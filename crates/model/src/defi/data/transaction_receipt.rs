@@ -181,7 +181,9 @@ mod tests {
         assert!(receipt.to.is_none());
         assert_eq!(
             receipt.contract_address,
-            Some(Address::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xaa]))
+            Some(Address::from_slice(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xaa
+            ]))
         );
         assert!(receipt.effective_gas_price.is_none());
         assert!(receipt.logs.is_empty());

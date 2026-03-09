@@ -783,7 +783,10 @@ impl Transaction {
         value: String,
     ) -> PyResult<Self> {
         let from = from.parse().map_err(to_pyvalue_err)?;
-        let to = to.map(|address| address.parse()).transpose().map_err(to_pyvalue_err)?;
+        let to = to
+            .map(|address| address.parse())
+            .transpose()
+            .map_err(to_pyvalue_err)?;
         let gas = gas.parse().map_err(to_pyvalue_err)?;
         let gas_price = gas_price.parse().map_err(to_pyvalue_err)?;
         let value = value.parse().map_err(to_pyvalue_err)?;

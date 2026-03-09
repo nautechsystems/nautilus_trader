@@ -81,8 +81,8 @@ def collect_rollout_preflight_errors(
     if module is None:
         try:
             module = _import_nautilus_pyo3(repo_root)
-        except Exception as exc:  # pragma: no cover - exercised through CLI usage
-            errors.append(f"Failed to import nautilus_pyo3 from checkout: {exc}")
+        except Exception as e:  # pragma: no cover - exercised through CLI usage
+            errors.append(f"Failed to import nautilus_pyo3 from checkout: {e}")
             return errors
 
     for export_name in sorted(required_exports):

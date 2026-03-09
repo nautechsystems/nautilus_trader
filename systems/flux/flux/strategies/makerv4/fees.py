@@ -9,8 +9,8 @@ from collections.abc import Mapping
 def _to_decimal(value: Any, *, field_name: str) -> Decimal:
     try:
         return Decimal(str(value))
-    except Exception as exc:  # pragma: no cover - defensive type guard
-        raise ValueError(f"Invalid decimal value for {field_name}: {value!r}") from exc
+    except Exception as e:  # pragma: no cover - defensive type guard
+        raise ValueError(f"Invalid decimal value for {field_name}: {value!r}") from e
 
 
 @dataclass(frozen=True, slots=True)

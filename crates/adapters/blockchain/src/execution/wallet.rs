@@ -346,10 +346,9 @@ impl WalletTracker {
         while let Some(chunk) = pending_chunks.pop() {
             match call(chunk.clone()).await {
                 Ok(values) => merged.extend(values),
-                Err(error) => {
+                Err(e) => {
                     let min_batch = self.config.multicall_min_batch_size.max(1);
-                    if chunk.len() > min_batch && should_split_on_error(error.to_string().as_str())
-                    {
+                    if chunk.len() > min_batch && should_split_on_error(e.to_string().as_str()) {
                         let midpoint = chunk.len() / 2;
                         let right = chunk[midpoint..].to_vec();
                         let left = chunk[..midpoint].to_vec();
@@ -360,10 +359,7 @@ impl WalletTracker {
                             pending_chunks.push(left);
                         }
                     } else {
-                        anyhow::bail!(
-                            "Wallet multicall chunk failed (size={}): {error}",
-                            chunk.len()
-                        );
+                        anyhow::bail!("Wallet multicall chunk failed (size={}): {e}", chunk.len());
                     }
                 }
             }
@@ -411,8 +407,8 @@ fn token_currency(token_balance: &TokenBalance) -> Currency {
             name.as_str(),
             CurrencyType::Crypto,
         );
-        if let Err(error) = Currency::register(currency, false) {
-            log::warn!("Failed to register token currency {code}: {error}");
+        if let Err(e) = Currency::register(currency, false) {
+            log::warn!("Failed to register token currency {code}: {e}");
         }
 
         match Currency::try_from_str(code.as_str()) {
@@ -475,8 +471,8 @@ mod tests {
     use alloy::primitives::{Address, U256};
     use nautilus_model::{
         currencies::CURRENCY_MAP,
-        enums::CurrencyType,
         defi::{chain::chains, wallet::TokenBalance},
+        enums::CurrencyType,
         types::{Currency, Money, fixed::FIXED_PRECISION},
     };
 
@@ -558,7 +554,9 @@ mod tests {
         assert_eq!(currency.precision, 6);
         assert_ne!(currency.code.as_str(), final_code);
 
-        let map = CURRENCY_MAP.lock().expect("currency map lock should succeed");
+        let map = CURRENCY_MAP
+            .lock()
+            .expect("currency map lock should succeed");
         assert_eq!(
             map.get(currency.code.as_str())
                 .expect("generated currency should be registered")

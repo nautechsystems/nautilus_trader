@@ -19,11 +19,10 @@ PUBLIC_API_HOST="${LP_PUBLIC_HOST:-127.0.0.1}"
 PUBLIC_API_PORT="${LP_PUBLIC_PORT:-5022}"
 LP_SKIP_FLUXBOARD_BUILD="${LP_SKIP_FLUXBOARD_BUILD:-0}"
 LP_SKIP_PULSE_BUILD="${LP_SKIP_PULSE_BUILD:-0}"
-LP_API_BACKEND_URL="http://${LP_API_HOST}:${LP_API_PORT}"
 PUBLIC_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
 
 usage() {
-  cat <<'USAGE'
+  cat << 'USAGE'
 Usage: ops/scripts/deploy/lp_stack.sh <start|stop|restart|status|health|logs <svc>>
 USAGE
 }
@@ -67,7 +66,7 @@ load_env_file() {
           echo "[lp-stack] invalid key in env file ${ENV_PATH}: ${key}" >&2
           exit 1
         fi
-        if printenv "${key}" >/dev/null 2>&1; then
+        if printenv "${key}" > /dev/null 2>&1; then
           continue
         fi
         if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
@@ -95,7 +94,6 @@ load_env_file() {
   PUBLIC_API_PORT="${LP_PUBLIC_PORT:-${PUBLIC_API_PORT}}"
   LP_SKIP_FLUXBOARD_BUILD="${LP_SKIP_FLUXBOARD_BUILD:-${LP_SKIP_FLUXBOARD_BUILD}}"
   LP_SKIP_PULSE_BUILD="${LP_SKIP_PULSE_BUILD:-${LP_SKIP_PULSE_BUILD}}"
-  LP_API_BACKEND_URL="http://${LP_API_HOST}:${LP_API_PORT}"
 }
 
 validate_mode() {
@@ -115,11 +113,11 @@ validate_mode() {
 }
 
 build_ui() {
-  if [[ "${LP_SKIP_FLUXBOARD_BUILD}" != "1" ]] && command -v pnpm >/dev/null 2>&1; then
-    pnpm --dir "${ROOT_DIR}/fluxboard" build >/dev/null 2>&1 || true
+  if [[ "${LP_SKIP_FLUXBOARD_BUILD}" != "1" ]] && command -v pnpm > /dev/null 2>&1; then
+    pnpm --dir "${ROOT_DIR}/fluxboard" build > /dev/null 2>&1 || true
   fi
-  if [[ "${LP_SKIP_PULSE_BUILD}" != "1" ]] && command -v pnpm >/dev/null 2>&1; then
-    pnpm --dir "${ROOT_DIR}/pulse-ui" build >/dev/null 2>&1 || true
+  if [[ "${LP_SKIP_PULSE_BUILD}" != "1" ]] && command -v pnpm > /dev/null 2>&1; then
+    pnpm --dir "${ROOT_DIR}/pulse-ui" build > /dev/null 2>&1 || true
   fi
 }
 
@@ -137,8 +135,8 @@ is_running() {
   pid_file="$(pid_path "${name}")"
   [[ -f "${pid_file}" ]] || return 1
   local pid
-  pid="$(<"${pid_file}")"
-  kill -0 "${pid}" >/dev/null 2>&1
+  pid="$(< "${pid_file}")"
+  kill -0 "${pid}" > /dev/null 2>&1
 }
 
 start_service() {
@@ -153,7 +151,7 @@ start_service() {
   fi
   (
     cd "${ROOT_DIR}"
-    nohup /bin/bash -lc "${cmd}" >>"${log_file}" 2>&1 &
+    nohup /bin/bash -lc "${cmd}" >> "${log_file}" 2>&1 &
     echo "$!" > "${pid_file}"
   )
   echo "[lp-stack] started ${name}"
@@ -165,10 +163,10 @@ stop_service() {
   pid_file="$(pid_path "${name}")"
   [[ -f "${pid_file}" ]] || return 0
   local pid
-  pid="$(<"${pid_file}")"
-  if kill -0 "${pid}" >/dev/null 2>&1; then
-    kill "${pid}" >/dev/null 2>&1 || true
-    wait "${pid}" 2>/dev/null || true
+  pid="$(< "${pid_file}")"
+  if kill -0 "${pid}" > /dev/null 2>&1; then
+    kill "${pid}" > /dev/null 2>&1 || true
+    wait "${pid}" 2> /dev/null || true
   fi
   rm -f "${pid_file}"
   echo "[lp-stack] stopped ${name}"
@@ -212,8 +210,8 @@ status_stack() {
 
 health_stack() {
   load_env_file
-  curl -fsS "http://${PUBLIC_API_HOST}:${PUBLIC_API_PORT}/lp" >/dev/null
-  curl -fsS "http://${PUBLIC_API_HOST}:${PUBLIC_API_PORT}/api/v1/hedgers/instances" >/dev/null
+  curl -fsS "http://${PUBLIC_API_HOST}:${PUBLIC_API_PORT}/lp" > /dev/null
+  curl -fsS "http://${PUBLIC_API_HOST}:${PUBLIC_API_PORT}/api/v1/hedgers/instances" > /dev/null
   echo "[lp-stack] health checks passed"
 }
 
