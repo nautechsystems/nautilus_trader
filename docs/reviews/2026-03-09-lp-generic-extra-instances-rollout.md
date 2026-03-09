@@ -6,7 +6,7 @@
 - Shared host base URL: `http://13.213.194.42:5022`
 - Backup root: `/root/flux-lp-rollout-backups/20260309T170510Z-generic-extra`
 - Final successful cutover window: `2026-03-09 17:05-17:08 UTC`
-- Final deployed worktree: `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize` at commit `06ffe457e`
+- Final deployed worktree: `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize` at commit `2a9c95fac`
 
 ## Verification Evidence
 
@@ -29,7 +29,7 @@
   - `bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022`
   - Result: `rollout checks passed against http://127.0.0.1:5022`
 - Final clean-worktree repoint:
-  - Rebuilt `fluxboard/dist` in `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize`, updated `/etc/flux/common.env` and `/etc/flux/tokenmm-api.env` to that worktree, restarted the shared services, and reran the localhost/public rollout smokes.
+  - Rebuilt `fluxboard/dist` in `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize`, regenerated `/etc/flux/tokenmm-api.env` from `ops/scripts/deploy/install_tokenmm_systemd.sh`, materialized the ignored `nautilus_trader/*.so` runtime extensions and `pulse-ui/dist` under the clean worktree, updated `/etc/flux/common.env` to that worktree, restarted the shared services, and reran the localhost/public rollout smokes.
   - Result: `PASS`
 
 ## Live Smoke Evidence
