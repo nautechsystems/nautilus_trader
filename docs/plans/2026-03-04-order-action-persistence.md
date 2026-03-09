@@ -169,4 +169,3 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 | Task 3: `OrderActionPersistenceActor` | TODO | Subscribe to `events.order.*`, filter, enqueue-only hot path, bounded flush |
 | Task 4: Docs update | TODO | Document usage + join with fills for audit |
 | Task 5: Strategy action-reason framework | TODO | Track via GitHub issue (see “Reason tagging” issue) |
-
