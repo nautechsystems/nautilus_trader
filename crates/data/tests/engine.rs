@@ -1545,7 +1545,7 @@ fn test_process_instrument(
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
     let cache = &data_engine.get_cache();
-    let messages = msgbus::stubs::get_saved_messages::<InstrumentAny>(handler);
+    let messages = msgbus::stubs::get_saved_messages::<InstrumentAny>(&handler);
 
     assert_eq!(
         cache.instrument(&audusd_sim.id()),

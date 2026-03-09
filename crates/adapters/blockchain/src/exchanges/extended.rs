@@ -39,22 +39,22 @@ pub struct DexExtended {
         Option<fn(HypersyncLog) -> anyhow::Result<PoolCreatedEvent>>,
     /// Function to parse initialize events from HyperSync logs.
     pub parse_initialize_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<InitializeEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<InitializeEvent>>,
     /// Function to parse swap events from HyperSync logs.
     pub parse_swap_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<SwapEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<SwapEvent>>,
     /// Function to parse mint events from HyperSync logs.
     pub parse_mint_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<MintEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<MintEvent>>,
     /// Function to parse burn events from HyperSync logs.
     pub parse_burn_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<BurnEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<BurnEvent>>,
     /// Function to parse collect events from HyperSync logs.
     pub parse_collect_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<CollectEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<CollectEvent>>,
     /// Function to parse flash events from HyperSync logs.
     pub parse_flash_event_hypersync_fn:
-        Option<fn(SharedDex, HypersyncLog) -> anyhow::Result<FlashEvent>>,
+        Option<fn(SharedDex, &HypersyncLog) -> anyhow::Result<FlashEvent>>,
     // === RPC parsers (hex-decode, standard Ethereum format) ===
     /// Function to parse pool creation events from RPC logs.
     pub parse_pool_created_event_rpc_fn: Option<fn(&RpcLog) -> anyhow::Result<PoolCreatedEvent>>,
@@ -109,7 +109,7 @@ impl DexExtended {
     /// Sets the function used to parse initialize events from HyperSync logs.
     pub fn set_initialize_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<InitializeEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<InitializeEvent>,
     ) {
         self.parse_initialize_event_hypersync_fn = Some(parse_fn);
     }
@@ -117,7 +117,7 @@ impl DexExtended {
     /// Sets the function used to parse swap events from HyperSync logs.
     pub fn set_swap_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<SwapEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<SwapEvent>,
     ) {
         self.parse_swap_event_hypersync_fn = Some(parse_fn);
     }
@@ -125,7 +125,7 @@ impl DexExtended {
     /// Sets the function used to parse mint events from HyperSync logs.
     pub fn set_mint_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<MintEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<MintEvent>,
     ) {
         self.parse_mint_event_hypersync_fn = Some(parse_fn);
     }
@@ -133,7 +133,7 @@ impl DexExtended {
     /// Sets the function used to parse burn events from HyperSync logs.
     pub fn set_burn_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<BurnEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<BurnEvent>,
     ) {
         self.parse_burn_event_hypersync_fn = Some(parse_fn);
     }
@@ -141,7 +141,7 @@ impl DexExtended {
     /// Sets the function used to parse collect events from HyperSync logs.
     pub fn set_collect_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<CollectEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<CollectEvent>,
     ) {
         self.parse_collect_event_hypersync_fn = Some(parse_fn);
     }
@@ -149,7 +149,7 @@ impl DexExtended {
     /// Sets the function used to parse flash events from HyperSync logs.
     pub fn set_flash_event_hypersync_parsing(
         &mut self,
-        parse_fn: fn(SharedDex, HypersyncLog) -> anyhow::Result<FlashEvent>,
+        parse_fn: fn(SharedDex, &HypersyncLog) -> anyhow::Result<FlashEvent>,
     ) {
         self.parse_flash_event_hypersync_fn = Some(parse_fn);
     }
@@ -235,7 +235,7 @@ impl DexExtended {
     /// # Errors
     ///
     /// Returns an error if the DEX does not have a HyperSync swap event parser defined or if parsing fails.
-    pub fn parse_swap_event_hypersync(&self, log: HypersyncLog) -> anyhow::Result<SwapEvent> {
+    pub fn parse_swap_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<SwapEvent> {
         if let Some(parse_fn) = &self.parse_swap_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
         } else {
@@ -252,7 +252,7 @@ impl DexExtended {
     /// # Errors
     ///
     /// Returns an error if the DEX does not have a HyperSync mint event parser defined or if parsing fails.
-    pub fn parse_mint_event_hypersync(&self, log: HypersyncLog) -> anyhow::Result<MintEvent> {
+    pub fn parse_mint_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<MintEvent> {
         if let Some(parse_fn) = &self.parse_mint_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
         } else {
@@ -269,7 +269,7 @@ impl DexExtended {
     /// # Errors
     ///
     /// Returns an error if the DEX does not have a HyperSync burn event parser defined or if parsing fails.
-    pub fn parse_burn_event_hypersync(&self, log: HypersyncLog) -> anyhow::Result<BurnEvent> {
+    pub fn parse_burn_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<BurnEvent> {
         if let Some(parse_fn) = &self.parse_burn_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
         } else {
@@ -288,7 +288,7 @@ impl DexExtended {
     /// Returns an error if the DEX does not have a HyperSync initialize event parser defined or if parsing fails.
     pub fn parse_initialize_event_hypersync(
         &self,
-        log: HypersyncLog,
+        log: &HypersyncLog,
     ) -> anyhow::Result<InitializeEvent> {
         if let Some(parse_fn) = &self.parse_initialize_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
@@ -306,7 +306,10 @@ impl DexExtended {
     /// # Errors
     ///
     /// Returns an error if the DEX does not have a HyperSync collect event parser defined or if parsing fails.
-    pub fn parse_collect_event_hypersync(&self, log: HypersyncLog) -> anyhow::Result<CollectEvent> {
+    pub fn parse_collect_event_hypersync(
+        &self,
+        log: &HypersyncLog,
+    ) -> anyhow::Result<CollectEvent> {
         if let Some(parse_fn) = &self.parse_collect_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
         } else {
@@ -323,7 +326,7 @@ impl DexExtended {
     /// # Errors
     ///
     /// Returns an error if the DEX does not have a HyperSync flash event parser defined or if parsing fails.
-    pub fn parse_flash_event_hypersync(&self, log: HypersyncLog) -> anyhow::Result<FlashEvent> {
+    pub fn parse_flash_event_hypersync(&self, log: &HypersyncLog) -> anyhow::Result<FlashEvent> {
         if let Some(parse_fn) = &self.parse_flash_event_hypersync_fn {
             parse_fn(self.dex.clone(), log)
         } else {

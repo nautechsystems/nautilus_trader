@@ -216,6 +216,7 @@ impl PyBacktestEngine {
 
     /// Changes the fill model for a venue.
     #[pyo3(name = "change_fill_model")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_change_fill_model(
         &mut self,
         py: Python,
@@ -253,7 +254,7 @@ impl PyBacktestEngine {
     fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.0
-            .add_instrument(instrument_any)
+            .add_instrument(&instrument_any)
             .map_err(to_pyruntime_err)
     }
 
@@ -263,6 +264,7 @@ impl PyBacktestEngine {
         reason = "Required for Python actor component registration"
     )]
     #[pyo3(name = "add_actor_from_config")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_add_actor_from_config(
         &mut self,
         _py: Python,
@@ -393,6 +395,7 @@ impl PyBacktestEngine {
         reason = "Required for Python strategy component registration"
     )]
     #[pyo3(name = "add_strategy_from_config")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
         &mut self,
         _py: Python,

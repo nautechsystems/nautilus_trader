@@ -436,7 +436,7 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
-#[allow(unused_variables)]
+#[allow(unused_variables, clippy::needless_pass_by_value)]
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,

@@ -150,7 +150,7 @@ pub fn dispatch_ws_message(
         OKXWsMessage::Orders(order_msgs) => {
             let ts_init = clock.get_time_ns();
             dispatch_order_messages(
-                order_msgs,
+                &order_msgs,
                 emitter,
                 state,
                 account_id,
@@ -165,7 +165,7 @@ pub fn dispatch_ws_message(
             let ts_init = clock.get_time_ns();
             let mut reports = Vec::new();
             for msg in algo_msgs {
-                match parse_algo_order_msg(msg, account_id, instruments, ts_init) {
+                match parse_algo_order_msg(&msg, account_id, instruments, ts_init) {
                     Ok(Some(report)) => reports.push(report),
                     Ok(None) => {}
                     Err(e) => log::error!("Failed to parse algo order message: {e}"),
@@ -201,7 +201,7 @@ pub fn dispatch_ws_message(
                         let instrument_id = instrument.id();
                         let size_precision = instrument.size_precision();
                         match crate::common::parse::parse_position_status_report(
-                            position,
+                            &position,
                             account_id,
                             instrument_id,
                             size_precision,
@@ -395,7 +395,7 @@ pub fn dispatch_ws_message(
 /// and falling back to execution reports for untracked/external orders.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_order_messages(
-    order_msgs: Vec<OKXOrderMsg>,
+    order_msgs: &[OKXOrderMsg],
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     account_id: AccountId,
@@ -405,7 +405,7 @@ fn dispatch_order_messages(
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     ts_init: UnixNanos,
 ) {
-    for msg in &order_msgs {
+    for msg in order_msgs {
         let Some(instrument) = instruments.get(&msg.inst_id) else {
             log::warn!("No instrument for {}, skipping order message", msg.inst_id);
             continue;

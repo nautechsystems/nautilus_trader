@@ -202,7 +202,7 @@ mod tests {
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
     fn test_signer() -> OrderSigner {
-        let pk = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
+        let pk = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
         OrderSigner::new(&pk).unwrap()
     }
 

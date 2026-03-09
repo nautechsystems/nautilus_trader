@@ -607,7 +607,7 @@ impl DataClient for OKXDataClient {
                 .values()
                 .cloned()
                 .collect();
-            ws.cache_instruments(instruments);
+            ws.cache_instruments(&instruments);
 
             ws.connect()
                 .await
@@ -672,7 +672,7 @@ impl DataClient for OKXDataClient {
                 .values()
                 .cloned()
                 .collect();
-            ws.cache_instruments(instruments);
+            ws.cache_instruments(&instruments);
 
             ws.connect()
                 .await

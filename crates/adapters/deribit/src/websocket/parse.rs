@@ -102,7 +102,7 @@ pub fn parse_trade_msg(
 
 /// Parses a vector of Deribit trade messages into Nautilus `Data` items.
 pub fn parse_trades_data(
-    trades: Vec<DeribitTradeMsg>,
+    trades: &[DeribitTradeMsg],
     instruments_cache: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {

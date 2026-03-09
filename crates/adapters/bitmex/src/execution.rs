@@ -365,8 +365,8 @@ impl BitmexExecutionClient {
 
         for instrument in &instruments {
             self.http_client.cache_instrument(instrument.clone());
-            self._submitter.cache_instrument(instrument.clone());
-            self._canceller.cache_instrument(instrument.clone());
+            self._submitter.cache_instrument(instrument);
+            self._canceller.cache_instrument(instrument);
         }
 
         self.core.set_instruments_initialized();
@@ -463,7 +463,7 @@ impl BitmexExecutionClient {
 
     fn submit_cached_order(
         &self,
-        order: OrderAny,
+        order: &OrderAny,
         submit_tries: Option<usize>,
         peg_price_type: Option<BitmexPegPriceType>,
         peg_offset_value: Option<f64>,
@@ -474,7 +474,7 @@ impl BitmexExecutionClient {
             return;
         }
 
-        self.emitter.emit_order_submitted(&order);
+        self.emitter.emit_order_submitted(order);
 
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -949,7 +949,7 @@ impl ExecutionClient for BitmexExecutionClient {
             })?;
 
         self.submit_cached_order(
-            order,
+            &order,
             submit_tries,
             peg_price_type,
             peg_offset_value,
@@ -983,7 +983,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
         for order in orders {
             self.submit_cached_order(
-                order,
+                &order,
                 submit_tries,
                 peg_price_type,
                 peg_offset_value,

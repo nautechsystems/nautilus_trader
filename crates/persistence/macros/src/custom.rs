@@ -827,6 +827,7 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
         /// PyO3 bindings (constructor, getters, to_json, from_json, record batch encode/decode). Only compiled when `feature = "python"`.
         #[cfg(feature = "python")]
         #[pyo3::pymethods]
+        #[allow(clippy::needless_pass_by_value)]
         impl #generics #name #generics {
             #[allow(clippy::too_many_arguments)]
             #[new]
@@ -942,6 +943,7 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let options = match parse_options(&attr) {
         Ok(o) => o,

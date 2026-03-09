@@ -669,7 +669,7 @@ impl SimulatedExchange {
     /// # Panics
     ///
     /// Panics if adding a missing instrument during deltas processing fails.
-    pub fn process_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         for module in &self.modules {
             module.pre_process(&Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
         }
@@ -691,7 +691,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
-            matching_engine.process_order_book_deltas(&deltas).unwrap();
+            matching_engine.process_order_book_deltas(deltas).unwrap();
         } else {
             panic!("Matching engine should be initialized");
         }
@@ -1044,7 +1044,7 @@ impl SimulatedExchange {
             }
             self.cache
                 .borrow_mut()
-                .update_account(AccountAny::Margin(margin_account))
+                .update_account(&AccountAny::Margin(margin_account))
                 .unwrap();
         }
     }
@@ -1150,7 +1150,7 @@ mod tests {
         let execution_client = BacktestExecutionClient::new(
             TraderId::test_default(),
             AccountId::test_default(),
-            exchange.clone(),
+            &exchange,
             cache,
             Rc::new(RefCell::new(clock)),
             None,
@@ -1492,7 +1492,7 @@ mod tests {
         // process both deltas
         exchange
             .borrow_mut()
-            .process_order_book_deltas(orderbook_deltas);
+            .process_order_book_deltas(&orderbook_deltas);
 
         let book = exchange
             .borrow()
@@ -1941,7 +1941,7 @@ mod tests {
         let execution_client = BacktestExecutionClient::new(
             TraderId::test_default(),
             AccountId::test_default(),
-            exchange.clone(),
+            &exchange,
             cache,
             Rc::new(RefCell::new(exec_clock)),
             None,

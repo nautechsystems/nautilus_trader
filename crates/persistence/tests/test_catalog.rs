@@ -43,7 +43,7 @@ use tempfile::TempDir;
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     (temp_dir, catalog)
 }
 
@@ -422,7 +422,7 @@ fn test_rust_write_2_bars_to_catalog() {
         .unwrap();
 
     let bar_type = bars[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2)]);
 }
 
@@ -439,7 +439,7 @@ fn test_rust_append_data_to_catalog() {
     catalog.write_to_parquet(bars2, None, None, None).unwrap();
 
     let bar_type = bars1[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (3, 3)]);
 }
 
@@ -457,10 +457,10 @@ fn test_rust_consolidate_catalog() {
 
     let bar_type = bars1[0].bar_type.to_string();
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
+        .consolidate_data("bars", Some(bar_type.as_str()), None, None, None, None)
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 3)]);
 }
 
@@ -483,7 +483,7 @@ fn test_rust_consolidate_catalog_with_time_range() {
     catalog
         .consolidate_data(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(UnixNanos::from(1)),
             Some(UnixNanos::from(2)),
             None,
@@ -491,7 +491,7 @@ fn test_rust_consolidate_catalog_with_time_range() {
         )
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (3, 3)]);
 }
 
@@ -534,7 +534,7 @@ fn test_rust_consolidate_with_deduplication() {
     // Consolidate with deduplication enabled; disable disjoint check since
     // we intentionally wrote overlapping files to seed the duplicates
     catalog
-        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .consolidate_data("bars", Some(&bar_type), None, None, Some(false), Some(true))
         .unwrap();
 
     // After consolidation there should be a single file
@@ -597,7 +597,7 @@ fn test_rust_consolidate_index_with_deduplication() {
     // Consolidate with deduplication enabled; disable disjoint check since
     // we intentionally wrote overlapping files to seed the duplicates
     catalog
-        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .consolidate_data("bars", Some(&bar_type), None, None, Some(false), Some(true))
         .unwrap();
 
     // After consolidation there should be a single file
@@ -680,7 +680,7 @@ fn test_rust_get_missing_intervals() {
 
     let bar_type = bars1[0].bar_type.to_string();
     let missing = catalog
-        .get_missing_intervals_for_request(0, 10, "bars", Some(bar_type))
+        .get_missing_intervals_for_request(0, 10, "bars", Some(&bar_type))
         .unwrap();
 
     assert_eq!(missing, vec![(0, 0), (3, 4), (7, 10)]);
@@ -697,12 +697,12 @@ fn test_rust_reset_data_file_names() {
     let bar_type = bars[0].bar_type.to_string();
     // Get intervals before reset
     let intervals_before = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(intervals_before, vec![(1, 3)]);
 
     // Reset file names
-    let result = catalog.reset_data_file_names("bars", Some(bar_type));
+    let result = catalog.reset_data_file_names("bars", Some(&bar_type));
 
     // The operation should succeed (even if it changes the intervals)
     assert!(result.is_ok());
@@ -729,13 +729,15 @@ fn test_rust_extend_file_name() {
     catalog
         .extend_file_name(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             UnixNanos::from(2),
             UnixNanos::from(3),
         )
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog
+        .get_intervals("bars", Some(bar_type.as_str()))
+        .unwrap();
     assert_eq!(intervals, vec![(1, 3), (4, 4)]);
 }
 
@@ -896,9 +898,7 @@ fn test_rust_query_files_with_multiple_files() {
 fn test_rust_get_intervals_empty() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
-    let intervals = catalog
-        .get_intervals("bars", Some("AUD/USD.SIM".to_string()))
-        .unwrap();
+    let intervals = catalog.get_intervals("bars", Some("AUD/USD.SIM")).unwrap();
 
     assert!(intervals.is_empty());
 }
@@ -920,7 +920,7 @@ fn test_consolidate_data_by_period_basic() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some("AUD/USD.SIM".to_string()),
+            Some("AUD/USD.SIM"),
             Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
@@ -943,7 +943,7 @@ fn test_consolidate_data_by_period_basic() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
@@ -952,7 +952,7 @@ fn test_consolidate_data_by_period_basic() {
         .unwrap();
 
     // Should have consolidated into period-based files
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
 
     // The exact intervals depend on the implementation, but we should have fewer files
     assert!(!intervals.is_empty());
@@ -979,7 +979,7 @@ fn test_consolidate_data_by_period_with_time_range() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(4000)),
@@ -988,7 +988,7 @@ fn test_consolidate_data_by_period_with_time_range() {
         .unwrap();
 
     // Operation should complete without error
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
 }
 
@@ -1000,7 +1000,7 @@ fn test_consolidate_data_by_period_empty_data() {
     // Consolidate empty catalog
     let result = catalog.consolidate_data_by_period(
         "bars",
-        Some(bar_type),
+        Some(&bar_type),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1037,7 +1037,7 @@ fn test_consolidate_data_by_period_different_periods() {
     for period_nanos in periods {
         let result = catalog.consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(period_nanos),
             None,
             None,
@@ -1063,7 +1063,7 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1072,7 +1072,7 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
         .unwrap();
 
     // Operation should complete without error
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
 }
 
@@ -1101,9 +1101,9 @@ fn test_consolidate_catalog_by_period_basic() {
 
     // Operation should complete without error
     let bar_type = bars[0].bar_type.to_string();
-    let bar_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let bar_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     let quote_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
 
     assert!(!bar_intervals.is_empty());
@@ -1132,7 +1132,7 @@ fn test_consolidate_catalog_by_period_with_time_range() {
 
     // Operation should complete without error
     let bar_type = bars[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
 }
 
@@ -1188,7 +1188,7 @@ fn test_consolidate_data_by_period_multiple_instruments() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1197,9 +1197,9 @@ fn test_consolidate_data_by_period_multiple_instruments() {
         .unwrap();
 
     // Only AUD/USD bars should be affected
-    let aud_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let aud_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     let eth_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
 
     assert!(!aud_intervals.is_empty());
@@ -1213,7 +1213,7 @@ fn test_consolidate_data_by_period_invalid_type() {
     // Consolidate non-existent data type
     let result = catalog.consolidate_data_by_period(
         "invalid_type",
-        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL".to_string()),
+        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1365,14 +1365,14 @@ fn test_generic_consolidate_data_by_period_quotes() {
 
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert_eq!(initial_intervals.len(), 3);
 
     // consolidate using generic function
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1382,7 +1382,7 @@ fn test_generic_consolidate_data_by_period_quotes() {
 
     // should have fewer files after consolidation
     let final_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
@@ -1402,14 +1402,14 @@ fn test_generic_consolidate_data_by_period_bars() {
     let bar_type = bars_list[0].bar_type.to_string();
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(initial_intervals.len(), 3);
 
     // consolidate using generic function
     catalog
         .consolidate_data_by_period_generic::<Bar>(
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1418,7 +1418,7 @@ fn test_generic_consolidate_data_by_period_bars() {
         .unwrap();
 
     // should have fewer files after consolidation
-    let final_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let final_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
 
@@ -1428,7 +1428,7 @@ fn test_generic_consolidate_data_by_period_empty_catalog() {
 
     // consolidate empty catalog
     let result = catalog.consolidate_data_by_period_generic::<QuoteTick>(
-        Some("ETH/USDT.BINANCE".to_string()),
+        Some("ETH/USDT.BINANCE"),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1458,7 +1458,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     // consolidate with time range
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
@@ -1468,7 +1468,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
 
     // operation should complete without error
     let intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert!(!intervals.is_empty());
 }
@@ -1488,17 +1488,17 @@ fn test_consolidation_workflow_end_to_end() {
     let bar_type = bars_list[0].bar_type.to_string();
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(initial_intervals.len(), 5);
 
     // consolidate all files
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
+        .consolidate_data("bars", Some(bar_type.as_str()), None, None, None, None)
         .unwrap();
 
     // should have fewer files after consolidation
-    let final_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let final_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
 
@@ -1521,7 +1521,7 @@ fn test_consolidation_preserves_data_integrity() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1530,7 +1530,7 @@ fn test_consolidation_preserves_data_integrity() {
         .unwrap();
 
     // data should still be accessible after consolidation
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
 
     // Should have at least one interval covering our data
     assert!(!intervals.is_empty());
@@ -1566,7 +1566,7 @@ fn test_to_object_path_trailing_slash() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Build a sample path under the catalog base
     let sample_path = format!(
@@ -1598,7 +1598,7 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test path with instrument ID
     let path_with_id = format!("{}/data/quotes/BTCUSD", base_dir.to_string_lossy());
@@ -1660,7 +1660,7 @@ fn test_make_path_custom_data_roundtrip() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
     assert!(path_no_id.contains("data/custom/MyCustomType"));
@@ -1671,7 +1671,7 @@ fn test_make_path_custom_data_roundtrip() {
     assert_eq!(identifier, None);
 
     let path_with_id = catalog
-        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST".to_string()))
+        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
         .unwrap();
     assert!(path_with_id.contains("data/custom/RustTestCustomData"));
     let (data_cls2, identifier2) = catalog
@@ -1687,7 +1687,7 @@ fn test_group_contiguous_intervals_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test contiguous intervals
     let intervals = vec![(1, 5), (6, 10), (11, 15)];
@@ -1721,7 +1721,7 @@ fn test_prepare_consolidation_queries_basic_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test basic period consolidation
     let intervals = vec![(1000, 5000), (5001, 10000)];
@@ -1747,7 +1747,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test with interval splitting
     // File: [1000, 5000], Request: start=2000, end=4000
@@ -1760,7 +1760,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     let queries = catalog
         .prepare_consolidation_queries(
             "quotes",
-            Some("EURUSD".to_string()),
+            Some("EURUSD"),
             &intervals,
             period_nanos,
             start,
@@ -1846,7 +1846,7 @@ fn test_is_remote_uri_extended_moved() {
 
     // Test local paths (should not be remote)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
     assert!(!local_catalog.is_remote_uri());
 
     let tmp_file = tempfile::tempdir().unwrap();
@@ -1895,7 +1895,7 @@ fn test_reconstruct_full_uri_moved() {
 
     // Test local path (should return full absolute path)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
     let reconstructed = local_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
@@ -1924,7 +1924,7 @@ fn test_delete_data_range_complete_file_deletion() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(3_000_000_000)),
         )
@@ -1955,7 +1955,7 @@ fn test_delete_data_range_partial_file_overlap_start() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(1_500_000_000)),
         )
@@ -1988,7 +1988,7 @@ fn test_delete_data_range_partial_file_overlap_end() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(2_500_000_000)),
             Some(UnixNanos::from(4_000_000_000)),
         )
@@ -2022,7 +2022,7 @@ fn test_delete_data_range_partial_file_overlap_middle() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(1_500_000_000)),
             Some(UnixNanos::from(3_500_000_000)),
         )
@@ -2044,7 +2044,7 @@ fn test_delete_data_range_no_data() {
     // delete from empty catalog - should not raise any errors
     let result = catalog.delete_data_range(
         "quotes",
-        Some("ETH/USDT.BINANCE".to_string()),
+        Some("ETH/USDT.BINANCE"),
         Some(UnixNanos::from(1_000_000_000)),
         Some(UnixNanos::from(2_000_000_000)),
     );
@@ -2073,7 +2073,7 @@ fn test_delete_data_range_no_intersection() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(3_000_000_000)),
             Some(UnixNanos::from(4_000_000_000)),
         )
@@ -2273,7 +2273,7 @@ fn test_prepare_delete_operations_basic() {
     let operations = catalog
         .prepare_delete_operations(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
@@ -2302,7 +2302,7 @@ fn test_prepare_delete_operations_no_intersection() {
     let operations = catalog
         .prepare_delete_operations(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(5000)),
             Some(UnixNanos::from(6000)),
@@ -2331,7 +2331,7 @@ fn test_delete_data_range_nanosecond_precision_boundaries() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(1_000_000_001)),
             Some(UnixNanos::from(1_000_000_002)),
         )
@@ -2366,7 +2366,7 @@ fn test_delete_data_range_single_file_double_split() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(2_500_000_000)),
             Some(UnixNanos::from(3_500_000_000)),
         )
@@ -2402,7 +2402,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(1)),
         )
@@ -2640,8 +2640,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     // This verifies the table naming fix for identifier-dependent table names
 
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create quote ticks for multiple instruments with different identifier patterns
     let eurusd_quotes = create_quote_ticks_for_instrument("EUR/USD.SIM", 1000, 3);
@@ -2701,8 +2700,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
 fn test_query_directory_based_registration() {
     // Test that directory-based registration (optimize_file_loading=true) reads all files in directory
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     // Each batch needs non-overlapping timestamps to create separate files
@@ -2745,8 +2743,7 @@ fn test_query_directory_based_registration() {
 fn test_query_file_based_registration() {
     // Test that file-based registration (optimize_file_loading=false) only reads specified files
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     let instrument_id = "GBP/USD.SIM";
@@ -2793,8 +2790,7 @@ fn test_query_file_based_registration() {
 fn test_query_directory_based_vs_file_based() {
     // Test that directory-based and file-based registration produce same results when all files are specified
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "AUD/USD.SIM";
@@ -2882,10 +2878,11 @@ fn test_rust_custom_data_roundtrip() {
         .unwrap();
 
     // Read back via dynamic custom data query
+    let ids = vec![instrument_id.to_string()];
     let loaded: Vec<Data> = catalog
         .query_custom_data_dynamic(
             "RustTestCustomData",
-            Some(vec![instrument_id.to_string()]),
+            Some(&ids),
             None,
             None,
             None,
@@ -2971,13 +2968,14 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
         .collect();
 
     catalog
-        .write_data_enum(data, None, None, Some(false))
+        .write_data_enum(&data, None, None, Some(false))
         .unwrap();
 
+    let ids_a = vec![id_a.to_string()];
     let loaded_a: Vec<Data> = catalog
         .query_custom_data_dynamic(
             "RustTestCustomData",
-            Some(vec![id_a.to_string()]),
+            Some(&ids_a),
             None,
             None,
             None,
@@ -2985,10 +2983,11 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
             true,
         )
         .unwrap();
+    let ids_b = vec![id_b.to_string()];
     let loaded_b: Vec<Data> = catalog
         .query_custom_data_dynamic(
             "RustTestCustomData",
-            Some(vec![id_b.to_string()]),
+            Some(&ids_b),
             None,
             None,
             None,
@@ -3106,8 +3105,7 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 
     // Also test with a local path to ensure directory-based registration works there too
     let temp_dir = TempDir::new().unwrap();
-    let mut local_catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut local_catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "USD/JPY.SIM";
@@ -3236,7 +3234,7 @@ fn test_write_skips_if_file_exists() {
 
     // Verify only one file exists
     let bar_type = create_bar(1).bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2)]);
 }
 
@@ -3269,7 +3267,7 @@ fn test_write_succeeds_with_disjoint_intervals() {
     // Write non-overlapping interval (5, 6) - should succeed
     let bars2 = vec![create_bar(5), create_bar(6)];
     catalog.write_to_parquet(bars2, None, None, None).unwrap();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (5, 6)]);
 }
 
@@ -3302,7 +3300,7 @@ fn test_query_first_timestamp() {
     let bar_type = bars[0].bar_type.to_string();
     // Query first timestamp
     let first_ts = catalog
-        .query_first_timestamp("bars", Some(bar_type))
+        .query_first_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(first_ts.is_some());
@@ -3316,7 +3314,7 @@ fn test_query_first_timestamp_empty() {
     let bar_type = create_bar(1).bar_type.to_string();
     // Query first timestamp when no data exists
     let first_ts = catalog
-        .query_first_timestamp("bars", Some(bar_type))
+        .query_first_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(first_ts.is_none());
@@ -3335,7 +3333,7 @@ fn test_query_last_timestamp() {
     let bar_type = bars[0].bar_type.to_string();
     // Query last timestamp
     let last_ts = catalog
-        .query_last_timestamp("bars", Some(bar_type))
+        .query_last_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(last_ts.is_some());
@@ -3457,7 +3455,8 @@ fn test_instrument_roundtrip_with_info_params() {
 
     catalog.write_instruments(vec![instrument_any]).unwrap();
 
-    let read = catalog.query_instruments(Some(vec![id_str])).unwrap();
+    let ids = vec![id_str];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
     assert_eq!(read.len(), 1, "Should read back exactly one instrument");
 
     let read_any = &read[0];

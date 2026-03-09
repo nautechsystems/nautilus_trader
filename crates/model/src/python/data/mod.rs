@@ -331,7 +331,7 @@ pub fn deserialize_custom_from_json(type_name: &str, payload: &[u8]) -> PyResult
     use crate::data::registry;
     let value: serde_json::Value = serde_json::from_slice(payload)
         .map_err(|e| to_pyvalue_err(format!("Invalid JSON: {e}")))?;
-    let Some(Data::Custom(custom)) = registry::deserialize_custom_from_json(type_name, value)
+    let Some(Data::Custom(custom)) = registry::deserialize_custom_from_json(type_name, &value)
         .map_err(|e| to_pyvalue_err(format!("Deserialization failed: {e}")))?
     else {
         return Err(to_pyvalue_err(format!(
@@ -344,8 +344,8 @@ pub fn deserialize_custom_from_json(type_name: &str, payload: &[u8]) -> PyResult
 /// Deserializes JSON value to CustomData via the data class's from_json.
 #[cfg(feature = "python")]
 fn py_json_deserialize_custom_data(
-    data_class: pyo3::Py<pyo3::PyAny>,
-    value: serde_json::Value,
+    data_class: &pyo3::Py<pyo3::PyAny>,
+    value: &serde_json::Value,
 ) -> Result<std::sync::Arc<dyn crate::data::CustomDataTrait>, anyhow::Error> {
     use std::sync::Arc;
 
@@ -429,7 +429,7 @@ fn py_encode_custom_data_to_record_batch(
 #[allow(unsafe_code)]
 #[cfg(feature = "python")]
 fn py_decode_record_batch_to_custom_data(
-    data_class: pyo3::Py<pyo3::PyAny>,
+    data_class: &pyo3::Py<pyo3::PyAny>,
     metadata: &std::collections::HashMap<String, String>,
     batch: arrow::record_batch::RecordBatch,
 ) -> Result<Vec<crate::data::Data>, anyhow::Error> {
@@ -553,7 +553,7 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     let json_deserializer = Box::new(
         move |value: serde_json::Value| -> Result<Arc<dyn crate::data::CustomDataTrait>, anyhow::Error> {
             pyo3::Python::attach(|py| {
-                py_json_deserialize_custom_data(data_class_for_json.clone_ref(py), value)
+                py_json_deserialize_custom_data(&data_class_for_json.clone_ref(py), &value)
             })
         },
     );
@@ -579,7 +579,7 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
               -> Result<Vec<crate::data::Data>, anyhow::Error> {
             pyo3::Python::attach(|py| {
                 py_decode_record_batch_to_custom_data(
-                    data_class_for_decode.clone_ref(py),
+                    &data_class_for_decode.clone_ref(py),
                     metadata,
                     batch,
                 )

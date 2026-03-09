@@ -95,7 +95,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+    fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut new_return = BTreeMap::new();
         let one_day_in_nanos = 86_400_000_000_000;
         let start_time = 1_600_000_000_000_000_000;
@@ -111,7 +111,7 @@ mod tests {
     #[rstest]
     fn test_empty_returns() {
         let volatility = ReturnsVolatility::new(None);
-        let returns = create_returns(vec![]);
+        let returns = create_returns(&[]);
         let result = volatility.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());
@@ -133,7 +133,7 @@ mod tests {
     fn test_volatility_calculation() {
         let volatility = ReturnsVolatility::new(None);
 
-        let returns = create_returns(vec![
+        let returns = create_returns(&[
             0.01, -0.02, 0.03, -0.01, 0.02, 0.04, -0.03, 0.05, -0.04, 0.02,
         ]);
         let result = volatility.calculate_from_returns(&returns);

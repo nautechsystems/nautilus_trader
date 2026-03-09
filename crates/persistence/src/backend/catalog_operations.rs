@@ -237,7 +237,7 @@ impl ParquetDataCatalog {
     pub fn consolidate_data(
         &self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
@@ -431,11 +431,12 @@ impl ParquetDataCatalog {
                 self.extract_data_cls_and_identifier_from_path(&directory)?;
 
             if let Some(data_cls_name) = data_cls {
+                let identifier_ref = identifier.as_deref();
                 // Use match statement to call the generic consolidate_data_by_period for various types
                 match data_cls_name.as_str() {
                     "quotes" => {
                         self.consolidate_data_by_period_generic::<QuoteTick>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -444,7 +445,7 @@ impl ParquetDataCatalog {
                     }
                     "trades" => {
                         self.consolidate_data_by_period_generic::<TradeTick>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -453,7 +454,7 @@ impl ParquetDataCatalog {
                     }
                     "order_book_deltas" => {
                         self.consolidate_data_by_period_generic::<OrderBookDelta>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -462,7 +463,7 @@ impl ParquetDataCatalog {
                     }
                     "order_book_depths" => {
                         self.consolidate_data_by_period_generic::<OrderBookDepth10>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -471,7 +472,7 @@ impl ParquetDataCatalog {
                     }
                     "bars" => {
                         self.consolidate_data_by_period_generic::<Bar>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -480,7 +481,7 @@ impl ParquetDataCatalog {
                     }
                     "index_prices" => {
                         self.consolidate_data_by_period_generic::<IndexPriceUpdate>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -489,7 +490,7 @@ impl ParquetDataCatalog {
                     }
                     "mark_prices" => {
                         self.consolidate_data_by_period_generic::<MarkPriceUpdate>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -498,7 +499,7 @@ impl ParquetDataCatalog {
                     }
                     "instrument_closes" => {
                         self.consolidate_data_by_period_generic::<InstrumentClose>(
-                            identifier,
+                            identifier_ref,
                             period_nanos,
                             start,
                             end,
@@ -512,7 +513,7 @@ impl ParquetDataCatalog {
                             let custom_type_name = data_cls_name.strip_prefix("custom/").unwrap();
                             self.consolidate_custom_data_by_period(
                                 custom_type_name,
-                                identifier,
+                                identifier_ref,
                                 period_nanos,
                                 start,
                                 end,
@@ -660,7 +661,7 @@ impl ParquetDataCatalog {
     pub fn consolidate_data_by_period(
         &mut self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         period_nanos: Option<u64>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -784,7 +785,7 @@ impl ParquetDataCatalog {
     /// Returns `Ok(())` on success, or an error if consolidation fails.
     pub fn consolidate_data_by_period_generic<T>(
         &mut self,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         period_nanos: Option<u64>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -802,7 +803,7 @@ impl ParquetDataCatalog {
         let ensure_contiguous_files = ensure_contiguous_files.unwrap_or(true);
 
         // Use get_intervals for cleaner implementation
-        let intervals = self.get_intervals(T::path_prefix(), identifier.clone())?;
+        let intervals = self.get_intervals(T::path_prefix(), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate
@@ -811,7 +812,7 @@ impl ParquetDataCatalog {
         // Use auxiliary function to prepare all queries for execution
         let queries_to_execute = self.prepare_consolidation_queries(
             T::path_prefix(),
-            identifier.clone(),
+            identifier,
             &intervals,
             period_nanos,
             start,
@@ -824,7 +825,7 @@ impl ParquetDataCatalog {
         }
 
         // Get directory for file operations
-        let directory = self.make_path(T::path_prefix(), identifier.clone())?;
+        let directory = self.make_path(T::path_prefix(), identifier)?;
         let mut existing_files = self.list_parquet_files(&directory)?;
         existing_files.sort();
 
@@ -837,7 +838,7 @@ impl ParquetDataCatalog {
 
         for query_info in queries_to_execute {
             // Query data for this period using query_typed_data
-            let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+            let instrument_ids = identifier.map(|id| vec![id.to_string()]);
 
             // Use optimize_file_loading=false to match Python behavior:
             // During consolidation, we want to read only the specific files being consolidated,
@@ -950,7 +951,7 @@ impl ParquetDataCatalog {
     fn consolidate_custom_data_by_period(
         &mut self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         period_nanos: Option<u64>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
@@ -961,7 +962,7 @@ impl ParquetDataCatalog {
 
         // Get intervals for the custom data type
         let path_prefix = format!("custom/{type_name}");
-        let intervals = self.get_intervals(&path_prefix, identifier.clone())?;
+        let intervals = self.get_intervals(&path_prefix, identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to consolidate
@@ -970,7 +971,7 @@ impl ParquetDataCatalog {
         // Use auxiliary function to prepare all queries for execution
         let queries_to_execute = self.prepare_consolidation_queries(
             &path_prefix,
-            identifier.clone(),
+            identifier,
             &intervals,
             period_nanos,
             start,
@@ -983,7 +984,7 @@ impl ParquetDataCatalog {
         }
 
         // Get directory for file operations
-        let directory = self.make_path(&path_prefix, identifier.clone())?;
+        let directory = self.make_path(&path_prefix, identifier)?;
         let mut existing_files = self.list_parquet_files(&directory)?;
         existing_files.sort();
 
@@ -996,11 +997,11 @@ impl ParquetDataCatalog {
 
         for query_info in queries_to_execute {
             // Query custom data for this period using query_custom_data_dynamic
-            let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+            let instrument_ids = identifier.map(|id| vec![id.to_string()]);
 
             let period_data = self.query_custom_data_dynamic(
                 type_name,
-                instrument_ids,
+                instrument_ids.as_deref(),
                 Some(UnixNanos::from(query_info.query_start)),
                 Some(UnixNanos::from(query_info.query_end)),
                 None,
@@ -1116,27 +1117,22 @@ impl ParquetDataCatalog {
     fn delete_custom_data_range(
         &mut self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()> {
         let path_prefix = format!("custom/{type_name}");
 
         // Get intervals for the custom data type
-        let intervals = self.get_intervals(&path_prefix, identifier.clone())?;
+        let intervals = self.get_intervals(&path_prefix, identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process
         }
 
         // Prepare all operations for execution
-        let operations_to_execute = self.prepare_delete_operations(
-            &path_prefix,
-            identifier.clone(),
-            &intervals,
-            start,
-            end,
-        )?;
+        let operations_to_execute =
+            self.prepare_delete_operations(&path_prefix, identifier, &intervals, start, end)?;
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -1151,10 +1147,10 @@ impl ParquetDataCatalog {
             match operation.operation_type.as_str() {
                 "split_before" => {
                     // Query custom data before the deletion range and write it
-                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let before_data = self.query_custom_data_dynamic(
                         type_name,
-                        instrument_ids,
+                        instrument_ids.as_deref(),
                         Some(UnixNanos::from(operation.query_start)),
                         Some(UnixNanos::from(operation.query_end)),
                         None,
@@ -1193,10 +1189,10 @@ impl ParquetDataCatalog {
                 }
                 "split_after" => {
                     // Query custom data after the deletion range and write it
-                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let after_data = self.query_custom_data_dynamic(
                         type_name,
-                        instrument_ids,
+                        instrument_ids.as_deref(),
                         Some(UnixNanos::from(operation.query_start)),
                         Some(UnixNanos::from(operation.query_end)),
                         None,
@@ -1266,7 +1262,7 @@ impl ParquetDataCatalog {
     pub fn prepare_consolidation_queries(
         &self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         intervals: &[(u64, u64)],
         period_nanos: u64,
         start: Option<UnixNanos>,
@@ -1362,7 +1358,7 @@ impl ParquetDataCatalog {
 
                 // Check if target file already exists (only when ensure_contiguous_files is true)
                 if ensure_contiguous_files {
-                    let directory = self.make_path(type_name, identifier.clone())?;
+                    let directory = self.make_path(type_name, identifier)?;
                     let target_filename = format!(
                         "{}/{}",
                         directory,
@@ -1609,7 +1605,7 @@ impl ParquetDataCatalog {
     pub fn reset_data_file_names(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<()> {
         let directory = self.make_path(data_cls, identifier)?;
         self.reset_file_names(&directory)
@@ -1824,7 +1820,7 @@ impl ParquetDataCatalog {
     pub fn delete_data_range(
         &mut self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()> {
@@ -1924,7 +1920,9 @@ impl ParquetDataCatalog {
                 self.extract_data_cls_and_identifier_from_path(&directory)
             {
                 // Call the existing delete_data_range method
-                if let Err(e) = self.delete_data_range(&data_type, identifier, start, end) {
+                if let Err(e) =
+                    self.delete_data_range(&data_type, identifier.as_deref(), start, end)
+                {
                     log::warn!("Failed to delete data in directory {directory}: {e}");
                     // Continue with other directories instead of failing completely
                 }
@@ -1955,7 +1953,7 @@ impl ParquetDataCatalog {
     /// Returns `Ok(())` on success, or an error if deletion fails.
     pub fn delete_data_range_generic<T>(
         &mut self,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()>
@@ -1968,20 +1966,15 @@ impl ParquetDataCatalog {
             + Clone,
     {
         // Get intervals for cleaner implementation
-        let intervals = self.get_intervals(T::path_prefix(), identifier.clone())?;
+        let intervals = self.get_intervals(T::path_prefix(), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process
         }
 
         // Prepare all operations for execution
-        let operations_to_execute = self.prepare_delete_operations(
-            T::path_prefix(),
-            identifier.clone(),
-            &intervals,
-            start,
-            end,
-        )?;
+        let operations_to_execute =
+            self.prepare_delete_operations(T::path_prefix(), identifier, &intervals, start, end)?;
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -1998,7 +1991,7 @@ impl ParquetDataCatalog {
                 "split_before" => {
                     // Query data before the deletion range and write it
                     // Use optimize_file_loading=false for precise file control during split operations
-                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let before_data = self.query_typed_data::<T>(
                         instrument_ids,
                         Some(UnixNanos::from(operation.query_start)),
@@ -2022,7 +2015,7 @@ impl ParquetDataCatalog {
                 "split_after" => {
                     // Query data after the deletion range and write it
                     // Use optimize_file_loading=false for precise file control during split operations
-                    let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
+                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let after_data = self.query_typed_data::<T>(
                         instrument_ids,
                         Some(UnixNanos::from(operation.query_start)),
@@ -2087,7 +2080,7 @@ impl ParquetDataCatalog {
     pub fn prepare_delete_operations(
         &self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         intervals: &[(u64, u64)],
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,

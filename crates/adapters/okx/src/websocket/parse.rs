@@ -946,7 +946,7 @@ pub fn parse_candle_msg(
 ///
 /// Returns an error if any contained order messages cannot be parsed.
 pub fn parse_order_msg_vec(
-    data: Vec<OKXOrderMsg>,
+    data: &[OKXOrderMsg],
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     fee_cache: &mut AHashMap<Ustr, Money>,
@@ -955,7 +955,7 @@ pub fn parse_order_msg_vec(
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut order_reports = Vec::with_capacity(data.len());
 
-    for msg in &data {
+    for msg in data {
         match parse_order_msg(
             msg,
             account_id,
@@ -1083,7 +1083,7 @@ pub fn parse_order_msg(
 /// Returns an error if the instrument cannot be found or if message fields
 /// fail to parse.
 pub fn parse_algo_order_msg(
-    msg: OKXAlgoOrderMsg,
+    msg: &OKXAlgoOrderMsg,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
@@ -1101,7 +1101,7 @@ pub fn parse_algo_order_msg(
         .get(&msg.inst_id)
         .ok_or_else(|| anyhow::anyhow!("No instrument found for inst_id: {}", msg.inst_id))?;
 
-    parse_algo_order_status_report(&msg, inst, account_id, ts_init)
+    parse_algo_order_status_report(msg, inst, account_id, ts_init)
         .map(ExecutionReport::Order)
         .map(Some)
 }
@@ -2333,7 +2333,7 @@ mod tests {
         let mut filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
-            data,
+            &data,
             account_id,
             &instruments,
             &mut fee_cache,
@@ -3420,8 +3420,7 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let result =
-            parse_algo_order_msg(msg.clone(), account_id, &instruments, UnixNanos::default());
+        let result = parse_algo_order_msg(msg, account_id, &instruments, UnixNanos::default());
 
         let report = result.unwrap().unwrap();
 
@@ -3486,8 +3485,7 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let result =
-            parse_algo_order_msg(msg.clone(), account_id, &instruments, UnixNanos::default());
+        let result = parse_algo_order_msg(msg, account_id, &instruments, UnixNanos::default());
 
         let report = result.unwrap().unwrap();
 
@@ -3555,7 +3553,7 @@ mod tests {
         let mut filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
-            vec![msg.clone()],
+            std::slice::from_ref(msg),
             account_id,
             &instruments,
             &mut fee_cache,
@@ -3628,7 +3626,7 @@ mod tests {
         let mut filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
-            vec![msg.clone()],
+            std::slice::from_ref(msg),
             account_id,
             &instruments,
             &mut fee_cache,
@@ -3704,7 +3702,7 @@ mod tests {
         let mut filled_qty_cache = AHashMap::new();
 
         let result = parse_order_msg_vec(
-            vec![msg.clone()],
+            std::slice::from_ref(msg),
             account_id,
             &instruments,
             &mut fee_cache,
@@ -4946,7 +4944,7 @@ mod tests {
 
         let msg = stub_algo_order_msg(OKXAlgoOrderType::Iceberg);
 
-        let result = parse_algo_order_msg(msg, account_id, &instruments, UnixNanos::default());
+        let result = parse_algo_order_msg(&msg, account_id, &instruments, UnixNanos::default());
 
         assert!(result.unwrap().is_none());
     }

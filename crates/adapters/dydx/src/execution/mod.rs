@@ -231,7 +231,7 @@ impl DydxExecutionClient {
 
         // Use private WebSocket client for authenticated subaccount subscriptions
         let credential = DydxCredential::resolve(
-            config.private_key.clone(),
+            config.private_key.as_deref(),
             config.is_testnet,
             config.authenticator_ids.clone(),
         )?

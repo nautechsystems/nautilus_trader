@@ -532,7 +532,7 @@ pub fn parse_futures_instrument(
 /// Currently this function does not return errors as all fields are handled gracefully,
 /// but returns `Result` for future error handling compatibility.
 pub fn parse_trade(
-    trade: BitmexTrade,
+    trade: &BitmexTrade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
@@ -564,7 +564,7 @@ pub fn parse_trade(
 ///
 /// Returns an error when required OHLC fields are missing from the payload.
 pub fn parse_trade_bin(
-    bin: BitmexTradeBin,
+    bin: &BitmexTradeBin,
     instrument: &InstrumentAny,
     bar_type: &BarType,
     ts_init: UnixNanos,
@@ -920,7 +920,7 @@ pub fn parse_order_status_report(
 ///
 /// Returns an error when the execution does not represent a trade or lacks required identifiers.
 pub fn parse_fill_report(
-    exec: BitmexExecution,
+    exec: &BitmexExecution,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
@@ -988,7 +988,7 @@ pub fn parse_fill_report(
 /// Currently this function does not return errors as all fields are handled gracefully,
 /// but returns `Result` for future error handling compatibility.
 pub fn parse_position_report(
-    position: BitmexPosition,
+    position: &BitmexPosition,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
@@ -1217,7 +1217,7 @@ mod tests {
         let spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
         let bar_type = BarType::new(instrument_any.id(), spec, AggregationSource::External);
 
-        let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
+        let bar = parse_trade_bin(&bins[0], &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
         let expected_open =
@@ -1264,7 +1264,7 @@ mod tests {
             foreign_notional: None,
         };
 
-        let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
+        let bar = parse_trade_bin(&bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
         let expected_high =
@@ -1869,7 +1869,7 @@ mod tests {
             parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
                 .unwrap();
 
-        let report = parse_fill_report(exec, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_fill_report(&exec, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-654321");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -1949,7 +1949,7 @@ mod tests {
         instrument_def.settl_currency = Some(Ustr::from("USDt"));
         let instrument = parse_perpetual_instrument(&instrument_def, UnixNanos::default()).unwrap();
 
-        let report = parse_fill_report(exec, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_fill_report(&exec, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-111111");
         assert_eq!(report.instrument_id.to_string(), "ETHUSD.BITMEX");
@@ -2062,7 +2062,7 @@ mod tests {
             parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
                 .unwrap();
 
-        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-789012");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
@@ -2172,7 +2172,7 @@ mod tests {
         instrument_def.settl_currency = Some(Ustr::from("USD"));
         let instrument = parse_futures_instrument(&instrument_def, UnixNanos::default()).unwrap();
 
-        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 500.0); // Should be absolute value
@@ -2279,7 +2279,7 @@ mod tests {
         instrument_def.quote_currency = Ustr::from("USD");
         let instrument = parse_spot_instrument(&instrument_def, UnixNanos::default()).unwrap();
 
-        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
@@ -2386,7 +2386,7 @@ mod tests {
         instrument_def.quote_currency = Ustr::from("USD");
         let instrument = parse_spot_instrument(&instrument_def, UnixNanos::default()).unwrap();
 
-        let report = parse_position_report(position, &instrument, UnixNanos::from(1)).unwrap();
+        let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
         assert!((report.quantity.as_f64() - 0.1).abs() < 1e-9);

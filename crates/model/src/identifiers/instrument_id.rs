@@ -91,7 +91,7 @@ impl FromStr for InstrumentId {
                     #[cfg(feature = "defi")]
                     if venue.is_dex() {
                         let validated_address = validate_address(symbol_part)
-                            .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?;
+                            .map_err(|e| anyhow::anyhow!(err_message(s, &e.to_string())))?;
                         Symbol::new(validated_address.to_string())
                     } else {
                         Symbol::new(symbol_part)
@@ -106,7 +106,7 @@ impl FromStr for InstrumentId {
             None => {
                 anyhow::bail!(err_message(
                     s,
-                    "missing '.' separator between symbol and venue components".to_string()
+                    "missing '.' separator between symbol and venue components"
                 ))
             }
         }
@@ -150,7 +150,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
     }
 }
 
-fn err_message(s: &str, e: String) -> String {
+fn err_message(s: &str, e: &str) -> String {
     format!("Error parsing `InstrumentId` from '{s}': {e}")
 }
 

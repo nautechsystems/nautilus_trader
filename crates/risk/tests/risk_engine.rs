@@ -853,9 +853,9 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
     ));
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    exec_engine.process(submitted);
-    exec_engine.process(accepted);
-    exec_engine.process(filled);
+    exec_engine.process(&submitted);
+    exec_engine.process(&accepted);
+    exec_engine.process(&filled);
 
     let submit_order2 = SubmitOrder::new(
         trader_id,
@@ -873,8 +873,8 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
 
     let venue_order_id2 = VenueOrderId::new("002");
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-    exec_engine.process(OrderEventAny::Submitted(order_submitted(&order2)));
-    exec_engine.process(OrderEventAny::Filled(order_filled(
+    exec_engine.process(&OrderEventAny::Submitted(order_submitted(&order2)));
+    exec_engine.process(&OrderEventAny::Filled(order_filled(
         &order2,
         &instrument_audusd,
         None,
@@ -993,9 +993,9 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
     ));
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    exec_engine.process(submitted);
-    exec_engine.process(accepted);
-    exec_engine.process(filled);
+    exec_engine.process(&submitted);
+    exec_engine.process(&accepted);
+    exec_engine.process(&filled);
 
     let submit_order2 = SubmitOrder::new(
         trader_id,
@@ -1013,13 +1013,13 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
 
     let venue_order_id2 = VenueOrderId::new("002");
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-    exec_engine.process(OrderEventAny::Submitted(order_submitted(&order2)));
-    exec_engine.process(OrderEventAny::Accepted(order_accepted(
+    exec_engine.process(&OrderEventAny::Submitted(order_submitted(&order2)));
+    exec_engine.process(&OrderEventAny::Accepted(order_accepted(
         &order2,
         Some(venue_order_id2),
         Some(account_id),
     )));
-    exec_engine.process(OrderEventAny::Filled(order_filled(
+    exec_engine.process(&OrderEventAny::Filled(order_filled(
         &order2,
         &instrument_audusd,
         None,
@@ -4036,7 +4036,7 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
 
     risk_engine.set_trading_state(TradingState::Halted);
 
-    let events = msgbus::stubs::get_saved_messages::<TradingStateChanged>(handler);
+    let events = msgbus::stubs::get_saved_messages::<TradingStateChanged>(&handler);
     assert_eq!(events.len(), 1);
 
     let event = &events[0];

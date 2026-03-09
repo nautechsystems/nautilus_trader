@@ -52,10 +52,10 @@ sol! {
 /// # Panics
 ///
 /// Panics if the contract address is not set in the log.
-pub fn parse_burn_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::Result<BurnEvent> {
-    validate_event_signature_hash("Burn", BURN_EVENT_SIGNATURE_HASH, &log)?;
+pub fn parse_burn_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow::Result<BurnEvent> {
+    validate_event_signature_hash("Burn", BURN_EVENT_SIGNATURE_HASH, log)?;
 
-    let owner = extract_address_from_topic(&log, 1, "owner")?;
+    let owner = extract_address_from_topic(log, 1, "owner")?;
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {
@@ -99,10 +99,10 @@ pub fn parse_burn_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::
         Ok(BurnEvent::new(
             dex,
             pool_identifier,
-            extract_block_number(&log)?,
-            extract_transaction_hash(&log)?,
-            extract_transaction_index(&log)?,
-            extract_log_index(&log)?,
+            extract_block_number(log)?,
+            extract_transaction_hash(log)?,
+            extract_transaction_index(log)?,
+            extract_log_index(log)?,
             owner,
             tick_lower,
             tick_upper,
@@ -224,7 +224,7 @@ mod tests {
     #[rstest]
     fn test_parse_burn_event_hypersync(hypersync_log: HypersyncLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event = parse_burn_event_hypersync(dex, hypersync_log).unwrap();
+        let event = parse_burn_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
             event.pool_identifier.to_string(),
@@ -270,7 +270,7 @@ mod tests {
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event_hypersync = parse_burn_event_hypersync(dex.clone(), hypersync_log).unwrap();
+        let event_hypersync = parse_burn_event_hypersync(dex.clone(), &hypersync_log).unwrap();
         let event_rpc = parse_burn_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);

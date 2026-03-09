@@ -448,15 +448,15 @@ pub fn validate_precision_bytes(
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 pub fn book_deltas_to_arrow_record_batch_bytes(
-    data: Vec<OrderBookDelta>,
+    data: &[OrderBookDelta],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
     }
 
     // Extract metadata from chunk
-    let metadata = OrderBookDelta::chunk_metadata(&data);
-    OrderBookDelta::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    let metadata = OrderBookDelta::chunk_metadata(data);
+    OrderBookDelta::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `OrderBookDepth10` into an Arrow `RecordBatch`.
@@ -468,7 +468,7 @@ pub fn book_deltas_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn book_depth10_to_arrow_record_batch_bytes(
-    data: Vec<OrderBookDepth10>,
+    data: &[OrderBookDepth10],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -477,7 +477,7 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    OrderBookDepth10::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    OrderBookDepth10::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
@@ -489,7 +489,7 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn quotes_to_arrow_record_batch_bytes(
-    data: Vec<QuoteTick>,
+    data: &[QuoteTick],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -498,7 +498,7 @@ pub fn quotes_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    QuoteTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    QuoteTick::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `TradeTick` into an Arrow `RecordBatch`.
@@ -510,7 +510,7 @@ pub fn quotes_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn trades_to_arrow_record_batch_bytes(
-    data: Vec<TradeTick>,
+    data: &[TradeTick],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -519,7 +519,7 @@ pub fn trades_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    TradeTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    TradeTick::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `Bar` into an Arrow `RecordBatch`.
@@ -530,7 +530,7 @@ pub fn trades_to_arrow_record_batch_bytes(
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
-pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, EncodingError> {
+pub fn bars_to_arrow_record_batch_bytes(data: &[Bar]) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
     }
@@ -538,7 +538,7 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    Bar::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    Bar::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `MarkPriceUpdate` into an Arrow `RecordBatch`.
@@ -550,7 +550,7 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn mark_prices_to_arrow_record_batch_bytes(
-    data: Vec<MarkPriceUpdate>,
+    data: &[MarkPriceUpdate],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -559,7 +559,7 @@ pub fn mark_prices_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    MarkPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    MarkPriceUpdate::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `IndexPriceUpdate` into an Arrow `RecordBatch`.
@@ -571,7 +571,7 @@ pub fn mark_prices_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn index_prices_to_arrow_record_batch_bytes(
-    data: Vec<IndexPriceUpdate>,
+    data: &[IndexPriceUpdate],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -580,7 +580,7 @@ pub fn index_prices_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    IndexPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    IndexPriceUpdate::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `InstrumentClose` into an Arrow `RecordBatch`.
@@ -592,7 +592,7 @@ pub fn index_prices_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_closes_to_arrow_record_batch_bytes(
-    data: Vec<InstrumentClose>,
+    data: &[InstrumentClose],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -601,5 +601,5 @@ pub fn instrument_closes_to_arrow_record_batch_bytes(
     // Take first element and extract metadata
     let first = data.first().unwrap();
     let metadata = first.metadata();
-    InstrumentClose::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    InstrumentClose::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }

@@ -216,7 +216,7 @@ pub fn parse_trade_msg_vec(
 #[must_use]
 pub fn parse_trade_bin_msg_vec(
     data: Vec<BitmexTradeBinMsg>,
-    topic: BitmexWsTopic,
+    topic: &BitmexWsTopic,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
@@ -228,7 +228,7 @@ pub fn parse_trade_bin_msg_vec(
             let price_precision = instrument.price_precision();
             trades.push(Data::Bar(parse_trade_bin_msg(
                 &msg,
-                &topic,
+                topic,
                 instrument,
                 instrument_id,
                 price_precision,
@@ -976,7 +976,7 @@ pub fn parse_execution_msg(
 /// <https://www.bitmex.com/app/wsAPI#Position>
 #[must_use]
 pub fn parse_position_msg(
-    msg: BitmexPositionMsg,
+    msg: &BitmexPositionMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> PositionStatusReport {
@@ -1017,7 +1017,7 @@ pub fn parse_position_msg(
 /// or an empty Vec if no relevant price is present.
 #[must_use]
 pub fn parse_instrument_msg(
-    msg: BitmexInstrumentMsg,
+    msg: &BitmexInstrumentMsg,
     instruments_cache: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> Vec<Data> {
@@ -1093,7 +1093,7 @@ pub fn parse_instrument_msg(
 /// Note: This returns `FundingRateUpdate` directly, not wrapped in Data enum,
 /// to keep it separate from the FFI layer.
 #[must_use]
-pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> FundingRateUpdate {
+pub fn parse_funding_msg(msg: &BitmexFundingMsg, ts_init: UnixNanos) -> FundingRateUpdate {
     let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol));
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
 
@@ -1115,7 +1115,7 @@ pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> FundingRa
 ///
 /// Panics if the balance calculation is invalid (total != locked + free).
 #[must_use]
-pub fn parse_wallet_msg(msg: BitmexWalletMsg, ts_init: UnixNanos) -> AccountState {
+pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountState {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
 
     // Map BitMEX currency to standard currency code
@@ -1156,7 +1156,7 @@ pub fn parse_wallet_msg(msg: BitmexWalletMsg, ts_init: UnixNanos) -> AccountStat
 ///
 /// This creates a MarginBalance that can be added to an AccountState.
 #[must_use]
-pub fn parse_margin_msg(msg: BitmexMarginMsg, instrument_id: InstrumentId) -> MarginBalance {
+pub fn parse_margin_msg(msg: &BitmexMarginMsg, instrument_id: InstrumentId) -> MarginBalance {
     // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(msg.currency.as_str());
     let currency = get_currency(&currency_str);
@@ -1743,7 +1743,7 @@ mod tests {
         let json_data = load_test_json("ws_position.json");
         let msg: BitmexPositionMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
+        let report = parse_position_msg(&msg, &instrument, UnixNanos::default());
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1760,7 +1760,7 @@ mod tests {
         msg.current_qty = Some(-500);
 
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
+        let report = parse_position_msg(&msg, &instrument, UnixNanos::default());
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from(500));
     }
@@ -1772,7 +1772,7 @@ mod tests {
         msg.current_qty = Some(0);
 
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
+        let report = parse_position_msg(&msg, &instrument, UnixNanos::default());
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from(0));
     }
@@ -1782,7 +1782,7 @@ mod tests {
         let json_data = load_test_json("ws_wallet.json");
         let msg: BitmexWalletMsg = serde_json::from_str(&json_data).unwrap();
         let ts_init = UnixNanos::from(1);
-        let account_state = parse_wallet_msg(msg, ts_init);
+        let account_state = parse_wallet_msg(&msg, ts_init);
 
         assert_eq!(account_state.account_id.to_string(), "BITMEX-1234567");
         assert!(!account_state.balances.is_empty());
@@ -1799,7 +1799,7 @@ mod tests {
         msg.amount = None;
 
         let ts_init = UnixNanos::from(1);
-        let account_state = parse_wallet_msg(msg, ts_init);
+        let account_state = parse_wallet_msg(&msg, ts_init);
         let balance = &account_state.balances[0];
         assert_eq!(balance.total.as_f64(), 0.0);
     }
@@ -1809,7 +1809,7 @@ mod tests {
         let json_data = load_test_json("ws_margin.json");
         let msg: BitmexMarginMsg = serde_json::from_str(&json_data).unwrap();
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let margin_balance = parse_margin_msg(msg, instrument_id);
+        let margin_balance = parse_margin_msg(&msg, instrument_id);
 
         assert_eq!(margin_balance.currency.code.to_string(), "XBT");
         assert_eq!(margin_balance.instrument_id, instrument_id);
@@ -1827,7 +1827,7 @@ mod tests {
         msg.available_margin = None;
 
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let margin_balance = parse_margin_msg(msg, instrument_id);
+        let margin_balance = parse_margin_msg(&msg, instrument_id);
         // Should still have valid margin values even if available_margin is None
         assert!(margin_balance.initial.as_f64() >= 0.0);
         assert!(margin_balance.maintenance.as_f64() >= 0.0);
@@ -1843,7 +1843,7 @@ mod tests {
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
 
-        let updates = parse_instrument_msg(msg, &instruments_cache, UnixNanos::from(1));
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
         // XBTUSD is not an index symbol, so it should have both mark and index prices
         assert_eq!(updates.len(), 2);
@@ -1878,7 +1878,7 @@ mod tests {
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
 
-        let updates = parse_instrument_msg(msg, &instruments_cache, UnixNanos::from(1));
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -1901,7 +1901,7 @@ mod tests {
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
 
-        let updates = parse_instrument_msg(msg, &instruments_cache, UnixNanos::from(1));
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
         assert_eq!(updates.len(), 1);
         match &updates[0] {
@@ -1926,7 +1926,7 @@ mod tests {
         let test_instrument = create_test_perpetual_instrument();
         instruments_cache.insert(Ustr::from("XBTUSD"), test_instrument);
 
-        let updates = parse_instrument_msg(msg, &instruments_cache, UnixNanos::from(1));
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
         assert_eq!(updates.len(), 0);
     }
 
@@ -1976,7 +1976,7 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let updates = parse_instrument_msg(msg, &instruments_cache, UnixNanos::from(1));
+        let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
         assert_eq!(updates.len(), 2);
 
@@ -2004,7 +2004,7 @@ mod tests {
     fn test_parse_funding_msg() {
         let json_data = load_test_json("ws_funding_rate.json");
         let msg: BitmexFundingMsg = serde_json::from_str(&json_data).unwrap();
-        let update = parse_funding_msg(msg, UnixNanos::from(1));
+        let update = parse_funding_msg(&msg, UnixNanos::from(1));
 
         assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
         assert_eq!(update.rate.to_string(), "0.0001");

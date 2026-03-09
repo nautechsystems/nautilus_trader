@@ -58,6 +58,7 @@ impl TradeId {
         Self::from("NULL")
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {

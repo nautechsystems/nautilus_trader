@@ -471,7 +471,7 @@ impl DeribitRawHttpClient {
                     Err(DeribitHttpError::from_jsonrpc_error(
                         error.code,
                         error.message.clone(),
-                        error.data.clone(),
+                        error.data.as_ref(),
                     ))
                 } else {
                     log::error!(

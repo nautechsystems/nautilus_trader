@@ -192,7 +192,7 @@ impl BlockchainDataClient {
                                             core_client.hypersync_client.process_block_dex_contract_events(
                                                 &dex,
                                                 block.number,
-                                                addresses,
+                                                &addresses,
                                                 core_client.subscription_manager.get_dex_pool_swap_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_mint_event_signature(&dex).unwrap(),
                                                 core_client.subscription_manager.get_dex_pool_burn_event_signature(&dex).unwrap(),

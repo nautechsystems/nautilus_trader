@@ -608,7 +608,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -636,7 +636,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -667,7 +667,7 @@ impl OrderBook {
         &self,
         own_book: Option<&OwnOrderBook>,
         depth: Option<usize>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> Self {
@@ -690,7 +690,7 @@ impl OrderBook {
         &self,
         own_book: Option<&OwnOrderBook>,
         depth: Option<usize>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> Result<Self, BookViewError> {
@@ -703,8 +703,7 @@ impl OrderBook {
             ));
         }
 
-        let bids_map =
-            self.bids_filtered_as_map(depth, own_book, status.clone(), accepted_buffer_ns, now);
+        let bids_map = self.bids_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
         let asks_map = self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
 
         let mut filtered_book = Self::new(self.instrument_id, self.book_type);
@@ -760,7 +759,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -786,7 +785,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {

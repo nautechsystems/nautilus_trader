@@ -125,12 +125,7 @@ impl Portfolio {
             &config,
         )));
 
-        Self::register_message_handlers(
-            cache.clone(),
-            clock.clone(),
-            inner.clone(),
-            config.clone(),
-        );
+        Self::register_message_handlers(&cache, &clock, &inner, config);
 
         Self {
             clock,
@@ -150,17 +145,17 @@ impl Portfolio {
             clock: self.clock.clone(),
             cache: self.cache.clone(),
             inner: self.inner.clone(),
-            config: self.config.clone(),
+            config: self.config,
         }
     }
 
     fn register_message_handlers(
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
-        inner: Rc<RefCell<PortfolioState>>,
+        cache: &Rc<RefCell<Cache>>,
+        clock: &Rc<RefCell<dyn Clock>>,
+        inner: &Rc<RefCell<PortfolioState>>,
         config: PortfolioConfig,
     ) {
-        let inner_weak = WeakCell::from(Rc::downgrade(&inner));
+        let inner_weak = WeakCell::from(Rc::downgrade(inner));
 
         // Typed handlers for subscriptions
         let update_account_handler = {
@@ -168,7 +163,8 @@ impl Portfolio {
             let inner = inner_weak.clone();
             TypedHandler::from(move |event: &AccountState| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_account(cache.clone(), inner_rc.into(), event);
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_account(&cache, &inner_rc, event);
                 }
             })
         };
@@ -177,16 +173,10 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
-            let config = config.clone();
             TypedHandler::from(move |event: &PositionEvent| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_position(
-                        cache.clone(),
-                        clock.clone(),
-                        inner_rc.into(),
-                        config.clone(),
-                        event,
-                    );
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_position(&cache, &clock, &inner_rc, config, event);
                 }
             })
         };
@@ -195,16 +185,10 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
-            let config = config.clone();
             TypedHandler::from(move |quote: &QuoteTick| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_quote_tick(
-                        cache.clone(),
-                        clock.clone(),
-                        inner_rc.into(),
-                        config.clone(),
-                        quote,
-                    );
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_quote_tick(&cache, &clock, &inner_rc, config, quote);
                 }
             })
         };
@@ -213,16 +197,10 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
-            let config = config.clone();
             TypedHandler::from(move |bar: &Bar| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_bar(
-                        cache.clone(),
-                        clock.clone(),
-                        inner_rc.into(),
-                        config.clone(),
-                        bar,
-                    );
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_bar(&cache, &clock, &inner_rc, config, bar);
                 }
             })
         };
@@ -231,14 +209,14 @@ impl Portfolio {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak.clone();
-            let config = config.clone();
             TypedHandler::from(move |mark_price: &MarkPriceUpdate| {
                 if let Some(inner_rc) = inner.upgrade() {
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
                     update_instrument_id(
-                        cache.clone(),
-                        clock.clone(),
-                        inner_rc.into(),
-                        config.clone(),
+                        &cache,
+                        &clock,
+                        &inner_rc,
+                        config,
                         &mark_price.instrument_id,
                     );
                 }
@@ -246,19 +224,13 @@ impl Portfolio {
         };
 
         let update_order_handler = {
-            let cache = cache;
+            let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner_weak;
-            let config = config.clone();
             TypedHandler::from(move |event: &OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
-                    update_order(
-                        cache.clone(),
-                        clock.clone(),
-                        inner_rc.into(),
-                        config.clone(),
-                        event,
-                    );
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_order(&cache, &clock, &inner_rc, config, event);
                 }
             })
         };
@@ -809,7 +781,7 @@ impl Portfolio {
 
             match result {
                 Some((updated_account, _)) => {
-                    cache.update_account(updated_account).unwrap();
+                    cache.update_account(&updated_account).unwrap();
                 }
                 None => {
                     initialized = false;
@@ -932,7 +904,7 @@ impl Portfolio {
                 Some((updated_account, _)) => {
                     self.cache
                         .borrow_mut()
-                        .update_account(AccountAny::Margin(updated_account))
+                        .update_account(&AccountAny::Margin(updated_account))
                         .unwrap();
                 }
                 None => {
@@ -955,57 +927,33 @@ impl Portfolio {
     ///
     /// Recalculates unrealized PnL for positions affected by the quote update.
     pub fn update_quote_tick(&mut self, quote: &QuoteTick) {
-        update_quote_tick(
-            self.cache.clone(),
-            self.clock.clone(),
-            self.inner.clone(),
-            self.config.clone(),
-            quote,
-        );
+        update_quote_tick(&self.cache, &self.clock, &self.inner, self.config, quote);
     }
 
     /// Updates portfolio calculations based on a new bar.
     ///
     /// Updates cached bar close prices and recalculates unrealized PnL.
     pub fn update_bar(&mut self, bar: &Bar) {
-        update_bar(
-            self.cache.clone(),
-            self.clock.clone(),
-            self.inner.clone(),
-            self.config.clone(),
-            bar,
-        );
+        update_bar(&self.cache, &self.clock, &self.inner, self.config, bar);
     }
 
     /// Updates portfolio with a new account state event.
     pub fn update_account(&mut self, event: &AccountState) {
-        update_account(self.cache.clone(), self.inner.clone(), event);
+        update_account(&self.cache, &self.inner, event);
     }
 
     /// Updates portfolio calculations based on an order event.
     ///
     /// Handles balance updates for order fills and margin calculations for order changes.
     pub fn update_order(&mut self, event: &OrderEventAny) {
-        update_order(
-            self.cache.clone(),
-            self.clock.clone(),
-            self.inner.clone(),
-            self.config.clone(),
-            event,
-        );
+        update_order(&self.cache, &self.clock, &self.inner, self.config, event);
     }
 
     /// Updates portfolio calculations based on a position event.
     ///
     /// Recalculates net positions, unrealized PnL, and margin requirements.
     pub fn update_position(&mut self, event: &PositionEvent) {
-        update_position(
-            self.cache.clone(),
-            self.clock.clone(),
-            self.inner.clone(),
-            self.config.clone(),
-            event,
-        );
+        update_position(&self.cache, &self.clock, &self.inner, self.config, event);
     }
 
     fn update_net_position(&self, instrument_id: &InstrumentId, positions_open: &[Position]) {
@@ -1626,19 +1574,19 @@ impl Portfolio {
 
 // Helper functions
 fn update_quote_tick(
-    cache: Rc<RefCell<Cache>>,
-    clock: Rc<RefCell<dyn Clock>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
     quote: &QuoteTick,
 ) {
-    update_instrument_id(cache, clock.clone(), inner, config, &quote.instrument_id);
+    update_instrument_id(cache, clock, inner, config, &quote.instrument_id);
 }
 
 fn update_bar(
-    cache: Rc<RefCell<Cache>>,
-    clock: Rc<RefCell<dyn Clock>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
     bar: &Bar,
 ) {
@@ -1647,13 +1595,13 @@ fn update_bar(
         .borrow_mut()
         .bar_close_prices
         .insert(instrument_id, bar.close);
-    update_instrument_id(cache, clock.clone(), inner, config, &instrument_id);
+    update_instrument_id(cache, clock, inner, config, &instrument_id);
 }
 
 fn update_instrument_id(
-    cache: Rc<RefCell<Cache>>,
-    clock: Rc<RefCell<dyn Clock>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
     instrument_id: &InstrumentId,
 ) {
@@ -1718,14 +1666,14 @@ fn update_instrument_id(
         }
 
         if let Some((ref updated_account, _)) = result_init {
-            cache_ref.update_account(updated_account.clone()).unwrap();
+            cache_ref.update_account(updated_account).unwrap();
         }
         account
     };
 
     let portfolio_clone = Portfolio {
         clock: clock.clone(),
-        cache,
+        cache: cache.clone(),
         inner: inner.clone(),
         config,
     };
@@ -1745,9 +1693,9 @@ fn update_instrument_id(
 }
 
 fn update_order(
-    cache: Rc<RefCell<Cache>>,
-    clock: Rc<RefCell<dyn Clock>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     _config: PortfolioConfig,
     event: &OrderEventAny,
 ) {
@@ -1856,7 +1804,7 @@ fn update_order(
     let mut cache_ref = cache.borrow_mut();
 
     if let Some((updated_account, account_state)) = account_state {
-        cache_ref.update_account(updated_account).unwrap();
+        cache_ref.update_account(&updated_account).unwrap();
         msgbus::publish_account_state(
             format!("events.account.{}", account.id()).into(),
             &account_state,
@@ -1870,9 +1818,9 @@ fn update_order(
 }
 
 fn update_position(
-    cache: Rc<RefCell<Cache>>,
-    clock: Rc<RefCell<dyn Clock>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     _config: PortfolioConfig,
     event: &PositionEvent,
 ) {
@@ -1959,7 +1907,7 @@ fn update_position(
 
         if let Some((margin_account, _)) = result {
             cache_ref
-                .update_account(AccountAny::Margin(margin_account))
+                .update_account(&AccountAny::Margin(margin_account))
                 .unwrap();
         }
     } else if account.is_none() {
@@ -1971,8 +1919,8 @@ fn update_position(
 }
 
 fn update_account(
-    cache: Rc<RefCell<Cache>>,
-    inner: Rc<RefCell<PortfolioState>>,
+    cache: &Rc<RefCell<Cache>>,
+    inner: &Rc<RefCell<PortfolioState>>,
     event: &AccountState,
 ) {
     let mut cache_ref = cache.borrow_mut();
@@ -1984,12 +1932,12 @@ fn update_account(
             return;
         }
 
-        if let Err(e) = cache_ref.update_account(account.clone()) {
+        if let Err(e) = cache_ref.update_account(&account) {
             log::error!("Failed to update account: {e}");
             return;
         }
     } else {
-        let account = match AccountAny::from_events(vec![event.clone()]) {
+        let account = match AccountAny::from_events(std::slice::from_ref(event)) {
             Ok(account) => account,
             Err(e) => {
                 log::error!("Failed to create account: {e}");

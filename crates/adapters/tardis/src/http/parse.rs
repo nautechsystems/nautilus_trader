@@ -37,7 +37,7 @@ use crate::{
 
 #[must_use]
 pub fn parse_instrument_any(
-    info: TardisInstrumentInfo,
+    info: &TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -65,7 +65,7 @@ pub fn parse_instrument_any(
 }
 
 fn parse_spot_instrument(
-    info: TardisInstrumentInfo,
+    info: &TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -93,7 +93,7 @@ fn parse_spot_instrument(
 
     // Current instrument definition
     let mut instruments = vec![create_currency_pair(
-        &info,
+        info,
         instrument_id,
         raw_symbol,
         price_increment,
@@ -146,7 +146,7 @@ fn parse_spot_instrument(
 
             // Replace with single instrument reflecting effective state
             instruments = vec![create_currency_pair(
-                &info,
+                info,
                 instrument_id,
                 raw_symbol,
                 price_increment,
@@ -190,7 +190,7 @@ fn parse_spot_instrument(
                 };
 
                 instruments.push(create_currency_pair(
-                    &info,
+                    info,
                     instrument_id,
                     raw_symbol,
                     price_increment,
@@ -214,7 +214,7 @@ fn parse_spot_instrument(
 }
 
 fn parse_perp_instrument(
-    info: TardisInstrumentInfo,
+    info: &TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -241,7 +241,7 @@ fn parse_perp_instrument(
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_perpetual(
-        &info,
+        info,
         instrument_id,
         raw_symbol,
         price_increment,
@@ -294,7 +294,7 @@ fn parse_perp_instrument(
 
             // Replace with single instrument reflecting effective state
             instruments = vec![create_crypto_perpetual(
-                &info,
+                info,
                 instrument_id,
                 raw_symbol,
                 price_increment,
@@ -338,7 +338,7 @@ fn parse_perp_instrument(
                 };
 
                 instruments.push(create_crypto_perpetual(
-                    &info,
+                    info,
                     instrument_id,
                     raw_symbol,
                     price_increment,
@@ -362,7 +362,7 @@ fn parse_perp_instrument(
 }
 
 fn parse_future_instrument(
-    info: TardisInstrumentInfo,
+    info: &TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -391,7 +391,7 @@ fn parse_future_instrument(
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_future(
-        &info,
+        info,
         instrument_id,
         raw_symbol,
         activation,
@@ -446,7 +446,7 @@ fn parse_future_instrument(
 
             // Replace with single instrument reflecting effective state
             instruments = vec![create_crypto_future(
-                &info,
+                info,
                 instrument_id,
                 raw_symbol,
                 activation,
@@ -492,7 +492,7 @@ fn parse_future_instrument(
                 };
 
                 instruments.push(create_crypto_future(
-                    &info,
+                    info,
                     instrument_id,
                     raw_symbol,
                     activation,
@@ -518,7 +518,7 @@ fn parse_future_instrument(
 }
 
 fn parse_option_instrument(
-    info: TardisInstrumentInfo,
+    info: &TardisInstrumentInfo,
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
@@ -547,7 +547,7 @@ fn parse_option_instrument(
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_option(
-        &info,
+        info,
         instrument_id,
         raw_symbol,
         activation,
@@ -602,7 +602,7 @@ fn parse_option_instrument(
 
             // Replace with single instrument reflecting effective state
             instruments = vec![create_crypto_option(
-                &info,
+                info,
                 instrument_id,
                 raw_symbol,
                 activation,
@@ -648,7 +648,7 @@ fn parse_option_instrument(
                 };
 
                 instruments.push(create_crypto_option(
-                    &info,
+                    info,
                     instrument_id,
                     raw_symbol,
                     activation,
@@ -751,7 +751,7 @@ mod tests {
         let json_data = load_test_json("instrument_spot.json");
         let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instruments = parse_instrument_any(info, None, None, false);
+        let instruments = parse_instrument_any(&info, None, None, false);
         let inst0 = instruments[0].clone();
         let inst1 = instruments[1].clone();
 
@@ -811,7 +811,7 @@ mod tests {
 
         let effective = UnixNanos::from("2020-08-01T08:00:00+00:00");
         let instrument =
-            parse_instrument_any(info, Some(effective), Some(UnixNanos::default()), false)
+            parse_instrument_any(&info, Some(effective), Some(UnixNanos::default()), false)
                 .first()
                 .unwrap()
                 .clone();
@@ -844,7 +844,7 @@ mod tests {
         let json_data = load_test_json("instrument_future.json");
         let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(&info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -883,7 +883,7 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(&info, None, Some(UnixNanos::default()), false)
             .last()
             .unwrap()
             .clone();
@@ -900,7 +900,7 @@ mod tests {
         let json_data = load_test_json("instrument_combo.json");
         let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(&info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();
@@ -942,7 +942,7 @@ mod tests {
         let json_data = load_test_json("instrument_option.json");
         let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, None, Some(UnixNanos::default()), false)
+        let instrument = parse_instrument_any(&info, None, Some(UnixNanos::default()), false)
             .first()
             .unwrap()
             .clone();

@@ -41,6 +41,7 @@ impl LongRatio {
     }
 
     #[pyo3(name = "calculate_from_positions")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_calculate_from_positions(
         &mut self,
         py: Python,

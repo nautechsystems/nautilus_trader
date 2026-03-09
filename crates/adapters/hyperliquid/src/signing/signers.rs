@@ -200,7 +200,7 @@ mod tests {
     #[rstest]
     fn test_sign_request_l1_action() {
         let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(private_key);
@@ -227,7 +227,7 @@ mod tests {
     #[rstest]
     fn test_sign_user_signed_returns_error() {
         let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(private_key);
@@ -252,7 +252,7 @@ mod tests {
         // Connection ID: 207b9fb52defb524f5a7f1c80f069ff8b58556b018532401de0e1342bcb13b40
 
         let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(private_key);
@@ -377,7 +377,7 @@ mod tests {
         // The key difference: production always includes a cloid field.
 
         let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
         .unwrap();
         let _signer = HyperliquidEip712Signer::new(private_key);
@@ -465,7 +465,7 @@ mod tests {
         // Full production-like test with cloid from ClientOrderId
 
         let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(private_key);

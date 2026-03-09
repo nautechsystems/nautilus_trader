@@ -148,12 +148,12 @@ impl DydxCredential {
     ///
     /// Returns an error if a credential is provided but invalid.
     pub fn resolve(
-        private_key: Option<String>,
+        private_key: Option<&str>,
         is_testnet: bool,
         authenticator_ids: Vec<u64>,
     ) -> anyhow::Result<Option<Self>> {
         // 1. Try private key from config
-        if let Some(ref pk) = private_key
+        if let Some(pk) = private_key
             && !pk.trim().is_empty()
         {
             return Ok(Some(Self::from_private_key(pk, authenticator_ids)?));
@@ -313,7 +313,7 @@ mod tests {
 
     #[rstest]
     fn test_resolve_with_provided_private_key() {
-        let result = DydxCredential::resolve(Some(TEST_PRIVATE_KEY.to_string()), false, vec![])
+        let result = DydxCredential::resolve(Some(TEST_PRIVATE_KEY), false, vec![])
             .expect("Failed to resolve credential");
 
         assert!(result.is_some());

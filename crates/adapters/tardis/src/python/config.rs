@@ -30,8 +30,8 @@ impl TardisInstrumentMiniInfo {
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
-        raw_symbol: String,
-        exchange: String,
+        raw_symbol: &str,
+        exchange: &str,
         price_precision: u8,
         size_precision: u8,
     ) -> Self {
@@ -40,7 +40,7 @@ impl TardisInstrumentMiniInfo {
             .expect("`exchange` should be Tardis convention");
         Self::new(
             instrument_id,
-            Some(Ustr::from(&raw_symbol)),
+            Some(Ustr::from(raw_symbol)),
             exchange,
             price_precision,
             size_precision,

@@ -44,7 +44,7 @@ const POOL_DB_BATCH_SIZE: usize = 2000;
 /// This function strips null bytes (0x00) and other problematic control characters that are
 /// invalid in PostgreSQL's UTF-8 text fields. Common with malformed on-chain token metadata.
 /// Preserves printable characters and common whitespace (space, tab, newline).
-fn sanitize_string(s: String) -> String {
+fn sanitize_string(s: &str) -> String {
     s.chars()
         .filter(|c| {
             // Keep printable characters and common whitespace, but filter null bytes
@@ -366,8 +366,8 @@ impl<'a> PoolDiscoveryService<'a> {
             match token_info {
                 Ok(token_info) => {
                     // Sanitize token metadata to remove null bytes and invalid UTF-8 characters
-                    let sanitized_name = sanitize_string(token_info.name);
-                    let sanitized_symbol = sanitize_string(token_info.symbol);
+                    let sanitized_name = sanitize_string(&token_info.name);
+                    let sanitized_symbol = sanitize_string(&token_info.symbol);
 
                     let token = Token::new(
                         self.chain.clone(),
@@ -386,7 +386,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 Err(token_info_error) => {
                     self.cache.insert_invalid_token_in_memory(token_address);
                     if let Some(database) = &self.cache.database {
-                        let sanitized_error = sanitize_string(token_info_error.to_string());
+                        let sanitized_error = sanitize_string(&token_info_error.to_string());
                         database
                             .add_invalid_token(
                                 self.chain.chain_id,

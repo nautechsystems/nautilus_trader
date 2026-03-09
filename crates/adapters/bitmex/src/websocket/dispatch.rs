@@ -166,13 +166,13 @@ pub fn dispatch_ws_message(
                         );
                         continue;
                     };
-                    let report = parse_position_msg(pos_msg, instrument, ts_init);
+                    let report = parse_position_msg(&pos_msg, instrument, ts_init);
                     emitter.send_position_report(report);
                 }
             }
             BitmexTableMessage::Wallet { data, .. } => {
                 for wallet_msg in data {
-                    let state = parse_wallet_msg(wallet_msg, ts_init);
+                    let state = parse_wallet_msg(&wallet_msg, ts_init);
                     emitter.send_account_state(state);
                 }
             }
@@ -502,7 +502,7 @@ fn dispatch_execution_messages(
 ///
 /// Guarantees the `Submitted -> Accepted -> ...` lifecycle by synthesizing
 /// `OrderAccepted` before any other event when one has not yet been emitted.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 fn dispatch_parsed_order_event(
     event: ParsedOrderEvent,
     client_order_id: ClientOrderId,

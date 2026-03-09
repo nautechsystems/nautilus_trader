@@ -34,6 +34,7 @@ use crate::{
 /// - retrieving the `account_type` attribute fails.
 /// - extracting the object into `CashAccount` or `MarginAccount` fails.
 /// - the `account_type` is unsupported.
+#[allow(clippy::needless_pass_by_value)]
 pub fn pyobject_to_account_any(py: Python, account: Py<PyAny>) -> PyResult<AccountAny> {
     let account_type = account
         .getattr(py, "account_type")?

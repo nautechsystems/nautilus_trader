@@ -37,10 +37,10 @@ pub struct OptionChainQuoteHandler {
 }
 
 impl OptionChainQuoteHandler {
-    pub fn new(manager: Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
+    pub fn new(manager: &Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
         let id = Ustr::from(&format!("OptionChainQuoteHandler({series_id})"));
         Self {
-            manager: WeakCell::from(Rc::downgrade(&manager)),
+            manager: WeakCell::from(Rc::downgrade(manager)),
             id,
         }
     }
@@ -66,10 +66,10 @@ pub struct OptionChainGreeksHandler {
 }
 
 impl OptionChainGreeksHandler {
-    pub fn new(manager: Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
+    pub fn new(manager: &Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
         let id = Ustr::from(&format!("OptionChainGreeksHandler({series_id})"));
         Self {
-            manager: WeakCell::from(Rc::downgrade(&manager)),
+            manager: WeakCell::from(Rc::downgrade(manager)),
             id,
         }
     }
@@ -96,14 +96,14 @@ pub struct OptionChainSlicePublisher {
 }
 
 impl OptionChainSlicePublisher {
-    pub fn new(manager: Rc<RefCell<OptionChainManager>>) -> Self {
+    pub fn new(manager: &Rc<RefCell<OptionChainManager>>) -> Self {
         Self {
-            manager: WeakCell::from(Rc::downgrade(&manager)),
+            manager: WeakCell::from(Rc::downgrade(manager)),
         }
     }
 
-    /// Called by the timer — takes the accumulated snapshot and publishes it.
-    pub fn publish(&self, event: TimeEvent) {
+    /// Called by the timer -- takes the accumulated snapshot and publishes it.
+    pub fn publish(&self, event: &TimeEvent) {
         if let Some(mgr) = self.manager.upgrade() {
             mgr.borrow_mut().publish_slice(event.ts_event);
         }

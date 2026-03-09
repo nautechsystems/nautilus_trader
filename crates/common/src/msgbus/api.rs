@@ -537,12 +537,12 @@ pub fn subscribe_defi_flash(
 }
 
 /// Unsubscribes a handler from instrument messages.
-pub fn unsubscribe_instruments(pattern: MStr<Pattern>, handler: ShareableMessageHandler) {
+pub fn unsubscribe_instruments(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
     unsubscribe_any(pattern, handler);
 }
 
 /// Unsubscribes a handler from instrument close messages.
-pub fn unsubscribe_instrument_close(pattern: MStr<Pattern>, handler: ShareableMessageHandler) {
+pub fn unsubscribe_instrument_close(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
     unsubscribe_any(pattern, handler);
 }
 
@@ -759,7 +759,7 @@ pub fn unsubscribe_defi_flash(pattern: MStr<Pattern>, handler: &TypedHandler<Poo
 }
 
 /// Unsubscribes a handler from a pattern (Any-based).
-pub fn unsubscribe_any(pattern: MStr<Pattern>, handler: ShareableMessageHandler) {
+pub fn unsubscribe_any(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
     log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
 
     let handler_id = handler.0.id();
@@ -1085,25 +1085,25 @@ pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
 }
 
 /// Sends a message to an endpoint, converting to Any (convenience wrapper).
-pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: T) {
+pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
 
     if let Some(handler) = handler {
-        handler.0.handle(&message);
+        handler.0.handle(message);
     } else {
         log::error!("send_any_value: no registered endpoint '{endpoint}'");
     }
 }
 
 /// Sends the [`DataResponse`] to the registered correlation ID handler.
-pub fn send_response(correlation_id: &UUID4, message: DataResponse) {
+pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
     let handler = get_message_bus()
         .borrow()
         .get_response_handler(correlation_id)
         .cloned();
 
     if let Some(handler) = handler {
-        match &message {
+        match message {
             DataResponse::Data(resp) => handler.0.handle(resp),
             DataResponse::Instrument(resp) => handler.0.handle(resp.as_ref()),
             DataResponse::Instruments(resp) => handler.0.handle(resp),

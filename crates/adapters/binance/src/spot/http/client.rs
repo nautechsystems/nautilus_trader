@@ -284,7 +284,7 @@ impl BinanceRawSpotHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         Ok(response.body.to_vec())
@@ -317,7 +317,7 @@ impl BinanceRawSpotHttpClient {
         }
     }
 
-    fn parse_error_response<T>(&self, response: HttpResponse) -> BinanceSpotHttpResult<T> {
+    fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceSpotHttpResult<T> {
         let status = response.status.as_u16();
         let body = &response.body;
 
@@ -554,7 +554,7 @@ impl BinanceRawSpotHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         Ok(response.body.to_vec())
@@ -741,7 +741,7 @@ impl BinanceRawSpotHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         Ok(response.body.to_vec())
@@ -883,7 +883,7 @@ impl BinanceRawSpotHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         Ok(response.body.to_vec())
@@ -1224,7 +1224,7 @@ impl BinanceRawSpotHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         Ok(response.body.to_vec())

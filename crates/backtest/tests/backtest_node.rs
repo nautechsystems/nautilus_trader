@@ -49,7 +49,7 @@ fn create_catalog_with_quotes(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -82,7 +82,7 @@ fn create_catalog_with_quotes_and_trades(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -1310,7 +1310,7 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 

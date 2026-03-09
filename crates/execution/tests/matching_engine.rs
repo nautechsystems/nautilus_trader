@@ -5668,7 +5668,7 @@ fn test_settlement_price_used_on_contract_expiration(
     let position = Position::new(&instrument_es, fill);
     cache
         .borrow_mut()
-        .add_position(position, OmsType::Netting)
+        .add_position(&position, OmsType::Netting)
         .unwrap();
 
     clear_order_event_handler_messages(&order_event_handler);

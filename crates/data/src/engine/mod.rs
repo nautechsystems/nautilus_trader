@@ -258,8 +258,8 @@ impl DataEngine {
     }
 
     /// Registers all message bus handlers for the data engine.
-    pub fn register_msgbus_handlers(engine: Rc<RefCell<Self>>) {
-        let weak = WeakCell::from(Rc::downgrade(&engine));
+    pub fn register_msgbus_handlers(engine: &Rc<RefCell<Self>>) {
+        let weak = WeakCell::from(Rc::downgrade(engine));
 
         let weak1 = weak.clone();
         msgbus::register_data_command_endpoint(
@@ -349,8 +349,8 @@ impl DataEngine {
     ///
     /// Panics if a catalog with the same `name` has already been registered.
     #[cfg(feature = "streaming")]
-    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
-        let name = Ustr::from(name.as_deref().unwrap_or("catalog_0"));
+    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<&str>) {
+        let name = Ustr::from(name.unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
 
@@ -878,7 +878,7 @@ impl DataEngine {
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these can be added to the `Data` enum (C/Cython blocking), process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
-            self.handle_instrument(instrument.clone());
+            self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
         } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
@@ -916,11 +916,12 @@ impl DataEngine {
                 self.drain_deferred_commands();
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
-            Data::Custom(custom) => self.handle_custom_data(custom),
+            Data::Custom(custom) => self.handle_custom_data(&custom),
         }
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
+    #[allow(clippy::needless_pass_by_value)] // Required by message bus dispatch
     pub fn response(&mut self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
@@ -960,12 +961,12 @@ impl DataEngine {
             _ => todo!("Handle other response types"),
         }
 
-        msgbus::send_response(&correlation_id, resp);
+        msgbus::send_response(&correlation_id, &resp);
     }
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
 
-    fn handle_instrument(&mut self, instrument: InstrumentAny) {
+    fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log::debug!("Handling instrument: {}", instrument.id());
 
         if let Err(e) = self
@@ -979,9 +980,9 @@ impl DataEngine {
 
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
-        msgbus::publish_any(topic, &instrument);
+        msgbus::publish_any(topic, instrument);
 
-        self.update_option_chains(&instrument);
+        self.update_option_chains(instrument);
     }
 
     fn update_option_chains(&mut self, instrument: &InstrumentAny) {
@@ -1232,10 +1233,10 @@ impl DataEngine {
         msgbus::publish_any(topic, &close);
     }
 
-    fn handle_custom_data(&self, custom: CustomData) {
+    fn handle_custom_data(&self, custom: &CustomData) {
         log::debug!("Processing custom data: {}", custom.data.type_name());
         let topic = switchboard::get_custom_topic(&custom.data_type);
-        msgbus::publish_any(topic, &custom);
+        msgbus::publish_any(topic, custom);
     }
 
     /// Drains deferred subscribe/unsubscribe commands pushed by option chain
@@ -1625,7 +1626,7 @@ impl DataEngine {
             let client = self.get_client(cmd.client_id.as_ref(), Some(&series_id.venue));
             OptionChainManager::create_and_setup(
                 series_id,
-                cache,
+                &cache,
                 cmd,
                 &clock,
                 priority,
@@ -2052,12 +2053,12 @@ impl DataEngine {
 
         if bar_type.is_composite() {
             let topic = switchboard::get_bars_topic(bar_type.composite());
-            let handler = TypedHandler::new(BarBarHandler::new(aggregator.clone(), bar_key));
+            let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_key));
             msgbus::subscribe_bars(topic.into(), handler.clone(), Some(self.msgbus_priority));
             subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
         } else if bar_type.spec().price_type == PriceType::Last {
             let topic = switchboard::get_trades_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarTradeHandler::new(aggregator.clone(), bar_key));
+            let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_key));
             msgbus::subscribe_trades(topic.into(), handler.clone(), Some(self.msgbus_priority));
             subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
         } else {
@@ -2079,7 +2080,7 @@ impl DataEngine {
             }
 
             let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarQuoteHandler::new(aggregator.clone(), bar_key));
+            let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_key));
             msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(self.msgbus_priority));
             subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
         }

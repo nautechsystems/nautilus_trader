@@ -46,14 +46,14 @@ use crate::arrow::{
 /// # Errors
 ///
 /// Returns a `PyErr` if writing the Arrow IPC stream fails.
-pub fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<PyBytes>> {
+pub fn arrow_record_batch_to_pybytes(py: Python, batch: &RecordBatch) -> PyResult<Py<PyBytes>> {
     // Create a cursor to write to a byte array in memory
     let mut cursor = Cursor::new(Vec::new());
     {
         let mut writer =
             StreamWriter::try_new(&mut cursor, &batch.schema()).map_err(to_pyruntime_err)?;
 
-        writer.write(&batch).map_err(to_pyruntime_err)?;
+        writer.write(batch).map_err(to_pyruntime_err)?;
 
         writer.finish().map_err(to_pyruntime_err)?;
     }
@@ -165,12 +165,13 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_book_deltas_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<OrderBookDelta>,
 ) -> PyResult<Py<PyBytes>> {
-    match book_deltas_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match book_deltas_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -181,12 +182,13 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_book_depth10_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<OrderBookDepth10>,
 ) -> PyResult<Py<PyBytes>> {
-    match book_depth10_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match book_depth10_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -197,12 +199,13 @@ pub fn py_book_depth10_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_quotes_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<QuoteTick>,
 ) -> PyResult<Py<PyBytes>> {
-    match quotes_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match quotes_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -213,12 +216,13 @@ pub fn py_quotes_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_trades_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<TradeTick>,
 ) -> PyResult<Py<PyBytes>> {
-    match trades_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match trades_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -229,9 +233,10 @@ pub fn py_trades_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "bars_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
-    match bars_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match bars_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -242,12 +247,13 @@ pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResu
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_mark_prices_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<MarkPriceUpdate>,
 ) -> PyResult<Py<PyBytes>> {
-    match mark_prices_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match mark_prices_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -258,12 +264,13 @@ pub fn py_mark_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_index_prices_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<IndexPriceUpdate>,
 ) -> PyResult<Py<PyBytes>> {
-    match index_prices_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match index_prices_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -274,12 +281,13 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_instrument_closes_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<InstrumentClose>,
 ) -> PyResult<Py<PyBytes>> {
-    match instrument_closes_to_arrow_record_batch_bytes(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match instrument_closes_to_arrow_record_batch_bytes(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }

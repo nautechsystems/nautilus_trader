@@ -41,6 +41,7 @@ use crate::{
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
+#[allow(clippy::needless_pass_by_value)]
 #[pymethods]
 impl DatabentoDataLoader {
     #[new]

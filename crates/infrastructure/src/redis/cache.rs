@@ -654,7 +654,7 @@ async fn drain_buffer(
             DatabaseOperation::Insert => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
-                    if let Err(e) = insert(&mut pipe, collection, &key, payload) {
+                    if let Err(e) = insert(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
                     }
                 } else {
@@ -664,7 +664,7 @@ async fn drain_buffer(
             DatabaseOperation::Update => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
-                    if let Err(e) = update(&mut pipe, collection, &key, payload) {
+                    if let Err(e) = update(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
                     }
                 } else {
@@ -693,16 +693,11 @@ async fn drain_buffer(
     }
 }
 
-fn insert(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    value: Vec<Bytes>,
-) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
-        INDEX => insert_index(pipe, key, &value),
+        INDEX => insert_index(pipe, key, value),
         GENERAL => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
@@ -822,13 +817,8 @@ fn insert_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
     pipe.rpush(key, value);
 }
 
-fn update(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    value: Vec<Bytes>,
-) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
         ACCOUNTS => {

@@ -276,7 +276,7 @@ impl BitmexDataClient {
                         if action != BitmexAction::Partial && !data.is_empty() {
                             let parsed = parse_trade_bin_msg_vec(
                                 data,
-                                BitmexWsTopic::TradeBin1m,
+                                &BitmexWsTopic::TradeBin1m,
                                 instruments_by_symbol,
                                 ts_init,
                             );
@@ -289,7 +289,7 @@ impl BitmexDataClient {
                         if action != BitmexAction::Partial && !data.is_empty() {
                             let parsed = parse_trade_bin_msg_vec(
                                 data,
-                                BitmexWsTopic::TradeBin5m,
+                                &BitmexWsTopic::TradeBin5m,
                                 instruments_by_symbol,
                                 ts_init,
                             );
@@ -302,7 +302,7 @@ impl BitmexDataClient {
                         if action != BitmexAction::Partial && !data.is_empty() {
                             let parsed = parse_trade_bin_msg_vec(
                                 data,
-                                BitmexWsTopic::TradeBin1h,
+                                &BitmexWsTopic::TradeBin1h,
                                 instruments_by_symbol,
                                 ts_init,
                             );
@@ -315,7 +315,7 @@ impl BitmexDataClient {
                         if action != BitmexAction::Partial && !data.is_empty() {
                             let parsed = parse_trade_bin_msg_vec(
                                 data,
-                                BitmexWsTopic::TradeBin1d,
+                                &BitmexWsTopic::TradeBin1d,
                                 instruments_by_symbol,
                                 ts_init,
                             );
@@ -336,7 +336,7 @@ impl BitmexDataClient {
                     }
                     BitmexTableMessage::Funding { data, .. } => {
                         for msg in data {
-                            let update = parse_funding_msg(msg, ts_init);
+                            let update = parse_funding_msg(&msg, ts_init);
                             log::debug!(
                                 "Funding rate update: instrument={}, rate={}",
                                 update.instrument_id,
@@ -430,7 +430,7 @@ impl BitmexDataClient {
                 }
 
                 for msg in data_for_prices {
-                    for d in parse_instrument_msg(msg, &temp_cache, ts_init) {
+                    for d in parse_instrument_msg(&msg, &temp_cache, ts_init) {
                         Self::send_data(sender, d);
                     }
                 }
@@ -469,7 +469,7 @@ impl BitmexDataClient {
 
                 // Parse mark/index price data
                 for msg in data {
-                    for d in parse_instrument_msg(msg, instruments_by_symbol, ts_init) {
+                    for d in parse_instrument_msg(&msg, instruments_by_symbol, ts_init) {
                         Self::send_data(sender, d);
                     }
                 }

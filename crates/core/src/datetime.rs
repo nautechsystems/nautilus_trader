@@ -269,7 +269,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 /// - The timestamp is out of range for `UnixNanos`
 /// - The date/time values are invalid
 #[inline]
-pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
+pub fn iso8601_to_unix_nanos(date_string: &str) -> anyhow::Result<UnixNanos> {
     date_string
         .parse::<UnixNanos>()
         .map_err(|e| anyhow::anyhow!("Failed to parse ISO 8601 string '{date_string}': {e}"))
@@ -882,7 +882,7 @@ mod tests {
     #[case("2024-02-10T14:58:43Z", 1_707_577_123_000_000_000)] // RFC3339 without fractions
     #[case("2024-02-10", 1_707_523_200_000_000_000)] // Simple date format
     fn test_iso8601_to_unix_nanos(#[case] input: &str, #[case] expected: u64) {
-        let result = iso8601_to_unix_nanos(input.to_string()).unwrap();
+        let result = iso8601_to_unix_nanos(input).unwrap();
         assert_eq!(result.as_u64(), expected);
     }
 
@@ -892,7 +892,7 @@ mod tests {
     #[case("2024-13-01")] // Invalid month
     #[case("not a timestamp")] // Random string
     fn test_iso8601_to_unix_nanos_invalid(#[case] input: &str) {
-        let result = iso8601_to_unix_nanos(input.to_string());
+        let result = iso8601_to_unix_nanos(input);
         assert!(result.is_err());
     }
 
@@ -900,7 +900,7 @@ mod tests {
     fn test_iso8601_roundtrip() {
         let original_nanos = UnixNanos::from(1_707_577_123_456_789_000);
         let iso8601_string = unix_nanos_to_iso8601(original_nanos);
-        let parsed_nanos = iso8601_to_unix_nanos(iso8601_string).unwrap();
+        let parsed_nanos = iso8601_to_unix_nanos(&iso8601_string).unwrap();
         assert_eq!(parsed_nanos, original_nanos);
     }
 

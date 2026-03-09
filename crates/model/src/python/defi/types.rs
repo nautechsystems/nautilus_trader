@@ -118,6 +118,7 @@ impl Chain {
 #[pymethods]
 impl Token {
     #[new]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         address: String,
@@ -186,7 +187,7 @@ impl Token {
 #[pymethods]
 impl Dex {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         name: String,
@@ -298,7 +299,7 @@ impl Dex {
 #[pymethods]
 impl Pool {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,

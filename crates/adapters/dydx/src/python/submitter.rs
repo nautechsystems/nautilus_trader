@@ -91,6 +91,7 @@ impl PyDydxOrderSubmitter {
         chain_id=None,
         grpc_rate_limit_per_second=None,
     ))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn py_new(
         grpc_client: PyDydxGrpcClient,
         http_client: DydxHttpClient,

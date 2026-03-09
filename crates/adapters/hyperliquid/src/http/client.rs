@@ -545,12 +545,12 @@ impl HyperliquidRawHttpClient {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 nonce_u64,
-                sig,
+                &sig,
                 vault.to_string(),
             )
             .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         } else {
-            HyperliquidExchangeRequest::new(action.clone(), nonce_u64, sig)
+            HyperliquidExchangeRequest::new(action.clone(), nonce_u64, &sig)
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         };
 
@@ -650,12 +650,12 @@ impl HyperliquidRawHttpClient {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 time_nonce.as_millis() as u64,
-                sig,
+                &sig,
                 vault.to_string(),
             )
             .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         } else {
-            HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
+            HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, &sig)
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         };
 

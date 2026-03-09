@@ -2178,7 +2178,7 @@ impl BitmexHttpClient {
                 continue;
             };
 
-            match parse_trade(trade, &instrument, ts_init) {
+            match parse_trade(&trade, &instrument, ts_init) {
                 Ok(trade) => parsed_trades.push(trade),
                 Err(e) => log::error!("Failed to parse trade: {e}"),
             }
@@ -2290,7 +2290,7 @@ impl BitmexHttpClient {
                 continue;
             }
 
-            match parse_trade_bin(bin, &instrument, &bar_type, ts_init) {
+            match parse_trade_bin(&bin, &instrument, &bar_type, ts_init) {
                 Ok(bar) => bars.push(bar),
                 Err(e) => log::warn!("Failed to parse trade bin: {e}"),
             }
@@ -2387,7 +2387,7 @@ impl BitmexHttpClient {
                 }
             };
 
-            match parse_fill_report(exec, &instrument, ts_init) {
+            match parse_fill_report(&exec, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
                     // Log at debug level for expected skip cases
@@ -2438,7 +2438,7 @@ impl BitmexHttpClient {
                 }
             };
 
-            match parse_position_report(pos, &instrument, ts_init) {
+            match parse_position_report(&pos, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => log::error!("Failed to parse position report: {e}"),
             }
@@ -2470,7 +2470,7 @@ impl BitmexHttpClient {
         let instrument = self.instrument_from_cache(Ustr::from(symbol))?;
         let ts_init = self.generate_ts_init();
 
-        parse_position_report(response, &instrument, ts_init)
+        parse_position_report(&response, &instrument, ts_init)
     }
 }
 

@@ -2250,7 +2250,7 @@ impl DataActorCore {
     /// Logs a warning if the actor is not currently subscribed to the topic.
     pub(crate) fn remove_subscription_any(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), handler);
+            msgbus::unsubscribe_any(topic.into(), &handler);
         } else {
             log::warn!(
                 "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
@@ -2413,7 +2413,7 @@ impl DataActorCore {
     #[allow(dead_code)]
     pub(crate) fn remove_instrument_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), handler);
+            msgbus::unsubscribe_any(topic.into(), &handler);
         }
     }
 
@@ -2436,7 +2436,7 @@ impl DataActorCore {
     #[allow(dead_code)]
     pub(crate) fn remove_instrument_close_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), handler);
+            msgbus::unsubscribe_any(topic.into(), &handler);
         }
     }
 
@@ -2954,7 +2954,7 @@ impl DataActorCore {
     }
 
     #[allow(dead_code)]
-    fn send_data_req(&self, request: RequestCommand) {
+    fn send_data_req(&self, request: &RequestCommand) {
         if self.config.log_commands {
             log::info!("{REQ}{SEND} {request:?}");
         }

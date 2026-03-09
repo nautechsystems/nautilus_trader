@@ -860,7 +860,7 @@ fn test_request_instrument(
     );
 
     let data_response = DataResponse::Instrument(Box::new(response));
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_instruments.len(), 1);
     assert_eq!(actor.received_instruments[0], instrument);
@@ -900,7 +900,7 @@ fn test_request_instruments(
     );
 
     let data_response = DataResponse::Instruments(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_instruments.len(), 2);
     assert_eq!(actor.received_instruments[0], instrument1);
@@ -938,7 +938,7 @@ fn test_request_quotes(
     );
 
     let data_response = DataResponse::Quotes(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_quotes.len(), 1);
     assert_eq!(actor.received_quotes[0], quote);
@@ -975,7 +975,7 @@ fn test_request_trades(
     );
 
     let data_response = DataResponse::Trades(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_trades.len(), 1);
     assert_eq!(actor.received_trades[0], trade);
@@ -1018,7 +1018,7 @@ fn test_request_funding_rates(
     );
 
     let data_response = DataResponse::FundingRates(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_funding_rates.len(), 1);
     assert_eq!(actor.received_funding_rates[0], funding_rate);
@@ -1057,7 +1057,7 @@ fn test_request_bars(
     );
 
     let data_response = DataResponse::Bars(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     assert_eq!(actor.received_bars.len(), 1);
     assert_eq!(actor.received_bars[0], bar);
@@ -1692,7 +1692,7 @@ fn test_request_book_snapshot(
         None,
     );
     let data_response = DataResponse::Book(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     // Should trigger on_book and record the book
     assert_eq!(actor.received_books.len(), 1);
@@ -1737,7 +1737,7 @@ fn test_request_data(
 
     // Publish the response
     let data_response = DataResponse::Data(response);
-    msgbus::send_response(&request_id, data_response);
+    msgbus::send_response(&request_id, &data_response);
 
     // Actor should receive the custom data
     assert_eq!(actor.received_data.len(), 1);

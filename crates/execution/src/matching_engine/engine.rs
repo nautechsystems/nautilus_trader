@@ -1695,7 +1695,7 @@ impl OrderMatchingEngine {
             let fill_price = self.settlement_price.unwrap_or(close.close_price);
             self.apply_fills(
                 &order,
-                vec![(fill_price, quantity)],
+                &[(fill_price, quantity)],
                 LiquiditySide::Taker,
                 Some(position_id),
                 None,
@@ -3109,7 +3109,13 @@ impl OrderMatchingEngine {
             );
         }
 
-        self.apply_fills(&order, fills, LiquiditySide::Taker, None, position);
+        self.apply_fills(
+            &order,
+            &fills,
+            LiquiditySide::Taker,
+            None,
+            position.as_ref(),
+        );
     }
 
     fn filter_fills_by_protection(
@@ -3262,7 +3268,13 @@ impl OrderMatchingEngine {
                 }
 
                 let liquidity_side = order.liquidity_side().unwrap();
-                self.apply_fills(&order, fills, liquidity_side, venue_position_id, position);
+                self.apply_fills(
+                    &order,
+                    &fills,
+                    liquidity_side,
+                    venue_position_id,
+                    position.as_ref(),
+                );
             }
             None => panic!("Limit order must have a price"),
         }
@@ -3271,14 +3283,14 @@ impl OrderMatchingEngine {
     fn apply_fills(
         &mut self,
         order: &OrderAny,
-        fills: Vec<(Price, Quantity)>,
+        fills: &[(Price, Quantity)],
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
-        position: Option<Position>,
+        position: Option<&Position>,
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
-            for (fill_px, fill_qty) in &fills {
+            for (fill_px, fill_qty) in fills {
                 total_size = total_size.add(*fill_qty);
             }
 
@@ -3311,7 +3323,7 @@ impl OrderMatchingEngine {
 
         let mut initial_market_to_limit_fill = false;
 
-        for &(mut fill_px, ref fill_qty) in &fills {
+        for &(mut fill_px, ref fill_qty) in fills {
             assert!(
                 (fill_px.precision == self.instrument.price_precision()),
                 "Invalid price precision for fill price {} when instrument price precision is {}.\
@@ -3388,7 +3400,7 @@ impl OrderMatchingEngine {
                 effective_fill_qty,
                 liquidity_side,
                 venue_position_id,
-                position.clone(),
+                position,
             );
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
@@ -3427,7 +3439,7 @@ impl OrderMatchingEngine {
         last_qty: Quantity,
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
-        position: Option<Position>,
+        position: Option<&Position>,
     ) {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();

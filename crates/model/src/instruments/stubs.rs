@@ -40,7 +40,7 @@ impl Default for SyntheticInstrument {
     fn default() -> Self {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
-        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0";
         Self::new(
             Symbol::new("BTC-LTC"),
             2,

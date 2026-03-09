@@ -1524,8 +1524,11 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_value::<Vec<DeribitTradeMsg>>(data.clone()) {
                                 Ok(trades) => {
                                     log::debug!("Received {} trades", trades.len());
-                                    let data_vec =
-                                        parse_trades_data(trades, &self.instruments_cache, ts_init);
+                                    let data_vec = parse_trades_data(
+                                        &trades,
+                                        &self.instruments_cache,
+                                        ts_init,
+                                    );
 
                                     if data_vec.is_empty() {
                                         log::debug!(

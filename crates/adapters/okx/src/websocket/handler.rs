@@ -307,7 +307,7 @@ impl OKXWsFeedHandler {
                         OKXWsFrame::Subscription {
                             event, arg, code, msg, ..
                         } => {
-                            self.handle_subscription_ack(event, &arg, code.as_deref(), msg.as_deref());
+                            self.handle_subscription_ack(&event, &arg, code.as_deref(), msg.as_deref());
                         }
                         OKXWsFrame::ChannelConnCount { .. } => {}
                     }
@@ -362,7 +362,7 @@ impl OKXWsFeedHandler {
 
     fn handle_subscription_ack(
         &self,
-        event: OKXSubscriptionEvent,
+        event: &OKXSubscriptionEvent,
         arg: &OKXWebSocketArg,
         code: Option<&str>,
         msg: Option<&str>,

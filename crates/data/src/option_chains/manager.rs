@@ -84,7 +84,7 @@ impl OptionChainManager {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_and_setup(
         series_id: OptionSeriesId,
-        cache: Rc<RefCell<Cache>>,
+        cache: &Rc<RefCell<Cache>>,
         cmd: &SubscribeOptionChain,
         clock: &Rc<RefCell<dyn Clock>>,
         msgbus_priority: u8,
@@ -93,7 +93,7 @@ impl OptionChainManager {
         deferred_cmd_queue: DeferredCommandQueue,
     ) -> Rc<RefCell<Self>> {
         let topic = switchboard::get_option_chain_topic(series_id);
-        let instruments = Self::resolve_instruments(&cache, &series_id);
+        let instruments = Self::resolve_instruments(cache, &series_id);
 
         let mut tracker = AtmTracker::new();
 
@@ -190,8 +190,7 @@ impl OptionChainManager {
         series_id: OptionSeriesId,
         priority: u8,
     ) -> (Vec<TypedHandler<QuoteTick>>, TypedHandler<QuoteTick>) {
-        let quote_handler =
-            TypedHandler::new(OptionChainQuoteHandler::new(manager_rc.clone(), series_id));
+        let quote_handler = TypedHandler::new(OptionChainQuoteHandler::new(manager_rc, series_id));
         // Always store prototype as first element for bootstrap cloning
         let mut handlers = Vec::with_capacity(instrument_ids.len() + 1);
         handlers.push(quote_handler.clone());
@@ -214,7 +213,7 @@ impl OptionChainManager {
         priority: u8,
     ) -> Vec<TypedHandler<OptionGreeks>> {
         let greeks_handler =
-            TypedHandler::new(OptionChainGreeksHandler::new(manager_rc.clone(), series_id));
+            TypedHandler::new(OptionChainGreeksHandler::new(manager_rc, series_id));
         // Always store prototype as first element for bootstrap cloning
         let mut handlers = Vec::with_capacity(instrument_ids.len() + 1);
         handlers.push(greeks_handler.clone());
@@ -279,13 +278,13 @@ impl OptionChainManager {
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> Ustr {
         let interval_ns = millis_to_nanos_unchecked(interval_ms as f64);
-        let publisher = OptionChainSlicePublisher::new(manager_rc.clone());
+        let publisher = OptionChainSlicePublisher::new(manager_rc);
         let timer_name = Ustr::from(&format!("OptionChain|{series_id}|{interval_ms}"));
 
         let now_ns = clock.borrow().timestamp_ns().as_u64();
         let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
 
-        let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| publisher.publish(event));
+        let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| publisher.publish(&event));
         let callback = TimeEventCallback::from(callback_fn);
 
         clock

@@ -63,12 +63,12 @@ impl DydxWebSocketClient {
     #[pyo3(name = "new_private")]
     fn py_new_private(
         url: String,
-        private_key: String,
+        private_key: &str,
         authenticator_ids: Vec<u64>,
         account_id: AccountId,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        let credential = DydxCredential::from_private_key(&private_key, authenticator_ids)
+        let credential = DydxCredential::from_private_key(private_key, authenticator_ids)
             .map_err(to_pyvalue_err)?;
         Ok(Self::new_private(url, credential, account_id, heartbeat))
     }
@@ -115,6 +115,7 @@ impl DydxWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,

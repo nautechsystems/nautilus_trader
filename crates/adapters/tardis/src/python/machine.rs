@@ -45,14 +45,14 @@ use crate::{
 impl ReplayNormalizedRequestOptions {
     #[staticmethod]
     #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> Self {
-        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    fn py_from_json(data: &[u8]) -> Self {
+        serde_json::from_slice(data).expect("Failed to parse JSON")
     }
 
     #[pyo3(name = "from_json_array")]
     #[staticmethod]
-    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
-        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    fn py_from_json_array(data: &[u8]) -> Vec<Self> {
+        serde_json::from_slice(data).expect("Failed to parse JSON array")
     }
 }
 
@@ -60,14 +60,14 @@ impl ReplayNormalizedRequestOptions {
 impl StreamNormalizedRequestOptions {
     #[staticmethod]
     #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> Self {
-        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    fn py_from_json(data: &[u8]) -> Self {
+        serde_json::from_slice(data).expect("Failed to parse JSON")
     }
 
     #[pyo3(name = "from_json_array")]
     #[staticmethod]
-    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
-        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    fn py_from_json_array(data: &[u8]) -> Vec<Self> {
+        serde_json::from_slice(data).expect("Failed to parse JSON array")
     }
 }
 
@@ -182,7 +182,7 @@ impl TardisMachineClient {
                     Ok(msg) => {
                         if let Some(Data::Bar(bar)) = determine_instrument_info(&msg, &map)
                             .and_then(|info| {
-                                parse_tardis_ws_message(msg, info, &book_snapshot_output)
+                                parse_tardis_ws_message(msg, &info, &book_snapshot_output)
                             })
                         {
                             bars.push(bar);
@@ -291,14 +291,14 @@ async fn handle_python_stream<S>(
 
                 if let Some(info) = info.clone() {
                     if let Some(data) =
-                        parse_tardis_ws_message(msg.clone(), info.clone(), &book_snapshot_output)
+                        parse_tardis_ws_message(msg.clone(), &info, &book_snapshot_output)
                     {
                         Python::attach(|py| {
                             let py_obj = data_to_pycapsule(py, data);
                             call_python(py, &callback, py_obj);
                         });
                     } else if let Some(funding_rate) =
-                        parse_tardis_ws_message_funding_rate(msg, info)
+                        parse_tardis_ws_message_funding_rate(msg, &info)
                     {
                         // Check if we should emit this funding rate
                         let should_emit = if let Some(cached_rate) =

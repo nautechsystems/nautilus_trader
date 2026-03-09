@@ -65,13 +65,13 @@ impl HyperliquidWebSocketClient {
     }
 
     #[pyo3(name = "cache_cloid_mapping")]
-    fn py_cache_cloid_mapping(&self, cloid: String, client_order_id: ClientOrderId) {
-        self.cache_cloid_mapping(ustr::Ustr::from(&cloid), client_order_id);
+    fn py_cache_cloid_mapping(&self, cloid: &str, client_order_id: ClientOrderId) {
+        self.cache_cloid_mapping(ustr::Ustr::from(cloid), client_order_id);
     }
 
     #[pyo3(name = "remove_cloid_mapping")]
-    fn py_remove_cloid_mapping(&self, cloid: String) {
-        self.remove_cloid_mapping(&ustr::Ustr::from(&cloid));
+    fn py_remove_cloid_mapping(&self, cloid: &str) {
+        self.remove_cloid_mapping(&ustr::Ustr::from(cloid));
     }
 
     #[pyo3(name = "clear_cloid_cache")]
@@ -85,11 +85,12 @@ impl HyperliquidWebSocketClient {
     }
 
     #[pyo3(name = "get_cloid_mapping")]
-    fn py_get_cloid_mapping(&self, cloid: String) -> Option<ClientOrderId> {
-        self.get_cloid_mapping(&ustr::Ustr::from(&cloid))
+    fn py_get_cloid_mapping(&self, cloid: &str) -> Option<ClientOrderId> {
+        self.get_cloid_mapping(&ustr::Ustr::from(cloid))
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &self,
         py: Python<'py>,

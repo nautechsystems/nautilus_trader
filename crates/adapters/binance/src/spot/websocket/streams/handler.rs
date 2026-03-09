@@ -202,7 +202,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle text JSON frame.
     fn handle_text_frame(&mut self, text: &str) -> Vec<BinanceSpotWsMessage> {
         if let Ok(response) = serde_json::from_str::<BinanceWsResponse>(text) {
-            self.handle_subscription_response(response);
+            self.handle_subscription_response(&response);
             return vec![];
         }
 
@@ -237,7 +237,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle subscription response.
-    fn handle_subscription_response(&mut self, response: BinanceWsResponse) {
+    fn handle_subscription_response(&mut self, response: &BinanceWsResponse) {
         if let Some(streams) = self.pending_requests.remove(&response.id) {
             if response.result.is_none() {
                 // Success - confirm subscriptions

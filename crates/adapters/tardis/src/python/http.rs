@@ -55,7 +55,7 @@ impl TardisHttpClient {
     #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, available_offset=None, effective=None, ts_init=None))]
     fn py_instruments<'py>(
         &self,
-        exchange: String,
+        exchange: &str,
         symbol: Option<String>,
         base_currency: Option<Vec<String>>,
         quote_currency: Option<Vec<String>>,
@@ -69,7 +69,7 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let exchange: TardisExchange = parse_enum(&exchange, stringify!(exchange))?;
+        let exchange: TardisExchange = parse_enum(exchange, stringify!(exchange))?;
 
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)

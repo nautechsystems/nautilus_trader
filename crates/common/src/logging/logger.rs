@@ -342,6 +342,7 @@ impl Logger {
             .ok_or_else(|| anyhow::anyhow!("Failed to create LogGuard from global sender"))
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn handle_messages(
         trader_id: String,
         instance_id: String,

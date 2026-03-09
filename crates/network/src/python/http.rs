@@ -518,7 +518,7 @@ pub fn http_delete(
 pub fn http_download(
     _py: Python<'_>,
     url: String,
-    filepath: String,
+    filepath: &str,
     params: Option<&Bound<'_, PyAny>>,
     headers: Option<HashMap<String, String>>,
     timeout_secs: Option<u64>,
@@ -545,7 +545,7 @@ pub fn http_download(
         url
     };
 
-    let filepath = Path::new(&filepath);
+    let filepath = Path::new(filepath);
 
     if let Some(parent) = filepath.parent() {
         std::fs::create_dir_all(parent).map_err(to_pyvalue_err)?;
@@ -902,15 +902,7 @@ mod tests {
         let filepath = temp_dir.join("test_download.txt");
 
         Python::attach(|py| {
-            http_download(
-                py,
-                url,
-                filepath.to_str().unwrap().to_string(),
-                None,
-                None,
-                Some(10),
-            )
-            .unwrap();
+            http_download(py, url, filepath.to_str().unwrap(), None, None, Some(10)).unwrap();
         });
 
         assert!(filepath.exists());

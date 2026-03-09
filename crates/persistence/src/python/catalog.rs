@@ -67,7 +67,7 @@ impl ParquetDataCatalogV2 {
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     #[must_use]
     pub fn new(
-        base_path: String,
+        base_path: &str,
         storage_options: Option<HashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<u8>,
@@ -100,7 +100,7 @@ impl ParquetDataCatalogV2 {
 
         Self {
             inner: ParquetDataCatalog::from_uri(
-                &base_path,
+                base_path,
                 storage_options,
                 batch_size,
                 compression,
@@ -359,10 +359,11 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
     #[pyo3(signature = (instrument_ids=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn instruments(&self, instrument_ids: Option<Vec<String>>) -> PyResult<Vec<Py<PyAny>>> {
         let rust_instruments = self
             .inner
-            .query_instruments(instrument_ids)
+            .query_instruments(instrument_ids.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query instruments: {e}")))?;
         Python::attach(|py| {
             rust_instruments
@@ -381,6 +382,7 @@ impl ParquetDataCatalogV2 {
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
     #[pyo3(signature = (data_cls, instrument_id=None, *, start, end))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
         data_cls: &str,
@@ -393,7 +395,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = UnixNanos::from(end);
 
         self.inner
-            .extend_file_name(data_cls, instrument_id, start_nanos, end_nanos)
+            .extend_file_name(data_cls, instrument_id.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to extend file name: {e}")))
     }
 
@@ -433,6 +435,7 @@ impl ParquetDataCatalogV2 {
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &self,
         type_name: &str,
@@ -449,7 +452,7 @@ impl ParquetDataCatalogV2 {
         self.inner
             .consolidate_data(
                 type_name,
-                instrument_id,
+                instrument_id.as_deref(),
                 start_nanos,
                 end_nanos,
                 ensure_contiguous_files,
@@ -512,6 +515,7 @@ impl ParquetDataCatalogV2 {
     /// - `end`: Optional end timestamp for consolidation range (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to control file naming strategy
     #[pyo3(signature = (type_name, identifier=None, period_nanos=None, start=None, end=None, ensure_contiguous_files=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn consolidate_data_by_period(
         &mut self,
         type_name: &str,
@@ -528,7 +532,7 @@ impl ParquetDataCatalogV2 {
         self.inner
             .consolidate_data_by_period(
                 type_name,
-                identifier,
+                identifier.as_deref(),
                 period_nanos,
                 start_nanos,
                 end_nanos,
@@ -551,13 +555,14 @@ impl ParquetDataCatalogV2 {
     /// - `data_cls`: The data class name
     /// - `instrument_id`: Optional instrument ID filter
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<()> {
         self.inner
-            .reset_data_file_names(data_cls, instrument_id)
+            .reset_data_file_names(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
@@ -615,6 +620,7 @@ impl ParquetDataCatalogV2 {
     /// - The method ensures data integrity by using atomic operations where possible
     /// - Empty directories are not automatically removed after deletion
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn delete_data_range(
         &mut self,
         type_name: &str,
@@ -627,7 +633,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .delete_data_range(type_name, instrument_id, start_nanos, end_nanos)
+            .delete_data_range(type_name, instrument_id.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to delete data range: {e}")))
     }
 
@@ -733,6 +739,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
     #[pyo3(signature = (start, end, data_cls, instrument_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
@@ -741,7 +748,7 @@ impl ParquetDataCatalogV2 {
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         self.inner
-            .get_missing_intervals_for_request(start, end, data_cls, instrument_id)
+            .get_missing_intervals_for_request(start, end, data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
     }
 
@@ -756,13 +763,14 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
         self.inner
-            .query_first_timestamp(data_cls, instrument_id)
+            .query_first_timestamp(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
@@ -777,13 +785,14 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
         self.inner
-            .query_last_timestamp(data_cls, instrument_id)
+            .query_last_timestamp(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query last timestamp: {e}")))
     }
 
@@ -798,13 +807,14 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         self.inner
-            .get_intervals(data_cls, instrument_id)
+            .get_intervals(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get intervals: {e}")))
     }
 
@@ -818,7 +828,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
         files: Option<Vec<String>>,
         optimize_file_loading: bool,
     ) -> PyResult<Vec<Py<PyAny>>> {
@@ -833,7 +843,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -847,7 +857,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -861,7 +871,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -875,7 +885,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -889,7 +899,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -903,7 +913,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -917,7 +927,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -931,7 +941,7 @@ impl ParquetDataCatalogV2 {
                         identifiers,
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files,
                         optimize_file_loading,
                     )
@@ -942,10 +952,10 @@ impl ParquetDataCatalogV2 {
                 .detach(|| {
                     self.inner.query_custom_data_dynamic(
                         data_type,
-                        identifiers.clone(),
+                        identifiers.as_deref(),
                         start_nanos,
                         end_nanos,
-                        where_clause.as_deref(),
+                        where_clause,
                         files.clone(),
                         optimize_file_loading,
                     )
@@ -980,7 +990,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<QuoteTick>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -990,7 +1000,7 @@ impl ParquetDataCatalogV2 {
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1017,7 +1027,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<TradeTick>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1027,7 +1037,7 @@ impl ParquetDataCatalogV2 {
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1054,7 +1064,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<OrderBookDelta>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1064,7 +1074,7 @@ impl ParquetDataCatalogV2 {
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1091,7 +1101,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<Bar>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1101,7 +1111,7 @@ impl ParquetDataCatalogV2 {
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1126,7 +1136,7 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<OrderBookDepth10>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1136,7 +1146,7 @@ impl ParquetDataCatalogV2 {
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1161,7 +1171,7 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<MarkPriceUpdate>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1171,7 +1181,7 @@ impl ParquetDataCatalogV2 {
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1196,7 +1206,7 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<IndexPriceUpdate>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1206,7 +1216,7 @@ impl ParquetDataCatalogV2 {
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1336,6 +1346,7 @@ impl ParquetDataCatalogV2 {
     /// )
     /// ```
     #[pyo3(signature = (instance_id, data_cls, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
@@ -1349,7 +1360,7 @@ impl ParquetDataCatalogV2 {
             instance_id,
             data_cls,
             Some(subdir),
-            identifiers,
+            identifiers.as_deref(),
             use_ts_event_for_ts_init,
         ) {
             Ok(()) => Ok(()),
@@ -1361,6 +1372,7 @@ impl ParquetDataCatalogV2 {
 
     /// Query custom data from Parquet files.
     #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn query_custom_data(
         &mut self,
         py: Python<'_>,
@@ -1368,7 +1380,7 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<Py<PyAny>>> {
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
@@ -1377,10 +1389,10 @@ impl ParquetDataCatalogV2 {
             .detach(|| {
                 self.inner.query_custom_data_dynamic(
                     type_name,
-                    identifiers,
+                    identifiers.as_deref(),
                     start_nanos,
                     end_nanos,
-                    where_clause.as_deref(),
+                    where_clause,
                     None,
                     true,
                 )

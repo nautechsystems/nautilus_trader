@@ -140,7 +140,7 @@ impl Block {
 #[pymethods]
 impl PoolSwap {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -279,7 +279,7 @@ impl PoolSwap {
 #[pymethods]
 impl PoolLiquidityUpdate {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -465,7 +465,7 @@ impl PoolLiquidityUpdate {
 #[pymethods]
 impl PoolFeeCollect {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -622,7 +622,7 @@ impl PoolFeeCollect {
 #[pymethods]
 impl PoolFlash {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -784,7 +784,7 @@ impl PoolFlash {
 #[pymethods]
 impl Transaction {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         hash: String,

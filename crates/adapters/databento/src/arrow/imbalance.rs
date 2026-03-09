@@ -152,7 +152,7 @@ impl DecodeDataFromRecordBatch for DatabentoImbalance {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Data>, EncodingError> {
-        let items = decode_imbalance_batch(metadata, record_batch)?;
+        let items = decode_imbalance_batch(metadata, &record_batch)?;
         Ok(items
             .into_iter()
             .map(|item| Data::Custom(CustomData::from_arc(Arc::new(item))))
@@ -167,7 +167,7 @@ impl DecodeDataFromRecordBatch for DatabentoImbalance {
 /// Returns an `EncodingError` if decoding fails.
 pub fn decode_imbalance_batch(
     metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<DatabentoImbalance>, EncodingError> {
     let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
     let cols = record_batch.columns();
@@ -280,14 +280,14 @@ pub fn decode_imbalance_batch(
 /// Returns an error if `data` is empty or encoding fails.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn imbalance_to_arrow_record_batch(
-    data: Vec<DatabentoImbalance>,
+    data: &[DatabentoImbalance],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
     }
 
-    let metadata = DatabentoImbalance::chunk_metadata(&data);
-    DatabentoImbalance::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    let metadata = DatabentoImbalance::chunk_metadata(data);
+    DatabentoImbalance::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 #[cfg(test)]
@@ -355,7 +355,7 @@ mod tests {
         let metadata = test_metadata();
         let original = vec![test_imbalance(instrument_id)];
         let batch = DatabentoImbalance::encode_batch(&metadata, &original).unwrap();
-        let decoded = decode_imbalance_batch(&metadata, batch).unwrap();
+        let decoded = decode_imbalance_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].instrument_id, instrument_id);
@@ -400,7 +400,7 @@ mod tests {
         let batch = DatabentoImbalance::encode_batch(&metadata, &original).unwrap();
         assert_eq!(batch.num_rows(), 3);
 
-        let decoded = decode_imbalance_batch(&metadata, batch).unwrap();
+        let decoded = decode_imbalance_batch(&metadata, &batch).unwrap();
         assert_eq!(decoded.len(), 3);
         for (orig, dec) in original.iter().zip(decoded.iter()) {
             assert_eq!(dec.instrument_id, orig.instrument_id);
@@ -415,9 +415,9 @@ mod tests {
     fn test_imbalance_to_arrow_record_batch_round_trip() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let original = vec![test_imbalance(instrument_id)];
-        let batch = imbalance_to_arrow_record_batch(original.clone()).unwrap();
+        let batch = imbalance_to_arrow_record_batch(&original).unwrap();
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_imbalance_batch(&metadata, batch).unwrap();
+        let decoded = decode_imbalance_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].ref_price, original[0].ref_price);
@@ -434,7 +434,7 @@ mod tests {
 
     #[rstest]
     fn test_imbalance_to_arrow_record_batch_empty() {
-        let result = imbalance_to_arrow_record_batch(vec![]);
+        let result = imbalance_to_arrow_record_batch(&[]);
         assert!(result.is_err());
     }
 
@@ -446,7 +446,7 @@ mod tests {
         let batch = DatabentoImbalance::encode_batch(&metadata, &data).unwrap();
 
         let empty_metadata = HashMap::new();
-        let result = decode_imbalance_batch(&empty_metadata, batch);
+        let result = decode_imbalance_batch(&empty_metadata, &batch);
         assert!(result.is_err());
     }
 
@@ -521,7 +521,7 @@ mod tests {
             imb.ts_event = 100.into();
             imb
         }];
-        let batch = imbalance_to_arrow_record_batch(original.clone()).unwrap();
+        let batch = imbalance_to_arrow_record_batch(&original).unwrap();
 
         let mut cursor = Cursor::new(Vec::new());
         {
@@ -536,7 +536,7 @@ mod tests {
         for batch_result in reader {
             let batch = batch_result.unwrap();
             let metadata = batch.schema().metadata().clone();
-            decoded.extend(decode_imbalance_batch(&metadata, batch).unwrap());
+            decoded.extend(decode_imbalance_batch(&metadata, &batch).unwrap());
         }
 
         assert_eq!(decoded.len(), 2);

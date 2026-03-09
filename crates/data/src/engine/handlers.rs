@@ -34,9 +34,9 @@ pub struct BarQuoteHandler {
 }
 
 impl BarQuoteHandler {
-    pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
+    pub(crate) fn new(aggregator: &Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
+            aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
         }
     }
@@ -66,9 +66,9 @@ pub struct BarTradeHandler {
 }
 
 impl BarTradeHandler {
-    pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
+    pub(crate) fn new(aggregator: &Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
+            aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
         }
     }
@@ -99,9 +99,9 @@ pub struct BarBarHandler {
 }
 
 impl BarBarHandler {
-    pub(crate) fn new(aggregator: Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
+    pub(crate) fn new(aggregator: &Rc<RefCell<Box<dyn BarAggregator>>>, bar_type: BarType) -> Self {
         Self {
-            aggregator: WeakCell::from(Rc::downgrade(&aggregator)),
+            aggregator: WeakCell::from(Rc::downgrade(aggregator)),
             bar_type,
         }
     }

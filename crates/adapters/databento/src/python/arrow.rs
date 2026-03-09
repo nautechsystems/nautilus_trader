@@ -64,12 +64,13 @@ pub fn get_databento_arrow_schema_map(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "databento_imbalance_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_databento_imbalance_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<DatabentoImbalance>,
 ) -> PyResult<Py<PyBytes>> {
-    match imbalance_to_arrow_record_batch(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match imbalance_to_arrow_record_batch(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -91,7 +92,7 @@ pub fn py_databento_imbalance_from_arrow_record_batch_bytes(
     for batch_result in reader {
         let batch = batch_result.map_err(to_pyruntime_err)?;
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_imbalance_batch(&metadata, batch).map_err(to_pyvalue_err)?;
+        let decoded = decode_imbalance_batch(&metadata, &batch).map_err(to_pyvalue_err)?;
         results.extend(decoded);
     }
 
@@ -104,12 +105,13 @@ pub fn py_databento_imbalance_from_arrow_record_batch_bytes(
 ///
 /// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "databento_statistics_to_arrow_record_batch_bytes")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_databento_statistics_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<DatabentoStatistics>,
 ) -> PyResult<Py<PyBytes>> {
-    match statistics_to_arrow_record_batch(data) {
-        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+    match statistics_to_arrow_record_batch(&data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
@@ -131,7 +133,7 @@ pub fn py_databento_statistics_from_arrow_record_batch_bytes(
     for batch_result in reader {
         let batch = batch_result.map_err(to_pyruntime_err)?;
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_statistics_batch(&metadata, batch).map_err(to_pyvalue_err)?;
+        let decoded = decode_statistics_batch(&metadata, &batch).map_err(to_pyvalue_err)?;
         results.extend(decoded);
     }
 

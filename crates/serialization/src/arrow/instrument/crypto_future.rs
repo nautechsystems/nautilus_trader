@@ -251,7 +251,7 @@ impl EncodeToRecordBatch for CryptoFuture {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_crypto_future_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<CryptoFuture>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();

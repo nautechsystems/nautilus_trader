@@ -228,7 +228,7 @@ impl NonceManager {
     /// # Panics
     ///
     /// Panics if the internal mutex is poisoned.
-    pub fn validate_local(&self, signer: SignerId, nonce: TimeNonce) -> Result<()> {
+    pub fn validate_local(&self, signer: &SignerId, nonce: TimeNonce) -> Result<()> {
         let states = self.signer_states.lock().expect(MUTEX_POISONED);
 
         // Always validate time window, even for new signers
@@ -253,7 +253,7 @@ impl NonceManager {
         }
 
         // If signer state exists, validate against used nonces and monotonicity
-        if let Some(state) = states.get(&signer) {
+        if let Some(state) = states.get(signer) {
             state
                 .validate_local(nonce, &self.policy)
                 .map_err(|e| Error::nonce_window(e.to_string()))?;
@@ -306,14 +306,14 @@ mod tests {
         let signer = SignerId::from("test_signer");
 
         let valid_nonce = TimeNonce::now_millis();
-        assert!(manager.validate_local(signer.clone(), valid_nonce).is_ok());
+        assert!(manager.validate_local(&signer, valid_nonce).is_ok());
 
         let old_nonce = TimeNonce::from_millis(TimeNonce::now_millis().0 - 3 * 24 * 60 * 60 * 1000);
-        assert!(manager.validate_local(signer.clone(), old_nonce).is_err());
+        assert!(manager.validate_local(&signer, old_nonce).is_err());
 
         let future_nonce =
             TimeNonce::from_millis(TimeNonce::now_millis().0 + 2 * 24 * 60 * 60 * 1000);
-        assert!(manager.validate_local(signer, future_nonce).is_err());
+        assert!(manager.validate_local(&signer, future_nonce).is_err());
     }
 
     #[rstest]
@@ -322,7 +322,7 @@ mod tests {
         let signer = SignerId::from("test_signer");
 
         let nonce = manager.next(signer.clone()).unwrap();
-        assert!(manager.validate_local(signer, nonce).is_err());
+        assert!(manager.validate_local(&signer, nonce).is_err());
     }
 
     #[rstest]

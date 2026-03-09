@@ -57,7 +57,7 @@ pub fn schema_with_data_type_column(base_schema: &Schema, type_name: &str) -> Sc
 ///
 /// Returns an error if the new `RecordBatch` cannot be created.
 pub fn augment_batch_with_data_type_column(
-    batch: RecordBatch,
+    batch: &RecordBatch,
     data_type_json: &str,
     type_name: &str,
     dt_meta: Option<&HashMap<String, String>>,
@@ -160,7 +160,7 @@ pub fn prepare_custom_data_batch(
             )
         })?;
     let batch =
-        augment_batch_with_data_type_column(batch, &data_type_json, type_name, dt_meta.as_ref())?;
+        augment_batch_with_data_type_column(&batch, &data_type_json, type_name, dt_meta.as_ref())?;
 
     Ok((batch, type_name.to_string(), identifier, start_ts, end_ts))
 }

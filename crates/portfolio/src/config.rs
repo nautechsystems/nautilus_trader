@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PortfolioConfig {
     /// The type of prices used for portfolio calculations, such as unrealized PnLs.
     /// If false (default), uses quote prices if available; otherwise, last trade prices

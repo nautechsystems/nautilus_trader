@@ -698,7 +698,7 @@ mod tests {
         let handler = get_stub_shareable_handler(None);
 
         msgbus::subscribe_any(topic.into(), handler.clone(), None);
-        msgbus::unsubscribe_any(topic.into(), handler);
+        msgbus::unsubscribe_any(topic.into(), &handler);
 
         assert!(!msgbus.borrow().has_subscribers(topic));
         assert!(msgbus.borrow().patterns().is_empty());
@@ -880,7 +880,7 @@ mod tests {
                             .unwrap();
 
                         // Apply to message bus
-                        msgbus::unsubscribe_any(pattern.as_str().into(), handler.clone());
+                        msgbus::unsubscribe_any(pattern.as_str().into(), &handler);
 
                         assert_eq!(
                             model.subscription_count(),

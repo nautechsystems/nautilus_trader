@@ -210,14 +210,14 @@ impl MarkPriceUpdate {
 
     #[staticmethod]
     #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return a dictionary representation of the object.
@@ -404,14 +404,14 @@ impl IndexPriceUpdate {
 
     #[staticmethod]
     #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return a dictionary representation of the object.

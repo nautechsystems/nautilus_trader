@@ -350,11 +350,11 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bids_as_map(
         &self,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        filter_orders(self.bids(), status.as_ref(), accepted_buffer_ns, ts_now)
+        filter_orders(self.bids(), status, accepted_buffer_ns, ts_now)
     }
 
     /// Maps ask price levels to their own orders, excluding empty levels after filtering.
@@ -363,11 +363,11 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn asks_as_map(
         &self,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        filter_orders(self.asks(), status.as_ref(), accepted_buffer_ns, ts_now)
+        filter_orders(self.asks(), status, accepted_buffer_ns, ts_now)
     }
 
     /// Aggregates own bid quantities per price level, omitting zero-quantity levels.
@@ -379,7 +379,7 @@ impl OwnOrderBook {
     /// If `depth` is provided, limits the number of price levels returned.
     pub fn bid_quantity(
         &self,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         depth: Option<usize>,
         group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
@@ -410,7 +410,7 @@ impl OwnOrderBook {
     /// If `depth` is provided, limits the number of price levels returned.
     pub fn ask_quantity(
         &self,
-        status: Option<AHashSet<OrderStatus>>,
+        status: Option<&AHashSet<OrderStatus>>,
         depth: Option<usize>,
         group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,

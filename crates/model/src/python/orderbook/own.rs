@@ -18,6 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{Python, prelude::*, pyclass::CompareOp};
@@ -263,11 +264,8 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.bids_as_map(
-            status.map(|s| s.into_iter().collect()),
-            accepted_buffer_ns,
-            ts_now,
-        )
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
+        self.bids_as_map(status_set.as_ref(), accepted_buffer_ns, ts_now)
     }
 
     #[pyo3(name = "asks_to_dict")]
@@ -278,11 +276,8 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.asks_as_map(
-            status.map(|s| s.into_iter().collect()),
-            accepted_buffer_ns,
-            ts_now,
-        )
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
+        self.asks_as_map(status_set.as_ref(), accepted_buffer_ns, ts_now)
     }
 
     #[pyo3(name = "bid_quantity")]
@@ -295,8 +290,9 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.bid_quantity(
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             depth,
             group_size,
             accepted_buffer_ns,
@@ -314,8 +310,9 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.ask_quantity(
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             depth,
             group_size,
             accepted_buffer_ns,

@@ -381,7 +381,7 @@ impl EncodeToRecordBatch for InstrumentAny {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_instrument_any_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
     let type_name = metadata
         .get("class")
@@ -553,7 +553,7 @@ mod tests {
         let metadata = instrument.metadata();
         let record_batch =
             InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
-        let decoded = decode_instrument_any_batch(&metadata, record_batch).unwrap();
+        let decoded = decode_instrument_any_batch(&metadata, &record_batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(Instrument::id(&decoded[0]), Instrument::id(&instrument));
@@ -608,7 +608,7 @@ mod tests {
         let metadata = instrument.metadata();
         let record_batch =
             InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
-        let decoded = decode_instrument_any_batch(&metadata, record_batch).unwrap();
+        let decoded = decode_instrument_any_batch(&metadata, &record_batch).unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(Instrument::id(&decoded[0]), Instrument::id(&instrument));
         assert_eq!(

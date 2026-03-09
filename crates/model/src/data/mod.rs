@@ -207,7 +207,7 @@ impl<'de> Deserialize<'de> for Data {
             )),
             _ => {
                 if let Some(data) =
-                    deserialize_custom_from_json(&type_name, value).map_err(D::Error::custom)?
+                    deserialize_custom_from_json(&type_name, &value).map_err(D::Error::custom)?
                 {
                     Ok(data)
                 } else {

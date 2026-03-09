@@ -171,10 +171,10 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
 /// # Errors
 ///
 /// Returns a `PyErr` if Python list creation or conversion fails.
-pub fn commissions_from_indexmap(
-    py: Python<'_>,
-    commissions: IndexMap<Currency, Money>,
-) -> PyResult<Bound<'_, PyAny>> {
+pub fn commissions_from_indexmap<'py>(
+    py: Python<'py>,
+    commissions: &IndexMap<Currency, Money>,
+) -> PyResult<Bound<'py, PyAny>> {
     commissions_from_vec(py, commissions.values().copied().collect())
 }
 

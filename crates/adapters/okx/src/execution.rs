@@ -654,10 +654,10 @@ impl ExecutionClient for OKXExecutionClient {
                 );
             }
 
-            self.ws_private.cache_instruments(all_instruments.clone());
+            self.ws_private.cache_instruments(&all_instruments);
             self.ws_private
                 .cache_inst_id_codes(all_inst_id_codes.clone());
-            self.ws_business.cache_instruments(all_instruments);
+            self.ws_business.cache_instruments(&all_instruments);
             self.ws_business.cache_inst_id_codes(all_inst_id_codes);
             self.core.set_instruments_initialized();
         }
@@ -867,9 +867,9 @@ impl ExecutionClient for OKXExecutionClient {
                     "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
                 );
             } else {
-                ws_private.cache_instruments(all_instruments.clone());
+                ws_private.cache_instruments(&all_instruments);
                 ws_private.cache_inst_id_codes(all_inst_id_codes.clone());
-                ws_business.cache_instruments(all_instruments);
+                ws_business.cache_instruments(&all_instruments);
                 ws_business.cache_inst_id_codes(all_inst_id_codes);
                 log::info!("Instruments initialized");
             }

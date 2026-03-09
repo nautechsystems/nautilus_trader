@@ -214,6 +214,7 @@ impl PyBitmexWebSocketClient {
 
     #[pyo3(name = "connect")]
     #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -844,7 +845,7 @@ async fn handle_table_message(
         BitmexTableMessage::TradeBin1m { action, data } => {
             if action != BitmexAction::Partial && !data.is_empty() {
                 for d in
-                    parse_trade_bin_msg_vec(data, BitmexWsTopic::TradeBin1m, &instruments, ts_init)
+                    parse_trade_bin_msg_vec(data, &BitmexWsTopic::TradeBin1m, &instruments, ts_init)
                 {
                     send_data_to_python(d, call_soon, callback);
                 }
@@ -853,7 +854,7 @@ async fn handle_table_message(
         BitmexTableMessage::TradeBin5m { action, data } => {
             if action != BitmexAction::Partial && !data.is_empty() {
                 for d in
-                    parse_trade_bin_msg_vec(data, BitmexWsTopic::TradeBin5m, &instruments, ts_init)
+                    parse_trade_bin_msg_vec(data, &BitmexWsTopic::TradeBin5m, &instruments, ts_init)
                 {
                     send_data_to_python(d, call_soon, callback);
                 }
@@ -862,7 +863,7 @@ async fn handle_table_message(
         BitmexTableMessage::TradeBin1h { action, data } => {
             if action != BitmexAction::Partial && !data.is_empty() {
                 for d in
-                    parse_trade_bin_msg_vec(data, BitmexWsTopic::TradeBin1h, &instruments, ts_init)
+                    parse_trade_bin_msg_vec(data, &BitmexWsTopic::TradeBin1h, &instruments, ts_init)
                 {
                     send_data_to_python(d, call_soon, callback);
                 }
@@ -871,7 +872,7 @@ async fn handle_table_message(
         BitmexTableMessage::TradeBin1d { action, data } => {
             if action != BitmexAction::Partial && !data.is_empty() {
                 for d in
-                    parse_trade_bin_msg_vec(data, BitmexWsTopic::TradeBin1d, &instruments, ts_init)
+                    parse_trade_bin_msg_vec(data, &BitmexWsTopic::TradeBin1d, &instruments, ts_init)
                 {
                     send_data_to_python(d, call_soon, callback);
                 }
@@ -879,7 +880,7 @@ async fn handle_table_message(
         }
         BitmexTableMessage::Funding { data, .. } => {
             for msg in data {
-                send_to_python(parse_funding_msg(msg, ts_init), call_soon, callback);
+                send_to_python(parse_funding_msg(&msg, ts_init), call_soon, callback);
             }
         }
         BitmexTableMessage::Order { data, .. } => {
@@ -916,7 +917,7 @@ async fn handle_table_message(
                 };
 
                 send_to_python(
-                    parse_position_msg(msg, instrument, ts_init),
+                    parse_position_msg(&msg, instrument, ts_init),
                     call_soon,
                     callback,
                 );
@@ -924,7 +925,7 @@ async fn handle_table_message(
         }
         BitmexTableMessage::Wallet { data, .. } => {
             for msg in data {
-                send_to_python(parse_wallet_msg(msg, ts_init), call_soon, callback);
+                send_to_python(parse_wallet_msg(&msg, ts_init), call_soon, callback);
             }
         }
         BitmexTableMessage::Margin { .. } => {}
@@ -1021,7 +1022,7 @@ async fn handle_instrument_messages(
         }
 
         for msg in data_for_prices {
-            for d in parse_instrument_msg(msg, &cache, ts_init) {
+            for d in parse_instrument_msg(&msg, &cache, ts_init) {
                 send_data_to_python(d, call_soon, callback);
             }
         }
@@ -1052,7 +1053,7 @@ async fn handle_instrument_messages(
         }
 
         for msg in data {
-            for d in parse_instrument_msg(msg, &cache, ts_init) {
+            for d in parse_instrument_msg(&msg, &cache, ts_init) {
                 send_data_to_python(d, call_soon, callback);
             }
         }
@@ -1315,7 +1316,7 @@ fn handle_execution_messages(
 }
 
 /// Dispatches a parsed order event to Python with lifecycle synthesis and deduplication.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 fn dispatch_order_event_to_python(
     event: ParsedOrderEvent,
     client_order_id: ClientOrderId,

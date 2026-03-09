@@ -1242,7 +1242,7 @@ impl DydxDataClient {
 
     fn resolve_crossed_order_book(
         book: &mut OrderBook,
-        venue_deltas: OrderBookDeltas,
+        venue_deltas: &OrderBookDeltas,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<OrderBookDeltas> {
         let instrument_id = venue_deltas.instrument_id;
@@ -1250,7 +1250,7 @@ impl DydxDataClient {
         let mut all_deltas = venue_deltas.deltas.clone();
 
         // Apply the original venue deltas first
-        book.apply_deltas(&venue_deltas)?;
+        book.apply_deltas(venue_deltas)?;
 
         // Check if orderbook is crossed
         let mut is_crossed = if let (Some(bid_price), Some(ask_price)) =
@@ -1436,14 +1436,14 @@ impl DydxDataClient {
             .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
 
         // Resolve crossed orderbook (applies deltas internally)
-        let resolved_deltas = match Self::resolve_crossed_order_book(&mut book, deltas, &instrument)
-        {
-            Ok(d) => d,
-            Err(e) => {
-                log::error!("Failed to resolve crossed order book for {instrument_id}: {e}");
-                return;
-            }
-        };
+        let resolved_deltas =
+            match Self::resolve_crossed_order_book(&mut book, &deltas, &instrument) {
+                Ok(d) => d,
+                Err(e) => {
+                    log::error!("Failed to resolve crossed order book for {instrument_id}: {e}");
+                    return;
+                }
+            };
 
         // Conditionally emit QuoteTick if instrument has quote subscription
         if active_quote_subs.contains(&instrument_id) {

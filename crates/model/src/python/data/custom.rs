@@ -28,12 +28,13 @@ use crate::data::{
 impl CustomData {
     #[new]
     #[pyo3(signature = (data_type, data))]
-    fn py_new(py: Python<'_>, data_type: DataType, data: Bound<'_, PyAny>) -> PyResult<Self> {
+    #[allow(clippy::needless_pass_by_value)]
+    fn py_new(py: Python<'_>, data_type: DataType, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let type_name = data_type.type_name();
-        if let Some(arc) = try_extract_from_py(type_name, &data) {
+        if let Some(arc) = try_extract_from_py(type_name, data) {
             return Ok(Self::new(arc, data_type));
         }
-        let wrapper = PythonCustomDataWrapper::new(py, &data)?;
+        let wrapper = PythonCustomDataWrapper::new(py, data)?;
         Ok(Self::new(std::sync::Arc::new(wrapper), data_type))
     }
 
@@ -72,6 +73,7 @@ impl CustomData {
         parse_custom_data_from_json_bytes(bytes).map_err(to_pyvalue_err)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn __richcmp__(
         &self,
         other: pyo3::Bound<'_, PyAny>,

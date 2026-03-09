@@ -1005,7 +1005,7 @@ impl Depth10StreamIterator {
         })
     }
 
-    fn process_snapshot5(&self, data: TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
+    fn process_snapshot5(&self, data: &TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1074,7 +1074,7 @@ impl Depth10StreamIterator {
         )
     }
 
-    fn process_snapshot25(&self, data: TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
+    fn process_snapshot25(&self, data: &TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1246,11 +1246,11 @@ impl Iterator for Depth10StreamIterator {
                         5 => self
                             .record
                             .deserialize::<TardisOrderBookSnapshot5Record>(None)
-                            .map(|data| self.process_snapshot5(data)),
+                            .map(|data| self.process_snapshot5(&data)),
                         25 => self
                             .record
                             .deserialize::<TardisOrderBookSnapshot25Record>(None)
-                            .map(|data| self.process_snapshot25(data)),
+                            .map(|data| self.process_snapshot25(&data)),
                         _ => return Some(Err(anyhow::anyhow!("Invalid levels: {}", self.levels))),
                     };
 

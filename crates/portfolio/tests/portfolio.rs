@@ -790,12 +790,12 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position1, OmsType::Hedging)
+        .add_position(&position1, OmsType::Hedging)
         .unwrap();
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position2, OmsType::Hedging)
+        .add_position(&position2, OmsType::Hedging)
         .unwrap();
     portfolio.cache().borrow_mut().add_quote(last).unwrap();
     portfolio.update_quote_tick(&last);
@@ -832,7 +832,7 @@ fn test_opening_one_long_position_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position.clone(), OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
 
     let position_opened = get_open_position(&position);
@@ -916,7 +916,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position.clone(), OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
 
     let position_opened = get_open_position(&position);
@@ -1021,7 +1021,7 @@ fn test_opening_one_short_position_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position.clone(), OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
 
     let position_opened = get_open_position(&position);
@@ -1142,7 +1142,7 @@ fn test_opening_positions_with_multi_asset_account(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position.clone(), OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
 
     let position_opened = get_open_position(&position);
@@ -1229,7 +1229,7 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position, OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
     portfolio
         .cache()
@@ -1367,12 +1367,12 @@ fn test_opening_several_positions_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position1, OmsType::Hedging)
+        .add_position(&position1, OmsType::Hedging)
         .unwrap();
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position2, OmsType::Hedging)
+        .add_position(&position2, OmsType::Hedging)
         .unwrap();
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened2));
@@ -1512,7 +1512,7 @@ fn test_modifying_position_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position1.clone(), OmsType::Hedging)
+        .add_position(&position1, OmsType::Hedging)
         .unwrap();
     let position_opened1 = get_open_position(&position1);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
@@ -1681,7 +1681,7 @@ fn test_closing_position_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position.clone(), OmsType::Hedging)
+        .add_position(&position, OmsType::Hedging)
         .unwrap();
 
     // Add quote tick for market data (needed for PnL calculations)
@@ -1947,17 +1947,17 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position1.clone(), OmsType::Hedging)
+        .add_position(&position1, OmsType::Hedging)
         .unwrap();
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position2.clone(), OmsType::Hedging)
+        .add_position(&position2, OmsType::Hedging)
         .unwrap();
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position3.clone(), OmsType::Hedging)
+        .add_position(&position3, OmsType::Hedging)
         .unwrap();
 
     let position_opened1 = get_open_position(&position1);
@@ -1973,7 +1973,7 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position3.clone(), OmsType::Hedging)
+        .add_position(&position3, OmsType::Hedging)
         .unwrap();
     portfolio.update_position(&PositionEvent::PositionClosed(position_closed3));
 
@@ -2058,7 +2058,7 @@ fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
     );
 
     let position = Position::new(&instrument_audusd, filled);
-    cache.add_position(position, OmsType::Netting).unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
     drop(cache);
 
     let result = portfolio.realized_pnl(&instrument_audusd.id());
@@ -2120,7 +2120,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position1.clone(), OmsType::Netting)
+        .add_position(&position1, OmsType::Netting)
         .unwrap();
 
     // Close the position
@@ -2203,7 +2203,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
     portfolio
         .cache()
         .borrow_mut()
-        .add_position(position2, OmsType::Netting)
+        .add_position(&position2, OmsType::Netting)
         .unwrap();
 
     // Calculate realized PnL - should include snapshot PnL

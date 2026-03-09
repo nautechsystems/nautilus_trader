@@ -325,7 +325,7 @@ impl BinanceRawFuturesHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         serde_json::from_slice(&response.body)
@@ -409,7 +409,7 @@ impl BinanceRawFuturesHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         serde_json::from_slice::<T>(&response.body)
@@ -446,7 +446,7 @@ impl BinanceRawFuturesHttpClient {
         }
     }
 
-    fn parse_error_response<T>(&self, response: HttpResponse) -> BinanceFuturesHttpResult<T> {
+    fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceFuturesHttpResult<T> {
         let status = response.status.as_u16();
         let body = String::from_utf8_lossy(&response.body).to_string();
 
@@ -2338,7 +2338,7 @@ mod tests {
             body: Bytes::from(r#"{"code":-1121,"msg":"Invalid symbol."}"#),
         };
 
-        let result: BinanceFuturesHttpResult<()> = client.parse_error_response(response);
+        let result: BinanceFuturesHttpResult<()> = client.parse_error_response(&response);
 
         match result {
             Err(BinanceFuturesHttpError::BinanceError { code, message }) => {

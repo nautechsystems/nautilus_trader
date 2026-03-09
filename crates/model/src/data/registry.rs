@@ -110,7 +110,7 @@ fn parse_data_type_from_value(value: &serde_json::Value) -> Option<DataType> {
 /// Parses the canonical CustomData JSON envelope `{ type, data_type, payload }` and returns
 /// the payload value to pass to the registered type deserializer. Does not depend on
 /// user payload field names.
-fn parse_envelope_payload(value: serde_json::Value) -> Result<serde_json::Value, anyhow::Error> {
+fn parse_envelope_payload(value: &serde_json::Value) -> Result<serde_json::Value, anyhow::Error> {
     let payload = value
         .get("payload")
         .cloned()
@@ -125,14 +125,14 @@ fn parse_envelope_payload(value: serde_json::Value) -> Result<serde_json::Value,
 /// Returns an error if the deserializer fails.
 pub fn deserialize_custom_from_json(
     type_name: &str,
-    value: serde_json::Value,
+    value: &serde_json::Value,
 ) -> Result<Option<Data>, anyhow::Error> {
     let reg = registries();
     let deserializer_ref = match reg.json.get(type_name) {
         Some(d) => d,
         None => return Ok(None),
     };
-    let data_type = parse_data_type_from_value(&value);
+    let data_type = parse_data_type_from_value(value);
     let payload = parse_envelope_payload(value)?;
     let arc = deserializer_ref.value()(payload)?;
     let custom = match data_type {

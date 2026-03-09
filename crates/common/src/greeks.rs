@@ -157,7 +157,7 @@ impl InstrumentGreeksParams {
             self.position.clone(),
             Some(self.percent_greeks),
             self.index_instrument_id,
-            self.beta_weights.clone(),
+            self.beta_weights.as_ref(),
             self.vega_time_weight_base,
         )
     }
@@ -260,7 +260,7 @@ impl PortfolioGreeksParams {
             .map(|f| f.clone().to_greeks_filter());
 
         calculator.portfolio_greeks(
-            self.underlyings.clone(),
+            self.underlyings.as_deref(),
             self.venue,
             self.instrument_id,
             self.strategy_id,
@@ -275,8 +275,8 @@ impl PortfolioGreeksParams {
             Some(self.publish_greeks),
             Some(self.percent_greeks),
             self.index_instrument_id,
-            self.beta_weights.clone(),
-            greeks_filter,
+            self.beta_weights.as_ref(),
+            greeks_filter.as_ref(),
             self.vega_time_weight_base,
         )
     }
@@ -339,7 +339,7 @@ impl GreeksCalculator {
         position: Option<Position>,
         percent_greeks: Option<bool>,
         index_instrument_id: Option<InstrumentId>,
-        beta_weights: Option<HashMap<InstrumentId, f64>>,
+        beta_weights: Option<&HashMap<InstrumentId, f64>>,
         vega_time_weight_base: Option<i32>,
     ) -> anyhow::Result<GreeksData> {
         // Set default values
@@ -377,7 +377,7 @@ impl GreeksCalculator {
                 underlying_price,
                 percent_greeks,
                 index_instrument_id,
-                beta_weights.as_ref(),
+                beta_weights,
                 0.0,
                 0.0,
                 0,
@@ -469,7 +469,7 @@ impl GreeksCalculator {
                 underlying_price,
                 percent_greeks,
                 index_instrument_id,
-                beta_weights.as_ref(),
+                beta_weights,
                 greeks.vega,
                 greeks.vol,
                 expiry_in_days,
@@ -547,7 +547,7 @@ impl GreeksCalculator {
                 underlying_price,
                 percent_greeks,
                 index_instrument_id,
-                beta_weights.as_ref(),
+                beta_weights,
                 greeks.vega,
                 shocked_vol,
                 shocked_expiry_in_days,
@@ -699,7 +699,7 @@ impl GreeksCalculator {
     #[allow(clippy::missing_panics_doc)] // Guarded by is_none check
     pub fn portfolio_greeks(
         &self,
-        underlyings: Option<Vec<String>>,
+        underlyings: Option<&[String]>,
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
@@ -714,8 +714,8 @@ impl GreeksCalculator {
         publish_greeks: Option<bool>,
         percent_greeks: Option<bool>,
         index_instrument_id: Option<InstrumentId>,
-        beta_weights: Option<HashMap<InstrumentId, f64>>,
-        greeks_filter: Option<GreeksFilter>,
+        beta_weights: Option<&HashMap<InstrumentId, f64>>,
+        greeks_filter: Option<&GreeksFilter>,
         vega_time_weight_base: Option<i32>,
     ) -> anyhow::Result<PortfolioGreeks> {
         let ts_event = self.clock.borrow().timestamp_ns();
@@ -746,7 +746,7 @@ impl GreeksCalculator {
         for position in open_positions {
             let position_instrument_id = position.instrument_id;
 
-            if let Some(ref underlyings_list) = underlyings {
+            if let Some(underlyings_list) = underlyings {
                 let mut skip_position = true;
 
                 for underlying in underlyings_list {
@@ -780,13 +780,13 @@ impl GreeksCalculator {
                 Some(position),
                 Some(percent_greeks),
                 index_instrument_id,
-                beta_weights.clone(),
+                beta_weights,
                 vega_time_weight_base,
             )?;
             let position_greeks = (quantity * &instrument_greeks).into();
 
             // Apply greeks filter if provided
-            if greeks_filter.is_none() || greeks_filter.as_ref().unwrap()(&instrument_greeks) {
+            if greeks_filter.is_none() || greeks_filter.unwrap()(&instrument_greeks) {
                 portfolio_greeks = portfolio_greeks + position_greeks;
             }
         }

@@ -218,6 +218,7 @@ impl BybitWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)] // PyO3 extracted parameter
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -967,7 +968,7 @@ impl BybitWebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            register_batch_pending(req_ids, per_order, &pending_py_requests);
+            register_batch_pending(req_ids, &per_order, &pending_py_requests);
             Ok(())
         })
     }
@@ -1040,7 +1041,7 @@ impl BybitWebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            register_batch_pending(req_ids, per_order, &pending_py_requests);
+            register_batch_pending(req_ids, &per_order, &pending_py_requests);
             Ok(())
         })
     }
@@ -1075,7 +1076,7 @@ impl BybitWebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            register_batch_pending(req_ids, per_order, &pending_py_requests);
+            register_batch_pending(req_ids, &per_order, &pending_py_requests);
             Ok(())
         })
     }
@@ -1160,7 +1161,7 @@ fn build_pending_entries<P: BatchOrderParams>(
 
 fn register_batch_pending(
     req_ids: Vec<String>,
-    per_order: Vec<PendingPyRequest>,
+    per_order: &[PendingPyRequest],
     pending_py_requests: &DashMap<String, Vec<PendingPyRequest>>,
 ) {
     for (req_id, chunk) in req_ids

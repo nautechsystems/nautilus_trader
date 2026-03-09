@@ -358,8 +358,8 @@ impl OKXWebSocketClient {
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same symbols will be replaced.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in &instruments {
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        for inst in instruments {
             self.instruments_cache
                 .insert(inst.symbol().inner(), inst.clone());
         }

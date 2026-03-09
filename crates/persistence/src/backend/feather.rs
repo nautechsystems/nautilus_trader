@@ -429,7 +429,7 @@ impl FeatherWriter {
                 format!("Custom data type \"{type_name}\" is not registered for Arrow")
             })?;
         let batch = augment_batch_with_data_type_column(
-            batch,
+            &batch,
             &data_type_json,
             type_name,
             dt_meta.as_ref(),
@@ -821,7 +821,7 @@ impl FeatherWriter {
     }
 
     /// Unsubscribes from the message bus.
-    pub fn unsubscribe_from_message_bus(handler: ShareableMessageHandler) {
+    pub fn unsubscribe_from_message_bus(handler: &ShareableMessageHandler) {
         unsubscribe_any(MStr::pattern("*"), handler);
     }
 }

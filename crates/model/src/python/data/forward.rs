@@ -25,7 +25,7 @@ impl ForwardPrice {
     #[pyo3(signature = (instrument_id, forward_price, underlying_index=None, ts_event=0, ts_init=0))]
     fn py_new(
         instrument_id: InstrumentId,
-        forward_price: String,
+        forward_price: &str,
         underlying_index: Option<String>,
         ts_event: u64,
         ts_init: u64,

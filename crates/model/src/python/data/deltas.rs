@@ -107,7 +107,7 @@ impl OrderBookDeltas {
     #[staticmethod]
     #[pyo3(name = "from_pycapsule")]
     #[allow(unsafe_code)]
-    pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
+    pub fn py_from_pycapsule(capsule: &Bound<'_, PyAny>) -> Self {
         let capsule: &Bound<'_, PyCapsule> = capsule
             .cast::<PyCapsule>()
             .expect("Error on downcast to `&PyCapsule`");

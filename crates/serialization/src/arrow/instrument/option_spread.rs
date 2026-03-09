@@ -276,7 +276,7 @@ impl EncodeToRecordBatch for OptionSpread {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_option_spread_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<OptionSpread>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();

@@ -123,6 +123,7 @@ impl KrakenFuturesWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,

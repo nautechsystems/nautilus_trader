@@ -1948,7 +1948,7 @@ struct PoolTestCase {
     tests: Vec<(SwapTestCase, ExpectedSwapResult)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SwapTestCase {
     SwapExact0For1 {
         amount0: U256,

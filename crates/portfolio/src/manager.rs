@@ -120,7 +120,7 @@ impl AccountsManager {
     ) -> Option<(AccountAny, AccountState)> {
         match account.clone() {
             AccountAny::Cash(cash_account) => self
-                .update_balance_locked(&cash_account, instrument, orders_open, ts_event)
+                .update_balance_locked(&cash_account, instrument, &orders_open, ts_event)
                 .map(|(updated_cash_account, state)| {
                     (AccountAny::Cash(updated_cash_account), state)
                 }),
@@ -291,7 +291,7 @@ impl AccountsManager {
                 if base_xrate.is_none() {
                     currency = base_currency;
                     base_xrate = self.calculate_xrate_to_base(
-                        AccountAny::Margin(account.clone()),
+                        &AccountAny::Margin(account.clone()),
                         instrument,
                         position.entry.as_specified(),
                     );
@@ -328,7 +328,7 @@ impl AccountsManager {
         &self,
         account: &CashAccount,
         instrument: &InstrumentAny,
-        orders_open: Vec<&OrderAny>,
+        orders_open: &[&OrderAny],
         ts_event: UnixNanos,
     ) -> Option<(CashAccount, AccountState)> {
         let mut account = account.clone();
@@ -346,7 +346,7 @@ impl AccountsManager {
 
         let mut currency = instrument.settlement_currency();
 
-        for order in &orders_open {
+        for order in orders_open {
             assert_eq!(
                 order.instrument_id(),
                 instrument.id(),
@@ -383,7 +383,7 @@ impl AccountsManager {
                 if base_xrate.is_none() {
                     currency = base_curr;
                     base_xrate = self.calculate_xrate_to_base(
-                        AccountAny::Cash(account.clone()),
+                        &AccountAny::Cash(account.clone()),
                         instrument,
                         order.order_side_specified(),
                     );
@@ -517,7 +517,7 @@ impl AccountsManager {
                 if base_xrate.is_none() {
                     currency = base_currency;
                     base_xrate = self.calculate_xrate_to_base(
-                        AccountAny::Margin(account.clone()),
+                        &AccountAny::Margin(account.clone()),
                         instrument,
                         order.order_side_specified(),
                     );
@@ -807,7 +807,7 @@ impl AccountsManager {
 
     fn calculate_xrate_to_base(
         &self,
-        account: AccountAny,
+        account: &AccountAny,
         instrument: &InstrumentAny,
         side: OrderSideSpecified,
     ) -> Option<f64> {
@@ -1301,7 +1301,7 @@ mod tests {
         let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
         cache
             .borrow_mut()
-            .add_position(position, OmsType::Netting)
+            .add_position(&position, OmsType::Netting)
             .unwrap();
 
         let fill2 = OrderFilled::new(

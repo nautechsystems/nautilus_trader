@@ -268,7 +268,7 @@ impl BacktestEngine {
         let exec_client = BacktestExecutionClient::new(
             self.config.trader_id(),
             account_id,
-            exchange.clone(),
+            &exchange,
             self.kernel.cache.clone(),
             self.kernel.clock.clone(),
             routing,
@@ -310,7 +310,7 @@ impl BacktestEngine {
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     ///
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+    pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
             if matches!(instrument, InstrumentAny::CurrencyPair(_))
@@ -334,7 +334,7 @@ impl BacktestEngine {
         self.kernel
             .data_engine
             .borrow_mut()
-            .process(&instrument as &dyn Any);
+            .process(instrument as &dyn Any);
         log::info!(
             "Added instrument {} to exchange {}",
             instrument_id,
@@ -850,7 +850,7 @@ impl BacktestEngine {
 
             match data {
                 Data::Delta(delta) => exchange.process_order_book_delta(*delta),
-                Data::Deltas(deltas) => exchange.process_order_book_deltas((**deltas).clone()),
+                Data::Deltas(deltas) => exchange.process_order_book_deltas(deltas),
                 Data::Quote(quote) => exchange.process_quote_tick(quote),
                 Data::Trade(trade) => exchange.process_trade_tick(trade),
                 Data::Bar(bar) => exchange.process_bar(*bar),

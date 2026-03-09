@@ -210,7 +210,9 @@ impl TardisHttpClient {
         Ok(response
             .into_iter()
             .filter(|info| is_available(info, start, end, available_offset, effective))
-            .flat_map(|info| parse_instrument_any(info, effective, ts_init, self.normalize_symbols))
+            .flat_map(|info| {
+                parse_instrument_any(&info, effective, ts_init, self.normalize_symbols)
+            })
             .collect())
     }
 }

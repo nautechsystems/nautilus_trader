@@ -195,7 +195,7 @@ impl ParquetDataCatalog {
     /// ```
     #[must_use]
     pub fn new(
-        base_path: PathBuf,
+        base_path: &Path,
         storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
@@ -356,7 +356,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn write_data_enum(
         &self,
-        data: Vec<Data>,
+        data: &[Data],
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         skip_disjoint_check: Option<bool>,
@@ -510,7 +510,7 @@ impl ParquetDataCatalog {
             schema.metadata.get("instrument_id").cloned()
         };
 
-        let directory = self.make_path(T::path_prefix(), identifier)?;
+        let directory = self.make_path(T::path_prefix(), identifier.as_deref())?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
         let object_path = self.to_object_path(&path.to_string_lossy());
@@ -597,7 +597,7 @@ impl ParquetDataCatalog {
         let end_ts = end.unwrap_or(end_ts);
         let batches = vec![batch];
 
-        let directory = self.make_path_custom_data(&type_name, identifier)?;
+        let directory = self.make_path_custom_data(&type_name, identifier.as_deref())?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
         let object_path = self.to_object_path(&path.to_string_lossy());
@@ -732,7 +732,7 @@ impl ParquetDataCatalog {
             }
 
             // Create directory path: data/instruments/{instrument_id}/
-            let directory = self.make_path("instruments", Some(instrument_id.clone()))?;
+            let directory = self.make_path("instruments", Some(instrument_id.as_str()))?;
             let filename = "instrument.parquet";
             let path = PathBuf::from(format!("{directory}/{filename}"));
             let object_path = self.to_object_path(&path.to_string_lossy());
@@ -812,7 +812,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_instruments(
         &self,
-        instrument_ids: Option<Vec<String>>,
+        instrument_ids: Option<&[String]>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         use nautilus_serialization::arrow::instrument::decode_instrument_any_batch;
 
@@ -841,7 +841,7 @@ impl ParquetDataCatalog {
                     let path_parts: Vec<&str> = dir_path.split('/').collect();
                     if let Some(instrument_id_dir) = path_parts.last() {
                         // Apply filter if provided
-                        if let Some(ref ids) = instrument_ids
+                        if let Some(ids) = instrument_ids
                             && !ids
                                 .iter()
                                 .map(|id| urisafe_instrument_id(id))
@@ -869,7 +869,7 @@ impl ParquetDataCatalog {
                 builder_schema.metadata().clone();
 
             for batch in batches {
-                let instruments = decode_instrument_any_batch(&metadata, batch)?;
+                let instruments = decode_instrument_any_batch(&metadata, &batch)?;
                 all_instruments.extend(instruments);
             }
         }
@@ -1085,7 +1085,7 @@ impl ParquetDataCatalog {
     pub fn extend_file_name(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
@@ -1231,7 +1231,7 @@ impl ParquetDataCatalog {
     pub fn list_parquet_files_with_criteria(
         &self,
         data_type: &str,
-        identifiers: Option<Vec<String>>,
+        identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<String>> {
@@ -1257,7 +1257,7 @@ impl ParquetDataCatalog {
             let path_str = object.location.to_string();
 
             // Filter by identifiers if provided
-            if let Some(ids) = &identifiers {
+            if let Some(ids) = identifiers {
                 let path_components = extract_path_components(&path_str);
                 let mut matches = false;
                 for id in ids {
@@ -1724,7 +1724,7 @@ impl ParquetDataCatalog {
     pub fn query_custom_data_dynamic(
         &mut self,
         type_name: &str,
-        identifiers: Option<Vec<String>>,
+        identifiers: Option<&[String]>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
@@ -1967,7 +1967,7 @@ impl ParquetDataCatalog {
     /// Queries any instrument data for the specified instrument(s) and time range.
     pub fn instruments(
         &self,
-        instrument_ids: Option<Vec<String>>,
+        instrument_ids: Option<&[String]>,
         _start: Option<UnixNanos>,
         _end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -2196,7 +2196,7 @@ impl ParquetDataCatalog {
         start: u64,
         end: u64,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -2252,7 +2252,7 @@ impl ParquetDataCatalog {
     pub fn query_first_timestamp(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -2312,7 +2312,7 @@ impl ParquetDataCatalog {
     pub fn query_last_timestamp(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -2363,9 +2363,9 @@ impl ParquetDataCatalog {
     pub fn get_intervals(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let directory = self.make_path(data_cls, identifier.clone())?;
+        let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 
         // For bars, fall back to partial matching when the exact directory
@@ -2376,7 +2376,7 @@ impl ParquetDataCatalog {
             return Ok(intervals);
         }
 
-        let safe_id = urisafe_instrument_id(&identifier.unwrap());
+        let safe_id = urisafe_instrument_id(identifier.unwrap());
 
         // Use relative path so list_directory_stems doesn't double-prefix
         // for remote catalogs (make_path already includes base_path)
@@ -2391,7 +2391,7 @@ impl ParquetDataCatalog {
             if extract_bar_type_instrument_id(&decoded) == Some(safe_id.as_str()) {
                 // Use decoded name to avoid double percent-encoding
                 // (to_object_path uses Path::from which re-encodes)
-                let subdir_path = self.make_path(data_cls, Some(decoded.into_owned()))?;
+                let subdir_path = self.make_path(data_cls, Some(&decoded))?;
                 all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
             }
         }
@@ -2537,11 +2537,11 @@ impl ParquetDataCatalog {
     /// // Returns: "/base/path/data/bars/BTCUSD-1H"
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn make_path(&self, type_name: &str, identifier: Option<String>) -> anyhow::Result<String> {
+    pub fn make_path(&self, type_name: &str, identifier: Option<&str>) -> anyhow::Result<String> {
         let mut components = vec!["data".to_string(), type_name.to_string()];
 
         if let Some(id) = identifier {
-            let safe_id = urisafe_instrument_id(&id);
+            let safe_id = urisafe_instrument_id(id);
             components.push(safe_id);
         }
 
@@ -2554,9 +2554,9 @@ impl ParquetDataCatalog {
     pub fn make_path_custom_data(
         &self,
         type_name: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<String> {
-        let components = custom_data_path_components(type_name, identifier.as_deref());
+        let components = custom_data_path_components(type_name, identifier);
         let path = make_object_store_path_owned(&self.base_path, components);
         Ok(path)
     }
@@ -3437,7 +3437,7 @@ impl ParquetDataCatalog {
         instance_id: &str,
         data_cls: &str,
         subdirectory: Option<&str>,
-        identifiers: Option<Vec<String>>,
+        identifiers: Option<&[String]>,
         use_ts_event_for_ts_init: bool,
     ) -> anyhow::Result<()> {
         let subdirectory = subdirectory.unwrap_or("backtest");
@@ -3452,12 +3452,8 @@ impl ParquetDataCatalog {
         let data_name = data_cls.to_snake_case();
 
         // List all feather files for this data class
-        let feather_files = self.list_feather_files(
-            subdirectory,
-            instance_id,
-            &data_name,
-            identifiers.as_deref(),
-        )?;
+        let feather_files =
+            self.list_feather_files(subdirectory, instance_id, &data_name, identifiers)?;
 
         if feather_files.is_empty() {
             return Ok(());
@@ -3757,7 +3753,7 @@ fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
 /// assert_eq!(nanos, 1609459200000000000);
 /// ```
 fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
-    Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
+    Ok(iso8601_to_unix_nanos(iso_timestamp)?.into())
 }
 
 /// Converts an instrument ID to a URI-safe format by removing forward slashes

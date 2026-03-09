@@ -156,13 +156,13 @@ impl BacktestNode {
             for data_config in config.data() {
                 let catalog = create_catalog(data_config)?;
                 let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
-                let filter = if instr_ids.is_empty() {
+                let filter: Option<Vec<String>> = if instr_ids.is_empty() {
                     None
                 } else {
                     Some(instr_ids.iter().map(ToString::to_string).collect())
                 };
 
-                let instruments = catalog.query_instruments(filter)?;
+                let instruments = catalog.query_instruments(filter.as_deref())?;
 
                 if !instr_ids.is_empty() && instruments.is_empty() {
                     let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
@@ -173,7 +173,7 @@ impl BacktestNode {
                 }
 
                 for instrument in instruments {
-                    engine.add_instrument(instrument)?;
+                    engine.add_instrument(&instrument)?;
                 }
             }
 

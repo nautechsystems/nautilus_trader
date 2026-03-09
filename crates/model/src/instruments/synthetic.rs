@@ -192,7 +192,7 @@ impl SyntheticInstrument {
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -201,7 +201,7 @@ impl SyntheticInstrument {
 
         // Build a safe version of the formula and the corresponding safe variable names.
         let (safe_formula, variables, safe_to_original) =
-            make_safe_formula_with_variables_and_mapping(&formula, &components)?;
+            make_safe_formula_with_variables_and_mapping(formula, &components)?;
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
         check_formula_variables(&operator_tree, &variables)?;
 
@@ -241,7 +241,7 @@ impl SyntheticInstrument {
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -264,9 +264,9 @@ impl SyntheticInstrument {
     /// # Errors
     ///
     /// Returns an error if parsing the new formula fails.
-    pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
+    pub fn change_formula(&mut self, formula: &str) -> anyhow::Result<()> {
         let (safe_formula, variables, _) =
-            make_safe_formula_with_variables_and_mapping(&formula, &self.components)?;
+            make_safe_formula_with_variables_and_mapping(formula, &self.components)?;
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
         check_formula_variables(&operator_tree, &variables)?;
         self.formula = safe_formula;
@@ -377,8 +377,8 @@ mod tests {
     #[rstest]
     fn test_change_formula() {
         let mut synth = SyntheticInstrument::default();
-        let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4".to_string();
-        synth.change_formula(new_formula.clone()).unwrap();
+        let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4";
+        synth.change_formula(new_formula).unwrap();
 
         let mut inputs = HashMap::new();
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
@@ -405,7 +405,7 @@ mod tests {
             symbol,
             2,
             components.clone(),
-            raw_formula,
+            &raw_formula,
             0.into(),
             0.into(),
         );
@@ -432,7 +432,7 @@ mod tests {
         let symbol = Symbol::from("ETH-USD");
 
         let mut synth =
-            SyntheticInstrument::new(symbol, 2, components, raw_formula, 0.into(), 0.into());
+            SyntheticInstrument::new(symbol, 2, components, &raw_formula, 0.into(), 0.into());
 
         let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
@@ -455,7 +455,7 @@ mod tests {
             symbol,
             2,
             components.clone(),
-            raw_formula,
+            &raw_formula,
             0.into(),
             0.into(),
         );

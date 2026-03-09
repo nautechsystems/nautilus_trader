@@ -145,9 +145,9 @@ impl NautilusKernel {
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
 
-        DataEngine::register_msgbus_handlers(data_engine.clone());
-        RiskEngine::register_msgbus_handlers(risk_engine.clone());
-        ExecutionEngine::register_msgbus_handlers(exec_engine.clone());
+        DataEngine::register_msgbus_handlers(&data_engine);
+        RiskEngine::register_msgbus_handlers(&risk_engine);
+        ExecutionEngine::register_msgbus_handlers(&exec_engine);
 
         let trader = Trader::new(
             config.trader_id(),

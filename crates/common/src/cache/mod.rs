@@ -1964,7 +1964,7 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails.
-    pub fn add_position(&mut self, position: Position, _oms_type: OmsType) -> anyhow::Result<()> {
+    pub fn add_position(&mut self, position: &Position, _oms_type: OmsType) -> anyhow::Result<()> {
         self.positions.insert(position.id, position.clone());
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
@@ -2000,7 +2000,7 @@ impl Cache {
             .insert(position.id);
 
         if let Some(database) = &mut self.database {
-            database.add_position(&position)?;
+            database.add_position(position)?;
             // TODO: Implement position snapshots
             // if self.snapshot_positions {
             //     database.snapshot_position_state(
@@ -2019,12 +2019,12 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if updating the account in the database fails.
-    pub fn update_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
+    pub fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let account_id = account.id();
         self.accounts.insert(account_id, account.clone());
 
         if let Some(database) = &mut self.database {
-            database.update_account(&account)?;
+            database.update_account(account)?;
         }
         Ok(())
     }

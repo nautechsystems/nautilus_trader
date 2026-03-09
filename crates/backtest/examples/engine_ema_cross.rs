@@ -122,7 +122,7 @@ fn main() -> anyhow::Result<()> {
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument)?;
+    engine.add_instrument(&instrument)?;
 
     engine.add_strategy(EmaCross::new(
         instrument_id,

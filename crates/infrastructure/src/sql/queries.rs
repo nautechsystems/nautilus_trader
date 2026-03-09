@@ -910,7 +910,7 @@ impl DatabaseQueries {
                 if account_events.is_empty() {
                     return Ok(None);
                 }
-                let account = AccountAny::from_events(account_events).unwrap();
+                let account = AccountAny::from_events(&account_events).unwrap();
                 Ok(Some(account))
             }
             Err(e) => anyhow::bail!("Failed to load account events: {e}"),

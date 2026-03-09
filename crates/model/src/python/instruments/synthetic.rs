@@ -32,7 +32,7 @@ impl SyntheticInstrument {
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
@@ -103,11 +103,12 @@ impl SyntheticInstrument {
     }
 
     #[pyo3(name = "change_formula")]
-    fn py_change_formula(&mut self, formula: String) -> PyResult<()> {
+    fn py_change_formula(&mut self, formula: &str) -> PyResult<()> {
         self.change_formula(formula).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "calculate")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_calculate(&mut self, inputs: Vec<f64>) -> PyResult<Price> {
         self.calculate(&inputs).map_err(to_pyvalue_err)
     }

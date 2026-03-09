@@ -239,6 +239,7 @@ impl OKXWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -254,7 +255,7 @@ impl OKXWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        self.cache_instruments(instruments_any);
+        self.cache_instruments(&instruments_any);
 
         let mut client = self.clone();
 
@@ -292,7 +293,7 @@ impl OKXWebSocketClient {
                             data,
                         } => {
                             handle_channel_data(
-                                channel,
+                                &channel,
                                 inst_id,
                                 data,
                                 &mut instruments_by_symbol,
@@ -313,7 +314,7 @@ impl OKXWebSocketClient {
                         }
                         OKXWsMessage::Orders(order_msgs) => {
                             handle_orders(
-                                order_msgs,
+                                &order_msgs,
                                 account_id,
                                 &instruments_by_symbol,
                                 &mut fee_cache,
@@ -354,7 +355,15 @@ impl OKXWebSocketClient {
                             data,
                         } => {
                             handle_order_response(
-                                id, op, code, msg, data, &_client, account_id, clock, &call_soon,
+                                id.as_deref(),
+                                &op,
+                                &code,
+                                &msg,
+                                &data,
+                                &_client,
+                                account_id,
+                                clock,
+                                &call_soon,
                                 &callback,
                             );
                         }
@@ -365,10 +374,10 @@ impl OKXWebSocketClient {
                             error,
                         } => {
                             handle_send_failed(
-                                request_id,
+                                &request_id,
                                 client_order_id,
-                                op,
-                                error,
+                                op.as_ref(),
+                                &error,
                                 &_client,
                                 account_id,
                                 clock,
@@ -1269,7 +1278,7 @@ impl OKXWebSocketClient {
             .into_iter()
             .map(|inst| pyobject_to_instrument_any(py, inst))
             .collect();
-        self.cache_instruments(instruments?);
+        self.cache_instruments(&instruments?);
         Ok(())
     }
 
@@ -1322,7 +1331,7 @@ fn handle_book_data(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_channel_data(
-    channel: OKXWsChannel,
+    channel: &OKXWsChannel,
     inst_id: Option<Ustr>,
     data: serde_json::Value,
     instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
@@ -1371,7 +1380,7 @@ fn handle_channel_data(
     let ts_init = clock.get_time_ns();
 
     match parse_ws_message_data(
-        &channel,
+        channel,
         data,
         &instrument_id,
         price_precision,
@@ -1439,7 +1448,7 @@ fn handle_instruments(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_orders(
-    order_msgs: Vec<OKXOrderMsg>,
+    order_msgs: &[OKXOrderMsg],
     account_id: AccountId,
     instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
     fee_cache: &mut AHashMap<Ustr, Money>,
@@ -1476,7 +1485,7 @@ fn handle_algo_orders(
 ) {
     let ts_init = clock.get_time_ns();
     for algo_msg in algo_msgs {
-        match parse_algo_order_msg(algo_msg, account_id, instruments_by_symbol, ts_init) {
+        match parse_algo_order_msg(&algo_msg, account_id, instruments_by_symbol, ts_init) {
             Ok(Some(report)) => {
                 dispatch_execution_reports_to_python(vec![report], call_soon, callback);
             }
@@ -1519,7 +1528,7 @@ fn handle_positions(
             let inst_key = Ustr::from(&position.inst_id);
             if let Some(instrument) = instruments_by_symbol.get(&inst_key) {
                 match parse_position_status_report(
-                    position,
+                    &position,
                     account_id,
                     instrument.id(),
                     instrument.size_precision(),
@@ -1539,18 +1548,18 @@ fn handle_positions(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_order_response(
-    id: Option<String>,
-    op: OKXWsOperation,
-    code: String,
-    msg: String,
-    data: Vec<serde_json::Value>,
+    id: Option<&str>,
+    op: &OKXWsOperation,
+    code: &str,
+    msg: &str,
+    data: &[serde_json::Value],
     client: &OKXWebSocketClient,
     account_id: AccountId,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    for item in &data {
+    for item in data {
         let s_code = item.get("sCode").and_then(|v| v.as_str()).unwrap_or("");
         let s_msg = item.get("sMsg").and_then(|v| v.as_str()).unwrap_or("");
         let cl_ord_id = item.get("clOrdId").and_then(|v| v.as_str()).unwrap_or("");
@@ -1687,10 +1696,10 @@ fn handle_order_response(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_send_failed(
-    request_id: String,
+    request_id: &str,
     client_order_id: Option<ClientOrderId>,
-    op: Option<OKXWsOperation>,
-    error: String,
+    op: Option<&OKXWsOperation>,
+    error: &str,
     client: &OKXWebSocketClient,
     account_id: AccountId,
     clock: &AtomicTime,
@@ -1714,7 +1723,7 @@ fn handle_send_failed(
                     info.instrument_id,
                     client_order_id,
                     account_id,
-                    Ustr::from(&error),
+                    Ustr::from(error),
                     UUID4::new(),
                     ts_init,
                     ts_init,
@@ -1736,7 +1745,7 @@ fn handle_send_failed(
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
-                    Ustr::from(&error),
+                    Ustr::from(error),
                     UUID4::new(),
                     ts_init,
                     ts_init,
@@ -1754,7 +1763,7 @@ fn handle_send_failed(
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
-                    Ustr::from(&error),
+                    Ustr::from(error),
                     UUID4::new(),
                     ts_init,
                     ts_init,

@@ -217,7 +217,7 @@ impl EncodeToRecordBatch for BettingInstrument {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_betting_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<BettingInstrument>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();

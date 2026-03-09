@@ -78,6 +78,7 @@ impl DataActorConfig {
 #[pyo3::pymethods]
 impl ImportableActorConfig {
     #[new]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_new(actor_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
         let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
             let kwargs = PyDict::new(py);
@@ -1975,37 +1976,37 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
     fn py_on_historical_data(&mut self, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_quotes")]
     fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_trades")]
     fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_bars")]
     fn py_on_historical_bars(&mut self, bars: Vec<Bar>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_mark_prices")]
     fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_index_prices")]
     fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses

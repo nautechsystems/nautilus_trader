@@ -73,7 +73,7 @@ impl Handler<OrderEventAny> for OrderEmulatorOnEventHandler {
 
     fn handle(&self, event: &OrderEventAny) {
         if let Some(emulator) = self.emulator.upgrade() {
-            emulator.borrow_mut().on_event(event.clone());
+            emulator.borrow_mut().on_event(event);
         }
     }
 }

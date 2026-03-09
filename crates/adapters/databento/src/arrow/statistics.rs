@@ -160,7 +160,7 @@ impl DecodeDataFromRecordBatch for DatabentoStatistics {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Data>, EncodingError> {
-        let items = decode_statistics_batch(metadata, record_batch)?;
+        let items = decode_statistics_batch(metadata, &record_batch)?;
         Ok(items
             .into_iter()
             .map(|item| Data::Custom(CustomData::from_arc(Arc::new(item))))
@@ -175,7 +175,7 @@ impl DecodeDataFromRecordBatch for DatabentoStatistics {
 /// Returns an `EncodingError` if decoding fails.
 pub fn decode_statistics_batch(
     metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<DatabentoStatistics>, EncodingError> {
     let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
     let cols = record_batch.columns();
@@ -271,14 +271,14 @@ pub fn decode_statistics_batch(
 /// Returns an error if `data` is empty or encoding fails.
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn statistics_to_arrow_record_batch(
-    data: Vec<DatabentoStatistics>,
+    data: &[DatabentoStatistics],
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
     }
 
-    let metadata = DatabentoStatistics::chunk_metadata(&data);
-    DatabentoStatistics::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+    let metadata = DatabentoStatistics::chunk_metadata(data);
+    DatabentoStatistics::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 #[cfg(test)]
@@ -348,7 +348,7 @@ mod tests {
         let metadata = test_metadata();
         let original = vec![test_statistics(instrument_id)];
         let batch = DatabentoStatistics::encode_batch(&metadata, &original).unwrap();
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].instrument_id, instrument_id);
@@ -387,7 +387,7 @@ mod tests {
         );
         let original = vec![stats];
         let batch = DatabentoStatistics::encode_batch(&metadata, &original).unwrap();
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].price, None);
@@ -415,9 +415,9 @@ mod tests {
         let some_stats = test_statistics(instrument_id);
         let data = vec![none_stats, some_stats];
 
-        let batch = statistics_to_arrow_record_batch(data.clone()).unwrap();
+        let batch = statistics_to_arrow_record_batch(&data).unwrap();
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 2);
         assert_eq!(decoded[0].price, None);
@@ -466,7 +466,7 @@ mod tests {
         let batch = DatabentoStatistics::encode_batch(&metadata, &original).unwrap();
         assert_eq!(batch.num_rows(), 3);
 
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
         assert_eq!(decoded.len(), 3);
         for (orig, dec) in original.iter().zip(decoded.iter()) {
             assert_eq!(dec.instrument_id, orig.instrument_id);
@@ -482,9 +482,9 @@ mod tests {
     fn test_statistics_to_arrow_record_batch_round_trip() {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let original = vec![test_statistics(instrument_id)];
-        let batch = statistics_to_arrow_record_batch(original.clone()).unwrap();
+        let batch = statistics_to_arrow_record_batch(&original).unwrap();
         let metadata = batch.schema().metadata().clone();
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].price, original[0].price);
@@ -555,7 +555,7 @@ mod tests {
         ]);
 
         let batch = DatabentoStatistics::encode_batch(&metadata, &[stats]).unwrap();
-        let decoded = decode_statistics_batch(&metadata, batch).unwrap();
+        let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].price.unwrap().as_f64(), price.as_f64());
@@ -578,13 +578,13 @@ mod tests {
         let batch = DatabentoStatistics::encode_batch(&metadata, &data).unwrap();
 
         let empty_metadata = HashMap::new();
-        let result = decode_statistics_batch(&empty_metadata, batch);
+        let result = decode_statistics_batch(&empty_metadata, &batch);
         assert!(result.is_err());
     }
 
     #[rstest]
     fn test_statistics_to_arrow_record_batch_empty() {
-        let result = statistics_to_arrow_record_batch(vec![]);
+        let result = statistics_to_arrow_record_batch(&[]);
         assert!(result.is_err());
     }
 
@@ -683,7 +683,7 @@ mod tests {
                 5_000_000_000.into(),
             ),
         ];
-        let batch = statistics_to_arrow_record_batch(original.clone()).unwrap();
+        let batch = statistics_to_arrow_record_batch(&original).unwrap();
 
         let mut cursor = Cursor::new(Vec::new());
         {
@@ -698,7 +698,7 @@ mod tests {
         for batch_result in reader {
             let batch = batch_result.unwrap();
             let metadata = batch.schema().metadata().clone();
-            decoded.extend(decode_statistics_batch(&metadata, batch).unwrap());
+            decoded.extend(decode_statistics_batch(&metadata, &batch).unwrap());
         }
 
         assert_eq!(decoded.len(), 2);

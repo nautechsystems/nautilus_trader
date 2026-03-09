@@ -185,6 +185,7 @@ impl StrategyConfig {
 #[pyo3::pymethods]
 impl ImportableStrategyConfig {
     #[new]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_new(strategy_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
         let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
             let kwargs = PyDict::new(py);
@@ -1002,7 +1003,7 @@ impl PyStrategy {
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
         slf.borrow_mut().set_python_instance(py_self);

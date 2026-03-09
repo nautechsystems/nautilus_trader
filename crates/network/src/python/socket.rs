@@ -27,7 +27,7 @@ use crate::{
 #[pymethods]
 impl SocketConfig {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, reconnect_max_attempts=None, idle_timeout_ms=None, certs_dir=None))]
     fn py_new(
         url: String,
@@ -149,32 +149,38 @@ impl SocketClient {
     /// and reconnecting. In such cases the send can be retried after some
     /// delay
     #[pyo3(name = "is_active")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_is_active(slf: PyRef<'_, Self>) -> bool {
         slf.is_active()
     }
 
     #[pyo3(name = "is_reconnecting")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_is_reconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_reconnecting()
     }
 
     #[pyo3(name = "is_disconnecting")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_is_disconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_disconnecting()
     }
 
     #[pyo3(name = "is_closed")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_is_closed(slf: PyRef<'_, Self>) -> bool {
         slf.is_closed()
     }
 
     #[pyo3(name = "mode")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_mode(slf: PyRef<'_, Self>) -> String {
         slf.connection_mode().to_string()
     }
 
     /// Reconnect the client.
     #[pyo3(name = "reconnect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let state_notify = slf.state_notify.clone();
@@ -240,6 +246,7 @@ impl SocketClient {
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "close")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let state_notify = slf.state_notify.clone();
@@ -282,6 +289,7 @@ impl SocketClient {
     ///
     /// - Throws an Exception if it is not able to send data.
     #[pyo3(name = "send")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,

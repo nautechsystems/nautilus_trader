@@ -187,7 +187,7 @@ where
                     });
 
                     if let Some(info) = info {
-                        if let Some(data) = parse_tardis_ws_message(msg, info, &book_snapshot_output) {
+                        if let Some(data) = parse_tardis_ws_message(msg, &info, &book_snapshot_output) {
                             yield Ok(data);
                         }
                     } else {

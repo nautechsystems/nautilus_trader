@@ -32,7 +32,7 @@ use rust_decimal::{
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_fixed_risk_position_size(
-    instrument: InstrumentAny,
+    instrument: &InstrumentAny,
     entry: Price,
     stop_loss: Price,
     equity: Money,
@@ -47,7 +47,7 @@ pub fn calculate_fixed_risk_position_size(
         return instrument.make_qty(0.0, None);
     }
 
-    let risk_points = calculate_risk_ticks(entry, stop_loss, &instrument);
+    let risk_points = calculate_risk_ticks(entry, stop_loss, instrument);
     let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate);
 
     if risk_points <= Decimal::ZERO {
@@ -123,7 +123,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -145,7 +145,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -166,7 +166,7 @@ mod tests {
         let price = Price::new(1.00100, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             price,
             price, // Same price = no risk
             equity,
@@ -188,7 +188,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -210,7 +210,7 @@ mod tests {
         let stop_loss = Price::new(110.000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -232,7 +232,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -254,7 +254,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -276,7 +276,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -298,7 +298,7 @@ mod tests {
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,
@@ -320,7 +320,7 @@ mod tests {
         let stop_loss = Price::new(107.403, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
-            instrument_gbpusd,
+            &instrument_gbpusd,
             entry,
             stop_loss,
             equity,

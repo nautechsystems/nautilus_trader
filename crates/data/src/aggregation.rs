@@ -87,7 +87,7 @@ pub trait BarAggregator: Any + Debug {
     /// Sets clock for time bar aggregators (default implementation does nothing, TimeBarAggregator overrides)
     fn set_clock(&mut self, _clock: Rc<RefCell<dyn Clock>>) {}
     /// Builds a bar from a time event (default implementation does nothing, TimeBarAggregator overrides)
-    fn build_bar(&mut self, _event: TimeEvent) {}
+    fn build_bar(&mut self, _event: &TimeEvent) {}
     /// Starts the timer for time bar aggregators.
     /// Default implementation does nothing, TimeBarAggregator overrides.
     /// Takes an optional Rc to create weak reference internally.
@@ -1652,7 +1652,7 @@ impl TimeBarAggregator {
 
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
             if let Some(agg) = aggregator_weak.upgrade() {
-                agg.borrow_mut().build_bar(event);
+                agg.borrow_mut().build_bar(&event);
             }
         }));
 
@@ -1745,7 +1745,7 @@ impl TimeBarAggregator {
         }
     }
 
-    fn build_bar(&mut self, event: TimeEvent) {
+    fn build_bar(&mut self, event: &TimeEvent) {
         if !self.core.builder.initialized {
             return;
         }
@@ -1830,7 +1830,7 @@ impl TimeBarAggregator {
         // Process timer events after data processing
         // Collect events first to avoid borrow checker issues
         let events: Vec<TimeEvent> = self.historical_events.drain(..).collect();
-        for event in events {
+        for event in &events {
             self.build_bar(event);
         }
     }
@@ -1896,7 +1896,7 @@ impl BarAggregator for TimeBarAggregator {
         self.set_clock_internal(clock);
     }
 
-    fn build_bar(&mut self, event: TimeEvent) {
+    fn build_bar(&mut self, event: &TimeEvent) {
         // Delegate to the implementation method
         // We use the struct name here to disambiguate from the trait method
         {
@@ -3053,7 +3053,7 @@ mod tests {
             next_sec,
             next_sec,
         );
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
@@ -3099,7 +3099,7 @@ mod tests {
         let ts1 = UnixNanos::from(1_000_000_000);
         clock.borrow_mut().set_time(ts1);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts1, ts1);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         // Update in second interval
         aggregator.update(Price::from("101.00"), Quantity::from(1), ts1);
@@ -3108,7 +3108,7 @@ mod tests {
         let ts2 = UnixNanos::from(2_000_000_000);
         clock.borrow_mut().set_time(ts2);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
@@ -3159,7 +3159,7 @@ mod tests {
         let ts1 = UnixNanos::from(1_000_000_000);
         clock.borrow_mut().set_time(ts1);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts1, ts1);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         // Update in second interval
         aggregator.update(Price::from("101.00"), Quantity::from(1), ts1);
@@ -3168,7 +3168,7 @@ mod tests {
         let ts2 = UnixNanos::from(2_000_000_000);
         clock.borrow_mut().set_time(ts2);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
@@ -3215,7 +3215,7 @@ mod tests {
         let ts1 = UnixNanos::from(1_000_000_000);
         clock.borrow_mut().set_time(ts1);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts1, ts1);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 0); // No bar should be built without updates
@@ -3251,13 +3251,13 @@ mod tests {
         let ts1 = UnixNanos::from(1_000_000_000);
         clock.borrow_mut().set_time(ts1);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts1, ts1);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         // Second interval without updates
         let ts2 = UnixNanos::from(2_000_000_000);
         clock.borrow_mut().set_time(ts2);
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2); // Both bars should be built
@@ -3301,7 +3301,7 @@ mod tests {
 
         // Simulate timestamp on close
         let event = TimeEvent::new(Ustr::from("1-SECOND-LAST"), UUID4::new(), ts2, ts2);
-        aggregator.build_bar(event);
+        aggregator.build_bar(&event);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         let bar = handler_guard.first().unwrap();

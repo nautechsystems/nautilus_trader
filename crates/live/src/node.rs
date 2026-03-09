@@ -927,7 +927,7 @@ impl LiveNode {
                 self.exec_manager
                     .record_position_activity(fill.instrument_id, fill.ts_event);
             }
-            self.kernel.exec_engine.borrow_mut().process(event.clone());
+            self.kernel.exec_engine.borrow_mut().process(event);
         }
     }
 

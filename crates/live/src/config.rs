@@ -409,7 +409,7 @@ impl NautilusKernelConfig for LiveNodeConfig {
     }
 
     fn portfolio(&self) -> Option<PortfolioConfig> {
-        self.portfolio.clone()
+        self.portfolio
     }
 
     fn streaming(&self) -> Option<StreamingConfig> {

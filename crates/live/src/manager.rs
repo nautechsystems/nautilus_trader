@@ -249,7 +249,7 @@ impl ExecutionManagerConfig {
 
 /// Execution report for continuous reconciliation.
 /// This is a simplified report type used during runtime reconciliation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExecutionReport {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
@@ -707,7 +707,7 @@ impl ExecutionManager {
         events.sort_by_key(|e| e.ts_event());
 
         for event in &events {
-            exec_engine.borrow_mut().process(event.clone());
+            exec_engine.borrow_mut().process(event);
         }
 
         let mut positions_created = 0usize;
@@ -760,7 +760,7 @@ impl ExecutionManager {
                         &positions_with_fills,
                     ) {
                         for event in position_events {
-                            exec_engine.borrow_mut().process(event.clone());
+                            exec_engine.borrow_mut().process(&event);
                             events.push(event);
                         }
                         positions_created += 1;

@@ -36,6 +36,7 @@ use crate::{
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_bitmex_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -48,6 +49,7 @@ fn extract_bitmex_data_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_bitmex_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -60,6 +62,7 @@ fn extract_bitmex_exec_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_bitmex_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -72,6 +75,7 @@ fn extract_bitmex_data_config(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_bitmex_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,

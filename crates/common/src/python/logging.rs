@@ -41,8 +41,8 @@ impl LoggerConfig {
     /// Returns a Python exception if the spec string is invalid.
     #[staticmethod]
     #[pyo3(name = "from_spec")]
-    pub fn py_from_spec(spec: String) -> PyResult<Self> {
-        Self::from_spec(&spec).map_err(to_pyvalue_err)
+    pub fn py_from_spec(spec: &str) -> PyResult<Self> {
+        Self::from_spec(spec).map_err(to_pyvalue_err)
     }
 }
 

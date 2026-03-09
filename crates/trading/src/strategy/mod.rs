@@ -1003,7 +1003,7 @@ pub trait Strategy: DataActor {
 
         let core = self.core_mut();
         if let Some(manager) = &mut core.order_manager {
-            manager.handle_event(event);
+            manager.handle_event(&event);
         }
     }
 

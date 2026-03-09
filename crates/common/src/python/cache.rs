@@ -398,6 +398,7 @@ impl Cache {
     }
 
     #[pyo3(name = "add_position")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_add_position(
         &mut self,
         py: Python,
@@ -405,7 +406,7 @@ impl Cache {
         oms_type: OmsType,
     ) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
-        self.add_position(position_obj, oms_type)
+        self.add_position(&position_obj, oms_type)
             .map_err(to_pyvalue_err)
     }
 

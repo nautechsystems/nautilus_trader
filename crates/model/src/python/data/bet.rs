@@ -230,6 +230,7 @@ impl BetPosition {
 /// Returns a `PyErr` if the PnL calculation fails.
 #[pyfunction]
 #[pyo3(name = "calc_bets_pnl")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
     Ok(calc_bets_pnl(&bets))
 }
