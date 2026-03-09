@@ -1,11 +1,36 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from flux.runners.tg_bots import run_lan_rogue_trader_alert as runner
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def test_module_invocation_requires_config_arg() -> None:
+    repo_root = _repo_root()
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(repo_root)
+
+    result = subprocess.run(  # noqa: S603 - controlled test invocation of the repo runner module
+        [sys.executable, "-m", "nautilus_trader.flux.runners.tg_bots.run_lan_rogue_trader_alert"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "--config" in result.stderr
 
 
 def test_once_mode_returns_zero(monkeypatch, tmp_path: Path) -> None:

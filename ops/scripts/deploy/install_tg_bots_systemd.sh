@@ -32,7 +32,7 @@ install_units() {
     "${COMMON_ENV_PATH}"
   install -m 0644 "${ROOT_DIR}/deploy/tg_bots/systemd/flux-tg-bots.target" "${TARGET_PATH}"
   if [[ ! -f "${LOCAL_CONFIG_PATH}" ]]; then
-    install -m 0640 "${ROOT_DIR}/deploy/tg_bots/lan_rogue_trader_alert.ini" "${LOCAL_CONFIG_PATH}"
+    install -m 0644 "${ROOT_DIR}/deploy/tg_bots/lan_rogue_trader_alert.ini" "${LOCAL_CONFIG_PATH}"
   fi
 }
 
@@ -53,6 +53,8 @@ render_service_env() {
     echo "LAN_ROGUE_TRADER_BOT_BINANCE_SECRET_ID=${BINANCE_SECRET_ID}"
     echo "LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID=${TELEGRAM_SECRET_ID}"
   } >> "${SERVICE_ENV_PATH}"
+  chown root:ubuntu "${SERVICE_ENV_PATH}"
+  chmod 0640 "${SERVICE_ENV_PATH}"
 }
 
 
