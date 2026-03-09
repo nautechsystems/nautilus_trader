@@ -15,6 +15,13 @@ Recent operator-facing log triage improvements:
 - the logs modal supports `All`, `Error`, `Warning`, and `Info` filters on top of the raw log text
 - the logs modal can refetch a larger window (`300` or `1000` lines) when the latest error is outside the default view
 
+Recent shell/layout improvements:
+
+- the main shell now scrolls at the page level instead of trapping vertical scroll inside the jobs content pane
+- top-level Pulse/Fluxboard shell links wrap on narrow screens instead of relying on sideways-only navigation
+- narrow viewports switch from the wide jobs table to grouped job cards so per-job and group actions remain reachable
+- the logs modal header now exposes its action cluster as an accessible `Log actions` group
+
 ## Quick start
 
 Install dependencies from the repository root:
@@ -71,6 +78,7 @@ Built bundles default to:
 - Pulse reads job state from `/api/pulse/jobs` and related `/api/pulse/*` routes.
 - `/api/pulse/jobs/{job_id}/logs` is still a raw text endpoint; the severity filters in the modal are a UI-layer convenience over that raw output.
 - For fast triage, use `Show only jobs with errors`, then click the row preview to open directly on the newest matching error line.
+- On small screens, Pulse renders grouped job cards instead of forcing horizontal panning across the desktop table.
 - TokenMM and equities shells may both deep-link into Pulse from the same host, so docs and links should keep `/pulse/*`, `/tokenmm/*`, and `/equities/*` distinct.
 - Localhost defaults are intentional. Exposing `/api/pulse/*` beyond loopback needs strong network controls.
 

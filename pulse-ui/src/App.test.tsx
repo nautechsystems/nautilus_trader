@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import App from "./App";
@@ -64,12 +64,53 @@ const jobsPayload = {
 };
 
 describe("App", () => {
+  const originalInnerWidth = window.innerWidth;
+  const originalMatchMedia = window.matchMedia;
+
+  function setViewportWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: width,
+    });
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  function stubResponsiveViewport(width: number) {
+    setViewportWidth(width);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: query.includes("max-width") ? width <= 760 : false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  }
+
   afterEach(() => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: originalInnerWidth,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    });
+    window.dispatchEvent(new Event("resize"));
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
 
-  it("renders shell links from the backend for TokenMM-only hosting", async () => {
+  it("renders a stack switcher from backend-reported surfaces for TokenMM-only hosting", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/pulse/jobs")) {
@@ -92,16 +133,13 @@ describe("App", () => {
     expect(pulseLink).toHaveAttribute("href", "/pulse/");
     expect(pulseLink).toHaveAttribute("aria-current", "page");
 
-    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/tokenmm");
-    expect(screen.getByRole("link", { name: "TokenMM Signal" })).toHaveAttribute("href", "/tokenmm/signal");
-    expect(screen.getByRole("link", { name: "TokenMM Params" })).toHaveAttribute("href", "/tokenmm/params");
-    expect(screen.getByRole("link", { name: "TokenMM Balances" })).toHaveAttribute("href", "/tokenmm/balances");
-    expect(screen.getByRole("link", { name: "TokenMM Trades" })).toHaveAttribute("href", "/tokenmm/trades");
-    expect(screen.getByRole("link", { name: "TokenMM Alerts" })).toHaveAttribute("href", "/tokenmm/alerts");
-    expect(screen.queryByRole("link", { name: "Equities Dashboard" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "TokenMM" })).toHaveAttribute("href", "/tokenmm");
+    expect(screen.queryByRole("link", { name: "TokenMM Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "TokenMM Signal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Equities" })).not.toBeInTheDocument();
   });
 
-  it("renders suite-aware shell links for TokenMM plus equities hosting", async () => {
+  it("renders only top-level stack links for multi-surface hosting", async () => {
     vi.stubEnv("VITE_PULSE_UI_BASE_PATH", "/ops/pulse/");
     const sharedHostPayload = {
       ...jobsPayload,
@@ -125,14 +163,10 @@ describe("App", () => {
 
     expect(await screen.findByText("flux")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Pulse" })).toHaveAttribute("href", "/ops/pulse/");
-    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/ops/tokenmm");
-    expect(screen.getByRole("link", { name: "TokenMM Alerts" })).toHaveAttribute("href", "/ops/tokenmm/alerts");
-    expect(screen.getByRole("link", { name: "Equities Dashboard" })).toHaveAttribute("href", "/ops/equities");
-    expect(screen.getByRole("link", { name: "Equities Signal" })).toHaveAttribute("href", "/ops/equities/signal");
-    expect(screen.getByRole("link", { name: "Equities Params" })).toHaveAttribute("href", "/ops/equities/params");
-    expect(screen.getByRole("link", { name: "Equities Balances" })).toHaveAttribute("href", "/ops/equities/balances");
-    expect(screen.getByRole("link", { name: "Equities Trades" })).toHaveAttribute("href", "/ops/equities/trades");
-    expect(screen.getByRole("link", { name: "Equities Alerts" })).toHaveAttribute("href", "/ops/equities/alerts");
+    expect(await screen.findByRole("link", { name: "TokenMM" })).toHaveAttribute("href", "/ops/tokenmm");
+    expect(screen.getByRole("link", { name: "Equities" })).toHaveAttribute("href", "/ops/equities");
+    expect(screen.queryByRole("link", { name: "TokenMM Alerts" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Equities Signal" })).not.toBeInTheDocument();
   });
 
   it("does not leak stale shell links across remount when the next jobs fetch fails", async () => {
@@ -155,13 +189,13 @@ describe("App", () => {
 
     const firstRender = render(<App />);
 
-    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/tokenmm");
+    expect(await screen.findByRole("link", { name: "TokenMM" })).toHaveAttribute("href", "/tokenmm");
 
     firstRender.unmount();
     render(<App />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
-    expect(screen.queryByRole("link", { name: "TokenMM Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "TokenMM" })).not.toBeInTheDocument();
   });
 
   it("loads process jobs, renders a grouped table, and exposes logs/actions", async () => {
@@ -184,7 +218,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Pulse" })).toBeInTheDocument();
-    expect(await screen.findByText("TokenMM")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /restart all tokenmm/i })).toBeInTheDocument();
     const apiRow = await screen.findByText("tokenmm-api");
     const bridgeRow = await screen.findByText("tokenmm-bridge");
     expect(apiRow).toBeInTheDocument();
@@ -212,6 +246,72 @@ describe("App", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/pulse/jobs", expect.any(Object));
     });
+  });
+
+  it("renders a mobile jobs presentation when the responsive branch selects a narrow viewport", async () => {
+    stubResponsiveViewport(390);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "TokenMM" })).toHaveAttribute("href", "/tokenmm");
+    expect(screen.getByRole("link", { name: "Pulse" })).toHaveAttribute("href", "/pulse/");
+    expect(await screen.findByRole("list", { name: "TokenMM jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View Logs tokenmm-api" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Restart All TokenMM$/i })).toBeInTheDocument();
+  });
+
+  it("supports responsive matchMedia listeners on browsers that only expose addListener/removeListener", async () => {
+    const listeners = new Set<(event: { matches: boolean }) => void>();
+
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => ({
+        matches: false,
+        media: "(max-width: 760px)",
+        onchange: null,
+        addListener: vi.fn((listener: (event: { matches: boolean }) => void) => {
+          listeners.add(listener);
+        }),
+        removeListener: vi.fn((listener: (event: { matches: boolean }) => void) => {
+          listeners.delete(listener);
+        }),
+      })),
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("tokenmm-api")).toBeInTheDocument();
+    act(() => {
+      listeners.forEach((listener) => listener({ matches: true }));
+    });
+    expect(await screen.findByRole("list", { name: "TokenMM jobs" })).toBeInTheDocument();
   });
 
   it("opens the error preview in error-focused mode and shows the error recency", async () => {
@@ -288,7 +388,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("TokenMM");
+    await screen.findByRole("button", { name: /^Restart All TokenMM$/i });
     await userEvent.click(screen.getByRole("button", { name: /^Restart All TokenMM$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -320,7 +420,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("TokenMM");
+    await screen.findByRole("button", { name: /^Restart All TokenMM$/i });
 
     const startButton = screen.getByRole("button", { name: "Start All TokenMM" });
     const stopButton = screen.getByRole("button", { name: "Stop All TokenMM" });
@@ -384,7 +484,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("TokenMM");
+    await screen.findByRole("button", { name: /^Restart All TokenMM$/i });
     await userEvent.click(screen.getByRole("button", { name: /restart all tokenmm/i }));
 
     const status = await screen.findByRole("status");
@@ -418,7 +518,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("TokenMM");
+    await screen.findByRole("button", { name: /^Restart All TokenMM$/i });
 
     const restartButton = screen.getByRole("button", { name: /^Restart All TokenMM$/i });
     await userEvent.click(restartButton);
@@ -460,7 +560,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("TokenMM");
+    await screen.findByRole("button", { name: /^Restart All TokenMM$/i });
 
     const autoRefreshToggle = screen.getByLabelText(/auto-refresh/i);
     expect(autoRefreshToggle).toBeChecked();

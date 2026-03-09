@@ -107,6 +107,10 @@ docs = [
   "sphinx-comments>=0.0.3,<1.0.0",
   "sphinx-markdown-builder>=0.6.9,<1.0.0",
 ]
+notebook = [
+  "ipykernel>=6.29.5,<7.0.0",
+  "jupyterlab>=4.4.7,<5.0.0",
+]
 
 [tool.isort]
 py_version = "312"

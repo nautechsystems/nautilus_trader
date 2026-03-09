@@ -105,6 +105,12 @@ consume the portfolio snapshot owned by `run_portfolio`.
 ## Production control plane
 
 ```bash
+make build
+pnpm --dir fluxboard install --frozen-lockfile
+pnpm --dir fluxboard build
+pnpm --dir pulse-ui install --frozen-lockfile
+pnpm --dir pulse-ui build
+.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py
 sudo ops/scripts/deploy/install_tokenmm_systemd.sh
 sudoedit /etc/flux/common.env
 sudo systemctl daemon-reload
@@ -114,6 +120,8 @@ sudo systemctl start flux-tokenmm.target
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
+- `install_tokenmm_systemd.sh` pins each TokenMM env file to the checkout used during install by writing
+  `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
@@ -136,6 +144,29 @@ Primary operator surfaces:
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/tokenmm/restart`
 - Risk validation and rollout gates live in `docs/runbooks/tokenmm-risk-validation.md`.
+
+## JupyterLab
+
+- Optional localhost-only research service template: `deploy/tokenmm/systemd/tokenmm-jupyter.env.example`.
+- `install_tokenmm_systemd.sh` also writes `/etc/flux/tokenmm-jupyter.env` for `flux@tokenmm-jupyter.service`.
+- Start it separately from the trading target:
+  - `sudo systemctl start flux@tokenmm-jupyter.service`
+  - `sudo journalctl -u flux@tokenmm-jupyter.service -n 20 --no-pager`
+- Direct localhost address: `http://127.0.0.1:8888/lab`
+- The notebook root is `research/tokenmm`, and the example notebook is `research/tokenmm/notebooks/tokenmm_trade_data.ipynb`.
+- The notebook reads local SQLite telemetry from `TOKENMM_TELEMETRY_DIR`, defaulting to `/var/lib/nautilus/telemetry/tokenmm`.
+
+## Telemetry Persistence
+
+- Run the rollout preflight before changing systemd envs:
+  - `.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py`
+- Create the local telemetry directory before restarting live services:
+  - `sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm`
+- Local SQLite verification:
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite 'SELECT COUNT(*) FROM order_action;'`
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite 'SELECT COUNT(*) FROM execution_fill;'`
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite 'SELECT COUNT(*) FROM quote_cycle;'`
+- For shipped Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
 
 ## Local smoke only
 

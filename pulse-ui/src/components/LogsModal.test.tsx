@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { getJobLogs } from "../api";
@@ -84,5 +84,20 @@ describe("LogsModal", () => {
     await waitFor(() => {
       expect(scrollIntoView).toHaveBeenCalled();
     });
+  });
+
+  it("exposes refresh, close, severity filters, and line-window controls through accessible roles", async () => {
+    render(<LogsModal jobId="tokenmm-api" jobName="tokenmm-api" onClose={vi.fn()} />);
+
+    const dialog = await screen.findByRole("dialog", { name: /logs for tokenmm-api/i });
+    expect(within(dialog).getByRole("group", { name: "Log actions" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Close logs" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("group", { name: "Severity filters" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "All" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Error" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Warning" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Info" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("combobox", { name: "Line window" })).toBeInTheDocument();
   });
 });

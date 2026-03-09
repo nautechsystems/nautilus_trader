@@ -11,6 +11,7 @@ COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
 STRATEGIES_DIR="${ROOT_DIR}/deploy/tokenmm/strategies"
+TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
 
 declare -a NODE_STRATEGIES=()
 
@@ -19,6 +20,19 @@ require_sudo() {
     echo "[tokenmm-systemd] run with sudo" >&2
     exit 1
   fi
+}
+
+
+require_project_python() {
+  if [[ ! -x "${TOKENMM_PYTHON_BIN}" ]]; then
+    echo "[tokenmm-systemd] missing project python at ${TOKENMM_PYTHON_BIN}; run \`uv sync --active --all-groups --all-extras\` first" >&2
+    exit 1
+  fi
+}
+
+
+run_rollout_preflight() {
+  "${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"
 }
 
 discover_node_strategies() {
@@ -65,6 +79,13 @@ install_sudoers() {
   rm -f "${tmp_sudoers}"
 }
 
+append_checkout_env_overrides() {
+  local env_path="$1"
+
+  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${ROOT_DIR}" "${ROOT_DIR}" >> "${env_path}"
+}
+
+
 render_api_env() {
   strategy_stack_write_env \
     "${ENV_DIR}/tokenmm-api.env" \
@@ -72,9 +93,10 @@ render_api_env() {
     "tokenmm" \
     "TokenMM" \
     "10" \
-    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse" \
+    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5022 --serve-fluxboard --serve-pulse" \
     "5022" \
     "tokenmm-api"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-api.env"
 }
 
 render_target() {
@@ -90,7 +112,8 @@ render_portfolio_env() {
     "tokenmm" \
     "TokenMM" \
     "10" \
-    "python3 -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-portfolio.env"
 }
 
 render_bridge_env() {
@@ -105,7 +128,8 @@ render_bridge_env() {
     "tokenmm" \
     "TokenMM" \
     "10" \
-    "python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-bridge.env"
 }
 
 render_node_envs() {
@@ -119,8 +143,16 @@ render_node_envs() {
       "tokenmm" \
       "TokenMM" \
       "10" \
-      "python3 -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+    append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"
   done
+}
+
+render_jupyter_env() {
+  install -m 0640 \
+    "${ROOT_DIR}/deploy/tokenmm/systemd/tokenmm-jupyter.env.example" \
+    "${ENV_DIR}/tokenmm-jupyter.env"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-jupyter.env"
 }
 
 enable_stack() {
@@ -130,6 +162,8 @@ enable_stack() {
 
 main() {
   require_sudo
+  require_project_python
+  run_rollout_preflight
   discover_node_strategies
   install_units
   render_target
@@ -137,6 +171,7 @@ main() {
   render_portfolio_env
   render_bridge_env
   render_node_envs
+  render_jupyter_env
   enable_stack
   echo "[tokenmm-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
 }
