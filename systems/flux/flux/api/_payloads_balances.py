@@ -95,6 +95,8 @@ def _position_agg_seed(row: dict[str, Any]) -> dict[str, Any]:
         "has_upnl": False,
         "qty_conversion_status": decode_text(row.get("qty_conversion_status")).strip() or None,
         "qty_conversion_source": decode_text(row.get("qty_conversion_source")).strip() or None,
+        "mark": None,
+        "mark_ts_ms": None,
     }
 
 
@@ -133,6 +135,13 @@ def _position_agg_update(agg: dict[str, Any], row: dict[str, Any]) -> None:
         agg["qty_conversion_status"] = decode_text(row.get("qty_conversion_status")).strip() or None
     if agg["qty_conversion_source"] is None:
         agg["qty_conversion_source"] = decode_text(row.get("qty_conversion_source")).strip() or None
+    mark = _to_decimal(row.get("mark_raw") or row.get("mark"))
+    if mark is not None:
+        mark_ts_ms = _row_ts_ms(row)
+        previous_mark_ts_ms = agg.get("mark_ts_ms")
+        if previous_mark_ts_ms is None or mark_ts_ms >= previous_mark_ts_ms:
+            agg["mark"] = mark
+            agg["mark_ts_ms"] = mark_ts_ms
 
 
 def _group_position_rows(
@@ -160,6 +169,20 @@ def _group_position_rows(
     return grouped, non_positions
 
 
+def _clear_position_valuation_fields(row: dict[str, Any]) -> None:
+    for key in (
+        "mark",
+        "mark_raw",
+        "mv",
+        "mv_raw",
+        "mv_display",
+        "notional",
+        "notional_quote",
+        "notional_usd",
+    ):
+        row.pop(key, None)
+
+
 def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> dict[str, Any] | None:
     sid, exchange, instrument = key
     has_qty_base = bool(agg["has_qty_base"])
@@ -172,6 +195,7 @@ def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> di
     side = "LONG" if qty_default > 0 else "SHORT"
     avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
     upnl = agg["upnl"] if agg["has_upnl"] else None
+    mark = agg.get("mark")
 
     row = dict(agg["row"])
     row["strategy_id"] = sid
@@ -196,6 +220,11 @@ def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> di
         row["qty_conversion_status"] = agg["qty_conversion_status"]
     if agg["qty_conversion_source"] is not None:
         row["qty_conversion_source"] = agg["qty_conversion_source"]
+    _clear_position_valuation_fields(row)
+    if mark is not None:
+        row["mark"] = float(mark)
+        row["mark_raw"] = float(mark)
+        row["mv_raw"] = float(qty_default * mark)
 
     meta_parts = [side]
     if avg_px is not None:
@@ -641,6 +670,7 @@ def _position_portfolio_row_from_agg(
     side = "LONG" if qty_default > 0 else "SHORT"
     avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
     upnl = agg["upnl"] if agg["has_upnl"] else None
+    mark = agg.get("mark")
 
     row = dict(agg["row"])
     row["strategy_id"] = portfolio_id
@@ -667,6 +697,11 @@ def _position_portfolio_row_from_agg(
         row["qty_conversion_status"] = qty_conversion_status
     if qty_conversion_source:
         row["qty_conversion_source"] = qty_conversion_source
+    _clear_position_valuation_fields(row)
+    if mark is not None:
+        row["mark"] = float(mark)
+        row["mark_raw"] = float(mark)
+        row["mv_raw"] = float(qty_default * mark)
 
     meta_parts = [side]
     if avg_px is not None:

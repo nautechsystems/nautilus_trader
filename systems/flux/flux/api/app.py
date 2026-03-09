@@ -140,6 +140,16 @@ class ApiEnvelopeError(ValueError):
         self.details = dict(details) if details is not None else None
 
 
+def _timestamp_is_fresh(
+    ts_ms: Any,
+    *,
+    now_ms_value: int,
+    stale_after_ms: int,
+) -> bool:
+    parsed = safe_int(ts_ms)
+    return parsed is not None and (now_ms_value - parsed) <= stale_after_ms
+
+
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     ordered: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_PARAMS_ORDER:
@@ -1655,95 +1665,109 @@ def create_flux_api_app(  # noqa: C901
             required_strategy_ids = set(
                 _required_strategy_ids_for_profile(profile_text, fallback=strategy_ids),
             )
+            request_now_ms = now_ms()
             portfolio_snapshot = (
                 store.load_portfolio_snapshot(profile_normalized)
                 if profile_normalized == "tokenmm"
                 else None
             )
             if portfolio_snapshot is not None:
-                snapshot_balances = portfolio_snapshot.get("balances")
-                snapshot_rows_raw = (
-                    snapshot_balances.get("rows")
-                    if isinstance(snapshot_balances, Mapping)
-                    else []
-                )
-                snapshot_rows = [
-                    dict(row)
-                    for row in snapshot_rows_raw
-                    if isinstance(row, Mapping)
-                ]
-                rows = filter_balance_rows_for_contract_scope(
-                    snapshot_rows,
-                    contracts=store._contracts,
-                )
-                if not rows and snapshot_rows:
-                    rows = snapshot_rows
-                if strategy_ids:
-                    market_rows = store.load_market_rows_for_strategies(strategy_ids)
-                    rows = collapse_balance_display_rows(
-                        enrich_balances_rows(
-                            rows,
-                            contracts=store._contracts,
-                            market_rows=market_rows,
-                        ),
-                    )
                 inventory = portfolio_snapshot.get("inventory")
                 inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
-                response_ts_ms = (
-                    safe_int(portfolio_snapshot.get("server_ts_ms"))
-                    or safe_int(inventory_payload.get("ts_ms"))
-                    or now_ms()
+                snapshot_stale_after_ms = (
+                    safe_int(inventory_payload.get("stale_after_ms"))
+                    or TOKENMM_BALANCES_STALE_AFTER_MS
                 )
-                components_payload = inventory_payload.get("components")
-                if not isinstance(components_payload, list):
-                    components_payload = portfolio_snapshot.get("components")
-                components = [
-                    dict(component)
-                    for component in (components_payload or [])
-                    if isinstance(component, Mapping)
-                ]
-                total_rows = len(rows)
-                return _ok(
-                    data={
-                        "source": "portfolio_snapshot",
-                        "rows": rows[:limit],
-                        "count": total_rows,
-                        "total": total_rows,
-                        "limit": limit,
-                        "totals": _balances_totals(rows),
-                        "server_ts_ms": response_ts_ms,
-                        "portfolio_id": decode_text(
-                            portfolio_snapshot.get("portfolio_id") or profile_normalized,
-                        ),
-                        "base_currency": decode_text(
-                            portfolio_snapshot.get("base_currency")
-                            or inventory_payload.get("base_currency"),
-                        ).strip().upper(),
-                        "components": components,
-                        "degraded": bool(inventory_payload.get("degraded", False)),
-                        "global_qty_base": inventory_payload.get("global_qty_base")
-                        or inventory_payload.get("global_qty"),
-                        "global_qty": inventory_payload.get("global_qty"),
-                        "aggregation_mode": decode_text(
-                            inventory_payload.get("aggregation_mode") or "strict",
-                        ),
-                        "global_qty_base_complete": bool(
-                            inventory_payload.get("global_qty_base_complete", True),
-                        ),
-                        "global_qty_complete": bool(
-                            inventory_payload.get("global_qty_complete", True),
-                        ),
-                        "missing_required": list(inventory_payload.get("missing_required") or []),
-                        "stale_required": list(inventory_payload.get("stale_required") or []),
-                        "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
-                        "stale_after_ms": safe_int(
-                            inventory_payload.get("stale_after_ms"),
+                if (
+                    _timestamp_is_fresh(
+                        portfolio_snapshot.get("server_ts_ms"),
+                        now_ms_value=request_now_ms,
+                        stale_after_ms=snapshot_stale_after_ms,
+                    )
+                    and _timestamp_is_fresh(
+                        inventory_payload.get("ts_ms"),
+                        now_ms_value=request_now_ms,
+                        stale_after_ms=snapshot_stale_after_ms,
+                    )
+                ):
+                    snapshot_balances = portfolio_snapshot.get("balances")
+                    snapshot_rows_raw = (
+                        snapshot_balances.get("rows")
+                        if isinstance(snapshot_balances, Mapping)
+                        else []
+                    )
+                    snapshot_rows = [
+                        dict(row)
+                        for row in snapshot_rows_raw
+                        if isinstance(row, Mapping)
+                    ]
+                    rows = filter_balance_rows_for_contract_scope(
+                        snapshot_rows,
+                        contracts=store._contracts,
+                    )
+                    if not rows and snapshot_rows:
+                        rows = snapshot_rows
+                    if strategy_ids:
+                        market_rows = store.load_market_rows_for_strategies(strategy_ids)
+                        rows = collapse_balance_display_rows(
+                            enrich_balances_rows(
+                                rows,
+                                contracts=store._contracts,
+                                market_rows=market_rows,
+                            ),
                         )
-                        or TOKENMM_BALANCES_STALE_AFTER_MS,
-                    },
-                )
+                    response_ts_ms = (
+                        safe_int(portfolio_snapshot.get("server_ts_ms"))
+                        or safe_int(inventory_payload.get("ts_ms"))
+                        or request_now_ms
+                    )
+                    components_payload = inventory_payload.get("components")
+                    if not isinstance(components_payload, list):
+                        components_payload = portfolio_snapshot.get("components")
+                    components = [
+                        dict(component)
+                        for component in (components_payload or [])
+                        if isinstance(component, Mapping)
+                    ]
+                    total_rows = len(rows)
+                    return _ok(
+                        data={
+                            "source": "portfolio_snapshot",
+                            "rows": rows[:limit],
+                            "count": total_rows,
+                            "total": total_rows,
+                            "limit": limit,
+                            "totals": _balances_totals(rows),
+                            "server_ts_ms": response_ts_ms,
+                            "portfolio_id": decode_text(
+                                portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                            ),
+                            "base_currency": decode_text(
+                                portfolio_snapshot.get("base_currency")
+                                or inventory_payload.get("base_currency"),
+                            ).strip().upper(),
+                            "components": components,
+                            "degraded": bool(inventory_payload.get("degraded", False)),
+                            "global_qty_base": inventory_payload.get("global_qty_base")
+                            or inventory_payload.get("global_qty"),
+                            "global_qty": inventory_payload.get("global_qty"),
+                            "aggregation_mode": decode_text(
+                                inventory_payload.get("aggregation_mode") or "strict",
+                            ),
+                            "global_qty_base_complete": bool(
+                                inventory_payload.get("global_qty_base_complete", True),
+                            ),
+                            "global_qty_complete": bool(
+                                inventory_payload.get("global_qty_complete", True),
+                            ),
+                            "missing_required": list(inventory_payload.get("missing_required") or []),
+                            "stale_required": list(inventory_payload.get("stale_required") or []),
+                            "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
+                            "stale_after_ms": snapshot_stale_after_ms,
+                        },
+                    )
 
-            response_ts_ms = now_ms()
+            response_ts_ms = request_now_ms
             rows_by_strategy: dict[str, list[dict[str, Any]]] = {}
             components: list[dict[str, Any]] = []
 

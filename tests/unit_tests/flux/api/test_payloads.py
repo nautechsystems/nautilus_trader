@@ -337,6 +337,44 @@ def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() 
     assert position["side"] == "LONG"
 
 
+def test_merge_portfolio_balances_rows_recomputes_netted_position_mv_from_mark() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mark_raw": 2.0,
+                    "mv_raw": 20.0,
+                },
+            ],
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "-5",
+                    "quantity": "5",
+                    "mark_raw": 2.0,
+                    "mv_raw": -10.0,
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    position = rows_by_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert position["signed_qty"] == "5"
+    assert position["mark_raw"] == pytest.approx(2.0)
+    assert position["mv_raw"] == pytest.approx(10.0)
+
+
 def test_merge_portfolio_balances_rows_retains_latest_known_mark_when_newer_cash_row_lacks_one() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={

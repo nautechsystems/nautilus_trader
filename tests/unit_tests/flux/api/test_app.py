@@ -2470,21 +2470,21 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
                 "stale_required": ["strategy_03"],
                 "null_qty_required": ["strategy_04"],
                 "degraded": True,
-                "ts_ms": 99_000,
+                "ts_ms": 122_000,
                 "stale_after_ms": 3_000,
                 "components": [
                     {
                         "strategy_id": flux_config.identity.strategy_id,
                         "local_qty_base": "15.000000",
                         "local_qty": "15.000000",
-                        "ts_ms": 99_000,
+                        "ts_ms": 122_000,
                         "state": "running",
                     },
                     {
                         "strategy_id": "strategy_02",
                         "local_qty_base": None,
                         "local_qty": None,
-                        "ts_ms": 99_000,
+                        "ts_ms": 122_000,
                         "state": "running",
                     },
                 ],
@@ -2494,14 +2494,14 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
                     "strategy_id": flux_config.identity.strategy_id,
                     "local_qty_base": "15.000000",
                     "local_qty": "15.000000",
-                    "ts_ms": 99_000,
+                    "ts_ms": 122_000,
                     "state": "running",
                 },
                 {
                     "strategy_id": "strategy_02",
                     "local_qty_base": None,
                     "local_qty": None,
-                    "ts_ms": 99_000,
+                    "ts_ms": 122_000,
                     "state": "running",
                 },
             ],
@@ -2516,7 +2516,7 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
                         "total": "15",
                         "mv_raw": 21.0,
                         "mark_raw": 1.4,
-                        "ts_ms": 99_000,
+                        "ts_ms": 122_000,
                     },
                 ],
                 "totals": {
@@ -2524,7 +2524,7 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
                     "mv_display": "$21.00",
                 },
             },
-            "server_ts_ms": 99_500,
+            "server_ts_ms": 122_500,
         },
     )
 
@@ -2546,7 +2546,7 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
 
     assert response.status_code == 200
     assert body["data"]["source"] == "portfolio_snapshot"
-    assert body["data"]["server_ts_ms"] == 99_500
+    assert body["data"]["server_ts_ms"] == 122_500
     assert body["data"]["global_qty_base"] == "129016.69578451"
     assert body["data"]["global_qty"] == "129016.69578451"
     assert body["data"]["aggregation_mode"] == "partial"
@@ -2562,26 +2562,152 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
             "strategy_id": flux_config.identity.strategy_id,
             "local_qty_base": "15.000000",
             "local_qty": "15.000000",
-            "ts_ms": 99_000,
+            "ts_ms": 122_000,
             "state": "running",
         },
         {
             "strategy_id": "strategy_02",
             "local_qty_base": None,
             "local_qty": None,
-            "ts_ms": 99_000,
+            "ts_ms": 122_000,
             "state": "running",
         },
     ]
 
 
+@pytest.mark.parametrize(
+    ("server_ts_ms", "inventory_ts_ms"),
+    [
+        (119_000, 122_500),
+        (122_500, 119_000),
+    ],
+)
+def test_balances_profile_tokenmm_rejects_stale_portfolio_snapshot_and_falls_back_to_live_balances(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+    server_ts_ms,
+    inventory_ts_ms,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "venue_a",
+                "asset": "ABC",
+                "free": "5",
+                "total": "5",
+                "mark_raw": 1.5,
+                "mv_raw": 7.5,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "venue_a",
+                "asset": "USDT",
+                "free": "12",
+                "total": "12",
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "999",
+                "global_qty": "999",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "ts_ms": inventory_ts_ms,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:ABC",
+                        "strategy_id": "tokenmm",
+                        "exchange": "venue_a",
+                        "asset": "ABC",
+                        "free": "999",
+                        "total": "999",
+                        "mark_raw": 1.0,
+                        "mv_raw": 999.0,
+                        "ts_ms": 122_500,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 999.0,
+                    "mv_display": "$999.00",
+                },
+            },
+            "server_ts_ms": server_ts_ms,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"].get("source") is None
+    assert body["data"]["server_ts_ms"] == 123_456
+    by_row_id = {row["row_id"]: row for row in body["data"]["rows"]}
+    assert by_row_id["tokenmm:cash:venue_a::ABC"]["total"] == "5"
+    assert by_row_id["tokenmm:cash:venue_a::ABC"]["mv_raw"] == pytest.approx(7.5)
+    assert by_row_id["tokenmm:cash:venue_a::USDT"]["total"] == "12"
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(19.5)
+
+
 def test_balances_profile_tokenmm_portfolio_snapshot_uses_market_rows_from_all_profile_strategies(
+    monkeypatch,
     flux_config,
     redis_client,
     strategy_metadata,
     params_schema,
     params_defaults,
 ) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
     secondary_keys = FluxRedisKeys(
         strategy_id="strategy_02",
         namespace=flux_config.identity.namespace,
@@ -2612,6 +2738,8 @@ def test_balances_profile_tokenmm_portfolio_snapshot_uses_market_rows_from_all_p
                 "aggregation_mode": "strict",
                 "global_qty_base_complete": True,
                 "global_qty_complete": True,
+                "ts_ms": 99_000,
+                "stale_after_ms": 3_000,
                 "components": [],
             },
             "components": [],
@@ -2660,12 +2788,14 @@ def test_balances_profile_tokenmm_portfolio_snapshot_uses_market_rows_from_all_p
 
 
 def test_balances_profile_tokenmm_portfolio_snapshot_preserves_non_null_market_quotes_across_strategies(
+    monkeypatch,
     flux_config,
     redis_client,
     strategy_metadata,
     params_schema,
     params_defaults,
 ) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_001_000)
     primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
     secondary_keys = FluxRedisKeys(
         strategy_id="strategy_02",
@@ -2715,6 +2845,8 @@ def test_balances_profile_tokenmm_portfolio_snapshot_preserves_non_null_market_q
                 "aggregation_mode": "strict",
                 "global_qty_base_complete": True,
                 "global_qty_complete": True,
+                "ts_ms": 1_700_000_000_900,
+                "stale_after_ms": 3_000,
                 "components": [],
             },
             "components": [],

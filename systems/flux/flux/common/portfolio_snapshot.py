@@ -26,6 +26,28 @@ def _format_money_display(value: float) -> str:
     return f"{'-$' if value < 0 else '$'}{abs(value):.2f}"
 
 
+def _balance_row_qty(row: Mapping[str, Any]) -> float | None:
+    return _coerce_finite_float(
+        row.get("signed_qty")
+        if str(row.get("kind")).strip().lower() == "position"
+        else row.get("total") or row.get("quantity") or row.get("signed_qty") or row.get("free"),
+    )
+
+
+def _coherent_balance_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    coherent: list[dict[str, Any]] = []
+    for source_row in rows:
+        row = dict(source_row)
+        mark = _coerce_finite_float(row.get("mark_raw") or row.get("mark"))
+        qty = _balance_row_qty(row)
+        if mark is not None:
+            row["mark_raw"] = mark
+            if qty is not None:
+                row["mv_raw"] = qty * mark
+        coherent.append(row)
+    return coherent
+
+
 def _balances_totals(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     total_mv = 0.0
     for row in rows:
@@ -83,14 +105,15 @@ def build_portfolio_snapshot(
         portfolio_id=portfolio_id,
         preserve_product_scope_cash=True,
     )
+    coherent_balance_rows = _coherent_balance_rows(balance_rows)
     return {
         "portfolio_id": portfolio_id,
         "base_currency": base_currency.upper(),
         "inventory": inventory,
         "components": inventory["components"],
         "balances": {
-            "rows": balance_rows,
-            "totals": _balances_totals(balance_rows),
+            "rows": coherent_balance_rows,
+            "totals": _balances_totals(coherent_balance_rows),
         },
         "server_ts_ms": int(now_ms_value),
     }

@@ -66,6 +66,56 @@ def test_build_portfolio_snapshot_partial_mode_includes_inventory_and_merged_bal
     assert snapshot["balances"]["totals"]["mv_raw"] == 18.0
 
 
+def test_build_portfolio_snapshot_totals_match_netted_position_valuation() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+        inventory_components={},
+        balance_rows_by_strategy={
+            "strategy_a": [
+                {
+                    "strategy_id": "strategy_a",
+                    "exchange": "bybit",
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mark_raw": 2.0,
+                    "mv_raw": 20.0,
+                },
+            ],
+            "strategy_b": [
+                {
+                    "strategy_id": "strategy_b",
+                    "exchange": "bybit",
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "-5",
+                    "quantity": "5",
+                    "mark_raw": 2.0,
+                    "mv_raw": -10.0,
+                },
+            ],
+        },
+        required_strategy_ids=set(),
+        now_ms_value=2_000,
+    )
+
+    assert len(snapshot["balances"]["rows"]) == 1
+    row = snapshot["balances"]["rows"][0]
+    assert row["strategy_id"] == "tokenmm"
+    assert row["exchange"] == "bybit"
+    assert row["kind"] == "position"
+    assert row["instrument_id"] == "PLUMEUSDT-LINEAR.BYBIT"
+    assert row["signed_qty"] == "5"
+    assert row["quantity"] == "5"
+    assert row["side"] == "LONG"
+    assert row["mark_raw"] == 2.0
+    assert row["mv_raw"] == 10.0
+    assert snapshot["balances"]["totals"]["mv_raw"] == 10.0
+    assert snapshot["balances"]["totals"]["mv_display"] == "$10.00"
+
+
 def test_portfolio_snapshot_round_trip_preserves_strict_inventory_metadata() -> None:
     encoded = encode_portfolio_snapshot(
         build_portfolio_snapshot(
