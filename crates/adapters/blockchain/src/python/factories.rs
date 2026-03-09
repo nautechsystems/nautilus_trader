@@ -2,8 +2,12 @@
 
 use pyo3::prelude::*;
 
-use crate::factories::{BlockchainDataClientFactory, BlockchainExecutionClientFactory};
+use crate::factories::BlockchainExecutionClientFactory;
 
+#[cfg(feature = "hypersync")]
+use crate::factories::BlockchainDataClientFactory;
+
+#[cfg(feature = "hypersync")]
 #[pymethods]
 impl BlockchainDataClientFactory {
     /// Creates a new `BlockchainDataClientFactory` instance.
@@ -34,5 +38,20 @@ impl BlockchainExecutionClientFactory {
     #[new]
     const fn py_new() -> Self {
         Self::new()
+    }
+
+    /// Returns the factory name.
+    const fn name(&self) -> &'static str {
+        "BLOCKCHAIN"
+    }
+
+    /// Returns the configuration type.
+    const fn config_type(&self) -> &'static str {
+        "BlockchainExecutionClientConfig"
+    }
+
+    /// Returns a string representation of the factory.
+    fn __repr__(&self) -> String {
+        format!("BlockchainExecutionClientFactory(name={})", self.name())
     }
 }

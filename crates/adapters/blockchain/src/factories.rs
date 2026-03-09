@@ -1,29 +1,30 @@
 //! Factory for creating blockchain data clients.
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{
-    cache::Cache,
-    clients::{DataClient, ExecutionClient},
-    clock::Clock,
-};
+#[cfg(feature = "hypersync")]
+use std::any::Any;
+
+use nautilus_common::{cache::Cache, clients::ExecutionClient};
+#[cfg(feature = "hypersync")]
+use nautilus_common::{clients::DataClient, clock::Clock};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::{
-    ExecutionClientFactory,
-    factories::{ClientConfig, DataClientFactory},
-};
+#[cfg(feature = "hypersync")]
+use nautilus_system::factories::DataClientFactory;
+use nautilus_system::{ExecutionClientFactory, factories::ClientConfig};
 
 use crate::{
-    config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
-    constants::BLOCKCHAIN_VENUE,
-    data::client::BlockchainDataClient,
-    execution::client::BlockchainExecutionClient,
+    config::BlockchainExecutionClientConfig, execution::client::BlockchainExecutionClient,
 };
 
+#[cfg(feature = "hypersync")]
+use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
+
+#[cfg(feature = "hypersync")]
 impl ClientConfig for BlockchainDataClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
@@ -35,6 +36,7 @@ impl ClientConfig for BlockchainDataClientConfig {
 /// This factory creates `BlockchainDataClient` instances configured for different blockchain networks
 /// (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
 #[derive(Debug, Clone)]
+#[cfg(feature = "hypersync")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -48,6 +50,7 @@ impl ClientConfig for BlockchainDataClientConfig {
 )]
 pub struct BlockchainDataClientFactory;
 
+#[cfg(feature = "hypersync")]
 impl BlockchainDataClientFactory {
     /// Creates a new [`BlockchainDataClientFactory`] instance.
     #[must_use]
@@ -56,12 +59,14 @@ impl BlockchainDataClientFactory {
     }
 }
 
+#[cfg(feature = "hypersync")]
 impl Default for BlockchainDataClientFactory {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "hypersync")]
 impl DataClientFactory for BlockchainDataClientFactory {
     fn create(
         &self,
@@ -134,17 +139,17 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             .downcast_ref::<BlockchainExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                    "Invalid config type for BlockchainExecutionClientFactory. Expected `BlockchainExecutionClientConfig`, was {config:?}"
                 )
             })?;
 
         let core_execution_client = ExecutionClientCore::new(
             blockchain_execution_config.trader_id,
             ClientId::from(name),
-            *BLOCKCHAIN_VENUE,
+            blockchain_execution_config.venue,
             OmsType::Netting,
             blockchain_execution_config.client_id,
-            AccountType::Wallet,
+            AccountType::Cash,
             None,
             cache,
         );
@@ -168,16 +173,30 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    #[cfg(feature = "hypersync")]
     use std::sync::Arc;
 
-    use nautilus_model::defi::chain::{Blockchain, chains};
-    use nautilus_system::factories::DataClientFactory;
+    use nautilus_common::cache::Cache;
+    use nautilus_model::defi::chain::chains;
+    use nautilus_model::{
+        identifiers::{AccountId, TraderId, Venue},
+        stubs::TestDefault,
+    };
+    use nautilus_system::ExecutionClientFactory;
     use rstest::rstest;
 
-    use crate::{config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory};
+    use crate::{
+        config::BlockchainExecutionClientConfig, factories::BlockchainExecutionClientFactory,
+    };
 
     #[rstest]
+    #[cfg(feature = "hypersync")]
     fn test_blockchain_data_client_config_creation() {
+        use crate::config::BlockchainDataClientConfig;
+        use nautilus_model::defi::chain::Blockchain;
+
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::new(
             chain,
@@ -197,9 +216,41 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "hypersync")]
     fn test_factory_creation() {
+        use crate::factories::BlockchainDataClientFactory;
+
         let factory = BlockchainDataClientFactory::new();
-        assert_eq!(factory.name(), "BLOCKCHAIN");
-        assert_eq!(factory.config_type(), "BlockchainDataClientConfig");
+        assert_eq!(
+            nautilus_system::factories::DataClientFactory::name(&factory),
+            "BLOCKCHAIN"
+        );
+        assert_eq!(
+            nautilus_system::factories::DataClientFactory::config_type(&factory),
+            "BlockchainDataClientConfig"
+        );
+    }
+
+    #[rstest]
+    fn test_execution_factory_propagates_config_venue() {
+        let venue = Venue::new("Arbitrum:UniswapV3");
+        let config = BlockchainExecutionClientConfig::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            venue,
+            chains::ARBITRUM.clone(),
+            String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+            None,
+            String::from("https://arb.example.com"),
+            None,
+        );
+        let factory = BlockchainExecutionClientFactory::new();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create("BLOCKCHAIN", &config, cache)
+            .expect("Execution client should be created");
+
+        assert_eq!(client.venue(), venue);
     }
 }

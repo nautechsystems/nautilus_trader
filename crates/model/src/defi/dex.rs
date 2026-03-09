@@ -93,6 +93,7 @@ pub enum DexType {
     FluidDEX,
     MaverickV1,
     MaverickV2,
+    PancakeSwapV2,
     PancakeSwapV3,
     SushiSwapV2,
     SushiSwapV3,
@@ -306,6 +307,7 @@ mod tests {
         assert!(DexType::from_dex_name("SushiSwapV2").is_some());
         assert!(DexType::from_dex_name("BalancerV2").is_some());
         assert!(DexType::from_dex_name("CamelotV3").is_some());
+        assert!(DexType::from_dex_name("PancakeSwapV2").is_some());
 
         // Verify specific DEX type
         let uniswap_v3 = DexType::from_dex_name("UniswapV3").unwrap();
@@ -318,6 +320,9 @@ mod tests {
         // Verify specialized names
         let fluid_dex = DexType::from_dex_name("FluidDEX").unwrap();
         assert_eq!(fluid_dex, DexType::FluidDEX);
+
+        let pancakeswap_v2 = DexType::from_dex_name("PancakeSwapV2").unwrap();
+        assert_eq!(pancakeswap_v2, DexType::PancakeSwapV2);
     }
 
     #[rstest]
@@ -355,6 +360,7 @@ mod tests {
             "FluidDEX",
             "MaverickV1",
             "MaverickV2",
+            "PancakeSwapV2",
             "PancakeSwapV3",
             "SushiSwapV2",
             "SushiSwapV3",
@@ -376,6 +382,7 @@ mod tests {
         // Test that DexType variants display correctly (using strum::Display)
         assert_eq!(DexType::UniswapV3.to_string(), "UniswapV3");
         assert_eq!(DexType::SushiSwapV2.to_string(), "SushiSwapV2");
+        assert_eq!(DexType::PancakeSwapV2.to_string(), "PancakeSwapV2");
         assert_eq!(
             DexType::AerodromeSlipstream.to_string(),
             "AerodromeSlipstream"

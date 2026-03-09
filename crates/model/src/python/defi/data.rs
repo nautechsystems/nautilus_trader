@@ -776,14 +776,14 @@ impl Transaction {
         block_hash: String,
         block_number: u64,
         from: String,
-        to: String,
+        to: Option<String>,
         gas: String,
         gas_price: String,
         transaction_index: u64,
         value: String,
     ) -> PyResult<Self> {
         let from = from.parse().map_err(to_pyvalue_err)?;
-        let to = to.parse().map_err(to_pyvalue_err)?;
+        let to = to.map(|address| address.parse()).transpose().map_err(to_pyvalue_err)?;
         let gas = gas.parse().map_err(to_pyvalue_err)?;
         let gas_price = gas_price.parse().map_err(to_pyvalue_err)?;
         let value = value.parse().map_err(to_pyvalue_err)?;
@@ -802,9 +802,14 @@ impl Transaction {
     }
 
     fn __str__(&self) -> String {
+        let to = self
+            .to
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "None".to_string());
         format!(
             "Transaction(chain={}, hash={}, block_number={}, from={}, to={}, value={})",
-            self.chain.name, self.hash, self.block_number, self.from, self.to, self.value
+            self.chain.name, self.hash, self.block_number, self.from, to, self.value
         )
     }
 
@@ -858,8 +863,8 @@ impl Transaction {
 
     #[getter]
     #[pyo3(name = "to")]
-    fn py_to(&self) -> String {
-        self.to.to_string()
+    fn py_to(&self) -> Option<String> {
+        self.to.as_ref().map(ToString::to_string)
     }
 
     #[getter]
@@ -884,5 +889,60 @@ impl Transaction {
     #[pyo3(name = "gas_price")]
     fn py_gas_price(&self) -> String {
         self.gas_price.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_py_transaction_new_with_recipient_round_trips_optional_to() {
+        Python::initialize();
+        Python::attach(|_py| {
+            let recipient = "0x3C9AF20C7B7809a825373881f61B5a69Ef8BC6bD".to_string();
+
+            let transaction = Transaction::py_new(
+                Chain::new(Blockchain::Ethereum, 1),
+                "0x6d0b33a68953fdfa280a3a3d7a21e9513aed38d8587682f03728bc178b52b824".to_string(),
+                "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0".to_string(),
+                22_323_670,
+                "0xd6a8749e224ecdfcc79d473d3355b1b0eb51d423".to_string(),
+                Some(recipient.clone()),
+                "21000".to_string(),
+                "762999156".to_string(),
+                153,
+                "100000000".to_string(),
+            )
+            .expect("transaction should parse");
+
+            assert_eq!(transaction.py_to(), Some(recipient.clone()));
+            assert!(transaction.__str__().contains(&format!("to={recipient}")));
+        });
+    }
+
+    #[rstest]
+    fn test_py_transaction_new_without_recipient_returns_none_and_formats_safely() {
+        Python::initialize();
+        Python::attach(|_py| {
+            let transaction = Transaction::py_new(
+                Chain::new(Blockchain::Ethereum, 1),
+                "0x6d0b33a68953fdfa280a3a3d7a21e9513aed38d8587682f03728bc178b52b824".to_string(),
+                "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0".to_string(),
+                22_323_670,
+                "0xd6a8749e224ecdfcc79d473d3355b1b0eb51d423".to_string(),
+                None,
+                "21000".to_string(),
+                "762999156".to_string(),
+                153,
+                "100000000".to_string(),
+            )
+            .expect("transaction should parse");
+
+            assert_eq!(transaction.py_to(), None);
+            assert!(transaction.__str__().contains("to=None"));
+        });
     }
 }

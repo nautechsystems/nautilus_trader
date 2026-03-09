@@ -18,6 +18,9 @@ secur32 = "secur32" # Windows security library (secur32.lib)
 # Intentional variable names and abbreviations
 NOO = "NOO" # Test data/identifier
 ot = "ot" # Order tag variable naming convention
+LOK = "LOK" # DEX revert code token used in documented selector mapping
+fot = "fot" # Fee-on-transfer shorthand used in planned test identifiers
+mis = "mis" # Prefix in hyphenated terms like mis-signed / mis-accounting
 
 # External API terms (exact spelling from their documentation)
 HIGHTER = "HIGHTER" # Binance API error code (their official typo)

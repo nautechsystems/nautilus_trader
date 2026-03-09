@@ -208,6 +208,7 @@ mod tests {
             "UniswapV4",
             "SushiSwapV2",
             "SushiSwapV3",
+            "PancakeSwapV2",
             "PancakeSwapV3",
             "CamelotV3",
             "CurveFinance",
@@ -298,6 +299,7 @@ mod tests {
     #[case("Arbitrum:CamelotV3", Blockchain::Arbitrum, DexType::CamelotV3)]
     #[case("Base:AerodromeV1", Blockchain::Base, DexType::AerodromeV1)]
     #[case("Polygon:SushiSwapV2", Blockchain::Polygon, DexType::SushiSwapV2)]
+    #[case("Bsc:PancakeSwapV2", Blockchain::Bsc, DexType::PancakeSwapV2)]
     fn test_parse_dex_valid(
         #[case] venue_str: &str,
         #[case] expected_chain: Blockchain,
