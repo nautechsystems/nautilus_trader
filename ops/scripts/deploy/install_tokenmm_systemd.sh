@@ -20,9 +20,13 @@ require_sudo() {
 }
 
 discover_node_strategies() {
-  mapfile -t NODE_STRATEGIES < <(
-    strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml"
-  )
+  local discovered=""
+  discovered="$(strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml")"
+  if [[ -n "${discovered}" ]]; then
+    mapfile -t NODE_STRATEGIES <<< "${discovered}"
+  else
+    NODE_STRATEGIES=()
+  fi
 }
 
 

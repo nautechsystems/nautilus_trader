@@ -119,6 +119,17 @@ strategy_stack_read_env_value() {
 }
 
 
+strategy_stack_require_identifier() {
+  local identifier="$1"
+  local label="$2"
+
+  if [[ ! "${identifier}" =~ ^[[:alnum:]][[:alnum:]_-]*$ ]]; then
+    echo "[strategy-stack] invalid ${label}: ${identifier}" >&2
+    return 1
+  fi
+}
+
+
 strategy_stack_collect_pulse_service_ids() {
   local -n out_service_ids="$1"
   local env_dir="$2"
@@ -134,7 +145,10 @@ strategy_stack_collect_pulse_service_ids() {
     if [[ "${pulse_enabled}" != "1" ]]; then
       continue
     fi
-    out_service_ids+=("$(basename "${env_path%.env}")")
+    local service_id
+    service_id="$(basename "${env_path%.env}")"
+    strategy_stack_require_identifier "${service_id}" "service ID from ${env_path}" || return 1
+    out_service_ids+=("${service_id}")
   done < <(find "${env_dir}" -maxdepth 1 -type f -name '*.env' | sort)
 }
 
@@ -143,9 +157,15 @@ strategy_stack_discover_strategy_ids() {
   local strategies_dir="$1"
   local excluded_template="${2:-*template*}"
 
-  find "${strategies_dir}" -maxdepth 1 -type f -name '*.toml' ! -name "${excluded_template}" -printf '%f\n' \
-    | sed 's/\.toml$//' \
-    | sort
+  local strategy_file=""
+  while IFS= read -r strategy_file; do
+    [[ -n "${strategy_file}" ]] || continue
+    local strategy_id="${strategy_file%.toml}"
+    strategy_stack_require_identifier "${strategy_id}" "strategy ID from ${strategies_dir}/${strategy_file}" || return 1
+    printf '%s\n' "${strategy_id}"
+  done < <(
+    find "${strategies_dir}" -maxdepth 1 -type f -name '*.toml' ! -name "${excluded_template}" -printf '%f\n' | sort
+  )
 }
 
 

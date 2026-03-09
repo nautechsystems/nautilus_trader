@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import logging
 from pathlib import Path
 from typing import Any
 
 import pytest
+import requests
 
 import flux.tg_bots.lan_rogue_trader_alert as alert_module
 from flux.tg_bots.lan_rogue_trader_alert import BinancePmClient
@@ -64,6 +66,16 @@ class FakeSession:
         if not self.responses:
             raise RuntimeError("missing response")
         return self.responses.pop(0)
+
+
+class RaisingSession:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+        self.calls: list[dict[str, Any]] = []
+
+    def post(self, url: str, json: dict[str, Any], timeout: float) -> FakeResponse:
+        self.calls.append({"url": url, "json": dict(json), "timeout": timeout})
+        raise self.exc
 
 
 class FakeGetResponse:
@@ -201,6 +213,27 @@ def test_telegram_thread_fallback_to_root_when_not_strict() -> None:
     assert "WARNING: thread_id failed" in session.calls[1]["json"]["text"]
 
 
+def test_telegram_transport_failure_redacts_bot_token(caplog: pytest.LogCaptureFixture) -> None:
+    session = RaisingSession(
+        requests.RequestException("POST https://api.telegram.org/bottoken/sendMessage failed")
+    )
+    notifier = TelegramNotifier(
+        bot_token="token",
+        chat_id=-100123,
+        thread_id=None,
+        strict_thread=False,
+        session=session,  # type: ignore[arg-type]
+        max_retries=1,
+    )
+
+    caplog.set_level(logging.ERROR)
+    ok = notifier.send_message("hello")
+
+    assert ok is False
+    assert "token" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+
 def test_missing_usdt_row_alerts_once_per_episode(tmp_path: Path) -> None:
     cfg = make_config(tmp_path, send_baseline=False)
     notifier = DummyNotifier()
@@ -322,3 +355,19 @@ telegram_chat_id = -100123
     config = load_config(config_path)
 
     assert config.account_label == "LanSub: traderX"
+
+
+def test_repo_root_searches_upwards_for_worktree_git_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    module_dir = repo_root / "packages" / "custom" / "systems" / "flux" / "flux" / "tg_bots"
+    module_dir.mkdir(parents=True)
+    (repo_root / ".git").write_text("gitdir: /tmp/worktrees/pr-33/.git", encoding="utf-8")
+    module_path = module_dir / "lan_rogue_trader_alert.py"
+    module_path.write_text("# placeholder", encoding="utf-8")
+
+    monkeypatch.setattr(alert_module, "__file__", str(module_path))
+
+    assert alert_module._repo_root() == repo_root

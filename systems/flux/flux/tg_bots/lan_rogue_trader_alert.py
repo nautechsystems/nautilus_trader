@@ -52,6 +52,14 @@ def _default_http_timeout_seconds() -> float:
     return float(os.getenv("HTTP_DEFAULT_TIMEOUT", "5"))
 
 
+def _redact_secret_text(text: str, *secrets: str) -> str:
+    redacted = text
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
 def build_http_session() -> requests.Session:
     """Build a local equivalent of the source retrying engine HTTP session."""
     session = requests.Session()
@@ -326,8 +334,9 @@ class TelegramNotifier:
                 if attempt < self.max_retries - 1:
                     _sleep_retry(attempt)
                     continue
-                LOG.error("Telegram send transport failure: %s", exc)
-                return False, None, str(exc)
+                redacted_error = _redact_secret_text(str(exc), self.bot_token)
+                LOG.error("Telegram send transport failure: %s", redacted_error)
+                return False, None, redacted_error
 
         return False, None, "send failed"
 
@@ -462,7 +471,11 @@ class LanRogueTraderAlertService:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    current_path = Path(__file__).resolve()
+    for parent in current_path.parents:
+        if (parent / ".git").exists() or (parent / "pyproject.toml").is_file():
+            return parent
+    raise RuntimeError(f"Could not find repository root from {current_path}")
 
 
 def default_config_path() -> Path:
