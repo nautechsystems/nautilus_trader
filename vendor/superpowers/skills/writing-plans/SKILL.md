@@ -47,10 +47,10 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
 
-| Task | Status | Owner | Depends On | Write Scope | Commit / Diff | Verification | Notes / Last Update |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Task 1: [Name] | not_started | unassigned | none | `path/to/file` | none | not_run | Plan created |
-| Task 2: [Name] | not_started | unassigned | Task 1 | `path/to/other_file` | none | not_run | Plan created |
+| Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Task 1: [Name] | not_started | unassigned | none | `path/to/file` | `shared` | `shared` | none | not_run | Plan created |
+| Task 2: [Name] | not_started | unassigned | Task 1 | `path/to/other_file` | `shared` | `shared` | none | not_run | Plan created |
 
 ---
 ```
@@ -74,6 +74,8 @@ Tracker requirements:
 - `Owner` should name the current responsible party (`main`, `implementer`, `spec-reviewer`, `code-quality-reviewer`, or specific agent handle if available)
 - `Depends On` must list prerequisite task names or `none`
 - `Write Scope` must name the exact files, modules, or directories the task is allowed to change
+- `Lane Branch` must name the dedicated implementer branch for parallel SDD lanes, or `shared` when serial execution stays in one branch/worktree
+- `Worktree Path` must name the dedicated workspace path for parallel SDD lanes, or `shared` when serial execution stays in one branch/worktree
 - `Commit / Diff` must record the latest relevant short SHA or pinned review range (`abc1234`, `abc1234..def5678`, or `none`)
 - `Verification` must record the most recent command/result summary (`not_run`, `pytest ... PASS`, `pnpm test FAIL`, `review only`)
 - `Notes / Last Update` should be a short factual update with verification or blocker context
@@ -84,10 +86,11 @@ Tracker requirements:
 Update expectations:
 
 - When implementation starts, set `Commit / Diff` to `none` until the first task commit exists
+- Before dispatching a parallel implementer lane, replace `shared` with the actual lane branch and worktree path
 - After each task commit, update `Commit / Diff` immediately
 - Before review, pin the exact diff the reviewer should inspect in `Commit / Diff`
 - After every verification command, update `Verification` immediately with pass/fail state
-- On completion, the row should tell a future reader exactly which commit landed the task and what command last verified it
+- On completion, the row should tell a future reader exactly which workspace produced the reviewed diff, which commit landed the task on the orchestration branch, and what command last verified it
 
 ## Task Structure
 
@@ -156,6 +159,7 @@ After each task section, add a short tracker reminder:
 - Build the tracker table before Task 1 so execution starts with a real source of truth
 - Make task names in the tracker exactly match task headings
 - Design tasks so independent work has disjoint write scope if parallel execution is desired
+- If parallel SDD is likely, pre-plan lane branch names and worktree paths so the controller can allocate them without improvising
 
 ## Execution Handoff
 

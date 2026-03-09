@@ -62,6 +62,7 @@ git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/d
 **If NOT ignored:**
 
 Per Jesse's rule "Fix broken things immediately":
+
 1. Add appropriate line to .gitignore
 2. Commit the change
 3. Proceed with worktree creation
@@ -141,6 +142,24 @@ Tests passing (<N> tests, 0 failures)
 Ready to implement <feature-name>
 ```
 
+## Subagent-Driven Development Topology
+
+When `subagent-driven-development` runs in parallel, use worktrees at two levels:
+
+- Controller/orchestration: one isolated worktree for the lead agent coordinating the plan
+- Parallel implementer lanes: one dedicated branch-backed worktree per write-capable lane
+- Reviewer lanes: no dedicated mutable worktree by default; reviewers should inspect pinned diffs unless verification requires checkout
+
+Recommended branch/path pattern for parallel lanes:
+
+```bash
+branch="lanes/task-<n>-<slug>"
+path=".worktrees/task-<n>-<slug>"
+git worktree add "$path" -b "$branch"
+```
+
+Do not run parallel implementer lanes in the controller worktree, and do not let two write-capable lanes share the same mutable worktree.
+
 ## Quick Reference
 
 | Situation | Action |
@@ -152,6 +171,7 @@ Ready to implement <feature-name>
 | Directory not ignored | Add to .gitignore + commit |
 | Tests fail during baseline | Report failures + ask |
 | No package.json/Cargo.toml | Skip dependency install |
+| Parallel implementer lanes | One dedicated branch-backed worktree per lane |
 
 ## Common Mistakes
 
@@ -194,6 +214,7 @@ Ready to implement auth feature
 ## Red Flags
 
 **Never:**
+
 - Create worktree without verifying it's ignored (project-local)
 - Skip baseline test verification
 - Proceed with failing tests without asking
@@ -201,6 +222,7 @@ Ready to implement auth feature
 - Skip AGENTS.md check
 
 **Always:**
+
 - Follow directory priority: existing > AGENTS.md > ask
 - Verify directory is ignored for project-local
 - Auto-detect and run project setup
@@ -209,10 +231,12 @@ Ready to implement auth feature
 ## Integration
 
 **Called by:**
+
 - **brainstorming** (Phase 4) - REQUIRED when design is approved and implementation follows
-- **subagent-driven-development** - REQUIRED before executing any tasks
+- **subagent-driven-development** - REQUIRED before executing any tasks, and for provisioning dedicated lane worktrees when implementers run in parallel
 - **executing-plans** - REQUIRED before executing any tasks
 - Any skill needing isolated workspace
 
 **Pairs with:**
+
 - **finishing-a-development-branch** - REQUIRED for cleanup after work complete

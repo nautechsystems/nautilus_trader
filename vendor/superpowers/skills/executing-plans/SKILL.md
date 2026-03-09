@@ -16,6 +16,7 @@ Load plan, review critically, execute tasks in batches, report for review betwee
 ## The Process
 
 ### Step 1: Load and Review Plan
+
 1. Read plan file
 2. Verify the plan contains a `## Progress Tracker` and treat it as the source of truth
 3. Review critically - identify any questions or concerns about the plan
@@ -23,14 +24,22 @@ Load plan, review critically, execute tasks in batches, report for review betwee
 5. If no concerns: Create TodoWrite and proceed
 
 If the tracker is missing or incomplete:
+
 - Stop immediately
 - Ask for the plan to be updated before execution begins
 - Do not invent a side tracker in chat or TodoWrite
 
+If the tracker includes `Lane Branch` or `Worktree Path` columns from the subagent-driven workflow:
+
+- Preserve them
+- Use `shared` unless you intentionally split execution across multiple workspaces
+
 ### Step 2: Execute Batch
+
 **Default: First 3 tasks**
 
 For each task:
+
 1. Update the Progress Tracker row to `in_progress` with current owner and a short note
 2. Mirror that state in TodoWrite
 3. Follow each step exactly (plan has bite-sized steps)
@@ -39,20 +48,25 @@ For each task:
 6. Mark task as `completed` in the tracker, then sync TodoWrite
 
 Use the plan's status vocabulary. If the plan does not define one, use:
+
 - `not_started`
 - `in_progress`
 - `blocked`
 - `completed`
 
 ### Step 3: Report
+
 When batch complete:
+
 - Show what was implemented
 - Show verification output
 - Reference the updated tracker state
 - Say: "Ready for feedback."
 
 ### Step 4: Continue
+
 Based on feedback:
+
 - Apply changes if needed
 - Update the tracker before and after any rework
 - Execute next batch
@@ -61,6 +75,7 @@ Based on feedback:
 ### Step 5: Complete Development
 
 After all tasks complete and verified:
+
 - Announce: "I'm using the finishing-a-development-branch skill to complete this work."
 - **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch
 - Follow that skill to verify tests, present options, execute choice
@@ -68,6 +83,7 @@ After all tasks complete and verified:
 ## When to Stop and Ask for Help
 
 **STOP executing immediately when:**
+
 - Hit a blocker mid-batch (missing dependency, test fails, instruction unclear)
 - Plan has critical gaps preventing starting
 - You don't understand an instruction
@@ -76,6 +92,7 @@ After all tasks complete and verified:
 **Ask for clarification rather than guessing.**
 
 When blocked:
+
 - Update the current task row to `blocked`
 - Record the blocker in `Notes / Last Update` and preserve the latest `Commit / Diff` and `Verification` state
 - Report the blocker to your human partner
@@ -83,15 +100,18 @@ When blocked:
 ## When to Revisit Earlier Steps
 
 **Return to Review (Step 1) when:**
+
 - Partner updates the plan based on your feedback
 - Fundamental approach needs rethinking
 
 **Don't force through blockers** - stop and ask.
 
 ## Remember
+
 - Review plan critically first
 - Use the plan doc's Progress Tracker as the canonical state record
 - Keep `Commit / Diff` and `Verification` columns current, not just status and notes
+- Keep `Lane Branch` and `Worktree Path` accurate when the plan includes them, even if they remain `shared`
 - Follow plan steps exactly
 - Don't skip verifications
 - Reference skills when plan says to
@@ -104,6 +124,7 @@ When blocked:
 ## Integration
 
 **Required workflow skills:**
+
 - **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
 - **superpowers:writing-plans** - Creates the plan this skill executes
 - **superpowers:finishing-a-development-branch** - Complete development after all tasks

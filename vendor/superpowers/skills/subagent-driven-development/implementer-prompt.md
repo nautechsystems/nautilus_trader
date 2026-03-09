@@ -26,6 +26,12 @@ Task tool (general-purpose):
     - Completed dependencies: [list]
     - Neighboring lanes running in parallel: [list or "none"]
 
+    ## Lane Workspace
+
+    - Lane branch: [assigned branch name or `shared`]
+    - Worktree path: [assigned worktree path or `shared`]
+    - Orchestration branch: [controller branch name]
+
     ## Before You Begin
 
     If you have questions about:
@@ -52,6 +58,8 @@ Task tool (general-purpose):
     It's always OK to pause and clarify. Don't guess or make assumptions.
 
     **Parallel lane rules:**
+    - If `Lane branch` / `Worktree path` are assigned, do all write-capable work there and nowhere else
+    - Do not switch to the orchestration branch while implementing or fixing review feedback
     - Stay inside your owned write scope unless you ask for approval to expand it
     - Do not revert or rewrite work that belongs to another lane
     - If another lane's changes affect your task, stop and report the conflict instead of guessing
@@ -87,6 +95,7 @@ Task tool (general-purpose):
 
     When done, report:
     - Status transition you recommend for the tracker
+    - Lane branch / worktree path you used
     - Commit SHA(s) or diff range the tracker should record
     - Exact verification commands run and whether they passed or failed
     - What you implemented

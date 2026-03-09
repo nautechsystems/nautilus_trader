@@ -16,7 +16,9 @@ Task tool (superpowers:code-reviewer):
   HEAD_SHA: [implementer commit or pinned diff head]
   DESCRIPTION: [task summary]
   OWNED_PATHS: [exact files/modules for this task]
+  LANE_BRANCH: [assigned branch name or `shared`]
+  REVIEW_WORKTREE: [usually `none`; only provided if verification requires checkout]
   TRACKER_ROW: [current row from the Progress Tracker]
 ```
 
-**Code reviewer returns:** Recommended status transition, review target commit/diff, Strengths, Issues (Critical/Important/Minor), Assessment
+**Code reviewer returns:** Recommended status transition, review target commit/diff, whether review was diff-only or used a reviewer worktree, Strengths, Issues (Critical/Important/Minor), Assessment

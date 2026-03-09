@@ -27,6 +27,8 @@ Task tool (general-purpose):
     - Owned write scope: [exact files/modules for this task]
     - Base SHA: [commit before task]
     - Head SHA: [implementer commit or current pinned diff]
+    - Lane branch: [assigned branch name or `shared`]
+    - Reviewer worktree: [usually `none`; only provided if verification requires checkout]
 
     ## CRITICAL: Do Not Trust the Report
 
@@ -41,6 +43,7 @@ Task tool (general-purpose):
     **DO:**
     - Read the actual code they wrote
     - Stay focused on the pinned task diff and owned scope
+    - Prefer diff review over mutating a lane worktree
     - Compare actual implementation to requirements line by line
     - Check for missing pieces they claimed to implement
     - Look for extra features they didn't mention
@@ -69,6 +72,7 @@ Task tool (general-purpose):
     Report:
     - Recommended status transition (`in_review_quality` or `in_progress`)
     - Review target commit/diff you verified
+    - Whether you used a reviewer worktree or diff-only review
     - ✅ Spec compliant (if everything matches after code inspection)
     - ❌ Issues found: [list specifically what's missing or extra, with file:line references]
 ```

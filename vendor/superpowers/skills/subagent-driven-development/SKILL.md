@@ -5,9 +5,9 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by dispatching fresh subagents per task lane. Use parallel task lanes when tasks are independent and have disjoint ownership. Every lane keeps the same two-stage review order: spec compliance first, then code quality.
+Execute plan by dispatching fresh subagents per task lane. Use parallel task lanes when tasks are independent and have disjoint ownership. When implementer lanes run in parallel, each write-capable lane gets its own branch-backed worktree. Every lane keeps the same two-stage review order: spec compliance first, then code quality.
 
-**Core principle:** Fresh subagent per task lane + safe parallel dispatch + two-stage review (spec then quality) = high quality without unnecessary serial bottlenecks
+**Core principle:** Fresh subagent per task lane + dedicated lane worktrees for parallel implementers + safe parallel dispatch + two-stage review (spec then quality) = high quality without unnecessary serial bottlenecks
 
 ## When to Use
 
@@ -33,6 +33,7 @@ digraph when_to_use {
 ```
 
 **vs. Executing Plans (separate session):**
+
 - Same session (no context switch)
 - Fresh subagent per task lane (no context pollution)
 - Can batch independent tasks in parallel when the plan proves they are disjoint
@@ -99,8 +100,10 @@ digraph process {
 ## Parallelization Gate
 
 Use `dispatching-parallel-agents` as a subroutine only when every task in the batch passes all of these checks:
+
 - No dependency edge between tasks
 - No overlapping write scope, owned files, or owned modules
+- A dedicated branch-backed worktree can be assigned to each write-capable implementer lane
 - No shared mutable external state that can invalidate another lane's verification
 - Targeted verification can run independently per lane
 - The controller can describe each lane's boundaries in one prompt without ambiguity
@@ -108,21 +111,37 @@ Use `dispatching-parallel-agents` as a subroutine only when every task in the ba
 If any check is uncertain, keep the work serial for that boundary. Speed is optional; correctness is not.
 
 Recommended lane size:
+
 - 2-4 implementer lanes at once for clearly independent tasks
 - Review lanes may also run in parallel when each reviewer is locked to one task's diff and owned scope
+
+## Lane Worktree Policy
+
+Use one orchestration worktree for the controller, then choose lane topology deliberately:
+
+- Single-lane serial execution: one isolated worktree is enough. Record `shared` in tracker fields if every task stays in the same workspace.
+- Parallel implementer lanes: every write-capable implementer lane MUST get its own branch-backed worktree before implementation begins.
+- Fix/rework loops: keep spec-fix and quality-fix cycles in the same lane worktree and branch that produced the reviewed diff.
+- Reviewer lanes: default to pinned diff review without a dedicated mutable worktree. Provision a reviewer worktree only when the reviewer must run verification against that lane's exact tree.
+- Controller integration: after both reviews pass, integrate the approved lane commit back into the orchestration branch, then update the tracker to record the integrated commit/diff.
+
+Never let parallel implementer lanes share the controller worktree or a shared mutable branch. If two lanes need the same files, they are not parallel-safe.
 
 ## Progress Tracker Contract
 
 The plan document's `## Progress Tracker` is the source of truth for task state and scheduling.
 
 Before starting execution:
+
 - Read the tracker and confirm every task has a row
-- Confirm every row includes `Depends On`, `Write Scope`, `Commit / Diff`, and `Verification`
+- Confirm every row includes `Depends On`, `Write Scope`, `Lane Branch`, `Worktree Path`, `Commit / Diff`, and `Verification`
 - Mirror it into TodoWrite, but do not treat TodoWrite as authoritative
 
 During execution, update the tracker immediately when:
+
 - a task starts
 - ownership changes
+- a lane branch or worktree path is assigned or changed
 - a task creates or replaces a commit the lane now depends on
 - a reviewer pins a new diff range for inspection
 - a verification command passes or fails
@@ -132,6 +151,7 @@ During execution, update the tracker immediately when:
 - the task is completed
 
 Use this status vocabulary unless the plan explicitly overrides it:
+
 - `not_started`
 - `in_progress`
 - `in_review_spec`
@@ -140,6 +160,7 @@ Use this status vocabulary unless the plan explicitly overrides it:
 - `completed`
 
 Recommended transition pattern per task:
+
 - `not_started` -> `in_progress` when the implementer begins work
 - `in_progress` -> `in_review_spec` before dispatching the spec reviewer
 - `in_review_spec` -> `in_progress` if spec issues require implementation fixes
@@ -149,16 +170,21 @@ Recommended transition pattern per task:
 - `*` -> `blocked` whenever progress stops pending clarification or dependency
 
 Controller responsibilities:
+
 - Update the tracker in the plan doc before dispatching each subagent and after every subagent reply that changes state
 - Use `Depends On` plus completed-task state to decide which lanes are ready
 - Use `Write Scope` to reject unsafe parallel batches before dispatch
+- Allocate a dedicated lane branch and worktree before dispatching any parallel implementer lane, then record both in the tracker
 - Keep `Commit / Diff` current so every review is pinned to a stable target
 - Keep `Verification` current so the tracker shows the latest test/command evidence, not just a narrative summary
+- Integrate approved lane commits back into the orchestration branch before marking the task complete, and update the tracker if integration rewrites the SHA
 - Pass the current tracker row with the task context so subagents know the latest status without rereading the whole plan
 - Keep TodoWrite synchronized with the tracker, but resolve conflicts in favor of the tracker
 
 Subagent responsibilities:
+
 - Report explicit status transitions in every handoff, including verification or blocker notes
+- Stay inside the assigned lane worktree and branch when write-capable work is requested
 - Report commit SHAs or diff ranges they expect the tracker to record
 - Report exact verification commands and whether they passed or failed
 - Respect the tracker row's dependency and write-scope boundaries
@@ -180,13 +206,15 @@ Tasks 1 and 2 are independent:
 - Task 1 owns `scripts/install-hook.sh`, `tests/install-hook.test.ts`
 - Task 2 owns `src/recovery.ts`, `tests/recovery.test.ts`
 
-[Update Task 1 + Task 2 tracker rows to in_progress, owner=implementer, commit/diff=none, verification=not_run]
+[Allocate Task 1 lane branch `lanes/task-1-hook` in `.worktrees/task-1-hook`]
+[Allocate Task 2 lane branch `lanes/task-2-recovery` in `.worktrees/task-2-recovery`]
+[Update Task 1 + Task 2 tracker rows to in_progress, owner=implementer, lane branch/worktree assigned, commit/diff=none, verification=not_run]
 [Dispatch both implementer lanes using dispatching-parallel-agents pattern]
 
 Task 1: Hook installation script
 
 [Get Task 1 text and context (already extracted)]
-[Dispatch implementation subagent with full task text + context]
+[Dispatch implementation subagent with full task text + context + assigned branch/worktree]
 
 Implementer: "Before I begin - should the hook be installed at user or system level?"
 
@@ -197,7 +225,7 @@ Implementer: "Got it. Implementing now..."
   - Implemented install-hook command
   - Added tests, 5/5 passing
   - Self-review: Found I missed --force flag, added it
-  - Committed (`abc1234`)
+  - Committed (`abc1234`) on `lanes/task-1-hook`
 
 [Update Task 1 tracker row to in_review_spec, owner=spec-reviewer, commit/diff=abc1234, verification=`npm test PASS`]
 [Dispatch spec compliance reviewer]
@@ -207,19 +235,20 @@ Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
 [Get git SHAs, dispatch code quality reviewer]
 Code reviewer: Strengths: Good test coverage, clean. Issues: None. Approved.
 
-[Update Task 1 tracker row to completed, commit/diff=abc1234, verification=`npm test PASS`, sync TodoWrite]
+[Cherry-pick `abc1234` onto orchestration branch -> `13579bd`]
+[Update Task 1 tracker row to completed, commit/diff=13579bd, verification=`npm test PASS`, note=`reviewed on lane branch lanes/task-1-hook`, sync TodoWrite]
 
 Task 2: Recovery modes
 
 [Get Task 2 text and context (already extracted)]
-[Dispatch implementation subagent with full task text + context]
+[Dispatch implementation subagent with full task text + context + assigned branch/worktree]
 
 Implementer: [No questions, proceeds]
 Implementer:
   - Added verify/repair modes
   - 8/8 tests passing
   - Self-review: All good
-  - Committed (`def5678`)
+  - Committed (`def5678`) on `lanes/task-2-recovery`
 
 [Update Task 2 tracker row to in_review_spec, owner=spec-reviewer, commit/diff=def5678, verification=`npm test PASS`]
 [Dispatch spec compliance reviewer]
@@ -227,7 +256,7 @@ Spec reviewer: ❌ Issues:
   - Missing: Progress reporting (spec says "report every 100 items")
   - Extra: Added --json flag (not requested)
 
-[Update Task 2 tracker row to in_progress, owner=implementer, commit/diff=def5678, verification=`npm test PASS`, note=fixing spec issues]
+[Update Task 2 tracker row to in_progress, owner=implementer, commit/diff=def5678, verification=`npm test PASS`, note=`fixing spec issues in lanes/task-2-recovery`]
 [Implementer fixes issues]
 Implementer: Removed --json flag, added progress reporting
 
@@ -239,7 +268,7 @@ Spec reviewer: ✅ Spec compliant now
 [Dispatch code quality reviewer]
 Code reviewer: Strengths: Solid. Issues (Important): Magic number (100)
 
-[Update Task 2 tracker row to in_progress, owner=implementer, commit/diff=fedcba9, verification=`npm test PASS`, note=fixing quality issues]
+[Update Task 2 tracker row to in_progress, owner=implementer, commit/diff=fedcba9, verification=`npm test PASS`, note=`fixing quality issues in lanes/task-2-recovery`]
 [Implementer fixes]
 Implementer: Extracted PROGRESS_INTERVAL constant
 
@@ -247,7 +276,8 @@ Implementer: Extracted PROGRESS_INTERVAL constant
 [Code reviewer reviews again]
 Code reviewer: ✅ Approved
 
-[Update Task 2 tracker row to completed, commit/diff=9876abc, verification=`npm test PASS`, sync TodoWrite]
+[Cherry-pick `9876abc` onto orchestration branch -> `2468ace`]
+[Update Task 2 tracker row to completed, commit/diff=2468ace, verification=`npm test PASS`, note=`reviewed on lane branch lanes/task-2-recovery`, sync TodoWrite]
 
 Task 3 depends on Task 1 and Task 2
 
@@ -266,6 +296,7 @@ Done!
 ## Advantages
 
 **vs. Manual execution:**
+
 - Subagents follow TDD naturally
 - Fresh context per task (no confusion)
 - Safe parallel lanes when the plan proves ownership is disjoint
@@ -273,11 +304,13 @@ Done!
 - Plan doc stays current as shared execution state
 
 **vs. Executing Plans:**
+
 - Same session (no handoff)
 - Continuous progress (no waiting)
 - Review checkpoints automatic
 
 **Efficiency gains:**
+
 - No file reading overhead (controller provides full text)
 - Controller curates exactly what context is needed
 - Subagent gets complete information upfront
@@ -285,6 +318,7 @@ Done!
 - Ready tasks can move in parallel instead of waiting behind unrelated work
 
 **Quality gates:**
+
 - Self-review catches issues before handoff
 - Two-stage review: spec compliance, then code quality
 - Review loops ensure fixes actually work
@@ -292,6 +326,7 @@ Done!
 - Code quality ensures implementation is well-built
 
 **Cost:**
+
 - More subagent invocations (implementer + 2 reviewers per task)
 - Controller does more prep work (extracting all tasks upfront)
 - Parallel scheduling requires explicit dependency and write-scope thinking
@@ -301,6 +336,7 @@ Done!
 ## Red Flags
 
 **Never:**
+
 - Start implementation on main/master branch without explicit user consent
 - Skip reviews (spec compliance OR code quality)
 - Skip Progress Tracker updates when state changes
@@ -319,23 +355,27 @@ Done!
 - Let reviewers inspect a moving target instead of a pinned task diff
 
 **If subagent asks questions:**
+
 - Answer clearly and completely
 - Provide additional context if needed
 - Don't rush them into implementation
 
 **If reviewer finds issues:**
+
 - Implementer (same subagent) fixes them
 - Reviewer reviews again
 - Repeat until approved
 - Don't skip the re-review
 
 **If subagent fails task:**
+
 - Dispatch fix subagent with specific instructions
 - Don't try to fix manually (context pollution)
 
 ## Integration
 
 **Required workflow skills:**
+
 - **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
 - **superpowers:writing-plans** - Creates the plan this skill executes
 - **superpowers:dispatching-parallel-agents** - Use as the controller's parallel batching pattern when ready tasks are truly independent
@@ -343,7 +383,9 @@ Done!
 - **superpowers:finishing-a-development-branch** - Complete development after all tasks
 
 **Subagents should use:**
+
 - **superpowers:test-driven-development** - Subagents follow TDD for each task
 
 **Alternative workflow:**
+
 - **superpowers:executing-plans** - Use for separate-session execution with human checkpoints instead of same-session orchestration
