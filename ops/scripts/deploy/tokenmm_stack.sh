@@ -31,6 +31,7 @@ AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
 BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"
 BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"
 OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-/nautilus/tokenmm/okx}"
+BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-/nautilus/tokenmm/bitget}"
 
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6380"
@@ -64,7 +65,7 @@ Environment overrides:
   TOKENMM_BALANCES_READY_TIMEOUT_SECS
   TOKENMM_STRICT_PROFILE_CHECK, TOKENMM_STRICT_BALANCES_READY_CHECK
   TOKENMM_LOAD_AWS_SECRETS, TOKENMM_AWS_REGION
-  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID
+  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID, TOKENMM_BITGET_SECRET_ID
 
 Production note:
   tokenmm_stack.sh is local smoke only; production service management belongs in Pulse
@@ -83,7 +84,7 @@ require_cmd() {
 is_allowed_env_key() {
   local key="$1"
   case "${key}" in
-    TOKENMM_* | BYBIT_* | BINANCE_* | OKX_*)
+    TOKENMM_* | BYBIT_* | BINANCE_* | OKX_* | BITGET_*)
       return 0
       ;;
     *)
@@ -169,6 +170,7 @@ load_env_file() {
   BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
   BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-${BINANCE_SECRET_ID}}"
   OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-${OKX_SECRET_ID}}"
+  BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-${BITGET_SECRET_ID}}"
 }
 
 resolve_redis_target_from_config() {
@@ -268,7 +270,7 @@ load_secret_into_env() {
       continue
     fi
     case "${key}" in
-      BYBIT_*|BINANCE_*|OKX_*)
+      BYBIT_*|BINANCE_*|BITGET_*|OKX_*)
         printf -v "${key}" "%s" "${value}"
         export "${key?}"
         ;;
@@ -288,6 +290,7 @@ load_aws_secrets_if_enabled() {
   load_secret_into_env "${BYBIT_SECRET_ID}"
   load_secret_into_env "${BINANCE_SECRET_ID}"
   load_secret_into_env "${OKX_SECRET_ID}"
+  load_secret_into_env "${BITGET_SECRET_ID}"
 }
 
 validate_mode() {
@@ -344,6 +347,9 @@ validate_config_and_keys() {
   [[ -z "${BYBIT_API_SECRET:-}" ]] && missing+=("BYBIT_API_SECRET")
   [[ -z "${BINANCE_API_KEY:-}" ]] && missing+=("BINANCE_API_KEY")
   [[ -z "${BINANCE_API_SECRET:-}" ]] && missing+=("BINANCE_API_SECRET")
+  [[ -z "${BITGET_API_KEY:-}" ]] && missing+=("BITGET_API_KEY")
+  [[ -z "${BITGET_API_SECRET:-}" ]] && missing+=("BITGET_API_SECRET")
+  [[ -z "${BITGET_API_PASSPHRASE:-}" ]] && missing+=("BITGET_API_PASSPHRASE")
   [[ -z "${OKX_API_KEY:-}" ]] && missing+=("OKX_API_KEY")
   [[ -z "${OKX_API_SECRET:-}" ]] && missing+=("OKX_API_SECRET")
   [[ -z "${OKX_API_PASSPHRASE:-}" ]] && missing+=("OKX_API_PASSPHRASE")

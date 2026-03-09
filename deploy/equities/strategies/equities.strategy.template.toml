@@ -59,7 +59,8 @@ trading_mode = "live"
 read_only_api = true
 auto_restart_time = "11:45 PM"
 time_zone = "America/New_York"
-relogin_after_twofa_timeout = true
+relogin_after_twofa_timeout = false
+twofa_timeout_action = "exit"
 
 [strategy]
 strategy_id = "aapl_tradexyz_makerv4"
