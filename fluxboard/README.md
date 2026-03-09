@@ -18,7 +18,7 @@ Modern React+TypeScript implementation of Fluxboard panels (Params, Trades, Mark
 
 - **Tech Stack:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, Socket.IO
 - **Backend:** FluxAPI (Flask). For TokenMM, default runner target is `127.0.0.1:5022`.
-- **Frontend:** Vite dev server (default `http://127.0.0.1:5173`) or embedded static serving from FluxAPI at `/tokenmm/*`.
+- **Frontend:** Vite dev server (default `http://127.0.0.1:5173`) or embedded static serving from FluxAPI at `/tokenmm/*` and `/equities/*`.
 - **Features:** Real-time updates via Socket.IO (polling transport by default), session persistence, formatting parity
 
 ## Quick Start
@@ -27,7 +27,8 @@ Modern React+TypeScript implementation of Fluxboard panels (Params, Trades, Mark
 
 - Node.js >= 18
 - pnpm installed (`npm install -g pnpm`)
-- FluxAPI running (see `examples/live/makerv3_single_leg/README.md` and `apps/fluxboard/docs/tokenmm_runbook.md`)
+- FluxAPI running. For serving and smoke checks, start with `apps/fluxboard/docs/tokenmm_runbook.md`.
+- Equities hosting uses the same Fluxboard bundle via `systems/flux/flux/runners/equities/run_api.py`.
 
 ### Installation
 
@@ -41,8 +42,10 @@ pnpm --dir fluxboard exec playwright install chromium
 
 For TokenMM, follow:
 
-1. `examples/live/makerv3_single_leg/README.md` (end-to-end runner order + dev/prod-like serving modes)
-2. `apps/fluxboard/docs/tokenmm_runbook.md` (serving/runbook + smoke checks)
+1. `apps/fluxboard/docs/tokenmm_runbook.md` (runner order, serving modes, and smoke checks)
+2. `systems/flux/flux/runners/tokenmm/run_api.py` (serves Fluxboard at `/tokenmm/*` and Pulse at `/pulse/*`)
+
+For equities, use `systems/flux/flux/runners/equities/run_api.py`, which serves the same Fluxboard app at `/equities/*` and can also serve Pulse at `/pulse/*`.
 
 ### Build
 
