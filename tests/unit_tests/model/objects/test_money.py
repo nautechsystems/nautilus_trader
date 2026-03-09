@@ -667,6 +667,54 @@ class TestMoney:
         with pytest.raises(ValueError, match="currency"):
             _ = money_usd - money_aud
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), Money(-1.00, USD)],
+            [Money(-1.00, USD), Money(1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
+        ],
+    )
+    def test_neg_returns_expected_money(self, value, expected):
+        # Arrange, Act
+        result = -value
+
+        # Assert
+        assert isinstance(result, Money)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), Money(1.00, USD)],
+            [Money(-1.00, USD), Money(-1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
+        ],
+    )
+    def test_pos_returns_expected_money(self, value, expected):
+        # Arrange, Act
+        result = +value
+
+        # Assert
+        assert isinstance(result, Money)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), Money(1.00, USD)],
+            [Money(-1.00, USD), Money(1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
+        ],
+    )
+    def test_abs_returns_expected_money(self, value, expected):
+        # Arrange, Act
+        result = abs(value)
+
+        # Assert
+        assert isinstance(result, Money)
+        assert result == expected
+
 
 class TestAccountBalance:
     def test_equality(self):

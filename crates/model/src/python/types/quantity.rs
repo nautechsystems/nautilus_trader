@@ -285,14 +285,12 @@ impl Quantity {
         self.as_decimal().neg()
     }
 
-    fn __pos__(&self) -> Decimal {
-        let mut value = self.as_decimal();
-        value.set_sign_positive(true);
-        value
+    fn __pos__(&self) -> Self {
+        *self
     }
 
-    fn __abs__(&self) -> Decimal {
-        self.as_decimal().abs()
+    fn __abs__(&self) -> Self {
+        *self
     }
 
     fn __int__(&self) -> u64 {

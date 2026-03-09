@@ -16,7 +16,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::Neg,
     str::FromStr,
 };
 
@@ -292,22 +291,20 @@ impl Money {
         }
     }
 
-    fn __neg__(&self) -> Decimal {
-        self.as_decimal().neg()
+    fn __neg__(&self) -> Self {
+        -*self
     }
 
-    fn __pos__(&self) -> Decimal {
-        let mut value = self.as_decimal();
-        value.set_sign_positive(true);
-        value
+    fn __pos__(&self) -> Self {
+        *self
     }
 
-    fn __abs__(&self) -> Decimal {
-        self.as_decimal().abs()
+    fn __abs__(&self) -> Self {
+        if self.raw < 0 { -*self } else { *self }
     }
 
-    fn __int__(&self) -> u64 {
-        self.as_f64() as u64
+    fn __int__(&self) -> i64 {
+        self.as_f64() as i64
     }
 
     fn __float__(&self) -> f64 {

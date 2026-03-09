@@ -101,16 +101,33 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Quantity(-0, precision=0), Decimal(0)],
-            [Quantity(0, precision=0), Decimal(0)],
-            [Quantity(1, precision=0), Decimal(1)],
+            [Quantity(-0, precision=0), Quantity(0, precision=0)],
+            [Quantity(0, precision=0), Quantity(0, precision=0)],
+            [Quantity(1, precision=0), Quantity(1, precision=0)],
         ],
     )
-    def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_abs_with_various_values_returns_expected_quantity(self, value, expected):
         # Arrange, Act
         result = abs(value)
 
         # Assert
+        assert isinstance(result, Quantity)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Quantity(0, precision=0), Quantity(0, precision=0)],
+            [Quantity(1, precision=0), Quantity(1, precision=0)],
+            [Quantity(1.5, precision=1), Quantity(1.5, precision=1)],
+        ],
+    )
+    def test_pos_with_various_values_returns_expected_quantity(self, value, expected):
+        # Arrange, Act
+        result = +value
+
+        # Assert
+        assert isinstance(result, Quantity)
         assert result == expected
 
     @pytest.mark.parametrize(
