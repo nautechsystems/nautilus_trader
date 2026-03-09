@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lp.hedgers import get_hedger_meta
 from lp.hedgers import list_hedgers
+from lp.hedgers import list_public_hedgers
 
 
 def test_registry_preserves_chainsaw_env_var_names() -> None:
@@ -34,3 +35,17 @@ def test_registry_marks_only_band1_and_band2_enabled_by_default() -> None:
     assert metas["hype_usdt_lp"].default_enabled is False
     assert metas["plume_weth_lp"].default_enabled is False
     assert metas["third_lp"].default_enabled is False
+
+
+def test_registry_exposes_staged_generic_instances_publicly_and_hides_third_stub() -> None:
+    public_ids = [meta.id for meta in list_public_hedgers()]
+    third = get_hedger_meta("third_lp")
+
+    assert public_ids == [
+        "eth_plume_lp",
+        "eth_plume_lp_band2",
+        "hype_usdt_lp",
+        "plume_weth_lp",
+    ]
+    assert third is not None
+    assert third.public_visible is False

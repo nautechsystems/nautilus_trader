@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from lp.api import create_lp_api_app
+from lp.hedgers import get_hedger_meta
 
 
 class FakeRedis:
@@ -118,17 +120,142 @@ def write_band1_config(tmp_path: Path) -> Path:
     )
 
 
+def write_hype_config(tmp_path: Path) -> Path:
+    return write_ini(
+        tmp_path,
+        """
+        [identity]
+        id = hype_usdt_lp
+        label = PLUME/USDT LP Hedger
+        state_key = hype_usdt_lp_hedger
+        job_id = service-hedger3
+
+        [lp_pool]
+        mode = synthetic
+        chain = plume
+        amm = rooster_v3
+        pool_address = 0x0000000000000000000000000000000000000000
+        token0_symbol = PLUME
+        token1_symbol = USDT
+        token0_decimals = 18
+        token1_decimals = 6
+        initial_token0 = 46159
+        initial_token1 = 1000
+        price_lower = 0.01854805801
+        price_upper = 0.02690558829
+
+        [target]
+        target_net_token0 = 0.0
+        target_net_token1 = 0.0
+
+        [bybit]
+        perp_symbol_token0 = PLUMEUSDT
+        perp_symbol_token1 =
+        order_qty_step_token0 = 0.001
+        order_qty_step_token1 = 1
+        max_slippage_bps = 30
+        api_key =
+        api_secret =
+
+        [rebalance]
+        poll_interval_sec = 3
+        price_move_pct = 2.0
+        token0_exposure_usd_threshold = 1000
+        token1_exposure_usd_threshold = 1000
+        min_order_qty_token0 = 0.01
+        min_order_qty_token1 = 10
+
+        [hedge]
+        hedge_token0 = 1
+        hedge_token1 = 0
+        """,
+        name="hype_usdt_lp_hedger.ini.disabled",
+    )
+
+
+def write_plume_weth_config(tmp_path: Path) -> Path:
+    return write_ini(
+        tmp_path,
+        """
+        [identity]
+        id = plume_weth_lp
+        label = PLUME/WETH LP Hedger
+        state_key = plume_weth_lp_hedger
+        job_id = service-hedger4
+
+        [lp_pool]
+        mode = synthetic
+        chain = plume
+        amm = rooster_v3
+        pool_address = 0x0000000000000000000000000000000000000000
+        token0_symbol = WETH
+        token1_symbol = WPLUME
+        token0_decimals = 18
+        token1_decimals = 18
+        initial_token0 = 0.5
+        initial_token1 = 500.0
+        price_lower = 0.0001
+        price_upper = 10000
+
+        [target]
+        target_net_token0 = 0.0
+        target_net_token1 = 0.0
+
+        [bybit]
+        perp_symbol_token0 = ETHUSDT
+        perp_symbol_token1 = PLUMEUSDT
+        order_qty_step_token0 = 0.001
+        order_qty_step_token1 = 1
+        max_slippage_bps = 30
+        api_key =
+        api_secret =
+
+        [rebalance]
+        poll_interval_sec = 3
+        price_move_pct = 2.0
+        token0_exposure_usd_threshold = 1000
+        token1_exposure_usd_threshold = 1000
+        min_order_qty_token0 = 0.01
+        min_order_qty_token1 = 10
+
+        [hedge]
+        hedge_token0 = 1
+        hedge_token1 = 1
+        """,
+        name="plume_weth_lp_hedger.ini.disabled",
+    )
+
+
 def build_app(tmp_path: Path, monkeypatch):
     redis_client = FakeRedis()
     pulse = FakePulse()
-    config_path = write_band1_config(tmp_path)
-    monkeypatch.setenv("ETH_PLUME_LP_HEDGER_CONFIG", str(config_path))
+    band1_config = write_band1_config(tmp_path)
+    hype_config = write_hype_config(tmp_path)
+    plume_weth_config = write_plume_weth_config(tmp_path)
+    monkeypatch.setenv("ETH_PLUME_LP_HEDGER_CONFIG", str(band1_config))
+    monkeypatch.setenv("HYPE_USDT_LP_HEDGER_CONFIG", str(hype_config))
+    monkeypatch.setenv("PLUME_WETH_LP_HEDGER_CONFIG", str(plume_weth_config))
+    metas = tuple(
+        meta
+        for meta in (
+            get_hedger_meta("eth_plume_lp"),
+            get_hedger_meta("eth_plume_lp_band2"),
+            get_hedger_meta("hype_usdt_lp"),
+            get_hedger_meta("plume_weth_lp"),
+            get_hedger_meta("third_lp"),
+        )
+        if meta is not None
+    )
     app = create_lp_api_app(
         redis_client=redis_client,
+        registry_metas=tuple(
+            replace(meta, config_default_path=str(Path(meta.config_default_path).name))
+            for meta in metas
+        ),
         get_job_status=pulse.get_job_status,
         control_job=pulse.control_job,
     )
-    return app, redis_client, pulse, config_path
+    return app, redis_client, pulse, band1_config
 
 
 def test_list_hedger_instances_returns_registry_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -145,7 +272,7 @@ def test_list_hedger_instances_returns_registry_metadata(tmp_path: Path, monkeyp
     assert body["data"][0]["config_env_var"] == "ETH_PLUME_LP_HEDGER_CONFIG"
 
 
-def test_list_hedger_instances_only_exposes_active_band1_and_band2_by_default(
+def test_list_hedger_instances_exposes_visible_public_ids_and_hides_third_stub(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -159,7 +286,59 @@ def test_list_hedger_instances_only_exposes_active_band1_and_band2_by_default(
     assert [item["id"] for item in body["data"]] == [
         "eth_plume_lp",
         "eth_plume_lp_band2",
+        "hype_usdt_lp",
+        "plume_weth_lp",
     ]
+
+
+def test_status_endpoint_marks_staged_generic_instance_not_ready(tmp_path: Path, monkeypatch) -> None:
+    app, _, _, _ = build_app(tmp_path, monkeypatch)
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/hedgers/hype_usdt_lp")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["staged"] is True
+    assert body["data"]["config_ready"] is False
+    assert any("pool" in error.lower() for error in body["data"]["config_readiness_errors"])
+
+
+def test_staged_generic_job_actions_reject_restart_until_config_ready(tmp_path: Path, monkeypatch) -> None:
+    app, _, _, _ = build_app(tmp_path, monkeypatch)
+
+    with app.test_client() as client:
+        response = client.post("/api/v1/hedgers/hype_usdt_lp/job", json={"action": "restart"})
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["error"] == "config_not_ready"
+
+
+def test_staged_generic_enable_rejects_true_until_config_ready(tmp_path: Path, monkeypatch) -> None:
+    app, _, _, _ = build_app(tmp_path, monkeypatch)
+
+    with app.test_client() as client:
+        response = client.post("/api/v1/hedgers/hype_usdt_lp/enabled", json={"enabled": True})
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["error"] == "config_not_ready"
+
+
+def test_config_patch_does_not_restart_staged_instance(tmp_path: Path, monkeypatch) -> None:
+    app, _, pulse, _ = build_app(tmp_path, monkeypatch)
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/hedgers/hype_usdt_lp/config",
+            json={"label": "PLUME/USDT LP Hedger Updated"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["restart"] == "skipped"
+    assert pulse.actions == []
 
 
 def test_status_endpoint_returns_chainsaw_payload_shape(tmp_path: Path, monkeypatch) -> None:

@@ -13,6 +13,7 @@ def _build_meta(
     config_env_var: str,
     config_default_path: str,
     default_enabled: bool,
+    public_visible: bool,
 ) -> LpHedgerMeta:
     return LpHedgerMeta(
         id=hedger_id,
@@ -26,6 +27,7 @@ def _build_meta(
         config_env_var=config_env_var,
         config_default_path=config_default_path,
         default_enabled=default_enabled,
+        public_visible=public_visible,
     )
 
 
@@ -37,6 +39,7 @@ _DEFAULT_HEDGERS: tuple[LpHedgerMeta, ...] = (
         config_env_var="ETH_PLUME_LP_HEDGER_CONFIG",
         config_default_path="deploy/lp/hedgers/eth_plume_lp_hedger.ini",
         default_enabled=True,
+        public_visible=True,
     ),
     _build_meta(
         hedger_id="eth_plume_lp_band2",
@@ -45,6 +48,7 @@ _DEFAULT_HEDGERS: tuple[LpHedgerMeta, ...] = (
         config_env_var="ETH_PLUME_LP_HEDGER_BAND2_CONFIG",
         config_default_path="deploy/lp/hedgers/eth_plume_lp_hedger_band2.ini",
         default_enabled=True,
+        public_visible=True,
     ),
     _build_meta(
         hedger_id="hype_usdt_lp",
@@ -53,6 +57,7 @@ _DEFAULT_HEDGERS: tuple[LpHedgerMeta, ...] = (
         config_env_var="HYPE_USDT_LP_HEDGER_CONFIG",
         config_default_path="deploy/lp/hedgers/hype_usdt_lp_hedger.ini.disabled",
         default_enabled=False,
+        public_visible=True,
     ),
     _build_meta(
         hedger_id="plume_weth_lp",
@@ -61,6 +66,7 @@ _DEFAULT_HEDGERS: tuple[LpHedgerMeta, ...] = (
         config_env_var="PLUME_WETH_LP_HEDGER_CONFIG",
         config_default_path="deploy/lp/hedgers/plume_weth_lp_hedger.ini.disabled",
         default_enabled=False,
+        public_visible=True,
     ),
     _build_meta(
         hedger_id="third_lp",
@@ -69,6 +75,7 @@ _DEFAULT_HEDGERS: tuple[LpHedgerMeta, ...] = (
         config_env_var="THIRD_LP_HEDGER_CONFIG",
         config_default_path="deploy/lp/hedgers/third_lp_hedger.ini.disabled",
         default_enabled=False,
+        public_visible=False,
     ),
 )
 
@@ -83,6 +90,10 @@ def list_active_hedgers() -> tuple[LpHedgerMeta, ...]:
     return tuple(meta for meta in _DEFAULT_HEDGERS if meta.default_enabled)
 
 
+def list_public_hedgers() -> tuple[LpHedgerMeta, ...]:
+    return tuple(meta for meta in _DEFAULT_HEDGERS if meta.public_visible)
+
+
 def list_hedger_metas() -> tuple[LpHedgerMeta, ...]:
     return list_hedgers()
 
@@ -95,4 +106,11 @@ def get_hedger_meta(hedger_id: str) -> LpHedgerMeta | None:
     return _REGISTRY.get(hedger_id)
 
 
-__all__ = ["get_hedger_meta", "iter_hedgers", "list_active_hedgers", "list_hedger_metas", "list_hedgers"]
+__all__ = [
+    "get_hedger_meta",
+    "iter_hedgers",
+    "list_active_hedgers",
+    "list_hedger_metas",
+    "list_hedgers",
+    "list_public_hedgers",
+]

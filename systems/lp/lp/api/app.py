@@ -17,7 +17,6 @@ from lp.config import LpHedgerConfig
 from lp.config import load_lp_hedger_config
 from lp.hedgers import LpHedgerMeta
 from lp.hedgers import get_hedger_meta
-from lp.hedgers import list_active_hedgers
 from lp.hedgers import list_hedgers
 
 
@@ -155,6 +154,8 @@ def _serialize_instance_meta(
     meta: LpHedgerMeta,
     *,
     config_summary: dict[str, Any] | None,
+    config_ready: bool,
+    config_readiness_errors: list[str],
 ) -> dict[str, Any]:
     payload = {
         "id": meta.id,
@@ -162,6 +163,9 @@ def _serialize_instance_meta(
         "state_key": meta.state_key,
         "config_env_var": meta.config_env_var,
         "config_default_path": meta.config_default_path,
+        "staged": meta.staged,
+        "config_ready": config_ready,
+        "config_readiness_errors": config_readiness_errors,
     }
     if config_summary:
         payload.update(
@@ -522,7 +526,13 @@ def _load_config_or_none(meta: LpHedgerMeta) -> LpHedgerConfig | None:
 
 def _status_config_summary(meta: LpHedgerMeta, config: LpHedgerConfig | None) -> dict[str, Any]:
     if config is None:
-        return _serialize_instance_meta(meta, config_summary=None)
+        config_ready, readiness_errors = _config_readiness(meta, config)
+        return _serialize_instance_meta(
+            meta,
+            config_summary=None,
+            config_ready=config_ready,
+            config_readiness_errors=readiness_errors,
+        )
     return _build_config_summary(config)
 
 
@@ -555,6 +565,56 @@ def _state_value(
     return None
 
 
+_PLACEHOLDER_SYMBOLS = {"TOKEN0", "TOKEN1"}
+
+
+def _is_zero_address(value: str) -> bool:
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    if not normalized.startswith("0x"):
+        return False
+    suffix = normalized.removeprefix("0x")
+    return bool(suffix) and set(suffix) <= {"0"}
+
+
+def _is_placeholder_symbol(value: str) -> bool:
+    return value.strip().upper() in _PLACEHOLDER_SYMBOLS
+
+
+def _config_readiness(meta: LpHedgerMeta, config: LpHedgerConfig | None) -> tuple[bool, list[str]]:
+    if not meta.staged:
+        return True, []
+    if config is None:
+        return False, ["Config file is missing for this staged hedger."]
+
+    errors: list[str] = []
+    if _is_zero_address(config.pool_address):
+        errors.append("Pool address must be set to a non-zero value.")
+    if _is_placeholder_symbol(config.token0_symbol):
+        errors.append("Token0 symbol must be replaced with a real asset symbol.")
+    if _is_placeholder_symbol(config.token1_symbol):
+        errors.append("Token1 symbol must be replaced with a real asset symbol.")
+    if not (config.hedge_token0 or config.hedge_token1):
+        errors.append("At least one hedge leg must be enabled.")
+    if config.hedge_token0:
+        if not config.perp_symbol_token0.strip():
+            errors.append("Token0 hedge requires a perp symbol.")
+        if config.order_qty_step_token0 <= 0:
+            errors.append("Token0 hedge requires a positive order qty step.")
+    if config.hedge_token1:
+        if not config.perp_symbol_token1.strip():
+            errors.append("Token1 hedge requires a perp symbol.")
+        if config.order_qty_step_token1 <= 0:
+            errors.append("Token1 hedge requires a positive order qty step.")
+    if config.hedge_token0 or config.hedge_token1:
+        if not config.bybit_api_key.strip():
+            errors.append("Bybit API key source is missing.")
+        if not config.bybit_api_secret.strip():
+            errors.append("Bybit API secret source is missing.")
+    return len(errors) == 0, errors
+
+
 def _build_status_payload(
     meta: LpHedgerMeta,
     *,
@@ -572,6 +632,7 @@ def _build_status_payload(
         _decode_json(client.get(meta.threshold_overrides_key)) or {},
     )
     config = _load_config_or_none(meta)
+    config_ready, readiness_errors = _config_readiness(meta, config)
 
     return {
         "id": meta.id,
@@ -593,13 +654,22 @@ def _build_status_payload(
         or _compute_threshold_effective(config, threshold_overrides),
         "hedger_enabled": _mode_flag(mode, "enabled", default=False),
         "dry_run": _mode_flag(mode, "dry_run", default=False),
+        "staged": meta.staged,
+        "config_ready": config_ready,
+        "config_readiness_errors": readiness_errors,
     }
 
 
 def _load_instance_payload(meta: LpHedgerMeta) -> dict[str, Any]:
     config = _load_config_or_none(meta)
     summary = _build_config_summary(config) if config is not None else None
-    return _serialize_instance_meta(meta, config_summary=summary)
+    config_ready, readiness_errors = _config_readiness(meta, config)
+    return _serialize_instance_meta(
+        meta,
+        config_summary=summary,
+        config_ready=config_ready,
+        config_readiness_errors=readiness_errors,
+    )
 
 
 class _LpApiRoutes:
@@ -613,6 +683,7 @@ class _LpApiRoutes:
     ) -> None:
         self.client = client
         self.metas = metas
+        self.public_metas = tuple(meta for meta in metas if meta.public_visible)
         self.metas_by_id = {meta.id: meta for meta in metas}
         self.status_reader = status_reader
         self.job_controller = job_controller
@@ -645,8 +716,11 @@ class _LpApiRoutes:
     def _status_payload(self, meta: LpHedgerMeta) -> dict[str, Any]:
         return _build_status_payload(meta, client=self.client, status_reader=self.status_reader)
 
+    def _is_config_ready(self, meta: LpHedgerMeta) -> tuple[bool, list[str]]:
+        return _config_readiness(meta, _load_config_or_none(meta))
+
     def hedger_instances(self):
-        payload = [_load_instance_payload(meta) for meta in self.metas]
+        payload = [_load_instance_payload(meta) for meta in self.public_metas]
         return jsonify({"ok": True, "data": payload, "error": None})
 
     def hedger_status(self, hedger_id: str):
@@ -663,6 +737,9 @@ class _LpApiRoutes:
         action = self._request_body().get("action")
         if action not in {"start", "stop", "restart"}:
             return self._error_response("invalid_action", 400)
+        config_ready, _ = self._is_config_ready(meta)
+        if meta.staged and action in {"start", "restart"} and not config_ready:
+            return self._error_response("config_not_ready", 400)
 
         self.job_controller(meta.job_id, str(action))
         return jsonify({"ok": True, "data": self._status_payload(meta), "error": None})
@@ -691,6 +768,17 @@ class _LpApiRoutes:
             return self._error_response("config_not_found", 404)
         except ValueError as exc:
             return self._error_response(str(exc), 400)
+
+        if meta.staged:
+            return jsonify(
+                {
+                    "ok": True,
+                    "data": _serialize_config(updated_config),
+                    "error": None,
+                    "restart": "skipped",
+                    "job_status": str(self.status_reader(meta.job_id)),
+                },
+            )
 
         job_status = self.job_controller(meta.job_id, "restart")
         return jsonify(
@@ -791,6 +879,9 @@ class _LpApiRoutes:
             return self._error_response("unknown_hedger", 404)
 
         enabled = bool(self._request_body().get("enabled"))
+        config_ready, _ = self._is_config_ready(meta)
+        if meta.staged and enabled and not config_ready:
+            return self._error_response("config_not_ready", 400)
         mode = _decode_json(self.client.get(meta.mode_key)) or {}
         mode["enabled"] = enabled
         self.client.set(meta.mode_key, json.dumps(mode))
@@ -815,7 +906,7 @@ def create_lp_api_app(
 ) -> Flask:
     app = Flask(__name__)
     client = redis_client or _NullRedis()
-    metas = tuple(list_active_hedgers() if registry_metas is None else registry_metas)
+    metas = tuple(list_hedgers() if registry_metas is None else registry_metas)
     status_reader = get_job_status or (lambda job_id: "unknown")
     job_controller = control_job or (lambda job_id, action: status_reader(job_id))
     _LpApiRoutes(

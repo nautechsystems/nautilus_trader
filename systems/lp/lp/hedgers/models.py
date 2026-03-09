@@ -16,6 +16,7 @@ class LpHedgerMeta:
     config_env_var: str
     config_default_path: str
     default_enabled: bool
+    public_visible: bool
 
     @property
     def hedger_id(self) -> str:
@@ -28,6 +29,10 @@ class LpHedgerMeta:
     @property
     def enabled(self) -> bool:
         return self.default_enabled
+
+    @property
+    def staged(self) -> bool:
+        return self.public_visible and not self.default_enabled
 
 
 __all__ = ["LpHedgerMeta"]
