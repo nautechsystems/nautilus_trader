@@ -193,6 +193,7 @@ describe("App", () => {
     expect(bridgeRow).toHaveAttribute("title", "TokenMM Bridge");
     expect(screen.queryByText("TokenMM API")).not.toBeInTheDocument();
     expect(screen.queryByText("TokenMM Bridge")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /view latest error tokenmm-api/i })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /view logs/i })).toHaveLength(2);
     expect(screen.getByRole("button", { name: /restart all/i })).toBeInTheDocument();
 
@@ -201,6 +202,7 @@ describe("App", () => {
     const logsDialog = await screen.findByRole("dialog", { name: /logs for tokenmm-api/i });
 
     expect(logsDialog).toBeInTheDocument();
+    expect(within(logsDialog).getByRole("button", { name: "All" })).toHaveClass("button--active");
     expect(within(logsDialog).getByText("Job")).toBeInTheDocument();
     expect(within(logsDialog).getByText("Command")).toBeInTheDocument();
     expect(within(logsDialog).getByText("Showing last 300 lines")).toBeInTheDocument();
@@ -320,9 +322,9 @@ describe("App", () => {
 
     await screen.findByText("TokenMM");
 
-    const startButton = screen.getByRole("button", { name: /start all tokenmm/i });
-    const stopButton = screen.getByRole("button", { name: /stop all tokenmm/i });
-    const restartButton = screen.getByRole("button", { name: /restart all tokenmm/i });
+    const startButton = screen.getByRole("button", { name: "Start All TokenMM" });
+    const stopButton = screen.getByRole("button", { name: "Stop All TokenMM" });
+    const restartButton = screen.getByRole("button", { name: "Restart All TokenMM" });
 
     expect(startButton).toBeEnabled();
     expect(stopButton).toBeEnabled();

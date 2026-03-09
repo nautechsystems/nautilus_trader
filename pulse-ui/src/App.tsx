@@ -18,6 +18,8 @@ interface OpenLogsState {
 interface ActionResult {
   success: boolean;
   message?: string;
+  pending?: boolean;
+  deferred?: string[];
   errors?: string[];
 }
 
@@ -41,6 +43,22 @@ function actionFailureMessage(result: ActionResult, fallback: string): string {
   return remaining > 0 ? `${summary}: ${detail} (+${remaining} more)` : `${summary}: ${detail}`;
 }
 
+function actionSuccessMessage(result: ActionResult, fallback: string): string {
+  const summary = compactText(result.message || fallback);
+  const details: string[] = [];
+
+  if (result.pending) {
+    details.push("pending");
+  }
+
+  const deferred = result.deferred?.map((item) => compactText(item)).filter(Boolean) ?? [];
+  if (deferred.length > 0) {
+    details.push(`deferred: ${deferred.join(", ")}`);
+  }
+
+  return details.length > 0 ? `${summary} (${details.join("; ")})` : summary;
+}
+
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [shellLinks, setShellLinks] = useState<ShellLink[]>([]);
@@ -52,6 +70,8 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [openLogs, setOpenLogs] = useState<OpenLogsState | null>(null);
   const [busyJobIds, setBusyJobIds] = useState<Set<string>>(new Set());
+  const [busyGroupKeys, setBusyGroupKeys] = useState<Set<string>>(new Set());
+  const busyGroupKeysRef = useRef<Set<string>>(new Set());
   const refreshTimer = useRef<number | null>(null);
 
   async function loadJobs(options?: { silent?: boolean }) {
@@ -98,6 +118,13 @@ export default function App() {
   }
 
   async function handleGroupAction(groupKey: string, action: "start" | "stop" | "restart") {
+    if (busyGroupKeysRef.current.has(groupKey)) {
+      return;
+    }
+
+    const nextBusyGroups = new Set(busyGroupKeysRef.current).add(groupKey);
+    busyGroupKeysRef.current = nextBusyGroups;
+    setBusyGroupKeys(nextBusyGroups);
     setError(null);
     setMessage(null);
 
@@ -106,10 +133,15 @@ export default function App() {
       if (!response.success) {
         throw new Error(actionFailureMessage(response, `Failed to ${action} ${groupKey}`));
       }
-      setMessage(response.message || `Requested ${action} for ${groupKey}`);
+      setMessage(actionSuccessMessage(response, `Requested ${action} for ${groupKey}`));
       await loadJobs({ silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} ${groupKey}`);
+    } finally {
+      const next = new Set(busyGroupKeysRef.current);
+      next.delete(groupKey);
+      busyGroupKeysRef.current = next;
+      setBusyGroupKeys(next);
     }
   }
 
@@ -244,6 +276,7 @@ export default function App() {
                   groupLabel={group.label}
                   jobs={group.jobs}
                   busyJobIds={busyJobIds}
+                  busy={busyGroupKeys.has(group.key)}
                   onAction={handleJobAction}
                   onGroupAction={handleGroupAction}
                   onViewLogs={(job) =>

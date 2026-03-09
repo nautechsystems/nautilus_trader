@@ -9,6 +9,7 @@ interface JobGroupProps {
   groupLabel: string;
   jobs: Job[];
   busyJobIds: Set<string>;
+  busy: boolean;
   onAction: (jobId: string, action: "start" | "stop" | "restart") => void;
   onGroupAction: (groupKey: string, action: "start" | "stop" | "restart") => void;
   onViewLogs: (job: Job) => void;
@@ -20,6 +21,7 @@ export function JobGroup({
   groupLabel,
   jobs,
   busyJobIds,
+  busy,
   onAction,
   onGroupAction,
   onViewLogs,
@@ -50,7 +52,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "start")}
-                disabled={!hasStartable}
+                disabled={!hasStartable || busy}
                 aria-label={`Start All ${groupLabel}`}
               >
                 <Play size={14} />
@@ -60,7 +62,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "stop")}
-                disabled={!hasRunning}
+                disabled={!hasRunning || busy}
                 aria-label={`Stop All ${groupLabel}`}
               >
                 <Square size={14} />
@@ -70,7 +72,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "restart")}
-                disabled={!hasRunning}
+                disabled={!hasRunning || busy}
                 aria-label={`Restart All ${groupLabel}`}
               >
                 <RotateCw size={14} />
