@@ -81,11 +81,11 @@ of the `flux:v1` market-data contract and do not use the standard `ok/api_versio
 
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/api/pulse/jobs` | `GET` | List enrolled jobs with grouped status, journald error summary, and unit metadata |
+| `/api/pulse/jobs` | `GET` | List enrolled jobs with grouped status, journald error summary (`count`, `last_seen`, `preview`), and unit metadata |
 | `/api/pulse/jobs/{job_id}/start` | `POST` | Start one managed `flux@{job_id}` unit |
 | `/api/pulse/jobs/{job_id}/stop` | `POST` | Stop one managed `flux@{job_id}` unit |
 | `/api/pulse/jobs/{job_id}/restart` | `POST` | Restart one managed `flux@{job_id}` unit |
-| `/api/pulse/jobs/{job_id}/logs` | `GET` | Return recent `journalctl` output (`?lines=300` default) |
+| `/api/pulse/jobs/{job_id}/logs` | `GET` | Return recent raw `journalctl` text (`?lines=300` default) |
 | `/api/pulse/jobs/group/{group_key}/start` | `POST` | Start every enrolled job in a group |
 | `/api/pulse/jobs/group/{group_key}/stop` | `POST` | Stop every enrolled job in a group |
 | `/api/pulse/jobs/group/{group_key}/restart` | `POST` | Restart every enrolled job in a group |
@@ -98,6 +98,19 @@ Discovery invariants:
 4. `PULSE_SELF_SERVICE_ID` enables deferred self-stop/self-restart handling for the serving API unit.
 5. For TokenMM production, `/api/pulse/*` is the supported service-management surface; `tokenmm_stack.sh` is
    local smoke only.
+
+Pulse payload notes:
+
+1. `/api/pulse/jobs` surfaces `errors.count`, `errors.last_seen`, and `errors.preview` from the current job summary window.
+2. `errors.last_seen` is best-effort and populated only when the summary log format exposes a parseable timestamp.
+3. `/api/pulse/jobs/{job_id}/logs` remains a raw text response; Pulse UI severity filters are applied client-side on top of that text, not via a separate structured logs API.
+
+Pulse jobs/logs invariants:
+
+1. `GET /api/pulse/jobs` includes per-job `errors` metadata with `count`, `preview`, and `last_seen`.
+2. `errors.preview` is the newest matching error-like message extracted from the recent journal window.
+3. `errors.last_seen` is populated when the summary journal output carries a parseable timestamp; otherwise it may be `null`.
+4. `GET /api/pulse/jobs/{job_id}/logs` remains a raw text `journalctl` response. Severity filtering in the Pulse modal is a UI behavior layered on top of that raw output, not a separate structured logs API contract.
 
 Pagination/limits:
 
