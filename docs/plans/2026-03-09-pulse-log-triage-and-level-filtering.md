@@ -32,11 +32,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | completed | main | Completed with backend commit `28f82c852`, frontend log-triage commit `d7ba0daee`, and docs commit `0690f6066`; final verification passed: `pytest tests/unit_tests/flux/pulse/test_api.py -v`, `pnpm --dir pulse-ui test`, and `pnpm --dir pulse-ui build` |
+| Overall | completed | main | Completed with backend commit `28f82c852`, frontend log-triage commits `d7ba0daee`, `64e2720fb`, and `10203a374`, docs commits `0690f6066` and `4b27dd2e6`; final verification passed: `pytest tests/unit_tests/flux/pulse/test_api.py -v`, `pnpm --dir pulse-ui test`, and `pnpm --dir pulse-ui build` |
 | Task 1: Harden Pulse Error Summary Metadata | completed | main | Spec and quality review approved; `pytest tests/unit_tests/flux/pulse/test_api.py -k "error_info or list_jobs or logs" -v` -> 6 passed; committed as `28f82c852` |
 | Task 2: Add Severity Filters To The Logs Modal | completed | main | Shipped in `d7ba0daee`; severity filters, line-window selection, latest-error targeting, and the no-match fallback regression fix are covered by `src/logs.test.ts` and `src/components/LogsModal.test.tsx`; `pnpm --dir pulse-ui test` passed |
-| Task 3: Make Job-Row Error Previews Actionable | completed | main | Shipped in `d7ba0daee`; error previews open the modal in `Error` mode, `errors.last_seen` renders in rows, `View Logs` stays unfiltered, and the neutral no-preview row path is covered in `src/App.test.tsx`; external spec-review agents timed out, so spec was validated locally and the full frontend suite passed |
-| Task 4: Document And Verify The New Triage Flow | completed | main | API docs and Pulse UI README updated in `0690f6066`; final verification passed: `pytest tests/unit_tests/flux/pulse/test_api.py -v`, `pnpm --dir pulse-ui test`, and `pnpm --dir pulse-ui build` |
+| Task 3: Make Job-Row Error Previews Actionable | completed | main | Shipped in `d7ba0daee` with follow-up hardening in `64e2720fb` and `10203a374`; error previews open the modal in `Error` mode, `errors.last_seen` renders in rows, `View Logs` stays unfiltered, group actions now guard against duplicate submits, and the spec review approved with no blocking findings |
+| Task 4: Document And Verify The New Triage Flow | completed | main | API docs and Pulse UI README updated in `0690f6066`; execution tracker recorded in `4b27dd2e6`; final verification passed: `pytest tests/unit_tests/flux/pulse/test_api.py -v`, `pnpm --dir pulse-ui test`, and `pnpm --dir pulse-ui build` |
 
 ---
 
