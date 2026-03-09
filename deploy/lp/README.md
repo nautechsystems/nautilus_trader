@@ -35,6 +35,8 @@ This directory is the deploy root for the dedicated LP hedger stack.
 Install the systemd units and seeded env files:
 
 ```bash
+pnpm --dir fluxboard build
+pnpm --dir pulse-ui build
 sudo ops/scripts/deploy/install_lp_systemd.sh
 sudoedit /etc/flux/common.env
 sudoedit /etc/flux/lp-system.ini

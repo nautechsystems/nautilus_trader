@@ -74,25 +74,23 @@ render_api_env() {
 }
 
 render_band1_env() {
-  local system_config_ref='${LP_SYSTEM_CONFIG:-/etc/flux/lp-system.ini}'
   strategy_stack_write_env \
     "${BAND1_ENV_PATH}" \
     "ETH/PLUME LP Band1 hedger" \
     "lp" \
     "LP" \
     "15" \
-    "python3 -m lp.runners.run_hedger --config ${BAND1_CONFIG} --system-config ${system_config_ref}"
+    "python3 -m lp.runners.run_hedger --config ${BAND1_CONFIG} --system-config /etc/flux/lp-system.ini"
 }
 
 render_band2_env() {
-  local system_config_ref='${LP_SYSTEM_CONFIG:-/etc/flux/lp-system.ini}'
   strategy_stack_write_env \
     "${BAND2_ENV_PATH}" \
     "ETH/PLUME LP Band2 hedger" \
     "lp" \
     "LP" \
     "15" \
-    "python3 -m lp.runners.run_hedger --config ${BAND2_CONFIG} --system-config ${system_config_ref}"
+    "python3 -m lp.runners.run_hedger --config ${BAND2_CONFIG} --system-config /etc/flux/lp-system.ini"
 }
 
 enable_stack() {

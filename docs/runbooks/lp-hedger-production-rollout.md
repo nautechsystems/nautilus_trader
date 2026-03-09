@@ -67,12 +67,19 @@ The preflight must report `ok: true` before operators proceed. It checks:
 
 ## Install And Restart Order
 
-1. Install or refresh systemd assets with `sudo ops/scripts/deploy/install_lp_systemd.sh`.
-2. Update `/etc/flux/common.env` and `/etc/flux/lp-system.ini`.
-3. Update the per-service env files for `lp-api`, Band1, and Band2.
-4. Run `sudo systemctl daemon-reload`.
-5. Restart the shared public host so it reloads `LP_API_BACKEND_URL` from `/etc/flux/common.env`.
-6. Start or restart `flux-lp.target`.
+1. Refresh the shared frontend bundles from the rollout worktree:
+
+   ```bash
+   pnpm --dir fluxboard build
+   pnpm --dir pulse-ui build
+   ```
+
+2. Install or refresh systemd assets with `sudo ops/scripts/deploy/install_lp_systemd.sh`.
+3. Update `/etc/flux/common.env` and `/etc/flux/lp-system.ini`.
+4. Update the per-service env files for `lp-api`, Band1, and Band2.
+5. Run `sudo systemctl daemon-reload`.
+6. Restart the shared public host so it reloads `LP_API_BACKEND_URL` from `/etc/flux/common.env`.
+7. Start or restart `flux-lp.target`.
 
 The restart order is important because the public host must see the current shared-host env before operators expect `/lp` or `/api/v1/hedgers/*` to proxy correctly.
 

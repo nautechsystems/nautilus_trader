@@ -158,6 +158,13 @@ def test_lp_prod_runbook_documents_go_no_go_and_rollback() -> None:
     assert "chainsaw" in text.lower()
 
 
+def test_lp_prod_runbook_documents_shared_frontend_build_prereqs() -> None:
+    text = _read("docs/runbooks/lp-hedger-production-rollout.md")
+
+    assert "pnpm --dir fluxboard build" in text
+    assert "pnpm --dir pulse-ui build" in text
+
+
 def test_lp_rollout_review_template_captures_restart_times_and_residual_risks() -> None:
     text = _read("docs/reviews/2026-03-09-lp-hedger-prod-rollout.md")
 

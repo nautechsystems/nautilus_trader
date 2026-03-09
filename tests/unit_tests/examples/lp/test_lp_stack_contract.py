@@ -149,3 +149,10 @@ def test_install_lp_systemd_references_band1_band2_only_and_shared_host_restart_
     assert "service-hedger3" not in script
     assert "flux@tokenmm-api.service" in script
     assert "LP_API_BACKEND_URL" in script
+
+
+def test_install_lp_systemd_writes_literal_lp_system_config_path_for_hedger_units() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/install_lp_systemd.sh")
+
+    assert "--system-config /etc/flux/lp-system.ini" in script
+    assert "${LP_SYSTEM_CONFIG:-/etc/flux/lp-system.ini}" not in script
