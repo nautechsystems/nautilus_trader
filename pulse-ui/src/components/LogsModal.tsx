@@ -104,7 +104,7 @@ export function LogsModal({ jobId, jobName, jobCmd, initialFilter = "ALL", onClo
             <p className="modal__subtitle">Recent output for the selected Pulse job.</p>
           </div>
 
-          <div className="modal__actions">
+          <div className="modal__actions" role="group" aria-label="Log actions">
             <button type="button" className="button button--primary" onClick={() => void loadLogs()} disabled={loading}>
               <RefreshCw className={loading ? "spin" : ""} size={15} />
               <span>Refresh</span>
