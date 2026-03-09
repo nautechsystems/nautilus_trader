@@ -1,26 +1,44 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import pytest
 
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
+
+
+TEST_PRIVATE_KEY = "0x" + ("11" * 32)
+TEST_VAULT_ADDRESS = "0x" + ("22" * 20)
 
 
 class TestHyperliquidInstrumentProvider:
+    def test_http_client_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        client = nautilus_pyo3.HyperliquidHttpClient(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            False,
+            10,
+            None,
+        )
+
+        # Assert
+        assert client.get_user_address().startswith("0x")
+        assert callable(client.request_account_state)
+
+    def test_http_client_from_credentials_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        client = nautilus_pyo3.HyperliquidHttpClient.from_credentials(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            False,
+            10,
+            None,
+        )
+
+        # Assert
+        assert client.get_user_address().startswith("0x")
+        assert callable(client.request_account_state)
+
     def test_provider_initialization(self, mock_http_client):
         # Arrange & Act
         provider = HyperliquidInstrumentProvider(
@@ -113,6 +131,24 @@ class TestHyperliquidInstrumentProvider:
 
         # Assert
         mock_http_client.load_instrument_definitions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_load_all_async_passes_trade_xyz_dex(self, mock_http_client):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(filters={"dex": "xyz"}),
+        )
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_http_client.load_instrument_definitions.assert_called_once_with(
+            include_perp=True,
+            include_spot=True,
+            dex="xyz",
+        )
 
     def test_instruments_pyo3_returns_list(self, mock_http_client):
         # Arrange

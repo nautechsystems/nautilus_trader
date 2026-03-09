@@ -10,6 +10,13 @@ NautilusTrader uses a **Rust core with Python bindings** architecture:
 
 This approach combines Python's simplicity and ecosystem with Rust's performance and memory safety.
 
+## Repo-level guidance
+
+- [Repo guide](../repo/index.md)
+- [Repo structure](../repo/structure.md)
+- [Repo workflows](../repo/workflows.md)
+- [Repo standards](../repo/standards.md)
+
 ## Contents
 
 - [Environment Setup](environment_setup.md)

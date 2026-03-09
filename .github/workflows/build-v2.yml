@@ -105,7 +105,7 @@ jobs:
       - name: Install Nautilus CLI
         env:
           NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
-        run: bash scripts/ci/install-nautilus-cli.sh
+        run: bash tooling/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
         run: nautilus database init --schema ${{ github.workspace }}/schema/sql
@@ -127,7 +127,7 @@ jobs:
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
-          bash ../scripts/ci/update-pyproject-version.sh
+          bash ../tooling/release/update-pyproject-version.sh
 
       # Build the wheel for v2 under python/ using maturin
       - name: Build wheel (v2)
@@ -195,4 +195,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+          bash ./tooling/release/publish-wheels-delete-artifacts.sh

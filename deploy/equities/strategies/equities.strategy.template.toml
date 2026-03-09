@@ -1,0 +1,96 @@
+[flux]
+mode = "live"
+confirm_live = true
+namespace = "flux"
+schema_version = "v1"
+
+[identity]
+strategy_id = "aapl_tradexyz_makerv4"
+strategy_instance_id = "aapl_tradexyz_makerv4"
+trader_id = "EQUITIES-LIVE-AAPL-TRADEXYZ"
+external_strategy_id = "aapl_tradexyz_makerv4"
+
+[venues]
+execution_venue = "HYPERLIQUID"
+reference_venue = "IBKR"
+execution_symbol = "AAPL"
+reference_symbol = "AAPL/USD"
+
+[node]
+# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
+# is the only way to opt into live execution from the stack or systemd wrappers.
+enable_execution = false
+log_level = "INFO"
+timeout_connection = 20.0
+timeout_reconciliation = 30.0
+timeout_portfolio = 10.0
+timeout_disconnection = 10.0
+timeout_post_stop = 5.0
+exec_reconciliation = true
+exec_reconciliation_lookback_mins = 15
+exec_reconciliation_startup_delay_secs = 10.0
+filter_unclaimed_external_orders = true
+filter_position_reports = false
+purge_closed_orders_interval_mins = 10
+purge_closed_orders_buffer_mins = 60
+purge_closed_positions_interval_mins = 10
+purge_closed_positions_buffer_mins = 60
+purge_account_events_interval_mins = 10
+purge_account_events_lookback_mins = 60
+purge_from_database = true
+
+[node.venues.HYPERLIQUID]
+instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
+execution = true
+private_key_env = "TRADE_XYZ_AGENT_PK"
+# Effective account identity precedence: vault_address_env -> account_address_env -> agent wallet master.
+account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
+vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
+dex = "xyz"
+testnet = false
+
+[node.venues.IBKR]
+adapter = "interactive_brokers"
+instrument_id = "AAPL.NASDAQ"
+ibg_client_id = 7
+execution = false
+use_regular_trading_hours = false
+
+[node.venues.IBKR.dockerized_gateway]
+trading_mode = "live"
+read_only_api = true
+auto_restart_time = "11:45 PM"
+time_zone = "America/New_York"
+relogin_after_twofa_timeout = true
+twofa_timeout_action = "restart"
+
+[strategy]
+strategy_id = "aapl_tradexyz_makerv4"
+strategy_groups = "equities"
+param_set = "makerv4"
+force_bot_off_on_start = true
+order_qty = "1"
+qty = "1"
+qty_unit = "base"
+bot_on = false
+outside_rth_hedge_enabled = true
+# Use the listed IBKR stock instrument for reference data. Do not use BLUEOCEAN as
+# the instrument_id; it is not a qualifiable stock venue in the provider contract.
+ibkr_primary_exchange = "NASDAQ"
+# IBKR hedge fees are not live-discovered; MakerV4 quotes use runtime param
+# assumed_hedge_fee_bps (default 1.0 bps) as an explicit configured assumption.
+max_age_ms = 10000
+des_qty_global = 0.0
+max_qty_global = 100.0
+max_skew_bps_global = 10.0
+des_qty_local = 0.0
+max_qty_local = 0.0
+max_skew_bps_local = 0.0
+linear_offset_bps = 0.0
+bid_edge1 = 5.0
+ask_edge1 = 5.0
+place_edge1 = 1.0
+distance1 = 2.0
+n_orders1 = 3
+quote_fail_critical_after_count = 3
+quote_fail_critical_after_s = 60.0

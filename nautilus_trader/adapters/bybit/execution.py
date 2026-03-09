@@ -1,17 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
 """
 Bybit execution client implementation.
 
@@ -23,6 +9,7 @@ WebSocket clients exposed via PyO3 for performance.
 
 import asyncio
 import contextlib
+import inspect
 from asyncio import Queue
 from decimal import Decimal
 from typing import Any
@@ -128,10 +115,13 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if set(product_types) == {BybitProductType.SPOT}:
             self._account_type = AccountType.CASH
-            AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
+            self._registered_cash_borrowing = bool(config.allow_cash_borrowing)
+            if self._registered_cash_borrowing:
+                AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
             # UTA (Unified Trading Account) for derivatives or mixed products
             self._account_type = AccountType.MARGIN
+            self._registered_cash_borrowing = False
 
         super().__init__(
             loop=loop,
@@ -166,6 +156,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
+        self._log.info(f"{config.allow_cash_borrowing=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
@@ -310,6 +301,10 @@ class BybitExecutionClient(LiveExecutionClient):
         # Cancel pending enqueuer tasks
         for enqueuer in self._repay_enqueuers.values():
             enqueuer.cancel_pending_tasks()
+
+        if self._registered_cash_borrowing:
+            AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+            self._registered_cash_borrowing = False
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -725,6 +720,30 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return None
 
+    def _resolve_is_leverage(
+        self,
+        command: SubmitOrder | SubmitOrderList,
+        product_type: BybitProductType,
+        *,
+        warn_on_legacy: bool = True,
+    ) -> tuple[bool, str | None]:
+        if product_type != BybitProductType.SPOT:
+            return False, None
+
+        legacy_is_leverage = False
+        if command.params and "is_leverage" in command.params:
+            legacy_is_leverage = bool(command.params.get("is_leverage", False))
+            if legacy_is_leverage and not command.allow_cash_borrowing and warn_on_legacy:
+                self._log.warning(
+                    "Bybit `params[\"is_leverage\"]` is deprecated; use `allow_cash_borrowing`.",
+                )
+
+        is_leverage = bool(command.allow_cash_borrowing or legacy_is_leverage)
+        if is_leverage and not self._config.allow_cash_borrowing:
+            return False, "CASH_BORROWING_NOT_ENABLED"
+
+        return is_leverage, None
+
     async def _query_account(self, command: QueryAccount) -> None:
         params = command.params or {}
         action = params.get("action")
@@ -847,6 +866,16 @@ class BybitExecutionClient(LiveExecutionClient):
         data_type = DataType(type(data))
         self._msgbus.publish(topic=f"data.{data_type.topic}", msg=data)
 
+    async def _trade_ws_is_active(self) -> bool:
+        if self._is_demo or self._ws_trade_client.is_closed():
+            return False
+
+        active = self._ws_trade_client.is_active()
+        if inspect.isawaitable(active):
+            active = await active
+
+        return bool(active)
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
@@ -864,6 +893,17 @@ class BybitExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        is_leverage, leverage_error = self._resolve_is_leverage(command, product_type)
+        if leverage_error:
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=leverage_error,
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -891,14 +931,12 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_trigger_price = None
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
-
-        is_leverage = command.params.get("is_leverage", False) if command.params else False
         is_quote_quantity = (
             order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
         )
 
         try:
-            if self._is_demo:
+            if not await self._trade_ws_is_active():
                 await self._http_client.submit_order(
                     account_id=self.pyo3_account_id,
                     product_type=product_type,
@@ -949,18 +987,20 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.order_list.orders:
             return
 
-        is_leverage = command.params.get("is_leverage", False) if command.params else False
+        if command.params and command.params.get("is_leverage", False) and not command.allow_cash_borrowing:
+            self._log.warning(
+                "Bybit `params[\"is_leverage\"]` is deprecated; use `allow_cash_borrowing`.",
+            )
 
-        if self._is_demo:
-            await self._submit_order_list_http(command, is_leverage)
+        if not await self._trade_ws_is_active():
+            await self._submit_order_list_http(command)
             return
 
-        await self._submit_order_list_ws(command, is_leverage)
+        await self._submit_order_list_ws(command)
 
     async def _submit_order_list_http(
         self,
         command: SubmitOrderList,
-        is_leverage: bool,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
 
@@ -979,6 +1019,21 @@ class BybitExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     reason=reason,
+                    ts_event=now_ns,
+                )
+                continue
+
+            is_leverage, leverage_error = self._resolve_is_leverage(
+                command,
+                product_type,
+                warn_on_legacy=False,
+            )
+            if leverage_error:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=leverage_error,
                     ts_event=now_ns,
                 )
                 continue
@@ -1032,7 +1087,6 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _submit_order_list_ws(
         self,
         command: SubmitOrderList,
-        is_leverage: bool,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
         order_list = command.order_list
@@ -1054,6 +1108,21 @@ class BybitExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     reason=reason,
+                    ts_event=now_ns,
+                )
+                continue
+
+            is_leverage, leverage_error = self._resolve_is_leverage(
+                command,
+                product_type,
+                warn_on_legacy=False,
+            )
+            if leverage_error:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=leverage_error,
                     ts_event=now_ns,
                 )
                 continue
@@ -1157,7 +1226,7 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
         try:
-            if self._is_demo:
+            if not await self._trade_ws_is_active():
                 await self._http_client.modify_order(
                     account_id=self.pyo3_account_id,
                     product_type=product_type,
@@ -1217,7 +1286,7 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
         try:
-            if self._is_demo:
+            if not await self._trade_ws_is_active():
                 await self._http_client.cancel_order(
                     account_id=self.pyo3_account_id,
                     product_type=product_type,
@@ -1280,7 +1349,7 @@ class BybitExecutionClient(LiveExecutionClient):
             command.cancels[0].instrument_id.symbol.value,
         )
 
-        if self._is_demo:
+        if not await self._trade_ws_is_active():
             # Cancel individually (batch not supported in demo)
             for cancel in command.cancels:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(

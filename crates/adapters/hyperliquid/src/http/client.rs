@@ -1,18 +1,3 @@
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------
-
 //! Provides the HTTP client integration for the [Hyperliquid](https://hyperliquid.xyz/) REST API.
 //!
 //! This module defines and implements a [`HyperliquidHttpClient`] for sending requests to various
@@ -121,7 +106,9 @@ pub struct HyperliquidRawHttpClient {
     base_exchange: String,
     signer: Option<HyperliquidEip712Signer>,
     nonce_manager: Option<Arc<NonceManager>>,
+    account_address: Option<String>,
     vault_address: Option<VaultAddress>,
+    dex: Option<String>,
     rest_limiter: Arc<WeightedLimiter>,
     rate_limit_backoff_base: Duration,
     rate_limit_backoff_cap: Duration,
@@ -153,7 +140,9 @@ impl HyperliquidRawHttpClient {
             base_exchange: exchange_url(is_testnet).to_string(),
             signer: None,
             nonce_manager: None,
+            account_address: None,
             vault_address: None,
+            dex: None,
             rest_limiter: Arc::new(WeightedLimiter::per_minute(1200)),
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
@@ -189,7 +178,9 @@ impl HyperliquidRawHttpClient {
             base_exchange: exchange_url(secrets.is_testnet).to_string(),
             signer: Some(signer),
             nonce_manager: Some(nonce_manager),
+            account_address: None,
             vault_address: secrets.vault_address,
+            dex: None,
             rest_limiter: Arc::new(WeightedLimiter::per_minute(1200)),
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
@@ -272,11 +263,21 @@ impl HyperliquidRawHttpClient {
     ///
     /// Returns [`Error::Auth`] if the client has no signer configured.
     pub fn get_account_address(&self) -> Result<String> {
-        if let Some(vault) = &self.vault_address {
+        if let Some(account_address) = &self.account_address {
+            Ok(account_address.clone())
+        } else if let Some(vault) = &self.vault_address {
             Ok(vault.to_hex())
         } else {
             self.get_user_address()
         }
+    }
+
+    pub fn set_account_address(&mut self, account_address: Option<String>) {
+        self.account_address = account_address;
+    }
+
+    pub fn set_dex(&mut self, dex: Option<String>) {
+        self.dex = dex;
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -297,7 +298,12 @@ impl HyperliquidRawHttpClient {
 
     /// Get metadata about available markets.
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
-        let request = InfoRequest::meta();
+        self.info_meta_with_dex(None).await
+    }
+
+    /// Get metadata about available markets, optionally overriding the client's default DEX.
+    pub async fn info_meta_with_dex(&self, dex: Option<&str>) -> Result<HyperliquidMeta> {
+        let request = InfoRequest::meta(dex.or(self.dex.as_deref()));
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -311,7 +317,15 @@ impl HyperliquidRawHttpClient {
 
     /// Get perpetuals metadata with asset contexts (for price precision refinement).
     pub async fn get_perp_meta_and_ctxs(&self) -> Result<PerpMetaAndCtxs> {
-        let request = InfoRequest::meta_and_asset_ctxs();
+        self.get_perp_meta_and_ctxs_with_dex(None).await
+    }
+
+    /// Get perpetuals metadata with asset contexts, optionally overriding the client's default DEX.
+    pub async fn get_perp_meta_and_ctxs_with_dex(
+        &self,
+        dex: Option<&str>,
+    ) -> Result<PerpMetaAndCtxs> {
+        let request = InfoRequest::meta_and_asset_ctxs(dex.or(self.dex.as_deref()));
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -324,7 +338,11 @@ impl HyperliquidRawHttpClient {
     }
 
     pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
-        let request = InfoRequest::meta();
+        self.load_perp_meta_with_dex(None).await
+    }
+
+    pub(crate) async fn load_perp_meta_with_dex(&self, dex: Option<&str>) -> Result<PerpMeta> {
+        let request = InfoRequest::meta(dex.or(self.dex.as_deref()));
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -338,39 +356,88 @@ impl HyperliquidRawHttpClient {
 
     /// Get user fills (trading history).
     pub async fn info_user_fills(&self, user: &str) -> Result<HyperliquidFills> {
-        let request = InfoRequest::user_fills(user);
+        self.info_user_fills_with_dex(user, None).await
+    }
+
+    /// Get user fills (trading history), optionally overriding the client's default DEX.
+    pub async fn info_user_fills_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<HyperliquidFills> {
+        let request = InfoRequest::user_fills(user, dex.or(self.dex.as_deref()));
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
     /// Get order status for a user.
     pub async fn info_order_status(&self, user: &str, oid: u64) -> Result<HyperliquidOrderStatus> {
-        let request = InfoRequest::order_status(user, oid);
+        self.info_order_status_with_dex(user, oid, None).await
+    }
+
+    /// Get order status for a user, optionally overriding the client's default DEX.
+    pub async fn info_order_status_with_dex(
+        &self,
+        user: &str,
+        oid: u64,
+        dex: Option<&str>,
+    ) -> Result<HyperliquidOrderStatus> {
+        let request = InfoRequest::order_status(user, oid, dex.or(self.dex.as_deref()));
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
     /// Get all open orders for a user.
     pub async fn info_open_orders(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::open_orders(user);
+        self.info_open_orders_with_dex(user, None).await
+    }
+
+    /// Get all open orders for a user, optionally overriding the client's default DEX.
+    pub async fn info_open_orders_with_dex(&self, user: &str, dex: Option<&str>) -> Result<Value> {
+        let request = InfoRequest::open_orders(user, dex.or(self.dex.as_deref()));
         self.send_info_request(&request).await
     }
 
     /// Get frontend open orders (includes more detail) for a user.
     pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::frontend_open_orders(user);
+        self.info_frontend_open_orders_with_dex(user, None).await
+    }
+
+    /// Get frontend open orders (includes more detail) for a user, optionally overriding
+    /// the client's default DEX.
+    pub async fn info_frontend_open_orders_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        let request = InfoRequest::frontend_open_orders(user, dex.or(self.dex.as_deref()));
         self.send_info_request(&request).await
     }
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::clearinghouse_state(user);
+        self.info_clearinghouse_state_with_dex(user, None).await
+    }
+
+    /// Get clearinghouse state (balances, positions, margin) for a user, optionally overriding
+    /// the client's default DEX.
+    pub async fn info_clearinghouse_state_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        let request = InfoRequest::clearinghouse_state(user, dex.or(self.dex.as_deref()));
         self.send_info_request(&request).await
     }
 
     /// Get user fee schedule and effective rates.
     pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::user_fees(user);
+        self.info_user_fees_with_dex(user, None).await
+    }
+
+    /// Get user fee schedule and effective rates, optionally overriding the client's default DEX.
+    pub async fn info_user_fees_with_dex(&self, user: &str, dex: Option<&str>) -> Result<Value> {
+        let request = InfoRequest::user_fees(user, dex.or(self.dex.as_deref()));
         self.send_info_request(&request).await
     }
 
@@ -964,6 +1031,28 @@ impl HyperliquidHttpClient {
         self.normalize_prices = value;
     }
 
+    /// Sets the default account address used for user-scoped queries.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner `Arc` has multiple references.
+    pub fn set_account_address(&mut self, account_address: Option<String>) {
+        Arc::get_mut(&mut self.inner)
+            .expect("cannot override account address: Arc has multiple references")
+            .set_account_address(account_address);
+    }
+
+    /// Sets the default DEX used for DEX-scoped info requests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner `Arc` has multiple references.
+    pub fn set_dex(&mut self, dex: Option<String>) {
+        Arc::get_mut(&mut self.inner)
+            .expect("cannot override dex: Arc has multiple references")
+            .set_dex(dex);
+    }
+
     /// Gets the user address derived from the private key (if client has credentials).
     ///
     /// # Errors
@@ -973,8 +1062,8 @@ impl HyperliquidHttpClient {
         self.inner.get_user_address()
     }
 
-    /// Gets the account address for queries: vault address if configured,
-    /// otherwise the user (EOA) address.
+    /// Gets the account address for queries: configured account address if set,
+    /// otherwise vault address, otherwise the user (EOA) address.
     ///
     /// # Errors
     ///
@@ -1167,9 +1256,19 @@ impl HyperliquidHttpClient {
     // Mutex/RwLock poisoning is not documented individually
     #[allow(clippy::missing_panics_doc)]
     pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
-        let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+        self.request_instruments_with_dex(None).await
+    }
 
-        match self.inner.load_perp_meta().await {
+    /// Fetch and parse all available instrument definitions, optionally overriding the default DEX.
+    #[allow(clippy::missing_panics_doc)]
+    pub async fn request_instruments_with_dex(
+        &self,
+        dex: Option<&str>,
+    ) -> Result<Vec<InstrumentAny>> {
+        let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+        let dex = dex.or(self.inner.dex.as_deref());
+
+        match self.load_perp_meta_with_dex(dex).await {
             Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
                 Ok(perp_defs) => {
                     log::debug!(
@@ -1187,21 +1286,23 @@ impl HyperliquidHttpClient {
             }
         }
 
-        match self.inner.get_spot_meta().await {
-            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
-                Ok(spot_defs) => {
-                    log::debug!(
-                        "Loaded Hyperliquid spot definitions: count={}",
-                        spot_defs.len(),
-                    );
-                    defs.extend(spot_defs);
-                }
+        if dex.is_none() {
+            match self.inner.get_spot_meta().await {
+                Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
+                    Ok(spot_defs) => {
+                        log::debug!(
+                            "Loaded Hyperliquid spot definitions: count={}",
+                            spot_defs.len(),
+                        );
+                        defs.extend(spot_defs);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse Hyperliquid spot instruments: {e}");
+                    }
+                },
                 Err(e) => {
-                    log::warn!("Failed to parse Hyperliquid spot instruments: {e}");
+                    log::warn!("Failed to load Hyperliquid spot metadata: {e}");
                 }
-            },
-            Err(e) => {
-                log::warn!("Failed to load Hyperliquid spot metadata: {e}");
             }
         }
 
@@ -1306,6 +1407,10 @@ impl HyperliquidHttpClient {
         self.inner.load_perp_meta().await
     }
 
+    pub(crate) async fn load_perp_meta_with_dex(&self, dex: Option<&str>) -> Result<PerpMeta> {
+        self.inner.load_perp_meta_with_dex(dex).await
+    }
+
     /// Get spot metadata (internal helper).
     #[allow(dead_code)]
     pub(crate) async fn get_spot_meta(&self) -> Result<SpotMeta> {
@@ -1322,9 +1427,26 @@ impl HyperliquidHttpClient {
         self.inner.info_user_fills(user).await
     }
 
+    pub async fn info_user_fills_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<HyperliquidFills> {
+        self.inner.info_user_fills_with_dex(user, dex).await
+    }
+
     /// Get order status for a user.
     pub async fn info_order_status(&self, user: &str, oid: u64) -> Result<HyperliquidOrderStatus> {
         self.inner.info_order_status(user, oid).await
+    }
+
+    pub async fn info_order_status_with_dex(
+        &self,
+        user: &str,
+        oid: u64,
+        dex: Option<&str>,
+    ) -> Result<HyperliquidOrderStatus> {
+        self.inner.info_order_status_with_dex(user, oid, dex).await
     }
 
     /// Get all open orders for a user.
@@ -1332,9 +1454,23 @@ impl HyperliquidHttpClient {
         self.inner.info_open_orders(user).await
     }
 
+    pub async fn info_open_orders_with_dex(&self, user: &str, dex: Option<&str>) -> Result<Value> {
+        self.inner.info_open_orders_with_dex(user, dex).await
+    }
+
     /// Get frontend open orders (includes more detail) for a user.
     pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
         self.inner.info_frontend_open_orders(user).await
+    }
+
+    pub async fn info_frontend_open_orders_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        self.inner
+            .info_frontend_open_orders_with_dex(user, dex)
+            .await
     }
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
@@ -1342,9 +1478,23 @@ impl HyperliquidHttpClient {
         self.inner.info_clearinghouse_state(user).await
     }
 
+    pub async fn info_clearinghouse_state_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        self.inner
+            .info_clearinghouse_state_with_dex(user, dex)
+            .await
+    }
+
     /// Get user fee schedule and effective rates.
     pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
         self.inner.info_user_fees(user).await
+    }
+
+    pub async fn info_user_fees_with_dex(&self, user: &str, dex: Option<&str>) -> Result<Value> {
+        self.inner.info_user_fees_with_dex(user, dex).await
     }
 
     /// Get candle/bar data for a coin.
@@ -1604,10 +1754,20 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        self.request_order_status_reports_with_dex(user, instrument_id, None)
+            .await
+    }
+
+    pub async fn request_order_status_reports_with_dex(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dex: Option<&str>,
+    ) -> Result<Vec<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let response = self.info_frontend_open_orders(user).await?;
+        let response = self.info_frontend_open_orders_with_dex(user, dex).await?;
 
         // Parse the JSON response into a vector of orders
         let orders: Vec<serde_json::Value> = serde_json::from_value(response)
@@ -1677,10 +1837,20 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<FillReport>> {
+        self.request_fill_reports_with_dex(user, instrument_id, None)
+            .await
+    }
+
+    pub async fn request_fill_reports_with_dex(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dex: Option<&str>,
+    ) -> Result<Vec<FillReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let fills_response = self.info_user_fills(user).await?;
+        let fills_response = self.info_user_fills_with_dex(user, dex).await?;
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
@@ -1727,10 +1897,20 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
+        self.request_position_status_reports_with_dex(user, instrument_id, None)
+            .await
+    }
+
+    pub async fn request_position_status_reports_with_dex(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dex: Option<&str>,
+    ) -> Result<Vec<PositionStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let state_response = self.info_clearinghouse_state(user).await?;
+        let state_response = self.info_clearinghouse_state_with_dex(user, dex).await?;
 
         // Extract asset positions from the clearinghouse state
         let asset_positions: Vec<serde_json::Value> = state_response
@@ -1787,10 +1967,18 @@ impl HyperliquidHttpClient {
     ///
     /// Returns an error if `account_id` is not set or the API request fails.
     pub async fn request_account_state(&self, user: &str) -> Result<AccountState> {
+        self.request_account_state_with_dex(user, None).await
+    }
+
+    pub async fn request_account_state_with_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<AccountState> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let state_response = self.info_clearinghouse_state(user).await?;
+        let state_response = self.info_clearinghouse_state_with_dex(user, dex).await?;
         let ts_init = self.clock.get_time_ns();
 
         log::trace!("Clearinghouse state response: {state_response}");

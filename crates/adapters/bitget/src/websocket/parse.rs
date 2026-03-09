@@ -6,29 +6,27 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use anyhow::{Context, bail};
+#[cfg(feature = "python")]
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
+use nautilus_model::data::bar::{
+    BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_HOUR_LAST, BAR_SPEC_1_MINUTE_LAST, BAR_SPEC_1_MONTH_LAST,
+    BAR_SPEC_1_SECOND_LAST, BAR_SPEC_1_WEEK_LAST, BAR_SPEC_2_DAY_LAST, BAR_SPEC_2_HOUR_LAST,
+    BAR_SPEC_3_DAY_LAST, BAR_SPEC_3_MINUTE_LAST, BAR_SPEC_3_MONTH_LAST, BAR_SPEC_4_HOUR_LAST,
+    BAR_SPEC_5_DAY_LAST, BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_6_HOUR_LAST, BAR_SPEC_6_MONTH_LAST,
+    BAR_SPEC_12_HOUR_LAST, BAR_SPEC_12_MONTH_LAST, BAR_SPEC_15_MINUTE_LAST,
+    BAR_SPEC_30_MINUTE_LAST,
+};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate,
         MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
-    enums::{
-        AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag,
-    },
+    enums::{AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::TradeId,
     instruments::{Instrument, any::InstrumentAny},
     types::{Price, Quantity},
 };
-use nautilus_model::data::bar::{
-    BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_HOUR_LAST, BAR_SPEC_1_MINUTE_LAST, BAR_SPEC_1_MONTH_LAST,
-    BAR_SPEC_1_SECOND_LAST, BAR_SPEC_1_WEEK_LAST, BAR_SPEC_12_HOUR_LAST, BAR_SPEC_12_MONTH_LAST,
-    BAR_SPEC_15_MINUTE_LAST, BAR_SPEC_2_DAY_LAST, BAR_SPEC_2_HOUR_LAST, BAR_SPEC_30_MINUTE_LAST,
-    BAR_SPEC_3_DAY_LAST, BAR_SPEC_3_MINUTE_LAST, BAR_SPEC_3_MONTH_LAST, BAR_SPEC_4_HOUR_LAST,
-    BAR_SPEC_5_DAY_LAST, BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_6_HOUR_LAST, BAR_SPEC_6_MONTH_LAST,
-};
-use rust_decimal::Decimal;
-#[cfg(feature = "python")]
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "python")]
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
@@ -36,6 +34,7 @@ use nautilus_model::{
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::websocket::messages::{
     BitgetWsArg, BitgetWsBookData, BitgetWsBookMessage, BitgetWsCandle, BitgetWsCandleMessage,
@@ -96,7 +95,10 @@ impl BitgetBookState {
 
     #[must_use]
     pub fn checksum_string(&self) -> String {
-        build_checksum_string(&sorted_levels(&self.bids, true), &sorted_levels(&self.asks, false))
+        build_checksum_string(
+            &sorted_levels(&self.bids, true),
+            &sorted_levels(&self.asks, false),
+        )
     }
 
     #[must_use]
@@ -106,19 +108,19 @@ impl BitgetBookState {
 
     #[must_use]
     pub fn best_bid(&self) -> Option<(String, String)> {
-        sorted_levels(&self.bids, true)
-            .into_iter()
-            .next()
+        sorted_levels(&self.bids, true).into_iter().next()
     }
 
     #[must_use]
     pub fn best_ask(&self) -> Option<(String, String)> {
-        sorted_levels(&self.asks, false)
-            .into_iter()
-            .next()
+        sorted_levels(&self.asks, false).into_iter().next()
     }
 
     fn validate_checksum(&self, book: &BitgetWsBookData) -> anyhow::Result<()> {
+        if book.checksum == 0 {
+            return Ok(());
+        }
+
         let expected = self.checksum();
         if expected != book.checksum {
             bail!(
@@ -233,7 +235,8 @@ pub fn parse_public_quote_tick(
 
     let bid_size = ticker.bid_size.as_deref().unwrap_or("0");
     let ask_size = ticker.ask_size.as_deref().unwrap_or("0");
-    let ts_event = parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
+    let ts_event =
+        parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
 
     QuoteTick::new_checked(
@@ -258,10 +261,16 @@ pub fn parse_public_mark_price(
         .mark_price
         .as_deref()
         .context("Bitget ticker missing mark price")?;
-    let ts_event = parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
+    let ts_event =
+        parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
 
-    Ok(MarkPriceUpdate::new(instrument.id(), Price::from(mark_price), ts_event, ts_init))
+    Ok(MarkPriceUpdate::new(
+        instrument.id(),
+        Price::from(mark_price),
+        ts_event,
+        ts_init,
+    ))
 }
 
 pub fn parse_public_index_price(
@@ -274,10 +283,16 @@ pub fn parse_public_index_price(
         .index_price
         .as_deref()
         .context("Bitget ticker missing index price")?;
-    let ts_event = parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
+    let ts_event =
+        parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
 
-    Ok(IndexPriceUpdate::new(instrument.id(), Price::from(index_price), ts_event, ts_init))
+    Ok(IndexPriceUpdate::new(
+        instrument.id(),
+        Price::from(index_price),
+        ts_event,
+        ts_init,
+    ))
 }
 
 pub fn parse_public_funding_rate(
@@ -290,7 +305,8 @@ pub fn parse_public_funding_rate(
         .funding_rate
         .as_deref()
         .context("Bitget ticker missing funding rate")?;
-    let ts_event = parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
+    let ts_event =
+        parse_public_ticker_ts(&ticker.ts, ts_init).context("invalid ticker timestamp")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
 
     let rate = funding_rate
@@ -298,7 +314,9 @@ pub fn parse_public_funding_rate(
         .with_context(|| format!("invalid funding rate '{funding_rate}'"))?;
 
     let next_funding_ns = match ticker.next_funding_time.as_deref() {
-        Some(v) => Some(parse_ts_millis(v, "ticker.nextFundingTime").context("invalid next funding time")?),
+        Some(v) => Some(
+            parse_ts_millis(v, "ticker.nextFundingTime").context("invalid next funding time")?,
+        ),
         None => None,
     };
 
@@ -343,10 +361,7 @@ fn parse_public_bar(
         .get(2)
         .context("Bitget candle missing high")?
         .as_str();
-    let low = candle
-        .get(3)
-        .context("Bitget candle missing low")?
-        .as_str();
+    let low = candle.get(3).context("Bitget candle missing low")?.as_str();
     let close = candle
         .get(4)
         .context("Bitget candle missing close")?
@@ -378,10 +393,7 @@ fn parse_public_bar(
     .context("failed to construct Bitget Bar")
 }
 
-fn parse_public_ticker_ts(
-    value: &Option<String>,
-    ts_init: UnixNanos,
-) -> anyhow::Result<UnixNanos> {
+fn parse_public_ticker_ts(value: &Option<String>, ts_init: UnixNanos) -> anyhow::Result<UnixNanos> {
     match value.as_deref() {
         Some(v) => parse_ts_millis(v, "ticker.ts"),
         None if ts_init.is_zero() => bail!("Bitget ticker missing ts"),
@@ -439,8 +451,8 @@ pub fn parse_public_trade_tick(
         "sell" => AggressorSide::Seller,
         _ => AggressorSide::NoAggressor,
     };
-    let trade_id = TradeId::new_checked(trade.trade_id.as_str())
-        .context("invalid Bitget trade identifier")?;
+    let trade_id =
+        TradeId::new_checked(trade.trade_id.as_str()).context("invalid Bitget trade identifier")?;
     let ts_event = parse_ts_millis(&trade.ts, "trade.ts")?;
     let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
 

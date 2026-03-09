@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 from decimal import Decimal
 from typing import Any
@@ -73,6 +58,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
@@ -184,6 +170,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._algo_order_instruments: dict[ClientOrderId, InstrumentId] = {}
         self._client_id_aliases: dict[ClientOrderId, ClientOrderId] = {}
         self._client_id_children: dict[ClientOrderId, ClientOrderId] = {}
+        self._terminal_cancel_reconcile_inflight: set[ClientOrderId] = set()
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
@@ -1210,6 +1197,12 @@ class OKXExecutionClient(LiveExecutionClient):
                 )
                 continue
 
+            if order.is_pending_cancel:
+                self._log.debug(
+                    f"Order {cancel.client_order_id!r} already pending cancel, skipping",
+                )
+                continue
+
             # Pending conditional orders must use HTTP algo cancel
             is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
                 order,
@@ -1855,6 +1848,13 @@ class OKXExecutionClient(LiveExecutionClient):
         if order is None or order.is_closed:
             return
         self._send_order_event(event)
+        if self._is_terminal_cancel_reject_reason(event.reason):
+            canonical_id = self._canonical_client_order_id(event.client_order_id) or event.client_order_id
+            if canonical_id not in self._terminal_cancel_reconcile_inflight:
+                self._terminal_cancel_reconcile_inflight.add(canonical_id)
+                self.create_task(
+                    self._reconcile_terminal_cancel_reject(event, canonical_id),
+                )
 
     def _handle_order_modify_rejected_pyo3(
         self,
@@ -2298,6 +2298,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     def _clear_order_state(self, client_order_id: ClientOrderId) -> None:
         canonical = self._canonical_client_order_id(client_order_id) or client_order_id
+        self._terminal_cancel_reconcile_inflight.discard(canonical)
         self._algo_order_ids.pop(canonical, None)
         self._algo_order_instruments.pop(canonical, None)
 
@@ -2307,3 +2308,103 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._client_id_aliases.pop(key, None)
 
         self._client_id_children.pop(canonical, None)
+
+    @staticmethod
+    def _is_terminal_cancel_reject_reason(reason: str | None) -> bool:
+        normalized = " ".join((reason or "").strip().lower().split())
+        return any(
+            text in normalized
+            for text in (
+                "s_code=51400",
+                "filled, canceled or does not exist",
+                "filled, cancelled or does not exist",
+                "already canceled",
+                "already cancelled",
+                "does not exist",
+            )
+        )
+
+    @staticmethod
+    def _fill_matches_order(
+        report: FillReport,
+        *,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId | None,
+    ) -> bool:
+        if report.client_order_id == client_order_id:
+            return True
+        if venue_order_id is not None and report.venue_order_id == venue_order_id:
+            return True
+        return False
+
+    async def _reconcile_terminal_cancel_reject(
+        self,
+        event: OrderCancelRejected,
+        canonical_client_order_id: ClientOrderId,
+    ) -> None:
+        try:
+            order = self._cache.order(canonical_client_order_id) or self._cache.order(
+                event.client_order_id,
+            )
+            if order is None or order.is_closed:
+                return
+
+            fill_reports = await self.generate_fill_reports(
+                GenerateFillReports(
+                    instrument_id=order.instrument_id,
+                    venue_order_id=order.venue_order_id,
+                    start=None,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            matched_fill_reports = [
+                report
+                for report in fill_reports
+                if self._fill_matches_order(
+                    report,
+                    client_order_id=canonical_client_order_id,
+                    venue_order_id=order.venue_order_id,
+                )
+            ]
+            for report in matched_fill_reports:
+                self._send_fill_report(report)
+
+            refreshed_order = self._cache.order(canonical_client_order_id)
+            if refreshed_order is not None and refreshed_order.is_closed:
+                return
+
+            status_report = await self.generate_order_status_report(
+                GenerateOrderStatusReport(
+                    instrument_id=order.instrument_id,
+                    client_order_id=canonical_client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            if status_report is not None:
+                if status_report.order_status in (
+                    OrderStatus.CANCELED,
+                    OrderStatus.EXPIRED,
+                    OrderStatus.FILLED,
+                ):
+                    self._send_order_status_report(status_report)
+                    self._clear_client_order_aliases(status_report)
+                return
+
+            fallback_order = self._cache.order(canonical_client_order_id)
+            if fallback_order is not None and fallback_order.is_pending_cancel and not matched_fill_reports:
+                self.generate_order_canceled(
+                    strategy_id=fallback_order.strategy_id,
+                    instrument_id=fallback_order.instrument_id,
+                    client_order_id=fallback_order.client_order_id,
+                    venue_order_id=fallback_order.venue_order_id,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                self._clear_order_state(fallback_order.client_order_id)
+        except Exception as e:
+            self._log.exception("Failed reconciling OKX terminal cancel reject", e)
+        finally:
+            self._terminal_cancel_reconcile_inflight.discard(canonical_client_order_id)

@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -185,6 +170,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log_rejected_due_post_only_as_warning: bool = (
             config.log_rejected_due_post_only_as_warning
         )
+        self._portfolio_margin_unsupported_reason: str | None = None
         self._recv_window = config.recv_window_ms
         self._max_retries = config.max_retries or 3
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
@@ -235,7 +221,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # (Binance Futures WS API session.logon only accepts Ed25519)
         http_client_for_ws: BinanceHttpClient | None = None
         account_type_for_ws: BinanceAccountType | None = None
-        if account_type.is_futures and not is_ed25519:
+        if account_type == BinanceAccountType.MARGIN:
+            http_client_for_ws = client
+            account_type_for_ws = account_type
+        elif account_type.is_futures and not is_ed25519:
             http_client_for_ws = client
             account_type_for_ws = account_type
 
@@ -817,12 +806,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     if isinstance(last_exc, BinanceError)
                     else False
                 )
+                if self._portfolio_margin_unsupported_reason is None:
+                    self._portfolio_margin_unsupported_reason = (
+                        _portfolio_margin_unsupported_reason(last_exc)
+                    )
+                    if self._portfolio_margin_unsupported_reason is not None:
+                        self._log.error(self._portfolio_margin_unsupported_reason)
 
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    reason=retry_manager.message,
+                    reason=self._portfolio_margin_unsupported_reason or retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                     due_post_only=due_post_only,
                 )
@@ -886,6 +881,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     def _validate_order_pre_submit(self, order: Order) -> str | None:  # noqa: C901 (too complex)
+        if self._portfolio_margin_unsupported_reason is not None:
+            return self._portfolio_margin_unsupported_reason
+
         # Check order type and time-in-force validity
         validity_error = self._check_order_validity(order)
         if validity_error:
@@ -1480,3 +1478,29 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 def _is_post_only_rejection(error: BinanceError) -> bool:
     error_code = get_binance_error_code(error)
     return error_code == BinanceErrorCode.GTX_ORDER_REJECT
+
+
+def _portfolio_margin_unsupported_reason(error: BaseException | None) -> str | None:
+    if not isinstance(error, BinanceError):
+        return None
+
+    message = error.message
+    code: int | None = None
+    text = ""
+    if isinstance(message, dict):
+        try:
+            code = int(message.get("code")) if message.get("code") is not None else None
+        except (TypeError, ValueError):
+            code = None
+        text = str(message.get("msg", ""))
+    else:
+        text = str(message)
+
+    if code != -3055 and "portfolio margin user" not in text.lower():
+        return None
+
+    detail = text or "Invalid requests for Portfolio Margin user."
+    return (
+        "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI spot/margin "
+        f"endpoints; configured adapter supports SPOT or cross MARGIN only ({detail})"
+    )

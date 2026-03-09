@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 import sys
 import time
@@ -135,11 +120,17 @@ class TestCacheDatabaseAdapter:
             config=CacheConfig(database=DatabaseConfig()),
         )
 
+    def setup_method(self) -> None:
+        self.setup()
+
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         time.sleep(0.2)
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
         time.sleep(0.5)  # Ensure clean slate
+
+    def teardown_method(self) -> None:
+        self.teardown()
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -275,6 +266,80 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    @pytest.mark.asyncio
+    async def test_delete_account_event_removes_event_from_redis_list(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.database.add_account(account)
+
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 1,
+        )
+
+        initial_event_id = account.events[0].id.value
+        event_to_remove = TestEventStubs.cash_account_state(account_id=account.id)
+        final_event = TestEventStubs.cash_account_state(account_id=account.id)
+
+        account.apply(event_to_remove)
+        self.database.update_account(account)
+        account.apply(final_event)
+        self.database.update_account(account)
+
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 3,
+        )
+
+        # Act
+        self.database.delete_account_event(account.id, event_to_remove.id.value)
+
+        # Assert
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 2,
+        )
+
+        loaded_account = self.database.load_account(account.id)
+        assert loaded_account is not None
+        loaded_event_ids = [event.id.value for event in loaded_account.events]
+        assert loaded_event_ids == [initial_event_id, final_event.id.value]
+
+    @pytest.mark.asyncio
+    async def test_delete_account_event_uses_ordered_write_path(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.database.add_account(account)
+
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 1,
+        )
+
+        initial_event_id = account.events[0].id.value
+        event_to_remove = TestEventStubs.cash_account_state(account_id=account.id)
+        final_event = TestEventStubs.cash_account_state(account_id=account.id)
+
+        account.apply(event_to_remove)
+        self.database.update_account(account)
+
+        # Do not wait here; deletion must remain ordered behind the queued update.
+        self.database.delete_account_event(account.id, event_to_remove.id.value)
+
+        account.apply(final_event)
+        self.database.update_account(account)
+
+        # Assert
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 2,
+        )
+
+        loaded_account = self.database.load_account(account.id)
+        assert loaded_account is not None
+        loaded_event_ids = [event.id.value for event in loaded_account.events]
+        assert loaded_event_ids == [initial_event_id, final_event.id.value]
 
     @pytest.mark.asyncio
     async def test_update_order_when_not_already_exists_logs(self):
@@ -1035,6 +1100,33 @@ class TestCacheDatabaseAdapter:
         assert result == {order.client_order_id: order}
 
     @pytest.mark.asyncio
+    async def test_load_order_when_cache_history_is_corrupt_deletes_key_and_returns_none(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        self.database.add_order(order)
+
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.database.update_order(order)
+        order.apply(TestEventStubs.order_accepted(order))
+        self.database.update_order(order)
+        self.database.update_order(order)  # Deliberately append the same event twice
+
+        await asyncio.sleep(0.2)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result is None
+        assert self.database.load_orders() == {}
+
+    @pytest.mark.asyncio
     async def test_load_positions_cache_when_no_positions(self):
         # Arrange, Act
         self.database.load_positions()
@@ -1183,9 +1275,15 @@ class TestRedisCacheDatabaseIntegrity:
             config=CacheConfig(database=DatabaseConfig()),
         )
 
+    def setup_method(self) -> None:
+        self.setup()
+
     def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests
+
+    def teardown_method(self) -> None:
+        self.teardown()
 
     @pytest.mark.asyncio
     async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):

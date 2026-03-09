@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 
@@ -50,7 +35,7 @@ def get_http_base_url(  # noqa: C901 (URL dispatch)
     if account_type.is_spot:
         return f"https://api.binance.{top_level_domain}"
     elif account_type.is_margin:
-        return f"https://sapi.binance.{top_level_domain}"
+        return f"https://api.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.USDT_FUTURES:
         return f"https://fapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.COIN_FUTURES:

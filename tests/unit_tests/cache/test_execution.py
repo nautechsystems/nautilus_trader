@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import pickle
 from decimal import Decimal
 
@@ -3022,6 +3007,58 @@ class TestCache:
 
         # Assert
         assert position_id in self.cache.position_ids()
+
+    def test_build_index_with_persisted_external_position_and_no_orders_keeps_integrity(self):
+        # Arrange
+        cache = Cache(database=None)
+        external_order = TestExecStubs.market_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-001"),
+        )
+        fill = TestEventStubs.order_filled(
+            external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("RECON-TRADE-1"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        cache.add_position(position, OmsType.NETTING)
+
+        # Simulate persisted-cache startup: positions loaded, orders missing, indexes rebuilt.
+        cache.clear_index()
+        cache.build_index()
+
+        # Act, Assert
+        assert cache.check_integrity()
+
+    def test_check_integrity_with_registered_strategy_and_no_orders_passes(self):
+        # Arrange
+        cache = Cache(database=None)
+        clock = TestClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(
+            trader_id=trader_id,
+            clock=clock,
+        )
+        portfolio = Portfolio(
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+        strategy = Strategy()
+        strategy.register(
+            trader_id=trader_id,
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+        cache.update_strategy(strategy)
+
+        # Act, Assert
+        assert cache.check_integrity()
 
 
 class TestExecutionCacheIntegrityCheck:

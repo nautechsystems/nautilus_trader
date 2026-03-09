@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
 
 import pytest
@@ -28,6 +13,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.manager import OrderManager
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
@@ -69,6 +55,7 @@ from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -150,6 +137,9 @@ class TestExecutionEngine:
         )
         self.portfolio.update_account(TestEventStubs.margin_account_state())
         self.exec_engine.register_client(self.exec_client)
+
+    def setup_method(self) -> None:
+        self.setup()
 
     def test_registered_clients_returns_expected(self) -> None:
         # Arrange, Act
@@ -397,6 +387,32 @@ class TestExecutionEngine:
 
         # Assert
         assert self.exec_engine.position_id_count(strategy_id) == 1
+
+    def test_load_cache_with_persisted_external_position_and_no_orders_keeps_integrity(self) -> None:
+        # Arrange
+        external_order = TestExecStubs.market_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-001"),
+        )
+        fill = TestEventStubs.order_filled(
+            external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("RECON-TRADE-1"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache_db.add_position(position)
+
+        # Act
+        self.portfolio.reset()
+        self.exec_engine.load_cache()
+
+        # Assert
+        assert self.exec_engine.check_integrity()
+        assert self.exec_engine.position_id_count(StrategyId("EXTERNAL")) == 1
 
     def test_given_random_command_logs_and_continues(self) -> None:
         # Arrange
@@ -3262,6 +3278,78 @@ class TestExecutionEngine:
         assert position_id is not None
         assert self.cache.position_id(tp_order.client_order_id) == position_id
         assert self.cache.position_id(sl_order.client_order_id) == position_id
+
+    def test_oto_child_submit_preserves_allow_cash_borrowing(self) -> None:
+        # Arrange
+        captured = []
+        self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+        self.msgbus.register(endpoint="RiskEngine.execute", handler=captured.append)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bracket = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            entry_order_type=OrderType.LIMIT,
+            entry_price=Price.from_str("1.00"),
+            tp_price=Price.from_str("1.10"),
+            sl_trigger_price=Price.from_str("0.90"),
+            quantity=Quantity.from_int(100_000),
+        )
+
+        entry_order = bracket.orders[0]
+        tp_order = bracket.orders[1]
+        sl_order = bracket.orders[2]
+        client_id = ClientId("SIM")
+        position_id = PositionId("P-1")
+
+        self.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_order(entry_order, position_id=position_id, client_id=client_id)
+        self.cache.add_order(tp_order)
+        self.cache.add_order(sl_order)
+
+        entry_order.apply(TestEventStubs.order_submitted(entry_order))
+        entry_order.apply(TestEventStubs.order_accepted(entry_order))
+        fill = TestEventStubs.order_filled(entry_order, AUDUSD_SIM)
+        entry_order.apply(fill)
+
+        manager = OrderManager(
+            clock=self.clock,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            component_name="TestOrderManager",
+            active_local=True,
+            submit_order_handler=captured.append,
+            modify_order_handler=lambda _order, _qty: None,
+        )
+        manager.cache_submit_order_command(
+            SubmitOrder(
+                trader_id=entry_order.trader_id,
+                strategy_id=entry_order.strategy_id,
+                order=entry_order,
+                position_id=position_id,
+                client_id=client_id,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                allow_cash_borrowing=True,
+            ),
+        )
+
+        # Act
+        manager.handle_order_filled(fill)
+
+        child_submits = [command for command in captured if isinstance(command, SubmitOrder)]
+
+        # Assert
+        assert len(child_submits) == 2
+        assert all(command.allow_cash_borrowing is True for command in child_submits)
 
     @pytest.mark.parametrize(
         ("status", "price", "process_steps", "expected_in_book"),

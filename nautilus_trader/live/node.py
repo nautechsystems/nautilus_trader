@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 import signal
 import time
@@ -34,6 +19,17 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
+
+
+class TradingNodeFatalError(RuntimeError):
+    """
+    Fatal trading node failure that should terminate the hosting process.
+    """
+
+    def __init__(self, reason: str, *, exit_code: int = 78) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.exit_code = exit_code
 
 
 class TradingNode:
@@ -296,6 +292,8 @@ class TradingNode:
                 task.add_done_callback(self._handle_run_task_result)
             else:
                 self.kernel.loop.run_until_complete(self.run_async())
+        except TradingNodeFatalError:
+            raise
         except RuntimeError as e:
             self.kernel.logger.exception("Error on run", e)
 
@@ -346,7 +344,12 @@ class TradingNode:
                     "Run `node.build()` prior to start.",
                 )
 
-            await self.kernel.start_async()
+            started = await self.kernel.start_async()
+
+            if not started:
+                raise TradingNodeFatalError(
+                    self.kernel.fatal_shutdown_reason or "Trading node startup failed",
+                )
 
             if self.kernel.loop.is_running():
                 self.kernel.logger.info("RUNNING")
@@ -375,6 +378,9 @@ class TradingNode:
                 self._task_streaming.add_done_callback(self._handle_streaming_exception)
 
             await asyncio.gather(*tasks)
+
+            if self.kernel.fatal_shutdown_reason is not None:
+                raise TradingNodeFatalError(self.kernel.fatal_shutdown_reason)
         except asyncio.CancelledError as e:
             self.kernel.logger.error(str(e))
 

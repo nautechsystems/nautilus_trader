@@ -1,18 +1,3 @@
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------
-
 //! Instrument definitions for the trading domain model.
 
 pub mod any;
@@ -409,6 +394,57 @@ pub trait Instrument: 'static + Send {
             .unwrap()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be converted to a base exposure quantity.
+    fn try_calculate_base_exposure_qty(
+        &self,
+        quantity: Quantity,
+        last_price: Option<Price>,
+    ) -> anyhow::Result<Quantity> {
+        let base_currency = self.base_currency();
+        let precision = base_currency.map_or(self.size_precision(), |currency| currency.precision);
+        let unsupported_quanto = base_currency.is_some_and(|base_currency| {
+            let settlement_currency = self.settlement_currency();
+            settlement_currency != base_currency && settlement_currency != self.quote_currency()
+        });
+
+        let value = if unsupported_quanto {
+            anyhow::bail!("quanto instruments are not supported for base exposure quantity");
+        } else if self.is_inverse() {
+            let last_price = last_price.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "last_price is required for inverse instrument base exposure quantity"
+                )
+            })?;
+            if !last_price.is_positive() {
+                anyhow::bail!(
+                    "last_price must be positive for inverse instrument base exposure quantity"
+                );
+            }
+            let _ = base_currency.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "base_currency is required for inverse instrument base exposure quantity"
+                )
+            })?;
+
+            quantity.as_decimal() * self.multiplier().as_decimal() / last_price.as_decimal()
+        } else {
+            quantity.as_decimal() * self.multiplier().as_decimal()
+        };
+
+        Quantity::from_decimal_dp(value, precision)
+    }
+
+    fn calculate_base_exposure_qty(
+        &self,
+        quantity: Quantity,
+        last_price: Option<Price>,
+    ) -> Quantity {
+        self.try_calculate_base_exposure_qty(quantity, last_price)
+            .unwrap()
+    }
+
     /// # Panics
     ///
     /// Panics if the instrument is inverse and does not have a base currency.
@@ -759,6 +795,142 @@ mod tests {
         let price = currency_pair_btcusdt.make_price(10_000.0);
         let base = currency_pair_btcusdt.calculate_base_quantity(quantity, price);
         assert_eq!(base.to_string(), "0.000200");
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_identity(currency_pair_btcusdt: CurrencyPair) {
+        let quantity = currency_pair_btcusdt.make_qty(2.0, None);
+        let exposure = currency_pair_btcusdt.calculate_base_exposure_qty(quantity, None);
+        assert_eq!(exposure.to_string(), "2.00000000");
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_linear_multiplier(mut crypto_perpetual_ethusdt: CryptoPerpetual) {
+        crypto_perpetual_ethusdt.multiplier = Quantity::from("10");
+        let quantity = Quantity::from("343");
+        let exposure = crypto_perpetual_ethusdt.calculate_base_exposure_qty(quantity, None);
+        assert_eq!(exposure.to_string(), "3430.00000000");
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_inverse_uses_base_precision(xbtusd_inverse_perp: CryptoPerpetual) {
+        let quantity = Quantity::from("100000");
+        let price = Price::from("11493.6");
+        let exposure = xbtusd_inverse_perp.calculate_base_exposure_qty(quantity, Some(price));
+        assert_eq!(exposure.to_string(), "8.70049419");
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_inverse_requires_price(xbtusd_inverse_perp: CryptoPerpetual) {
+        let err = xbtusd_inverse_perp
+            .try_calculate_base_exposure_qty(Quantity::from("100000"), None)
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "last_price is required for inverse instrument base exposure quantity"
+        );
+    }
+
+    #[rstest]
+    #[case("0.0")]
+    #[case("-1.0")]
+    fn calculate_base_exposure_inverse_requires_positive_price(
+        xbtusd_inverse_perp: CryptoPerpetual,
+        #[case] last_price: &str,
+    ) {
+        let err = xbtusd_inverse_perp
+            .try_calculate_base_exposure_qty(
+                Quantity::from("100000"),
+                Some(Price::from(last_price)),
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "last_price must be positive for inverse instrument base exposure quantity"
+        );
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_inverse_quanto_is_unsupported() {
+        let ethusd_inverse_quanto = CryptoPerpetual::new(
+            InstrumentId::from("ETHUSD-INV-QUANTO.TEST"),
+            Symbol::from("ETHUSD-INV-QUANTO"),
+            Currency::from("ETH"),
+            Currency::from("USD"),
+            Currency::from("BTC"),
+            true,
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            Some(Quantity::from("1")),
+            Some(Quantity::from("1")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let err = ethusd_inverse_quanto
+            .try_calculate_base_exposure_qty(Quantity::from("100"), Some(Price::from("2500.00")))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "quanto instruments are not supported for base exposure quantity"
+        );
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_quanto_is_unsupported() {
+        let ethusd_quanto = CryptoPerpetual::new(
+            InstrumentId::from("ETHUSD-QUANTO.TEST"),
+            Symbol::from("ETHUSD-QUANTO"),
+            Currency::from("ETH"),
+            Currency::from("USD"),
+            Currency::from("BTC"),
+            false,
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            Some(Quantity::from("1")),
+            Some(Quantity::from("1")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let err = ethusd_quanto
+            .try_calculate_base_exposure_qty(Quantity::from("100"), Some(Price::from("2500.00")))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "quanto instruments are not supported for base exposure quantity"
+        );
+    }
+
+    #[rstest]
+    fn calculate_base_exposure_uses_size_precision_when_no_base_currency() {
+        let instrument = betting();
+        let exposure = instrument.calculate_base_exposure_qty(Quantity::from("12.34"), None);
+        assert_eq!(exposure.to_string(), "12.34");
     }
 
     #[rstest]

@@ -1,0 +1,16 @@
+# Allow the API service user to operate managed Flux services for Pulse.
+Cmnd_Alias FLUX_PULSE = \
+  /usr/bin/systemctl start flux@equities-portfolio.service, \
+  /usr/bin/systemctl stop flux@equities-portfolio.service, \
+  /usr/bin/systemctl restart flux@equities-portfolio.service, \
+  /usr/bin/journalctl -u flux@equities-portfolio.service, \
+  /usr/bin/systemctl start flux@equities-bridge.service, \
+  /usr/bin/systemctl stop flux@equities-bridge.service, \
+  /usr/bin/systemctl restart flux@equities-bridge.service, \
+  /usr/bin/journalctl -u flux@equities-bridge.service, \
+  /usr/bin/systemctl start flux@equities-node-aapl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-aapl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-aapl_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-aapl_tradexyz_makerv4.service
+
+ubuntu ALL=(root) NOPASSWD: FLUX_PULSE

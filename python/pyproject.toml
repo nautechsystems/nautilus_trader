@@ -2,9 +2,7 @@
 name = "nautilus-trader"
 version = "2.0.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
-authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
-  "License :: OSI Approved :: GNU Lesser General Public License Version 3.0 (LGPLv3+)",
   "Operating System :: OS Independent",
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
@@ -20,7 +18,6 @@ classifiers = [
   "Intended Audience :: Financial and Insurance Industry",
   "Intended Audience :: Science/Research",
 ]
-license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
@@ -30,11 +27,6 @@ dependencies = [
   "python-dotenv>=1.2.1",
   "pytz>=2025.2.0",
 ]
-
-[project.urls]
-homepage = "https://nautilustrader.io"
-repository = "https://github.com/nautechsystems/nautilus_trader"
-docs = "https://nautilustrader.io/docs"
 
 [build-system]
 requires = ["maturin>=1.12.4", "patchelf"]

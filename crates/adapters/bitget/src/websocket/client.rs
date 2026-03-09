@@ -12,7 +12,6 @@ use crate::websocket::messages::{
     BitgetWsAccountArg, BitgetWsAccountSubscriptionMessage, BitgetWsArg, BitgetWsLoginArg,
     BitgetWsLoginMessage, BitgetWsSubscriptionMessage,
 };
-use nautilus_network::websocket::WebSocketConfig;
 #[cfg(feature = "python")]
 use crate::websocket::parse::{
     parse_public_bars, parse_public_candle, parse_public_funding_rate, parse_public_index_price,
@@ -28,6 +27,7 @@ use nautilus_model::{
     data::Data,
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
+use nautilus_network::websocket::WebSocketConfig;
 #[cfg(feature = "python")]
 use pyo3::IntoPyObjectExt;
 #[cfg(feature = "python")]
@@ -84,7 +84,11 @@ impl BitgetWebSocketClient {
     }
 
     #[must_use]
-    pub fn unsubscribe_message(inst_type: BitgetProductType, channel: &str, inst_id: &str) -> String {
+    pub fn unsubscribe_message(
+        inst_type: BitgetProductType,
+        channel: &str,
+        inst_id: &str,
+    ) -> String {
         Self::subscription_message("unsubscribe", inst_type, channel, inst_id)
     }
 
@@ -160,10 +164,11 @@ impl BitgetWebSocketClient {
             heartbeat_msg: Some(Self::ping_message().to_string()),
             reconnect_timeout_ms: Some(Self::DEFAULT_RECONNECT_TIMEOUT_MS),
             reconnect_delay_initial_ms: Some(
-                retry_delay_initial_ms
-                    .unwrap_or(Self::DEFAULT_RECONNECT_DELAY_INITIAL_MS),
+                retry_delay_initial_ms.unwrap_or(Self::DEFAULT_RECONNECT_DELAY_INITIAL_MS),
             ),
-            reconnect_delay_max_ms: Some(retry_delay_max_ms.unwrap_or(Self::DEFAULT_RECONNECT_DELAY_MAX_MS)),
+            reconnect_delay_max_ms: Some(
+                retry_delay_max_ms.unwrap_or(Self::DEFAULT_RECONNECT_DELAY_MAX_MS),
+            ),
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
@@ -230,7 +235,11 @@ impl BitgetWebSocketClient {
 
     #[staticmethod]
     #[pyo3(name = "subscribe_candle_message")]
-    fn py_subscribe_candle_message(inst_type: BitgetProductType, interval: &str, inst_id: &str) -> String {
+    fn py_subscribe_candle_message(
+        inst_type: BitgetProductType,
+        interval: &str,
+        inst_id: &str,
+    ) -> String {
         Self::subscribe_candle_message(inst_type, interval, inst_id)
     }
 
@@ -300,8 +309,8 @@ impl BitgetWebSocketClient {
         msg.data
             .iter()
             .map(|trade| {
-                let tick =
-                    parse_public_trade_tick(trade, &instrument, ts_init).map_err(to_pyruntime_err)?;
+                let tick = parse_public_trade_tick(trade, &instrument, ts_init)
+                    .map_err(to_pyruntime_err)?;
                 Ok(data_to_pycapsule(py, Data::Trade(tick)))
             })
             .collect()
@@ -346,8 +355,8 @@ impl BitgetWebSocketClient {
         msg.data
             .iter()
             .map(|ticker| {
-                let mark_price =
-                    parse_public_mark_price(&instrument, &msg.arg, ticker, ts_init).map_err(to_pyruntime_err)?;
+                let mark_price = parse_public_mark_price(&instrument, &msg.arg, ticker, ts_init)
+                    .map_err(to_pyruntime_err)?;
                 Ok(data_to_pycapsule(py, Data::MarkPriceUpdate(mark_price)))
             })
             .collect()
@@ -369,8 +378,8 @@ impl BitgetWebSocketClient {
         msg.data
             .iter()
             .map(|ticker| {
-                let index_price =
-                    parse_public_index_price(&instrument, &msg.arg, ticker, ts_init).map_err(to_pyruntime_err)?;
+                let index_price = parse_public_index_price(&instrument, &msg.arg, ticker, ts_init)
+                    .map_err(to_pyruntime_err)?;
                 Ok(data_to_pycapsule(py, Data::IndexPriceUpdate(index_price)))
             })
             .collect()
@@ -392,13 +401,9 @@ impl BitgetWebSocketClient {
         msg.data
             .iter()
             .map(|ticker| {
-                let funding_rate = parse_public_funding_rate(
-                    &instrument,
-                    &msg.arg,
-                    ticker,
-                    ts_init,
-                )
-                .map_err(to_pyruntime_err)?;
+                let funding_rate =
+                    parse_public_funding_rate(&instrument, &msg.arg, ticker, ts_init)
+                        .map_err(to_pyruntime_err)?;
                 funding_rate.into_py_any(py).map_err(to_pyruntime_err)
             })
             .collect()

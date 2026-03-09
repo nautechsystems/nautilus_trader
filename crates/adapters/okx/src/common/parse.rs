@@ -1,18 +1,3 @@
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------
-
 //! Parsing utilities that convert OKX payloads into Nautilus domain models.
 
 use std::str::FromStr;
@@ -60,7 +45,7 @@ use crate::{
             OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
             OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
         },
-        models::OKXInstrument,
+        models::{OKXInstrument, OkxQuantityUnitInfo},
     },
     http::models::{
         OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXIndexTicker, OKXMarkPrice,
@@ -1540,19 +1525,21 @@ pub fn parse_swap_instrument(
     validate_underlying(definition.inst_id, definition.uly)?;
 
     let context = format!("SWAP instrument {}", definition.inst_id);
-    let (base_currency, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
-            definition.uly,
-            definition.inst_id
-        )
-    })?;
+    let (base_currency_code, quote_currency_code) =
+        definition.uly.split_once('-').ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
+                definition.uly,
+                definition.inst_id
+            )
+        })?;
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let base_currency = Currency::get_or_create_crypto_with_context(base_currency, Some(&context));
+    let base_currency =
+        Currency::get_or_create_crypto_with_context(base_currency_code, Some(&context));
     let quote_currency =
-        Currency::get_or_create_crypto_with_context(quote_currency, Some(&context));
+        Currency::get_or_create_crypto_with_context(quote_currency_code, Some(&context));
     let settlement_currency =
         Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
@@ -1590,6 +1577,13 @@ pub fn parse_swap_instrument(
         )
     })?;
     let multiplier = parse_multiplier_product(definition)?;
+    let info = OkxQuantityUnitInfo::from_derivative(
+        definition,
+        base_currency_code,
+        quote_currency_code,
+        multiplier,
+    )?
+    .to_params();
     let lot_size = Some(size_increment);
     let max_quantity = if definition.max_mkt_sz.is_empty() {
         None
@@ -1641,7 +1635,7 @@ pub fn parse_swap_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        None,
+        Some(info),
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -1665,19 +1659,20 @@ pub fn parse_futures_instrument(
     validate_underlying(definition.inst_id, definition.uly)?;
 
     let context = format!("FUTURES instrument {}", definition.inst_id);
-    let (_, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
-            definition.uly,
-            definition.inst_id
-        )
-    })?;
+    let (base_currency_code, quote_currency_code) =
+        definition.uly.split_once('-').ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
+                definition.uly,
+                definition.inst_id
+            )
+        })?;
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let underlying = Currency::get_or_create_crypto_with_context(definition.uly, Some(&context));
     let quote_currency =
-        Currency::get_or_create_crypto_with_context(quote_currency, Some(&context));
+        Currency::get_or_create_crypto_with_context(quote_currency_code, Some(&context));
     let settlement_currency =
         Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
@@ -1723,6 +1718,13 @@ pub fn parse_futures_instrument(
         )
     })?;
     let multiplier = parse_multiplier_product(definition)?;
+    let info = OkxQuantityUnitInfo::from_derivative(
+        definition,
+        base_currency_code,
+        quote_currency_code,
+        multiplier,
+    )?
+    .to_params();
     let lot_size = Some(size_increment);
     let max_quantity = if definition.max_mkt_sz.is_empty() {
         None
@@ -1776,7 +1778,7 @@ pub fn parse_futures_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        None,
+        Some(info),
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -2057,14 +2059,24 @@ pub fn parse_account_state(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::Params;
     use nautilus_model::{identifiers::PositionId, instruments::Instrument};
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
         OKXPositionSide,
-        common::{enums::OKXMarginMode, testing::load_test_json},
+        common::{
+            enums::OKXMarginMode,
+            models::{
+                BaseExposureMode as PublicBaseExposureMode,
+                OkxDerivativeContractType as PublicOkxDerivativeContractType,
+                OkxQuantityUnitInfo as PublicOkxQuantityUnitInfo,
+            },
+            testing::load_test_json,
+        },
         http::{
             client::OKXResponse,
             models::{
@@ -2074,6 +2086,86 @@ mod tests {
             },
         },
     };
+
+    fn make_test_swap_instrument(
+        inst_id: &str,
+        uly: &str,
+        settle_ccy: &str,
+        ct_val: &str,
+        ct_val_ccy: &str,
+        ct_type: OKXContractType,
+        lot_sz: &str,
+    ) -> OKXInstrument {
+        OKXInstrument {
+            inst_type: OKXInstrumentType::Swap,
+            inst_id: Ustr::from(inst_id),
+            inst_id_code: None,
+            uly: Ustr::from(uly),
+            inst_family: Ustr::from(uly),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from(settle_ccy),
+            ct_val: ct_val.to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: ct_val_ccy.to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: String::new(),
+            list_time: None,
+            exp_time: None,
+            lever: String::new(),
+            tick_sz: "0.01".to_string(),
+            lot_sz: lot_sz.to_string(),
+            min_sz: lot_sz.to_string(),
+            ct_type,
+            state: crate::common::enums::OKXInstrumentStatus::Live,
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: "100000".to_string(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
+        }
+    }
+
+    fn swap_info(instrument: &InstrumentAny) -> PublicOkxQuantityUnitInfo {
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perpetual) => {
+                PublicOkxQuantityUnitInfo::from_info(perpetual.info.as_ref())
+                    .expect("swap metadata should parse from instrument info")
+                    .expect("swap instrument should surface info metadata")
+            }
+            _ => panic!("Expected CryptoPerpetual instrument"),
+        }
+    }
+
+    fn futures_info(instrument: &InstrumentAny) -> PublicOkxQuantityUnitInfo {
+        match instrument {
+            InstrumentAny::CryptoFuture(future) => {
+                PublicOkxQuantityUnitInfo::from_info(future.info.as_ref())
+                    .expect("futures metadata should parse from instrument info")
+                    .expect("futures instrument should surface info metadata")
+            }
+            _ => panic!("Expected CryptoFuture instrument"),
+        }
+    }
+
+    fn assert_swap_base_exposure_metadata(
+        info: &PublicOkxQuantityUnitInfo,
+        ct_val: &str,
+        ct_val_ccy: &str,
+        ct_type: PublicOkxDerivativeContractType,
+        lot_sz: &str,
+        base_exposure_mode: PublicBaseExposureMode,
+    ) {
+        assert_eq!(info.ct_val, ct_val);
+        assert_eq!(info.ct_val_ccy, ct_val_ccy);
+        assert_eq!(info.ct_type, ct_type);
+        assert_eq!(info.lot_sz, lot_sz);
+        assert_eq!(info.base_exposure_mode, base_exposure_mode);
+    }
 
     #[rstest]
     fn test_parse_fee_currency_with_zero_fee_empty_string() {
@@ -2679,10 +2771,18 @@ mod tests {
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_price(), None);
         assert_eq!(instrument.min_price(), None);
+        assert_swap_base_exposure_metadata(
+            &swap_info(&instrument),
+            "100",
+            "USD",
+            PublicOkxDerivativeContractType::Inverse,
+            "1",
+            PublicBaseExposureMode::PriceBased,
+        );
     }
 
     #[rstest]
-    fn test_parse_linear_swap_instrument() {
+    fn test_parse_swap_instrument_linear_contract_metadata() {
         let json_data = load_test_json("http_get_instruments_swap.json");
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
 
@@ -2709,6 +2809,311 @@ mod tests {
         assert_eq!(instrument.lot_size(), Some(Quantity::from("0.01")));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from("0.01")));
         assert_eq!(instrument.max_quantity(), Some(Quantity::from(20000)));
+        assert_swap_base_exposure_metadata(
+            &swap_info(&instrument),
+            "0.1",
+            "ETH",
+            PublicOkxDerivativeContractType::Linear,
+            "0.01",
+            PublicBaseExposureMode::ExactMultiplier,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_surfaces_identity_base_exposure_metadata() {
+        let instrument = make_test_swap_instrument(
+            "SOL-USDT-SWAP",
+            "SOL-USDT",
+            "USDT",
+            "1",
+            "SOL",
+            OKXContractType::Linear,
+            "0.1",
+        );
+
+        let parsed =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &swap_info(&parsed),
+            "1",
+            "SOL",
+            PublicOkxDerivativeContractType::Linear,
+            "0.1",
+            PublicBaseExposureMode::Identity,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_surfaces_unsupported_base_exposure_metadata() {
+        let instrument = make_test_swap_instrument(
+            "XRP-USDT-SWAP",
+            "XRP-USDT",
+            "USDC",
+            "10",
+            "XRP",
+            OKXContractType::Linear,
+            "1",
+        );
+
+        let parsed =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &swap_info(&parsed),
+            "10",
+            "XRP",
+            PublicOkxDerivativeContractType::Linear,
+            "1",
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_missing_multiplier_metadata_degrades_base_exposure_metadata() {
+        let mut instrument = make_test_swap_instrument(
+            "SOL-USDT-SWAP",
+            "SOL-USDT",
+            "USDT",
+            "1",
+            "SOL",
+            OKXContractType::Linear,
+            "0.1",
+        );
+        instrument.ct_mult.clear();
+
+        let parsed =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &swap_info(&parsed),
+            "1",
+            "SOL",
+            PublicOkxDerivativeContractType::Linear,
+            "0.1",
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_missing_ct_val_degrades_base_exposure_metadata() {
+        let instrument = make_test_swap_instrument(
+            "SOL-USDT-SWAP",
+            "SOL-USDT",
+            "USDT",
+            "",
+            "SOL",
+            OKXContractType::Linear,
+            "0.1",
+        );
+
+        let parsed =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &swap_info(&parsed),
+            "",
+            "SOL",
+            PublicOkxDerivativeContractType::Linear,
+            "0.1",
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_missing_ct_val_ccy_degrades_base_exposure_metadata() {
+        let instrument = make_test_swap_instrument(
+            "SOL-USDT-SWAP",
+            "SOL-USDT",
+            "USDT",
+            "1",
+            "",
+            OKXContractType::Linear,
+            "0.1",
+        );
+
+        let parsed =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &swap_info(&parsed),
+            "1",
+            "",
+            PublicOkxDerivativeContractType::Linear,
+            "0.1",
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_unit_info_from_derivative_missing_lot_sz_degrades_base_exposure_metadata() {
+        let instrument = make_test_swap_instrument(
+            "SOL-USDT-SWAP",
+            "SOL-USDT",
+            "USDT",
+            "1",
+            "SOL",
+            OKXContractType::Linear,
+            "",
+        );
+
+        let info = PublicOkxQuantityUnitInfo::from_derivative(
+            &instrument,
+            "SOL",
+            "USDT",
+            Some(Quantity::from(1)),
+        )
+        .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &info,
+            "1",
+            "SOL",
+            PublicOkxDerivativeContractType::Linear,
+            "",
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_info_helper_ignores_generic_mode_without_okx_keys() {
+        let mut info = Params::new();
+        info.insert(
+            "base_exposure_mode".to_string(),
+            serde_json::Value::String("unsupported".to_string()),
+        );
+
+        let parsed = PublicOkxQuantityUnitInfo::from_info(Some(&info)).unwrap();
+
+        assert_eq!(parsed, None);
+    }
+
+    #[rstest]
+    #[case("okx_ct_val", "", "SOL", "0.1")]
+    #[case("okx_ct_val_ccy", "1", "", "0.1")]
+    #[case("okx_lot_sz", "1", "SOL", "")]
+    fn test_parse_swap_instrument_info_helper_preserves_empty_raw_fields_for_unsupported_metadata(
+        #[case] empty_key: &str,
+        #[case] expected_ct_val: &str,
+        #[case] expected_ct_val_ccy: &str,
+        #[case] expected_lot_sz: &str,
+    ) {
+        let mut info = Params::new();
+        info.insert(
+            "okx_ct_val".to_string(),
+            serde_json::Value::String("1".to_string()),
+        );
+        info.insert(
+            "okx_ct_val_ccy".to_string(),
+            serde_json::Value::String("SOL".to_string()),
+        );
+        info.insert(
+            "okx_ct_type".to_string(),
+            serde_json::Value::String("linear".to_string()),
+        );
+        info.insert(
+            "okx_lot_sz".to_string(),
+            serde_json::Value::String("0.1".to_string()),
+        );
+        info.insert(
+            "base_exposure_mode".to_string(),
+            serde_json::Value::String("unsupported".to_string()),
+        );
+        info.insert(
+            empty_key.to_string(),
+            serde_json::Value::String(String::new()),
+        );
+
+        let result = PublicOkxQuantityUnitInfo::from_params(&info).unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &result,
+            expected_ct_val,
+            expected_ct_val_ccy,
+            PublicOkxDerivativeContractType::Linear,
+            expected_lot_sz,
+            PublicBaseExposureMode::Unsupported,
+        );
+    }
+
+    #[rstest]
+    #[case("identity")]
+    #[case("exact_multiplier")]
+    #[case("price_based")]
+    fn test_parse_swap_instrument_info_helper_rejects_non_unsupported_mode_with_empty_raw_fields(
+        #[case] base_exposure_mode: &str,
+    ) {
+        let mut info = Params::new();
+        info.insert(
+            "okx_ct_val".to_string(),
+            serde_json::Value::String(String::new()),
+        );
+        info.insert(
+            "okx_ct_val_ccy".to_string(),
+            serde_json::Value::String("SOL".to_string()),
+        );
+        info.insert(
+            "okx_ct_type".to_string(),
+            serde_json::Value::String("linear".to_string()),
+        );
+        info.insert(
+            "okx_lot_sz".to_string(),
+            serde_json::Value::String("0.1".to_string()),
+        );
+        info.insert(
+            "base_exposure_mode".to_string(),
+            serde_json::Value::String(base_exposure_mode.to_string()),
+        );
+
+        let result = PublicOkxQuantityUnitInfo::from_params(&info);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Incomplete OKX quantity-unit metadata")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_info_helper_rejects_empty_ct_type() {
+        let mut info = Params::new();
+        info.insert(
+            "okx_ct_val".to_string(),
+            serde_json::Value::String("1".to_string()),
+        );
+        info.insert(
+            "okx_ct_val_ccy".to_string(),
+            serde_json::Value::String("SOL".to_string()),
+        );
+        info.insert(
+            "okx_ct_type".to_string(),
+            serde_json::Value::String(String::new()),
+        );
+        info.insert(
+            "okx_lot_sz".to_string(),
+            serde_json::Value::String("0.1".to_string()),
+        );
+        info.insert(
+            "base_exposure_mode".to_string(),
+            serde_json::Value::String("identity".to_string()),
+        );
+
+        let result = PublicOkxQuantityUnitInfo::from_params(&info);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Empty OKX quantity-unit metadata key")
+        );
     }
 
     #[rstest]
@@ -2811,6 +3216,59 @@ mod tests {
         assert_eq!(instrument.lot_size(), Some(Quantity::from(1)));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
         assert_eq!(instrument.max_quantity(), Some(Quantity::from(10000)));
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_surfaces_base_exposure_metadata() {
+        let json_data = load_test_json("http_get_instruments_futures.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst: &OKXInstrument = response
+            .data
+            .first()
+            .expect("Test data must have an instrument");
+
+        let instrument =
+            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        let info = futures_info(&instrument);
+        assert_eq!(
+            PublicOkxQuantityUnitInfo::from_params(&info.to_params()).unwrap(),
+            info
+        );
+        assert_swap_base_exposure_metadata(
+            &info,
+            "100",
+            "USD",
+            PublicOkxDerivativeContractType::Inverse,
+            "1",
+            PublicBaseExposureMode::PriceBased,
+        );
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_missing_ct_mult_degrades_base_exposure_metadata() {
+        let json_data = load_test_json("http_get_instruments_futures.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let mut okx_inst = response
+            .data
+            .first()
+            .expect("Test data must have an instrument")
+            .clone();
+        okx_inst.ct_mult.clear();
+
+        let instrument =
+            parse_futures_instrument(&okx_inst, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        assert_swap_base_exposure_metadata(
+            &futures_info(&instrument),
+            "100",
+            "USD",
+            PublicOkxDerivativeContractType::Inverse,
+            "1",
+            PublicBaseExposureMode::Unsupported,
+        );
     }
 
     #[rstest]

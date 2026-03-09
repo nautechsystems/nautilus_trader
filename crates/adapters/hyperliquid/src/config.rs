@@ -1,18 +1,3 @@
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------
-
 //! Configuration structures for the Hyperliquid adapter.
 
 use crate::common::consts::{info_url, ws_url};
@@ -29,6 +14,8 @@ use crate::common::consts::{info_url, ws_url};
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
     pub private_key: Option<String>,
+    /// Optional DEX identifier for builder/HIP-3 markets.
+    pub dex: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
@@ -54,6 +41,7 @@ impl Default for HyperliquidDataClientConfig {
     fn default() -> Self {
         Self {
             private_key: None,
+            dex: None,
             base_url_ws: None,
             base_url_http: None,
             http_proxy_url: None,
@@ -114,8 +102,12 @@ pub struct HyperliquidExecClientConfig {
     /// - Mainnet: `HYPERLIQUID_PK`
     /// - Testnet: `HYPERLIQUID_TESTNET_PK`
     pub private_key: Option<String>,
+    /// Optional logical account address for queries/subscriptions when signer and account differ.
+    pub account_address: Option<String>,
     /// Optional vault address for vault operations.
     pub vault_address: Option<String>,
+    /// Optional DEX identifier for builder/HIP-3 markets.
+    pub dex: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
@@ -148,7 +140,9 @@ impl Default for HyperliquidExecClientConfig {
     fn default() -> Self {
         Self {
             private_key: None,
+            account_address: None,
             vault_address: None,
+            dex: None,
             base_url_ws: None,
             base_url_http: None,
             base_url_exchange: None,

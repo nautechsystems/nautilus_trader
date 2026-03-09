@@ -37,6 +37,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class BitgetDataClient(LiveMarketDataClient):
@@ -84,6 +85,7 @@ class BitgetDataClient(LiveMarketDataClient):
         self._bar_subscriptions: dict[tuple[str, str], int] = {}
         self._bar_instruments: dict[tuple[str, str], InstrumentId] = {}
         self._instrument_index: dict[tuple[str, str], Any] = {}
+        self._pyo3_instrument_index: dict[tuple[str, str], Any] = {}
         self._update_instruments_interval_mins = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
@@ -106,9 +108,12 @@ class BitgetDataClient(LiveMarketDataClient):
         self._rebuild_instrument_index()
         self._send_all_instruments_to_data_engine()
 
+        ws_url = self._config.base_url_ws_public or nautilus_pyo3.get_bitget_ws_public_url(
+            self._environment,
+        )
         ws_client = nautilus_pyo3.BitgetWebSocketClient(self._environment)
         ws_config = ws_client.websocket_config(
-            base_url=self._config.base_url_ws_public,
+            base_url=ws_url,
             retry_delay_initial_ms=self._config.retry_delay_initial_ms,
             retry_delay_max_ms=self._config.retry_delay_max_ms,
         )
@@ -119,7 +124,7 @@ class BitgetDataClient(LiveMarketDataClient):
             handler=self._handle_ws_message,
             post_reconnection=self._handle_ws_reconnect,
         )
-        self._log.info(f"Connected to Bitget WebSocket {ws_config.url}", LogColor.BLUE)
+        self._log.info(f"Connected to Bitget WebSocket {ws_url}", LogColor.BLUE)
 
         if self._update_instruments_interval_mins:
             self._update_instruments_task = self.create_task(
@@ -153,6 +158,7 @@ class BitgetDataClient(LiveMarketDataClient):
         self._bar_subscriptions.clear()
         self._bar_instruments.clear()
         self._instrument_index.clear()
+        self._pyo3_instrument_index.clear()
 
     async def _subscribe(self, command: SubscribeData) -> None:
         self._log.debug(f"Unhandled subscribe command: {command}")
@@ -238,7 +244,7 @@ class BitgetDataClient(LiveMarketDataClient):
             message = nautilus_pyo3.BitgetWebSocketClient.subscribe_candle_message(
                 product_type,
                 interval,
-                instrument.raw_symbol.value,
+                self._exchange_symbol(instrument, product_type),
             )
             await self._send_ws_text(message)
             self._bar_instruments[key] = bar_type.instrument_id
@@ -296,7 +302,7 @@ class BitgetDataClient(LiveMarketDataClient):
                 message = nautilus_pyo3.BitgetWebSocketClient.unsubscribe_candle_message(
                     product_type,
                     interval,
-                    instrument.raw_symbol.value,
+                    self._exchange_symbol(instrument, product_type),
                 )
                 await self._send_ws_text(message)
             self._bar_subscriptions.pop(key, None)
@@ -359,7 +365,7 @@ class BitgetDataClient(LiveMarketDataClient):
         if start_ms is None and end_ms is None:
             payload = await self._http_client.request_funding_rates(
                 product_type,
-                instrument.raw_symbol.value,
+                self._exchange_symbol(instrument, product_type),
             )
             for entry in json.loads(payload or "[]"):
                 ts_event_ms = self._parse_timestamp_ms(entry.get("nextFundingTime")) or (
@@ -382,7 +388,7 @@ class BitgetDataClient(LiveMarketDataClient):
                 page_limit = min(remaining or 100, 100)
                 history_payload = await self._http_client.request_funding_rate_history(
                     product_type,
-                    instrument.raw_symbol.value,
+                    self._exchange_symbol(instrument, product_type),
                     page,
                     page_limit,
                 )
@@ -462,7 +468,7 @@ class BitgetDataClient(LiveMarketDataClient):
 
         payload = await self._http_client.request_bars(
             product_type,
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
             interval,
             self._datetime_to_millis(request.start),
             self._datetime_to_millis(request.end),
@@ -474,7 +480,7 @@ class BitgetDataClient(LiveMarketDataClient):
                 "arg": {
                     "channel": f"candle{interval}",
                     "instType": BitgetDataClient._product_type_key(self, product_type),
-                    "instId": instrument.raw_symbol.value,
+                    "instId": self._exchange_symbol(instrument, product_type),
                 },
                 "data": rows,
             },
@@ -510,7 +516,7 @@ class BitgetDataClient(LiveMarketDataClient):
             return
 
         snapshot = await self._http_client.request_order_book_snapshot(
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
             product_type,
             instrument,
         )
@@ -518,13 +524,24 @@ class BitgetDataClient(LiveMarketDataClient):
 
     def _rebuild_instrument_index(self) -> None:
         self._instrument_index.clear()
+        self._pyo3_instrument_index.clear()
+
+        pyo3_instruments = getattr(self._instrument_provider, "instruments_pyo3", lambda: [])()
+        for raw, instrument in zip(pyo3_instruments, instruments_from_pyo3(pyo3_instruments)):
+            product_type = self._instrument_product_type(instrument)
+            if product_type not in self._product_types:
+                continue
+
+            key = (self._product_type_key(product_type), self._exchange_symbol(instrument, product_type))
+            self._instrument_index[key] = instrument
+            self._pyo3_instrument_index[key] = raw
 
         for instrument in self._instrument_provider.get_all().values():
             product_type = self._instrument_product_type(instrument)
             if product_type not in self._product_types:
                 continue
 
-            key = (self._product_type_key(product_type), instrument.raw_symbol.value)
+            key = (self._product_type_key(product_type), self._exchange_symbol(instrument, product_type))
             self._instrument_index[key] = instrument
 
     def _send_all_instruments_to_data_engine(self) -> None:
@@ -664,8 +681,9 @@ class BitgetDataClient(LiveMarketDataClient):
 
             if str(channel).startswith("books"):
                 state = self._book_states.setdefault(key, nautilus_pyo3.BitgetBookState())
+                pyo3_instrument = self._pyo3_instrument_index.get(key, instrument)
                 try:
-                    capsule = state.apply_message(message, instrument)
+                    capsule = state.apply_message(message, pyo3_instrument)
                 except Exception as e:
                     self._log.warning(f"Bitget book desync for {instrument.id}: {e}")
                     state.reset()
@@ -712,7 +730,7 @@ class BitgetDataClient(LiveMarketDataClient):
         message = nautilus_pyo3.BitgetWebSocketClient.subscribe_message(
             product_type,
             "trade",
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
         )
         await self._send_ws_text(message)
         self._active_trade_subs.add(instrument_id)
@@ -727,7 +745,7 @@ class BitgetDataClient(LiveMarketDataClient):
         message = nautilus_pyo3.BitgetWebSocketClient.unsubscribe_message(
             product_type,
             "trade",
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
         )
         await self._send_ws_text(message)
         self._active_trade_subs.discard(instrument_id)
@@ -751,7 +769,7 @@ class BitgetDataClient(LiveMarketDataClient):
         if key not in self._ticker_subscriptions:
             message = nautilus_pyo3.BitgetWebSocketClient.subscribe_ticker_message(
                 product_type,
-                instrument.raw_symbol.value,
+                self._exchange_symbol(instrument, product_type),
             )
             await self._send_ws_text(message)
             self._ticker_subscriptions[key] = set()
@@ -774,7 +792,7 @@ class BitgetDataClient(LiveMarketDataClient):
             product_type = self._instrument_product_type(instrument)
             message = nautilus_pyo3.BitgetWebSocketClient.unsubscribe_ticker_message(
                 product_type,
-                instrument.raw_symbol.value,
+                self._exchange_symbol(instrument, product_type),
             )
             await self._send_ws_text(message)
 
@@ -789,7 +807,7 @@ class BitgetDataClient(LiveMarketDataClient):
         product_type = self._instrument_product_type(instrument)
         message = nautilus_pyo3.BitgetWebSocketClient.subscribe_ticker_message(
             product_type,
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
         )
         await self._send_ws_text(message)
 
@@ -802,7 +820,7 @@ class BitgetDataClient(LiveMarketDataClient):
         message = nautilus_pyo3.BitgetWebSocketClient.subscribe_candle_message(
             product_type,
             channel,
-            instrument.raw_symbol.value,
+            self._exchange_symbol(instrument, product_type),
         )
         await self._send_ws_text(message)
 
@@ -822,13 +840,14 @@ class BitgetDataClient(LiveMarketDataClient):
             return
 
         product_type = self._instrument_product_type(instrument)
-        key = (self._product_type_key(product_type), instrument.raw_symbol.value)
+        symbol = self._exchange_symbol(instrument, product_type)
+        key = (self._product_type_key(product_type), symbol)
         self._book_states[key] = nautilus_pyo3.BitgetBookState()
 
         message = nautilus_pyo3.BitgetWebSocketClient.subscribe_message(
             product_type,
             "books",
-            instrument.raw_symbol.value,
+            symbol,
         )
         await self._send_ws_text(message)
         self._active_book_subs.add(instrument_id)
@@ -840,11 +859,12 @@ class BitgetDataClient(LiveMarketDataClient):
             return
 
         product_type = self._instrument_product_type(instrument)
-        key = (self._product_type_key(product_type), instrument.raw_symbol.value)
+        symbol = self._exchange_symbol(instrument, product_type)
+        key = (self._product_type_key(product_type), symbol)
         message = nautilus_pyo3.BitgetWebSocketClient.unsubscribe_message(
             product_type,
             "books",
-            instrument.raw_symbol.value,
+            symbol,
         )
         await self._send_ws_text(message)
         self._book_states.pop(key, None)
@@ -864,7 +884,7 @@ class BitgetDataClient(LiveMarketDataClient):
 
         try:
             snapshot = await self._http_client.request_order_book_snapshot(
-                instrument.raw_symbol.value,
+                self._exchange_symbol(instrument, product_type),
                 product_type,
                 instrument,
             )
@@ -921,6 +941,26 @@ class BitgetDataClient(LiveMarketDataClient):
         ):
             return "USDC-FUTURES"
         return normalized
+
+    def _exchange_symbol(self, instrument: Any, product_type: object | None = None) -> str:
+        raw_symbol = str(getattr(getattr(instrument, "raw_symbol", None), "value", "")).strip().upper()
+        if not raw_symbol:
+            raw_symbol = str(
+                getattr(getattr(getattr(instrument, "id", None), "symbol", None), "value", ""),
+            ).strip().upper()
+        if not raw_symbol:
+            return ""
+
+        actual_product_type = (
+            product_type if product_type is not None else self._instrument_product_type(instrument)
+        )
+        if self._is_spot_product_type(actual_product_type):
+            return raw_symbol
+        if raw_symbol.endswith("-PERP"):
+            return raw_symbol[:-5]
+        if self._is_delivery_symbol(raw_symbol):
+            return raw_symbol.rsplit("-", 1)[0]
+        return raw_symbol
 
     def _is_spot_product_type(self, product_type: object) -> bool:
         return self._product_type_key(product_type) == "SPOT"

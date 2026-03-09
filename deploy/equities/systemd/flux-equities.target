@@ -1,0 +1,10 @@
+[Unit]
+Description=Flux Equities Stack
+Wants=flux@equities-api.service
+Wants=flux@equities-portfolio.service
+Wants=flux@equities-bridge.service
+Wants=flux@equities-node-aapl_tradexyz_makerv4.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

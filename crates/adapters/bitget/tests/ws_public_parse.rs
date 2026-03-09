@@ -4,15 +4,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_bitget::websocket::parse::{
-    BitgetBookState, parse_public_book, parse_public_book_deltas, parse_public_trade_tick,
-    parse_public_bars, parse_public_candle, parse_public_funding_rate, parse_public_index_price,
-    parse_public_mark_price, parse_public_quote_tick, parse_public_ticker, parse_public_trades,
+    BitgetBookState, parse_public_bars, parse_public_book, parse_public_book_deltas,
+    parse_public_candle, parse_public_funding_rate, parse_public_index_price,
+    parse_public_mark_price, parse_public_quote_tick, parse_public_ticker, parse_public_trade_tick,
+    parse_public_trades,
 };
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::TradeTick,
-    enums::AggressorSide,
     enums::AggregationSource,
+    enums::AggressorSide,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -93,8 +94,14 @@ fn snapshot_parses_into_valid_book_state_and_deltas() {
     assert_eq!(msg.action, "snapshot");
     assert_eq!(state.last_seq(), Some(1001));
     assert_eq!(state.checksum(), msg.data[0].checksum);
-    assert_eq!(state.best_bid(), Some(("100.00".to_string(), "1.50".to_string())));
-    assert_eq!(state.best_ask(), Some(("100.50".to_string(), "1.00".to_string())));
+    assert_eq!(
+        state.best_bid(),
+        Some(("100.00".to_string(), "1.50".to_string()))
+    );
+    assert_eq!(
+        state.best_ask(),
+        Some(("100.50".to_string(), "1.00".to_string()))
+    );
     assert_eq!(deltas.sequence, 1001);
     assert_eq!(deltas.deltas.len(), 7);
 }
@@ -120,10 +127,45 @@ fn update_mutates_book_state_deterministically() {
 
     assert_eq!(state.last_seq(), Some(1002));
     assert_eq!(state.checksum(), update.data[0].checksum);
-    assert_eq!(state.best_bid(), Some(("100.10".to_string(), "1.20".to_string())));
-    assert_eq!(state.best_ask(), Some(("100.50".to_string(), "0.80".to_string())));
+    assert_eq!(
+        state.best_bid(),
+        Some(("100.10".to_string(), "1.20".to_string()))
+    );
+    assert_eq!(
+        state.best_ask(),
+        Some(("100.50".to_string(), "0.80".to_string()))
+    );
     assert_eq!(deltas.sequence, 1002);
     assert_eq!(deltas.deltas.len(), 4);
+}
+
+#[test]
+fn snapshot_with_zero_checksum_still_initializes_book_state() {
+    let mut snapshot =
+        parse_public_book(include_str!("../test_data/ws_public_depth_snapshot.json"))
+            .expect("snapshot fixture should deserialize");
+    let update = parse_public_book(include_str!("../test_data/ws_public_depth_update.json"))
+        .expect("update fixture should deserialize");
+    let mut state = BitgetBookState::default();
+
+    snapshot.data[0].checksum = 0;
+
+    state
+        .apply_snapshot(&snapshot.data[0])
+        .expect("snapshot with zero checksum should still initialize book state");
+    state
+        .apply_update(&update.data[0])
+        .expect("subsequent updates should still validate");
+
+    assert_eq!(state.last_seq(), Some(1002));
+    assert_eq!(
+        state.best_bid(),
+        Some(("100.10".to_string(), "1.20".to_string()))
+    );
+    assert_eq!(
+        state.best_ask(),
+        Some(("100.50".to_string(), "0.80".to_string()))
+    );
 }
 
 #[test]
@@ -136,9 +178,11 @@ fn update_requires_snapshot_first() {
         .apply_update(&update.data[0])
         .expect_err("update should fail without an initial snapshot");
 
-    assert!(error
-        .to_string()
-        .contains("update received before initial snapshot"));
+    assert!(
+        error
+            .to_string()
+            .contains("update received before initial snapshot")
+    );
 }
 
 #[test]
@@ -188,7 +232,10 @@ fn ticker_parses_quote_mark_index_and_funding_from_payload() {
     assert_eq!(index.value, Price::from("100.55"));
 
     assert_eq!(funding.instrument_id, instrument.id());
-    assert_eq!(funding.next_funding_ns, Some(UnixNanos::from(1_700_000_005_000_000_000_u64)));
+    assert_eq!(
+        funding.next_funding_ns,
+        Some(UnixNanos::from(1_700_000_005_000_000_000_u64))
+    );
 }
 
 #[test]
@@ -202,26 +249,27 @@ fn candle_parse_into_bars() {
 
     assert_eq!(bars.len(), 2);
     let first = bars[0];
-    assert_eq!(first.bar_type.aggregation_source(), AggregationSource::External);
+    assert_eq!(
+        first.bar_type.aggregation_source(),
+        AggregationSource::External
+    );
     assert_eq!(first.bar_type.instrument_id(), instrument.id());
     assert_eq!(first.open, Price::from("100.00"));
     assert_eq!(first.high, Price::from("101.00"));
     assert_eq!(first.low, Price::from("99.50"));
     assert_eq!(first.close, Price::from("100.75"));
     assert_eq!(first.volume, Quantity::from("10.50"));
-    assert_eq!(first.ts_event, UnixNanos::from(1_700_000_000_000_000_000_u64));
+    assert_eq!(
+        first.ts_event,
+        UnixNanos::from(1_700_000_000_000_000_000_u64)
+    );
 
     let second = bars[1];
     assert_eq!(second.open, Price::from("100.75"));
     assert_eq!(second.volume, Quantity::from("8.25"));
 }
 
-fn assert_trade(
-    trade: &TradeTick,
-    side: AggressorSide,
-    price: &str,
-    size: &str,
-) {
+fn assert_trade(trade: &TradeTick, side: AggressorSide, price: &str, size: &str) {
     assert_eq!(trade.aggressor_side, side);
     assert_eq!(trade.price, Price::from(price));
     assert_eq!(trade.size, Quantity::from(size));

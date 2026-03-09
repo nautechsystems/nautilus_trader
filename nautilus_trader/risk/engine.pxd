@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
 
 from nautilus_trader.cache.cache cimport Cache
@@ -87,8 +72,14 @@ cdef class RiskEngine(Component):
     cpdef bint _check_order(self, Instrument instrument, Order order)
     cpdef bint _check_order_price(self, Instrument instrument, Order order)
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
-    cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
-    cpdef bint _check_orders_risk_for_account(self, Instrument instrument, list orders, AccountId account_id)
+    cpdef bint _check_orders_risk(self, Instrument instrument, list orders, bint allow_cash_borrowing=*)
+    cpdef bint _check_orders_risk_for_account(
+        self,
+        Instrument instrument,
+        list orders,
+        AccountId account_id,
+        bint allow_cash_borrowing=*,
+    )
     cpdef str _check_price(self, Instrument instrument, Price price)
     cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=*)
 

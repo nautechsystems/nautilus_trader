@@ -75,6 +75,8 @@ dist/
 env/
 *.bak
 *.sh
+!fluxboard/deploy.sh
+!ops/scripts/deploy/*.sh
 *tmp/
 *temp/
 
@@ -125,3 +127,16 @@ tests/test_data/**/backtest/**
 !tests/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*
+
+/.worktrees/
+.run/
+
+# Vendored Fluxboard artifacts
+fluxboard/node_modules/
+fluxboard/dist/
+fluxboard/.cache/
+fluxboard/.vite/
+fluxboard/playwright-report/
+fluxboard/test-results/
+fluxboard/coverage/
+fluxboard/tmp-*

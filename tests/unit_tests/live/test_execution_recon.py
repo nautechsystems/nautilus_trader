@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
 from decimal import Decimal
 
@@ -5259,6 +5244,84 @@ class TestHedgeModeReconciliation:
 
         # Act
         result = self.exec_engine._reconcile_position_report_hedging(report)
+
+        # Assert
+        assert result is False  # Reconciliation failed
+
+    @pytest.mark.asyncio
+    async def test_netting_reconciliation_with_quantity_mismatch_fails_without_generate_orders(
+        self,
+    ):
+        """
+        Test that netting mode reconciliation fails when quantities don't match and
+        generate_missing_orders is disabled.
+        """
+        # Arrange
+        self.exec_engine.generate_missing_orders = False
+
+        order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-NETTING-MISMATCH"),
+            last_qty=Quantity.from_int(197_764),
+            last_px=Price.from_str("1.00000"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(99_382),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        result = self.exec_engine._reconcile_position_report_netting(report)
+
+        # Assert
+        assert result is False  # Reconciliation failed
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_fails_for_netting_quantity_mismatch_without_generate_orders(
+        self,
+    ):
+        """
+        Test that startup reconciliation fails closed for netting positions when the
+        cached quantity does not match the venue report and synthetic generation is
+        disabled.
+        """
+        # Arrange
+        self.exec_engine.generate_missing_orders = False
+
+        order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-NETTING-STARTUP"),
+            last_qty=Quantity.from_int(197_764),
+            last_px=Price.from_str("1.00000"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(99_382),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.client.add_position_status_report(report)
+
+        # Act
+        result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result is False  # Reconciliation failed

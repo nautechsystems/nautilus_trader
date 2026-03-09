@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.betting cimport BettingAccount
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
@@ -23,7 +8,7 @@ from nautilus_trader.core.rust.model cimport AccountType
 
 cdef dict[str, type] _ISSUER_ACCOUNT_TYPE = {}
 cdef dict[str, bint] _ISSUER_ACCOUNT_CALCULATED = {}
-cdef dict[str, bint] _ISSUER_CASH_BORROWING = {}
+cdef dict[str, int] _ISSUER_CASH_BORROWING = {}
 
 
 cdef class AccountFactory:
@@ -88,16 +73,9 @@ cdef class AccountFactory:
         issuer : str
             The issuer for the account.
 
-        Raises
-        ------
-        KeyError
-            If cash borrowing has already been registered for the `issuer`.
-
         """
         Condition.not_none(issuer, "issuer")
-        Condition.not_in(issuer, _ISSUER_CASH_BORROWING, "issuer", "_ISSUER_CASH_BORROWING")
-
-        _ISSUER_CASH_BORROWING[issuer] = True
+        _ISSUER_CASH_BORROWING[issuer] = _ISSUER_CASH_BORROWING.get(issuer, 0) + 1
 
     @staticmethod
     def deregister_cash_borrowing(str issuer):
@@ -113,8 +91,11 @@ cdef class AccountFactory:
 
         """
         Condition.not_none(issuer, "issuer")
-
-        _ISSUER_CASH_BORROWING.pop(issuer, None)
+        cdef int count = _ISSUER_CASH_BORROWING.get(issuer, 0)
+        if count <= 1:
+            _ISSUER_CASH_BORROWING.pop(issuer, None)
+        else:
+            _ISSUER_CASH_BORROWING[issuer] = count - 1
 
     @staticmethod
     cdef Account create_c(AccountState event):
@@ -126,7 +107,7 @@ cdef class AccountFactory:
         # Determine account settings
         cdef type account_cls = _ISSUER_ACCOUNT_TYPE.get(issuer)
         cdef bint calculated = _ISSUER_ACCOUNT_CALCULATED.get(issuer, False)
-        cdef bint allow_borrowing = _ISSUER_CASH_BORROWING.get(issuer, False)
+        cdef bint allow_borrowing = _ISSUER_CASH_BORROWING.get(issuer, 0) > 0
 
         # Create account
         if account_cls is not None:

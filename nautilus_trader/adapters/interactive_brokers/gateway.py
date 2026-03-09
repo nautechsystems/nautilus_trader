@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import os
 import sys
 from enum import IntEnum
@@ -66,6 +51,10 @@ class DockerizedIBGateway:
         self.timeout = config.timeout
         self.container_image = config.container_image
         self.vnc_port = config.vnc_port
+        self.auto_restart_time = config.auto_restart_time
+        self.time_zone = config.time_zone
+        self.relogin_after_twofa_timeout = config.relogin_after_twofa_timeout
+        self.twofa_timeout_action = config.twofa_timeout_action
 
         try:
             import docker
@@ -168,6 +157,27 @@ class DockerizedIBGateway:
         if self.vnc_port is not None:
             ports[str(self.VNC_PORT_INTERNAL)] = (self.host, self.vnc_port)
 
+        environment = {
+            "TWS_USERID": self.username,
+            "TWS_PASSWORD": self.password.get_value(),
+            "TRADING_MODE": self.trading_mode,
+            "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
+        }
+
+        if self.auto_restart_time is not None:
+            environment["AUTO_RESTART_TIME"] = self.auto_restart_time
+        if self.time_zone is not None:
+            environment["TIME_ZONE"] = self.time_zone
+            environment["TZ"] = self.time_zone
+        if self.relogin_after_twofa_timeout:
+            environment["RELOGIN_AFTER_TWOFA_TIMEOUT"] = "yes"
+
+        twofa_timeout_action = self.twofa_timeout_action
+        if twofa_timeout_action is None and self.auto_restart_time is not None:
+            twofa_timeout_action = "restart"
+        if twofa_timeout_action is not None:
+            environment["TWOFA_TIMEOUT_ACTION"] = twofa_timeout_action
+
         self._container = self._docker.containers.run(
             image=self.container_image,
             name=self.container_name,
@@ -175,12 +185,7 @@ class DockerizedIBGateway:
             detach=True,
             ports=ports,
             platform="amd64",
-            environment={
-                "TWS_USERID": self.username,
-                "TWS_PASSWORD": self.password.get_value(),
-                "TRADING_MODE": self.trading_mode,
-                "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
-            },
+            environment=environment,
         )
         self.log.info(f"Container `{self.container_name}` starting, waiting for ready")
 

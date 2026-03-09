@@ -1,18 +1,3 @@
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------
-
 //! Integration tests for Hyperliquid HTTP client using a mock server.
 
 use std::{
@@ -514,7 +499,7 @@ impl TestHttpClient {
     }
 
     async fn info_meta(&self) -> Result<PerpMeta, String> {
-        let request = InfoRequest::meta();
+        let request = InfoRequest::meta(None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
@@ -526,7 +511,7 @@ impl TestHttpClient {
     }
 
     async fn get_perp_meta_and_ctxs(&self) -> Result<PerpMetaAndCtxs, String> {
-        let request = InfoRequest::meta_and_asset_ctxs();
+        let request = InfoRequest::meta_and_asset_ctxs(None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
@@ -544,18 +529,18 @@ impl TestHttpClient {
     }
 
     async fn info_user_fills(&self, user: &str) -> Result<HyperliquidFills, String> {
-        let request = InfoRequest::user_fills(user);
+        let request = InfoRequest::user_fills(user, None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
 
     async fn info_open_orders(&self, user: &str) -> Result<Value, String> {
-        let request = InfoRequest::open_orders(user);
+        let request = InfoRequest::open_orders(user, None);
         self.send_info_request(&request).await
     }
 
     async fn info_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
-        let request = InfoRequest::clearinghouse_state(user);
+        let request = InfoRequest::clearinghouse_state(user, None);
         self.send_info_request(&request).await
     }
 

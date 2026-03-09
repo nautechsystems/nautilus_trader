@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
@@ -70,7 +55,13 @@ cdef class OrderManager:
 
     cpdef void cancel_order(self, Order order)
     cpdef void modify_order_quantity(self, Order order, Quantity new_quantity)
-    cpdef void create_new_submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
+    cpdef void create_new_submit_order(
+        self,
+        Order order,
+        PositionId position_id=*,
+        ClientId client_id=*,
+        bint allow_cash_borrowing=*,
+    )
     cpdef bint should_manage_order(self, Order order)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------

@@ -1,22 +1,8 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
 
 from libc.math cimport floor
 from libc.math cimport pow
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core import nautilus_pyo3
@@ -844,6 +830,75 @@ cdef class Instrument(Data):
         Condition.not_none(quantity, "quantity")
 
         return Quantity(quantity.as_f64_c() * (1.0 / last_px.as_f64_c()), self.size_precision)
+
+    cpdef Quantity calculate_base_exposure_qty(
+        self,
+        Quantity quantity,
+        Price last_px=None,
+    ):
+        """
+        Calculate normalized base exposure from the given venue/native `quantity`.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The venue/native quantity to convert.
+        last_px : Price, optional
+            The last price for inverse instrument conversion.
+
+        Returns
+        -------
+        Quantity
+
+        Raises
+        ------
+        ValueError
+            If the instrument is inverse and `last_px` is not provided.
+        ValueError
+            If the instrument has unsupported quanto semantics.
+
+        """
+        Condition.not_none(quantity, "quantity")
+
+        cdef object base_currency = self.get_base_currency()
+        cdef Currency settlement_currency = self.get_settlement_currency()
+        cdef uint8_t precision = self.size_precision
+        cdef bint unsupported_quanto = False
+        cdef object value
+
+        if base_currency is not None:
+            precision = (<Currency>base_currency).get_precision()
+            unsupported_quanto = (
+                settlement_currency != <Currency>base_currency
+                and settlement_currency != self.quote_currency
+            )
+
+        if unsupported_quanto:
+            raise ValueError(
+                "Quanto instruments are not supported for base exposure quantity"
+            )
+        elif self.is_inverse:
+            if last_px is None:
+                raise ValueError(
+                    "last_px is required for inverse instrument base exposure quantity"
+                )
+            if not last_px.is_positive():
+                raise ValueError(
+                    "last_px must be positive for inverse instrument base exposure quantity"
+                )
+            if base_currency is None:
+                raise ValueError(
+                    "base_currency is required for inverse instrument base exposure quantity"
+                )
+            value = (
+                quantity.as_decimal()
+                * self.multiplier.as_decimal()
+                / last_px.as_decimal()
+            )
+        else:
+            value = quantity.as_decimal() * self.multiplier.as_decimal()
+
+        return Quantity.from_decimal_c(value, precision)
 
 
 cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):

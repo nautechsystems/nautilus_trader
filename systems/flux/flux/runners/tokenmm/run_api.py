@@ -1,0 +1,564 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import os
+import tomllib
+from pathlib import Path
+from typing import Any
+from typing import cast
+from urllib.error import HTTPError
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
+import urllib.request as urllib_request
+
+import redis
+from flask import abort
+from flask import redirect
+from flask import Response
+from flask import request
+from flask import send_from_directory
+
+from flux.api import ContractCatalogEntry
+from flux.api import StrategyMetadata
+from flux.api import create_flux_api_app
+from flux.api.app import RedisClientProtocol
+from flux.common.config import FLUX_DEFAULT_NAMESPACE
+from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.common.config import FluxConfig
+from flux.common.config import FluxIdentityConfig
+from flux.common.config import FluxRedisConfig
+from flux.common.config import FluxVenuesConfig
+from flux.common.config import validate_identifier_part
+from flux.pulse import PulseControlPlane
+from flux.runners.shared.logging import configure_python_logging
+from flux.runners.shared.logging import emit_startup_banner
+from flux.runners.shared.strategy_set import build_profile_strategy_maps
+from flux.runners.shared.strategy_set import build_profile_summary
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
+
+
+SAFE_MODES = frozenset({"paper", "testnet", "live"})
+DEFAULT_PULSE_BASE_PATH = "/pulse"
+TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
+DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
+TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
+
+
+def _repo_root() -> Path:
+    for module_path in (Path(__file__), Path(__file__).resolve()):
+        candidate = module_path.parents[4]
+        if candidate.name == "systems":
+            candidate = candidate.parent
+        if (candidate / "deploy").exists():
+            return candidate
+    return Path(__file__).resolve().parents[4]
+
+
+DEFAULT_FLUXBOARD_DIST = _repo_root() / "fluxboard" / "dist"
+DEFAULT_PULSE_DIST = _repo_root() / "pulse-ui" / "dist"
+PROXY_TIMEOUT_SECS = 30.0
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "content-length",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+}
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _load_config(path: Path) -> dict[str, Any]:
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"Config root must be a table: {path}")
+    return apply_redis_env_overrides(data)
+
+
+def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
+    value = data.get(name, {})
+    if not isinstance(value, dict):
+        raise ValueError(f"[{name}] must be a TOML table")
+    return value
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Flux API app for TokenMM.")
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
+    parser.add_argument("--confirm-live", action="store_true")
+    parser.add_argument("--log-level", default=None)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    parser.add_argument(
+        "--serve-fluxboard",
+        action="store_true",
+        help="Serve built Fluxboard static assets at /tokenmm/* with SPA fallback.",
+    )
+    parser.add_argument(
+        "--fluxboard-dist",
+        type=Path,
+        default=None,
+        help="Path to Fluxboard dist directory (defaults to repo-root/fluxboard/dist).",
+    )
+    parser.add_argument(
+        "--serve-pulse",
+        action="store_true",
+        help="Serve built Pulse static assets at /pulse/* with SPA fallback.",
+    )
+    parser.add_argument(
+        "--pulse-dist",
+        type=Path,
+        default=None,
+        help="Path to Pulse dist directory (defaults to repo-root/pulse-ui/dist).",
+    )
+    return parser.parse_args()
+
+
+def _resolve_mode(config: dict[str, Any], args: argparse.Namespace) -> str:
+    flux = _table(config, "flux")
+    mode = str(args.mode or flux.get("mode", "paper")).strip().lower()
+    if mode not in SAFE_MODES:
+        raise ValueError(f"Invalid mode {mode!r}; expected one of {sorted(SAFE_MODES)}")
+    if mode == "live" and not args.confirm_live:
+        raise ValueError("Live mode requires explicit --confirm-live")
+    return mode
+
+
+def _build_contract_catalog(config: dict[str, Any]) -> tuple[ContractCatalogEntry, ...]:
+    contracts = config.get("contracts", [])
+    if not isinstance(contracts, list):
+        raise ValueError("[[contracts]] must be a TOML array of tables")
+
+    out: list[ContractCatalogEntry] = []
+    for index, item in enumerate(contracts):
+        if not isinstance(item, dict):
+            raise ValueError(f"contracts[{index}] must be a table")
+        exchange = _optional_text(item.get("exchange"))
+        symbol = _optional_text(item.get("symbol"))
+        instrument_id = _optional_text(item.get("instrument_id")) or ""
+        if not exchange or not symbol:
+            raise ValueError(f"contracts[{index}] requires non-empty exchange and symbol")
+        out.append(
+            ContractCatalogEntry(
+                exchange=exchange,
+                symbol=symbol,
+                instrument_id=instrument_id,
+            ),
+        )
+
+    if not out:
+        venues = _table(config, "venues")
+        out.append(
+            ContractCatalogEntry(
+                exchange=str(venues.get("execution_venue", "bybit")).lower(),
+                symbol=str(venues.get("execution_symbol", "PLUMEUSDT")).upper(),
+            ),
+        )
+        out.append(
+            ContractCatalogEntry(
+                exchange=str(venues.get("reference_venue", "binance")).lower(),
+                symbol=str(venues.get("reference_symbol", "PLUMEUSDT")).upper(),
+            ),
+        )
+
+    deduped: dict[tuple[str, str, str], ContractCatalogEntry] = {}
+    for contract in out:
+        exchange = contract.exchange.strip().lower()
+        symbol = contract.symbol.strip().upper()
+        instrument_id = contract.instrument_id.strip().upper()
+        key = (exchange, symbol, instrument_id)
+        deduped[key] = ContractCatalogEntry(
+            exchange=exchange,
+            symbol=symbol,
+            instrument_id=instrument_id,
+        )
+
+    return tuple(deduped.values())
+
+
+def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool) -> FluxConfig:
+    flux = _table(config, "flux")
+    identity = _table(config, "identity")
+    redis_cfg = _table(config, "redis")
+    venues = _table(config, "venues")
+
+    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3"
+
+    flux_identity = FluxIdentityConfig(
+        namespace=_optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
+        schema_version=_optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION,
+        strategy_id=strategy_id,
+        strategy_instance_id=_optional_text(identity.get("strategy_instance_id")) or strategy_id,
+        trader_id=_optional_text(identity.get("trader_id")) or "flux_api",
+        external_strategy_id=_optional_text(identity.get("external_strategy_id")) or strategy_id,
+    )
+
+    flux_redis = FluxRedisConfig(
+        host=str(redis_cfg.get("host", "127.0.0.1")),
+        port=int(redis_cfg.get("port", 6380)),
+        db=int(redis_cfg.get("db", 0)),
+        username=_optional_text(redis_cfg.get("username")),
+        password=_optional_text(redis_cfg.get("password")),
+        ssl=bool(redis_cfg.get("ssl", False)),
+        connect_timeout_secs=float(redis_cfg.get("connect_timeout_secs", 5.0)),
+        read_timeout_secs=float(redis_cfg.get("read_timeout_secs", 5.0)),
+    )
+
+    flux_venues = FluxVenuesConfig(
+        execution_venue=str(venues.get("execution_venue", "BYBIT")),
+        reference_venue=str(venues.get("reference_venue", "BINANCE")),
+        execution_symbol=str(venues.get("execution_symbol", "PLUMEUSDT")),
+        reference_symbol=str(venues.get("reference_symbol", "PLUMEUSDT")),
+    )
+
+    return FluxConfig(
+        mode=mode,
+        confirm_live=confirm_live,
+        identity=flux_identity,
+        redis=flux_redis,
+        venues=flux_venues,
+    )
+
+
+def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
+    api_cfg = _table(config, "api")
+    return str(args.host or api_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+
+
+def _build_profile_strategy_maps(
+    api_cfg: dict[str, Any],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    return build_profile_strategy_maps(
+        api_cfg,
+        descriptor=TOKENMM_DESCRIPTOR,
+        validate_identifier=validate_identifier_part,
+    )
+
+
+def _tokenmm_profile_summary(
+    profile_strategy_map: dict[str, list[str]],
+    profile_required_strategy_map: dict[str, list[str]],
+) -> str:
+    return build_profile_summary(
+        TOKENMM_DESCRIPTOR,
+        profile_strategy_map,
+        profile_required_strategy_map,
+    )
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_equities_backend_url() -> str | None:
+    return _optional_text(os.getenv("EQUITIES_API_BACKEND_URL"))
+
+
+def _should_proxy_to_equities_backend() -> bool:
+    path = request.path or "/"
+    if path == "/equities" or path.startswith("/equities/"):
+        return True
+
+    profile = _optional_text(request.args.get("profile"))
+    if profile != "equities":
+        return False
+
+    return path == "/socket.io/" or path == "/socket.io" or path == "/api/v1" or path.startswith("/api/v1/")
+
+
+def _proxy_request_to_backend(backend_url: str) -> Response:
+    incoming = urlsplit(request.url)
+    backend = urlsplit(backend_url)
+    query = urlencode(list(request.args.items(multi=True)), doseq=True)
+    target_url = urlunsplit(
+        (
+            backend.scheme,
+            backend.netloc,
+            request.path,
+            query,
+            "",
+        ),
+    )
+    body = request.get_data(cache=True)
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in HOP_BY_HOP_HEADERS
+    }
+    headers["X-Forwarded-Proto"] = incoming.scheme
+    headers["X-Forwarded-Host"] = incoming.netloc
+    headers["X-Forwarded-For"] = request.remote_addr or "127.0.0.1"
+    proxy_request = urllib_request.Request(
+        target_url,
+        data=body if body else None,
+        headers=headers,
+        method=request.method,
+    )
+    try:
+        with urllib_request.urlopen(proxy_request, timeout=PROXY_TIMEOUT_SECS) as upstream:
+            response = Response(upstream.read(), status=upstream.status)
+            for key, value in upstream.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+            return response
+    except HTTPError as exc:
+        body = exc.read() if exc.fp is not None else b"Bad gateway"
+        response = Response(body, status=exc.code)
+        if exc.headers is not None:
+            for key, value in exc.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+        return response
+    except URLError:
+        return Response("Bad gateway", status=502, content_type="text/plain")
+
+
+def _attach_profile_router_proxy(app: Any, *, equities_backend_url: str) -> None:
+    @app.before_request
+    def _proxy_equities_requests() -> Response | None:
+        if not _should_proxy_to_equities_backend():
+            return None
+        return _proxy_request_to_backend(equities_backend_url)
+
+
+def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
+    if args.fluxboard_dist is not None:
+        return args.fluxboard_dist
+    env_path = _optional_text(os.getenv("FLUXBOARD_DIST"))
+    if env_path:
+        return Path(env_path)
+    config_path = _optional_text(api_cfg.get("fluxboard_dist"))
+    if config_path:
+        return Path(config_path)
+    return DEFAULT_FLUXBOARD_DIST
+
+
+def _resolve_pulse_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
+    if args.pulse_dist is not None:
+        return args.pulse_dist
+    env_path = _optional_text(os.getenv("PULSE_DIST"))
+    if env_path:
+        return Path(env_path)
+    config_path = _optional_text(api_cfg.get("pulse_dist"))
+    if config_path:
+        return Path(config_path)
+    return DEFAULT_PULSE_DIST
+
+
+def _should_enable_pulse_routes(args: argparse.Namespace, api_cfg: dict[str, Any]) -> bool:
+    return bool(args.serve_pulse or api_cfg.get("enable_pulse_routes", False))
+
+
+def _is_within(parent: Path, candidate: Path) -> bool:
+    try:
+        candidate.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
+    dist_root = dist_dir.resolve()
+    index_path = dist_root / "index.html"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
+
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
+        target = DEFAULT_TOKENMM_BASE_PATH
+        if subpath:
+            target = f"{target}/{subpath.strip().lstrip('/')}"
+        query = request.query_string.decode("utf-8").strip()
+        if query:
+            target = f"{target}?{query}"
+        return redirect(target, code=302)
+
+    @app.get(TOKENMM_ALIAS_BASE_PATH)
+    @app.get(f"{TOKENMM_ALIAS_BASE_PATH}/")
+    def _tokenm_alias_index() -> Any:
+        return _redirect_tokenm_alias()
+
+    @app.get(f"{TOKENMM_ALIAS_BASE_PATH}/<path:subpath>")
+    def _tokenm_alias_subpath(subpath: str) -> Any:
+        return _redirect_tokenm_alias(subpath)
+
+    @app.get(DEFAULT_TOKENMM_BASE_PATH)
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/")
+    def _tokenmm_index() -> Any:
+        return _serve_index()
+
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/assets/<path:asset_path>")
+    def _tokenmm_assets(asset_path: str) -> Any:
+        normalized = asset_path.strip().lstrip("/")
+        candidate = (dist_root / "assets" / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root / "assets"), normalized)
+
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/<path:subpath>")
+    def _tokenmm_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+
+def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
+    dist_root = dist_dir.resolve()
+    index_path = dist_root / "index.html"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"Pulse index not found at {index_path}")
+
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    @app.get(DEFAULT_PULSE_BASE_PATH)
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/")
+    def _pulse_index() -> Any:
+        return _serve_index()
+
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/assets/<path:asset_path>")
+    def _pulse_assets(asset_path: str) -> Any:
+        normalized = asset_path.strip().lstrip("/")
+        candidate = (dist_root / "assets" / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root / "assets"), normalized)
+
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/<path:subpath>")
+    def _pulse_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+
+def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
+    socket_server = app.extensions.get("flux_socket_server")
+    socketio = getattr(socket_server, "socketio", None)
+    if socketio is None:
+        socketio = app.extensions.get("flux_socketio")
+
+    if socketio is None:
+        app.run(host=host, port=port, debug=False, use_reloader=False)
+        return
+
+    run_kwargs: dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "debug": False,
+        "use_reloader": False,
+    }
+    try:
+        socketio.run(app, **run_kwargs, allow_unsafe_werkzeug=True)
+    except TypeError as e:
+        # Older flask-socketio versions do not accept this kwarg.
+        if "allow_unsafe_werkzeug" not in str(e):
+            raise
+        socketio.run(app, **run_kwargs)
+
+
+def main() -> None:
+    args = _parse_args()
+    config = _load_config(args.config)
+    mode = _resolve_mode(config, args)
+
+    api_cfg = _table(config, "api")
+    configure_python_logging(
+        cli_level=args.log_level,
+        config_level=api_cfg.get("log_level", "INFO"),
+        service_env_var="FLUX_API_LOG_LEVEL",
+    )
+    contracts = _build_contract_catalog(config)
+    flux_config = _build_flux_config(
+        config,
+        mode=mode,
+        confirm_live=(mode != "live" or args.confirm_live),
+    )
+
+    metadata = StrategyMetadata(
+        strategy_class=str(api_cfg.get("strategy_class", "maker_v3")),
+        strategy_groups=str(api_cfg.get("strategy_groups", TOKENMM_DESCRIPTOR.profile)),
+        base_asset=str(api_cfg.get("base_asset", "BASE")),
+        quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
+    )
+    profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
+    emit_startup_banner(
+        prefix="tokenmm-run-api",
+        message=_tokenmm_profile_summary(profile_strategy_map, profile_required_strategy_map),
+    )
+
+    redis_client = redis.Redis(
+        host=flux_config.redis.host,
+        port=flux_config.redis.port,
+        db=flux_config.redis.db,
+        username=flux_config.redis.username,
+        password=flux_config.redis.password,
+        ssl=flux_config.redis.ssl,
+        socket_connect_timeout=flux_config.redis.connect_timeout_secs,
+        socket_timeout=flux_config.redis.read_timeout_secs,
+        decode_responses=False,
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        cast(RedisClientProtocol, redis_client),
+        contract_catalog=contracts,
+        strategy_metadata=metadata,
+        profile_strategy_map=profile_strategy_map or None,
+        profile_required_strategy_map=profile_required_strategy_map or None,
+    )
+    if _should_enable_pulse_routes(args, api_cfg):
+        PulseControlPlane().register_routes(app)
+    equities_backend_url = _resolve_equities_backend_url()
+    if equities_backend_url:
+        _attach_profile_router_proxy(app, equities_backend_url=equities_backend_url)
+
+    serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
+    if serve_fluxboard:
+        dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
+        _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
+    if args.serve_pulse:
+        dist_path = _resolve_pulse_dist_path(args, api_cfg)
+        _attach_pulse_routes(app, dist_dir=dist_path)
+
+    host = _resolve_bind_host(config, args)
+    port = int(args.port or api_cfg.get("port", 5022))
+    _run_with_socketio_if_available(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()

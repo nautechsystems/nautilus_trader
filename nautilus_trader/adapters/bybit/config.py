@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 from nautilus_trader.config import LiveDataClientConfig
@@ -129,6 +114,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         If use fast execution stream.
     use_http_batch_api : bool, default False
         If the client is using http api to send batch order requests (deprecated).
+    allow_cash_borrowing : bool, default False
+        If spot cash-account orders submitted by this client may opt in to
+        borrowing. This enables venue capability only; orders must still
+        request borrowing explicitly.
     use_spot_position_reports : bool, default False
         If True, wallet balances for SPOT instruments will be reported as positions:
         - Positive balances are reported as LONG positions.

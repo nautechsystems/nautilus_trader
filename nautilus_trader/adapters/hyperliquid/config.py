@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 from nautilus_trader.common.config import PositiveInt
@@ -44,6 +29,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
+    dex: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt = 10
 
@@ -58,10 +44,15 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The Hyperliquid EVM private key.
         If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
         environment variable (depending on the `testnet` setting).
+    account_address : str, optional
+        The funded account address to use for account-state queries, fee lookup, and
+        WebSocket subscriptions when execution is signed by a separate agent wallet.
     vault_address : str, optional
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
+        When both `vault_address` and `account_address` are provided, the vault address
+        is the effective account identity for queries, fee lookup, and subscriptions.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional
@@ -94,10 +85,12 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     """
 
     private_key: str | None = None
+    account_address: str | None = None
     vault_address: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
+    dex: str | None = None
     testnet: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None

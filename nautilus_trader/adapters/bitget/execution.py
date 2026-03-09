@@ -62,6 +62,10 @@ from nautilus_trader.model.objects import Quantity
 class BitgetExecutionClient(LiveExecutionClient):
     """Minimal Bitget execution client scaffold."""
 
+    @staticmethod
+    def _default_account_id(client_name: str) -> AccountId:
+        return AccountId(f"{client_name}-001")
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -93,6 +97,7 @@ class BitgetExecutionClient(LiveExecutionClient):
             if config.demo
             else nautilus_pyo3.BitgetEnvironment.MAINNET
         )
+        self._set_account_id(BitgetExecutionClient._default_account_id(name or BITGET_VENUE.value))
         self._product_types = tuple(config.product_types) if config.product_types else tuple(
             BITGET_DEFAULT_PRODUCTS,
         )
@@ -147,8 +152,10 @@ class BitgetExecutionClient(LiveExecutionClient):
                 return
 
             event = payload.get("event")
-            code = str(payload.get("code") or "")
-            msg = str(payload.get("msg") or "")
+            raw_code = payload.get("code")
+            code = "" if raw_code is None else str(raw_code)
+            raw_msg = payload.get("msg")
+            msg = "" if raw_msg is None else str(raw_msg)
             arg = payload.get("arg") or {}
 
             if event == "login" and code == "0":
@@ -223,12 +230,20 @@ class BitgetExecutionClient(LiveExecutionClient):
         latest_update_ms = 0
 
         for entry in data:
-            currency = Currency.from_str(str(entry["coin"]))
-            free = Money(Decimal(str(entry.get("available") or "0")), currency)
+            currency_code = str(entry.get("coin") or entry.get("marginCoin") or "").strip()
+            if not currency_code:
+                self._log.debug(f"Skipping Bitget account payload entry without currency: {entry}")
+                continue
+
+            currency = Currency.from_str(currency_code)
+            free_amount = Decimal(str(entry.get("available") or "0"))
             frozen = Decimal(str(entry.get("frozen") or "0"))
             locked_extra = Decimal(str(entry.get("locked") or "0"))
-            locked = Money(frozen + locked_extra, currency)
-            total = free + locked
+            locked_amount = frozen + locked_extra
+            total_amount = Decimal(str(entry.get("equity") or (free_amount + locked_amount)))
+            free = Money(free_amount, currency)
+            locked = Money(locked_amount, currency)
+            total = Money(total_amount, currency)
             balances.append(
                 AccountBalance(
                     total=total,
@@ -237,6 +252,10 @@ class BitgetExecutionClient(LiveExecutionClient):
                 ),
             )
             latest_update_ms = max(latest_update_ms, int(entry.get("uTime") or 0))
+
+        if not balances:
+            self._log.debug("Bitget private account payload produced no balances")
+            return
 
         self.generate_account_state(
             balances=balances,
@@ -1369,7 +1388,8 @@ class BitgetExecutionClient(LiveExecutionClient):
 
             mass_status = ExecutionMassStatus(
                 client_id=self.id,
-                account_id=self.account_id,
+                account_id=self.account_id
+                or BitgetExecutionClient._default_account_id(self.id.value),
                 venue=BITGET_VENUE,
                 report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),

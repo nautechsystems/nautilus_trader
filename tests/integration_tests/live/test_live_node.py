@@ -1,19 +1,5 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
+from types import SimpleNamespace
 
 import msgspec
 import pytest
@@ -25,6 +11,7 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFact
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 
@@ -215,3 +202,68 @@ class TestTradingNodeOperation:
         node.run()
         await asyncio.sleep(2.0)
         await node.stop_async()
+
+    @pytest.mark.asyncio
+    async def test_run_async_raises_for_fatal_startup_without_logging_running(self):
+        loop = asyncio.get_running_loop()
+        node = TradingNode(
+            config=TradingNodeConfig(logging=LoggingConfig(bypass_logging=True)),
+            loop=loop,
+        )
+        node._is_built = True
+        entered_task_gather: list[bool] = []
+
+        async def _start_async() -> bool:
+            node.kernel._fatal_shutdown_reason = "startup failure: engines failed to connect"
+            return False
+
+        async def _done() -> None:
+            return None
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(node.kernel, "start_async", _start_async)
+        def _mark_entered_task_gather():
+            entered_task_gather.append(True)
+            return loop.create_task(_done())
+
+        monkeypatch.setattr(node.kernel.data_engine, "get_cmd_queue_task", _mark_entered_task_gather)
+
+        with pytest.raises(TradingNodeFatalError, match="startup failure"):
+            await node.run_async()
+
+        assert entered_task_gather == []
+        monkeypatch.undo()
+
+    @pytest.mark.asyncio
+    async def test_run_async_raises_for_fatal_shutdown_after_tasks_complete(self):
+        loop = asyncio.get_running_loop()
+        node = TradingNode(
+            config=TradingNodeConfig(logging=LoggingConfig(bypass_logging=True)),
+            loop=loop,
+        )
+        node._is_built = True
+        node.kernel._fatal_shutdown_reason = None
+        node.kernel._loop = SimpleNamespace(is_running=lambda: True)
+
+        async def _start_async() -> bool:
+            node.kernel._fatal_shutdown_reason = "runtime critical shutdown"
+            return True
+
+        async def _done() -> None:
+            return None
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(node.kernel, "start_async", _start_async)
+        monkeypatch.setattr(node.kernel.data_engine, "get_cmd_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.data_engine, "get_req_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.data_engine, "get_res_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.data_engine, "get_data_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.risk_engine, "get_cmd_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.risk_engine, "get_evt_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.exec_engine, "get_cmd_queue_task", lambda: loop.create_task(_done()))
+        monkeypatch.setattr(node.kernel.exec_engine, "get_evt_queue_task", lambda: loop.create_task(_done()))
+
+        with pytest.raises(TradingNodeFatalError, match="runtime critical shutdown"):
+            await node.run_async()
+
+        monkeypatch.undo()

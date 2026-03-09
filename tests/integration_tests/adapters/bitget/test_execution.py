@@ -14,6 +14,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
@@ -85,6 +86,7 @@ async def test_connect_opens_private_websocket_and_sends_login() -> None:
             retry_delay_max_ms=None,
         ),
         _loop=object(),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
         _handle_ws_message=lambda _raw: None,
         _handle_ws_reconnect=lambda: None,
         _send_ws_text=send_ws_text,
@@ -138,6 +140,32 @@ async def test_connect_opens_private_websocket_and_sends_login() -> None:
     assert captured_configs[0].url == "wss://private.example"
     assert captured_configs[0].heartbeat_msg == "rust-ping"
     assert sent == [b"login:key:pass:secret:1708883200123"]
+
+
+@pytest.mark.asyncio
+async def test_generate_mass_status_defaults_account_id_when_unset() -> None:
+    async def no_reports(_command):
+        return []
+
+    dummy = SimpleNamespace(
+        reconciliation_active=False,
+        account_id=None,
+        id=SimpleNamespace(value="BITGET"),
+        _clock=SimpleNamespace(
+            utc_now=lambda: None,
+            timestamp_ns=lambda: 999,
+        ),
+        _log=SimpleNamespace(exception=lambda *_args, **_kwargs: None),
+        generate_order_status_reports=no_reports,
+        generate_fill_reports=no_reports,
+        generate_position_status_reports=no_reports,
+    )
+
+    mass_status = await BitgetExecutionClient.generate_mass_status(dummy)  # type: ignore[arg-type]
+
+    assert mass_status is not None
+    assert mass_status.account_id == AccountId("BITGET-001")
+    assert dummy.reconciliation_active is False
 
 
 def test_handle_ws_reconnect_schedules_reauth_on_event_loop_thread() -> None:
@@ -204,6 +232,32 @@ def test_handle_ws_message_login_success_schedules_private_subscriptions() -> No
     BitgetExecutionClient._handle_ws_message(
         dummy,  # type: ignore[arg-type]
         b'{"event":"login","code":"0","msg":""}',
+    )
+
+    assert calls == [dummy._on_ws_authenticated]
+
+
+def test_handle_ws_message_login_success_with_numeric_code_schedules_private_subscriptions() -> None:
+    calls: list[object] = []
+
+    class DummyLoop:
+        def call_soon_threadsafe(self, callback):
+            calls.append(callback)
+
+    dummy = SimpleNamespace(
+        _loop=DummyLoop(),
+        _on_ws_authenticated=lambda: None,
+        _log=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+            debug=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_ws_message(
+        dummy,  # type: ignore[arg-type]
+        b'{"event":"login","code":0,"msg":""}',
     )
 
     assert calls == [dummy._on_ws_authenticated]
@@ -393,6 +447,40 @@ def test_handle_account_channel_generates_account_state() -> None:
     assert generated[0]["margins"] == []
     assert generated[0]["reported"] is True
     assert generated[0]["ts_event"] == millis_to_nanos(1708883200123)
+
+
+def test_handle_account_channel_generates_account_state_for_futures_margin_payload() -> None:
+    generated: list[dict] = []
+    payload = {
+        "action": "snapshot",
+        "arg": {"instType": "USDT-FUTURES", "channel": "account", "coin": "default"},
+        "data": [
+            {
+                "marginCoin": "USDT",
+                "available": "12.5",
+                "frozen": "1.25",
+                "equity": "13.75",
+                "uTime": "1708883200999",
+            },
+        ],
+    }
+    dummy = SimpleNamespace(
+        generate_account_state=lambda **kwargs: generated.append(kwargs),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_account_channel(dummy, payload)  # type: ignore[arg-type]
+
+    assert len(generated) == 1
+    balance = generated[0]["balances"][0]
+    assert str(balance.free) == "12.50000000 USDT"
+    assert str(balance.locked) == "1.25000000 USDT"
+    assert str(balance.total) == "13.75000000 USDT"
+    assert generated[0]["margins"] == []
+    assert generated[0]["reported"] is True
+    assert generated[0]["ts_event"] == millis_to_nanos(1708883200999)
 
 
 def test_handle_orders_channel_generates_order_accepted() -> None:

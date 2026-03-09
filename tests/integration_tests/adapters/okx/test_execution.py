@@ -1,18 +1,4 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -31,15 +17,20 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -50,6 +41,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters.okx.conftest import _create_currency
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
 
@@ -306,6 +298,81 @@ async def test_generate_position_status_reports_spot_margin_uses_margin_inst_typ
     call_args = http_client.request_position_status_reports.call_args
     assert call_args.kwargs["instrument_type"] == nautilus_pyo3.OKXInstrumentType.MARGIN
     assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_keeps_swap_contract_qty_venue_native(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, _, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"instrument_types": (nautilus_pyo3.OKXInstrumentType.SWAP,)},
+    )
+
+    plume = _create_currency(
+        "PLUME",
+        precision=8,
+        iso4217=0,
+        name="Plume",
+        currency_type=CurrencyType.CRYPTO,
+    )
+    instrument = CryptoPerpetual(
+        instrument_id=InstrumentId(Symbol("PLUME-USDT-SWAP"), OKX_VENUE),
+        raw_symbol=Symbol("PLUME-USDT-SWAP"),
+        base_currency=plume,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=6,
+        size_precision=0,
+        price_increment=Price.from_str("0.000001"),
+        size_increment=Quantity.from_int(1),
+        multiplier=Quantity.from_int(10),
+        lot_size=Quantity.from_int(1),
+        max_quantity=Quantity.from_int(1_000_000),
+        min_quantity=Quantity.from_int(1),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000.000000"),
+        min_price=Price.from_str("0.000001"),
+        margin_init=Decimal("0.1"),
+        margin_maint=Decimal("0.05"),
+        maker_fee=Decimal("0.0002"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+    client._cache.add_instrument(instrument)
+
+    raw_report = PositionStatusReport(
+        account_id=client.account_id,
+        instrument_id=instrument.id,
+        position_side=PositionSide.SHORT,
+        quantity=Quantity.from_int(657),
+        report_id=TestIdStubs.uuid(),
+        ts_last=0,
+        ts_init=0,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.okx.execution.PositionStatusReport.from_pyo3",
+        lambda _obj: raw_report,
+    )
+    http_client.request_position_status_reports.return_value = [MagicMock()]
+
+    command = GeneratePositionStatusReports(
+        instrument_id=instrument.id,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    reports = await client.generate_position_status_reports(command)
+
+    assert len(reports) == 1
+    assert reports[0].quantity == Quantity.from_int(657)
+    assert reports[0].signed_decimal_qty == Decimal("-657")
 
 
 @pytest.mark.asyncio

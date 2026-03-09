@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import hashlib
@@ -107,6 +92,23 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
     raise TypeError(f"Unsupported type for schema generation: {type_}")
 
 
+def _encode_pyo3_enum_like(obj: Any) -> str | None:
+    module_name = type(obj).__module__
+    if not module_name.startswith("nautilus_trader.core.nautilus_pyo3"):
+        return None
+
+    name = getattr(obj, "name", None)
+    if isinstance(name, str) and name:
+        return name
+
+    text = str(obj)
+    type_name = type(obj).__name__
+    if text.startswith(f"{type_name}."):
+        return text.split(".", maxsplit=1)[1]
+
+    return text
+
+
 def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
     # Check for fully_qualified_name first, before generic type check
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
@@ -129,6 +131,9 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return obj.isoformat()
     if isinstance(obj, Environment):
         return obj.value
+    pyo3_enum_value = _encode_pyo3_enum_like(obj)
+    if pyo3_enum_value is not None:
+        return pyo3_enum_value
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)

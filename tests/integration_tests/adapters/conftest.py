@@ -1,22 +1,7 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common import Environment
@@ -178,8 +163,8 @@ def trader(
 
 
 @pytest.fixture
-def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
-    mock = mocker.MagicMock()
+def mock_data_engine_process(msgbus, data_engine):
+    mock = MagicMock()
     msgbus.deregister(endpoint="DataEngine.process", handler=data_engine.process)
     msgbus.register(
         endpoint="DataEngine.process",
@@ -189,8 +174,8 @@ def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
 
 
 @pytest.fixture
-def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
-    mock = mocker.MagicMock()
+def mock_exec_engine_process(msgbus, exec_engine):
+    mock = MagicMock()
     msgbus.deregister(endpoint="ExecEngine.process", handler=exec_engine.process)
     msgbus.register(
         endpoint="ExecEngine.process",

@@ -153,7 +153,7 @@ jobs:
       - name: Install Nautilus CLI
         env:
           NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
-        run: bash scripts/ci/install-nautilus-cli.sh
+        run: bash tooling/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
         run: nautilus database init --schema ${{ github.workspace }}/schema/sql
@@ -256,7 +256,7 @@ jobs:
       - name: Install Nautilus CLI
         env:
           NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
-        run: bash scripts/ci/install-nautilus-cli.sh
+        run: bash tooling/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
         run: nautilus database init --schema ${{ github.workspace }}/schema/sql
@@ -459,7 +459,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+          bash ./tooling/release/publish-wheels-delete-artifacts.sh
 
   publish-wheels-nightly:
     name: publish-wheels-nightly
@@ -519,7 +519,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+          bash ./tooling/release/publish-wheels-delete-artifacts.sh
 
   publish-wheels-master:
     runs-on: ubuntu-latest
@@ -640,7 +640,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+          bash ./tooling/release/publish-wheels-delete-artifacts.sh
 
   tag-release:
     needs:
@@ -684,13 +684,13 @@ jobs:
         # https://github.com/salsify/action-detect-and-tag-new-version
         uses: salsify/action-detect-and-tag-new-version@b1778166f13188a9d478e2d1198f993011ba9864 # v2.0.3
         with:
-          version-command: ./scripts/package-version.sh
+          version-command: ./tooling/release/package-version.sh
 
       - name: Set output
         id: vars
         run: |
-          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> "$GITHUB_ENV"
-          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> "$GITHUB_ENV"
+          echo "TAG_NAME=v$(./tooling/release/package-version.sh)" >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=NautilusTrader $(./tooling/release/package-version.sh) Beta" >> "$GITHUB_ENV"
           sed -n '/^#/,$ {p;/^---/q}; w RELEASE.md' RELEASES.md
 
       - name: Create GitHub release

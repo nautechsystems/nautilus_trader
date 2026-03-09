@@ -3,8 +3,55 @@
 //  https://nautechsystems.io
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum BitgetStringOrNumber {
+    String(String),
+    Number(f64),
+}
+
+impl BitgetStringOrNumber {
+    fn into_string(self) -> String {
+        match self {
+            Self::String(value) => value,
+            Self::Number(value) => {
+                let mut rendered = value.to_string();
+                if rendered.contains('e') || rendered.contains('E') {
+                    rendered = format!("{value:.16}");
+                    while rendered.contains('.') && rendered.ends_with('0') {
+                        rendered.pop();
+                    }
+                    if rendered.ends_with('.') {
+                        rendered.pop();
+                    }
+                }
+                rendered
+            }
+        }
+    }
+}
+
+fn deserialize_level_pairs<'de, D>(deserializer: D) -> Result<Vec<[String; 2]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw_levels = Vec::<[BitgetStringOrNumber; 2]>::deserialize(deserializer)?;
+    Ok(raw_levels
+        .into_iter()
+        .map(|[price, size]| [price.into_string(), size.into_string()])
+        .collect())
+}
+
+fn deserialize_default_on_null<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(|value| value.unwrap_or_default())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,7 +120,9 @@ pub struct BitgetContractSymbol {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitget")
 )]
 pub struct BitgetOrderBookSnapshot {
+    #[serde(deserialize_with = "deserialize_level_pairs")]
     pub asks: Vec<[String; 2]>,
+    #[serde(deserialize_with = "deserialize_level_pairs")]
     pub bids: Vec<[String; 2]>,
     pub ts: String,
     #[serde(default)]
@@ -126,7 +175,6 @@ pub struct BitgetHistoricalFundingRate {
     #[serde(default)]
     pub funding_time: String,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -201,7 +249,7 @@ pub struct BitgetOrderInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BitgetMixOrdersPage {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_on_null")]
     pub entrusted_list: Vec<BitgetOrderInfo>,
 }
 
@@ -239,7 +287,7 @@ pub struct BitgetFillInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BitgetMixFillsPage {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_on_null")]
     pub fill_list: Vec<BitgetFillInfo>,
 }
 

@@ -48,14 +48,16 @@ fn rest_payload_with_body_matches_docs_shape() {
 fn rest_signature_payload_with_invalid_utf8_body_returns_error() {
     let body = [0xff, 0xfe, 0xfd];
 
-    assert!(rest_signature_payload(
-        1_659_927_630_000,
-        "POST",
-        "/api/v2/spot/trade/place-order",
-        None,
-        Some(&body),
-    )
-    .is_err());
+    assert!(
+        rest_signature_payload(
+            1_659_927_630_000,
+            "POST",
+            "/api/v2/spot/trade/place-order",
+            None,
+            Some(&body),
+        )
+        .is_err()
+    );
 }
 
 #[test]

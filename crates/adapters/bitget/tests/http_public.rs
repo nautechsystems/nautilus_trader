@@ -6,15 +6,24 @@
 use std::path::PathBuf;
 
 use nautilus_bitget::{
-    common::{enums::{BitgetEnvironment, BitgetProductType}, symbol::nautilus_symbol_for_delivery},
+    common::{
+        enums::{BitgetEnvironment, BitgetProductType},
+        symbol::nautilus_symbol_for_delivery,
+    },
     http::{
         client::BitgetHttpClient,
-        models::{BitgetApiResponse, BitgetContractConfigResponse, BitgetContractSymbol,
-                 BitgetOrderBookSnapshot, BitgetSpotSymbolsResponse, BitgetSpotSymbol},
+        models::{
+            BitgetApiResponse, BitgetContractConfigResponse, BitgetContractSymbol,
+            BitgetMixFillsPage, BitgetMixOrdersPage, BitgetOrderBookSnapshot, BitgetSpotSymbol,
+            BitgetSpotSymbolsResponse,
+        },
     },
 };
 use nautilus_core::UnixNanos;
-use nautilus_model::{instruments::InstrumentAny, types::{Money, Price, Quantity}};
+use nautilus_model::{
+    instruments::{Instrument, InstrumentAny},
+    types::{Money, Price, Quantity},
+};
 use serde::de::DeserializeOwned;
 
 fn manifest_path() -> PathBuf {
@@ -126,7 +135,9 @@ fn test_build_instruments_from_fixture_responses() {
     let spot = instruments
         .iter()
         .find_map(|instrument| match instrument {
-            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => Some(pair),
+            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => {
+                Some(pair)
+            }
             _ => None,
         })
         .expect("BTCUSDT spot instrument should exist");
@@ -140,7 +151,11 @@ fn test_build_instruments_from_fixture_responses() {
     let perpetual = instruments
         .iter()
         .find_map(|instrument| match instrument {
-            InstrumentAny::CryptoPerpetual(perp) if perp.raw_symbol.to_string() == "BTCUSDT-PERP" => Some(perp),
+            InstrumentAny::CryptoPerpetual(perp)
+                if perp.raw_symbol.to_string() == "BTCUSDT-PERP" =>
+            {
+                Some(perp)
+            }
             _ => None,
         })
         .expect("BTCUSDT perpetual instrument should exist");
@@ -153,7 +168,11 @@ fn test_build_instruments_from_fixture_responses() {
     let delivery = instruments
         .iter()
         .find_map(|instrument| match instrument {
-            InstrumentAny::CryptoFuture(future) if future.raw_symbol.to_string() == expected_future_symbol => Some(future),
+            InstrumentAny::CryptoFuture(future)
+                if future.raw_symbol.to_string() == expected_future_symbol =>
+            {
+                Some(future)
+            }
             _ => None,
         })
         .expect("ETHUSDT delivery instrument should exist");
@@ -166,7 +185,9 @@ fn test_build_instruments_from_fixture_responses() {
     let spot_usdt_min = instruments
         .iter()
         .find_map(|instrument| match instrument {
-            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => Some(pair),
+            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => {
+                Some(pair)
+            }
             _ => None,
         })
         .expect("BTCUSDT spot instrument should exist");
@@ -181,6 +202,17 @@ fn test_deserialize_spot_merge_depth_snapshot() {
     assert_eq!(response.code, "00000");
     assert_eq!(response.data.bids.len(), 2);
     assert_eq!(response.data.asks[0][0], "38084.5");
+}
+
+#[test]
+fn test_deserialize_numeric_spot_merge_depth_snapshot() {
+    let response: BitgetApiResponse<BitgetOrderBookSnapshot> =
+        load_api_response::<BitgetOrderBookSnapshot>("http_spot_merge_depth_numeric.json");
+
+    assert_eq!(response.code, "00000");
+    assert_eq!(response.data.bids.len(), 2);
+    assert_eq!(response.data.bids[0][0], "0.01127");
+    assert_eq!(response.data.asks[0][1], "203133.2");
 }
 
 #[test]
@@ -201,13 +233,40 @@ fn test_build_order_book_snapshot_deltas_from_spot_snapshot() {
     let deltas = client
         .build_order_book_snapshot_deltas(
             &response.data,
-            &instrument,
+            instrument.id(),
             UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
         .expect("snapshot deltas should build");
 
     assert_eq!(deltas.deltas.len(), 5);
     assert_eq!(deltas.sequence, 1_622_102_974_025);
+}
+
+#[test]
+fn test_build_order_book_snapshot_deltas_from_numeric_spot_snapshot() {
+    let client = BitgetHttpClient::new(BitgetEnvironment::Mainnet);
+    let response: BitgetApiResponse<BitgetOrderBookSnapshot> =
+        load_api_response::<BitgetOrderBookSnapshot>("http_spot_merge_depth_numeric.json");
+    let instruments = client.build_instruments(
+        &load_api_response::<Vec<BitgetSpotSymbol>>("http_spot_symbols.json").data,
+        &load_api_response::<Vec<BitgetContractSymbol>>("http_contract_config.json").data,
+        UnixNanos::from(1_700_000_000_000_000_000_u64),
+    );
+    let instrument = instruments
+        .into_iter()
+        .find(|inst| matches!(inst, InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT"))
+        .expect("spot instrument should exist");
+
+    let deltas = client
+        .build_order_book_snapshot_deltas(
+            &response.data,
+            instrument.id(),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
+        )
+        .expect("snapshot deltas should build");
+
+    assert_eq!(deltas.deltas.len(), 5);
+    assert_eq!(deltas.sequence, 1_772_878_386_826);
 }
 
 #[test]
@@ -228,7 +287,7 @@ fn test_build_order_book_snapshot_deltas_from_mix_snapshot() {
     let deltas = client
         .build_order_book_snapshot_deltas(
             &response.data,
-            &instrument,
+            instrument.id(),
             UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
         .expect("snapshot deltas should build");
@@ -236,4 +295,24 @@ fn test_build_order_book_snapshot_deltas_from_mix_snapshot() {
     assert_eq!(deltas.deltas.len(), 5);
     assert_eq!(deltas.sequence, 1_695_870_968_804);
     assert_eq!(BitgetProductType::UsdtFutures.as_api_str(), "USDT-FUTURES");
+}
+
+#[test]
+fn test_deserialize_mix_orders_page_with_null_entrusted_list() {
+    let page: BitgetMixOrdersPage = serde_json::from_value(serde_json::json!({
+        "entrustedList": null,
+    }))
+    .expect("null entrustedList should deserialize");
+
+    assert!(page.entrusted_list.is_empty());
+}
+
+#[test]
+fn test_deserialize_mix_fills_page_with_null_fill_list() {
+    let page: BitgetMixFillsPage = serde_json::from_value(serde_json::json!({
+        "fillList": null,
+    }))
+    .expect("null fillList should deserialize");
+
+    assert!(page.fill_list.is_empty());
 }

@@ -1,23 +1,9 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
+from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenToken
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
@@ -103,6 +89,58 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         return self._delete_resp_decoder.decode(raw)
 
 
+class BinanceListenTokenHttp(BinanceHttpEndpoint):
+    """
+    Endpoint for creating Binance margin user data stream listen tokens.
+
+    `POST /sapi/v1/userListenToken`
+
+    References
+    ----------
+    https://developers.binance.com/docs/margin_trading/trade-data-stream
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        url_path: str,
+    ):
+        methods = {
+            HttpMethod.POST: BinanceSecurityType.USER_STREAM,
+        }
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self._post_resp_decoder = msgspec.json.Decoder(BinanceListenToken)
+
+    class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        POST parameters for creating margin listen tokens.
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol, optional
+            The trading pair. Required for isolated margin accounts.
+        isIsolated : bool, optional
+            Whether the listen token is for isolated margin.
+        validity : int, optional
+            Token validity in milliseconds. Defaults to 24 hours on Binance.
+
+        """
+
+        symbol: BinanceSymbol | None = None
+        isIsolated: bool | None = None
+        validity: int | None = None
+
+    async def post(self, params: PostParameters | None = None) -> BinanceListenToken:
+        method_type = HttpMethod.POST
+        raw = await self._method(method_type, params)
+        return self._post_resp_decoder.decode(raw)
+
+
 class BinanceUserDataHttpAPI:
     """
     Provides access to the Binance User Data Stream HTTP REST API.
@@ -124,23 +162,27 @@ class BinanceUserDataHttpAPI:
         PyCondition.not_none(client, "client")
         self.client = client
         self.account_type = account_type
+        self._endpoint_listentoken: BinanceListenTokenHttp | None = None
 
         if account_type == BinanceAccountType.SPOT:
             listen_key_url = "/api/v3/userDataStream"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         elif account_type == BinanceAccountType.MARGIN:
-            listen_key_url = "/sapi/v1/userDataStream"
+            self._endpoint_listenkey = None
+            self._endpoint_listentoken = BinanceListenTokenHttp(client, "/sapi/v1/userListenToken")
         elif account_type == BinanceAccountType.ISOLATED_MARGIN:
-            listen_key_url = "/sapi/v1/userDataStream/isolated"
+            self._endpoint_listenkey = None
+            self._endpoint_listentoken = BinanceListenTokenHttp(client, "/sapi/v1/userListenToken")
         elif account_type == BinanceAccountType.USDT_FUTURES:
             listen_key_url = "/fapi/v1/listenKey"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         elif account_type == BinanceAccountType.COIN_FUTURES:
             listen_key_url = "/dapi/v1/listenKey"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         else:
             raise RuntimeError(
                 f"invalid `BinanceAccountType`, was {account_type}",
             )
-
-        self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
 
     async def create_listen_key(
         self,
@@ -149,12 +191,36 @@ class BinanceUserDataHttpAPI:
         """
         Create a new Binance listenKey.
         """
+        if self._endpoint_listenkey is None:
+            raise RuntimeError(
+                f"listenKey not supported for account type {self.account_type.value}",
+            )
         key = await self._endpoint_listenkey._post(
             params=self._endpoint_listenkey.PostParameters(
                 symbol=BinanceSymbol(symbol) if symbol else None,
             ),
         )
         return key
+
+    async def create_listen_token(
+        self,
+        symbol: str | None = None,
+        validity: int | None = None,
+    ) -> BinanceListenToken:
+        """
+        Create a new Binance margin listenToken.
+        """
+        if self._endpoint_listentoken is None:
+            raise RuntimeError(
+                f"listenToken not supported for account type {self.account_type.value}",
+            )
+        return await self._endpoint_listentoken.post(
+            params=self._endpoint_listentoken.PostParameters(
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                isIsolated=self.account_type == BinanceAccountType.ISOLATED_MARGIN,
+                validity=validity,
+            ),
+        )
 
     async def keepalive_listen_key(
         self,
@@ -164,6 +230,10 @@ class BinanceUserDataHttpAPI:
         """
         Keepalive an existing Binance listenKey.
         """
+        if self._endpoint_listenkey is None:
+            raise RuntimeError(
+                f"listenKey not supported for account type {self.account_type.value}",
+            )
         await self._endpoint_listenkey._put(
             params=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol) if symbol else None,
@@ -179,6 +249,10 @@ class BinanceUserDataHttpAPI:
         """
         Close an existing Binance listenKey.
         """
+        if self._endpoint_listenkey is None:
+            raise RuntimeError(
+                f"listenKey not supported for account type {self.account_type.value}",
+            )
         await self._endpoint_listenkey._delete(
             params=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol) if symbol else None,

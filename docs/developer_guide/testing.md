@@ -53,6 +53,37 @@ uv run --active --no-sync pytest --new-first --failed-first
 pytest
 ```
 
+#### Python optional extras
+
+Some Python tests cover functionality behind optional dependencies. For example, the analysis tearsheet
+visualization paths depend on the `visualization` extra (`plotly`).
+
+Install the extra when you need that coverage:
+
+```bash
+pip install -e '.[visualization]'
+# or, using uv:
+uv pip install -e '.[visualization]'
+```
+
+When the extra is not installed, plotly-dependent tests are skipped.
+
+#### App frontend tests
+
+Fluxboard and Pulse UI are documented under `apps/` even though those entries
+currently resolve to the existing top-level worktrees. Use the `apps/*` paths
+in docs and automation:
+
+```bash
+pnpm --dir apps/fluxboard install --frozen-lockfile
+pnpm --dir apps/fluxboard test:run
+pnpm --dir apps/fluxboard build
+
+pnpm --dir apps/pulse-ui install --frozen-lockfile
+pnpm --dir apps/pulse-ui test:run
+pnpm --dir apps/pulse-ui build
+```
+
 For performance tests:
 
 ```bash
@@ -114,7 +145,9 @@ Prefer hand-written stubs that return fixed values over mocking frameworks. Use 
 
 ## Code coverage
 
-We generate coverage reports with `coverage` and publish them to [codecov](https://about.codecov.io/).
+Nightly CI coverage runs through `bash tooling/ci/test-coverage.sh`. That job
+emits the terminal summary plus a `coverage.xml` artifact in GitHub Actions.
+External Codecov publishing is not part of the current workflow.
 
 Aim for high coverage without sacrificing appropriate error handling or causing "test induced damage" to the architecture.
 

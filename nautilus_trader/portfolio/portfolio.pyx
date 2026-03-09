@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import pickle
 from collections import defaultdict
 from decimal import Decimal
@@ -41,9 +26,11 @@ from nautilus_trader.portfolio.config import PortfolioConfig
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.accounting.manager cimport AccountsManager
 from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
@@ -1728,13 +1715,24 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef void _update_account(self, AccountState event):
         cdef Account account = self._cache.account(event.account_id)
+        cdef Account refreshed_account
         if account is None:
             # Generate account
             account = AccountFactory.create_c(event)
             self._cache.add_account(account)
         else:
-            account.apply(event)
-            self._cache.update_account(account)
+            if event.account_type == AccountType.CASH and isinstance(account, CashAccount):
+                refreshed_account = AccountFactory.create_c(event)
+                if (<CashAccount>refreshed_account).allow_borrowing != (<CashAccount>account).allow_borrowing:
+                    account = refreshed_account
+                    (<Cache>self._cache)._accounts[account.id] = account
+                    self._cache.update_account(account)
+                else:
+                    account.apply(event)
+                    self._cache.update_account(account)
+            else:
+                account.apply(event)
+                self._cache.update_account(account)
 
         cdef:
             bint should_log = True

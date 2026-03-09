@@ -1,19 +1,5 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 import asyncio
+import json
 import math
 import os
 from asyncio import Queue
@@ -52,6 +38,8 @@ from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from flux.events import FluxBusPayload
+from flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
@@ -74,8 +62,12 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -118,6 +110,9 @@ class LiveExecutionEngine(ExecutionEngine):
     """
 
     _sentinel: Final[None] = None
+    _EXECUTION_ALERT_BURST_THRESHOLD: Final[int] = 3
+    _EXECUTION_ALERT_BURST_WINDOW_NS: Final[int] = 60_000_000_000
+    _EXECUTION_ALERT_BURST_COOLDOWN_NS: Final[int] = 60_000_000_000
 
     def __init__(
         self,
@@ -152,6 +147,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
+        self._execution_alert_windows: dict[tuple[str, str, str], list[int]] = {}
+        self._execution_alert_last_sent_ns: dict[tuple[str, str, str], int] = {}
 
         self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
             qname="cmd_queue",
@@ -419,6 +416,39 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._purge_account_events_loop(self.purge_account_events_interval_mins),
                 name="purge_account_events",
             )
+
+    def _run_startup_purges(self) -> None:
+        ts_now = self._clock.timestamp_ns()
+
+        if self.purge_closed_orders_interval_mins:
+            try:
+                self._cache.purge_closed_orders(
+                    ts_now=ts_now,
+                    buffer_secs=(self.purge_closed_orders_buffer_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging closed orders on start", e)
+
+        if self.purge_closed_positions_interval_mins:
+            try:
+                self._cache.purge_closed_positions(
+                    ts_now=ts_now,
+                    buffer_secs=(self.purge_closed_positions_buffer_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging closed positions on start", e)
+
+        if self.purge_account_events_interval_mins:
+            try:
+                self._cache.purge_account_events(
+                    ts_now=ts_now,
+                    lookback_secs=(self.purge_account_events_lookback_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging account events on start", e)
 
     async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
         interval_secs = interval_mins * 60
@@ -1448,79 +1478,11 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             return
 
-        if order.status == OrderStatus.ACCEPTED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: ACCEPTED order not found at venue, marking as REJECTED",
-                LogColor.YELLOW,
-            )
-            rejected = create_order_rejected_event(
-                order=order,
-                ts_now=ts_now,
-                reason="ORDER_NOT_FOUND_AT_VENUE",
-            )
-            self._handle_event_with_tracking(rejected)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.status == OrderStatus.PARTIALLY_FILLED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: PARTIALLY_FILLED "
-                f"order not found at venue, marking as CANCELED (preserving {order.filled_qty} filled quantity)",
-                LogColor.YELLOW,
-            )
-            canceled = create_order_canceled_event(
-                order=order,
-                ts_now=ts_now,
-            )
-            self._handle_event_with_tracking(canceled)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.status == OrderStatus.SUBMITTED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: SUBMITTED order not found at venue, marking as REJECTED",
-                LogColor.YELLOW,
-            )
-            rejected = create_order_rejected_event(
-                order=order,
-                ts_now=ts_now,
-                reason="ORDER_NOT_FOUND_AT_VENUE",
-            )
-            self._handle_event_with_tracking(rejected)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.is_inflight:
-            self._log.debug(
-                f"Deferring resolution for {order.client_order_id!r} - still inflight state {order.status_string()}",
-            )
-            self._clear_recon_tracking(order.client_order_id, drop_last_query=False)
-            self._ts_last_query[order.client_order_id] = ts_now
-            return
-
-        if order.is_closed:
-            if order.status == OrderStatus.FILLED:
-                self._log.debug(
-                    f"{order.client_order_id!r} is FILLED and not found at venue (expected behavior)",
-                )
-            else:
-                self._log.warning(
-                    f"Order {order.client_order_id!r} is already closed as {order.status_string()}, "
-                    "skipping missing-order resolution",
-                )
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        self._log.warning(
-            f"Unexpected order status {order.status_string()} "
-            f"for order not found at venue: {order.client_order_id!r}",
+        self._resolve_cached_order_missing_at_venue(
+            order,
+            ts_now=ts_now,
+            reason="ORDER_NOT_FOUND_AT_VENUE",
         )
-        self._clear_recon_tracking(order.client_order_id)
-        self._order_local_activity_ns.pop(order.client_order_id, None)
 
     async def _query_order_status_reports(
         self,
@@ -1672,6 +1634,7 @@ class LiveExecutionEngine(ExecutionEngine):
         coordinating reconciliation across all execution clients.
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
+        deadline = self._loop.time() + timeout_secs
 
         try:
             for client_id in self._external_clients:
@@ -1705,7 +1668,20 @@ class LiveExecutionEngine(ExecutionEngine):
             mass_status_coros = [
                 c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
             ]
-            mass_status_all = await asyncio.gather(*mass_status_coros, return_exceptions=True)
+            mass_status_timeout = deadline - self._loop.time()
+            if mass_status_timeout <= 0:
+                self._log.error("Execution reconciliation timed out before mass-status generation started")
+                return False
+            try:
+                mass_status_all = await asyncio.wait_for(
+                    asyncio.gather(*mass_status_coros, return_exceptions=True),
+                    timeout=mass_status_timeout,
+                )
+            except asyncio.TimeoutError:
+                self._log.error(
+                    f"Execution reconciliation timed out after {timeout_secs}s while awaiting mass status reports",
+                )
+                return False
 
             # Reconcile each mass status with the execution engine
             for mass_status_or_exception in mass_status_all:
@@ -1770,10 +1746,27 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
 
                     position_results: list[bool] = []
-                    for task_result_or_exception in await asyncio.gather(
-                        *report_tasks,
-                        return_exceptions=True,
-                    ):
+                    position_reports_timeout = deadline - self._loop.time()
+                    if position_reports_timeout <= 0:
+                        self._log.error(
+                            f"Execution reconciliation timed out after {timeout_secs}s before awaiting position reports for {client_id}",
+                        )
+                        return False
+                    try:
+                        position_report_results = await asyncio.wait_for(
+                            asyncio.gather(
+                                *report_tasks,
+                                return_exceptions=True,
+                            ),
+                            timeout=position_reports_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self._log.error(
+                            f"Execution reconciliation timed out after {timeout_secs}s while awaiting position reports for {client_id}",
+                        )
+                        return False
+
+                    for task_result_or_exception in position_report_results:
                         if isinstance(task_result_or_exception, Exception):
                             self._log.error(
                                 f"Failed to generate position status reports: {task_result_or_exception}",
@@ -2477,11 +2470,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
         if not quantities_match:
             if not self.generate_missing_orders:
-                self._log.warning(
-                    f"Discrepancy for {report.instrument_id} position "
-                    "when `generate_missing_orders` disabled, skipping further reconciliation",
+                self._log.error(
+                    f"Cannot reconcile {report.instrument_id}: "
+                    f"position net qty {position_signed_decimal_qty} != reported net qty "
+                    f"{report.signed_decimal_qty} and `generate_missing_orders` is disabled",
                 )
-                return True
+                return False
 
             diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
             diff_quantity = Quantity(diff, instrument.size_precision)
@@ -3574,6 +3568,12 @@ class LiveExecutionEngine(ExecutionEngine):
         # Handle an order event with activity tracking, recording fills in cache and
         # cleaning up tracking data for closed orders.
         self._record_local_activity(event)
+        cancel_rejected_prior_status: OrderStatus | None = None
+
+        if isinstance(event, OrderCancelRejected) and event.client_order_id is not None:
+            cached_order = self._cache.order(event.client_order_id)
+            if cached_order is not None:
+                cancel_rejected_prior_status = cached_order.status
 
         if isinstance(event, OrderFilled):
             self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
@@ -3586,6 +3586,11 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._inferred_fill_ts[client_order_id] = event.ts_event
 
         self._handle_event(event)
+        self._resolve_cancel_state_mismatch(
+            event,
+            prior_status=cancel_rejected_prior_status,
+        )
+        self._publish_execution_alert_if_relevant(event)
 
         if event.client_order_id is None:
             return
@@ -3596,6 +3601,319 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             self._inferred_fill_ts.pop(order.client_order_id, None)
             self._fill_application_audit.pop(order.client_order_id, None)
+
+    def _resolve_cached_order_missing_at_venue(
+        self,
+        order: Order,
+        *,
+        ts_now: int,
+        reason: str,
+        prior_status: OrderStatus | None = None,
+    ) -> None:
+        if not order.is_open:
+            if order.is_closed:
+                if order.status == OrderStatus.FILLED:
+                    self._log.debug(
+                        f"{order.client_order_id!r} is FILLED and not found at venue (expected behavior)",
+                    )
+                else:
+                    self._log.warning(
+                        f"Order {order.client_order_id!r} is already closed as {order.status_string()}, "
+                        "skipping missing-order resolution",
+                    )
+            else:
+                self._log.debug(
+                    f"Skipping missing-order resolution for {order.client_order_id!r} - "
+                    f"current status {order.status_string()}",
+                )
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        resolution_status = prior_status or order.status
+
+        if resolution_status in (OrderStatus.ACCEPTED, OrderStatus.SUBMITTED):
+            self._log.warning(
+                f"Reconciling {order.client_order_id!r}: {resolution_status.name} "
+                f"order not found at venue, marking as REJECTED",
+                LogColor.YELLOW,
+            )
+            rejected = create_order_rejected_event(
+                order=order,
+                ts_now=ts_now,
+                reason=reason,
+            )
+            self._handle_event_with_tracking(rejected)
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        if resolution_status in (
+            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.PENDING_CANCEL,
+            OrderStatus.PENDING_UPDATE,
+        ):
+            self._log.warning(
+                f"Reconciling {order.client_order_id!r}: {resolution_status.name} "
+                f"order not found at venue, marking as CANCELED",
+                LogColor.YELLOW,
+            )
+            canceled = create_order_canceled_event(
+                order=order,
+                ts_now=ts_now,
+            )
+            self._handle_event_with_tracking(canceled)
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        self._log.warning(
+            f"Unexpected order status {order.status_string()} "
+            f"for order not found at venue: {order.client_order_id!r}",
+        )
+        self._clear_recon_tracking(order.client_order_id)
+        self._order_local_activity_ns.pop(order.client_order_id, None)
+
+    def _resolve_cancel_state_mismatch(
+        self,
+        event: OrderEvent,
+        *,
+        prior_status: OrderStatus | None = None,
+    ) -> None:
+        if not isinstance(event, OrderCancelRejected):
+            return
+
+        if not self._is_cancel_state_mismatch_reason(self._normalize_alert_reason(event.reason)):
+            return
+
+        client_order_id = event.client_order_id
+        if client_order_id is None:
+            return
+
+        order = self._cache.order(client_order_id)
+        if order is None or order.is_closed:
+            return
+
+        self._resolve_cached_order_missing_at_venue(
+            order,
+            ts_now=int(event.ts_event or self._clock.timestamp_ns()),
+            reason="ORDER_CANCEL_STATE_MISMATCH",
+            prior_status=prior_status,
+        )
+
+    @staticmethod
+    def _normalize_alert_reason(reason: str | None) -> str:
+        return " ".join((reason or "").strip().lower().split())
+
+    def _owned_strategy_id_for_event(self, event: OrderEvent) -> StrategyId | None:
+        strategy_id = None
+        if event.client_order_id is not None:
+            strategy_id = self._cache.strategy_id_for_order(event.client_order_id)
+
+        if strategy_id is None:
+            strategy_id = getattr(event, "strategy_id", None)
+
+        if strategy_id is None or strategy_id.value == "EXTERNAL":
+            return None
+
+        return strategy_id
+
+    @classmethod
+    def _is_financial_reject_reason(cls, reason: str) -> bool:
+        return any(
+            text in reason
+            for text in (
+                "insufficient account balance",
+                "insufficient balance",
+                "insufficient margin",
+                "insufficient funds",
+                "insufficient equity",
+            )
+        )
+
+    @classmethod
+    def _is_cancel_state_mismatch_reason(cls, reason: str) -> bool:
+        return any(
+            text in reason
+            for text in (
+                "unknown order sent",
+                "s_code=51400",
+                "filled, canceled or does not exist",
+                "filled, cancelled or does not exist",
+                "already canceled",
+                "already cancelled",
+                "already canceled or matched",
+                "state mismatch",
+                "does not exist",
+            )
+        )
+
+    def _publish_execution_alert(self, payload: dict[str, Any]) -> None:
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        self._msgbus.publish(
+            topic=TOPIC_EXECUTION_ALERT,
+            msg=FluxBusPayload(
+                topic=TOPIC_EXECUTION_ALERT,
+                payload=payload_json,
+                ts_event=int(payload.get("ts_event", 0)),
+                ts_init=int(payload.get("ts_event", 0)),
+            ),
+        )
+
+    def _build_execution_alert_payload(
+        self,
+        *,
+        event: OrderEvent,
+        strategy_id: StrategyId,
+        alert_key: str,
+        message: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        ts_event = int(event.ts_event or self._clock.timestamp_ns())
+        venue = event.instrument_id.venue.value if event.instrument_id is not None else ""
+        payload: dict[str, Any] = {
+            "strategy_id": strategy_id.value,
+            "level": "error",
+            "message": message,
+            "alert_key": alert_key,
+            "actionable": True,
+            "source": "execution",
+            "event_type": type(event).__name__,
+            "venue": venue,
+            "instrument_id": event.instrument_id.value if event.instrument_id is not None else "",
+            "client_order_id": event.client_order_id.value if event.client_order_id else "",
+            "ts_event": ts_event,
+            "ts_ms": ts_event // 1_000_000,
+        }
+        if reason:
+            payload["reason"] = reason
+        venue_order_id = getattr(event, "venue_order_id", None)
+        if venue_order_id is not None:
+            payload["venue_order_id"] = venue_order_id.value
+        return payload
+
+    def _publish_burst_execution_alert_if_needed(
+        self,
+        *,
+        event: OrderEvent,
+        strategy_id: StrategyId,
+        reason: str,
+        alert_key: str,
+        message: str,
+    ) -> None:
+        normalized_reason = self._normalize_alert_reason(reason) or "unknown"
+        now_ns = int(event.ts_event or self._clock.timestamp_ns())
+        burst_key = (strategy_id.value, event.instrument_id.venue.value, normalized_reason)
+        window = [
+            ts
+            for ts in self._execution_alert_windows.get(burst_key, [])
+            if now_ns - ts <= self._EXECUTION_ALERT_BURST_WINDOW_NS
+        ]
+        window.append(now_ns)
+        self._execution_alert_windows[burst_key] = window
+
+        if len(window) < self._EXECUTION_ALERT_BURST_THRESHOLD:
+            return
+
+        cooldown_key = (strategy_id.value, alert_key, normalized_reason)
+        last_sent_ns = self._execution_alert_last_sent_ns.get(cooldown_key, 0)
+        if now_ns - last_sent_ns < self._EXECUTION_ALERT_BURST_COOLDOWN_NS:
+            return
+
+        self._execution_alert_last_sent_ns[cooldown_key] = now_ns
+        self._publish_execution_alert(
+            self._build_execution_alert_payload(
+                event=event,
+                strategy_id=strategy_id,
+                alert_key=alert_key,
+                message=message,
+                reason=reason,
+            ),
+        )
+
+    def _publish_execution_alert_if_relevant(self, event: OrderEvent) -> None:
+        if event.reconciliation:
+            return
+
+        strategy_id = self._owned_strategy_id_for_event(event)
+        if strategy_id is None:
+            return
+
+        reason = self._normalize_alert_reason(getattr(event, "reason", None))
+
+        if isinstance(event, OrderDenied):
+            self._publish_execution_alert(
+                self._build_execution_alert_payload(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="order_denied",
+                    message=f"Order denied before exchange submission on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                ),
+            )
+            return
+
+        if isinstance(event, OrderRejected):
+            if event.due_post_only:
+                return
+            if self._is_financial_reject_reason(reason):
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_rejected_insufficient_margin",
+                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+            else:
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_rejected",
+                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+            return
+
+        if isinstance(event, OrderCancelRejected):
+            if self._is_cancel_state_mismatch_reason(reason):
+                return
+
+            self._publish_execution_alert(
+                self._build_execution_alert_payload(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_cancel_rejected",
+                    message=f"Exchange cancel rejected on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                ),
+            )
+            return
+
+        if isinstance(event, OrderModifyRejected):
+            if self._is_financial_reject_reason(reason):
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_modify_rejected_insufficient_margin",
+                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+            else:
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_modify_rejected",
+                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
 
     def _record_local_activity(self, event: OrderEvent | None) -> None:
         if event is None:

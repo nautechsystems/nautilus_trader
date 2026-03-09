@@ -208,9 +208,9 @@ fi
 
 # Check 5: [package] section field ordering
 # Required order: name, readme, version.workspace, edition.workspace, rust-version.workspace,
-#                 authors.workspace, license.workspace, description, categories.workspace,
-#                 keywords.workspace, documentation.workspace, repository.workspace, homepage.workspace
-# Optional fields (publish, build, include) can appear after homepage.workspace
+#                 description, categories.workspace, keywords.workspace
+# Optional legacy metadata (authors/license/documentation/repository/homepage) and
+# publish/build/include can appear after keywords.workspace
 package_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /dev/null | while read -r file; do
   # Skip placeholder manifest
   [[ "$file" == "crates/Cargo.toml" ]] && continue
@@ -223,11 +223,11 @@ package_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /d
     field_order["version.workspace"] = 3
     field_order["edition.workspace"] = 4
     field_order["rust-version.workspace"] = 5
-    field_order["authors.workspace"] = 6
-    field_order["license.workspace"] = 7
-    field_order["description"] = 8
-    field_order["categories.workspace"] = 9
-    field_order["keywords.workspace"] = 10
+    field_order["description"] = 6
+    field_order["categories.workspace"] = 7
+    field_order["keywords.workspace"] = 8
+    field_order["authors.workspace"] = 9
+    field_order["license.workspace"] = 10
     field_order["documentation.workspace"] = 11
     field_order["repository.workspace"] = 12
     field_order["homepage.workspace"] = 13
@@ -237,14 +237,9 @@ package_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /d
     required["version.workspace"] = 1
     required["edition.workspace"] = 1
     required["rust-version.workspace"] = 1
-    required["authors.workspace"] = 1
-    required["license.workspace"] = 1
     required["description"] = 1
     required["categories.workspace"] = 1
     required["keywords.workspace"] = 1
-    required["documentation.workspace"] = 1
-    required["repository.workspace"] = 1
-    required["homepage.workspace"] = 1
 
     in_package = 0
     prev_field = ""
@@ -488,9 +483,9 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "  - Add [lints] workspace = true after [package] for all crates"
   echo "  - Add doc = false to all [[bin]] and [[example]] sections"
   echo "  - [package] fields must be in order: name, readme, version.workspace, edition.workspace,"
-  echo "    rust-version.workspace, authors.workspace, license.workspace, description,"
-  echo "    categories.workspace, keywords.workspace, documentation.workspace, repository.workspace,"
-  echo "    homepage.workspace, then optional fields (publish, build, include)"
+  echo "    rust-version.workspace, description, categories.workspace, keywords.workspace,"
+  echo "    then optional metadata fields (authors/license/documentation/repository/homepage)"
+  echo "    and optional fields (publish, build, include)"
   echo "  - crate-type must use order: [\"rlib\", \"staticlib\", \"cdylib\"]"
   echo "  - Remove unused dependencies from [workspace.dependencies] in root Cargo.toml"
   echo "  - Ensure related dependencies have matching versions (e.g., capnp and capnpc)"

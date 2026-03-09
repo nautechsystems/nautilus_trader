@@ -31,7 +31,7 @@ jobs:
 
       - name: Get Rust toolchain version
         shell: bash
-        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+        run: echo "TOOLCHAIN=$(bash tooling/dev/rust-toolchain.sh)" >> "$GITHUB_ENV"
 
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain
@@ -67,7 +67,7 @@ jobs:
 
       - name: Get Rust toolchain version
         shell: bash
-        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+        run: echo "TOOLCHAIN=$(bash tooling/dev/rust-toolchain.sh)" >> "$GITHUB_ENV"
 
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain

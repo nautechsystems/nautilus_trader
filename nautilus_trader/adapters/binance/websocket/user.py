@@ -1,17 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
 """
 Binance WebSocket API client for user data streams.
 
@@ -114,6 +100,7 @@ class BinanceUserDataWebSocketClient:
         self._loop = loop
         self._is_futures: bool = is_futures
         self._stream_base_url: str | None = stream_base_url
+        self._account_type = account_type
 
         self._api_key: str = api_key
 
@@ -142,6 +129,7 @@ class BinanceUserDataWebSocketClient:
         self._msg_id: int = 0
         self._pending_requests: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._subscription_id: str | None = None
+        self._subscription_expiration_time_ms: int | None = None
         self._is_authenticated: bool = False
         self._is_recovery_failed: bool = False
         self._reconnect_task: asyncio.Task | None = None
@@ -167,6 +155,14 @@ class BinanceUserDataWebSocketClient:
     @property
     def _use_rest_listen_key(self) -> bool:
         return self._is_futures and self._http_user is not None
+
+    @property
+    def _use_margin_listen_token(self) -> bool:
+        return (
+            self._account_type == BinanceAccountType.MARGIN
+            and self._http_user is not None
+            and not self._is_futures
+        )
 
     def _get_sign(self, data: str) -> str:
         if self._ed25519_key is not None:
@@ -251,6 +247,7 @@ class BinanceUserDataWebSocketClient:
     def _handle_reconnect(self) -> None:
         self._is_authenticated = False
         self._subscription_id = None
+        self._subscription_expiration_time_ms = None
         self._cancel_keepalive()
         self._reconnect_task = self._loop.create_task(self._reauth_and_resubscribe())
 
@@ -271,6 +268,7 @@ class BinanceUserDataWebSocketClient:
 
     async def _resubscribe(self) -> None:
         self._subscription_id = None
+        self._subscription_expiration_time_ms = None
         self._cancel_keepalive()
         await self._disconnect_stream()
 
@@ -319,6 +317,7 @@ class BinanceUserDataWebSocketClient:
         """
         self._cancel_keepalive()
         self._subscription_id = None
+        self._subscription_expiration_time_ms = None
         self._is_authenticated = False
 
         await self._disconnect_stream()
@@ -388,6 +387,9 @@ class BinanceUserDataWebSocketClient:
         """
         Authenticate the WebSocket session using session.logon.
 
+        Margin listenToken mode does not use WebSocket session authentication;
+        this method becomes a local readiness no-op in that case.
+
         Returns the session logon response.
 
         """
@@ -395,6 +397,11 @@ class BinanceUserDataWebSocketClient:
             # REST listenKey auth is per-request via API key header
             self._is_authenticated = True
             self._log.info("Session authenticated (REST listenKey mode)", LogColor.GREEN)
+            return {}
+
+        if self._use_margin_listen_token:
+            self._is_authenticated = True
+            self._log.info("Session ready (margin listenToken mode)", LogColor.GREEN)
             return {}
 
         timestamp = self._clock.timestamp_ms()
@@ -431,13 +438,19 @@ class BinanceUserDataWebSocketClient:
         """
         Subscribe to the user data stream.
 
-        For Spot, sends `userDataStream.subscribe` — events arrive inline.
+        For Spot, sends `userDataStream.subscribe` and requires an authenticated
+        WebSocket session.
+        For cross margin, subscribes with a REST-issued listenToken and does not
+        require WebSocket session authentication.
         For Futures + Ed25519, sends `userDataStream.start` via WS API.
         For Futures + HMAC, creates listenKey via REST API.
 
         """
-        if not self._is_authenticated:
+        if not self._is_authenticated and not self._use_margin_listen_token:
             raise RuntimeError("Session not authenticated, call session_logon first")
+
+        if self._use_margin_listen_token:
+            return await self._subscribe_margin_listen_token()
 
         if self._use_rest_listen_key:
             return await self._subscribe_rest()
@@ -468,6 +481,32 @@ class BinanceUserDataWebSocketClient:
                 LogColor.BLUE,
             )
             return str(subscription_id)
+
+    async def _subscribe_margin_listen_token(self) -> str:
+        if self._http_user is None:
+            raise RuntimeError("HTTP user client required for margin listenToken mode")
+
+        token = await self._http_user.create_listen_token()
+        response = await self._send_request(
+            "userDataStream.subscribe.listenToken",
+            {"listenToken": token.token},
+        )
+        result = response.get("result", {})
+        subscription_id = result.get("subscriptionId")
+        if subscription_id is None:
+            raise RuntimeError(f"No subscriptionId in response: {response}")
+
+        self._subscription_id = str(subscription_id)
+        self._subscription_expiration_time_ms = int(
+            result.get("expirationTime") or token.expirationTime,
+        )
+        self._cancel_keepalive()
+        self._keepalive_task = self._loop.create_task(self._keepalive_loop())
+        self._log.info(
+            f"Subscribed to margin user data stream: {subscription_id}",
+            LogColor.BLUE,
+        )
+        return self._subscription_id
 
     async def _subscribe_rest(self) -> str:
         response = await self._http_user.create_listen_key()
@@ -533,6 +572,14 @@ class BinanceUserDataWebSocketClient:
             except Exception as e:
                 self._log.warning(f"Error closing REST listenKey: {e}")
             self._log.info("Closed user data stream (REST)")
+        elif self._use_margin_listen_token:
+            await self._send_request(
+                "userDataStream.unsubscribe",
+                {"subscriptionId": self._subscription_id},
+            )
+            self._log.info(
+                f"Unsubscribed from margin user data stream: {self._subscription_id}",
+            )
         elif self._is_futures:
             await self._disconnect_stream()
             await self._send_request(
@@ -557,6 +604,8 @@ class BinanceUserDataWebSocketClient:
                 try:
                     if self._use_rest_listen_key:
                         await self._http_user.keepalive_listen_key()
+                    elif self._use_margin_listen_token:
+                        await self._renew_margin_subscription()
                     else:
                         await self._send_request(
                             "userDataStream.ping",
@@ -567,3 +616,21 @@ class BinanceUserDataWebSocketClient:
                     self._log.error(f"Failed to send keepalive: {e}")
         except asyncio.CancelledError:
             pass
+
+    async def _renew_margin_subscription(self) -> None:
+        if self._http_user is None:
+            raise RuntimeError("HTTP user client required for margin listenToken mode")
+
+        token = await self._http_user.create_listen_token()
+        response = await self._send_request(
+            "userDataStream.subscribe.listenToken",
+            {"listenToken": token.token},
+        )
+        result = response.get("result", {})
+        subscription_id = result.get("subscriptionId")
+        if subscription_id is not None:
+            self._subscription_id = str(subscription_id)
+        self._subscription_expiration_time_ms = int(
+            result.get("expirationTime") or token.expirationTime,
+        )
+        self._log.debug("Margin user data stream renewed")
