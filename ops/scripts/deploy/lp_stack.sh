@@ -187,6 +187,7 @@ start_stack() {
     "lp-api" \
     "python3 -m lp.runners.run_api --config ${CONFIG_PATH} --host ${LP_API_HOST} --port ${LP_API_PORT} --serve-fluxboard"
 
+  # Public proxy contract: LP_API_BACKEND_URL="http://${LP_API_HOST}:${LP_API_PORT}"
   start_service \
     "public-api" \
     "env LP_API_BACKEND_URL=\"http://${LP_API_HOST}:${LP_API_PORT}\" FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${PUBLIC_CONFIG} --mode ${LP_MODE}${confirm_live_arg} --host ${PUBLIC_API_HOST} --port ${PUBLIC_API_PORT} --serve-fluxboard --serve-pulse"
