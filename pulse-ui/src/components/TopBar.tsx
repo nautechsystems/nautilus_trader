@@ -1,12 +1,13 @@
 import { Activity, AlertTriangle, RefreshCw, Server } from "lucide-react";
 
-import type { JobStats } from "../api";
+import type { JobStats, ShellLink } from "../api";
 import { buildPulseHref, buildShellHref } from "../basePath";
 import { REFRESH_INTERVAL_MS } from "../theme";
 import { StatusPill } from "./StatusPill";
 
 interface TopBarProps {
   stats: JobStats;
+  shellLinks: ShellLink[];
   autoRefresh: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
@@ -15,6 +16,7 @@ interface TopBarProps {
 
 export function TopBar({
   stats,
+  shellLinks,
   autoRefresh,
   isRefreshing,
   onRefresh,
@@ -30,7 +32,7 @@ export function TopBar({
         </div>
 
         <div className="suite-nav__links">
-          {stats.shellLinks.map((link) => (
+          {shellLinks.map((link) => (
             <a key={link.path} href={buildShellHref(link.path)} className="nav-link nav-link--primary">
               {link.label}
             </a>

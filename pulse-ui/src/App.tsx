@@ -1,7 +1,7 @@
 import { AlertTriangle, Clock3 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { calculateStats, getJobs, groupJobs, performGroupAction, performJobAction, type Job } from "./api";
+import { calculateStats, getJobs, groupJobs, performGroupAction, performJobAction, type Job, type ShellLink } from "./api";
 import { JobGroup } from "./components/JobGroup";
 import { LogsModal } from "./components/LogsModal";
 import { TopBar } from "./components/TopBar";
@@ -41,6 +41,7 @@ function actionFailureMessage(result: ActionResult, fallback: string): string {
 
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [shellLinks, setShellLinks] = useState<ShellLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showOnlyErrors, setShowOnlyErrors] = useState(false);
@@ -61,8 +62,10 @@ export default function App() {
     try {
       const payload = await getJobs();
       setJobs(payload.jobs);
+      setShellLinks(payload.shell_links || []);
       setLastUpdated(Date.now());
     } catch (err) {
+      setShellLinks([]);
       setError(err instanceof Error ? err.message : "Failed to fetch jobs");
     } finally {
       setLoading(false);
@@ -170,6 +173,7 @@ export default function App() {
       </a>
       <TopBar
         stats={stats}
+        shellLinks={shellLinks}
         autoRefresh={autoRefresh}
         isRefreshing={loading}
         onRefresh={() => void loadJobs()}

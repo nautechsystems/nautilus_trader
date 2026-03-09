@@ -135,6 +135,35 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Equities Alerts" })).toHaveAttribute("href", "/ops/equities/alerts");
   });
 
+  it("does not leak stale shell links across remount when the next jobs fetch fails", async () => {
+    const fetchMock = vi
+      .fn<(_: RequestInfo | URL) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "boom" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const firstRender = render(<App />);
+
+    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/tokenmm");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(screen.queryByRole("link", { name: "TokenMM Dashboard" })).not.toBeInTheDocument();
+  });
+
   it("loads process jobs, renders a grouped table, and exposes logs/actions", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

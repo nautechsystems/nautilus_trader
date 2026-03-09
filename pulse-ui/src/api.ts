@@ -43,7 +43,6 @@ export interface JobStats {
   active: number;
   failed: number;
   totalErrors: number;
-  shellLinks: ShellLink[];
 }
 
 export interface JobGroup {
@@ -62,7 +61,6 @@ export interface ActionResponse {
 }
 
 const API_BASE = "/api/pulse";
-let lastShellLinks: ShellLink[] = [];
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -90,9 +88,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function getJobs(): Promise<JobsResponse> {
-  const payload = await fetchJSON<JobsResponse>(`${API_BASE}/jobs`);
-  lastShellLinks = payload.shell_links || [];
-  return payload;
+  return fetchJSON<JobsResponse>(`${API_BASE}/jobs`);
 }
 
 export async function performJobAction(jobId: string, action: "start" | "stop" | "restart"): Promise<ActionResponse> {
@@ -164,6 +160,5 @@ export function calculateStats(jobs: Job[]): JobStats {
     active: jobs.filter((job) => (job.status || job.state) === "active").length,
     failed: jobs.filter((job) => (job.status || job.state) === "failed").length,
     totalErrors: jobs.reduce((sum, job) => sum + (job.errors?.count || 0), 0),
-    shellLinks: lastShellLinks,
   };
 }
