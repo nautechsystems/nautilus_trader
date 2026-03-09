@@ -28,7 +28,9 @@ discover_node_strategies() {
 }
 
 build_target_service_ids() {
+  # shellcheck disable=SC2178
   local -n out_service_ids="$1"
+  # shellcheck disable=SC2034
   out_service_ids=(
     "equities-api"
     "equities-portfolio"
@@ -41,7 +43,9 @@ build_target_service_ids() {
 }
 
 build_pulse_service_ids() {
+  # shellcheck disable=SC2178
   local -n out_service_ids="$1"
+  # shellcheck disable=SC2034,SC2178
   out_service_ids=(
     "equities-portfolio"
     "equities-bridge"
@@ -51,7 +55,6 @@ build_pulse_service_ids() {
     out_service_ids+=("equities-node-${strategy_id}")
   done
 }
-
 
 install_units() {
   strategy_stack_install_base_units \
@@ -72,8 +75,8 @@ install_sudoers() {
   local service_ids=()
   tmp_sudoers="$(mktemp)"
   build_pulse_service_ids service_ids
-  strategy_stack_render_sudoers ubuntu "${tmp_sudoers}" "${service_ids[@]}"
-  if command -v visudo >/dev/null 2>&1; then
+  strategy_stack_render_merged_sudoers ubuntu "${tmp_sudoers}" "${SUDOERS_PATH}" "${service_ids[@]}"
+  if command -v visudo > /dev/null 2>&1; then
     visudo -cf "${tmp_sudoers}"
   fi
   install -m 0440 "${tmp_sudoers}" "${SUDOERS_PATH}"

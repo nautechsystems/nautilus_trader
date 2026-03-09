@@ -56,7 +56,7 @@ Installer behavior:
 
 - installs `flux@.service`
 - installs `/etc/flux/common.env` from `deploy/lp/systemd/common.env.example` if it does not already exist
-- installs `/etc/sudoers.d/flux-pulse` for the LP Pulse-managed service set
+- merges the LP Pulse-managed service ids into `/etc/sudoers.d/flux-pulse` without dropping existing shared-host entries
 - writes `/etc/flux/lp-api.env`
 - writes `/etc/flux/service-eth-plume-lp-hedger.env`
 - writes `/etc/flux/service-eth-plume-lp-hedger-band2.env`
@@ -70,7 +70,7 @@ Band1 and Band2 are the live auto-started production pair for this rollout. `hyp
 Run the host preflight before starting `flux-lp.target`:
 
 ```bash
-python3 ops/scripts/lp_hedger_preflight.py --json
+sudo python3 ops/scripts/lp_hedger_preflight.py --json
 ```
 
 `LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini` is the operator-managed system INI for shared LP runtime settings. It must remain readable by the Flux service user `ubuntu` (for example `root:ubuntu` with mode `0640`). It should provide the same chainsaw sections:

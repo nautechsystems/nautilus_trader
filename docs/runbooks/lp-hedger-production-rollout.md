@@ -66,7 +66,7 @@ Intentional monorepo deltas must be documented in `fluxboard/docs/lp_contract.md
 Before enabling `flux-lp.target`, confirm:
 
 ```bash
-python3 ops/scripts/lp_hedger_preflight.py --json
+sudo python3 ops/scripts/lp_hedger_preflight.py --json
 ```
 
 The preflight must report `ok: true` before operators proceed. It checks:
@@ -76,6 +76,8 @@ The preflight must report `ok: true` before operators proceed. It checks:
 3. `/etc/flux/lp-system.ini` is readable by the Flux service user `ubuntu`.
 4. The Band1, Band2, `hype_usdt_lp`, and `plume_weth_lp` hedger INI files exist and are readable.
 5. The shared public host remains on `:5022`, and the LP API remains loopback-bound on `:5025`.
+
+Because `/etc/flux/common.env` is typically seeded as a root-owned `0640` file, the default preflight invocation should run under `sudo` unless operators pass alternate readable paths with `--common-env` and `--system-ini`.
 
 ## Install And Restart Order
 
@@ -130,7 +132,7 @@ Use Band1 and Band2 on `/lp` as the live canary surface before declaring the rol
 
 Go/no-go gates:
 
-1. `python3 ops/scripts/lp_hedger_preflight.py --json` reports `ok: true`.
+1. `sudo python3 ops/scripts/lp_hedger_preflight.py --json` reports `ok: true`.
 2. `bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022` succeeds.
 3. `/lp` shows Band1, Band2, `hype_usdt_lp`, and `plume_weth_lp`; Band1/Band2 preserve the live operator controls, and the staged generic entries show readiness errors while restart/enable remain blocked.
 4. Pulse reports healthy jobs for `lp-api`, `service-eth-plume-lp-hedger`, and `service-eth-plume-lp-hedger-band2`, and reports `service-hedger3` and `service-hedger4` as managed stopped jobs.

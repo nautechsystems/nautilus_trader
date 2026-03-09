@@ -18,6 +18,29 @@ def _read(relative_path: str) -> str:
 
 
 class _RolloutHandler(BaseHTTPRequestHandler):
+    instances_payload: dict[str, Any] = {
+        "ok": True,
+        "data": [
+            {"id": "eth_plume_lp"},
+            {"id": "eth_plume_lp_band2"},
+        ],
+    }
+    hedger_payload: dict[str, Any] = {
+        "ok": True,
+        "data": {"id": "eth_plume_lp"},
+    }
+    pulse_jobs_payload: dict[str, Any] = {
+        "jobs": [
+            {"id": "lp-api", "status": "active"},
+            {"id": "service-eth-plume-lp-hedger", "status": "active"},
+            {"id": "service-eth-plume-lp-hedger-band2", "status": "active"},
+        ],
+        "shell_links": [],
+        "total": 3,
+        "active": 3,
+        "failed": 0,
+    }
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/lp":
             body = b"<!doctype html><html><body>lp</body></html>"
@@ -27,8 +50,16 @@ class _RolloutHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path in {"/api/v1/hedgers/instances", "/api/v1/hedgers/eth_plume_lp"}:
-            body = json.dumps({"ok": True}).encode("utf-8")
+        if self.path == "/api/v1/hedgers/instances":
+            body = json.dumps(type(self).instances_payload).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/api/v1/hedgers/eth_plume_lp":
+            body = json.dumps(type(self).hedger_payload).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -36,15 +67,7 @@ class _RolloutHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path == "/api/pulse/jobs":
-            body = json.dumps(
-                {
-                    "jobs": [],
-                    "shell_links": [],
-                    "total": 0,
-                    "active": 0,
-                    "failed": 0,
-                },
-            ).encode("utf-8")
+            body = json.dumps(type(self).pulse_jobs_payload).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -255,7 +278,11 @@ def test_lp_rollout_check_script_covers_ui_api_and_pulse() -> None:
     assert "/lp" in script
     assert "/api/v1/hedgers/instances" in script
     assert "/api/v1/hedgers/eth_plume_lp" in script
+    assert "eth_plume_lp_band2" in script
     assert "/api/pulse/jobs" in script
+    assert "lp-api" in script
+    assert "service-eth-plume-lp-hedger" in script
+    assert "service-eth-plume-lp-hedger-band2" in script
 
 
 def test_lp_rollout_check_accepts_real_pulse_jobs_payload_shape() -> None:
@@ -270,6 +297,40 @@ def test_lp_rollout_check_accepts_real_pulse_jobs_payload_shape() -> None:
         server.server_close()
 
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_lp_rollout_check_fails_when_band2_pulse_job_is_missing() -> None:
+    original_jobs = _RolloutHandler.pulse_jobs_payload
+    _RolloutHandler.pulse_jobs_payload = {
+        "jobs": [
+            {"id": "lp-api", "status": "active"},
+            {"id": "service-eth-plume-lp-hedger", "status": "active"},
+        ],
+        "shell_links": [],
+        "total": 2,
+        "active": 2,
+        "failed": 0,
+    }
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RolloutHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _run_rollout_check(f"http://127.0.0.1:{server.server_port}")
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+        _RolloutHandler.pulse_jobs_payload = original_jobs
+
+    assert result.returncode != 0
+
+
+def test_lp_docs_require_sudo_for_default_preflight_paths() -> None:
+    readme = _read("deploy/lp/README.md")
+    runbook = _read("docs/runbooks/lp-hedger-production-rollout.md")
+
+    assert "sudo python3 ops/scripts/lp_hedger_preflight.py --json" in readme
+    assert "sudo python3 ops/scripts/lp_hedger_preflight.py --json" in runbook
 
 
 def test_lp_prod_runbook_documents_go_no_go_and_rollback() -> None:

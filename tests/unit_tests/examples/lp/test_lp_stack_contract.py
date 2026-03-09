@@ -134,6 +134,7 @@ def test_lp_systemd_assets_use_chainsaw_job_ids() -> None:
     assert "/usr/bin/systemctl restart flux@service-hedger4.service" in sudoers
     assert "deploy/lp/systemd/common.env.example" in install_script
     assert "flux-lp.target" in install_script
+    assert "strategy_stack_render_merged_sudoers" in install_script
     assert "lp-api.env" in install_script
     assert "service-eth-plume-lp-hedger.env" in install_script
     assert "service-eth-plume-lp-hedger-band2.env" in install_script
@@ -171,3 +172,37 @@ def test_install_lp_systemd_writes_literal_lp_system_config_path_for_hedger_unit
 
     assert "--system-config /etc/flux/lp-system.ini" in script
     assert "${LP_SYSTEM_CONFIG:-/etc/flux/lp-system.ini}" not in script
+
+
+def test_shared_sudoers_renderer_merges_existing_flux_pulse_service_ids(tmp_path: Path) -> None:
+    shared_script = _repo_root() / "ops/scripts/deploy/shared_strategy_stack.sh"
+    existing = tmp_path / "flux-pulse.existing"
+    existing.write_text(
+        _read(_repo_root() / "deploy/tokenmm/systemd/flux-pulse.sudoers"),
+        encoding="utf-8",
+    )
+    rendered = tmp_path / "flux-pulse.rendered"
+
+    result = subprocess.run(  # noqa: S603
+        [
+            "/bin/bash",
+            "-lc",
+            (
+                f"source '{shared_script}'; "
+                f"strategy_stack_render_merged_sudoers ubuntu '{rendered}' '{existing}' "
+                "lp-api service-eth-plume-lp-hedger service-eth-plume-lp-hedger-band2; "
+                f"cat '{rendered}'"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    sudoers = result.stdout
+    assert "/usr/bin/systemctl restart flux@tokenmm-api.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@lp-api.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@service-eth-plume-lp-hedger.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@service-eth-plume-lp-hedger-band2.service" in sudoers
+    assert sudoers.count("flux@tokenmm-api.service") == 4
+    assert sudoers.count("flux@lp-api.service") == 4
