@@ -110,6 +110,7 @@ main() {
   render_band2_env
   enable_stack
   echo "[lp-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
+  echo "[lp-systemd] restart flux@tokenmm-api.service after updating /etc/flux/common.env so LP_API_BACKEND_URL is reloaded before starting flux-lp.target"
 }
 
 main "$@"

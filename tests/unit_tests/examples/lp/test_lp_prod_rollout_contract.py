@@ -124,3 +124,18 @@ def test_lp_preflight_accepts_band1_band2_config_contract(tmp_path: Path) -> Non
 
     assert result["ok"] is True
     assert result["errors"] == []
+
+
+def test_lp_systemd_contract_documents_shared_host_env_requirements() -> None:
+    text = _read("deploy/lp/systemd/common.env.example")
+
+    assert "LP_API_BACKEND_URL=http://127.0.0.1:5025" in text
+    assert "LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini" in text
+
+
+def test_lp_readme_documents_shared_host_restart_order() -> None:
+    text = _read("deploy/lp/README.md")
+
+    assert "/etc/flux/common.env" in text
+    assert "flux@tokenmm-api.service" in text
+    assert "flux-lp.target" in text

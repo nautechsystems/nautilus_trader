@@ -39,8 +39,11 @@ sudo ops/scripts/deploy/install_lp_systemd.sh
 sudoedit /etc/flux/common.env
 sudoedit /etc/flux/lp-system.ini
 sudo systemctl daemon-reload
+sudo systemctl restart flux@tokenmm-api.service
 sudo systemctl start flux-lp.target
 ```
+
+Restart `flux@tokenmm-api.service` after updating `/etc/flux/common.env` so `LP_API_BACKEND_URL` is reloaded before operators expect `/lp` and `/api/v1/hedgers/*` to proxy correctly.
 
 Installer behavior:
 

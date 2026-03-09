@@ -138,3 +138,14 @@ def test_lp_readme_documents_hidden_backend_and_disabled_configs() -> None:
     assert "/api/v1/hedgers/*" in readme
     assert ".ini.disabled" in readme
     assert "Band1 and Band2" in readme
+
+
+def test_install_lp_systemd_references_band1_band2_only_and_shared_host_restart_order() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/install_lp_systemd.sh")
+
+    assert "lp-api.env" in script
+    assert "service-eth-plume-lp-hedger.env" in script
+    assert "service-eth-plume-lp-hedger-band2.env" in script
+    assert "service-hedger3" not in script
+    assert "flux@tokenmm-api.service" in script
+    assert "LP_API_BACKEND_URL" in script
