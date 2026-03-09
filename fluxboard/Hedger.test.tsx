@@ -170,7 +170,6 @@ describe('Hedger layout', () => {
       { id: 'eth_plume_lp_band2', label: 'ETH/PLUME LP Band2' },
       { id: 'hype_usdt_lp', label: 'HYPE/USDT LP Hedger' },
       { id: 'plume_weth_lp', label: 'PLUME/WETH LP Hedger' },
-      { id: 'third_lp', label: 'Third LP Hedger' },
     ]);
     mockApi.getHedgerStatusById.mockResolvedValue(buildStatus());
   });
@@ -205,14 +204,16 @@ describe('Hedger layout', () => {
     expect(pageTitle).toBeInTheDocument();
   });
 
-  it('renders hedger selector with all instances', async () => {
+  it('renders hedger selector with the public lp instances only', async () => {
     render(<Hedger />);
     const selector = await screen.findByLabelText(/Hedger/i);
     const options = (selector as HTMLSelectElement).querySelectorAll('option');
-    expect(options.length).toBeGreaterThanOrEqual(5);
-    expect(Array.from(options).map(o => o.value)).toEqual(
-      expect.arrayContaining(['eth_plume_lp', 'eth_plume_lp_band2', 'hype_usdt_lp', 'plume_weth_lp', 'third_lp'])
-    );
+    expect(Array.from(options).map(o => o.value)).toEqual([
+      'eth_plume_lp',
+      'eth_plume_lp_band2',
+      'hype_usdt_lp',
+      'plume_weth_lp',
+    ]);
   });
 
   it('calls getHedgerStatusById when a different hedger is selected', async () => {
@@ -228,12 +229,65 @@ describe('Hedger layout', () => {
 
   it('enables config edit for both eth and non-eth hedgers', async () => {
     const user = userEvent.setup();
+    mockApi.getHedgerStatusById.mockImplementation(async (hedgerId: string) =>
+      hedgerId === 'hype_usdt_lp'
+        ? buildStatus({
+            id: 'hype_usdt_lp',
+            job_status: 'stopped',
+            hedger_enabled: false,
+            staged: true,
+            config_ready: false,
+            config_readiness_errors: ['Pool address must be set to a non-zero value.'],
+            config_summary: {
+              label: 'HYPE/USDT LP Hedger',
+              token0_symbol: 'HYPE',
+              token1_symbol: 'USDT',
+            },
+          })
+        : buildStatus()
+    );
     render(<Hedger />);
     const editButton = await screen.findByRole('button', { name: /Edit Config/i });
     expect(editButton).not.toBeDisabled();
     const selector = await screen.findByLabelText(/Hedger/i);
     await user.selectOptions(selector, 'hype_usdt_lp');
     expect(editButton).not.toBeDisabled();
+  });
+
+  it('shows staged readiness errors and disables restart and enable controls for not-ready generic hedgers', async () => {
+    const user = userEvent.setup();
+    mockApi.getHedgerStatusById.mockImplementation(async (hedgerId: string) =>
+      hedgerId === 'hype_usdt_lp'
+        ? buildStatus({
+            id: 'hype_usdt_lp',
+            job_status: 'stopped',
+            hedger_enabled: false,
+            staged: true,
+            config_ready: false,
+            config_readiness_errors: [
+              'Pool address must be set to a non-zero value.',
+              'Bybit API key source is missing.',
+            ],
+            config_summary: {
+              label: 'HYPE/USDT LP Hedger',
+              token0_symbol: 'HYPE',
+              token1_symbol: 'USDT',
+            },
+          })
+        : buildStatus()
+    );
+
+    render(<Hedger />);
+
+    const selector = await screen.findByLabelText(/Hedger/i);
+    await user.selectOptions(selector, 'hype_usdt_lp');
+
+    expect(await screen.findByText(/Staged config incomplete/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pool address must be set to a non-zero value\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Bybit API key source is missing\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Edit Config/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Restart$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Enable Hedger/i })).toBeDisabled();
   });
 
   it('documents the intentional monorepo lp deltas from Chainsaw', () => {

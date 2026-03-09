@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { api } from './api';
 import type {
   HedgerGeometry,
+  HedgerInstanceMeta,
   HedgerSnapshot,
   HedgerStatus,
   HedgerThresholdOverrides,
@@ -180,9 +181,7 @@ const normalizeHedgerConfig = (config: HedgerConfig): HedgerConfig => ({
 
 export default function Hedger() {
   const [selectedHedgerId, setSelectedHedgerId] = useState<string>('eth_plume_lp');
-  const [hedgerInstances, setHedgerInstances] = useState<
-    { id: string; label?: string | null; token0_symbol?: string | null; token1_symbol?: string | null; api_key_hint?: string | null }[]
-  >([]);
+  const [hedgerInstances, setHedgerInstances] = useState<HedgerInstanceMeta[]>([]);
   const [status, setStatus] = useState<HedgerStatus | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<HedgerSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -280,6 +279,14 @@ export default function Hedger() {
   );
   const hedgerEnabled = status?.hedger_enabled ?? snapshot?.hedger_enabled ?? false;
   const configSummary = (status?.config_summary ?? {}) as Record<string, string | number | null>;
+  const isStaged = Boolean(status?.staged ?? instanceMeta?.staged);
+  const configReady = status?.config_ready ?? instanceMeta?.config_ready ?? true;
+  const readinessErrors = (
+    status?.config_readiness_errors ??
+    instanceMeta?.config_readiness_errors ??
+    []
+  ).filter((error): error is string => Boolean(error));
+  const stageControlsBlocked = hedgerToggleBusy || (isStaged && !configReady);
   const hedgerLabel =
     (configSummary.label as string | undefined) ||
     (instanceMeta?.label as string | undefined) ||
@@ -297,6 +304,7 @@ export default function Hedger() {
     (instanceMeta?.token1_symbol as string | undefined) ||
     (usesLegacyPlumePerEthDisplay ? 'PLUME' : 'Token1');
   const hedgerSubtitle = `${symbol0}/${symbol1} LP hedge bot – manages exposure via perps.`;
+  const configSubmitLabel = isStaged ? 'Save Config' : 'Save & Restart';
   const perpSymbol0 =
     (configSummary.perp_symbol_token0 as string | null | undefined) ??
     (snapshot?.perp_symbol_token0 as string | null | undefined) ??
@@ -600,7 +608,7 @@ export default function Hedger() {
   }, [hedgerLabel, loadStatus, selectedHedgerId]);
 
   const toggleHedgerEnabled = useCallback(async () => {
-    if (hedgerToggleBusy) return;
+    if (hedgerToggleBusy || (isStaged && !configReady)) return;
     setHedgerToggleBusy(true);
     try {
       const nextState = await api.setHedgerEnabledById(selectedHedgerId, !hedgerEnabled);
@@ -612,10 +620,10 @@ export default function Hedger() {
     } finally {
       setHedgerToggleBusy(false);
     }
-  }, [hedgerLabel, hedgerToggleBusy, hedgerEnabled, loadStatus, selectedHedgerId]);
+  }, [configReady, hedgerLabel, hedgerToggleBusy, hedgerEnabled, isStaged, loadStatus, selectedHedgerId]);
 
   const restartHedger = useCallback(async () => {
-    if (hedgerToggleBusy) return;
+    if (hedgerToggleBusy || (isStaged && !configReady)) return;
     setHedgerToggleBusy(true);
     try {
       await api.setHedgerJobStateById(selectedHedgerId, 'restart');
@@ -627,7 +635,7 @@ export default function Hedger() {
     } finally {
       setHedgerToggleBusy(false);
     }
-  }, [hedgerLabel, hedgerToggleBusy, loadStatus, selectedHedgerId]);
+  }, [configReady, hedgerLabel, hedgerToggleBusy, isStaged, loadStatus, selectedHedgerId]);
 
   const clearRecentHedges = useCallback(async () => {
     if (eventsClearing) return;
@@ -693,6 +701,23 @@ export default function Hedger() {
                   <p className="text-xs" style={{ color: colors.text.muted }}>
                     {hedgerSubtitle}
                   </p>
+                  {isStaged ? (
+                    <div className="mt-2 flex flex-col gap-1">
+                      <p
+                        className="text-[11px] font-medium"
+                        style={{ color: configReady ? colors.text.secondary : colors.semantic.danger.DEFAULT }}
+                      >
+                        {configReady ? 'Staged hedger ready for operator start.' : 'Staged config incomplete'}
+                      </p>
+                      {!configReady && readinessErrors.length > 0 ? (
+                        <ul className="flex flex-col gap-1 text-[11px]" style={{ color: colors.text.muted }}>
+                          {readinessErrors.map(error => (
+                            <li key={error}>{error}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {apiKeyHint ? (
                     <p className="text-[11px]" style={{ color: colors.text.muted }}>
                       Bybit key: {apiKeyHint}
@@ -725,6 +750,14 @@ export default function Hedger() {
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2 text-right">
                 {isDryRun && <StatusPill status="warning" label="Dry Run" size="xs" tone="subtle" />}
+                {isStaged && (
+                  <StatusPill
+                    status={configReady ? 'muted' : 'warning'}
+                    label={configReady ? 'Staged' : 'Config Incomplete'}
+                    size="xs"
+                    tone="subtle"
+                  />
+                )}
                 <StatusPill
                   status={isRunning ? 'success' : 'muted'}
                   label={isRunning ? 'Running' : 'Stopped'}
@@ -737,13 +770,13 @@ export default function Hedger() {
                   size="xs"
                   tone="subtle"
                 />
-                <Button size="xs" variant="secondary" disabled={hedgerToggleBusy} onClick={restartHedger}>
+                <Button size="xs" variant="secondary" disabled={stageControlsBlocked} onClick={restartHedger}>
                   Restart
                 </Button>
                 <Button
                   size="xs"
                   variant={hedgerEnabled ? 'destructive' : 'success'}
-                  disabled={hedgerToggleBusy}
+                  disabled={stageControlsBlocked}
                   onClick={toggleHedgerEnabled}
                 >
                   {hedgerEnabled ? 'Disable Hedger' : 'Enable Hedger'}
@@ -1417,7 +1450,7 @@ export default function Hedger() {
                   },
                 };
                 await api.patchHedgerConfig(selectedHedgerId, patchPayload);
-                toast.success('Config saved & hedger restart requested');
+                toast.success(isStaged ? 'Config saved' : 'Config saved & hedger restart requested');
                 setConfigEditorOpen(false);
                 await loadStatus();
               } catch (error) {
@@ -1691,7 +1724,7 @@ export default function Hedger() {
                 Cancel
               </Button>
               <Button type="submit" variant="success" disabled={configSaving}>
-                Save & Restart
+                {configSubmitLabel}
               </Button>
             </DialogFooter>
           </form>
