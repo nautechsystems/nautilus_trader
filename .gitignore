@@ -87,20 +87,19 @@ PERF.JSON
 output.json
 
 # AI assistants and tools
+.worktrees/
 .cursorignore
 .mcp.json
 .mcp.local.json
 mcp/*.json
-.claude/
-claude.config.json
 .cursor/
 .aider*
 .continue/
 
 AGENTS.md
-CLAUDE.md
 CODEX.md
 GEMINI.md
+!AGENTS.md
 
 # Nautilus specific
 .ipynb_checkpoints/
