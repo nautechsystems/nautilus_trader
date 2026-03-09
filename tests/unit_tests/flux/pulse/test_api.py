@@ -105,6 +105,23 @@ def test_extract_error_info_ignores_socketio_invalid_session_restart_noise() -> 
     }
 
 
+def test_extract_error_info_returns_last_seen_for_latest_matching_line() -> None:
+    logs_text = "\n".join(
+        [
+            "2026-03-06T19:20:48+00:00 host flux-tokenmm-api[237388]: INFO healthy",
+            "2026-03-06T19:20:49+00:00 host flux-tokenmm-api[237388]: ERROR first failure",
+            "2026-03-06T19:20:50+00:00 host flux-tokenmm-api[237388]: INFO retrying",
+            "2026-03-06T19:20:51+00:00 host flux-tokenmm-api[237388]: CRITICAL latest failure",
+        ],
+    )
+
+    assert _extract_error_info(logs_text) == {
+        "count": 2,
+        "last_seen": "2026-03-06T19:20:51+00:00",
+        "preview": "CRITICAL latest failure",
+    }
+
+
 def test_extract_active_since_reads_current_systemd_activation_timestamp() -> None:
     output = _status_output(state="active (running)", pid=1234, memory="45.2M")
 
@@ -151,9 +168,18 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
         if cmd[:3] == ["systemctl", "status", "flux@tokenmm-bridge"]:
             return FakeCompletedProcess(cmd, stdout=_status_output(state="failed", pid=None, memory=None))
         if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-api"]:
-            return FakeCompletedProcess(cmd, stdout="INFO healthy\nERROR something bad\n")
+            return FakeCompletedProcess(
+                cmd,
+                stdout=(
+                    "2026-03-06T19:20:48+00:00 host flux-tokenmm-api[237388]: INFO healthy\n"
+                    "2026-03-06T19:20:49+00:00 host flux-tokenmm-api[237388]: ERROR something bad\n"
+                ),
+            )
         if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-bridge"]:
-            return FakeCompletedProcess(cmd, stdout="INFO idle\n")
+            return FakeCompletedProcess(
+                cmd,
+                stdout="2026-03-06T19:20:48+00:00 host flux-tokenmm-bridge[237388]: INFO idle\n",
+            )
         raise AssertionError(f"unexpected command: {cmd}")
 
     control_plane = PulseControlPlane(
@@ -175,7 +201,7 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
                 "description": "TokenMM API",
                 "errors": {
                     "count": 1,
-                    "last_seen": None,
+                    "last_seen": "2026-03-06T19:20:49+00:00",
                     "preview": "ERROR something bad",
                 },
                 "group_key": "tokenmm",
@@ -291,7 +317,13 @@ def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path
             assert "--since" in cmd
             since_index = cmd.index("--since")
             assert cmd[since_index + 1] == "Fri 2026-03-06 10:00:00 UTC"
-            return FakeCompletedProcess(cmd, stdout="INFO healthy\n")
+            assert "-o" in cmd
+            format_index = cmd.index("-o")
+            assert cmd[format_index + 1] == "short-iso"
+            return FakeCompletedProcess(
+                cmd,
+                stdout="2026-03-06T19:20:48+00:00 host flux-tokenmm-api[237388]: INFO healthy\n",
+            )
         raise AssertionError(f"unexpected command: {cmd}")
 
     control_plane = PulseControlPlane(

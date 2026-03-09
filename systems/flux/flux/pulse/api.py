@@ -23,6 +23,9 @@ ERROR_MESSAGE_PATTERN = re.compile(
     r"\b(ERROR|CRITICAL|EXCEPTION|TRACEBACK|FAILED TO START|FAILED WITH RESULT)\b",
     re.IGNORECASE,
 )
+JOURNAL_SHORT_ISO_TIMESTAMP_PATTERN = re.compile(
+    r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))\s+",
+)
 BENIGN_LOG_PATTERNS = (
     re.compile(
         r"Invalid session\s+\S+\s+\(further occurrences of this error will be logged with level INFO\)",
@@ -139,16 +142,29 @@ def _extract_active_since(output: str, *, status: str) -> str | None:
 
 
 def _extract_error_info(logs_text: str) -> dict[str, Any]:
-    matches = [
-        line.strip()
-        for line in logs_text.splitlines()
-        if ERROR_MESSAGE_PATTERN.search(line)
-        and not any(pattern.search(line) for pattern in BENIGN_LOG_PATTERNS)
-    ]
-    preview = matches[-1] if matches else None
+    matches: list[tuple[str | None, str]] = []
+    for raw_line in logs_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        timestamp_match = JOURNAL_SHORT_ISO_TIMESTAMP_PATTERN.match(line)
+        timestamp = timestamp_match.group("timestamp") if timestamp_match else None
+        _, separator, message = line.partition(": ")
+        normalized_message = message.strip() if separator else line
+
+        if not ERROR_MESSAGE_PATTERN.search(normalized_message):
+            continue
+        if any(pattern.search(normalized_message) for pattern in BENIGN_LOG_PATTERNS):
+            continue
+
+        matches.append((timestamp, normalized_message))
+
+    preview = matches[-1][1] if matches else None
+    last_seen = matches[-1][0] if matches else None
     return {
         "count": len(matches),
-        "last_seen": None,
+        "last_seen": last_seen,
         "preview": preview,
     }
 
@@ -369,6 +385,8 @@ class PulseControlPlane:
             journal_cmd.extend(["--since", active_since])
         journal_cmd.extend(
             [
+                "-o",
+                "short-iso",
                 "-n",
                 "300",
                 "--no-pager",
