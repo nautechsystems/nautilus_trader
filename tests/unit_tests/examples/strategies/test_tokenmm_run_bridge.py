@@ -11,6 +11,7 @@ from flux.runners.tokenmm.run_bridge import _load_config
 from flux.runners.tokenmm.run_bridge import _parse_args
 from flux.runners.tokenmm.run_bridge import _resolve_strategy_ids
 from nautilus_trader.flux.events import TOPIC_EXECUTION_ALERT
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
 
 
 def test_resolve_strategy_ids_prefers_cli_strategy_ids() -> None:
@@ -109,3 +110,10 @@ def test_build_handlers_routes_execution_alert_topic_to_alert_handler() -> None:
 
     assert FULL_TO_SUFFIX_TOPICS[TOPIC_EXECUTION_ALERT] == "alert"
     assert handlers[TOPIC_EXECUTION_ALERT] is handlers["alert"]
+
+
+def test_build_handlers_routes_strategy_alert_topic_to_alert_handler() -> None:
+    handlers = _build_handlers()
+
+    assert FULL_TO_SUFFIX_TOPICS[TOPIC_ALERT] == "alert"
+    assert handlers[TOPIC_ALERT] is handlers["alert"]

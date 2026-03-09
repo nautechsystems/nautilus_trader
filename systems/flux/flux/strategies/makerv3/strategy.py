@@ -145,6 +145,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
         n_orders3: NonNegativeInt | None = None
         order_reject_alert_after_count: NonNegativeInt | None = None
         order_reject_alert_after_s: NonNegativeFloat | None = None
+        pending_cancel_grace_ms: NonNegativeInt | None = None
+        pending_cancel_block_after_ms: NonNegativeInt | None = None
+        quote_liveness_stall_after_ms: NonNegativeInt | None = None
+        quote_liveness_recover_after_ms: NonNegativeInt | None = None
         quote_fail_critical_after_count: NonNegativeInt | None = None
         quote_fail_critical_after_s: NonNegativeFloat | None = None
         spot_cash_borrowing_policy: SpotCashBorrowingPolicy = "none"
@@ -205,12 +209,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._instruments: dict[InstrumentId, Instrument] = {}
             self._managed_client_order_ids: set[str] = set()
             self._pending_cancel_client_order_ids: set[str] = set()
+            self._pending_cancel_first_seen_ns_by_client_order_id: dict[str, int] = {}
             self._cancel_reject_retry_after_ns_by_client_order_id: dict[str, int] = {}
             self._order_rejections_ns_by_reason: dict[str, list[int]] = {}
             self._quote_failures_ns: list[int] = []
             self._quote_failure_circuit_open = False
             self._venue_protection_circuit_open = False
             self._last_stale_cancel_ns = 0
+            self._last_completed_quote_ns = 0
+            self._last_order_event_ns = 0
             self._last_state_name: str | None = None
             self._state_is_blocked = False
             self._startup_cleanup_pending = False
@@ -243,8 +250,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._order_rejections_ns_by_reason.clear()
             self._quote_failures_ns.clear()
             self._pending_cancel_client_order_ids.clear()
+            self._pending_cancel_first_seen_ns_by_client_order_id.clear()
             self._cancel_reject_retry_after_ns_by_client_order_id.clear()
             self._last_stale_cancel_ns = 0
+            self._last_completed_quote_ns = 0
+            self._last_order_event_ns = 0
             self._last_state_name = None
             self._state_is_blocked = False
             self._startup_cleanup_pending = False
@@ -402,6 +412,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
             self._set_managed_only_stop_safety(False)
             self._pending_cancel_client_order_ids.clear()
+            self._pending_cancel_first_seen_ns_by_client_order_id.clear()
             self._cancel_reject_retry_after_ns_by_client_order_id.clear()
             self._startup_cleanup_pending = False
             timer_names: set[str] = set()
@@ -685,11 +696,22 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _track_pending_cancel(
             self,
             client_order_id: ClientOrderId | str | None,
+            *,
+            now_ns: int | None = None,
         ) -> None:
             client_order_id_str = str(client_order_id or "")
             if not client_order_id_str:
                 return
             self._pending_cancel_client_order_ids.add(client_order_id_str)
+            if now_ns is None:
+                with suppress(Exception):
+                    now_ns = int(self.clock.timestamp_ns())
+            if now_ns is None or int(now_ns) <= 0:
+                return
+            self._pending_cancel_first_seen_ns_by_client_order_id.setdefault(
+                client_order_id_str,
+                int(now_ns),
+            )
 
         def _clear_pending_cancel(
             self,
@@ -699,9 +721,92 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if not client_order_id_str:
                 return
             self._pending_cancel_client_order_ids.discard(client_order_id_str)
+            self._pending_cancel_first_seen_ns_by_client_order_id.pop(client_order_id_str, None)
 
         def _has_pending_managed_cancels(self) -> bool:
             return bool(self._pending_cancel_client_order_ids)
+
+        def _pending_cancel_order(
+            self,
+            client_order_id: ClientOrderId | str | None,
+        ) -> Any | None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return None
+            cache = getattr(self, "_cache", None)
+            order_fn = getattr(cache, "order", None)
+            if not callable(order_fn):
+                return None
+            with suppress(Exception):
+                return order_fn(client_order_id_str)
+            return None
+
+        def _clear_orphaned_pending_cancels(self) -> tuple[str, ...]:
+            cleared: list[str] = []
+            for client_order_id in sorted(self._pending_cancel_client_order_ids):
+                if self._pending_cancel_order(client_order_id) is not None:
+                    continue
+                self._pending_cancel_client_order_ids.discard(client_order_id)
+                self._pending_cancel_first_seen_ns_by_client_order_id.pop(client_order_id, None)
+                cleared.append(client_order_id)
+            return tuple(cleared)
+
+        def _quote_progress_payload(self) -> dict[str, Any] | None:
+            payload: dict[str, Any] = {}
+            last_completed_quote_ns = int(getattr(self, "_last_completed_quote_ns", 0) or 0)
+            if last_completed_quote_ns > 0:
+                payload["last_completed_quote_ts_ms"] = last_completed_quote_ns // 1_000_000
+            last_order_event_ns = int(getattr(self, "_last_order_event_ns", 0) or 0)
+            if last_order_event_ns > 0:
+                payload["last_order_event_ts_ms"] = last_order_event_ns // 1_000_000
+            pending_cancel_count = len(self._pending_cancel_client_order_ids)
+            if pending_cancel_count > 0:
+                payload["pending_cancel_count"] = pending_cancel_count
+                current_state_ns = int(getattr(self, "_last_state_ns", 0) or 0)
+                oldest_pending_cancel_ns = min(
+                    (
+                        int(self._pending_cancel_first_seen_ns_by_client_order_id.get(client_order_id, 0) or 0)
+                        for client_order_id in self._pending_cancel_client_order_ids
+                    ),
+                    default=0,
+                )
+                if oldest_pending_cancel_ns > 0 and current_state_ns >= oldest_pending_cancel_ns:
+                    payload["oldest_pending_cancel_age_ms"] = (
+                        current_state_ns - oldest_pending_cancel_ns
+                    ) // 1_000_000
+            return payload or None
+
+        def _quote_blockers_payload(self, *, state: str | None = None) -> list[dict[str, Any]]:
+            pending_cancel_count = len(self._pending_cancel_client_order_ids)
+            if pending_cancel_count <= 0:
+                return []
+            state_name = str(state or getattr(self, "_last_state_name", None) or "").strip().lower()
+            reason_code = (
+                "pending_cancel_stuck"
+                if state_name == "blocked_pending_cancel"
+                else "pending_cancel_in_flight"
+            )
+            blocker: dict[str, Any] = {
+                "reason_code": reason_code,
+                "pending_cancel_count": pending_cancel_count,
+            }
+            quote_progress = self._quote_progress_payload() or {}
+            oldest_pending_cancel_age_ms = quote_progress.get("oldest_pending_cancel_age_ms")
+            if oldest_pending_cancel_age_ms is not None:
+                blocker["oldest_pending_cancel_age_ms"] = oldest_pending_cancel_age_ms
+            return [blocker]
+
+        def _record_order_event_progress(self, event: Any) -> None:
+            now_ns = getattr(event, "ts_event", None)
+            if now_ns is None:
+                with suppress(Exception):
+                    now_ns = int(self.clock.timestamp_ns())
+            if now_ns is None:
+                return
+            self._last_order_event_ns = max(
+                int(getattr(self, "_last_order_event_ns", 0) or 0),
+                int(now_ns),
+            )
 
         def _set_managed_only_stop_safety(self, enabled: bool) -> None:
             self.request_immediate_stop(enabled)
@@ -820,6 +925,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Handle order fill events and reconcile managed order tracking.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             self._clear_pending_cancel(getattr(event, "client_order_id", None))
@@ -870,6 +976,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Handle order rejection events and reconcile managed tracking.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             reason = _normalized_reject_reason(getattr(event, "reason", None))
@@ -911,15 +1018,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Track managed orders with cancel requests in flight.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
-            self._track_pending_cancel(getattr(event, "client_order_id", None))
+            self._track_pending_cancel(
+                getattr(event, "client_order_id", None),
+                now_ns=getattr(event, "ts_event", None),
+            )
             self._publish_current_state_snapshot()
 
         def on_order_cancel_rejected(self, event: Any) -> None:
             """
             Clear pending-cancel state and hard-stop on venue protection reasons.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             client_order_id = getattr(event, "client_order_id", None)
             self._clear_pending_cancel(client_order_id)
@@ -963,6 +1075,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Handle order cancel events and reconcile managed tracking.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             self._clear_pending_cancel(getattr(event, "client_order_id", None))
@@ -976,6 +1089,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Handle order expiry events and reconcile managed tracking.
             """
+            self._record_order_event_progress(event)
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             self._clear_pending_cancel(getattr(event, "client_order_id", None))
@@ -1661,13 +1775,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
             reason_code: str,
             quote_cycle_id: str,
             payload: dict[str, Any] | None = None,
+            **payload_fields: Any,
         ) -> None:
+            event_payload = dict(payload or {})
+            event_payload.update(payload_fields)
             envelope = build_quote_cycle_envelope(
                 run_id=str(getattr(self, "_run_id", self._strategy_identity)),
                 quote_cycle_id=quote_cycle_id,
                 quote_cycle_event=quote_cycle_event,
                 reason_code=reason_code,
-                payload=payload,
+                payload=event_payload,
             )
             self._publish_event(
                 QUOTE_CYCLE_EVENT_NAME,
@@ -1769,7 +1886,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 ):
                     continue
                 self.cancel_order(order)
-                self._track_pending_cancel(getattr(order, "client_order_id", None))
+                self._track_pending_cancel(getattr(order, "client_order_id", None), now_ns=now_ns)
                 cancel_count += 1
 
             return cancel_count
@@ -1844,7 +1961,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _publish_current_state_snapshot(self) -> None:
             current_state = getattr(self, "_last_state_name", None) or "running"
-            self._publish_state(current_state)
+            self._publish_state(current_state, refresh_pricing_debug=False)
 
         def _cancel_managed_quotes(
             self,
@@ -1857,6 +1974,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if managed_orders is None:
                 managed_orders = self._managed_orders()
             requested_cancel_ids: set[str] = set()
+            cancel_request_ns = int(self.clock.timestamp_ns())
 
             def _cancel_order(order: Order) -> None:
                 self.cancel_order(order)
@@ -1864,7 +1982,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 if not client_order_id:
                     return
                 requested_cancel_ids.add(client_order_id)
-                self._pending_cancel_client_order_ids.add(client_order_id)
+                self._track_pending_cancel(client_order_id, now_ns=cancel_request_ns)
 
             result = managed_orders_mod.cancel_managed_quotes(
                 reason=reason,
@@ -1975,12 +2093,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             managed_orders_count: int | None = None,
             managed_orders: list[Order] | None = None,
+            refresh_pricing_debug: bool = True,
         ) -> None:
             publisher_mod.publish_state(
                 self,
                 state,
                 managed_orders_count=managed_orders_count,
                 managed_orders=managed_orders,
+                refresh_pricing_debug=refresh_pricing_debug,
             )
 
         def _publish_event(self, name: str, *, ts_ns: int | None = None, **payload: Any) -> None:

@@ -953,12 +953,26 @@ def build_signals_payload_impl(
     balance_readiness = (
         dict(state_balance_readiness) if isinstance(state_balance_readiness, Mapping) else None
     )
+    state_quote_blockers = state.get("quote_blockers")
+    quote_blockers = (
+        [dict(row) for row in state_quote_blockers if isinstance(row, Mapping)]
+        if isinstance(state_quote_blockers, list)
+        else []
+    )
 
     state_name = decode_text(state.get("state")).strip().lower()
     state_blocked = state_name.startswith("blocked_")
     tradeable = bot_on and not state_blocked
     near_tradeable = False
     blocked = (not bot_on) or state_blocked
+    blocking_quote_blockers = [
+        row
+        for row in quote_blockers
+        if decode_text(row.get("reason_code")).strip().lower() not in {"", "pending_cancel_in_flight"}
+    ]
+    if blocking_quote_blockers:
+        tradeable = False
+        blocked = True
 
     md_health: dict[str, Any] = {
         "legs_count": len(legs),

@@ -291,6 +291,45 @@ def test_on_order_pending_cancel_republishes_current_state_with_cache_truth(
     }
 
 
+def test_on_order_pending_cancel_state_exports_quote_blocker_metadata(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._last_state_name = "running"
+    strategy._runtime_params["n_orders1"] = 5
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy.on_order_pending_cancel(SimpleNamespace(client_order_id="A", ts_event=1_000_000_000))
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_progress"]["pending_cancel_count"] == 1
+    assert state_payload["quote_progress"]["last_order_event_ts_ms"] == 1_000
+    assert state_payload["quote_progress"]["oldest_pending_cancel_age_ms"] == 0
+    assert state_payload["quote_blockers"][0]["reason_code"] == "pending_cancel_in_flight"
+    assert state_payload["quote_blockers"][0]["oldest_pending_cancel_age_ms"] == 0
+
+
+def test_publish_state_exports_last_completed_quote_progress(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._last_completed_quote_ns = 1_234_000_000
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_progress"]["last_completed_quote_ts_ms"] == 1_234
+
+
 def test_canonical_strategy_exports_match_root_surface() -> None:
     assert MakerV3StrategyFromRoot is MakerV3Strategy
     assert MakerV3StrategyConfigFromRoot is MakerV3StrategyConfig

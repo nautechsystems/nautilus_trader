@@ -13,12 +13,14 @@ from flux.strategies.makerv3 import publisher as publisher_mod
 from flux.strategies.makerv3.constants import ALERT_COOLDOWN_BLOCKED_MS
 from flux.strategies.makerv3.constants import ALERT_KEY_MARKET_DATA_BLOCKED
 from flux.strategies.makerv3.constants import ALERT_KEY_PORTFOLIO_INVENTORY_BLOCKED
+from flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_LIVENESS_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
 from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PENDING_CANCEL
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
@@ -538,6 +540,7 @@ def refresh_quotes(  # noqa: C901
     if not desired_buys and not desired_sells:
         strategy._cancel_managed_quotes("no_targets", managed_orders=active_orders)
         strategy._last_requote_ns = now_ns
+        strategy._last_completed_quote_ns = now_ns
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
@@ -579,20 +582,102 @@ def refresh_quotes(  # noqa: C901
         max_age_ms=max_age_ms,
     )
     if strategy._has_pending_managed_cancels():
+        from_state = getattr(strategy, "_last_state_name", None)
+        pending_cancel_first_seen_ns = getattr(
+            strategy,
+            "_pending_cancel_first_seen_ns_by_client_order_id",
+            {},
+        )
+        oldest_pending_cancel_ns = min(
+            (
+                int(pending_cancel_first_seen_ns.get(client_order_id, 0) or 0)
+                for client_order_id in getattr(strategy, "_pending_cancel_client_order_ids", ())
+            ),
+            default=0,
+        )
+        oldest_pending_cancel_age_ms = (
+            max(0, (now_ns - oldest_pending_cancel_ns) // 1_000_000)
+            if oldest_pending_cancel_ns > 0 and now_ns >= oldest_pending_cancel_ns
+            else None
+        )
+        clear_orphans = getattr(strategy, "_clear_orphaned_pending_cancels", None)
+        cleared_orphans: tuple[str, ...] = ()
+        if callable(clear_orphans):
+            cleared_orphans = tuple(clear_orphans())
+        if cleared_orphans and not strategy._has_pending_managed_cancels():
+            strategy._last_requote_ns = now_ns
+            strategy._last_completed_quote_ns = now_ns
+            strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
+            strategy._publish_quote_cycle_event(
+                now_ns=now_ns,
+                quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
+                reason_code=REASON_COMPLETED_NO_ACTIONS,
+                quote_cycle_id=quote_cycle_id,
+                payload={
+                    "cancel_count": cancels,
+                    "place_count": 0,
+                    "cleared_orphaned_pending_cancels": list(cleared_orphans),
+                },
+            )
+            return
+        pending_cancel_block_after_ms = max(
+            0,
+            int(runtime_params.get("pending_cancel_block_after_ms", 0) or 0),
+        )
+        if (
+            oldest_pending_cancel_age_ms is not None
+            and pending_cancel_block_after_ms > 0
+            and oldest_pending_cancel_age_ms < pending_cancel_block_after_ms
+        ):
+            strategy._last_requote_ns = now_ns
+            strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
+            strategy._publish_quote_cycle_event(
+                now_ns=now_ns,
+                quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
+                reason_code=REASON_SKIPPED_PENDING_CANCELS,
+                quote_cycle_id=quote_cycle_id,
+                payload={
+                    "cancel_count": cancels,
+                    "pending_cancels": len(
+                        getattr(strategy, "_pending_cancel_client_order_ids", ()),
+                    ),
+                    "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
+                },
+                oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
+            )
+            return
         strategy._last_requote_ns = now_ns
-        strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
+        strategy._publish_state("blocked_pending_cancel")
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
-            quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
-            reason_code=REASON_SKIPPED_PENDING_CANCELS,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
+            reason_code=REASON_BLOCKED_PENDING_CANCEL,
             quote_cycle_id=quote_cycle_id,
             payload={
                 "cancel_count": cancels,
                 "pending_cancels": len(getattr(strategy, "_pending_cancel_client_order_ids", ())),
+                "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
                 "bid_levels": len(desired_buys),
                 "ask_levels": len(desired_sells),
             },
+            oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
         )
+        if from_state != "blocked_pending_cancel":
+            strategy._publish_actionable_alert(
+                alert_key=ALERT_KEY_QUOTE_LIVENESS_BLOCKED,
+                message=(
+                    "Quoting blocked (pending cancel stuck) "
+                    f"strategy_id={strategy._external_strategy_id}"
+                ),
+                level="warning",
+                reason_code=REASON_BLOCKED_PENDING_CANCEL,
+                cooldown_ms=ALERT_COOLDOWN_BLOCKED_MS,
+                transition=f"{from_state}->blocked_pending_cancel",
+                now_ns=now_ns,
+                pending_cancel_count=len(
+                    getattr(strategy, "_pending_cancel_client_order_ids", ()),
+                ),
+            )
         return
     places += strategy._place_missing_levels(
         side=OrderSide.BUY,
@@ -610,6 +695,7 @@ def refresh_quotes(  # noqa: C901
     )
 
     strategy._last_requote_ns = now_ns
+    strategy._last_completed_quote_ns = now_ns
     cycle_reason = REASON_COMPLETED_REBALANCED if cancels or places else REASON_COMPLETED_NO_ACTIONS
     strategy._publish_quote_cycle_event(
         now_ns=now_ns,

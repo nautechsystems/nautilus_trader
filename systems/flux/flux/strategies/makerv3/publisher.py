@@ -636,6 +636,7 @@ def publish_state(
     *,
     managed_orders_count: int | None = None,
     managed_orders: Sequence[Any] | None = None,
+    refresh_pricing_debug: bool = True,
 ) -> None:
     """
     Publish a state snapshot and emit blocked/unblocked transition events.
@@ -679,10 +680,24 @@ def publish_state(
     )
     if maker_quote_status is not None:
         payload["maker_quote_status"] = maker_quote_status
+    quote_progress_fn = getattr(strategy, "_quote_progress_payload", None)
+    if callable(quote_progress_fn):
+        quote_progress = quote_progress_fn()
+        if quote_progress:
+            payload["quote_progress"] = quote_progress
+    quote_blockers_fn = getattr(strategy, "_quote_blockers_payload", None)
+    if callable(quote_blockers_fn):
+        quote_blockers = quote_blockers_fn(state=state)
+        if quote_blockers:
+            payload["quote_blockers"] = quote_blockers
     maker_role_map = _maker_role_map_payload(strategy)
     if maker_role_map:
         payload["maker_role_map"] = maker_role_map
-    pricing_debug = _pricing_debug_payload(strategy)
+    pricing_debug = (
+        _pricing_debug_payload(strategy)
+        if refresh_pricing_debug
+        else getattr(strategy, "_last_pricing_debug", None)
+    )
     if pricing_debug:
         strategy._last_pricing_debug = pricing_debug
         payload["pricing_debug"] = pricing_debug

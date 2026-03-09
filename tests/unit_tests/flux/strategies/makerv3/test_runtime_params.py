@@ -110,6 +110,25 @@ def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config()
     assert runtime_params["order_reject_alert_after_s"] == Decimal(12)
 
 
+def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        pending_cancel_grace_ms=250,
+        pending_cancel_block_after_ms=1_500,
+        quote_liveness_stall_after_ms=3_000,
+        quote_liveness_recover_after_ms=900,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["pending_cancel_grace_ms"] == 250
+    assert runtime_params["pending_cancel_block_after_ms"] == 1_500
+    assert runtime_params["quote_liveness_stall_after_ms"] == 3_000
+    assert runtime_params["quote_liveness_recover_after_ms"] == 900
+
+
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
     strategy = strategy_factory()
 

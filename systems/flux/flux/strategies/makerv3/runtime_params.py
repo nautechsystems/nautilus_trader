@@ -68,6 +68,10 @@ _QUOTE_RUNTIME_INT_NAMES: tuple[str, ...] = (
     "n_orders1",
     "n_orders2",
     "n_orders3",
+    "pending_cancel_grace_ms",
+    "pending_cancel_block_after_ms",
+    "quote_liveness_stall_after_ms",
+    "quote_liveness_recover_after_ms",
 )
 _QUOTE_RUNTIME_DECIMAL_NAMES: tuple[str, ...] = (
     "des_qty_global",
