@@ -237,7 +237,21 @@ describe('useTradesStore', () => {
     expect(staleStats.applied).toBe(false);
   });
 
-  it('keeps resync active for rejected/no-op events and clears on accepted apply', () => {
+  it('does not clear global resync after only trades acknowledges the current epoch', () => {
+    const currentResyncId = useResyncStore.getState().bumpResync('two-consumer-contract');
+    expect(currentResyncId).toBe(1);
+
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+
+    const state = useResyncStore.getState();
+    expect(state.appliedBy).toMatchObject({ trades: currentResyncId });
+    expect(state.isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('order-view', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('keeps resync active for rejected/no-op events and after accepted trades apply until order view acknowledges', () => {
     const store = useTradesStore.getState() as any;
     store.setSnapshot(
       [{ op: 'upsert', row_id: 'base', seq: 10, version: 2 } as any],
@@ -283,6 +297,31 @@ describe('useTradesStore', () => {
     }
     expect(accepted.accepted).toBe(true);
     expect(accepted.applied).toBe(true);
+    expect(useResyncStore.getState().isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('order-view', nextResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('does not clear the current resync when trades replays an older epoch acknowledgement', () => {
+    const firstEpoch = useResyncStore.getState().bumpResync('epoch-1');
+    expect(firstEpoch).toBe(1);
+    useResyncStore.getState().markResyncApplied('trades', firstEpoch);
+    useResyncStore.getState().markResyncApplied('order-view', firstEpoch);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+
+    const secondEpoch = useResyncStore.getState().bumpResync('epoch-2');
+    expect(secondEpoch).toBe(2);
+
+    useResyncStore.getState().markResyncApplied('order-view', secondEpoch);
+    useResyncStore.getState().markResyncApplied('trades', firstEpoch);
+
+    const state = useResyncStore.getState();
+    expect(state.appliedBy.trades).toBe(firstEpoch);
+    expect(state.appliedBy['order-view']).toBe(secondEpoch);
+    expect(state.isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('trades', secondEpoch);
     expect(useResyncStore.getState().isResyncing).toBe(false);
   });
 });

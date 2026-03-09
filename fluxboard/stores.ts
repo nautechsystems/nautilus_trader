@@ -407,6 +407,18 @@ type ResyncStore = {
   resetResyncState: () => void;
 };
 
+export const RESYNC_ACK_CONSUMERS = ['trades', 'order-view'] as const;
+
+const hasCurrentResyncAckFromAllConsumers = (
+  resyncId: number,
+  appliedBy: Record<string, number>,
+): boolean => {
+  if (resyncId <= 0) {
+    return false;
+  }
+  return RESYNC_ACK_CONSUMERS.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
+};
+
 export const useResyncStore = create<ResyncStore>((set, get) => ({
   resyncId: 0,
   isResyncing: false,
@@ -439,12 +451,11 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       }
 
       const appliedBy = { ...state.appliedBy, [normalizedConsumer]: normalizedResyncId };
-      const hasAppliedCurrent = normalizedResyncId >= state.resyncId;
+      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(state.resyncId, appliedBy);
 
-      // TODO(PR1767): tighten this clear rule once we formalize multi-consumer resync completion policy.
       return {
         appliedBy,
-        isResyncing: hasAppliedCurrent ? false : state.isResyncing,
+        isResyncing: isResyncComplete ? false : state.isResyncing,
       };
     }),
 

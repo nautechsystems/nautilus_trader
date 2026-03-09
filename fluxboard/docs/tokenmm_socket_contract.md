@@ -133,6 +133,17 @@ For `profile=tokenmm`, socket risk-facing fields must align with the shared port
    - `seq > last_seq + 1`: gap detected, trigger REST resync
 6. If server restarts and sequence appears reset, treat as a gap and run REST resync.
 
+## Fluxboard Resync Completion Ownership
+
+Fluxboard's global resync completion contract is owned by [`stores.ts`](../stores.ts).
+
+1. The authoritative acknowledgement consumers are `trades` and `order-view`.
+2. `bumpGlobalResync` opens a new resync epoch and `markGlobalResyncApplied` records per-consumer acknowledgement for that epoch.
+3. `isResyncing` must remain `true` until both `trades` and `order-view` have acknowledged the current epoch.
+4. One consumer acknowledging the current epoch must not clear the resync by itself.
+5. A stale acknowledgement from an older epoch may remain recorded for that consumer, but it must not clear a newer active epoch.
+6. Trades and Order View own only their local apply decisions; they do not own the global clear rule.
+
 ## Event: `market_update`
 
 Purpose:
