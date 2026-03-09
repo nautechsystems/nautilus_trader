@@ -20,6 +20,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 ## Bite-Sized Task Granularity
 
 **Each step is one action (2-5 minutes):**
+
 - "Write the failing test" - step
 - "Run it to make sure it fails" - step
 - "Implement the minimal code to make the test pass" - step
@@ -59,6 +60,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 Every plan MUST include a `## Progress Tracker` section directly before the first task.
 
 Use this exact status vocabulary:
+
 - `not_started` - task has not begun
 - `in_progress` - implementation is underway
 - `in_review_spec` - waiting on or undergoing spec compliance review
@@ -67,6 +69,7 @@ Use this exact status vocabulary:
 - `completed` - task finished and verified
 
 Tracker requirements:
+
 - Include every task in the table, in task order
 - `Owner` should name the current responsible party (`main`, `implementer`, `spec-reviewer`, `code-quality-reviewer`, or specific agent handle if available)
 - `Depends On` must list prerequisite task names or `none`
@@ -79,6 +82,7 @@ Tracker requirements:
 - If execution will use `executing-plans`, still include review-capable statuses so the tracker stays portable between execution modes
 
 Update expectations:
+
 - When implementation starts, set `Commit / Diff` to `none` until the first task commit exists
 - After each task commit, update `Commit / Diff` immediately
 - Before review, pin the exact diff the reviewer should inspect in `Commit / Diff`
@@ -143,6 +147,7 @@ After each task section, add a short tracker reminder:
 ```
 
 ## Remember
+
 - Exact file paths always
 - Complete code in plan (not "add validation")
 - Exact commands with expected output
@@ -165,10 +170,12 @@ After saving the plan, offer execution choice:
 **Which approach?"**
 
 **If Subagent-Driven chosen:**
+
 - **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
 - Stay in this session
 - Fresh subagent lanes + review-driven execution
 
 **If Separate Session chosen:**
+
 - Guide them to open new session in worktree
 - **REQUIRED SUB-SKILL:** New session uses superpowers:executing-plans
