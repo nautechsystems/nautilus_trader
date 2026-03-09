@@ -3,6 +3,29 @@ import userEvent from "@testing-library/user-event";
 
 import App from "./App";
 
+function shellLinks(...surfaces: Array<"tokenmm" | "equities">) {
+  const suiteLabels = {
+    tokenmm: "TokenMM",
+    equities: "Equities",
+  } as const;
+  const entries = [
+    ["Dashboard", ""],
+    ["Signal", "signal"],
+    ["Params", "params"],
+    ["Balances", "balances"],
+    ["Trades", "trades"],
+    ["Alerts", "alerts"],
+  ] as const;
+
+  return surfaces.flatMap((surface) =>
+    entries.map(([label, suffix]) => ({
+      surface,
+      label: `${suiteLabels[surface]} ${label}`,
+      path: suffix ? `${surface}/${suffix}` : surface,
+    })),
+  );
+}
+
 const jobsPayload = {
   jobs: [
     {
@@ -34,6 +57,7 @@ const jobsPayload = {
       errors: { count: 1, last_seen: null, preview: "ERROR something bad" },
     },
   ],
+  shell_links: shellLinks("tokenmm"),
   total: 2,
   active: 1,
   failed: 1,
@@ -45,7 +69,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders a Fluxboard-style shell with Pulse active and TokenMM cross-links", async () => {
+  it("renders shell links from the backend for TokenMM-only hosting", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/pulse/jobs")) {
@@ -68,21 +92,26 @@ describe("App", () => {
     expect(pulseLink).toHaveAttribute("href", "/pulse/");
     expect(pulseLink).toHaveAttribute("aria-current", "page");
 
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/tokenmm");
-    expect(screen.getByRole("link", { name: "Signal" })).toHaveAttribute("href", "/tokenmm/signal");
-    expect(screen.getByRole("link", { name: "Params" })).toHaveAttribute("href", "/tokenmm/params");
-    expect(screen.getByRole("link", { name: "Balances" })).toHaveAttribute("href", "/tokenmm/balances");
-    expect(screen.getByRole("link", { name: "Trades" })).toHaveAttribute("href", "/tokenmm/trades");
-    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", "/tokenmm/alerts");
+    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/tokenmm");
+    expect(screen.getByRole("link", { name: "TokenMM Signal" })).toHaveAttribute("href", "/tokenmm/signal");
+    expect(screen.getByRole("link", { name: "TokenMM Params" })).toHaveAttribute("href", "/tokenmm/params");
+    expect(screen.getByRole("link", { name: "TokenMM Balances" })).toHaveAttribute("href", "/tokenmm/balances");
+    expect(screen.getByRole("link", { name: "TokenMM Trades" })).toHaveAttribute("href", "/tokenmm/trades");
+    expect(screen.getByRole("link", { name: "TokenMM Alerts" })).toHaveAttribute("href", "/tokenmm/alerts");
+    expect(screen.queryByRole("link", { name: "Equities Dashboard" })).not.toBeInTheDocument();
   });
 
-  it("builds pulse nav links from configured base path", async () => {
+  it("renders suite-aware shell links for TokenMM plus equities hosting", async () => {
     vi.stubEnv("VITE_PULSE_UI_BASE_PATH", "/ops/pulse/");
+    const sharedHostPayload = {
+      ...jobsPayload,
+      shell_links: shellLinks("tokenmm", "equities"),
+    };
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/pulse/jobs")) {
-        return new Response(JSON.stringify(jobsPayload), {
+        return new Response(JSON.stringify(sharedHostPayload), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -96,12 +125,14 @@ describe("App", () => {
 
     expect(await screen.findByText("flux")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Pulse" })).toHaveAttribute("href", "/ops/pulse/");
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/ops/tokenmm");
-    expect(screen.getByRole("link", { name: "Signal" })).toHaveAttribute("href", "/ops/tokenmm/signal");
-    expect(screen.getByRole("link", { name: "Params" })).toHaveAttribute("href", "/ops/tokenmm/params");
-    expect(screen.getByRole("link", { name: "Balances" })).toHaveAttribute("href", "/ops/tokenmm/balances");
-    expect(screen.getByRole("link", { name: "Trades" })).toHaveAttribute("href", "/ops/tokenmm/trades");
-    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", "/ops/tokenmm/alerts");
+    expect(await screen.findByRole("link", { name: "TokenMM Dashboard" })).toHaveAttribute("href", "/ops/tokenmm");
+    expect(screen.getByRole("link", { name: "TokenMM Alerts" })).toHaveAttribute("href", "/ops/tokenmm/alerts");
+    expect(screen.getByRole("link", { name: "Equities Dashboard" })).toHaveAttribute("href", "/ops/equities");
+    expect(screen.getByRole("link", { name: "Equities Signal" })).toHaveAttribute("href", "/ops/equities/signal");
+    expect(screen.getByRole("link", { name: "Equities Params" })).toHaveAttribute("href", "/ops/equities/params");
+    expect(screen.getByRole("link", { name: "Equities Balances" })).toHaveAttribute("href", "/ops/equities/balances");
+    expect(screen.getByRole("link", { name: "Equities Trades" })).toHaveAttribute("href", "/ops/equities/trades");
+    expect(screen.getByRole("link", { name: "Equities Alerts" })).toHaveAttribute("href", "/ops/equities/alerts");
   });
 
   it("loads process jobs, renders a grouped table, and exposes logs/actions", async () => {

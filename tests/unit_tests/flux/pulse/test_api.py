@@ -30,6 +30,35 @@ def _status_output(*, state: str, pid: int | None = None, memory: str | None = N
     )
 
 
+def _expected_shell_links(*surfaces: str) -> list[dict[str, str]]:
+    labels = {
+        "tokenmm": "TokenMM",
+        "equities": "Equities",
+    }
+    suffixes = (
+        ("Dashboard", ""),
+        ("Signal", "signal"),
+        ("Params", "params"),
+        ("Balances", "balances"),
+        ("Trades", "trades"),
+        ("Alerts", "alerts"),
+    )
+
+    links: list[dict[str, str]] = []
+    for surface in surfaces:
+        surface_label = labels[surface]
+        for link_label, suffix in suffixes:
+            path = surface if not suffix else f"{surface}/{suffix}"
+            links.append(
+                {
+                    "label": f"{surface_label} {link_label}",
+                    "path": path,
+                    "surface": surface,
+                },
+            )
+    return links
+
+
 def test_discover_services_filters_to_pulse_enrolled_env_files(tmp_path: Path) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)
@@ -82,7 +111,7 @@ def test_extract_active_since_reads_current_systemd_activation_timestamp() -> No
     assert _extract_active_since(output, status="active") == "Fri 2026-03-06 10:00:00 UTC"
 
 
-def test_list_jobs_returns_jobs_payload_with_grouping_and_error_counts(tmp_path: Path) -> None:
+def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_counts(tmp_path: Path) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)
     (env_dir / "tokenmm-api.env").write_text(
@@ -182,11 +211,56 @@ def test_list_jobs_returns_jobs_payload_with_grouping_and_error_counts(tmp_path:
                 "uptime": None,
             },
         ],
+        "shell_links": _expected_shell_links("tokenmm"),
         "total": 2,
         "active": 1,
         "failed": 1,
     }
     assert calls
+
+
+def test_list_jobs_returns_shared_host_shell_links_when_equities_proxy_is_configured(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "common.env").write_text(
+        "EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024\n",
+        encoding="utf-8",
+    )
+    (env_dir / "tokenmm-api.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM API",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                "PORT=5022",
+                'CMD="python -m flux.runners.tokenmm.run_api"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-api"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="active (running)", pid=1234, memory="45.2M"))
+        if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-api"]:
+            return FakeCompletedProcess(cmd, stdout="INFO healthy\n")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+    app = Flask(__name__)
+    control_plane.register_routes(app)
+
+    response = app.test_client().get("/api/pulse/jobs")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["shell_links"] == _expected_shell_links("tokenmm", "equities")
 
 
 def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path) -> None:

@@ -13,15 +13,6 @@ interface TopBarProps {
   onToggleAutoRefresh: () => void;
 }
 
-const SUITE_LINKS = [
-  { path: "tokenmm", label: "Dashboard" },
-  { path: "tokenmm/signal", label: "Signal" },
-  { path: "tokenmm/params", label: "Params" },
-  { path: "tokenmm/balances", label: "Balances" },
-  { path: "tokenmm/trades", label: "Trades" },
-  { path: "tokenmm/alerts", label: "Alerts" },
-] as const;
-
 export function TopBar({
   stats,
   autoRefresh,
@@ -39,7 +30,7 @@ export function TopBar({
         </div>
 
         <div className="suite-nav__links">
-          {SUITE_LINKS.map((link) => (
+          {stats.shellLinks.map((link) => (
             <a key={link.path} href={buildShellHref(link.path)} className="nav-link nav-link--primary">
               {link.label}
             </a>

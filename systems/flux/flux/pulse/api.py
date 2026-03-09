@@ -34,6 +34,18 @@ ACTION_PAST_TENSE = {
     "stop": "stopped",
     "restart": "restarted",
 }
+SHELL_LINK_SUFFIXES = (
+    ("Dashboard", ""),
+    ("Signal", "signal"),
+    ("Params", "params"),
+    ("Balances", "balances"),
+    ("Trades", "trades"),
+    ("Alerts", "alerts"),
+)
+SHELL_SURFACE_LABELS = {
+    "tokenmm": "TokenMM",
+    "equities": "Equities",
+}
 
 
 class CommandRunner(Protocol):
@@ -196,10 +208,12 @@ class PulseControlPlane:
 
         @blueprint.get("/jobs")
         def list_jobs() -> Any:
-            jobs = [self._service_payload(service) for service in self.discover_services()]
+            services = self.discover_services()
+            jobs = [self._service_payload(service) for service in services]
             return jsonify(
                 {
                     "jobs": jobs,
+                    "shell_links": self._shell_links(services),
                     "total": len(jobs),
                     "active": sum(1 for job in jobs if job["status"] == "active"),
                     "failed": sum(1 for job in jobs if job["status"] == "failed"),
@@ -287,6 +301,51 @@ class PulseControlPlane:
 
     def _unit_name(self, job_id: str) -> str:
         return f"{self._unit_prefix}@{job_id}"
+
+    def _read_env_registry(self) -> dict[str, dict[str, str]]:
+        registry: dict[str, dict[str, str]] = {}
+        if not self._env_dir.exists():
+            return registry
+
+        for env_path in sorted(self._env_dir.glob("*.env")):
+            try:
+                registry[env_path.stem] = _parse_env_lines(env_path.read_text(encoding="utf-8").splitlines())
+            except OSError:
+                continue
+        return registry
+
+    def _shell_surfaces(self, services: Sequence[PulseService]) -> list[str]:
+        surfaces: list[str] = []
+        seen: set[str] = set()
+
+        for service in services:
+            surface = service.group_key.strip().lower()
+            if surface not in SHELL_SURFACE_LABELS or surface in seen:
+                continue
+            seen.add(surface)
+            surfaces.append(surface)
+
+        env_registry = self._read_env_registry()
+        common_env = env_registry.get("common", {})
+        if common_env.get("EQUITIES_API_BACKEND_URL") and "equities" not in seen:
+            surfaces.append("equities")
+
+        return surfaces
+
+    def _shell_links(self, services: Sequence[PulseService]) -> list[dict[str, str]]:
+        links: list[dict[str, str]] = []
+        for surface in self._shell_surfaces(services):
+            surface_label = SHELL_SURFACE_LABELS[surface]
+            for link_label, suffix in SHELL_LINK_SUFFIXES:
+                path = surface if not suffix else f"{surface}/{suffix}"
+                links.append(
+                    {
+                        "label": f"{surface_label} {link_label}",
+                        "path": path,
+                        "surface": surface,
+                    },
+                )
+        return links
 
     def _service_payload(self, service: PulseService) -> dict[str, Any]:
         result = self._run(
