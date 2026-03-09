@@ -232,6 +232,103 @@ describe('store freshness contract', () => {
     expect(useBalancesStore.getState().lastDataTs).toBe(Date.parse('2026-02-11T00:00:06.000Z'));
   });
 
+  it('balances: setData advances lastDataTs when rendered child metadata changes without numeric changes', () => {
+    useBalancesStore.getState().setData({
+      rows: [
+        {
+          id: 'plume-parent',
+          coin: 'PLUME',
+          canonical: 'PLUME',
+          is_parent: true,
+          stable: false,
+          qty_display: '100',
+          qty_raw: 100,
+          mv_display: '$50.00',
+          mv_raw: 50,
+          mark_display: '0.5',
+          mark_raw: 0.5,
+          last_ts: 1000,
+          children: [
+            {
+              id: 'plume-child',
+              parent_id: 'plume-parent',
+              coin: 'PLUME',
+              display_name_short: 'PLUME Spot',
+              venue: 'bybit',
+              wallet: 'primary',
+              qty_display: '100',
+              qty_raw: 100,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '0.5',
+              mark_raw: 0.5,
+              time_display: 'just now',
+              time_iso: '2026-02-11T00:00:00.000Z',
+              last_ts: 1000,
+            },
+          ],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 50, mv_display: '$50.00' },
+      generated_at: '2026-02-11T00:00:00.000Z',
+      risk_groups: [],
+    } as any);
+
+    const first = useBalancesStore.getState();
+    const firstRows = first.rows;
+    const firstDataTs = first.lastDataTs;
+
+    vi.setSystemTime(new Date('2026-02-11T00:00:02.000Z'));
+    useBalancesStore.getState().setData({
+      rows: [
+        {
+          id: 'plume-parent',
+          coin: 'PLUME',
+          canonical: 'PLUME',
+          is_parent: true,
+          stable: false,
+          qty_display: '100',
+          qty_raw: 100,
+          mv_display: '$50.00',
+          mv_raw: 50,
+          mark_display: '0.5',
+          mark_raw: 0.5,
+          last_ts: 1000,
+          children: [
+            {
+              id: 'plume-child',
+              parent_id: 'plume-parent',
+              coin: 'PLUME',
+              display_name_short: 'PLUME Treasury Spot',
+              venue: 'bybit',
+              wallet: 'primary',
+              qty_display: '100',
+              qty_raw: 100,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '0.5',
+              mark_raw: 0.5,
+              time_display: 'just now',
+              time_iso: '2026-02-11T00:00:00.000Z',
+              last_ts: 1000,
+            },
+          ],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 50, mv_display: '$50.00' },
+      generated_at: '2026-02-11T00:00:00.000Z',
+      risk_groups: [],
+    } as any);
+
+    const second = useBalancesStore.getState();
+    expect(second.rows).not.toBe(firstRows);
+    expect(second.lastDataTs).toBe(Date.parse('2026-02-11T00:00:02.000Z'));
+    expect(second.lastDataTs).not.toBe(firstDataTs);
+    expect(second.rows[0]?.children[0]?.display_name_short).toBe('PLUME Treasury Spot');
+  });
+
   it('alerts: dismiss/clear do not advance lastDataTs', () => {
     useAlertsStore.getState().setRows([
       {

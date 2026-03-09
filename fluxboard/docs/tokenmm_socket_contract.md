@@ -119,6 +119,7 @@ For `profile=tokenmm`, socket risk-facing fields must align with the shared port
 4. `global_qty_base` may be present while `global_qty_base_complete = false` in `partial` mode.
 5. Compatibility aliases `global_qty` and `global_qty_complete` may remain temporarily, but they must mirror `global_qty_base` and `global_qty_base_complete`.
 6. Clients must not treat `global_qty_base` presence alone as proof of completeness.
+7. Fluxboard risk drilldown stays API-driven: backend-authored `risk_groups`, `risk_groups[].rows`, and row-level `risk_key` / `risk_label` semantics come from REST and must not be reconstructed from socket-side coin bucketing.
 
 ## Sequence (`seq`) Semantics
 

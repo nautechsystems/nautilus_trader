@@ -49,9 +49,14 @@ the remaining broad verification reds are cleared.
   balances rows, and merged balances totals in Redis.
 - `GET /api/v1/balances?profile=tokenmm` must consume that shared portfolio snapshot rather than recomputing
   shared balances semantics independently.
+- `GET /api/v1/balances?profile=tokenmm` may report `source = "portfolio_snapshot"` only when the shared
+  snapshot is fresh enough: `server_ts_ms` and inventory `ts_ms` must both be within `stale_after_ms`.
+  If that gate fails, the API falls back to the live per-strategy merge path.
 - `GET /api/v1/signals?profile=tokenmm` must render strategy-local and portfolio-global quantities from
   canonical strategy state plus portfolio metadata, not derive them from balances except in explicit
   compatibility fallback mode.
+- Fluxboard balances/risk drilldown consumes backend-authored `risk_groups`, `risk_groups[].rows`, and row
+  `risk_key` / `risk_label` semantics from the API payload. It must not locally infer buckets from coin text.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
 - `risk_delta` remains diagnostic only and must not silently replace `local_qty_base` for spot local inventory.
 - startup reconciliation failure means degraded or blocked trading, not best-effort stale-cache trading.
@@ -66,6 +71,7 @@ Shared inventory metadata:
 - `aggregation_mode = "strict"` means all required contributors must be fresh and known.
 - `aggregation_mode = "partial"` means `global_qty_base` is the sum of fresh known contributors and
   `global_qty_base_complete = false` marks the shared view as incomplete.
+- `stale_after_ms` is the freshness budget for preferring the shared `portfolio_snapshot`.
 - compatibility aliases `global_qty` and `global_qty_complete` mirror the canonical base fields.
 - missing, stale, and unknown contributors remain visible in diagnostics in both modes.
 

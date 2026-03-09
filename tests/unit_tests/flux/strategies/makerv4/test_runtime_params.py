@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
 
 from nautilus_trader.flux.strategies.makerv4 import MakerV4Strategy
 from nautilus_trader.flux.strategies.makerv4 import MakerV4StrategyConfig
@@ -66,7 +69,13 @@ def test_makerv4_defaults_enable_instant_hedge_and_fee_controls() -> None:
         ["ioc_through_mid", "IOC Through Mid"],
     ]
     assert schema["maker_fee_source"]["type"] == "select"
+    assert schema["maker_fee_source"]["options"] == [
+        ["hyperliquid_api", "Hyperliquid API"],
+    ]
     assert schema["hedge_fee_source"]["type"] == "select"
+    assert schema["hedge_fee_source"]["options"] == [
+        ["config", "Configured Assumption"],
+    ]
 
 
 def test_params_manager_factory_uses_makerv4_param_set_and_select_defaults() -> None:
@@ -93,6 +102,21 @@ def test_params_manager_factory_uses_makerv4_param_set_and_select_defaults() -> 
     assert manager.defaults["assumed_hedge_fee_bps"] == 1.0
 
 
+def test_params_manager_rejects_unsupported_makerv4_select_updates() -> None:
+    redis_client = _FakeRedis()
+    strategy = MakerV4Strategy(config=_build_config())
+    manager = runtime_params_mod.params_manager_factory(redis_client=redis_client)(strategy)
+
+    with pytest.raises(ValueError, match="Invalid option value"):
+        manager.publish_update({"hedge_style": "resting_limit"}, ts_ms=123)
+
+    with pytest.raises(ValueError, match="Invalid option value"):
+        manager.publish_update({"maker_fee_source": "manual"}, ts_ms=123)
+
+    with pytest.raises(ValueError, match="Invalid option value"):
+        manager.publish_update({"hedge_fee_source": "live_oracle"}, ts_ms=123)
+
+
 def test_resolve_fee_rules_uses_live_maker_fee_and_assumed_hedge_fee() -> None:
     rules = fees_mod.resolve_fee_rules(
         runtime_params={
@@ -109,3 +133,81 @@ def test_resolve_fee_rules_uses_live_maker_fee_and_assumed_hedge_fee() -> None:
     assert rules.maker_fee_bps == Decimal("0.35")
     assert rules.hedge_fee_bps == Decimal("1.25")
     assert rules.fee_snapshot_age_s == Decimal("9")
+
+
+def test_resolve_fee_rules_rejects_unsupported_fee_sources() -> None:
+    with pytest.raises(ValueError, match="Unsupported maker fee source"):
+        fees_mod.resolve_fee_rules(
+            runtime_params={
+                "maker_fee_source": "manual",
+                "hedge_fee_source": "config",
+                "assumed_hedge_fee_bps": 1.25,
+            },
+            maker_fee_bps=Decimal("0.35"),
+        )
+
+    with pytest.raises(ValueError, match="Unsupported hedge fee source"):
+        fees_mod.resolve_fee_rules(
+            runtime_params={
+                "maker_fee_source": "hyperliquid_api",
+                "hedge_fee_source": "live_oracle",
+                "assumed_hedge_fee_bps": 1.25,
+            },
+            maker_fee_bps=Decimal("0.35"),
+        )
+
+
+def test_instant_hedge_disabled_fails_closed_without_creating_hedge_request() -> None:
+    strategy = MakerV4Strategy(config=_build_config())
+    strategy._runtime_params["instant_hedge_enabled"] = False
+    strategy._latest_quotes = {
+        strategy.config.reference_instrument_id: {
+            "bid": Decimal("190.00"),
+            "ask": Decimal("190.04"),
+            "ts_ns": 1_000_000_000,
+        },
+    }
+    strategy._publish_json = lambda *_args, **_kwargs: None
+
+    strategy.on_order_filled(
+        SimpleNamespace(
+            instrument_id=strategy.config.maker_instrument_id,
+            trade_id="fill-1",
+            order_side="BUY",
+            last_qty=SimpleNamespace(as_decimal=lambda: Decimal("1")),
+            last_px=SimpleNamespace(as_decimal=lambda: Decimal("190.00")),
+            ts_event=1_050_000_000,
+        )
+    )
+
+    assert strategy.hedge_request_count == 0
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "instant_hedge_disabled"
+
+
+def test_unsupported_hedge_style_fails_closed() -> None:
+    strategy = MakerV4Strategy(config=_build_config())
+    strategy._runtime_params["hedge_style"] = "resting_limit"
+    strategy._latest_quotes = {
+        strategy.config.reference_instrument_id: {
+            "bid": Decimal("190.00"),
+            "ask": Decimal("190.04"),
+            "ts_ns": 1_000_000_000,
+        },
+    }
+    strategy._publish_json = lambda *_args, **_kwargs: None
+
+    strategy.on_order_filled(
+        SimpleNamespace(
+            instrument_id=strategy.config.maker_instrument_id,
+            trade_id="fill-2",
+            order_side="BUY",
+            last_qty=SimpleNamespace(as_decimal=lambda: Decimal("1")),
+            last_px=SimpleNamespace(as_decimal=lambda: Decimal("190.00")),
+            ts_event=1_050_000_000,
+        )
+    )
+
+    assert strategy.hedge_request_count == 0
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "unsupported_hedge_style"

@@ -47,6 +47,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - Production secrets should be provided through `/etc/flux/common.env` plus `/etc/flux/equities-node-*.env`.
 - Required trade[XYZ] env vars are `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS`.
 - Optional vault routing env var is `TRADE_XYZ_VAULT_ADDRESS`.
+- Local smoke with the checked-in `node.venues.IBKR.dockerized_gateway` contract also requires `TWS_USERNAME` and `TWS_PASSWORD`.
 - Set `TRADE_XYZ_ACCOUNT_ADDRESS` to the funded master account when the configured private key belongs to an agent wallet.
 - If vault trading is enabled, provide `vault_address_env` and it will take precedence for account-state queries, fee lookup, and WS subscriptions.
 - `deploy/equities/equities_stack.env` is for local paper/testnet smoke only.

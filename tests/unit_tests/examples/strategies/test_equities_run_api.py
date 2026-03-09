@@ -12,6 +12,7 @@ from flux.runners.equities.run_api import _build_profile_strategy_maps
 from flux.runners.equities.run_api import _equities_profile_summary
 from flux.runners.equities.run_api import _load_config
 from flux.runners.equities.run_api import _parse_args
+from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
 
@@ -35,7 +36,7 @@ def test_equities_descriptor_exposes_stable_profile_contract() -> None:
     assert descriptor.profile == "equities"
     assert descriptor.aliases == ("equities",)
     assert descriptor.base_path == "/equities"
-    assert descriptor.route_aliases == ("/tokenm",)
+    assert descriptor.route_aliases == ()
     assert descriptor.strategy_ids_field == "equities_strategy_ids"
     assert descriptor.required_strategy_ids_field == "equities_required_strategy_ids"
 
@@ -104,6 +105,38 @@ def test_attach_fluxboard_equities_routes_serves_index_assets_and_spa_fallback(t
     response = client.get("/equities/signals/aapl")
     assert response.status_code == 200
     assert "equities" in response.get_data(as_text=True)
+
+
+def test_attach_fluxboard_equities_routes_does_not_answer_tokenm_alias(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html>equities</html>", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_fluxboard_equities_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/tokenm")
+
+    assert response.status_code == 404
+
+
+def test_resolve_strategy_name_requires_explicit_supported_strategy_class_for_equities() -> None:
+    with pytest.raises(ValueError, match="api.strategy_class"):
+        _resolve_strategy_name({})
+
+    with pytest.raises(ValueError, match="api.strategy_class"):
+        _resolve_strategy_name({"strategy_class": "maker_v9"})
+
+
+def test_resolve_strategy_name_rejects_param_set_drift() -> None:
+    with pytest.raises(ValueError, match="api.param_set"):
+        _resolve_strategy_name(
+            {
+                "strategy_class": "maker_v4",
+                "param_set": "makerv3",
+            }
+        )
 
 
 def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:

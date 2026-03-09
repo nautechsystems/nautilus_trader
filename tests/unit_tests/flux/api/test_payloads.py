@@ -466,6 +466,30 @@ def test_merge_portfolio_balances_rows_nets_unmarked_position_valuation_when_all
     assert "mark_raw" not in position
 
 
+def test_merge_portfolio_balances_rows_labels_realized_only_pnl_without_unrealized_marker() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "2",
+                    "quantity": "2",
+                    "realized_pnl": "5.5",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    position = rows_by_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert "uPnL=" not in position["locked"]
+    assert "rPnL=5.5" in position["locked"]
+
+
 def test_merge_portfolio_balances_rows_retains_latest_known_mark_when_newer_cash_row_lacks_one() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
@@ -815,6 +839,54 @@ def test_filter_balance_rows_for_contract_scope_keeps_usdc_collateral_for_usd_pe
 
     assert [row["row_id"] for row in filtered] == [
         "cash-usdc",
+        "pos-aapl",
+    ]
+
+
+def test_filter_balance_rows_for_contract_scope_keeps_stable_collateral_for_usd_perps() -> None:
+    rows = [
+        {
+            "row_id": "cash-usdt",
+            "exchange": "hyperliquid",
+            "asset": "USDT",
+            "total": "125.0",
+        },
+        {
+            "row_id": "cash-usde",
+            "exchange": "hyperliquid",
+            "asset": "USDE",
+            "total": "50.0",
+        },
+        {
+            "row_id": "cash-zent",
+            "exchange": "hyperliquid",
+            "asset": "ZENT",
+            "total": "500",
+        },
+        {
+            "row_id": "pos-aapl",
+            "exchange": "hyperliquid",
+            "kind": "position",
+            "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "asset": "AAPL",
+            "signed_qty": "1",
+        },
+    ]
+
+    filtered = filter_balance_rows_for_contract_scope(
+        rows,
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+        ),
+    )
+
+    assert [row["row_id"] for row in filtered] == [
+        "cash-usdt",
+        "cash-usde",
         "pos-aapl",
     ]
 
@@ -1837,6 +1909,46 @@ def test_enrich_balances_rows_uses_spot_contract_metadata_for_cash_rows() -> Non
     assert plume_cash["display_name_short"] == "PLUME Spot"
 
 
+def test_enrich_balances_rows_prefers_canonical_spot_contract_with_live_market_for_cash_rows() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "account": "main",
+            "asset": "PLUME",
+            "total": "5",
+            "row_id": "strategy_01:acc:0",
+        },
+    ]
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDC",
+            instrument_id="PLUMEUSDC-SPOT.BYBIT",
+        ),
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+    )
+    market_rows = {
+        "bybit:PLUMEUSDT-SPOT.BYBIT": {"bid": 0.0104, "ask": 0.0106, "ts_ms": 2_000},
+    }
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows=market_rows,
+    )
+
+    plume_cash = enriched[0]
+    assert plume_cash["instrument_id"] == "PLUMEUSDT-SPOT.BYBIT"
+    assert plume_cash["quote_asset"] == "USDT"
+    assert plume_cash["mark_raw"] == pytest.approx(0.0105)
+    assert plume_cash["mv_raw"] == pytest.approx(0.0525)
+
+
 def test_enrich_balances_rows_prefers_spot_contract_and_market_fallback_for_spot_position_rows() -> None:
     rows = [
         {
@@ -2004,6 +2116,11 @@ def test_build_signals_payload_emits_makerv4_quote_snapshot() -> None:
                     "fee_snapshot_age_s": 9,
                     "hedge_latency_ms": 45,
                     "hedge_slippage_bps_vs_mid": 1.5,
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "BLUEOCEAN",
+                    },
                 },
             },
         },
@@ -2017,8 +2134,93 @@ def test_build_signals_payload_emits_makerv4_quote_snapshot() -> None:
     quote_snapshot = payload["maker_v4"]["quote_snapshot"]
     assert quote_snapshot["maker_leg"]["venue"] == "HYPERLIQUID"
     assert quote_snapshot["hedge_leg"]["venue"] == "IBKR"
+    assert quote_snapshot["hedge_leg"]["route"] == "BLUEOCEAN"
     assert quote_snapshot["ref_leg"]["venue"] == "IBKR"
     assert quote_snapshot["effective_spread_bps"] == 6.5
     assert quote_snapshot["effective_account_source"] == "userRole.master"
     assert quote_snapshot["assumed_hedge_fee_bps"] == 1.0
     assert quote_snapshot["hedge_disabled_reason"] == "stale_quote"
+
+
+def test_build_signals_payload_synthesizes_distinct_makerv4_hedge_leg_from_role_map() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv4",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "hedge_paused",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.BLUEOCEAN",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": -0.72,
+                    "quoted_spread_bps": 1.05,
+                    "expected_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                    "hedge_route": "BLUEOCEAN",
+                    "fee_snapshot_age_s": 0.025,
+                    "hedge_latency_ms": 40,
+                    "hedge_slippage_bps_vs_mid": 0.53,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    quote_snapshot = payload["maker_v4"]["quote_snapshot"]
+    assert quote_snapshot["hedge_leg"]["instrument_id"] == "AAPL.BLUEOCEAN"
+    assert quote_snapshot["hedge_leg"]["venue"] == "IBKR"
+    assert quote_snapshot["hedge_leg"]["symbol"] == "AAPL/USD"
+    assert quote_snapshot["ref_leg"]["instrument_id"] == "AAPL.NASDAQ"
+    assert quote_snapshot["hedge_route"] == "BLUEOCEAN"

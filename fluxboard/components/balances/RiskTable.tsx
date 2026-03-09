@@ -13,17 +13,7 @@ export type RiskSortState = {
   direction: RiskSortDirection;
 };
 
-export type RiskSourceBreakdownRow = {
-  venue: string;
-  coin: string;
-  qty_raw: number;
-  mv_raw: number;
-  mark_raw?: number | null;
-  time_display?: string | null;
-  label?: string | null;
-  wallet?: string | null;
-  address?: string | null;
-};
+export type RiskSourceBreakdownRow = NonNullable<RiskGroup['rows']>[number];
 
 const columnMeta: Record<
   RiskSortColumn,
@@ -42,7 +32,7 @@ const DEFAULT_SORT: RiskSortState = { column: 'gross_mv', direction: 'desc' };
 
 export function RiskTable({
   rows,
-  breakdowns,
+  breakdowns: _breakdowns,
   search,
   nonZeroOnly,
   sort,
@@ -62,12 +52,12 @@ export function RiskTable({
   const filtered = useMemo(() => {
     const query = (search || '').trim().toLowerCase();
     return (rows || []).filter((g) => {
-      const netMv = g.net_mv ?? 0;
-      const passesNet = !nonZeroOnly || Math.abs(netMv) > 0;
+      const grossMv = g.gross_mv ?? 0;
+      const passesGross = !nonZeroOnly || Math.abs(grossMv) > 0;
       const matches = !query
         || g.risk_key.toLowerCase().includes(query)
         || (g.label ?? '').toLowerCase().includes(query);
-      return passesNet && matches;
+      return passesGross && matches;
     });
   }, [rows, search, nonZeroOnly]);
 
@@ -229,12 +219,7 @@ export function RiskTable({
                 const impliedMark = netQty ? Math.abs(netMv / netQty) : Math.abs(netMv);
                 const shortAbs = Math.abs(g.short_mv ?? 0);
                 const gross = g.gross_mv ?? 0;
-                const sources = (breakdowns?.[g.risk_key] ?? []).slice().sort((a, b) => {
-                  const amv = Math.abs(a.mv_raw ?? 0);
-                  const bmv = Math.abs(b.mv_raw ?? 0);
-                  if (amv === bmv) return String(a.venue).localeCompare(String(b.venue));
-                  return bmv - amv;
-                });
+                const sources = g.rows ?? [];
                 const isExpanded = expanded.has(g.risk_key);
 
                 return (

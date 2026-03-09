@@ -120,7 +120,6 @@ def _coerce_strategy_ids(raw_value: Any) -> list[str]:
 
 
 def _resolve_strategy_ids(config: dict[str, Any], args: argparse.Namespace) -> list[str] | None:
-    identity = _table(config, "identity")
     api_cfg = _table(config, "api")
     strategy_id_args = _coerce_strategy_ids(args.strategy_id)
     all_strategies = bool(args.all_strategies)
@@ -137,10 +136,10 @@ def _resolve_strategy_ids(config: dict[str, Any], args: argparse.Namespace) -> l
     if configured_ids:
         return configured_ids
 
-    strategy_id = _optional_text(identity.get("strategy_id"))
-    if not strategy_id:
-        raise ValueError("A non-empty strategy_id is required unless `--all-strategies` is set")
-    return [strategy_id]
+    raise ValueError(
+        "`api.equities_strategy_ids` must be configured explicitly for the equities bridge "
+        "unless `--strategy-id` or `--all-strategies` is provided",
+    )
 
 
 def main() -> None:

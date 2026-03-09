@@ -79,10 +79,10 @@ function buildMakerV4Strategy(): SignalStrategy {
     },
     maker_role_map: {
       maker_leg: 'maker',
-      hedge_leg: 'hedge',
+      hedge_leg: 'hedge-blueocean',
       ref_leg: 'hedge',
     },
-    legs_order: ['maker', 'hedge'],
+    legs_order: ['maker', 'hedge', 'hedge-blueocean'],
     legs: {
       maker: {
         exchange: 'hyperliquid',
@@ -94,20 +94,33 @@ function buildMakerV4Strategy(): SignalStrategy {
         instrument_id: 'AAPL.NASDAQ',
         update_ts_ms: 1_700_000_000_500,
       },
+      'hedge-blueocean': {
+        exchange: 'ibkr',
+        instrument_id: 'AAPL.BLUEOCEAN',
+        update_ts_ms: 1_700_000_000_550,
+      },
     },
     maker_v4: {
       quote_snapshot: {
         ts_ms: 1_700_000_000_500,
         effective_spread_bps: 6.5,
+        quoted_spread_bps: 8.0,
+        expected_maker_fee_bps: 0.25,
+        assumed_hedge_fee_bps: 1.0,
         hedge_ready: false,
+        hedge_route: 'BLUEOCEAN',
         hedge_disabled_reason: 'stale_quote',
+        fee_snapshot_age_s: 9,
+        hedge_latency_ms: 45,
+        hedge_slippage_bps_vs_mid: 1.5,
         maker_leg: {
           venue: 'HYPERLIQUID',
           instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
         },
         hedge_leg: {
           venue: 'IBKR',
-          instrument_id: 'AAPL.NASDAQ',
+          instrument_id: 'AAPL.BLUEOCEAN',
+          route: 'BLUEOCEAN',
         },
         ref_leg: {
           venue: 'IBKR',
@@ -123,7 +136,7 @@ function buildMakerV4Strategy(): SignalStrategy {
 }
 
 describe('MakerV4SignalTable', () => {
-  it('renders a dedicated maker v4 signal table with both venue legs and effective spread', () => {
+  it('renders a dedicated maker v4 signal table with both venue legs, route, and effective spread', () => {
     render(
       <MakerV4SignalTable
         rows={[buildMakerV4Strategy()]}
@@ -137,7 +150,19 @@ describe('MakerV4SignalTable', () => {
     expect(screen.getByText(/Hyperliquid/i)).toBeInTheDocument();
     expect(screen.getByText(/IBKR/i)).toBeInTheDocument();
     expect(screen.getByText('6.5 bps')).toBeInTheDocument();
+    expect(screen.getAllByText(/BLUEOCEAN/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Paused')).toBeInTheDocument();
+  });
+
+  it('renders the routed hedge identity and visible hedge latency from the quote snapshot', () => {
+    render(
+      <MakerV4SignalTable
+        rows={[buildMakerV4Strategy()]}
+      />,
+    );
+
+    expect(screen.getByText('IBKR AAPL.BLUEOCEAN')).toBeInTheDocument();
+    expect(screen.getByText(/45 ms/i)).toBeInTheDocument();
   });
 
   it('switches the equities signal route to the dedicated maker v4 table', async () => {

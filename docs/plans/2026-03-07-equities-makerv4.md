@@ -114,7 +114,7 @@
 | 8 | completed | controller | Dedicated Fluxboard MakerV4 signal view implemented and locally approved; Fluxboard Task 8 verification passed. |
 | 9 | completed | controller | Dual-venue equities balances/positions slice verified locally (`11 passed`). |
 | 10 | completed | controller | Deploy/runtime contract is approved; route alignment and shared-contract consistency are enforced (`27 passed`). |
-| 11 | in_progress | controller | Verification matrix is green and the Saturday canary now has the correct MakerV4 row shape plus a non-degraded balances endpoint, but live IBKR quote flow and dual-venue live balances are not yet fully proven on the paper weekend host. |
+| 11 | in_progress | controller | Follow-up review plan from 2026-03-09 is complete in code/test. Final matrix is green (`163 pytest`, `23 vitest` on runnable files), rollback docs are written, and the remaining live residual is host-specific: the IBKR gateway handshake on `127.0.0.1:4001` is currently failing, so live dual-venue balances are not yet visible on this box. |
 
 ## Task 1: Fix Hyperliquid effective-account resolution for balances and fees
 

@@ -49,6 +49,16 @@ def test_hyperliquid_perp_to_ibkr_instrument_id_maps_equity_symbol() -> None:
     )
 
 
+def test_hyperliquid_perp_to_ibkr_instrument_id_preserves_dotted_share_class_symbols() -> None:
+    assert (
+        hyperliquid_perp_to_ibkr_instrument_id(
+            "xyz:BRK.B-USD-PERP.HYPERLIQUID",
+            primary_exchange="NYSE",
+        )
+        == "BRK.B.NYSE"
+    )
+
+
 @pytest.mark.parametrize(
     "instrument_id",
     [

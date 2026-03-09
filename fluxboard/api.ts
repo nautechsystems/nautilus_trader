@@ -240,6 +240,8 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       last_ts: tsMs > 0 ? tsMs : null,
       chain: String(row.chain ?? '').trim() || null,
       contract: String(row.contract ?? row.instrument_id ?? '').trim() || null,
+      risk_key: String(row.risk_key ?? '').trim() || null,
+      risk_label: String(row.risk_label ?? '').trim() || null,
     };
 
     const existing = byParent.get(parentId);
@@ -308,6 +310,33 @@ function normalizeBalancesRows(rows: unknown): BalanceParentRow[] {
   }
 
   return normalizeFlatBalancesRows(rows);
+}
+
+function normalizeRiskGroups(groups: unknown): BalancesPayload['risk_groups'] {
+  if (!Array.isArray(groups)) return [];
+  return groups
+    .filter((group): group is Record<string, unknown> => Boolean(group) && typeof group === 'object')
+    .map((group) => ({
+      ...group,
+      risk_key: String(group.risk_key ?? ''),
+      label: String(group.label ?? group.risk_key ?? ''),
+      rows: Array.isArray(group.rows)
+        ? group.rows
+            .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+            .map((row) => ({
+              row_id: typeof row.row_id === 'string' && row.row_id ? row.row_id : null,
+              venue: String(row.venue ?? ''),
+              coin: String(row.coin ?? ''),
+              qty_raw: toFiniteNumber(row.qty_raw, 0),
+              mv_raw: toFiniteNumber(row.mv_raw, 0),
+              mark_raw: row.mark_raw == null ? null : toFiniteNumber(row.mark_raw, 0),
+              time_display: typeof row.time_display === 'string' ? row.time_display : null,
+              label: typeof row.label === 'string' && row.label ? row.label : null,
+              wallet: typeof row.wallet === 'string' && row.wallet ? row.wallet : null,
+              address: typeof row.address === 'string' && row.address ? row.address : null,
+            }))
+        : [],
+    }));
 }
 
 function toFiniteOptionalNumber(value: unknown): number | undefined {
@@ -1739,7 +1768,7 @@ export const api = {
       totals: payload.totals ?? { mv_raw: totalMv, mv_display: formatMoneyDisplay(totalMv) },
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
-      risk_groups: Array.isArray(payload.risk_groups) ? payload.risk_groups : [],
+      risk_groups: normalizeRiskGroups(payload.risk_groups),
     };
   },
 

@@ -100,12 +100,15 @@ EQUITIES_CONFIRM_LIVE=0 \
 EQUITIES_ENABLE_EXECUTION=0 \
 TRADE_XYZ_AGENT_PK=... \
 TRADE_XYZ_ACCOUNT_ADDRESS=... \
+TWS_USERNAME=... \
+TWS_PASSWORD=... \
 ops/scripts/deploy/equities_stack.sh start
 ```
 
 Optional local secret loading:
 
-- Set `EQUITIES_LOAD_AWS_SECRETS=1` and `EQUITIES_TRADE_XYZ_SECRET_ID=...` to load `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from AWS Secrets Manager before credential validation.
+- Set `EQUITIES_LOAD_AWS_SECRETS=1` and `EQUITIES_TRADE_XYZ_SECRET_ID=...` to load `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` from AWS Secrets Manager before credential validation.
+- If the active strategy keeps `node.venues.IBKR.dockerized_gateway`, local smoke also requires `TWS_USERNAME` and `TWS_PASSWORD` in the env file or shell before `equities_stack.sh start`.
 
 Smoke-check the profile surfaces directly:
 
@@ -138,3 +141,9 @@ Expected smoke result:
 Fluxboard contract reference:
 
 - See `fluxboard/docs/equities_contract.md` for the frozen `/equities` route and payload expectations when an equities API is deployed separately from the shared-host Pulse control plane.
+
+## Rollback
+
+- Disable MakerV4 cleanly by removing `aapl_tradexyz_makerv4` from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping `flux@equities-node-aapl_tradexyz_makerv4.service`.
+- Emergency MakerV3 re-enable remains available through `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`. Restore it to `.toml`, retire the MakerV4 file from discovery, switch the shared allowlist/strategy metadata back to MakerV3, rerun the installer, then `systemctl daemon-reload` and restart `flux-equities.target`.
+- `/equities`, `profile=equities`, and `portfolio=equities` stay stable during rollback. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry revert with the strategy file swap.

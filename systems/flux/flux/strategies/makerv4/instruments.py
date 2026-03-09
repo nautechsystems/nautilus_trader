@@ -6,7 +6,7 @@ import re
 
 
 _HYPERLIQUID_EQUITY_PERP_RE = re.compile(
-    r"^(?:[a-z0-9_]+:)?(?P<symbol>[A-Z0-9]+)-USD-PERP\.HYPERLIQUID$",
+    r"^(?:[a-z0-9_]+:)?(?P<symbol>[A-Z0-9]+(?:\.[A-Z0-9]+)*)-USD-PERP\.HYPERLIQUID$",
 )
 
 

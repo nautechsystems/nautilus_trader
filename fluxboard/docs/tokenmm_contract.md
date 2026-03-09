@@ -388,6 +388,7 @@ Balances and inventory rows must use explicit unit-bearing fields when they expo
 For `profile=tokenmm`, the response must also carry the shared portfolio ownership/completeness fields when available:
 
 - `source = "portfolio_snapshot"`
+- `stale_after_ms`
 - `aggregation_mode`
 - `global_qty_base`
 - `global_qty_base_complete`
@@ -397,6 +398,18 @@ For `profile=tokenmm`, the response must also carry the shared portfolio ownersh
 - `missing_required`
 - `stale_required`
 - `null_qty_required`
+
+Snapshot freshness gate:
+
+1. `source = "portfolio_snapshot"` is valid only when the shared snapshot is fresh enough: snapshot `server_ts_ms` and inventory `ts_ms` must both be within `stale_after_ms`.
+2. If that freshness gate fails, `/api/v1/balances?profile=tokenmm` falls back to the live per-strategy merge path and must not keep advertising `source = "portfolio_snapshot"`.
+3. Clients must treat `stale_after_ms` as the freshness budget for the shared snapshot.
+
+Fluxboard risk consumption:
+
+1. `risk_groups` is backend-authored. Fluxboard must not rebuild TokenMM risk grouping from holdings coins.
+2. `risk_groups[].rows` is backend-authored drilldown content and order.
+3. Balance rows participating in a risk group must carry row-level `risk_key` and `risk_label` fields so Holdings drilldown can use the same semantics as the Risk tab.
 
 Required quantity field names for risk-facing rows:
 

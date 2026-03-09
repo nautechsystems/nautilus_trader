@@ -116,8 +116,43 @@ def test_equities_active_strategy_contract_is_makerv4_only() -> None:
     assert config["strategy"]["param_set"] == "makerv4"
     assert config["strategy"]["outside_rth_hedge_enabled"] is True
     assert config["strategy"]["ibkr_primary_exchange"] == "NASDAQ"
+    assert config["node"]["enable_execution"] is False
     assert config["node"]["venues"]["IBKR"]["instrument_id"] == "AAPL.NASDAQ"
     assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
+
+
+def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
+    repo_root = _repo_root()
+    active_path = repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml"
+    template_path = repo_root / "deploy/equities/strategies/equities.strategy.template.toml"
+    active_config = _load_toml(repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml")
+    template_config = _load_toml(template_path)
+    active_text = _read(active_path)
+    template_text = _read(template_path)
+    stack_script = _read(repo_root / "ops/scripts/deploy/equities_stack.sh")
+    install_script = _read(repo_root / "ops/scripts/deploy/install_equities_systemd.sh")
+
+    assert active_config["node"]["enable_execution"] is False
+    assert template_config["node"]["enable_execution"] is False
+    assert (
+        "# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution"
+        in active_text
+    )
+    assert (
+        "# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution"
+        in template_text
+    )
+    assert 'ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"' in stack_script
+    assert (
+        'runtime override: EQUITIES_ENABLE_EXECUTION=1 passes --enable-execution even when'
+        in stack_script
+    )
+    assert 'exec_flag+=(--enable-execution)' in stack_script
+    assert (
+        "python3 -m nautilus_trader.flux.runners.equities.run_node --config"
+        in install_script
+    )
+    assert "--enable-execution" in install_script
 
 
 def test_equities_shared_contract_catalog_matches_active_canary_route() -> None:
@@ -147,6 +182,9 @@ def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -
     assert "deploy/equities/equities.live.toml" in env_example
     assert "TRADE_XYZ_AGENT_PK=" in env_example
     assert "TRADE_XYZ_ACCOUNT_ADDRESS=" in env_example
+    assert "TRADE_XYZ_VAULT_ADDRESS=" in env_example
+    assert "TWS_USERNAME=" in env_example
+    assert "TWS_PASSWORD=" in env_example
 
 
 def test_equities_stack_honors_enable_execution_flag_for_nodes() -> None:
@@ -260,7 +298,17 @@ def test_equities_stack_script_parses_env_safely_and_loads_trade_xyz_secrets() -
     assert "jq -r 'to_entries[] |" in script
     assert "TRADE_XYZ_AGENT_PK" in script
     assert "TRADE_XYZ_ACCOUNT_ADDRESS" in script
+    assert "TRADE_XYZ_VAULT_ADDRESS" in script
     assert "warning: skipping unsupported secret key" in script
+
+
+def test_equities_stack_script_validates_ibkr_docker_gateway_credentials_when_configured() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/equities_stack.sh")
+
+    assert "TWS_USERNAME" in script
+    assert "TWS_PASSWORD" in script
+    assert "missing required IBKR dockerized gateway credentials" in script
+    assert "dockerized_gateway" in script
 
 
 def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
@@ -275,6 +323,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "TRADE_XYZ_AGENT_PK" in readme
     assert "TRADE_XYZ_ACCOUNT_ADDRESS" in readme
     assert "TRADE_XYZ_VAULT_ADDRESS" in readme
+    assert "TWS_USERNAME" in readme
+    assert "TWS_PASSWORD" in readme
     assert "shared config merge only imports `redis` and `portfolio`" in readme
     assert "active node settings live in `deploy/equities/strategies/*.toml`" in readme
     assert "AAPL.NASDAQ" in readme
@@ -291,6 +341,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "ibkr_primary_exchange" in strategies_readme
     assert "assumed_hedge_fee_bps" in strategies_readme
     assert "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument" in strategies_readme
+    assert "TWS_USERNAME" in strategies_readme
+    assert "TWS_PASSWORD" in strategies_readme
 
     assert "EQUITIES_REDIS_HOST=" in common_env
     assert "EQUITIES_REDIS_PASSWORD=" in common_env

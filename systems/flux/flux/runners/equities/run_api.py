@@ -11,8 +11,6 @@ from typing import cast
 
 import redis
 from flask import abort
-from flask import redirect
-from flask import request
 from flask import send_from_directory
 
 from flux.api import ContractCatalogEntry
@@ -42,7 +40,9 @@ SAFE_MODES = frozenset({"paper", "testnet", "live"})
 EQUITIES_DESCRIPTOR = get_strategy_set_descriptor("equities")
 DEFAULT_EQUITIES_STRATEGY_SPEC = get_strategy_spec("makerv3")
 DEFAULT_EQUITIES_BASE_PATH = EQUITIES_DESCRIPTOR.base_path
-EQUITIES_ALIAS_BASE_PATH = EQUITIES_DESCRIPTOR.route_aliases[0]
+EQUITIES_ALIAS_BASE_PATH = (
+    EQUITIES_DESCRIPTOR.route_aliases[0] if EQUITIES_DESCRIPTOR.route_aliases else None
+)
 DEFAULT_PULSE_BASE_PATH = "/pulse"
 
 
@@ -247,16 +247,26 @@ def _equities_profile_summary(
 
 
 def _resolve_strategy_name(api_cfg: dict[str, Any]) -> str:
-    explicit = _optional_text(api_cfg.get("param_set"))
-    if explicit:
-        return explicit
-
     strategy_class = (_optional_text(api_cfg.get("strategy_class")) or "").lower()
+    if not strategy_class:
+        raise ValueError("`api.strategy_class` must be set explicitly for equities")
     if strategy_class in {"maker_v4", "makerv4"}:
-        return "makerv4"
-    if strategy_class in {"maker_v3", "makerv3"}:
-        return DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
-    return DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
+        strategy_name = "makerv4"
+    elif strategy_class in {"maker_v3", "makerv3"}:
+        strategy_name = DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
+    else:
+        raise ValueError(
+            "`api.strategy_class` must be one of {'maker_v4', 'makerv4', 'maker_v3', 'makerv3'} "
+            f"for equities, got {strategy_class!r}",
+        )
+
+    explicit_param_set = _optional_text(api_cfg.get("param_set"))
+    expected_param_set = get_strategy_spec(strategy_name).param_set
+    if explicit_param_set and explicit_param_set != expected_param_set:
+        raise ValueError(
+            f"`api.param_set` drift for equities: expected {expected_param_set!r}, got {explicit_param_set!r}",
+        )
+    return strategy_name
 
 
 def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> StrategyMetadata:
@@ -332,23 +342,16 @@ def _attach_fluxboard_equities_routes(app: Any, *, dist_dir: Path) -> None:
     def _serve_index() -> Any:
         return send_from_directory(str(dist_root), "index.html")
 
-    def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
-        target = DEFAULT_EQUITIES_BASE_PATH
-        if subpath:
-            target = f"{target}/{subpath.strip().lstrip('/')}"
-        query = request.query_string.decode("utf-8").strip()
-        if query:
-            target = f"{target}?{query}"
-        return redirect(target, code=302)
+    if EQUITIES_ALIAS_BASE_PATH:
+        @app.get(EQUITIES_ALIAS_BASE_PATH)
+        @app.get(f"{EQUITIES_ALIAS_BASE_PATH}/")
+        def _tokenm_alias_index() -> Any:
+            abort(404)
 
-    @app.get(EQUITIES_ALIAS_BASE_PATH)
-    @app.get(f"{EQUITIES_ALIAS_BASE_PATH}/")
-    def _tokenm_alias_index() -> Any:
-        return _redirect_tokenm_alias()
-
-    @app.get(f"{EQUITIES_ALIAS_BASE_PATH}/<path:subpath>")
-    def _tokenm_alias_subpath(subpath: str) -> Any:
-        return _redirect_tokenm_alias(subpath)
+        @app.get(f"{EQUITIES_ALIAS_BASE_PATH}/<path:subpath>")
+        def _tokenm_alias_subpath(subpath: str) -> Any:
+            _ = subpath
+            abort(404)
 
     @app.get(DEFAULT_EQUITIES_BASE_PATH)
     @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/")

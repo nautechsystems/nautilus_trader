@@ -84,6 +84,25 @@ def _identity_exposure_instrument(
     )
 
 
+def _price_based_exposure_instrument(
+    instrument_id: InstrumentId,
+    *,
+    base_currency: str = "PLUME",
+    quote_currency: str = "USDT",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=instrument_id,
+        base_currency=SimpleNamespace(code=base_currency),
+        quote_currency=SimpleNamespace(code=quote_currency),
+        settlement_currency=SimpleNamespace(code=quote_currency),
+        multiplier=Quantity.from_str("1"),
+        info={"base_exposure_mode": "price_based"},
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        make_price=lambda value: Price.from_str(str(value)),
+        calculate_base_exposure_qty=lambda qty, price: qty.as_decimal() * price.as_decimal(),
+    )
+
+
 def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility(
     strategy_factory,
 ) -> None:
@@ -956,6 +975,67 @@ def test_maker_local_position_summary_keeps_fresh_venue_report_when_only_positio
     assert summary.base_qty == Decimal("99382")
 
 
+def test_maker_local_position_summary_treats_omitted_maker_report_as_fresh_flat_position(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    other_instrument_id = InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT")
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(maker_instrument_id)
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        other_instrument_id: _identity_exposure_instrument(other_instrument_id, base_currency="BTC"),
+    }
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        positions_open=lambda instrument_id=None: [],
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy._last_maker_position_activity_ns = 100
+
+    report = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_decimal_qty=Decimal("99382"),
+        avg_px_open=Decimal("0.0109378"),
+        ts_last=200,
+        ts_init=210,
+        venue_position_id=None,
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(position_reports={maker_instrument_id: [report]}, ts_init=210),
+    )
+
+    strategy._handle_execution_report_message(
+        SimpleNamespace(
+            position_reports={
+                other_instrument_id: [
+                    SimpleNamespace(
+                        instrument_id=other_instrument_id,
+                        signed_decimal_qty=Decimal("2"),
+                        avg_px_open=Decimal("100"),
+                        ts_last=220,
+                        ts_init=220,
+                        venue_position_id=None,
+                    ),
+                ],
+            },
+            ts_init=220,
+        ),
+    )
+
+    snapshot = strategy._fresh_maker_position_report_snapshot()
+    summary = strategy._maker_local_position_summary("PLUME")
+
+    assert snapshot is not None
+    assert snapshot["signed_qty"] == Decimal("0")
+    assert snapshot["signed_qty_base"] == Decimal("0")
+    assert summary.venue_qty == Decimal("0")
+    assert summary.base_qty == Decimal("0")
+
+
 def test_maker_local_position_summary_converts_okx_venue_report_to_base_once(
     strategy_factory,
 ) -> None:
@@ -1799,3 +1879,65 @@ def test_publish_portfolio_inventory_component_keeps_conversion_diagnostics_for_
     assert component.local_position_qty_base is None
     assert component.qty_conversion_status == "missing_metadata"
     assert component.qty_conversion_source == "generic:instrument multiplier unavailable"
+
+
+def test_price_based_position_conversion_uses_shared_last_px_across_balances_local_and_portfolio(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = _price_based_exposure_instrument(maker_instrument_id)
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(reference_instrument_id),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda instrument_id=None: [
+            SimpleNamespace(
+                instrument_id=maker_instrument_id,
+                signed_qty=Decimal("3"),
+                avg_px_open=Decimal("2"),
+            ),
+        ],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy._inventory_base_exposure_last_px = lambda: Decimal("5")
+    published: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: published.append((topic, payload))
+    fake_redis = _FakeRedis()
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_balances()
+    summary = strategy._maker_local_position_summary("PLUME")
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    balances_payload = next(payload for topic, payload in published if topic.endswith(".balances"))
+    position_payload = balances_payload["positions"][0]
+    component = decode_component(
+        fake_redis.get(
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id=strategy._external_strategy_id,
+                portfolio_id="tokenmm",
+                base_currency="PLUME",
+            ),
+        ),
+    )
+
+    assert position_payload["signed_qty_base"] == "15"
+    assert position_payload["qty_conversion_status"] == "price_based"
+    assert summary.base_qty == Decimal("15")
+    assert component is not None
+    assert component.local_qty_base == Decimal("15")
+    assert component.local_position_qty_base == Decimal("15")

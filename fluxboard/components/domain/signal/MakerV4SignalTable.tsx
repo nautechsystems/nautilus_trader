@@ -142,7 +142,7 @@ export default function MakerV4SignalTable({
         ...row,
         _quoteSnapshot: quoteSnapshot,
         _makerLeg: quoteSnapshot?.maker_leg ?? null,
-        _hedgeLeg: quoteSnapshot?.hedge_leg ?? quoteSnapshot?.ref_leg ?? null,
+        _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
         _statusLabel: describeTradingStatus(status),
         _lastUpdateMs: lastUpdateMs,
         _lastAgeMs: lastAgeMs,
@@ -235,12 +235,21 @@ export default function MakerV4SignalTable({
         const hedgeReady = snapshot?.hedge_ready === true;
         const disabledReason = snapshot?.hedge_disabled_reason ?? (row.original.tradeable === false ? 'blocked' : '—');
         const route = snapshot?.hedge_route ?? '—';
+        const hedgeLatencyMs = coerceNumber(snapshot?.hedge_latency_ms);
+        const hedgeSlippageBps = coerceNumber(snapshot?.hedge_slippage_bps_vs_mid);
+        const subLabel = hedgeLatencyMs != null ? `${route} · ${hedgeLatencyMs} ms` : route;
+        const tooltip = [
+          `Route: ${route}`,
+          `Reason: ${disabledReason}`,
+          `Hedge latency: ${hedgeLatencyMs != null ? `${hedgeLatencyMs} ms` : '—'}`,
+          `Hedge slippage vs mid: ${formatBps(hedgeSlippageBps)}`,
+        ].join('\n');
         return (
           <StatusPill
             status={hedgeReady ? 'ok' : snapshot?.hedge_disabled_reason ? 'warning' : 'muted'}
             label={hedgeReady ? 'Ready' : 'Blocked'}
-            subLabel={route}
-            tooltip={`Route: ${route}\nReason: ${disabledReason}`}
+            subLabel={subLabel}
+            tooltip={tooltip}
             size="xs"
             tone="subtle"
           />

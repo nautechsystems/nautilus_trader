@@ -418,4 +418,260 @@ describe('Balances component', () => {
     expect(await screen.findByText('bybit')).toBeInTheDocument();
     expect(await screen.findByText('wallet')).toBeInTheDocument();
   });
+
+  it('rerenders child metadata when only rendered balance labels change across polls', async () => {
+    const initialPayload = buildPayload();
+    const updatedPayload = buildPayload();
+    updatedPayload.rows[0].children[0].display_name_short = 'PLUME Treasury Position';
+    updatedPayload.rows[0].children[0].display_name_long = 'Bybit PLUME Treasury Position';
+
+    mockedApi.getBalances
+      .mockResolvedValueOnce(initialPayload as any)
+      .mockResolvedValueOnce(updatedPayload as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME Perp')).toBeInTheDocument();
+    });
+
+    const [pollFn] = mockUsePolling.mock.calls[0];
+    await act(async () => {
+      await pollFn();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME Treasury Position')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('PLUME Perp')).not.toBeInTheDocument();
+  });
+
+  it('keeps gross-but-net-flat risk rows visible by default', async () => {
+    const user = userEvent.setup();
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      risk_groups: [
+        {
+          risk_key: 'PAIR_BOOK',
+          label: 'Pair Book',
+          net_qty: 0,
+          net_mv: 0,
+          long_mv: 37.75,
+          short_mv: -37.75,
+          gross_mv: 75.5,
+          abs_net_mv: 0,
+          hedge_ratio: 1,
+          sources: ['bybit', 'okx'],
+          rows: [],
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Risk' }));
+
+    expect(await screen.findByText('Pair Book')).toBeInTheDocument();
+  });
+
+  it('uses backend risk breakdown rows when expanding a risk group', async () => {
+    const user = userEvent.setup();
+    mockedApi.getBalances.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'STABLES_LOGICAL',
+          coin: 'STABLES_LOGICAL',
+          canonical: 'STABLES',
+          is_parent: true,
+          stable: true,
+          qty_display: '100',
+          qty_raw: 100,
+          mv_display: '$100.00',
+          mv_raw: 100,
+          mark_display: '1.0',
+          mark_raw: 1,
+          time_display: '1h ago',
+          time_iso: '2024-01-01T01:00:00Z',
+          last_ts: 1704070800000,
+          raw: { qty: 100, mv_usd: 100, mark: 1 },
+          children: [
+            {
+              id: 'stable-parent:usdc',
+              parent_id: 'STABLES_LOGICAL',
+              coin: 'USDC',
+              display_name_short: 'Treasury USDC',
+              venue: 'wallet',
+              wallet: 'treasury',
+              qty_display: '50',
+              qty_raw: 50,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '1.0',
+              mark_raw: 1,
+              time_display: '1h ago',
+              time_iso: '2024-01-01T01:00:00Z',
+              last_ts: 1704070800000,
+              risk_key: 'STABLE_BUCKET',
+              risk_label: 'Stable Bucket',
+            },
+            {
+              id: 'stable-parent:usdt',
+              parent_id: 'STABLES_LOGICAL',
+              coin: 'USDT',
+              display_name_short: 'Ops USDT',
+              venue: 'wallet',
+              wallet: 'ops',
+              qty_display: '50',
+              qty_raw: 50,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '1.0',
+              mark_raw: 1,
+              time_display: '1h ago',
+              time_iso: '2024-01-01T01:00:00Z',
+              last_ts: 1704070800000,
+              risk_key: 'USD_CASH',
+              risk_label: 'USD Cash',
+            },
+          ],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 100, mv_display: '$100.00' },
+      generated_at: '2024-01-01T01:05:00Z',
+      view: 'parents_only',
+      risk_groups: [
+        {
+          risk_key: 'STABLE_BUCKET',
+          label: 'Stable Bucket',
+          net_qty: 0,
+          net_mv: 0,
+          long_mv: 50,
+          short_mv: -50,
+          gross_mv: 100,
+          abs_net_mv: 0,
+          hedge_ratio: 1,
+          sources: ['wallet'],
+          rows: [
+            { venue: 'wallet', coin: 'USDC', qty_raw: 50, mv_raw: 50, mark_raw: 1, time_display: '1h ago' },
+            { venue: 'wallet', coin: 'USDT', qty_raw: -50, mv_raw: -50, mark_raw: 1, time_display: '1h ago' },
+          ],
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('STABLES')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Risk' }));
+    await user.click(screen.getByRole('button', { name: /expand risk sources/i }));
+
+    expect(await screen.findByText('USDC')).toBeInTheDocument();
+    expect(await screen.findByText('USDT')).toBeInTheDocument();
+  });
+
+  it('filters holdings using backend risk keys when a risk row is selected', async () => {
+    const user = userEvent.setup();
+    mockedApi.getBalances.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'STABLES_LOGICAL',
+          coin: 'STABLES_LOGICAL',
+          canonical: 'STABLES',
+          is_parent: true,
+          stable: true,
+          qty_display: '100',
+          qty_raw: 100,
+          mv_display: '$100.00',
+          mv_raw: 100,
+          mark_display: '1.0',
+          mark_raw: 1,
+          time_display: '1h ago',
+          time_iso: '2024-01-01T01:00:00Z',
+          last_ts: 1704070800000,
+          raw: { qty: 100, mv_usd: 100, mark: 1 },
+          children: [
+            {
+              id: 'stable-parent:usdc',
+              parent_id: 'STABLES_LOGICAL',
+              coin: 'USDC',
+              display_name_short: 'Treasury USDC',
+              venue: 'wallet',
+              wallet: 'treasury',
+              qty_display: '50',
+              qty_raw: 50,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '1.0',
+              mark_raw: 1,
+              time_display: '1h ago',
+              time_iso: '2024-01-01T01:00:00Z',
+              last_ts: 1704070800000,
+              risk_key: 'STABLE_BUCKET',
+              risk_label: 'Stable Bucket',
+            },
+            {
+              id: 'stable-parent:usdt',
+              parent_id: 'STABLES_LOGICAL',
+              coin: 'USDT',
+              display_name_short: 'Ops USDT',
+              venue: 'wallet',
+              wallet: 'ops',
+              qty_display: '50',
+              qty_raw: 50,
+              mv_display: '$50.00',
+              mv_raw: 50,
+              mark_display: '1.0',
+              mark_raw: 1,
+              time_display: '1h ago',
+              time_iso: '2024-01-01T01:00:00Z',
+              last_ts: 1704070800000,
+              risk_key: 'USD_CASH',
+              risk_label: 'USD Cash',
+            },
+          ],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 100, mv_display: '$100.00' },
+      generated_at: '2024-01-01T01:05:00Z',
+      view: 'parents_only',
+      risk_groups: [
+        {
+          risk_key: 'STABLE_BUCKET',
+          label: 'Stable Bucket',
+          net_qty: 50,
+          net_mv: 50,
+          long_mv: 50,
+          short_mv: 0,
+          gross_mv: 50,
+          abs_net_mv: 50,
+          hedge_ratio: 0,
+          sources: ['wallet'],
+          rows: [
+            { venue: 'wallet', coin: 'USDC', qty_raw: 50, mv_raw: 50, mark_raw: 1, time_display: '1h ago' },
+          ],
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('STABLES')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Risk' }));
+    await user.click(screen.getByRole('button', { name: /filter holdings by underlying/i }));
+
+    expect(await screen.findByText('Treasury USDC')).toBeInTheDocument();
+    expect(screen.queryByText('Ops USDT')).not.toBeInTheDocument();
+  });
 });

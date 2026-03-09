@@ -41,6 +41,7 @@ def build_ibkr_ioc_limit(
     bid: Decimal | None,
     ask: Decimal | None,
     cross_mid_bps: Decimal,
+    max_cross_bps: Decimal | None = None,
     tick_size: Decimal,
     quote_age_ms: int | None = None,
     max_quote_age_ms: int | None = None,
@@ -64,7 +65,10 @@ def build_ibkr_ioc_limit(
         raise ValueError(f"Unsupported side: {side!r}")
 
     mid = (bid + ask) / Decimal("2")
-    cross_ratio = cross_mid_bps / Decimal("10000")
+    effective_cross_mid_bps = cross_mid_bps
+    if max_cross_bps is not None and effective_cross_mid_bps > max_cross_bps:
+        effective_cross_mid_bps = max_cross_bps
+    cross_ratio = effective_cross_mid_bps / Decimal("10000")
     raw_price = mid * (Decimal("1") + cross_ratio if normalized_side == "BUY" else Decimal("1") - cross_ratio)
     rounded_price = round_ibkr_limit_price(
         raw_price,

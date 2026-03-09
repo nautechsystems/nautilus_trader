@@ -34,13 +34,12 @@ def test_resolve_strategy_ids_uses_api_equities_allowlist_when_cli_missing() -> 
     assert resolved == ["strategy_a", "strategy_b"]
 
 
-def test_resolve_strategy_ids_falls_back_to_config_strategy_id_when_allowlist_missing() -> None:
+def test_resolve_strategy_ids_requires_explicit_equities_allowlist_when_cli_missing() -> None:
     config = {"identity": {"strategy_id": "config_strategy"}}
     args = Namespace(strategy_id=None, all_strategies=False)
 
-    resolved = _resolve_strategy_ids(config, args)
-
-    assert resolved == ["config_strategy"]
+    with pytest.raises(ValueError, match="api.equities_strategy_ids"):
+        _resolve_strategy_ids(config, args)
 
 
 def test_resolve_strategy_ids_requires_strategy_id_without_all_strategies() -> None:

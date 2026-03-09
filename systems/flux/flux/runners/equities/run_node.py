@@ -17,6 +17,7 @@ from typing import Any
 import redis
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import LoggingConfig
@@ -40,6 +41,12 @@ from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
 from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
 from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
+from flux.strategies.makerv4.reference_balances import (
+    IbkrReferenceBalanceSnapshotProviderConfig,
+)
+from flux.strategies.makerv4.reference_balances import (
+    get_cached_ibkr_reference_balance_provider,
+)
 from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
@@ -175,6 +182,56 @@ def _attach_portfolio_inventory_feed(
     )
 
 
+def _attach_reference_balance_snapshot_provider(
+    *,
+    strategy: Any,
+    config: dict[str, Any],
+) -> None:
+    configure_provider = getattr(strategy, "configure_reference_balance_snapshot_provider", None)
+    if not callable(configure_provider):
+        return
+
+    venues_cfg = _table(config, "venues")
+    reference_venue = (_optional_text(venues_cfg.get("reference_venue")) or "").upper()
+    if reference_venue != "IBKR":
+        return
+
+    node_cfg = _table(config, "node")
+    venue_entries = node_cfg.get("venues")
+    if not isinstance(venue_entries, dict):
+        return
+    ibkr_cfg = venue_entries.get("IBKR")
+    if not isinstance(ibkr_cfg, dict):
+        return
+    adapter_id = (_optional_text(ibkr_cfg.get("adapter")) or "ibkr").lower()
+    if adapter_id not in {"ibkr", "interactive_brokers"}:
+        return
+
+    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
+    dockerized_gateway = None
+    if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
+        dockerized_gateway = dockerized_gateway_cfg
+    elif isinstance(dockerized_gateway_cfg, dict):
+        dockerized_gateway = DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
+    elif dockerized_gateway_cfg is not None:
+        raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
+
+    provider = get_cached_ibkr_reference_balance_provider(
+        IbkrReferenceBalanceSnapshotProviderConfig(
+            ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
+            ibg_port=(
+                None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
+            ),
+            ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
+            dockerized_gateway=dockerized_gateway,
+            connection_timeout=int(ibkr_cfg.get("connection_timeout", 300)),
+            request_timeout_secs=int(ibkr_cfg.get("request_timeout_secs", 60)),
+            account_id=_optional_text(ibkr_cfg.get("account_id")),
+        ),
+    )
+    configure_provider(provider)
+
+
 def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
     return build_redis_database_config(redis_cfg)
 
@@ -234,6 +291,17 @@ def _runtime_params_module(strategy_spec: FluxStrategySpec):
     if strategy_spec.param_set == "makerv4":
         return makerv4_runtime_params_mod
     return makerv3_runtime_params_mod
+
+
+def _strategy_allowed_instrument_ids(
+    *,
+    strategy_spec: FluxStrategySpec,
+    maker_instrument_id: InstrumentId,
+    reference_instrument_id: InstrumentId,
+) -> list[InstrumentId]:
+    if strategy_spec.param_set == "makerv4":
+        return [maker_instrument_id, reference_instrument_id]
+    return [maker_instrument_id]
 
 
 def _effective_venue_resolution_config(
@@ -353,7 +421,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         strategy_spec=strategy_spec,
     )
 
-    enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
+    enable_execution = bool(node_cfg.get("enable_execution", False) or force_enable_execution)
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )
@@ -374,6 +442,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     _register_cash_borrowing_venues(exec_clients=strategy_venues.exec_clients)
     maker_instrument_id = strategy_venues.execution_instrument_id
     reference_instrument_id = strategy_venues.reference_instrument_id
+    allowed_instrument_ids = _strategy_allowed_instrument_ids(
+        strategy_spec=strategy_spec,
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
@@ -460,8 +533,8 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             maker_instrument_id=maker_instrument_id,
             reference_instrument_id=reference_instrument_id,
             external_strategy_id=external_strategy_id,
-            allowed_submit_instrument_ids=[maker_instrument_id],
-            external_order_claims=[maker_instrument_id],
+            allowed_submit_instrument_ids=allowed_instrument_ids,
+            external_order_claims=allowed_instrument_ids,
             manage_stop=bool(strategy_cfg.get("manage_stop", mode == "live")),
             order_qty=order_qty,
             qty_unit=qty_unit,
@@ -525,6 +598,10 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         redis_cfg=redis_cfg,
         namespace=namespace,
         schema_version=schema_version,
+    )
+    _attach_reference_balance_snapshot_provider(
+        strategy=strategy,
+        config=venue_resolution_config,
     )
 
     node = TradingNode(config=config_node)

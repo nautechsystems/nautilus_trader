@@ -25,7 +25,7 @@ TRADE_XYZ_SECRET_ID="${EQUITIES_TRADE_XYZ_SECRET_ID:-/nautilus/equities/trade_xy
 is_allowed_env_key() {
   local key="$1"
   case "${key}" in
-    EQUITIES_* | TRADE_XYZ_*)
+    EQUITIES_* | TRADE_XYZ_* | TWS_*)
       return 0
       ;;
     *)
@@ -127,7 +127,7 @@ load_secret_into_env() {
       continue
     fi
     case "${key}" in
-      TRADE_XYZ_AGENT_PK | TRADE_XYZ_ACCOUNT_ADDRESS)
+      TRADE_XYZ_AGENT_PK | TRADE_XYZ_ACCOUNT_ADDRESS | TRADE_XYZ_VAULT_ADDRESS)
         printf -v "${key}" "%s" "${value}"
         export "${key?}"
         ;;
@@ -145,6 +145,31 @@ load_aws_secrets_if_enabled() {
   require_cmd aws
   require_cmd jq
   load_secret_into_env "${TRADE_XYZ_SECRET_ID}"
+}
+
+strategy_requires_ibkr_dockerized_gateway() {
+  local config_path
+  while IFS= read -r config_path; do
+    if python3 - "${config_path}" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as fh:
+    config = tomllib.load(fh)
+
+gateway = (
+    config.get("node", {})
+    .get("venues", {})
+    .get("IBKR", {})
+    .get("dockerized_gateway")
+)
+raise SystemExit(0 if isinstance(gateway, dict) else 1)
+PY
+    then
+      return 0
+    fi
+  done < <(node_configs)
+  return 1
 }
 
 validate_mode() {
@@ -177,6 +202,16 @@ validate_credentials() {
   if (( ${#missing[@]} > 0 )); then
     echo "[equities-stack] missing required credentials: ${missing[*]}" >&2
     exit 1
+  fi
+
+  if strategy_requires_ibkr_dockerized_gateway; then
+    local missing_ibkr=()
+    [[ -z "${TWS_USERNAME:-}" ]] && missing_ibkr+=("TWS_USERNAME")
+    [[ -z "${TWS_PASSWORD:-}" ]] && missing_ibkr+=("TWS_PASSWORD")
+    if (( ${#missing_ibkr[@]} > 0 )); then
+      echo "[equities-stack] missing required IBKR dockerized gateway credentials: ${missing_ibkr[*]}" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -227,6 +262,8 @@ start_stack() {
   start_process bridge python3 -m nautilus_trader.flux.runners.equities.run_bridge --config "${CONFIG_PATH}" --mode "${MODE}"
   start_process api env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.equities.run_api --config "${CONFIG_PATH}" --mode "${MODE}" --host "${API_HOST}" --port "${API_PORT}" --serve-fluxboard --serve-pulse
   local -a exec_flag=()
+  # runtime override: EQUITIES_ENABLE_EXECUTION=1 passes --enable-execution even when
+  # checked-in strategy TOMLs keep node.enable_execution=false for safe default installs.
   if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
     exec_flag+=(--enable-execution)
   fi

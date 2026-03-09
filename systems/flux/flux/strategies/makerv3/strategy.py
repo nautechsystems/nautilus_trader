@@ -1130,6 +1130,21 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return None
 
             avg_px_open = avg_px_num / avg_px_den if avg_px_den > 0 else None
+            return self._build_maker_position_report_snapshot(
+                signed_qty=total,
+                avg_px_open=avg_px_open,
+                position_id=position_id,
+                ts_ns=latest_ts_ns,
+            )
+
+        def _build_maker_position_report_snapshot(
+            self,
+            *,
+            signed_qty: Decimal,
+            avg_px_open: Decimal | None,
+            position_id: str | None,
+            ts_ns: int,
+        ) -> dict[str, Any]:
             instrument = self._resolve_instrument(self.config.maker_instrument_id)
             signed_qty_base: Decimal | None = None
             qty_conversion_status: str | None = None
@@ -1140,7 +1155,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             else:
                 exposure = exposure_from_venue_qty(
                     instrument,
-                    total,
+                    signed_qty,
                     last_px=self._inventory_base_exposure_last_px(),
                 )
                 signed_qty_base = exposure.base_qty
@@ -1148,16 +1163,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 qty_conversion_source = exposure.qty_conversion_source
             return {
                 "instrument_id": self.config.maker_instrument_id,
-                "signed_qty": total,
-                "signed_qty_venue": total,
-                "quantity_venue": abs(total),
+                "signed_qty": signed_qty,
+                "signed_qty_venue": signed_qty,
+                "quantity_venue": abs(signed_qty),
                 "signed_qty_base": signed_qty_base,
                 "quantity_base": abs(signed_qty_base) if signed_qty_base is not None else None,
                 "qty_conversion_status": qty_conversion_status,
                 "qty_conversion_source": qty_conversion_source,
                 "avg_px_open": avg_px_open,
                 "position_id": position_id,
-                "ts_ns": latest_ts_ns,
+                "ts_ns": max(0, int(ts_ns)),
             }
 
         def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
@@ -1188,6 +1203,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                         reports,
                         fallback_ts_ns=int(getattr(message, "ts_init", 0) or 0),
                     )
+                    if snapshot is None:
+                        # Reconciliation can encode a flat maker position by omitting the maker row
+                        # from an otherwise fresh position_reports snapshot.
+                        snapshot = self._build_maker_position_report_snapshot(
+                            signed_qty=Decimal(0),
+                            avg_px_open=None,
+                            position_id=None,
+                            ts_ns=int(getattr(message, "ts_init", 0) or 0),
+                        )
             if snapshot is None:
                 return
 

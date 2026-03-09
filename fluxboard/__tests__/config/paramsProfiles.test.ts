@@ -4,6 +4,7 @@ import {
   deriveStrategyProfile,
   getProfileLabel,
   getProfileHiddenKeys,
+  getProfilePriorityKeys,
   isProfileHiddenKey,
   listParamsProfiles,
 } from '../../config/paramsProfiles';
@@ -236,6 +237,19 @@ describe('paramsProfiles', () => {
       'assumed_hedge_fee_bps',
       'qty',
       'bid_edge1',
+    ]);
+  });
+
+  it('keeps maker_v4-only controls aligned with the supported runtime surface', () => {
+    expect(getProfilePriorityKeys('maker_v4').slice(0, 8)).toEqual([
+      'bot_on',
+      'instant_hedge_enabled',
+      'hedge_style',
+      'hedge_ioc_cross_mid_bps',
+      'hedge_ioc_max_cross_bps',
+      'maker_fee_source',
+      'hedge_fee_source',
+      'assumed_hedge_fee_bps',
     ]);
   });
 });

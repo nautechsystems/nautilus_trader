@@ -5,6 +5,7 @@ TokenMM risk correctness depends on one ownership model:
 - each MakerV3 strategy owns only its local maker-leg truth
 - `run_portfolio` owns only the shared TokenMM portfolio truth
 - API and Fluxboard render those sources; they do not invent alternative risk engines
+- Fluxboard balances/risk drilldown must consume backend-authored `risk_groups`, `risk_groups[].rows`, and row-level `risk_key` / `risk_label` semantics instead of locally bucketing coins.
 
 ## Canonical Quantities
 
@@ -24,7 +25,8 @@ TokenMM risk correctness depends on one ownership model:
 ### Shared portfolio truth
 
 - `run_portfolio` computes shared TokenMM inventory, contributor diagnostics, merged balances rows, and shared totals.
-- `Balances(profile=tokenmm)` renders the shared portfolio snapshot. It must not recompute TokenMM risk or balance semantics independently.
+- `Balances(profile=tokenmm)` renders the shared portfolio snapshot only when the snapshot is fresh enough to trust: `server_ts_ms` and inventory `ts_ms` must be within `stale_after_ms`, otherwise the API falls back to the live per-strategy merge path.
+- `Balances(profile=tokenmm)` must expose backend-authored `risk_groups` plus `risk_groups[].rows`, and each balance row must carry the matching `risk_key` / `risk_label` used for Fluxboard drilldown.
 - `Signals(profile=tokenmm)` may render both strategy-local and portfolio-global quantities, but it must source those values from strategy state and portfolio metadata rather than deriving them from balances except in explicit compatibility fallback mode.
 
 ## Reconciliation Contract

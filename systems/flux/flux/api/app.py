@@ -21,6 +21,7 @@ from flask import request
 
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
+from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api.payloads import build_alerts_rows
 from flux.api.payloads import build_balances_rows
 from flux.api.payloads import build_envelope
@@ -519,9 +520,33 @@ class FluxApiStore:
         self,
         strategy_ids: Sequence[str],
     ) -> dict[str, dict[str, Any]]:
+        def _market_row_has_price(row: Mapping[str, Any]) -> bool:
+            mid = row.get("mid")
+            bid = row.get("bid")
+            ask = row.get("ask")
+            return any(value is not None for value in (mid, bid, ask))
+
         def _merge_market_row(existing: Mapping[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
-            combined = dict(existing)
-            for key, value in incoming.items():
+            existing_ts_ms = coerce_ts_ms(existing.get("ts_ms") or existing.get("ts")) or -1
+            incoming_ts_ms = coerce_ts_ms(incoming.get("ts_ms") or incoming.get("ts")) or -1
+            existing_has_price = _market_row_has_price(existing)
+            incoming_has_price = _market_row_has_price(incoming)
+
+            if incoming_has_price and (not existing_has_price or incoming_ts_ms >= existing_ts_ms):
+                primary_row = incoming
+                fallback_row = existing
+            elif existing_has_price:
+                primary_row = existing
+                fallback_row = incoming
+            elif incoming_ts_ms >= existing_ts_ms:
+                primary_row = incoming
+                fallback_row = existing
+            else:
+                primary_row = existing
+                fallback_row = incoming
+
+            combined = dict(fallback_row)
+            for key, value in primary_row.items():
                 if value is None and key in combined:
                     continue
                 combined[key] = value
@@ -1716,6 +1741,7 @@ def create_flux_api_app(  # noqa: C901
                                 market_rows=market_rows,
                             ),
                         )
+                    rows, risk_groups = build_balance_risk_groups(rows)
                     response_ts_ms = (
                         safe_int(portfolio_snapshot.get("server_ts_ms"))
                         or safe_int(inventory_payload.get("ts_ms"))
@@ -1738,6 +1764,7 @@ def create_flux_api_app(  # noqa: C901
                             "total": total_rows,
                             "limit": limit,
                             "totals": _balances_totals(rows),
+                            "risk_groups": risk_groups,
                             "server_ts_ms": response_ts_ms,
                             "portfolio_id": decode_text(
                                 portfolio_snapshot.get("portfolio_id") or profile_normalized,
@@ -1814,6 +1841,7 @@ def create_flux_api_app(  # noqa: C901
             )
             if filtered_rows:
                 rows = filtered_rows
+            rows, risk_groups = build_balance_risk_groups(rows)
             missing_required = sorted(
                 component["strategy_id"]
                 for component in components
@@ -1828,6 +1856,7 @@ def create_flux_api_app(  # noqa: C901
                     "total": total_rows,
                     "limit": limit,
                     "totals": _balances_totals(rows),
+                    "risk_groups": risk_groups,
                     "server_ts_ms": response_ts_ms,
                     "components": components,
                     "degraded": degraded,
@@ -1840,6 +1869,7 @@ def create_flux_api_app(  # noqa: C901
             rows = store.load_balances_rows(strategy_id)
             response_ts_ms = now_ms()
 
+        rows, risk_groups = build_balance_risk_groups(rows)
         total_rows = len(rows)
         return _ok(
             data={
@@ -1848,6 +1878,7 @@ def create_flux_api_app(  # noqa: C901
                 "total": total_rows,
                 "limit": limit,
                 "totals": _balances_totals(rows),
+                "risk_groups": risk_groups,
                 "server_ts_ms": response_ts_ms,
             },
         )

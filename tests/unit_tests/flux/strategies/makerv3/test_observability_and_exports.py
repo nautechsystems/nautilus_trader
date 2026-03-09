@@ -382,6 +382,90 @@ def test_publish_balances_filters_fallback_positions_to_maker_base_asset(
     assert position_rows[0]["instrument_id"] == str(maker_instrument_id)
 
 
+def test_publish_balances_does_not_fallback_to_same_base_position_from_other_venue(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    other_venue_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        other_venue_instrument_id: SimpleNamespace(
+            id=other_venue_instrument_id,
+            base_currency=SimpleNamespace(code="PLUME"),
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            []
+            if instrument_id == maker_instrument_id
+            else [SimpleNamespace(instrument_id=other_venue_instrument_id, signed_qty=Decimal(9))]
+        ),
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert balances_payload["positions"] == []
+
+
+def test_publish_balances_does_not_fallback_to_same_base_position_from_other_instrument_same_venue(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    other_instrument_id = InstrumentId.from_str("PLUMEUSDT-SPOT.BYBIT")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        other_instrument_id: SimpleNamespace(
+            id=other_instrument_id,
+            base_currency=SimpleNamespace(code="PLUME"),
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            []
+            if instrument_id == maker_instrument_id
+            else [SimpleNamespace(instrument_id=other_instrument_id, signed_qty=Decimal(9))]
+        ),
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert balances_payload["positions"] == []
+
+
 def test_publish_balances_skips_portfolio_lookup_when_no_cached_accounts(
     clocked_strategy_factory,
 ) -> None:

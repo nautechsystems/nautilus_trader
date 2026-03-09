@@ -45,6 +45,19 @@ def test_build_hedge_limit_caps_sell_at_best_bid_after_rounding() -> None:
     assert limit_price == Decimal("190.00")
 
 
+def test_build_hedge_limit_caps_cross_mid_bps_before_rounding() -> None:
+    limit_price = build_ibkr_ioc_limit(
+        side="BUY",
+        bid=Decimal("190.00"),
+        ask=Decimal("195.00"),
+        cross_mid_bps=Decimal("50"),
+        max_cross_bps=Decimal("10"),
+        tick_size=Decimal("0.01"),
+    )
+
+    assert limit_price == Decimal("192.70")
+
+
 def test_build_hedge_limit_returns_none_for_locked_market() -> None:
     assert (
         build_ibkr_ioc_limit(

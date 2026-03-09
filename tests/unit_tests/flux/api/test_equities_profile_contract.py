@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+from decimal import Decimal
+from types import SimpleNamespace
 
 import nautilus_trader.flux.api.app as app_module
 from nautilus_trader.flux.api import create_flux_api_app
@@ -9,6 +11,10 @@ from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
 from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
+from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4Strategy
+from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4StrategyConfig
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 def _compat_flux_config(flux_config):
@@ -221,6 +227,162 @@ def test_signals_profile_equities_emits_makerv4_quote_snapshot(
     assert row["maker_v4"]["quote_snapshot"]["maker_leg"]["venue"] == "HYPERLIQUID"
     assert row["maker_v4"]["quote_snapshot"]["hedge_leg"]["venue"] == "IBKR"
     assert row["maker_v4"]["quote_snapshot"]["effective_spread_bps"] == 6.5
+
+
+def test_signals_profile_equities_projects_makerv4_inventory_fields_from_strategy_state(
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    strategy_id = "aapl_tradexyz_makerv4"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    strategy = MakerV4Strategy(
+        config=MakerV4StrategyConfig(
+            maker_instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            order_qty=Decimal("1"),
+            external_strategy_id=strategy_id,
+            strategy_id=strategy_id,
+        ),
+    )
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    strategy._instruments = {
+        maker_id: SimpleNamespace(
+            raw_symbol="AAPL/USD",
+            base_currency=SimpleNamespace(code="AAPL"),
+            quote_currency=SimpleNamespace(code="USD"),
+            settlement_currency=SimpleNamespace(code="USD"),
+            multiplier=Decimal("1"),
+            is_inverse=False,
+            make_qty=lambda value: Decimal(str(value)),
+            make_price=lambda value: Decimal(str(value)),
+            calculate_base_exposure_qty=lambda qty, _price=None: Decimal(str(qty)),
+        ),
+        ref_id: SimpleNamespace(
+            raw_symbol="AAPL",
+            base_currency=SimpleNamespace(code="AAPL"),
+            quote_currency=SimpleNamespace(code="USD"),
+            settlement_currency=SimpleNamespace(code="USD"),
+            multiplier=Decimal("1"),
+            is_inverse=False,
+            make_qty=lambda value: Decimal(str(value)),
+            make_price=lambda value: Decimal(str(value)),
+            calculate_base_exposure_qty=lambda qty, _price=None: Decimal(str(qty)),
+        ),
+    }
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("255.70"), "ask": Decimal("255.90"), "ts_ns": 1_700_000_000_000_000_000},
+        ref_id: {"bid": Decimal("255.60"), "ask": Decimal("255.80"), "ts_ns": 1_700_000_000_001_000_000},
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda: [SimpleNamespace(instrument_id=maker_id, signed_qty=Decimal("12"))],
+        accounts=lambda: [],
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=redis_client,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+        stale_after_ms=3_000,
+        allow_partial_global_risk=True,
+    )
+    redis_client.strings[
+        FluxRedisKeys.portfolio_inventory(
+            portfolio_id="equities",
+            base_currency="AAPL",
+            namespace="flux",
+            schema_version="v1",
+        )
+    ] = encode_portfolio_inventory(
+        {
+            "portfolio_id": "equities",
+            "base_currency": "AAPL",
+            "global_qty_base": "37",
+            "global_qty": "37",
+            "global_qty_base_complete": False,
+            "global_qty_complete": False,
+            "aggregation_mode": "partial",
+            "ts_ms": 1_700_000_000_001,
+            "stale_after_ms": 3_000,
+        },
+    ).encode("utf-8")
+    published: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: published.append((topic, payload))  # type: ignore[assignment]
+    strategy._publish_state_snapshot(now_ns=1_700_000_000_002_000_000)
+
+    redis_client.set_json(keys.state(), published[-1][1])
+    redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0", "bot_on": "0"})
+    redis_client.set_json(keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": strategy_id, "fv": 255.8}])
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv4",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["position_qty_venue"] == 12.0
+    assert row["position_qty_base"] == 12.0
+    assert row["local_qty_base"] == 12.0
+    assert row["local_qty"] == 12.0
+    assert row["global_qty_base"] == 37.0
+    assert row["global_qty"] == 37.0
+    assert row["global_qty_base_complete"] is False
+    assert row["global_qty_complete"] is False
+    assert row["aggregation_mode"] == "partial"
+    assert row["qty_conversion_status"] == "identity"
+    assert row["qty_conversion_source"] == "generic:multiplier=1"
 
 
 def test_params_profile_equities_does_not_discover_unallowlisted_strategies(
@@ -521,6 +683,139 @@ def test_balances_profile_equities_includes_hyperliquid_and_ibkr_rows(
     assert any(row["asset"] == "USDC" for row in rows)
     assert any(row["asset"] == "USD" for row in rows)
     assert any(row.get("kind") == "position" and row["exchange"] == "ibkr" for row in rows)
+
+
+def test_balances_profile_equities_flattens_nested_ibkr_account_events_with_explicit_venue(
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    strategy_id = "aapl_tradexyz_makerv4"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0", "bot_on": "0"})
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": strategy_id,
+                "ts_ms": 1_700_000_000_100,
+                "accounts": [
+                    {
+                        "account_id": "HYPERLIQUID-master",
+                        "events": [
+                            {
+                                "account_id": "HYPERLIQUID-master",
+                                "balances": [
+                                    {
+                                        "currency": "USDC",
+                                        "free": "250.5",
+                                        "locked": "0",
+                                        "total": "250.5",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "account_id": "U1234567",
+                        "venue": "ibkr",
+                        "events": [
+                            {
+                                "account_id": "U1234567",
+                                "venue": "ibkr",
+                                "balances": [
+                                    {
+                                        "currency": "USD",
+                                        "free": "1000",
+                                        "locked": "0",
+                                        "total": "1000",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+                "positions": [
+                    {
+                        "kind": "position",
+                        "exchange": "ibkr",
+                        "account_id": "U1234567",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "quantity": "5",
+                        "signed_qty": "5",
+                        "side": "LONG",
+                        "ts_ms": 1_700_000_000_200,
+                    },
+                ],
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv4",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]["rows"]
+    venues = {row["exchange"] for row in rows}
+    assert venues == {"hyperliquid", "ibkr"}
+    assert any(
+        row["exchange"] == "ibkr" and row["asset"] == "USD" and row.get("kind") != "position"
+        for row in rows
+    )
+    assert any(
+        row["exchange"] == "ibkr" and row.get("kind") == "position" and row["asset"] == "AAPL"
+        for row in rows
+    )
 
 
 def test_balances_profile_equities_marks_shared_ibkr_cash_rows_as_shared_account(

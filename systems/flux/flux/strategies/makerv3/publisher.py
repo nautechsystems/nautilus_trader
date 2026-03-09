@@ -124,8 +124,17 @@ def _matching_base_positions(
     *,
     base_currency: str | None,
 ) -> list[Any]:
+    maker_instrument_id = getattr(getattr(strategy, "config", None), "maker_instrument_id", None)
+    if maker_instrument_id is not None:
+        exact_matches = [
+            position
+            for position in positions
+            if getattr(position, "instrument_id", None) == maker_instrument_id
+        ]
+        return exact_matches
+
     if not base_currency:
-        return positions
+        return []
 
     filtered: list[Any] = []
     for position in positions:
@@ -229,8 +238,16 @@ def _position_qty_payload(
     if instrument is None:
         return payload
 
+    shared_last_px = avg_px_open
+    shared_last_px_lookup = getattr(strategy, "_inventory_base_exposure_last_px", None)
+    if callable(shared_last_px_lookup):
+        with suppress(Exception):
+            latest_last_px = shared_last_px_lookup()
+            if latest_last_px is not None:
+                shared_last_px = latest_last_px
+
     with suppress(Exception):
-        exposure = exposure_from_venue_qty(instrument, signed_qty_dec, last_px=avg_px_open)
+        exposure = exposure_from_venue_qty(instrument, signed_qty_dec, last_px=shared_last_px)
         payload["qty_conversion_status"] = exposure.qty_conversion_status
         payload["qty_conversion_source"] = exposure.qty_conversion_source
         if exposure.base_qty is not None:
@@ -790,6 +807,18 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
     for account in accounts:
         payload["accounts"].append(_serialize_account_payload(account))
 
+    supplemental_balance_snapshot = None
+    supplemental_balance_snapshot_lookup = getattr(strategy, "_supplemental_balance_snapshot", None)
+    if callable(supplemental_balance_snapshot_lookup):
+        with suppress(Exception):
+            supplemental_balance_snapshot = supplemental_balance_snapshot_lookup()
+    if isinstance(supplemental_balance_snapshot, Mapping):
+        supplemental_accounts = supplemental_balance_snapshot.get("accounts")
+        if isinstance(supplemental_accounts, Sequence):
+            for account in supplemental_accounts:
+                if isinstance(account, dict):
+                    payload["accounts"].append(dict(account))
+
     fresh_maker_position_snapshot = None
     fresh_snapshot_lookup = getattr(strategy, "_fresh_maker_position_report_snapshot", None)
     if callable(fresh_snapshot_lookup):
@@ -834,6 +863,13 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
 
     for position in positions:
         payload["positions"].append(_serialize_position_payload(strategy, position))
+
+    if isinstance(supplemental_balance_snapshot, Mapping):
+        supplemental_positions = supplemental_balance_snapshot.get("positions")
+        if isinstance(supplemental_positions, Sequence):
+            for position in supplemental_positions:
+                if isinstance(position, dict):
+                    payload["positions"].append(dict(position))
 
     payload["ts_event"] = now_ns
     payload["ts_ms"] = now_ns // 1_000_000

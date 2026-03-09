@@ -450,6 +450,8 @@ export type BalanceChildRow = CanonicalNamingFields & {
   form_source?: string;
   chain?: string | null;
   contract?: string | null;
+  risk_key?: string | null;
+  risk_label?: string | null;
 };
 
 export type BalanceParentRow = {
@@ -503,6 +505,18 @@ export type RiskGroup = {
   abs_net_mv?: number | null;
   hedge_ratio?: number | null;
   sources?: string[];
+  rows?: Array<{
+    row_id?: string | null;
+    venue: string;
+    coin: string;
+    qty_raw: number;
+    mv_raw: number;
+    mark_raw?: number | null;
+    time_display?: string | null;
+    label?: string | null;
+    wallet?: string | null;
+    address?: string | null;
+  }>;
 };
 
 export type BalancesPayload = {
@@ -671,6 +685,7 @@ export type MakerV2QuoteSnapshot = {
 
 export type MakerV4LegSnapshot = {
   venue?: string;
+  route?: string | null;
   symbol?: string;
   instrument_id?: string;
   bid?: string | number | null;

@@ -88,4 +88,72 @@ describe('RiskTable', () => {
 
     expect(negativeNetCell.className).toContain('text-rose-400');
   });
+
+  it('keeps gross-but-net-flat rows visible when nonZeroOnly is enabled', () => {
+    const onSortChange = vi.fn();
+
+    render(
+      <RiskTable
+        rows={[
+          {
+            risk_key: 'PAIR_BOOK',
+            label: 'Pair Book',
+            net_qty: 0,
+            net_mv: 0,
+            long_mv: 100,
+            short_mv: -100,
+            gross_mv: 200,
+            abs_net_mv: 0,
+            hedge_ratio: 1,
+            sources: ['bybit', 'okx'],
+          },
+        ]}
+        breakdowns={{}}
+        search=""
+        nonZeroOnly={true}
+        sort={DEFAULT_SORT}
+        onSortChange={onSortChange}
+      />,
+    );
+
+    expect(screen.getByText('Pair Book')).toBeInTheDocument();
+  });
+
+  it('renders backend-authored breakdown rows from risk_groups semantics', async () => {
+    const onSortChange = vi.fn();
+    const user = (await import('@testing-library/user-event')).default.setup();
+
+    render(
+      <RiskTable
+        rows={[
+          {
+            risk_key: 'STABLE_BUCKET',
+            label: 'Stable Bucket',
+            net_qty: 0,
+            net_mv: 0,
+            long_mv: 50,
+            short_mv: -50,
+            gross_mv: 100,
+            abs_net_mv: 0,
+            hedge_ratio: 1,
+            sources: ['wallet', 'bybit'],
+            rows: [
+              { venue: 'wallet', coin: 'USDC', qty_raw: 50, mv_raw: 50, mark_raw: 1, time_display: 'just now' },
+              { venue: 'bybit', coin: 'USDT', qty_raw: -50, mv_raw: -50, mark_raw: 1, time_display: 'just now' },
+            ],
+          } as any,
+        ]}
+        breakdowns={{}}
+        search=""
+        nonZeroOnly={false}
+        sort={DEFAULT_SORT}
+        onSortChange={onSortChange}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /expand risk sources/i }));
+
+    expect(screen.getByText('USDC')).toBeInTheDocument();
+    expect(screen.getByText('USDT')).toBeInTheDocument();
+  });
 });

@@ -56,3 +56,38 @@ def test_tokenmm_risk_audit_script_checks_canonical_endpoints_and_reconciliation
     assert "local qty" in script.lower()
     assert "argparse" in script
     assert "__main__" in script
+
+
+def test_tokenmm_docs_lock_snapshot_freshness_shared_inventory_publishers_and_backend_risk_groups() -> (
+    None
+):
+    source_of_truth = _read(_repo_root() / "docs/architecture/tokenmm-risk-source-of-truth.md")
+    portfolio_semantics = _read(
+        _repo_root() / "docs/architecture/tokenmm-portfolio-inventory-semantics.md",
+    )
+    runbook = _read(_repo_root() / "docs/runbooks/tokenmm-risk-validation.md")
+    deploy_readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+    contract_doc = _read(_repo_root() / "fluxboard/docs/tokenmm_contract.md")
+    socket_doc = _read(_repo_root() / "fluxboard/docs/tokenmm_socket_contract.md")
+
+    assert "stale_after_ms" in portfolio_semantics
+    assert "fresh enough" in portfolio_semantics
+    assert "MakerV3 and MakerV4" in portfolio_semantics
+    assert "risk_groups" in source_of_truth
+    assert "risk_key" in source_of_truth
+
+    assert "stale_after_ms" in runbook
+    assert "source = \"portfolio_snapshot\"" in runbook
+    assert "falls back to the live per-strategy merge path" in runbook
+
+    assert "stale_after_ms" in deploy_readme
+    assert "risk_groups" in deploy_readme
+    assert "risk_key" in deploy_readme
+
+    assert "stale_after_ms" in contract_doc
+    assert "risk_groups" in contract_doc
+    assert "risk_groups[].rows" in contract_doc
+    assert "risk_key" in contract_doc
+
+    assert "risk_groups" in socket_doc
+    assert "risk_key" in socket_doc

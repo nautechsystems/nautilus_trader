@@ -38,6 +38,7 @@ start_id = "$"
 host = "0.0.0.0"
 port = 5022
 strategy_class = "maker_v4"
+param_set = "makerv4"
 strategy_groups = "equities"
 base_asset = "AAPL"
 quote_asset = "USD"

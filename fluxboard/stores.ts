@@ -1200,6 +1200,39 @@ type BalancesStore = {
   setRiskSort: (column: BalancesStore['riskSort']['column'], direction: 'asc' | 'desc') => void;
 };
 
+function balanceChildMetadataEqual(a: BalanceChildRow, b: BalanceChildRow): boolean {
+  return (
+    a.coin === b.coin
+    && (a.display_name_short ?? null) === (b.display_name_short ?? null)
+    && (a.display_name_long ?? null) === (b.display_name_long ?? null)
+    && (a.inventory_asset ?? null) === (b.inventory_asset ?? null)
+    && (a.base_asset ?? null) === (b.base_asset ?? null)
+    && (a.quote_asset ?? null) === (b.quote_asset ?? null)
+    && (a.product_type ?? null) === (b.product_type ?? null)
+    && (a.market_type ?? null) === (b.market_type ?? null)
+    && (a.form ?? null) === (b.form ?? null)
+    && (a.chain ?? null) === (b.chain ?? null)
+    && (a.contract ?? null) === (b.contract ?? null)
+    && (a.venue ?? null) === (b.venue ?? null)
+    && (a.wallet ?? null) === (b.wallet ?? null)
+    && (a.label ?? null) === (b.label ?? null)
+    && (a.address ?? null) === (b.address ?? null)
+    && (a.risk_key ?? null) === (b.risk_key ?? null)
+    && (a.risk_label ?? null) === (b.risk_label ?? null)
+  );
+}
+
+function balanceParentMetadataEqual(a: BalanceParentRow, b: BalanceParentRow): boolean {
+  return (
+    a.coin === b.coin
+    && a.canonical === b.canonical
+    && a.is_parent === b.is_parent
+    && a.stable === b.stable
+    && (a.time_display ?? null) === (b.time_display ?? null)
+    && (a.time_iso ?? null) === (b.time_iso ?? null)
+  );
+}
+
 function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[]): boolean {
   if (prev.length !== next.length) return false;
   for (let i = 0; i < prev.length; i += 1) {
@@ -1212,6 +1245,7 @@ function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[])
       a.mv_raw !== b.mv_raw ||
       (a.mark_raw ?? null) !== (b.mark_raw ?? null) ||
       (a.last_ts ?? null) !== (b.last_ts ?? null) ||
+      !balanceParentMetadataEqual(a, b) ||
       a.children.length !== b.children.length
     ) {
       return false;
@@ -1225,7 +1259,8 @@ function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[])
         ca.qty_raw !== cb.qty_raw ||
         ca.mv_raw !== cb.mv_raw ||
         (ca.mark_raw ?? null) !== (cb.mark_raw ?? null) ||
-        (ca.last_ts ?? null) !== (cb.last_ts ?? null)
+        (ca.last_ts ?? null) !== (cb.last_ts ?? null) ||
+        !balanceChildMetadataEqual(ca, cb)
       ) {
         return false;
       }
@@ -1283,6 +1318,29 @@ function riskGroupsEqual(prev: RiskGroup[], next: RiskGroup[]): boolean {
     if (aSources.length !== bSources.length) return false;
     for (let j = 0; j < aSources.length; j += 1) {
       if (aSources[j] !== bSources[j]) {
+        return false;
+      }
+    }
+
+    const aRows = a.rows ?? [];
+    const bRows = b.rows ?? [];
+    if (aRows.length !== bRows.length) return false;
+    for (let j = 0; j < aRows.length; j += 1) {
+      const ar = aRows[j];
+      const br = bRows[j];
+      if (
+        !br
+        || (ar.row_id ?? null) !== (br.row_id ?? null)
+        || ar.venue !== br.venue
+        || ar.coin !== br.coin
+        || ar.qty_raw !== br.qty_raw
+        || ar.mv_raw !== br.mv_raw
+        || (ar.mark_raw ?? null) !== (br.mark_raw ?? null)
+        || (ar.time_display ?? null) !== (br.time_display ?? null)
+        || (ar.label ?? null) !== (br.label ?? null)
+        || (ar.wallet ?? null) !== (br.wallet ?? null)
+        || (ar.address ?? null) !== (br.address ?? null)
+      ) {
         return false;
       }
     }

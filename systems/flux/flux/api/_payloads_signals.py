@@ -587,6 +587,7 @@ def _normalize_v4_leg_snapshot(
     payload = dict(existing) if isinstance(existing, Mapping) else {}
     if isinstance(leg, Mapping):
         venue = decode_text(leg.get("exchange") or leg.get("venue")).strip().upper()
+        route = decode_text(leg.get("route")).strip().upper()
         symbol = decode_text(leg.get("symbol")).strip()
         instrument_id = decode_text(leg.get("instrument_id")).strip()
         bid = _first_valid_float(leg.get("bid"))
@@ -596,6 +597,8 @@ def _normalize_v4_leg_snapshot(
         age_ms = safe_int(leg.get("age_ms"))
         if venue:
             payload["venue"] = venue
+        if route:
+            payload["route"] = route
         if symbol:
             payload["symbol"] = symbol
         if instrument_id:
@@ -613,6 +616,16 @@ def _normalize_v4_leg_snapshot(
     return payload
 
 
+def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None:
+    text = decode_text(instrument_id).strip().upper()
+    if "." not in text:
+        return None
+    route = text.rsplit(".", maxsplit=1)[-1].strip()
+    if route in {"SMART", "BLUEOCEAN"}:
+        return route
+    return None
+
+
 def _derive_quote_snapshot_v4(
     *,
     state: Mapping[str, Any],
@@ -620,6 +633,7 @@ def _derive_quote_snapshot_v4(
     maker_leg: Mapping[str, Any] | None,
     hedge_leg: Mapping[str, Any] | None,
     ref_leg: Mapping[str, Any] | None,
+    hedge_leg_id: str | None = None,
 ) -> dict[str, Any]:
     state_maker_v4 = state.get("maker_v4")
     quote_snapshot: dict[str, Any] = {}
@@ -641,6 +655,49 @@ def _derive_quote_snapshot_v4(
         quote_snapshot.get("ref_leg") if isinstance(quote_snapshot.get("ref_leg"), Mapping) else None,
         ref_leg,
     )
+    hedge_leg_id_text = decode_text(hedge_leg_id).strip()
+    if hedge_leg_id_text:
+        hedge_route = (
+            decode_text(quote_snapshot.get("hedge_route")).strip().upper()
+            or _ibkr_route_from_instrument_id_text(hedge_leg_id_text)
+        )
+        hedge_snapshot = quote_snapshot["hedge_leg"]
+        ref_snapshot = quote_snapshot["ref_leg"]
+        if not hedge_snapshot:
+            synthesized: dict[str, Any] = {
+                "instrument_id": hedge_leg_id_text,
+            }
+            ref_venue = (
+                decode_text(ref_snapshot.get("venue")).strip().upper()
+                if isinstance(ref_snapshot, Mapping)
+                else ""
+            )
+            ref_symbol = (
+                decode_text(ref_snapshot.get("symbol")).strip()
+                if isinstance(ref_snapshot, Mapping)
+                else ""
+            )
+            if ref_venue:
+                synthesized["venue"] = ref_venue
+            elif hedge_route:
+                synthesized["venue"] = "IBKR"
+            if ref_symbol:
+                synthesized["symbol"] = ref_symbol
+            if hedge_route:
+                synthesized["route"] = hedge_route
+            quote_snapshot["hedge_leg"] = synthesized
+        else:
+            if "instrument_id" not in hedge_snapshot:
+                hedge_snapshot["instrument_id"] = hedge_leg_id_text
+            if hedge_route and "route" not in hedge_snapshot:
+                hedge_snapshot["route"] = hedge_route
+            if isinstance(ref_snapshot, Mapping):
+                ref_venue = decode_text(ref_snapshot.get("venue")).strip().upper()
+                ref_symbol = decode_text(ref_snapshot.get("symbol")).strip()
+                if ref_venue and "venue" not in hedge_snapshot:
+                    hedge_snapshot["venue"] = ref_venue
+                if ref_symbol and "symbol" not in hedge_snapshot:
+                    hedge_snapshot["symbol"] = ref_symbol
     return quote_snapshot
 
 
@@ -752,6 +809,12 @@ def build_signals_payload_impl(
     ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
     legs_order = list(legs.keys())
     role_map = _role_map_for_signal(state=state, legs_order=legs_order, legs=legs)
+    raw_role_map = state.get("maker_role_map")
+    raw_hedge_leg_id = (
+        decode_text(raw_role_map.get("hedge_leg")).strip()
+        if isinstance(raw_role_map, Mapping)
+        else ""
+    )
 
     maker_leg = legs.get(role_map.get("maker_leg") or "") if role_map.get("maker_leg") else None
     ref_leg = legs.get(role_map.get("ref_leg") or "") if role_map.get("ref_leg") else None
@@ -762,6 +825,13 @@ def build_signals_payload_impl(
         ref_leg = None
     if not isinstance(hedge_leg, Mapping):
         hedge_leg = None
+    hedge_leg_id = decode_text(role_map.get("hedge_leg")).strip()
+    raw_role_map = state.get("maker_role_map")
+    if not hedge_leg_id and isinstance(raw_role_map, Mapping):
+        hedge_leg_id = decode_text(raw_role_map.get("hedge_leg")).strip()
+    if hedge_leg is None and hedge_leg_id and isinstance(ref_leg, Mapping):
+        hedge_leg = dict(ref_leg)
+        hedge_leg["instrument_id"] = hedge_leg_id
 
     leg_a = (
         maker_leg if maker_leg is not None else (legs.get(legs_order[0]) if legs_order else None)
@@ -858,8 +928,9 @@ def build_signals_payload_impl(
             state=state,
             ts_ms=ts_ms,
             maker_leg=maker_leg,
-            hedge_leg=hedge_leg or ref_leg,
+            hedge_leg=hedge_leg,
             ref_leg=ref_leg,
+            hedge_leg_id=raw_hedge_leg_id or role_map.get("hedge_leg"),
         )
         if strategy_family == "maker_v4"
         else _derive_quote_snapshot(

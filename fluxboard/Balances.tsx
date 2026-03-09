@@ -34,7 +34,7 @@ import {
   formatMoneyNoSign,
   shortAddress,
 } from './utils/balanceFormat';
-import { formatMark, formatQty, isStable } from './lib/assetFormat';
+import { formatMark, formatQty } from './lib/assetFormat';
 import { exportCSV, exportJSON, generateTimestampFilename } from './utils/export';
 import {
   colors,
@@ -68,18 +68,6 @@ type ParentEntry = {
 type ChildEntry = {
   parent: BalanceParentRow;
   child: BalanceChildRow;
-};
-
-type RiskSourceBreakdownRow = {
-  venue: string;
-  coin: string;
-  qty_raw: number;
-  mv_raw: number;
-  mark_raw: number | null;
-  time_display: string | null;
-  label: string | null;
-  wallet: string | null;
-  address: string | null;
 };
 
 const BALANCE_FILTERS: ColumnFilter[] = [
@@ -259,7 +247,9 @@ export default function Balances({
   const [lastOkMs, setLastOkMs] = useState<number | null>(null);
   const [mode, setMode] = useState<'holdings' | 'risk'>('holdings');
   const [riskSearch, setRiskSearch] = useState('');
-  const [riskNonZeroOnly, setRiskNonZeroOnly] = useState(true);
+  const [riskNonZeroOnly, setRiskNonZeroOnly] = useState(false);
+  const [selectedRiskKey, setSelectedRiskKey] = useState<string | null>(null);
+  const [selectedRiskLabel, setSelectedRiskLabel] = useState<string | null>(null);
   const { isMobile } = useMobileLayout();
 
   const renderMarkCell = (symbol: string, mark: number | null | undefined) => {
@@ -367,19 +357,25 @@ export default function Balances({
     return rows
       .filter((parent) => (filters.stableOnly ? parent.stable : true))
       .map((parent) => {
-        const filteredChildren = parent.children.filter((child) =>
-          filters.hideZero ? ZERO_GUARD(child.mv_raw) : true
-        );
+        const filteredChildren = parent.children.filter((child) => {
+          if (selectedRiskKey && (child.risk_key ?? null) !== selectedRiskKey) {
+            return false;
+          }
+          return filters.hideZero ? ZERO_GUARD(child.mv_raw) : true;
+        });
         return { parent, children: filteredChildren };
       })
       .filter(({ parent, children }) => {
+        if (selectedRiskKey && children.length === 0) {
+          return false;
+        }
         if (!filters.hideZero) return true;
         if (filters.logicalOnly) {
           return ZERO_GUARD(parent.mv_raw);
         }
         return ZERO_GUARD(parent.mv_raw) || children.length > 0;
       });
-  }, [rows, filters.hideZero, filters.logicalOnly, filters.stableOnly]);
+  }, [rows, filters.hideZero, filters.logicalOnly, filters.stableOnly, selectedRiskKey]);
 
   const filteredParentEntries = useMemo<ParentEntry[]>(() => {
     if (!filters.logicalOnly) return baseParentEntries;
@@ -541,43 +537,13 @@ export default function Balances({
 
   const handleRiskRowClick = useCallback((riskKey: string, label: string) => {
     setMode('holdings');
+    setSelectedRiskKey(riskKey || null);
+    setSelectedRiskLabel(label || riskKey || null);
     setFilters((prev) => ({
       ...prev,
-      columnFilters: { ...prev.columnFilters, coin: label || riskKey },
+      logicalOnly: false,
     }));
   }, []);
-
-  const riskKeyForCoin = useCallback((coin: string): string => {
-    const c = String(coin || '').toUpperCase();
-    if (!c) return '';
-    if (isStable(c)) return 'USD_CASH';
-    return c.endsWith('_PERP') ? c.slice(0, -5) : c;
-  }, []);
-
-  const riskBreakdowns = useMemo(() => {
-    const out: Record<string, RiskSourceBreakdownRow[]> = {};
-    for (const parent of rows || []) {
-      const children = parent.children || [];
-      for (const child of children) {
-        const riskKey = riskKeyForCoin(child.coin);
-        if (!riskKey) continue;
-        const row: RiskSourceBreakdownRow = {
-          venue: child.venue ?? '',
-          coin: child.coin,
-          qty_raw: child.qty_raw ?? 0,
-          mv_raw: child.mv_raw ?? 0,
-          mark_raw: (child.mark_raw ?? null) as number | null,
-          time_display: child.time_display ?? null,
-          label: (child.label ?? null) as string | null,
-          wallet: (child.wallet ?? null) as string | null,
-          address: (child.address ?? null) as string | null,
-        };
-        if (!out[riskKey]) out[riskKey] = [];
-        out[riskKey].push(row);
-      }
-    }
-    return out;
-  }, [rows, riskKeyForCoin]);
 
   const nowMs = Date.now();
 
@@ -633,7 +599,11 @@ export default function Balances({
         <Button
           variant={mode === 'holdings' ? 'secondary' : 'ghost'}
           size="xs"
-          onClick={() => setMode('holdings')}
+          onClick={() => {
+            setMode('holdings');
+            setSelectedRiskKey(null);
+            setSelectedRiskLabel(null);
+          }}
           className="rounded-none border-0"
         >
           Holdings
@@ -1037,15 +1007,27 @@ export default function Balances({
                   onCheckedChange={(value) => updateFilters({ logicalOnly: value })}
                   label="Logical only"
                 />
-                <Switch
-                  size="sm"
-                  checked={filters.stableOnly}
-                  onCheckedChange={(value) => updateFilters({ stableOnly: value })}
-                  label="Stables only"
-                />
-              </div>
-            )}
-          />
+              <Switch
+                size="sm"
+                checked={filters.stableOnly}
+                onCheckedChange={(value) => updateFilters({ stableOnly: value })}
+                label="Stables only"
+              />
+              {selectedRiskKey && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setSelectedRiskKey(null);
+                    setSelectedRiskLabel(null);
+                  }}
+                >
+                  Risk: {selectedRiskLabel ?? selectedRiskKey}
+                </Button>
+              )}
+            </div>
+          )}
+        />
           <PanelBody className="bg-bg-surface">
             <TooltipProvider>
               <table className="terminal-table min-w-full text-sm">
@@ -1099,7 +1081,7 @@ export default function Balances({
                 size="sm"
                 checked={riskNonZeroOnly}
                 onCheckedChange={(value) => setRiskNonZeroOnly(Boolean(value))}
-                label="Non-zero net only"
+                label="Non-zero gross only"
               />
               <span className="text-xs text-text-muted">
                 {riskGroups?.length ?? 0} underlyings
@@ -1108,7 +1090,6 @@ export default function Balances({
           </div>
           <RiskTable
             rows={riskGroups || []}
-            breakdowns={riskBreakdowns}
             search={riskSearch}
             nonZeroOnly={riskNonZeroOnly}
             sort={riskSort as RiskSortState}

@@ -17,6 +17,8 @@ execution_symbol = "AAPL"
 reference_symbol = "AAPL/USD"
 
 [node]
+# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
+# is the only way to opt into live execution from the stack or systemd wrappers.
 enable_execution = false
 log_level = "INFO"
 timeout_connection = 20.0
@@ -56,11 +58,11 @@ use_regular_trading_hours = false
 
 [node.venues.IBKR.dockerized_gateway]
 trading_mode = "live"
-    read_only_api = true
-    auto_restart_time = "11:45 PM"
-    time_zone = "America/New_York"
-    relogin_after_twofa_timeout = false
-    twofa_timeout_action = "exit"
+read_only_api = true
+auto_restart_time = "11:45 PM"
+time_zone = "America/New_York"
+relogin_after_twofa_timeout = true
+twofa_timeout_action = "restart"
 
 [strategy]
 strategy_id = "aapl_tradexyz_makerv4"

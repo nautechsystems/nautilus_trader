@@ -60,13 +60,15 @@ python scripts/ops/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022
 ## Shared portfolio review
 
 1. Read `balances?profile=tokenmm`.
-2. Confirm `source = "portfolio_snapshot"`.
-3. Confirm `global_qty_base` and `global_qty_base_complete` match every strategy
+2. Confirm `source = "portfolio_snapshot"` only when the shared snapshot is within `stale_after_ms`.
+3. If `source = "portfolio_snapshot"` is absent, confirm the API falls back to the live per-strategy merge path instead of reusing stale snapshot data.
+4. Confirm `global_qty_base` and `global_qty_base_complete` match every strategy
    row in `signals?profile=tokenmm`.
-4. Confirm the `components` list contains one row per expected strategy and that
+5. Confirm the `components` list contains one row per expected strategy and that
    each component `local_qty_base` matches the strategy-local value.
-5. Confirm the merged balances rows and totals are the shared portfolio output,
+6. Confirm the merged balances rows and totals are the shared portfolio output,
    not independently recomputed strategy rows.
+7. Confirm the API payload exposes backend-authored `risk_groups`, `risk_groups[].rows`, and row `risk_key` / `risk_label` semantics used by Fluxboard drilldown.
 
 ## Degraded metadata
 

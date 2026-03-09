@@ -94,6 +94,8 @@ def _position_agg_seed(row: dict[str, Any]) -> dict[str, Any]:
         "avg_den": Decimal(0),
         "upnl": Decimal(0),
         "has_upnl": False,
+        "rpnl": Decimal(0),
+        "has_rpnl": False,
         "qty_conversion_status": decode_text(row.get("qty_conversion_status")).strip() or None,
         "qty_conversion_source": decode_text(row.get("qty_conversion_source")).strip() or None,
         "mark": None,
@@ -139,12 +141,14 @@ def _position_agg_update(agg: dict[str, Any], row: dict[str, Any]) -> None:
     upnl = _to_decimal(
         row.get("unrealized_pnl")
         or row.get("unrealizedPnl")
-        or row.get("realized_pnl")
-        or row.get("realizedPnl"),
     )
     if upnl is not None:
         agg["upnl"] += upnl
         agg["has_upnl"] = True
+    rpnl = _to_decimal(row.get("realized_pnl") or row.get("realizedPnl"))
+    if rpnl is not None:
+        agg["rpnl"] += rpnl
+        agg["has_rpnl"] = True
     if agg["qty_conversion_status"] is None:
         agg["qty_conversion_status"] = decode_text(row.get("qty_conversion_status")).strip() or None
     if agg["qty_conversion_source"] is None:
@@ -233,6 +237,7 @@ def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> di
     side = "LONG" if qty_default > 0 else "SHORT"
     avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
     upnl = agg["upnl"] if agg["has_upnl"] else None
+    rpnl = agg["rpnl"] if agg["has_rpnl"] else None
     mark = agg.get("mark")
 
     row = dict(agg["row"])
@@ -271,6 +276,8 @@ def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> di
         meta_parts.append(f"avg={_decimal_text(avg_px)}")
     if upnl is not None:
         meta_parts.append(f"uPnL={_decimal_text(upnl)}")
+    if rpnl is not None:
+        meta_parts.append(f"rPnL={_decimal_text(rpnl)}")
     row["locked"] = " ".join(meta_parts)
     row["side"] = side
     row["row_id"] = f"{sid}:pos:{exchange}:{instrument}"
@@ -298,6 +305,7 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
         row_prefix: str,
         product_type: str,
         account_id: str = "",
+        account_venue: str = "",
     ) -> int:
         appended = 0
         if not isinstance(events, list):
@@ -309,7 +317,9 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
             if not isinstance(event_balances, list):
                 continue
             event_account_id = decode_text(event.get("account_id")).strip() or account_id
-            venue = event_account_id.split("-", maxsplit=1)[0].lower() if event_account_id else ""
+            venue = decode_text(event.get("venue") or account_venue).strip().lower()
+            if not venue and event_account_id and "-" in event_account_id:
+                venue = event_account_id.split("-", maxsplit=1)[0].lower()
             for balance_index, balance in enumerate(event_balances):
                 if not isinstance(balance, dict):
                     continue
@@ -360,6 +370,7 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
                         row_prefix=account_row_id,
                         product_type=current_product_type,
                         account_id=decode_text(account.get("account_id")).strip(),
+                        account_venue=decode_text(account.get("venue")).strip(),
                     )
                     if account_flattened:
                         flattened += account_flattened
@@ -632,6 +643,22 @@ def _balance_inventory_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
     return (exchange, inventory_asset)
 
 
+def _balance_account_hint(row: Mapping[str, Any]) -> str:
+    return decode_text(
+        row.get("account")
+        or row.get("account_id")
+        or row.get("subaccount"),
+    ).strip()
+
+
+def _balance_duplicate_display_key(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    inventory_key = _balance_inventory_key(row)
+    if inventory_key is None:
+        return None
+    exchange, inventory_asset = inventory_key
+    return (exchange, _balance_account_hint(row), inventory_asset)
+
+
 def _balance_product_type(row: Mapping[str, Any]) -> str:
     product_type = decode_text(row.get("product_type")).strip().lower()
     if product_type in {"spot", "perp"}:
@@ -656,7 +683,7 @@ def collapse_balance_display_rows(rows: Sequence[Mapping[str, Any]]) -> list[dic
     Balances should render that inventory once, while Signal and other raw snapshot consumers remain untouched.
     """
 
-    cash_keys: set[tuple[str, str]] = set()
+    cash_keys: dict[tuple[str, str], set[str]] = {}
     normalized_rows = [dict(source_row) for source_row in rows if isinstance(source_row, Mapping)]
 
     for row in normalized_rows:
@@ -664,16 +691,20 @@ def collapse_balance_display_rows(rows: Sequence[Mapping[str, Any]]) -> list[dic
             continue
         if _balance_product_type(row) != "spot":
             continue
-        key = _balance_inventory_key(row)
+        key = _balance_duplicate_display_key(row)
         if key is not None:
-            cash_keys.add(key)
+            exchange, account, inventory_asset = key
+            cash_keys.setdefault((exchange, inventory_asset), set()).add(account)
 
     collapsed: list[dict[str, Any]] = []
     for row in normalized_rows:
         if _is_position_row(row) and _balance_product_type(row) == "spot":
-            key = _balance_inventory_key(row)
-            if key is not None and key in cash_keys:
-                continue
+            key = _balance_duplicate_display_key(row)
+            if key is not None:
+                exchange, account, inventory_asset = key
+                cash_accounts = cash_keys.get((exchange, inventory_asset), set())
+                if cash_accounts and (not account or account in cash_accounts or "" in cash_accounts):
+                    continue
         collapsed.append(row)
     return collapsed
 
@@ -710,6 +741,7 @@ def _position_portfolio_row_from_agg(
     side = "LONG" if qty_default > 0 else "SHORT"
     avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
     upnl = agg["upnl"] if agg["has_upnl"] else None
+    rpnl = agg["rpnl"] if agg["has_rpnl"] else None
     mark = agg.get("mark")
 
     row = dict(agg["row"])
@@ -750,6 +782,8 @@ def _position_portfolio_row_from_agg(
         meta_parts.append(f"avg={_decimal_text(avg_px)}")
     if upnl is not None:
         meta_parts.append(f"uPnL={_decimal_text(upnl)}")
+    if rpnl is not None:
+        meta_parts.append(f"rPnL={_decimal_text(rpnl)}")
     row["locked"] = " ".join(meta_parts)
     row["side"] = side
     row["row_id"] = f"{portfolio_id}:pos:{exchange}:{instrument}"
@@ -879,6 +913,7 @@ def merge_portfolio_balances_rows(
 
 
 _STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
+_PREFERRED_SPOT_QUOTES = ("USDT", "USDC", "USD", "FDUSD", "DAI", "USDE")
 
 
 def _normalized_symbol_signature(symbol: Any) -> str:
@@ -911,6 +946,7 @@ def _row_contract_key(
     row: Mapping[str, Any],
     *,
     contracts: Sequence[ContractCatalogEntry],
+    market_rows: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> str | None:
     exchange = _row_exchange_hint(row)
     if not exchange:
@@ -951,20 +987,36 @@ def _row_contract_key(
     want_product_type = "spot"
     if _is_position_row(dict(row)) and any(token in instrument_hint for token in ("PERP", "LINEAR", "SWAP")):
         want_product_type = "perp"
-    for contract in candidates:
+    def _contract_sort_key(contract: ContractCatalogEntry) -> tuple[int, int, int, int, str]:
         naming = canonical_naming_fields(
             instrument_id=contract.instrument_id,
             exchange=contract.exchange,
             symbol=contract.symbol,
             is_position=False,
         )
-        if naming.get("product_type") == want_product_type:
-            return contract_id_for_leg(
-                exchange=contract.exchange,
-                symbol=contract.symbol,
-                instrument_id=contract.instrument_id,
-            )
-    first = candidates[0]
+        product_type = decode_text(naming.get("product_type")).strip().lower()
+        contract_id = contract_id_for_leg(
+            exchange=contract.exchange,
+            symbol=contract.symbol,
+            instrument_id=contract.instrument_id,
+        )
+        market_row = (market_rows or {}).get(contract_id) or {}
+        market_mid = _contract_market_mid(market_row)
+        market_ts_ms = _row_ts_ms(market_row)
+        _base_asset, quote_asset = normalize_symbol_parts(symbol=contract.symbol)
+        try:
+            quote_rank = _PREFERRED_SPOT_QUOTES.index(quote_asset)
+        except ValueError:
+            quote_rank = len(_PREFERRED_SPOT_QUOTES)
+        return (
+            0 if product_type == want_product_type else 1,
+            0 if market_mid is not None else 1,
+            quote_rank if want_product_type == "spot" else 0,
+            -market_ts_ms,
+            contract_id,
+        )
+
+    first = min(candidates, key=_contract_sort_key)
     return contract_id_for_leg(
         exchange=first.exchange,
         symbol=first.symbol,
@@ -993,7 +1045,7 @@ def enrich_balances_rows(
             else row.get("total") or row.get("quantity") or row.get("signed_qty") or row.get("free"),
         )
         asset_hint = _row_asset_hint(row)
-        contract_key = _row_contract_key(row, contracts=contracts)
+        contract_key = _row_contract_key(row, contracts=contracts, market_rows=market_rows)
         matched_contract: ContractCatalogEntry | None = None
         if contract_key:
             for contract in contracts:
@@ -1072,22 +1124,27 @@ def filter_balance_rows_for_contract_scope(
     """Keep only the balance rows relevant to the contract catalog in scope."""
 
     allowed_assets: set[str] = set()
+    allowed_assets_by_exchange: dict[str, set[str]] = {}
     allowed_contracts: set[str] = set()
     for contract in contracts:
+        exchange = decode_text(contract.exchange).strip().lower()
         base_asset, quote_asset = normalize_symbol_parts(symbol=contract.symbol)
         if base_asset:
             allowed_assets.add(base_asset)
+            allowed_assets_by_exchange.setdefault(exchange, set()).add(base_asset)
         if quote_asset:
             allowed_assets.add(quote_asset)
+            allowed_assets_by_exchange.setdefault(exchange, set()).add(quote_asset)
         naming = canonical_naming_fields(
             instrument_id=contract.instrument_id,
             exchange=contract.exchange,
             symbol=contract.symbol,
             is_position=False,
         )
-        if naming.get("product_type") == "perp" and quote_asset == "USD":
-            # Hyperliquid and similar USD-quoted perps commonly settle/collateralize in USDC.
-            allowed_assets.add("USDC")
+        if naming.get("product_type") == "perp" and quote_asset in (_STABLE_BALANCE_ASSETS | {"USD"}):
+            # Stable-quoted perp books commonly collateralize in venue-specific stable assets, not just the literal quote.
+            allowed_assets.update(_STABLE_BALANCE_ASSETS)
+            allowed_assets_by_exchange.setdefault(exchange, set()).update(_STABLE_BALANCE_ASSETS)
         allowed_contracts.add(
             contract_id_for_leg(
                 exchange=contract.exchange,
@@ -1106,9 +1163,157 @@ def filter_balance_rows_for_contract_scope(
             continue
 
         asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+        exchange = _row_exchange_hint(row)
+        exchange_allowed_assets = allowed_assets_by_exchange.get(exchange) if exchange else None
+        if exchange_allowed_assets is not None:
+            if asset in exchange_allowed_assets:
+                filtered.append(row)
+            continue
         if asset in allowed_assets:
             filtered.append(row)
     return filtered
+
+
+def _clean_float_zero(value: float) -> float:
+    return 0.0 if abs(value) < 1e-12 else value
+
+
+def _balance_risk_semantics(row: Mapping[str, Any]) -> tuple[str, str] | None:
+    explicit_key = decode_text(row.get("risk_key")).strip().upper()
+    explicit_label = decode_text(row.get("risk_label")).strip()
+    if explicit_key:
+        return explicit_key, (explicit_label or explicit_key)
+
+    naming = canonical_naming_fields(
+        instrument_id=row.get("instrument_id"),
+        exchange=row.get("exchange"),
+        venue=row.get("venue"),
+        symbol=row.get("symbol"),
+        asset=row.get("asset"),
+        inventory_asset=row.get("inventory_asset") or row.get("coin") or row.get("asset") or row.get("base"),
+        is_position=_is_position_row(dict(row)),
+    )
+    inventory_asset = decode_text(
+        row.get("inventory_asset")
+        or naming.get("inventory_asset")
+        or row.get("coin")
+        or row.get("asset")
+        or row.get("base"),
+    ).strip().upper()
+    if not inventory_asset:
+        inventory_asset = _row_asset_hint(row)
+    if not inventory_asset:
+        return None
+    if inventory_asset in _STABLE_BALANCE_ASSETS:
+        return "USD_CASH", "USD Cash"
+    if inventory_asset.endswith("_PERP"):
+        inventory_asset = inventory_asset[:-5]
+    return inventory_asset, inventory_asset
+
+
+def build_balance_risk_groups(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    annotated_rows: list[dict[str, Any]] = []
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for source_row in rows:
+        row = dict(source_row)
+        semantics = _balance_risk_semantics(row)
+        if semantics is None:
+            annotated_rows.append(row)
+            continue
+
+        risk_key, risk_label = semantics
+        row["risk_key"] = risk_key
+        row["risk_label"] = risk_label
+        annotated_rows.append(row)
+
+        qty = (
+            safe_float(row.get("signed_qty"))
+            if _is_position_row(row)
+            else _balance_row_qty(row)
+        )
+        if qty is None:
+            qty = safe_float(row.get("qty")) or 0.0
+        mv_raw = safe_float(row.get("mv_raw") or row.get("mv")) or 0.0
+        venue = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+        coin = decode_text(
+            row.get("inventory_asset")
+            or row.get("coin")
+            or row.get("asset")
+            or row.get("base")
+            or risk_key,
+        ).strip().upper() or risk_key
+        group = grouped.setdefault(
+            risk_key,
+            {
+                "risk_key": risk_key,
+                "label": risk_label,
+                "net_qty": 0.0,
+                "net_mv": 0.0,
+                "long_mv": 0.0,
+                "short_mv": 0.0,
+                "gross_mv": 0.0,
+                "sources": [],
+                "rows": [],
+            },
+        )
+        group["net_qty"] += qty
+        group["net_mv"] += mv_raw
+        if mv_raw >= 0:
+            group["long_mv"] += mv_raw
+        else:
+            group["short_mv"] += mv_raw
+        group["gross_mv"] += abs(mv_raw)
+        if venue and venue not in group["sources"]:
+            group["sources"].append(venue)
+        group["rows"].append(
+            {
+                "row_id": decode_text(row.get("row_id")).strip() or None,
+                "venue": venue,
+                "coin": coin,
+                "qty_raw": qty,
+                "mv_raw": mv_raw,
+                "mark_raw": safe_float(row.get("mark_raw") or row.get("mark")),
+                "time_display": decode_text(row.get("time_display")).strip() or None,
+                "label": decode_text(row.get("label")).strip() or None,
+                "wallet": decode_text(
+                    row.get("account")
+                    or row.get("account_id")
+                    or row.get("wallet")
+                    or row.get("subaccount"),
+                ).strip()
+                or None,
+                "address": decode_text(row.get("address")).strip() or None,
+            },
+        )
+
+    risk_groups: list[dict[str, Any]] = []
+    for group in grouped.values():
+        gross_mv = _clean_float_zero(float(group["gross_mv"]))
+        net_mv = _clean_float_zero(float(group["net_mv"]))
+        hedge_ratio = 0.0 if gross_mv <= 0 else max(0.0, min(1.0, 1.0 - (abs(net_mv) / gross_mv)))
+        risk_groups.append(
+            {
+                **group,
+                "net_qty": _clean_float_zero(float(group["net_qty"])),
+                "net_mv": net_mv,
+                "long_mv": _clean_float_zero(float(group["long_mv"])),
+                "short_mv": _clean_float_zero(float(group["short_mv"])),
+                "gross_mv": gross_mv,
+                "abs_net_mv": abs(net_mv),
+                "hedge_ratio": _clean_float_zero(hedge_ratio),
+            },
+        )
+
+    risk_groups.sort(
+        key=lambda group: (
+            -abs(safe_float(group.get("gross_mv")) or 0.0),
+            decode_text(group.get("risk_key")).strip(),
+        ),
+    )
+    return annotated_rows, risk_groups
 
 
 def _portfolio_balance_sort_key(row: Mapping[str, Any]) -> tuple[int, int, float, int, str]:
