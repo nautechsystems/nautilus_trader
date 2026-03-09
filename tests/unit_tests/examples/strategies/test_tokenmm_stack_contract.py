@@ -98,6 +98,7 @@ def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
 def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
 
+    assert "rebuild_flux_pulse_sudoers.sh" in script
     assert "strategy_stack_write_env" in script
     assert '"tokenmm"' in script
     assert '"TokenMM"' in script

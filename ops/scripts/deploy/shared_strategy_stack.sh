@@ -91,6 +91,54 @@ strategy_stack_render_sudoers() {
 }
 
 
+strategy_stack_read_env_value() {
+  local env_path="$1"
+  local key="$2"
+  local line=""
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "${line}" ]] && continue
+    [[ "${line}" == \#* ]] && continue
+    [[ "${line}" != "${key}"=* ]] && continue
+
+    local value="${line#*=}"
+    if [[ ${#value} -ge 2 && "${value:0:1}" == "${value: -1}" ]]; then
+      case "${value:0:1}" in
+        '"'|"'")
+          value="${value:1:${#value}-2}"
+          ;;
+      esac
+    fi
+    printf '%s\n' "${value}"
+    return 0
+  done < "${env_path}"
+
+  return 1
+}
+
+
+strategy_stack_collect_pulse_service_ids() {
+  local -n out_service_ids="$1"
+  local env_dir="$2"
+  out_service_ids=()
+
+  [[ -d "${env_dir}" ]] || return 0
+
+  local env_path=""
+  while IFS= read -r env_path; do
+    [[ -n "${env_path}" ]] || continue
+    local pulse_enabled=""
+    pulse_enabled="$(strategy_stack_read_env_value "${env_path}" "PULSE_ENABLED" || true)"
+    if [[ "${pulse_enabled}" != "1" ]]; then
+      continue
+    fi
+    out_service_ids+=("$(basename "${env_path%.env}")")
+  done < <(find "${env_dir}" -maxdepth 1 -type f -name '*.env' | sort)
+}
+
+
 strategy_stack_discover_strategy_ids() {
   local strategies_dir="$1"
   local excluded_template="${2:-*template*}"
