@@ -54,6 +54,12 @@ Installer behavior:
 
 Band1 and Band2 are the only active checked-in production instances for this rollout.
 
+Run the host preflight before starting `flux-lp.target`:
+
+```bash
+python3 ops/scripts/lp_hedger_preflight.py --json
+```
+
 `LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini` is the operator-managed system INI for shared LP runtime settings. It should provide the same chainsaw sections:
 
 - `[redis]`

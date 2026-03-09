@@ -54,10 +54,16 @@ Intentional monorepo deltas must be documented in `fluxboard/docs/lp_contract.md
 
 Before enabling `flux-lp.target`, confirm:
 
+```bash
+python3 ops/scripts/lp_hedger_preflight.py --json
+```
+
+The preflight must report `ok: true` before operators proceed. It checks:
+
 1. `/etc/flux/common.env` points the public host at `LP_API_BACKEND_URL=http://127.0.0.1:5025`.
 2. `/etc/flux/lp-system.ini` contains `[redis]`, `[plume]`, `[bybit]`, `[bybit_hedger]`, and `[bybit_hedger_band2]`.
-3. `/etc/flux/lp-api.env`, `/etc/flux/service-eth-plume-lp-hedger.env`, and `/etc/flux/service-eth-plume-lp-hedger-band2.env` are present and readable.
-4. The shared public host remains bound to `:5022`, and the LP API remains loopback-bound on `:5025`.
+3. The Band1 and Band2 hedger INI files exist and are readable.
+4. The shared public host remains on `:5022`, and the LP API remains loopback-bound on `:5025`.
 
 ## Install And Restart Order
 
