@@ -545,6 +545,24 @@ pub struct OrderSubscription {
     pub segmentation_enabled: Option<bool>,
 }
 
+/// Race stream subscription request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RaceSubscription {
+    pub op: String,
+    pub id: Option<u64>,
+}
+
+impl RaceSubscription {
+    #[must_use]
+    pub fn new(id: u64) -> Self {
+        Self {
+            op: "raceSubscription".to_string(),
+            id: Some(id),
+        }
+    }
+}
+
 /// Heartbeat request to keep the connection alive.
 #[derive(Debug, Clone, Serialize)]
 pub struct StreamHeartbeat {

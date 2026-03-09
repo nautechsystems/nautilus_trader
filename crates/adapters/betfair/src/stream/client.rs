@@ -34,7 +34,7 @@ use super::{
     error::BetfairStreamError,
     messages::{
         Authentication, MarketDataFilter, MarketSubscription, OrderFilter, OrderSubscription,
-        StreamMarketFilter, StreamMessage, stream_decode,
+        RaceSubscription, StreamMarketFilter, StreamMessage, stream_decode,
     },
 };
 use crate::common::{credential::BetfairCredential, enums::StatusErrorCode};
@@ -385,12 +385,158 @@ impl BetfairStreamClient {
     }
 }
 
+/// Betfair race stream client for Total Performance Data (TPD).
+///
+/// Connects to `sports-data-stream-api.betfair.com` and subscribes to Race Change
+/// Messages (RCM) with live GPS tracking data. Simpler than [`BetfairStreamClient`]:
+/// no clk-based delta resumption, just auth + raceSubscription on (re)connect.
+#[derive(Debug)]
+pub struct BetfairRaceStreamClient {
+    socket: SocketClient,
+    closed: AtomicBool,
+}
+
+impl BetfairRaceStreamClient {
+    /// Connects to the Betfair race stream and subscribes.
+    ///
+    /// The `race_fatal_tx` channel receives a signal when the server returns a
+    /// fatal status error (e.g. NOT_AUTHORIZED, no TPD entitlement). The caller
+    /// should monitor this channel and close the client when it fires.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails or the initial send fails.
+    pub async fn connect(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: TcpMessageHandler,
+        config: BetfairStreamConfig,
+        race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<Self, BetfairStreamError> {
+        let auth = Authentication::new(credential.app_key().to_string(), session_token);
+        let auth_bytes = Bytes::from(serde_json::to_vec(&auth)?);
+
+        let race_sub = RaceSubscription::new(1);
+        let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub)?);
+
+        let mode = if config.use_tls {
+            Mode::Tls
+        } else {
+            Mode::Plain
+        };
+
+        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
+            Arc::new(OnceLock::new());
+
+        let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+            if let Ok(StreamMessage::Status(status)) = stream_decode(data) {
+                if let Some(ref code) = status.error_code
+                    && code.is_race_stream_fatal()
+                {
+                    log::error!(
+                        "Betfair race stream fatal error: {:?} - {:?} \
+                         (check TPD entitlement on your Betfair app key)",
+                        status.error_code,
+                        status.error_message,
+                    );
+                    let _ = race_fatal_tx.send(());
+                    return;
+                }
+
+                if status.connection_closed {
+                    log::error!(
+                        "Betfair race stream closed: {:?} - {:?}",
+                        status.error_code,
+                        status.error_message,
+                    );
+                } else if status.error_code.is_some() {
+                    log::warn!(
+                        "Betfair race stream status: {:?} - {:?}",
+                        status.error_code,
+                        status.error_message,
+                    );
+                }
+            }
+            handler(data);
+        });
+
+        let auth_reconnect = auth_bytes.clone();
+        let sub_reconnect = race_sub_bytes.clone();
+        let shared_tx_reconnect = Arc::clone(&shared_tx);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let Some(tx) = shared_tx_reconnect.get() else {
+                return;
+            };
+            let mut combined = Vec::with_capacity(auth_reconnect.len() + 2 + sub_reconnect.len());
+            combined.extend_from_slice(&auth_reconnect);
+            combined.extend_from_slice(b"\r\n");
+            combined.extend_from_slice(&sub_reconnect);
+            let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
+        });
+
+        let url = format!("{}:{}", config.host, config.port);
+        let socket_config = SocketConfig {
+            url,
+            mode,
+            suffix: b"\r\n".to_vec(),
+            message_handler: Some(message_handler),
+            heartbeat: Some((
+                config.heartbeat_ms.div_ceil(1_000),
+                b"{\"op\":\"heartbeat\"}".to_vec(),
+            )),
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
+            reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
+            connection_max_retries: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: Some(config.idle_timeout_ms),
+            certs_dir: None,
+        };
+
+        let socket = SocketClient::connect(socket_config, None, Some(post_reconnection), None)
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+
+        let _ = shared_tx.set(socket.writer_tx.clone());
+
+        let mut combined = Vec::with_capacity(auth_bytes.len() + 2 + race_sub_bytes.len());
+        combined.extend_from_slice(&auth_bytes);
+        combined.extend_from_slice(b"\r\n");
+        combined.extend_from_slice(&race_sub_bytes);
+        socket
+            .send_bytes(combined)
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+
+        Ok(Self {
+            socket,
+            closed: AtomicBool::new(false),
+        })
+    }
+
+    /// Returns `true` if the connection is active.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.socket.is_active()
+    }
+
+    /// Closes the race stream connection.
+    pub async fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.socket.close().await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stream::messages::{Authentication, MarketDataFilter, StreamMarketFilter};
+    use crate::stream::messages::{
+        Authentication, MarketDataFilter, RaceSubscription, StreamMarketFilter,
+    };
 
     #[rstest]
     fn test_invalid_clock_status_resets_clocks() {
@@ -623,5 +769,93 @@ mod tests {
         assert!(order_sub.contains("\"op\":\"orderSubscription\""));
         assert!(order_sub.contains("\"clk\":\"ocm-clk1\""));
         assert!(order_sub.contains("\"initialClk\":\"ocm-iclk1\""));
+    }
+
+    #[rstest]
+    fn test_race_subscription_serialization() {
+        let sub = RaceSubscription::new(42);
+        let json = serde_json::to_string(&sub).unwrap();
+        assert!(json.contains("\"op\":\"raceSubscription\""));
+        assert!(json.contains("\"id\":42"));
+    }
+
+    #[rstest]
+    fn test_race_stream_reconnect_replays_auth_and_subscription() {
+        let auth = Authentication::new("key".to_string(), "token".to_string());
+        let auth_bytes = Bytes::from(serde_json::to_vec(&auth).unwrap());
+        let race_sub = RaceSubscription::new(1);
+        let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub).unwrap());
+
+        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
+            Arc::new(OnceLock::new());
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
+        let _ = shared_tx.set(tx);
+
+        let auth_reconnect = auth_bytes;
+        let sub_reconnect = race_sub_bytes;
+        let shared_tx_reconnect = Arc::clone(&shared_tx);
+        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let Some(tx) = shared_tx_reconnect.get() else {
+                return;
+            };
+            let mut combined = Vec::with_capacity(auth_reconnect.len() + 2 + sub_reconnect.len());
+            combined.extend_from_slice(&auth_reconnect);
+            combined.extend_from_slice(b"\r\n");
+            combined.extend_from_slice(&sub_reconnect);
+            let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
+        });
+
+        post_reconnection();
+
+        let cmd = rx.try_recv().expect("auth+race subscription message");
+        assert!(rx.try_recv().is_err(), "no further messages expected");
+
+        let WriterCommand::Send(bytes) = cmd else {
+            panic!("expected Send");
+        };
+
+        let text = std::str::from_utf8(&bytes).unwrap();
+        let (auth_part, sub_part) = text
+            .split_once("\r\n")
+            .expect("CRLF separator in combined message");
+
+        assert!(auth_part.contains("\"op\":\"authentication\""));
+        assert!(sub_part.contains("\"op\":\"raceSubscription\""));
+    }
+
+    #[rstest]
+    fn test_race_stream_handler_fatal_status_sends_kill_signal() {
+        let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let inner_handler: TcpMessageHandler = Arc::new(|_data: &[u8]| {});
+
+        let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+            if let Ok(StreamMessage::Status(status)) = stream_decode(data)
+                && let Some(ref code) = status.error_code
+                && code.is_race_stream_fatal()
+            {
+                let _ = race_fatal_tx.send(());
+                return;
+            }
+            inner_handler(data);
+        });
+
+        // Fatal: NOT_AUTHORIZED
+        handler(
+            br#"{"op":"status","statusCode":"503","errorCode":"NOT_AUTHORIZED","connectionClosed":true}"#,
+        );
+        assert!(
+            race_fatal_rx.try_recv().is_ok(),
+            "fatal error must send kill signal"
+        );
+
+        // Non-fatal: INVALID_CLOCK
+        handler(
+            br#"{"op":"status","statusCode":"503","errorCode":"INVALID_CLOCK","connectionClosed":true}"#,
+        );
+        assert!(
+            race_fatal_rx.try_recv().is_err(),
+            "non-fatal error must not send kill signal"
+        );
     }
 }

@@ -840,6 +840,22 @@ pub enum StatusErrorCode {
     InvalidRequest,
 }
 
+impl StatusErrorCode {
+    /// Returns `true` for errors that will never succeed on retry and should
+    /// permanently disable the race stream.
+    #[must_use]
+    pub fn is_race_stream_fatal(&self) -> bool {
+        matches!(
+            self,
+            Self::NoAppKey
+                | Self::InvalidAppKey
+                | Self::NotAuthorized
+                | Self::SubscriptionLimitExceeded
+                | Self::MaxConnectionLimitExceeded
+        )
+    }
+}
+
 /// Streaming change type.
 #[derive(
     Clone,
@@ -1301,5 +1317,19 @@ mod tests {
             ),
             OrderStatus::Canceled,
         );
+    }
+
+    #[rstest]
+    #[case(StatusErrorCode::NoAppKey, true)]
+    #[case(StatusErrorCode::InvalidAppKey, true)]
+    #[case(StatusErrorCode::NotAuthorized, true)]
+    #[case(StatusErrorCode::SubscriptionLimitExceeded, true)]
+    #[case(StatusErrorCode::MaxConnectionLimitExceeded, true)]
+    #[case(StatusErrorCode::InvalidClock, false)]
+    #[case(StatusErrorCode::Timeout, false)]
+    #[case(StatusErrorCode::InvalidInput, false)]
+    #[case(StatusErrorCode::TooManyRequests, false)]
+    fn test_is_race_stream_fatal(#[case] code: StatusErrorCode, #[case] expected: bool) {
+        assert_eq!(code.is_race_stream_fatal(), expected);
     }
 }

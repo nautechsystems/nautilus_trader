@@ -375,6 +375,19 @@ impl FillTracker {
         fill_price
     }
 
+    /// Pre-populates state for a bet from existing order data.
+    ///
+    /// Called during reconnect sync so that the first stream update
+    /// computes a correct incremental fill instead of treating the
+    /// cumulative matched size as a new fill.
+    pub fn sync_order(&mut self, bet_id: &str, filled_qty: Decimal, avg_px: Decimal) {
+        self.filled_qty.insert(bet_id.to_string(), filled_qty);
+
+        if avg_px > Decimal::ZERO {
+            self.avg_px.insert(bet_id.to_string(), avg_px);
+        }
+    }
+
     /// Removes state for a completed bet to prevent unbounded growth.
     pub fn prune(&mut self, bet_id: &str) {
         self.filled_qty.remove(bet_id);
@@ -743,7 +756,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::testing::load_test_json,
+        common::{
+            enums::{StreamingOrderType, StreamingPersistenceType, StreamingSide},
+            testing::load_test_json,
+        },
         stream::messages::{PV, StreamMessage, stream_decode},
     };
 
@@ -1980,5 +1996,93 @@ mod tests {
             "Active runners should not produce close events, found {}",
             closes.len()
         );
+    }
+
+    fn make_test_uo(
+        bet_id: &str,
+        size: Decimal,
+        sm: Option<Decimal>,
+        avp: Option<Decimal>,
+    ) -> UnmatchedOrder {
+        UnmatchedOrder {
+            id: bet_id.to_string(),
+            p: Decimal::new(25, 1),
+            s: size,
+            side: StreamingSide::Back,
+            status: StreamingOrderStatus::Executable,
+            pt: StreamingPersistenceType::Lapse,
+            ot: StreamingOrderType::Limit,
+            pd: 1616568581000,
+            bsp: None,
+            rfo: None,
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp,
+            sm,
+            sr: None,
+            sl: None,
+            sc: None,
+            sv: None,
+            lsrc: None,
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_sync_order_prevents_duplicate_fill() {
+        let mut tracker = FillTracker::new();
+
+        // Sync existing fill state: 10 matched at 2.5
+        tracker.sync_order("123456", Decimal::new(10, 0), Decimal::new(25, 1));
+
+        let uo = make_test_uo(
+            "123456",
+            Decimal::new(20, 0),
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+
+        let instrument_id = InstrumentId::from("1.234567-123456-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        // Same sm=10 as synced, should not emit a fill
+        let result =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(
+            result.is_none(),
+            "should not emit fill for already-synced qty"
+        );
+    }
+
+    #[rstest]
+    fn test_fill_tracker_sync_order_allows_incremental_fill() {
+        let mut tracker = FillTracker::new();
+
+        // Sync: 10 matched at 2.5
+        tracker.sync_order("123456", Decimal::new(10, 0), Decimal::new(25, 1));
+
+        let uo = make_test_uo(
+            "123456",
+            Decimal::new(20, 0),
+            Some(Decimal::new(15, 0)),
+            Some(Decimal::new(26, 1)),
+        );
+
+        let instrument_id = InstrumentId::from("1.234567-123456-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        // sm=15 vs synced 10, should emit incremental fill of 5
+        let result =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(result.is_some(), "should emit fill for new matched qty");
+        let fill = result.unwrap();
+        assert_eq!(fill.last_qty, Quantity::from("5.00"));
     }
 }

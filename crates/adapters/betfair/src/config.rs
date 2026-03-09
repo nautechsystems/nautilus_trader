@@ -24,6 +24,10 @@ pub struct BetfairDataConfig {
     /// Delay in seconds before sending the initial subscription message
     /// after connecting to the stream (default: 3).
     pub subscription_delay_secs: Option<u64>,
+    /// Subscribe to the race stream for Total Performance Data (TPD).
+    /// When true, a separate connection to `sports-data-stream-api.betfair.com`
+    /// receives Race Change Messages (RCM) with live GPS tracking data.
+    pub subscribe_race_data: bool,
 }
 
 impl Default for BetfairDataConfig {
@@ -31,6 +35,7 @@ impl Default for BetfairDataConfig {
         Self {
             stream_conflate_ms: None,
             subscription_delay_secs: Some(3),
+            subscribe_race_data: false,
         }
     }
 }
@@ -50,6 +55,17 @@ pub struct BetfairExecConfig {
     /// Set to 0 to disable polling. Only applies when
     /// `calculate_account_state` is true.
     pub request_account_state_secs: u64,
+    /// When true, reconciliation only requests orders matching market IDs
+    /// from `reconcile_market_ids`. When false, all orders are reconciled.
+    pub reconcile_market_ids_only: bool,
+    /// Market IDs to restrict reconciliation to. Only used when
+    /// `reconcile_market_ids_only` is true.
+    pub reconcile_market_ids: Option<Vec<String>>,
+    /// When true, attach the latest market version to placeOrders and
+    /// replaceOrders requests. If the market has advanced past the version
+    /// sent with the order, Betfair lapses the bet rather than matching
+    /// against a changed book (default: false).
+    pub use_market_version: bool,
 }
 
 impl Default for BetfairExecConfig {
@@ -59,6 +75,9 @@ impl Default for BetfairExecConfig {
             ignore_external_orders: false,
             calculate_account_state: true,
             request_account_state_secs: 300,
+            reconcile_market_ids_only: false,
+            reconcile_market_ids: None,
+            use_market_version: false,
         }
     }
 }
@@ -75,6 +94,7 @@ mod tests {
 
         assert!(config.stream_conflate_ms.is_none());
         assert_eq!(config.subscription_delay_secs, Some(3));
+        assert!(!config.subscribe_race_data);
     }
 
     #[rstest]
@@ -85,6 +105,9 @@ mod tests {
         assert!(!config.ignore_external_orders);
         assert!(config.calculate_account_state);
         assert_eq!(config.request_account_state_secs, 300);
+        assert!(!config.reconcile_market_ids_only);
+        assert!(config.reconcile_market_ids.is_none());
+        assert!(!config.use_market_version);
     }
 
     #[rstest]
@@ -117,5 +140,27 @@ mod tests {
         };
 
         assert!(!config.calculate_account_state);
+    }
+
+    #[rstest]
+    fn test_exec_config_reconcile_market_ids() {
+        let config = BetfairExecConfig {
+            reconcile_market_ids_only: true,
+            reconcile_market_ids: Some(vec!["1.234567".to_string()]),
+            ..Default::default()
+        };
+
+        assert!(config.reconcile_market_ids_only);
+        assert_eq!(config.reconcile_market_ids.as_ref().unwrap().len(), 1);
+    }
+
+    #[rstest]
+    fn test_exec_config_use_market_version() {
+        let config = BetfairExecConfig {
+            use_market_version: true,
+            ..Default::default()
+        };
+
+        assert!(config.use_market_version);
     }
 }

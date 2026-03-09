@@ -47,7 +47,10 @@ use tokio::task::JoinHandle;
 
 use crate::{
     common::{
-        consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE},
+        consts::{
+            BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_RACE_STREAM_HOST,
+            BETFAIR_VENUE,
+        },
         credential::BetfairCredential,
         enums::{MarketDataFilterField, MarketStatus},
         parse::{
@@ -59,7 +62,7 @@ use crate::{
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
-        client::BetfairStreamClient,
+        client::{BetfairRaceStreamClient, BetfairStreamClient},
         config::BetfairStreamConfig,
         messages::{MarketDataFilter, StreamMarketFilter, StreamMessage, stream_decode},
         parse::{
@@ -99,6 +102,7 @@ pub struct BetfairDataClient {
     http_client: Arc<BetfairHttpClient>,
     provider: BetfairInstrumentProvider,
     stream_client: Option<Arc<BetfairStreamClient>>,
+    race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
     config: BetfairDataConfig,
@@ -108,6 +112,7 @@ pub struct BetfairDataClient {
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     subscribed_market_ids: AHashSet<String>,
     keep_alive_handle: Option<JoinHandle<()>>,
+    race_fatal_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairDataClient {
@@ -138,6 +143,7 @@ impl BetfairDataClient {
             http_client,
             provider,
             stream_client: None,
+            race_stream_client: None,
             credential,
             stream_config,
             config,
@@ -147,6 +153,7 @@ impl BetfairDataClient {
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             subscribed_market_ids: AHashSet::new(),
             keep_alive_handle: None,
+            race_fatal_handle: None,
         }
     }
 
@@ -501,6 +508,10 @@ impl DataClient for BetfairDataClient {
         if let Some(handle) = self.keep_alive_handle.take() {
             handle.abort();
         }
+
+        if let Some(handle) = self.race_fatal_handle.take() {
+            handle.abort();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -511,8 +522,13 @@ impl DataClient for BetfairDataClient {
         if let Some(handle) = self.keep_alive_handle.take() {
             handle.abort();
         }
+
+        if let Some(handle) = self.race_fatal_handle.take() {
+            handle.abort();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
         self.stream_client = None;
+        self.race_stream_client = None;
         self.provider.store_mut().clear();
 
         if let Ok(mut guard) = self.instruments.write() {
@@ -598,6 +614,62 @@ impl DataClient for BetfairDataClient {
 
         self.stream_client = Some(Arc::new(stream_client));
 
+        if self.config.subscribe_race_data {
+            let race_config = BetfairStreamConfig {
+                host: BETFAIR_RACE_STREAM_HOST.to_string(),
+                ..self.stream_config.clone()
+            };
+
+            let race_session = self
+                .http_client
+                .session_token()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("No session token for race stream"))?;
+
+            let race_handler = Self::create_stream_handler(
+                self.data_sender.clone(),
+                Arc::clone(&self.instruments),
+                self.currency,
+                self.provider.min_notional(),
+            );
+
+            let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+
+            match BetfairRaceStreamClient::connect(
+                &self.credential,
+                race_session,
+                race_handler,
+                race_config,
+                race_fatal_tx,
+            )
+            .await
+            {
+                Ok(client) => {
+                    let race_client = Arc::new(client);
+                    self.race_stream_client = Some(Arc::clone(&race_client));
+
+                    if let Some(handle) = self.race_fatal_handle.take() {
+                        handle.abort();
+                    }
+
+                    self.race_fatal_handle = Some(get_runtime().spawn(async move {
+                        if race_fatal_rx.recv().await.is_some() {
+                            log::error!(
+                                "Betfair race stream permanently disabled due to fatal error"
+                            );
+                            race_client.close().await;
+                        }
+                    }));
+
+                    log::info!("Betfair race stream connected");
+                }
+                Err(e) => {
+                    log::warn!("Betfair race stream connect failed: {e}");
+                    self.race_stream_client = None;
+                }
+            }
+        }
+
         // Abort any existing keep-alive task before spawning a new one
         if let Some(handle) = self.keep_alive_handle.take() {
             handle.abort();
@@ -632,6 +704,15 @@ impl DataClient for BetfairDataClient {
         if let Some(handle) = self.keep_alive_handle.take() {
             handle.abort();
         }
+
+        if let Some(handle) = self.race_fatal_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(client) = &self.race_stream_client {
+            client.close().await;
+        }
+        self.race_stream_client = None;
 
         if let Some(client) = &self.stream_client {
             client.close().await;
