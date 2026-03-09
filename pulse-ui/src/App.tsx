@@ -104,7 +104,7 @@ export default function App() {
       if (!response.success) {
         throw new Error(actionFailureMessage(response, `Failed to ${action} ${jobId}`));
       }
-      setMessage(response.message || `Requested ${action} for ${jobId}`);
+      setMessage(actionSuccessMessage(response, `Requested ${action} for ${jobId}`));
       await loadJobs({ silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${action} ${jobId}`);

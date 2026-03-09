@@ -289,7 +289,7 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByText("TokenMM");
-    await userEvent.click(screen.getByRole("button", { name: /restart all tokenmm/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^Restart All TokenMM$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "restarted 0 jobs in group 'tokenmm': tokenmm-bridge: sudo: The \"no new privileges\" flag is set. (+1 more)",
@@ -420,7 +420,7 @@ describe("App", () => {
 
     await screen.findByText("TokenMM");
 
-    const restartButton = screen.getByRole("button", { name: /restart all tokenmm/i });
+    const restartButton = screen.getByRole("button", { name: /^Restart All TokenMM$/i });
     await userEvent.click(restartButton);
     await userEvent.click(restartButton);
 
