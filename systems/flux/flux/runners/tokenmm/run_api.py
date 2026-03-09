@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import tomllib
+import urllib.request as urllib_request
 from pathlib import Path
 from typing import Any
 from typing import cast
@@ -13,12 +14,11 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
-import urllib.request as urllib_request
 
 import redis
+from flask import Response
 from flask import abort
 from flask import redirect
-from flask import Response
 from flask import request
 from flask import send_from_directory
 
@@ -39,6 +39,9 @@ from flux.runners.shared.logging import emit_startup_banner
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.runners.shared.surface_proxy import SurfaceProxyDescriptor
+from flux.runners.shared.surface_proxy import resolve_surface_backends
+from flux.runners.shared.surface_proxy import resolve_surface_proxy_descriptor
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
@@ -47,6 +50,24 @@ DEFAULT_PULSE_BASE_PATH = "/pulse"
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
 TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
+FLUXBOARD_SPA_BASE_PATHS: tuple[tuple[str, str], ...] = (
+    (DEFAULT_TOKENMM_BASE_PATH, "tokenmm"),
+    ("/lp", "lp"),
+)
+SURFACE_PROXY_DESCRIPTORS: tuple[SurfaceProxyDescriptor, ...] = (
+    SurfaceProxyDescriptor(
+        surface="equities",
+        base_paths=("/equities",),
+        backend_env_var="EQUITIES_API_BACKEND_URL",
+        api_prefixes=("/api/v1", "/socket.io"),
+        profile_names=("equities",),
+    ),
+    SurfaceProxyDescriptor(
+        surface="lp",
+        base_paths=("/api/v1/hedgers",),
+        backend_env_var="LP_API_BACKEND_URL",
+    ),
+)
 
 
 def _repo_root() -> Path:
@@ -270,20 +291,8 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_equities_backend_url() -> str | None:
-    return _optional_text(os.getenv("EQUITIES_API_BACKEND_URL"))
-
-
-def _should_proxy_to_equities_backend() -> bool:
-    path = request.path or "/"
-    if path == "/equities" or path.startswith("/equities/"):
-        return True
-
-    profile = _optional_text(request.args.get("profile"))
-    if profile != "equities":
-        return False
-
-    return path == "/socket.io/" or path == "/socket.io" or path == "/api/v1" or path.startswith("/api/v1/")
+def _resolve_surface_proxy_backends() -> dict[str, str]:
+    return resolve_surface_backends(SURFACE_PROXY_DESCRIPTORS)
 
 
 def _proxy_request_to_backend(backend_url: str) -> Response:
@@ -335,12 +344,22 @@ def _proxy_request_to_backend(backend_url: str) -> Response:
         return Response("Bad gateway", status=502, content_type="text/plain")
 
 
-def _attach_profile_router_proxy(app: Any, *, equities_backend_url: str) -> None:
+def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) -> None:
     @app.before_request
-    def _proxy_equities_requests() -> Response | None:
-        if not _should_proxy_to_equities_backend():
+    def _proxy_surface_requests() -> Response | None:
+        descriptor = resolve_surface_proxy_descriptor(
+            path=request.path,
+            profile=_optional_text(request.args.get("profile")),
+            descriptors=SURFACE_PROXY_DESCRIPTORS,
+        )
+        if descriptor is None:
             return None
-        return _proxy_request_to_backend(equities_backend_url)
+
+        backend_url = surface_backends.get(descriptor.surface)
+        if not backend_url:
+            return None
+
+        return _proxy_request_to_backend(backend_url)
 
 
 def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
@@ -379,14 +398,53 @@ def _is_within(parent: Path, candidate: Path) -> bool:
     return True
 
 
+def _register_fluxboard_spa_base_path(
+    app: Any,
+    *,
+    dist_root: Path,
+    base_path: str,
+    endpoint_prefix: str,
+) -> None:
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    def _serve_assets(asset_path: str) -> Any:
+        normalized = asset_path.strip().lstrip("/")
+        candidate = (dist_root / "assets" / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root / "assets"), normalized)
+
+    def _serve_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+    app.add_url_rule(base_path, endpoint=f"{endpoint_prefix}_index", view_func=_serve_index, methods=["GET"])
+    app.add_url_rule(f"{base_path}/", endpoint=f"{endpoint_prefix}_index_slash", view_func=_serve_index, methods=["GET"])
+    app.add_url_rule(
+        f"{base_path}/assets/<path:asset_path>",
+        endpoint=f"{endpoint_prefix}_assets",
+        view_func=_serve_assets,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        f"{base_path}/<path:subpath>",
+        endpoint=f"{endpoint_prefix}_asset_or_spa",
+        view_func=_serve_asset_or_spa,
+        methods=["GET"],
+    )
+
+
 def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
-
-    def _serve_index() -> Any:
-        return send_from_directory(str(dist_root), "index.html")
 
     def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
         target = DEFAULT_TOKENMM_BASE_PATH
@@ -406,28 +464,13 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     def _tokenm_alias_subpath(subpath: str) -> Any:
         return _redirect_tokenm_alias(subpath)
 
-    @app.get(DEFAULT_TOKENMM_BASE_PATH)
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/")
-    def _tokenmm_index() -> Any:
-        return _serve_index()
-
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/assets/<path:asset_path>")
-    def _tokenmm_assets(asset_path: str) -> Any:
-        normalized = asset_path.strip().lstrip("/")
-        candidate = (dist_root / "assets" / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root / "assets"), normalized)
-
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/<path:subpath>")
-    def _tokenmm_asset_or_spa(subpath: str) -> Any:
-        normalized = subpath.strip().lstrip("/")
-        candidate = (dist_root / normalized).resolve()
-        if candidate.is_file() and _is_within(dist_root, candidate):
-            return send_from_directory(str(dist_root), normalized)
-        if normalized.startswith("assets/"):
-            abort(404)
-        return _serve_index()
+    for base_path, endpoint_prefix in FLUXBOARD_SPA_BASE_PATHS:
+        _register_fluxboard_spa_base_path(
+            app,
+            dist_root=dist_root,
+            base_path=base_path,
+            endpoint_prefix=f"fluxboard_{endpoint_prefix}",
+        )
 
 
 def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
@@ -543,9 +586,9 @@ def main() -> None:
     )
     if _should_enable_pulse_routes(args, api_cfg):
         PulseControlPlane().register_routes(app)
-    equities_backend_url = _resolve_equities_backend_url()
-    if equities_backend_url:
-        _attach_profile_router_proxy(app, equities_backend_url=equities_backend_url)
+    surface_backends = _resolve_surface_proxy_backends()
+    if surface_backends:
+        _attach_profile_router_proxy(app, surface_backends=surface_backends)
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:

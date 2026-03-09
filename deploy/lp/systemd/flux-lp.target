@@ -1,0 +1,9 @@
+[Unit]
+Description=Flux LP Stack
+Wants=flux@lp-api.service
+Wants=flux@service-eth-plume-lp-hedger.service
+Wants=flux@service-eth-plume-lp-hedger-band2.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

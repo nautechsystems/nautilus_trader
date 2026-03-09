@@ -49,6 +49,11 @@ export interface DialogProps {
   children: React.ReactNode;
 
   /**
+   * Optional accessible description announced with the title
+   */
+  description?: React.ReactNode;
+
+  /**
    * Optional footer content (usually action buttons)
    */
   footer?: React.ReactNode;
@@ -94,6 +99,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       onClose,
       title,
       children,
+      description,
       footer,
       size = 'md',
       className,
@@ -104,6 +110,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
   ) => {
     const { isMobile } = useMobileLayout();
     const isSheet = variant === 'sheet' && isMobile;
+    const descriptionId = React.useId();
     // Handle backdrop click
     const handlePointerDownOutside = (event: Event) => {
       if (preventBackdropClose) {
@@ -136,6 +143,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         {/* Dialog Content */}
         <DialogPrimitive.Content
           ref={ref}
+          aria-describedby={description ? descriptionId : undefined}
           className={cn(
             isSheet
               ? 'fixed inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0'
@@ -200,6 +208,15 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
             className="flex-1 overflow-y-auto px-4 py-3 min-h-0"
             style={{ color: colors.text.secondary }}
           >
+            {description ? (
+              <DialogPrimitive.Description
+                id={descriptionId}
+                className="mb-3 text-sm"
+                style={{ color: colors.text.secondary }}
+              >
+                {description}
+              </DialogPrimitive.Description>
+            ) : null}
             {children}
           </div>
 

@@ -1,0 +1,14 @@
+[project]
+name = "lp"
+version = "0.1.0"
+description = "LP hedger runtime and API system"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+readme = "README.md"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["lp"]

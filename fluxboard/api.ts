@@ -1361,6 +1361,91 @@ export const api = {
     return unwrapFluxEnvelope(response);
   },
 
+  setHedgerGeometryOverridesById: async (
+    hedgerId: string,
+    overrides: HedgerGeometryOverrides
+  ): Promise<HedgerGeometryResponse> => {
+    const headers = await signedJsonHeaders(overrides);
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/geometry-overrides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(overrides),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerGeometryOverridesById: async (hedgerId: string): Promise<HedgerGeometryResponse> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/geometry-overrides`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  setHedgerThresholdOverridesById: async (
+    hedgerId: string,
+    overrides: HedgerThresholdOverrides
+  ): Promise<HedgerThresholdResponse> => {
+    const headers = await signedJsonHeaders(overrides);
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/threshold-overrides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(overrides),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerThresholdOverridesById: async (hedgerId: string): Promise<HedgerThresholdResponse> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/threshold-overrides`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  setHedgerEnabledById: async (
+    hedgerId: string,
+    enabled: boolean
+  ): Promise<{ hedger_enabled: boolean }> => {
+    const payload = { enabled };
+    const headers = await signedJsonHeaders(payload);
+    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/enabled`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(payload),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerEventsById: async (hedgerId: string): Promise<{ cleared: number }> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/events/clear`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
   // Hedger – ETH/PLUME LP hedger status (primary band)
   getEthPlumeHedgerStatus: async (): Promise<HedgerStatus> => {
     return api.getHedgerStatusById('eth_plume_lp');
@@ -1382,161 +1467,57 @@ export const api = {
   setHedgerGeometryOverrides: async (
     overrides: HedgerGeometryOverrides
   ): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/geometry-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerGeometryOverridesById('eth_plume_lp', overrides);
   },
 
   clearHedgerGeometryOverrides: async (): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/geometry-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerGeometryOverridesById('eth_plume_lp');
   },
 
   setHedgerThresholdOverrides: async (
     overrides: HedgerThresholdOverrides
   ): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/threshold-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerThresholdOverridesById('eth_plume_lp', overrides);
   },
 
   clearHedgerThresholdOverrides: async (): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/threshold-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerThresholdOverridesById('eth_plume_lp');
   },
 
   setHedgerEnabled: async (enabled: boolean): Promise<{ hedger_enabled: boolean }> => {
-    const payload = { enabled };
-    const headers = await signedJsonHeaders(payload);
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
-      '/api/v1/hedgers/eth_plume_lp/enabled',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(payload),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerEnabledById('eth_plume_lp', enabled);
   },
 
   setHedgerBand2GeometryOverrides: async (
     overrides: HedgerGeometryOverrides
   ): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/geometry-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerGeometryOverridesById('eth_plume_lp_band2', overrides);
   },
 
   clearHedgerBand2GeometryOverrides: async (): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/geometry-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerGeometryOverridesById('eth_plume_lp_band2');
   },
 
   setHedgerBand2ThresholdOverrides: async (
     overrides: HedgerThresholdOverrides
   ): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/threshold-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerThresholdOverridesById('eth_plume_lp_band2', overrides);
   },
 
   clearHedgerBand2ThresholdOverrides: async (): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/threshold-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerThresholdOverridesById('eth_plume_lp_band2');
   },
 
   setHedgerBand2Enabled: async (enabled: boolean): Promise<{ hedger_enabled: boolean }> => {
-    const payload = { enabled };
-    const headers = await signedJsonHeaders(payload);
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/enabled',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(payload),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerEnabledById('eth_plume_lp_band2', enabled);
   },
 
   clearHedgerEvents: async (): Promise<{ cleared: number }> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
-      '/api/v1/hedgers/eth_plume_lp/events/clear',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerEventsById('eth_plume_lp');
   },
 
   clearHedgerBand2Events: async (): Promise<{ cleared: number }> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/events/clear',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerEventsById('eth_plume_lp_band2');
   },
 
   getScannerPricingSnapshots: async (

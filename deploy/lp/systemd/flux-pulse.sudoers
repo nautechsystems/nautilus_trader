@@ -1,0 +1,16 @@
+# Allow the API service user to operate managed Flux services for Pulse.
+Cmnd_Alias FLUX_PULSE = \
+  /usr/bin/systemctl start flux@lp-api.service, \
+  /usr/bin/systemctl stop flux@lp-api.service, \
+  /usr/bin/systemctl restart flux@lp-api.service, \
+  /usr/bin/journalctl -u flux@lp-api.service, \
+  /usr/bin/systemctl start flux@service-eth-plume-lp-hedger.service, \
+  /usr/bin/systemctl stop flux@service-eth-plume-lp-hedger.service, \
+  /usr/bin/systemctl restart flux@service-eth-plume-lp-hedger.service, \
+  /usr/bin/journalctl -u flux@service-eth-plume-lp-hedger.service, \
+  /usr/bin/systemctl start flux@service-eth-plume-lp-hedger-band2.service, \
+  /usr/bin/systemctl stop flux@service-eth-plume-lp-hedger-band2.service, \
+  /usr/bin/systemctl restart flux@service-eth-plume-lp-hedger-band2.service, \
+  /usr/bin/journalctl -u flux@service-eth-plume-lp-hedger-band2.service
+
+ubuntu ALL=(root) NOPASSWD: FLUX_PULSE
