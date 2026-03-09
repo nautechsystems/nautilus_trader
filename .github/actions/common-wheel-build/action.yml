@@ -81,6 +81,9 @@ runs:
           echo "$pythonLocation/bin/python${INPUTS_PYTHON_VERSION}"
         )
         export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
+        if [ "$(uname -m)" = "arm64" ]; then
+          export ARCHFLAGS="-arch arm64"
+        fi
 
         PYTHON_LIB_DIR=$(dirname $(dirname $PYO3_PYTHON))/lib
         export LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$LIBRARY_PATH"
