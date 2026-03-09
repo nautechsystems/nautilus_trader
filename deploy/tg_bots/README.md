@@ -25,6 +25,11 @@ Optional AWS Secrets Manager backup IDs:
 - `/nautilus/tg-bots/lan_rogue_trader_bot/binance`
 - `/nautilus/tg-bots/lan_rogue_trader_bot/telegram_bot`
 
+These `_SECRET_ID` values are operator metadata only. The current
+`flux@.service` contract does not auto-load AWS Secrets Manager values into the
+runtime env; operators still need the live `LAN_ROGUE_TRADER_BOT_*` secret env
+vars in `/etc/flux/tg-bot-lan-rogue-trader-alert.env`.
+
 ## Production control plane
 
 ```bash
@@ -61,6 +66,7 @@ Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
 - The installer seeds `/etc/flux/tg-bot-lan-rogue-trader-alert.ini` from the sanitized template if it does not already exist.
+- The installer preserves any existing `LAN_ROGUE_TRADER_BOT_*` secret values on rerun instead of blanking them.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
 - The TG bot group renders under `TG Bots` at `http://<host>:5022/pulse`.
 

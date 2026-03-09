@@ -28,6 +28,11 @@ Optional AWS Secrets Manager backups:
 - `/nautilus/tg-bots/lan_rogue_trader_bot/binance`
 - `/nautilus/tg-bots/lan_rogue_trader_bot/telegram_bot`
 
+These `_SECRET_ID` values are not consumed automatically by the current
+runtime. They are operator notes and backup IDs only; the live
+`LAN_ROGUE_TRADER_BOT_*` secret env vars still need to be present in
+`/etc/flux/tg-bot-lan-rogue-trader-alert.env`.
+
 Local config file:
 
 - `/etc/flux/tg-bot-lan-rogue-trader-alert.ini`
@@ -98,7 +103,7 @@ Rollback is config-only:
 - Missing Pulse row:
   Confirm `/etc/flux/tg-bot-lan-rogue-trader-alert.env` exists and keeps
   `PULSE_ENABLED=1`, then run
-  `sudo /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh`.
+  `sudo ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh` from the repo root.
 - Service exits immediately:
   check `WORKDIR`, `PYTHONPATH`, `CMD`, and the three `LAN_ROGUE_TRADER_BOT_*`
   secret env vars in the service env file.

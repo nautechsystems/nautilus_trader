@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -13,5 +15,66 @@ def test_install_tg_bots_systemd_seeds_readable_local_config() -> None:
     )
 
     assert 'install -m 0644 "${ROOT_DIR}/deploy/tg_bots/lan_rogue_trader_alert.ini" "${LOCAL_CONFIG_PATH}"' in script
-    assert 'chown root:ubuntu "${SERVICE_ENV_PATH}"' in script
-    assert 'chmod 0640 "${SERVICE_ENV_PATH}"' in script
+    assert 'SERVICE_ENV_OWNER="${SERVICE_ENV_OWNER-root:ubuntu}"' in script
+    assert 'chown "${SERVICE_ENV_OWNER}" "${SERVICE_ENV_PATH}"' in script
+    assert 'chmod "${SERVICE_ENV_MODE}" "${SERVICE_ENV_PATH}"' in script
+
+
+def test_render_service_env_preserves_existing_live_secrets_and_custom_env(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    service_env_path = env_dir / "tg-bot-lan-rogue-trader-alert.env"
+    local_config_path = env_dir / "tg-bot-lan-rogue-trader-alert.ini"
+    service_env_path.write_text(
+        """PULSE_ENABLED=1
+PULSE_DESCRIPTION=Old description
+PULSE_GROUP_KEY=tg-bots
+PULSE_GROUP_LABEL=TG Bots
+PULSE_GROUP_ORDER=60
+CMD="python3 -m old.runner"
+LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY=live-key
+LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET=live-secret
+LAN_ROGUE_TRADER_BOT_TELEGRAM_BOT_TOKEN=live-token
+LAN_ROGUE_TRADER_BOT_BINANCE_SECRET_ID=/existing/binance
+LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID=/existing/telegram
+FLUX_TG_BOTS_LOG_LEVEL=DEBUG
+""",
+        encoding="utf-8",
+    )
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "ROOT_DIR": str(repo_root),
+            "ENV_DIR": str(env_dir),
+            "SERVICE_ENV_PATH": str(service_env_path),
+            "LOCAL_CONFIG_PATH": str(local_config_path),
+            "SERVICE_ENV_OWNER": "",
+        }
+    )
+    subprocess.run(  # noqa: S603 - controlled test invocation of the repo installer helper
+        [
+            "/usr/bin/bash",
+            "-lc",
+            f'source "{repo_root / "ops/scripts/deploy/install_tg_bots_systemd.sh"}"\nrender_service_env\n',
+        ],
+        check=True,
+        env=env,
+        cwd=repo_root,
+    )
+
+    rendered_env = service_env_path.read_text(encoding="utf-8")
+
+    assert "PULSE_DESCRIPTION=Lan Rogue Trader Telegram alert bot" in rendered_env
+    assert (
+        'CMD="python3 -m nautilus_trader.flux.runners.tg_bots.run_lan_rogue_trader_alert '
+        f'--config {local_config_path}"'
+    ) in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY=live-key" in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET=live-secret" in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_TELEGRAM_BOT_TOKEN=live-token" in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_BINANCE_SECRET_ID=/existing/binance" in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID=/existing/telegram" in rendered_env
+    assert "FLUX_TG_BOTS_LOG_LEVEL=DEBUG" in rendered_env
+    assert "LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY=\n" not in rendered_env
