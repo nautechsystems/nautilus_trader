@@ -52,8 +52,8 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | not_started | unassigned | Plan created |
-| Task 1: Freeze The Production LP Rollout Contract | not_started | unassigned | Plan created |
+| Overall | in_progress | main | Execution started in isolated worktree from `origin/main`; materialized the LP port dependency commit locally because current `origin/main` does not yet contain it. |
+| Task 1: Freeze The Production LP Rollout Contract | completed | main | Added the rollout runbook plus LP doc contract updates. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `2 passed`; `uv run --no-project --with pytest pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `2 passed`. |
 | Task 2: Audit And Port Remaining Chainsaw LP GUI Parity To `/lp` | not_started | unassigned | Plan created |
 | Task 3: Decouple `/lp` From TokenMM-Specific Static Asset Paths | not_started | unassigned | Plan created |
 | Task 4: Add LP Preflight Audit Tooling For Shared-Host Production | not_started | unassigned | Plan created |

@@ -28,6 +28,7 @@ This directory is the deploy root for the dedicated LP hedger stack.
 - Preserve the chainsaw job IDs, hedger IDs, Redis key families, config/env key names, and payload field names.
 - Keep checked-in configs sanitized: same key names as chainsaw, but no live Bybit secrets in git.
 - Auto-enroll only Band1 and Band2. Extra configs stay `.ini.disabled` until pool geometry and credentials are validated.
+- Use `docs/runbooks/lp-hedger-production-rollout.md` as the production rollout source of truth for preflight, restart order, smoke validation, and rollback.
 
 ## Production control plane
 
@@ -51,6 +52,8 @@ Installer behavior:
 - writes `/etc/flux/service-eth-plume-lp-hedger-band2.env`
 - rewrites `/etc/systemd/system/flux-lp.target` so the target enrolls `lp-api`, Band1, and Band2 only
 
+Band1 and Band2 are the only active checked-in production instances for this rollout.
+
 `LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini` is the operator-managed system INI for shared LP runtime settings. It should provide the same chainsaw sections:
 
 - `[redis]`
@@ -66,6 +69,8 @@ Primary operator surfaces:
 - `GET /api/v1/hedgers/eth_plume_lp`
 - `POST /api/v1/hedgers/<hedger_id>/job`
 - `http://<host>:5022/pulse`
+
+For the full production cutover and rollback procedure, follow `docs/runbooks/lp-hedger-production-rollout.md`.
 
 ## Local smoke only
 
