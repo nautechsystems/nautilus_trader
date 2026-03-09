@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from flux.runners.shared.logging import configure_service_logging
 from flux.tg_bots.lan_rogue_trader_alert import BinancePmClient
-from flux.tg_bots.lan_rogue_trader_alert import build_http_session
 from flux.tg_bots.lan_rogue_trader_alert import JsonStateStore
 from flux.tg_bots.lan_rogue_trader_alert import LanRogueTraderAlertService
 from flux.tg_bots.lan_rogue_trader_alert import TelegramNotifier
+from flux.tg_bots.lan_rogue_trader_alert import build_http_session
 from flux.tg_bots.lan_rogue_trader_alert import load_config
 
 

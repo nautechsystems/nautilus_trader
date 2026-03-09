@@ -49,8 +49,8 @@ def test_rebuild_flux_pulse_sudoers_discovers_all_pulse_enabled_jobs(tmp_path: P
     )
 
     script_path = _repo_root() / "ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
-    subprocess.run(
-        ["bash", str(script_path)],
+    subprocess.run(  # noqa: S603 - test executes a repo-controlled helper script path
+        ["/usr/bin/bash", str(script_path)],
         check=True,
         env={
             "ENV_DIR": str(env_dir),

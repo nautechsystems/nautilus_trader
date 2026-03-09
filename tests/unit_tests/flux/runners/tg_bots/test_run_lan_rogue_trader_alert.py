@@ -11,22 +11,18 @@ from flux.runners.tg_bots import run_lan_rogue_trader_alert as runner
 def test_once_mode_returns_zero(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "lan_rogue_trader_alert.ini"
     config_path.write_text(
-        "\n".join(
-            [
-                "[lan_rogue_trader_alert]",
-                "poll_secs = 60",
-                "cooldown_secs = 300",
-                "binance_base_url = https://papi.binance.com",
-                "asset = USDT",
-                "api_key_env = BINANCE_API_KEY",
-                "api_secret_env = BINANCE_API_SECRET",
-                "account_label = LanSub: traderX",
-                "telegram_bot_token_env = TELEGRAM_BOT_TOKEN",
-                "telegram_chat_id = -100123",
-                "send_baseline = false",
-                "",
-            ]
-        ),
+        """[lan_rogue_trader_alert]
+poll_secs = 60
+cooldown_secs = 300
+binance_base_url = https://papi.binance.com
+asset = USDT
+api_key_env = BINANCE_API_KEY
+api_secret_env = BINANCE_API_SECRET
+account_label = LanSub: traderX
+telegram_bot_token_env = TELEGRAM_BOT_TOKEN
+telegram_chat_id = -100123
+send_baseline = false
+""",
         encoding="utf-8",
     )
 

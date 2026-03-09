@@ -1,0 +1,7 @@
+[Unit]
+Description=Flux TG Bots Stack
+Wants=flux@tg-bot-lan-rogue-trader-alert.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

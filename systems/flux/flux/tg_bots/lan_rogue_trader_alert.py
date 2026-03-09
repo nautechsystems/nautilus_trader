@@ -7,20 +7,21 @@ import json
 import logging
 import os
 import time
+from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from decimal import Decimal
 from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any
-from typing import Mapping
-from typing import Sequence
 from urllib.parse import urlencode
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -429,7 +430,7 @@ class LanRogueTraderAlertService:
         state.pending_last_at = now
 
         should_alert_now = state.last_alert_at == 0 or now >= state.last_alert_at + self.config.cooldown_secs
-        if not should_alert_now and self.config.emergency_bypass_usdt > Decimal("0"):
+        if not should_alert_now and self.config.emergency_bypass_usdt > Decimal(0):
             since_last_alert = abs(balance - state.last_alert_balance)
             if since_last_alert >= self.config.emergency_bypass_usdt:
                 should_alert_now = True
@@ -502,7 +503,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
 
     strict_thread = _get_bool(cfg, "strict_thread", False)
     state_path = Path((cfg.get("state_path") or str(_DEFAULT_STATE_PATH)).strip())
-    emergency_bypass = _get_decimal(cfg, "emergency_bypass_usdt", Decimal("0"))
+    emergency_bypass = _get_decimal(cfg, "emergency_bypass_usdt", Decimal(0))
     timezone_name = (cfg.get("timezone") or "Asia/Bangkok").strip() or "Asia/Bangkok"
     send_baseline = _get_bool(cfg, "send_baseline", True)
 
@@ -577,7 +578,7 @@ def fmt_amount(amount: Decimal) -> str:
 
 
 def format_local_utc(ts: int, timezone_name: str) -> str:
-    utc_dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    utc_dt = datetime.fromtimestamp(int(ts), tz=UTC)
     local_dt = _to_local_tz(utc_dt, timezone_name)
     local_str = local_dt.strftime("%Y-%m-%d %H:%M:%S")
     utc_str = utc_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -588,16 +589,16 @@ def _to_local_tz(dt: datetime, timezone_name: str) -> datetime:
     if ZoneInfo is not None:
         try:
             return dt.astimezone(ZoneInfo(timezone_name))
-        except Exception:
-            pass
+        except Exception as exc:
+            LOG.debug("ZoneInfo failed for timezone %s: %s", timezone_name, exc)
 
     if dateutil_tz is not None:
         try:
             tzinfo = dateutil_tz.gettz(timezone_name)
             if tzinfo is not None:
                 return dt.astimezone(tzinfo)
-        except Exception:
-            pass
+        except Exception as exc:
+            LOG.debug("dateutil timezone lookup failed for %s: %s", timezone_name, exc)
 
     LOG.warning("Invalid or unsupported timezone %s, falling back to UTC", timezone_name)
     return dt
@@ -692,13 +693,13 @@ def _load_secret(env_key: str) -> str:
 
 __all__ = [
     "BinancePmClient",
-    "build_http_session",
     "JsonStateStore",
     "LanRogueTraderAlertService",
     "MissingAssetError",
     "TelegramNotifier",
     "WatchConfig",
     "WatchState",
+    "build_http_session",
     "default_config_path",
     "fmt_amount",
     "format_local_utc",

@@ -59,7 +59,7 @@ class FakeSession:
         self.responses = list(responses)
         self.calls: list[dict[str, Any]] = []
 
-    def post(self, url: str, json: dict[str, Any], timeout: float) -> FakeResponse:  # noqa: A002
+    def post(self, url: str, json: dict[str, Any], timeout: float) -> FakeResponse:
         self.calls.append({"url": url, "json": dict(json), "timeout": timeout})
         if not self.responses:
             raise RuntimeError("missing response")
@@ -87,23 +87,23 @@ class FakeGetSession:
 
 
 def make_config(tmp_path: Path, **overrides: Any) -> WatchConfig:
-    cfg = dict(
-        poll_secs=60,
-        cooldown_secs=3600,
-        binance_base_url="https://papi.binance.com",
-        asset="USDT",
-        binance_api_key="k",
-        binance_api_secret="s",
-        account_label="LanSub: traderX",
-        telegram_bot_token="t",
-        telegram_chat_id=-100123,
-        telegram_thread_id=42,
-        strict_thread=False,
-        state_path=tmp_path / "lan_state.json",
-        emergency_bypass_usdt=Decimal("0"),
-        timezone_name="Asia/Bangkok",
-        send_baseline=False,
-    )
+    cfg = {
+        "poll_secs": 60,
+        "cooldown_secs": 3600,
+        "binance_base_url": "https://papi.binance.com",
+        "asset": "USDT",
+        "binance_api_key": "k",
+        "binance_api_secret": "s",
+        "account_label": "LanSub: traderX",
+        "telegram_bot_token": "t",
+        "telegram_chat_id": -100123,
+        "telegram_thread_id": 42,
+        "strict_thread": False,
+        "state_path": tmp_path / "lan_state.json",
+        "emergency_bypass_usdt": Decimal(0),
+        "timezone_name": "Asia/Bangkok",
+        "send_baseline": False,
+    }
     cfg.update(overrides)
     return WatchConfig(**cfg)
 
@@ -114,22 +114,22 @@ def test_cooldown_suppresses_and_summary_fires(tmp_path: Path) -> None:
     store = JsonStateStore(cfg.state_path)
     svc = LanRogueTraderAlertService(cfg, DummyBinance([]), notifier, store)
 
-    state = WatchState.initial(Decimal("100"))
+    state = WatchState.initial(Decimal(100))
     state.last_alert_at = 1000
-    state.last_alert_balance = Decimal("100")
+    state.last_alert_balance = Decimal(100)
     svc.state = state
 
-    svc._apply_balance(balance=Decimal("99"), now=1100)
+    svc._apply_balance(balance=Decimal(99), now=1100)
     assert notifier.messages == []
     assert state.pending is True
     assert state.pending_count == 1
 
-    svc._apply_balance(balance=Decimal("99"), now=4601)
+    svc._apply_balance(balance=Decimal(99), now=4601)
     assert len(notifier.messages) == 1
     assert "summary" in notifier.messages[0].lower()
     assert state.pending is False
     assert state.last_alert_at == 4601
-    assert state.last_alert_balance == Decimal("99")
+    assert state.last_alert_balance == Decimal(99)
 
 
 def test_immediate_alert_fires_after_cooldown_elapsed(tmp_path: Path) -> None:
@@ -138,32 +138,32 @@ def test_immediate_alert_fires_after_cooldown_elapsed(tmp_path: Path) -> None:
     store = JsonStateStore(cfg.state_path)
     svc = LanRogueTraderAlertService(cfg, DummyBinance([]), notifier, store)
 
-    state = WatchState.initial(Decimal("100"))
+    state = WatchState.initial(Decimal(100))
     state.last_alert_at = 1000
-    state.last_alert_balance = Decimal("100")
+    state.last_alert_balance = Decimal(100)
     svc.state = state
 
-    svc._apply_balance(balance=Decimal("101"), now=1401)
+    svc._apply_balance(balance=Decimal(101), now=1401)
 
     assert len(notifier.messages) == 1
     assert "USDT balance changed" in notifier.messages[0]
     assert state.pending is False
     assert state.last_alert_at == 1401
-    assert state.last_alert_balance == Decimal("101")
+    assert state.last_alert_balance == Decimal(101)
 
 
 def test_emergency_bypass_fires_inside_cooldown(tmp_path: Path) -> None:
-    cfg = make_config(tmp_path, cooldown_secs=3600, emergency_bypass_usdt=Decimal("10"))
+    cfg = make_config(tmp_path, cooldown_secs=3600, emergency_bypass_usdt=Decimal(10))
     notifier = DummyNotifier()
     store = JsonStateStore(cfg.state_path)
     svc = LanRogueTraderAlertService(cfg, DummyBinance([]), notifier, store)
 
-    state = WatchState.initial(Decimal("100"))
+    state = WatchState.initial(Decimal(100))
     state.last_alert_at = 1000
-    state.last_alert_balance = Decimal("100")
+    state.last_alert_balance = Decimal(100)
     svc.state = state
 
-    svc._apply_balance(balance=Decimal("85"), now=1200)
+    svc._apply_balance(balance=Decimal(85), now=1200)
 
     assert len(notifier.messages) == 1
     assert "USDT balance changed" in notifier.messages[0]
@@ -209,7 +209,7 @@ def test_missing_usdt_row_alerts_once_per_episode(tmp_path: Path) -> None:
         [
             MissingAssetError("Asset USDT missing in Binance PM balance payload"),
             MissingAssetError("Asset USDT missing in Binance PM balance payload"),
-            Decimal("100"),
+            Decimal(100),
             MissingAssetError("Asset USDT missing in Binance PM balance payload"),
         ]
     )
@@ -272,25 +272,21 @@ def test_load_config_accepts_renamed_section_and_renamed_default_state_path(
 ) -> None:
     config_path = tmp_path / "lan_rogue_trader_alert.ini"
     config_path.write_text(
-        "\n".join(
-            [
-                "[lan_rogue_trader_alert]",
-                "poll_secs = 60",
-                "cooldown_secs = 300",
-                "binance_base_url = https://papi.binance.com",
-                "asset = USDT",
-                "api_key_env = BINANCE_API_KEY",
-                "api_secret_env = BINANCE_API_SECRET",
-                "account_label = LanSub: traderX",
-                "telegram_bot_token_env = TELEGRAM_BOT_TOKEN",
-                "telegram_chat_id = -100123",
-                "telegram_thread_id = 42",
-                "strict_thread = false",
-                "timezone = Asia/Bangkok",
-                "send_baseline = false",
-                "",
-            ]
-        ),
+        """[lan_rogue_trader_alert]
+poll_secs = 60
+cooldown_secs = 300
+binance_base_url = https://papi.binance.com
+asset = USDT
+api_key_env = BINANCE_API_KEY
+api_secret_env = BINANCE_API_SECRET
+account_label = LanSub: traderX
+telegram_bot_token_env = TELEGRAM_BOT_TOKEN
+telegram_chat_id = -100123
+telegram_thread_id = 42
+strict_thread = false
+timezone = Asia/Bangkok
+send_baseline = false
+""",
         encoding="utf-8",
     )
     monkeypatch.setenv("BINANCE_API_KEY", "k")
@@ -309,18 +305,14 @@ def test_load_config_accepts_legacy_section_name_for_backwards_compat(
 ) -> None:
     config_path = tmp_path / "lan_usdt_watch.ini"
     config_path.write_text(
-        "\n".join(
-            [
-                "[lan_usdt_watch]",
-                "binance_base_url = https://papi.binance.com",
-                "api_key_env = BINANCE_API_KEY",
-                "api_secret_env = BINANCE_API_SECRET",
-                "account_label = LanSub: traderX",
-                "telegram_bot_token_env = TELEGRAM_BOT_TOKEN",
-                "telegram_chat_id = -100123",
-                "",
-            ]
-        ),
+        """[lan_usdt_watch]
+binance_base_url = https://papi.binance.com
+api_key_env = BINANCE_API_KEY
+api_secret_env = BINANCE_API_SECRET
+account_label = LanSub: traderX
+telegram_bot_token_env = TELEGRAM_BOT_TOKEN
+telegram_chat_id = -100123
+""",
         encoding="utf-8",
     )
     monkeypatch.setenv("BINANCE_API_KEY", "k")
