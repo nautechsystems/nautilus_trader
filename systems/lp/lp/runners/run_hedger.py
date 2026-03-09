@@ -417,3 +417,7 @@ __all__ = [
     "resolve_bybit_credentials",
     "resolve_config_path",
 ]
+
+
+if __name__ == "__main__":
+    main()

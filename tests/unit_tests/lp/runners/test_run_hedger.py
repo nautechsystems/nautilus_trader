@@ -190,3 +190,10 @@ def test_cli_config_path_wins_over_chainsaw_env_var(tmp_path: Path, monkeypatch)
     monkeypatch.setenv("ETH_PLUME_LP_HEDGER_BAND2_CONFIG", str(env_config))
 
     assert resolve_config_path(args) == cli_config
+
+
+def test_run_hedger_module_invokes_main_when_executed_as_script() -> None:
+    source = Path(run_hedger.__file__).read_text(encoding="utf-8")
+
+    assert 'if __name__ == "__main__":' in source
+    assert "main()" in source.split('if __name__ == "__main__":', 1)[1]
