@@ -85,6 +85,7 @@ def _position_group_key(row: dict[str, Any], strategy_id: str) -> tuple[str, str
 def _position_agg_seed(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "row": dict(row),
+        "row_count": 0,
         "qty_base": Decimal(0),
         "has_qty_base": False,
         "qty_venue": Decimal(0),
@@ -97,10 +98,23 @@ def _position_agg_seed(row: dict[str, Any]) -> dict[str, Any]:
         "qty_conversion_source": decode_text(row.get("qty_conversion_source")).strip() or None,
         "mark": None,
         "mark_ts_ms": None,
+        "valuation_totals": {
+            "mv_raw": Decimal(0),
+            "notional": Decimal(0),
+            "notional_quote": Decimal(0),
+            "notional_usd": Decimal(0),
+        },
+        "valuation_counts": {
+            "mv_raw": 0,
+            "notional": 0,
+            "notional_quote": 0,
+            "notional_usd": 0,
+        },
     }
 
 
 def _position_agg_update(agg: dict[str, Any], row: dict[str, Any]) -> None:
+    agg["row_count"] += 1
     qty_base = _position_signed_qty(row)
     qty_venue = _position_venue_signed_qty(row)
     if qty_base is not None:
@@ -142,6 +156,14 @@ def _position_agg_update(agg: dict[str, Any], row: dict[str, Any]) -> None:
         if previous_mark_ts_ms is None or mark_ts_ms >= previous_mark_ts_ms:
             agg["mark"] = mark
             agg["mark_ts_ms"] = mark_ts_ms
+    valuation_totals = agg["valuation_totals"]
+    valuation_counts = agg["valuation_counts"]
+    for key in ("mv_raw", "notional", "notional_quote", "notional_usd"):
+        valuation = _to_decimal(row.get(key))
+        if valuation is None:
+            continue
+        valuation_totals[key] += valuation
+        valuation_counts[key] += 1
 
 
 def _group_position_rows(
@@ -183,6 +205,22 @@ def _clear_position_valuation_fields(row: dict[str, Any]) -> None:
         row.pop(key, None)
 
 
+def _apply_unmarked_position_valuation(row: dict[str, Any], agg: Mapping[str, Any]) -> None:
+    row_count = int(agg.get("row_count") or 0)
+    if row_count <= 1:
+        return
+
+    _clear_position_valuation_fields(row)
+    valuation_totals = agg.get("valuation_totals") or {}
+    valuation_counts = agg.get("valuation_counts") or {}
+    for key in ("mv_raw", "notional", "notional_quote", "notional_usd"):
+        if valuation_counts.get(key) != row_count:
+            continue
+        total = valuation_totals.get(key)
+        if total is not None:
+            row[key] = float(total)
+
+
 def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> dict[str, Any] | None:
     sid, exchange, instrument = key
     has_qty_base = bool(agg["has_qty_base"])
@@ -220,11 +258,13 @@ def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> di
         row["qty_conversion_status"] = agg["qty_conversion_status"]
     if agg["qty_conversion_source"] is not None:
         row["qty_conversion_source"] = agg["qty_conversion_source"]
-    _clear_position_valuation_fields(row)
     if mark is not None:
+        _clear_position_valuation_fields(row)
         row["mark"] = float(mark)
         row["mark_raw"] = float(mark)
         row["mv_raw"] = float(qty_default * mark)
+    else:
+        _apply_unmarked_position_valuation(row, agg)
 
     meta_parts = [side]
     if avg_px is not None:
@@ -697,11 +737,13 @@ def _position_portfolio_row_from_agg(
         row["qty_conversion_status"] = qty_conversion_status
     if qty_conversion_source:
         row["qty_conversion_source"] = qty_conversion_source
-    _clear_position_valuation_fields(row)
     if mark is not None:
+        _clear_position_valuation_fields(row)
         row["mark"] = float(mark)
         row["mark_raw"] = float(mark)
         row["mv_raw"] = float(qty_default * mark)
+    else:
+        _apply_unmarked_position_valuation(row, agg)
 
     meta_parts = [side]
     if avg_px is not None:

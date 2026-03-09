@@ -116,6 +116,84 @@ def test_build_portfolio_snapshot_totals_match_netted_position_valuation() -> No
     assert snapshot["balances"]["totals"]["mv_display"] == "$10.00"
 
 
+def test_build_portfolio_snapshot_preserves_unmarked_position_valuation() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+        inventory_components={},
+        balance_rows_by_strategy={
+            "strategy_a": [
+                {
+                    "strategy_id": "strategy_a",
+                    "exchange": "bybit",
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mv_raw": 20.0,
+                    "notional_quote": 20.0,
+                },
+            ],
+        },
+        required_strategy_ids=set(),
+        now_ms_value=2_000,
+    )
+
+    assert len(snapshot["balances"]["rows"]) == 1
+    row = snapshot["balances"]["rows"][0]
+    assert row["signed_qty"] == "10"
+    assert row["mv_raw"] == 20.0
+    assert row["notional_quote"] == 20.0
+    assert "mark_raw" not in row
+    assert snapshot["balances"]["totals"]["mv_raw"] == 20.0
+    assert snapshot["balances"]["totals"]["mv_display"] == "$20.00"
+
+
+def test_build_portfolio_snapshot_nets_unmarked_position_valuation_when_all_rows_provide_it() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+        inventory_components={},
+        balance_rows_by_strategy={
+            "strategy_a": [
+                {
+                    "strategy_id": "strategy_a",
+                    "exchange": "bybit",
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mv_raw": 20.0,
+                    "notional_quote": 20.0,
+                },
+            ],
+            "strategy_b": [
+                {
+                    "strategy_id": "strategy_b",
+                    "exchange": "bybit",
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "-5",
+                    "quantity": "5",
+                    "mv_raw": -10.0,
+                    "notional_quote": -10.0,
+                },
+            ],
+        },
+        required_strategy_ids=set(),
+        now_ms_value=2_000,
+    )
+
+    assert len(snapshot["balances"]["rows"]) == 1
+    row = snapshot["balances"]["rows"][0]
+    assert row["signed_qty"] == "5"
+    assert row["mv_raw"] == 10.0
+    assert row["notional_quote"] == 10.0
+    assert "mark_raw" not in row
+    assert snapshot["balances"]["totals"]["mv_raw"] == 10.0
+    assert snapshot["balances"]["totals"]["mv_display"] == "$10.00"
+
+
 def test_portfolio_snapshot_round_trip_preserves_strict_inventory_metadata() -> None:
     encoded = encode_portfolio_snapshot(
         build_portfolio_snapshot(

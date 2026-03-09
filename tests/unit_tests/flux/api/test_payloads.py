@@ -170,6 +170,31 @@ def test_build_balances_rows_prefers_base_qty_and_preserves_venue_qty_fields() -
     )
 
 
+def test_build_balances_rows_preserves_upstream_position_valuation_without_mark() -> None:
+    rows = build_balances_rows(
+        raw_snapshot=[
+            {
+                "strategy_id": "strategy_01",
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "signed_qty": "10",
+                "quantity": "10",
+                "mv_raw": 20.0,
+                "notional_quote": 20.0,
+            },
+        ],
+        strategy_id="strategy_01",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["signed_qty"] == "10"
+    assert row["mv_raw"] == 20.0
+    assert row["notional_quote"] == 20.0
+    assert "mark_raw" not in row
+
+
 def test_build_balances_rows_flattens_nested_account_events_balances() -> None:
     raw_snapshot = [
         {
@@ -373,6 +398,72 @@ def test_merge_portfolio_balances_rows_recomputes_netted_position_mv_from_mark()
     assert position["signed_qty"] == "5"
     assert position["mark_raw"] == pytest.approx(2.0)
     assert position["mv_raw"] == pytest.approx(10.0)
+
+
+def test_merge_portfolio_balances_rows_preserves_upstream_position_valuation_without_mark() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mv_raw": 20.0,
+                    "notional_quote": 20.0,
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    position = rows_by_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert position["signed_qty"] == "10"
+    assert position["mv_raw"] == 20.0
+    assert position["notional_quote"] == 20.0
+    assert "mark_raw" not in position
+
+
+def test_merge_portfolio_balances_rows_nets_unmarked_position_valuation_when_all_rows_provide_it() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mv_raw": 20.0,
+                    "notional_quote": 20.0,
+                },
+            ],
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "signed_qty": "-5",
+                    "quantity": "5",
+                    "mv_raw": -10.0,
+                    "notional_quote": -10.0,
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    position = rows_by_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert position["signed_qty"] == "5"
+    assert position["mv_raw"] == 10.0
+    assert position["notional_quote"] == 10.0
+    assert "mark_raw" not in position
 
 
 def test_merge_portfolio_balances_rows_retains_latest_known_mark_when_newer_cash_row_lacks_one() -> None:
