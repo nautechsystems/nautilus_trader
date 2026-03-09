@@ -231,3 +231,23 @@ def test_binance_signature_is_deterministic() -> None:
     signature = BinancePmClient.sign_params(params=params, secret="testsecret")
     assert signature == "5ce2e9906da7a0647c0769e04c4335e224dff5553b7954030d102d9372c106d9"
 
+
+def test_binance_fetch_balance_accepts_single_object_payload() -> None:
+    session = FakeGetSession(
+        FakeGetResponse(
+            200,
+            {
+                "asset": "USDT",
+                "totalWalletBalance": "123.45",
+            },
+        )
+    )
+    client = BinancePmClient(
+        base_url="https://papi.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    assert client.fetch_balance() == Decimal("123.45")
