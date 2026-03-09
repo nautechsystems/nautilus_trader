@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { calculateStats, getJobs, groupJobs, performGroupAction, performJobAction, type Job, type ShellLink } from "./api";
 import { JobGroup } from "./components/JobGroup";
+import { JobCards } from "./components/JobCards";
 import { LogsModal } from "./components/LogsModal";
 import { TopBar } from "./components/TopBar";
 import type { LogFilter } from "./logs";
@@ -73,6 +74,11 @@ export default function App() {
   const [busyGroupKeys, setBusyGroupKeys] = useState<Set<string>>(new Set());
   const busyGroupKeysRef = useRef<Set<string>>(new Set());
   const refreshTimer = useRef<number | null>(null);
+  const [isCompactLayout, setIsCompactLayout] = useState(() =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 760px)").matches
+      : false,
+  );
 
   async function loadJobs(options?: { silent?: boolean }) {
     if (!options?.silent) {
@@ -171,6 +177,27 @@ export default function App() {
   }, [autoRefresh]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 760px)");
+    setIsCompactLayout(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsCompactLayout(event.matches);
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
@@ -256,21 +283,10 @@ export default function App() {
         ) : null}
 
         <section className="table-card">
-          <table className="jobs-table">
-            <thead>
-              <tr>
-                <th>Job</th>
-                <th>Status</th>
-                <th>PID</th>
-                <th>Memory</th>
-                <th>Uptime</th>
-                <th>Errors</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          {isCompactLayout ? (
+            <div className="job-cards-shell">
               {groupedJobs.map((group) => (
-                <JobGroup
+                <JobCards
                   key={group.key}
                   groupKey={group.key}
                   groupLabel={group.label}
@@ -297,8 +313,52 @@ export default function App() {
                   }
                 />
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <table className="jobs-table">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Status</th>
+                  <th>PID</th>
+                  <th>Memory</th>
+                  <th>Uptime</th>
+                  <th>Errors</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedJobs.map((group) => (
+                  <JobGroup
+                    key={group.key}
+                    groupKey={group.key}
+                    groupLabel={group.label}
+                    jobs={group.jobs}
+                    busyJobIds={busyJobIds}
+                    busy={busyGroupKeys.has(group.key)}
+                    onAction={handleJobAction}
+                    onGroupAction={handleGroupAction}
+                    onViewLogs={(job) =>
+                      setOpenLogs({
+                        jobId: jobIdOf(job),
+                        jobName: job.name,
+                        jobCmd: job.cmd,
+                        initialFilter: "ALL",
+                      })
+                    }
+                    onViewError={(job) =>
+                      setOpenLogs({
+                        jobId: jobIdOf(job),
+                        jobName: job.name,
+                        jobCmd: job.cmd,
+                        initialFilter: "ERROR",
+                      })
+                    }
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
 
           {!loading && groupedJobs.length === 0 ? <div className="empty-state empty-state--panel">No jobs found.</div> : null}
           {loading && jobs.length === 0 ? <div className="empty-state empty-state--panel">Loading process jobs...</div> : null}

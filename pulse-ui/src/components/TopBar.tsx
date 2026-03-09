@@ -14,6 +14,37 @@ interface TopBarProps {
   onToggleAutoRefresh: () => void;
 }
 
+interface SurfaceLink {
+  label: string;
+  path: string;
+}
+
+function fallbackSurfaceLabel(surface: string): string {
+  return surface
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function stackLinks(shellLinks: ShellLink[]): SurfaceLink[] {
+  const unique = new Map<string, SurfaceLink>();
+
+  for (const link of shellLinks) {
+    if (unique.has(link.surface)) {
+      continue;
+    }
+
+    const topLevelLabel = link.label.replace(/\s+Dashboard$/i, "").trim();
+    unique.set(link.surface, {
+      label: topLevelLabel || fallbackSurfaceLabel(link.surface),
+      path: link.surface,
+    });
+  }
+
+  return Array.from(unique.values());
+}
+
 export function TopBar({
   stats,
   shellLinks,
@@ -23,6 +54,7 @@ export function TopBar({
   onToggleAutoRefresh,
 }: TopBarProps) {
   const pulseHref = buildPulseHref();
+  const surfaceLinks = stackLinks(shellLinks);
 
   return (
     <header className="topbar">
@@ -32,7 +64,7 @@ export function TopBar({
         </div>
 
         <div className="suite-nav__links">
-          {shellLinks.map((link) => (
+          {surfaceLinks.map((link) => (
             <a key={link.path} href={buildShellHref(link.path)} className="nav-link nav-link--primary">
               {link.label}
             </a>

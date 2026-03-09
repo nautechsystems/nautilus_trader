@@ -100,17 +100,118 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
 
     assert "rebuild_flux_pulse_sudoers.sh" in script
     assert "strategy_stack_write_env" in script
+    assert 'TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in script
+    assert "append_checkout_env_overrides" in script
+    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in script
     assert '"tokenmm"' in script
     assert '"TokenMM"' in script
     assert '"10"' in script
     assert '"tokenmm-api"' in script
     assert "--serve-pulse" in script
     assert "--serve-fluxboard" in script
+    assert '${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api' in script
     assert "--port 5022 --serve-fluxboard --serve-pulse" in script
     assert "http://127.0.0.1:5022/pulse" in _read(
         _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
     )
     assert "http://<host>:5022/pulse" in _read(_repo_root() / "deploy/tokenmm/README.md")
+
+
+def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
+    repo_root = _repo_root()
+    pyproject = _read(repo_root / "pyproject.toml")
+    install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    preflight_wrapper = _read(repo_root / "ops/scripts/deploy/tokenmm_rollout_preflight.py")
+    preflight_module = _read(repo_root / "systems/flux/flux/runners/tokenmm/rollout_preflight.py")
+    common_env = _read(repo_root / "deploy/tokenmm/systemd/common.env.example")
+    jupyter_env = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-jupyter.env.example")
+    readme = _read(repo_root / "deploy/tokenmm/README.md")
+    research_readme = _read(repo_root / "research/tokenmm/README.md")
+    notebook = _read(repo_root / "research/tokenmm/notebooks/tokenmm_trade_data.ipynb")
+
+    assert "notebook = [" in pyproject
+    assert "jupyterlab>=" in pyproject
+    assert "ipykernel>=" in pyproject
+
+    assert "TOKENMM_TELEMETRY_DIR=/var/lib/nautilus/telemetry/tokenmm" in common_env
+
+    assert "PULSE_ENABLED=0" in jupyter_env
+    assert "PORT=8888" in jupyter_env
+    assert 'CMD="uv run --group notebook jupyter lab' in jupyter_env
+    assert "bash -lc" not in jupyter_env
+    assert "--ip=127.0.0.1" in jupyter_env
+    assert "--ServerApp.allow_remote_access=False" in jupyter_env
+    assert "--ServerApp.root_dir=research/tokenmm" in jupyter_env
+
+    assert "render_jupyter_env()" in install_script
+    assert "tokenmm-jupyter.env" in install_script
+    assert "tokenmm-jupyter.env.example" in install_script
+    assert "tokenmm_rollout_preflight.py" in install_script
+    assert '"${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"' in install_script
+    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in install_script
+    assert "python3 -m nautilus_trader.flux.runners.tokenmm" not in install_script
+
+    assert "rollout_preflight" in preflight_wrapper
+    assert "collect_rollout_preflight_errors" in preflight_module
+    assert "fluxboard/dist/index.html" in preflight_module
+    assert "pulse-ui/dist/index.html" in preflight_module
+    assert "BitgetEnvironment" in preflight_module
+
+    assert "tokenmm-jupyter.env.example" in readme
+    assert "flux@tokenmm-jupyter.service" in readme
+    assert "tokenmm_trade_data.ipynb" in readme
+    assert "http://127.0.0.1:8888/lab" in readme
+
+    assert "execution_fill" in research_readme
+    assert "order_action" in research_readme
+    assert "quote_cycle" in research_readme
+
+    assert '"nbformat": 4' in notebook
+    assert "execution_fill" in notebook
+    assert "order_action" in notebook
+    assert "quote_cycle" in notebook
+
+
+def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None:
+    repo_root = _repo_root()
+    api_doc = _read(repo_root / "docs/flux/api.md")
+    runbook = _read(repo_root / "docs/fluxboard/tokenmm_runbook.md")
+    deploy_readme = _read(repo_root / "deploy/tokenmm/README.md")
+    telemetry_runbook = _read(repo_root / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
+    design_doc = _read(
+        repo_root / "docs/plans/2026-03-09-tokenmm-telemetry-jupyter-go-prod-design.md",
+    )
+
+    assert "binds to `127.0.0.1` by default" in api_doc
+    assert "localhost/internal deployments" in api_doc
+
+    assert "flux@tokenmm-jupyter.service" in runbook
+    assert "fills.sqlite" in runbook
+    assert "orders.sqlite" in runbook
+    assert "quote_cycles.sqlite" in runbook
+    assert "POST http://127.0.0.1:5022/api/pulse/jobs/group/tokenmm/restart" in runbook
+    assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in runbook
+    assert "http://127.0.0.1:8888/lab" in runbook
+
+    assert "TOKENMM_TELEMETRY_DIR" in deploy_readme
+    assert "tokenmm-jupyter.env.example" in deploy_readme
+    assert "pnpm --dir fluxboard install --frozen-lockfile" in deploy_readme
+    assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in deploy_readme
+    assert "pnpm --dir fluxboard build" in deploy_readme
+    assert "pnpm --dir pulse-ui install --frozen-lockfile" in deploy_readme
+    assert "pnpm --dir pulse-ui build" in deploy_readme
+    assert "make build" in deploy_readme
+
+    assert "orders.sqlite" in telemetry_runbook
+    assert "fills.sqlite" in telemetry_runbook
+    assert "quote_cycles.sqlite" in telemetry_runbook
+    assert "telemetry" in telemetry_runbook
+    assert "psql" in telemetry_runbook
+    assert 'export POSTGRES_URL="postgresql://' in telemetry_runbook
+
+    assert "cutover" in design_doc
+    assert "localhost-only JupyterLab" in design_doc
+    assert "telemetry shipper" in design_doc
 
 
 def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> (
@@ -380,17 +481,17 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "strategy_stack_discover_strategy_ids" in install_script
     assert "plumeusdt_bybit_perp_makerv3" not in install_script
     assert (
-        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m '
+        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
         'nautilus_trader.flux.runners.tokenmm.run_api'
         in install_script
     )
     assert "--serve-fluxboard" in install_script
     assert "--serve-pulse" in install_script
-    assert "--host 0.0.0.0" in install_script
+    assert "--host 127.0.0.1" in install_script
     assert (
-        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m '
+        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
         'nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} '
-        '--mode live --confirm-live --host 0.0.0.0 --port 5022 '
+        '--mode live --confirm-live --host 127.0.0.1 --port 5022 '
         '--serve-fluxboard --serve-pulse'
         in install_script
     )
@@ -485,7 +586,7 @@ def test_tokenmm_registry_uses_execution_scoped_ids_not_tokenmm_clone_ids() -> N
     for strategy_id in TOKENMM_STRATEGY_IDS:
         assert f'"{strategy_id}"' in config
     assert "tokenmm_plume_makerv3" not in config
-    assert 'host = "0.0.0.0"' in config
+    assert 'host = "127.0.0.1"' in config
 
 
 def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instruments() -> None:

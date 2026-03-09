@@ -107,7 +107,7 @@ read_count = 200
 start_id = "$"
 
 [api]
-host = "0.0.0.0"
+host = "127.0.0.1"
 port = 5022
 strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
