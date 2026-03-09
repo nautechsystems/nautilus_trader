@@ -145,6 +145,23 @@ def test_list_hedger_instances_returns_registry_metadata(tmp_path: Path, monkeyp
     assert body["data"][0]["config_env_var"] == "ETH_PLUME_LP_HEDGER_CONFIG"
 
 
+def test_list_hedger_instances_only_exposes_active_band1_and_band2_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    app, _, _, _ = build_app(tmp_path, monkeypatch)
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/hedgers/instances")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert [item["id"] for item in body["data"]] == [
+        "eth_plume_lp",
+        "eth_plume_lp_band2",
+    ]
+
+
 def test_status_endpoint_returns_chainsaw_payload_shape(tmp_path: Path, monkeypatch) -> None:
     app, redis_client, pulse, _ = build_app(tmp_path, monkeypatch)
     pulse.status_by_job["service-eth-plume-lp-hedger"] = "running"

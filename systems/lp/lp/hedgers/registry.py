@@ -79,6 +79,10 @@ def list_hedgers() -> tuple[LpHedgerMeta, ...]:
     return tuple(_DEFAULT_HEDGERS)
 
 
+def list_active_hedgers() -> tuple[LpHedgerMeta, ...]:
+    return tuple(meta for meta in _DEFAULT_HEDGERS if meta.default_enabled)
+
+
 def list_hedger_metas() -> tuple[LpHedgerMeta, ...]:
     return list_hedgers()
 
@@ -91,4 +95,4 @@ def get_hedger_meta(hedger_id: str) -> LpHedgerMeta | None:
     return _REGISTRY.get(hedger_id)
 
 
-__all__ = ["get_hedger_meta", "iter_hedgers", "list_hedger_metas", "list_hedgers"]
+__all__ = ["get_hedger_meta", "iter_hedgers", "list_active_hedgers", "list_hedger_metas", "list_hedgers"]

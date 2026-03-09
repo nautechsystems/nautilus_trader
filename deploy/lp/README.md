@@ -117,7 +117,7 @@ ops/scripts/deploy/lp_stack.sh stop
 Expected smoke result:
 
 - `/lp` serves the Fluxboard SPA.
-- `/api/v1/hedgers/instances` returns the registered hedger list.
+- `/api/v1/hedgers/instances` returns the active production hedger list for `/lp` (Band1 and Band2 only during this rollout).
 - `/api/v1/hedgers/eth_plume_lp` returns a chainsaw-compatible hedger payload.
 
 ## Contracts

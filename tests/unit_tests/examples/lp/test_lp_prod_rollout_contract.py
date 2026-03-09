@@ -120,6 +120,8 @@ def test_lp_prod_docs_keep_band1_band2_as_only_active_instances() -> None:
 
     assert "Band1 and Band2" in text
     assert ".ini.disabled" in text
+    assert "/api/v1/hedgers/instances" in text
+    assert "active production hedger list" in text
 
 
 def test_lp_preflight_requires_loopback_backend_url_and_system_ini_sections(tmp_path: Path) -> None:

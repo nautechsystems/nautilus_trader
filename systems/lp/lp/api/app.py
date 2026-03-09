@@ -17,6 +17,7 @@ from lp.config import LpHedgerConfig
 from lp.config import load_lp_hedger_config
 from lp.hedgers import LpHedgerMeta
 from lp.hedgers import get_hedger_meta
+from lp.hedgers import list_active_hedgers
 from lp.hedgers import list_hedgers
 
 
@@ -814,7 +815,7 @@ def create_lp_api_app(
 ) -> Flask:
     app = Flask(__name__)
     client = redis_client or _NullRedis()
-    metas = tuple(list_hedgers() if registry_metas is None else registry_metas)
+    metas = tuple(list_active_hedgers() if registry_metas is None else registry_metas)
     status_reader = get_job_status or (lambda job_id: "unknown")
     job_controller = control_job or (lambda job_id, action: status_reader(job_id))
     _LpApiRoutes(
