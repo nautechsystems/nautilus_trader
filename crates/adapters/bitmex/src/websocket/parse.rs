@@ -31,7 +31,10 @@ use nautilus_model::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
         PriceType, RecordFlag, TimeInForce, TrailingOffsetType,
     },
-    events::{OrderUpdated, account::state::AccountState},
+    events::{
+        OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderTriggered, OrderUpdated,
+        account::state::AccountState,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
@@ -56,7 +59,8 @@ use crate::{
     common::{
         consts::BITMEX_VENUE,
         enums::{
-            BitmexExecInstruction, BitmexExecType, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+            BitmexExecInstruction, BitmexExecType, BitmexOrderStatus, BitmexOrderType,
+            BitmexPegPriceType, BitmexSide,
         },
         parse::{
             clean_reason, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
@@ -659,6 +663,118 @@ pub fn parse_order_msg(
     Ok(report)
 }
 
+/// Parsed order event variants produced by [`parse_order_event`] for tracked orders.
+#[derive(Debug, Clone)]
+pub enum ParsedOrderEvent {
+    Accepted(OrderAccepted),
+    Canceled(OrderCanceled),
+    Expired(OrderExpired),
+    Triggered(OrderTriggered),
+    Rejected(OrderRejected),
+}
+
+/// Converts a full BitMEX order message into a [`ParsedOrderEvent`] for tracked orders.
+///
+/// Returns `None` for transitional statuses (`PendingNew`, `PendingCancel`, `PendingReplace`)
+/// and for fill-related statuses (`PartiallyFilled`, `Filled`, `Rejected`) that are handled
+/// through other channels (Execution table for fills, HTTP response for rejections).
+pub fn parse_order_event(
+    msg: &BitmexOrderMsg,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> Option<ParsedOrderEvent> {
+    let instrument_id = parse_instrument_id(msg.symbol);
+    let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
+    let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "timestamp");
+
+    match msg.ord_status {
+        BitmexOrderStatus::New => {
+            let accepted = OrderAccepted::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                account_id,
+                UUID4::new(),
+                ts_event,
+                ts_init,
+                false,
+            );
+            Some(ParsedOrderEvent::Accepted(accepted))
+        }
+        BitmexOrderStatus::Canceled => {
+            // BitMEX cancels post-only orders instead of rejecting them when they
+            // would cross the spread. Detect via "ParticipateDoNotInitiate" reason.
+            let cancel_reason = msg
+                .ord_rej_reason
+                .or(msg.text)
+                .map(|r| clean_reason(r.as_ref()));
+
+            let is_post_only_rejection = cancel_reason
+                .as_deref()
+                .is_some_and(|r| r.contains("ParticipateDoNotInitiate"));
+
+            if is_post_only_rejection {
+                let rejected = OrderRejected::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    account_id,
+                    Ustr::from(
+                        cancel_reason
+                            .as_deref()
+                            .unwrap_or("Post-only order rejected"),
+                    ),
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    true, // due_post_only
+                );
+                Some(ParsedOrderEvent::Rejected(rejected))
+            } else {
+                let canceled = OrderCanceled::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(account_id),
+                );
+                Some(ParsedOrderEvent::Canceled(canceled))
+            }
+        }
+        BitmexOrderStatus::Expired => {
+            let expired = OrderExpired::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                UUID4::new(),
+                ts_event,
+                ts_init,
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+            );
+            Some(ParsedOrderEvent::Expired(expired))
+        }
+        // Rejections: handled at submit time via HTTP response
+        // Fills: handled via the Execution table, not order status updates
+        // Transitional: PendingNew, PendingCancel, PendingReplace
+        _ => None,
+    }
+}
+
 /// Parse a BitMEX WebSocket order update message into a Nautilus `OrderUpdated` event.
 ///
 /// This handles partial updates where only changed fields are present.
@@ -668,8 +784,7 @@ pub fn parse_order_update_msg(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> Option<OrderUpdated> {
-    // For BitMEX updates, we don't have trader_id or strategy_id from the exchange
-    // These will be populated by the execution engine when it matches the venue_order_id
+    // Uses external IDs; callers enrich with tracked identity when available
     let trader_id = TraderId::external();
     let strategy_id = StrategyId::external();
     let instrument_id = parse_instrument_id(msg.symbol);

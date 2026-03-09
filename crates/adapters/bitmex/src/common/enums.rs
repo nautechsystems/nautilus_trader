@@ -265,6 +265,16 @@ pub enum BitmexOrderStatus {
     Expired,
 }
 
+impl BitmexOrderStatus {
+    /// Returns whether this status represents a terminal order state.
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Filled | Self::Canceled | Self::Rejected | Self::Expired
+        )
+    }
+}
+
 impl From<BitmexOrderStatus> for OrderStatus {
     fn from(value: BitmexOrderStatus) -> Self {
         match value {

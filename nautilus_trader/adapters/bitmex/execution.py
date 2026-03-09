@@ -52,9 +52,14 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import contingency_type_to_pyo3
 from nautilus_trader.model.functions import order_side_to_pyo3
@@ -65,7 +70,6 @@ from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
@@ -301,6 +305,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._loop,
             instruments,
             self._handle_msg,
+            nautilus_pyo3.TraderId(self.trader_id.value),
         )
 
         # Wait for connection to be established
@@ -512,6 +517,21 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+
+        # Register identity before submit so the WS dispatch routes this order's
+        # messages through the tracked path (events instead of reports)
+        self._ws_client.register_order_identity(
+            client_order_id=pyo3_client_order_id,
+            instrument_id=pyo3_instrument_id,
+            strategy_id=nautilus_pyo3.StrategyId(order.strategy_id.value),
+            order_side=pyo3_order_side,
+            order_type=pyo3_order_type,
+        )
+
         # Generate OrderSubmitted event here to ensure correct event sequencing
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -519,11 +539,6 @@ class BitmexExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
-        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
-        pyo3_order_type = order_type_to_pyo3(order.order_type)
-        pyo3_order_side = order_side_to_pyo3(order.side)
         pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
         pyo3_time_in_force = time_in_force_to_pyo3(order.time_in_force)
         pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
@@ -622,6 +637,7 @@ class BitmexExecutionClient(LiveExecutionClient):
                 )
                 return
 
+            self._ws_client.remove_order_identity(pyo3_client_order_id)
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -926,7 +942,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             ts_event=account_state.ts_event,
         )
 
-    def _handle_msg(self, msg: Any) -> None:
+    def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
         try:
             if nautilus_pyo3.is_pycapsule(msg):
                 pass  # PyCapsules are handled by data clients
@@ -934,10 +950,26 @@ class BitmexExecutionClient(LiveExecutionClient):
                 self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
-            elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
-                self._handle_order_status_report_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderAccepted):
+                self._handle_order_accepted_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCanceled):
+                self._handle_order_canceled_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderExpired):
+                self._handle_order_expired_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderRejected):
+                self._handle_order_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
+                self._handle_order_cancel_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
+                self._handle_order_modify_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderTriggered):
+                self._handle_order_triggered_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderUpdated):
                 self._handle_order_updated_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderFilled):
+                self._handle_order_filled_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
+                self._handle_order_status_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
                 self._handle_fill_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
@@ -959,6 +991,18 @@ class BitmexExecutionClient(LiveExecutionClient):
         for fill_report in reports:
             self._handle_fill_report_pyo3(fill_report)
 
+    def _handle_order_accepted_pyo3(self, pyo3_event: nautilus_pyo3.OrderAccepted) -> None:
+        event = OrderAccepted.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_canceled_pyo3(self, pyo3_event: nautilus_pyo3.OrderCanceled) -> None:
+        event = OrderCanceled.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_expired_pyo3(self, pyo3_event: nautilus_pyo3.OrderExpired) -> None:
+        event = OrderExpired.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
@@ -977,109 +1021,41 @@ class BitmexExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
-    def _handle_order_updated_pyo3(
-        self,
-        pyo3_event: nautilus_pyo3.OrderUpdated,
-    ) -> None:
-        client_order_id = ClientOrderId(pyo3_event.client_order_id.value)
+    def _handle_order_triggered_pyo3(self, pyo3_event: nautilus_pyo3.OrderTriggered) -> None:
+        event = OrderTriggered.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
 
-        # For EXTERNAL orders (no clOrdID from BitMEX), look up by venue_order_id
-        if client_order_id.value == "EXTERNAL" and pyo3_event.venue_order_id:
-            venue_order_id = VenueOrderId(pyo3_event.venue_order_id.value)
-            indexed_client_order_id = self._cache.client_order_id(venue_order_id)
-            if indexed_client_order_id:
-                client_order_id = indexed_client_order_id
-
-        order = self._cache.order(client_order_id)
-        if not order:
-            # Log at debug for EXTERNAL orders (often internal BitMEX system entries)
-            if pyo3_event.client_order_id.value == "EXTERNAL":
-                self._log.debug(
-                    f"Cannot find order for external update with "
-                    f"venue_order_id {pyo3_event.venue_order_id}, ignoring",
-                )
-            else:
-                self._log.warning(
-                    f"Cannot find order for client_order_id {client_order_id} with "
-                    f"venue_order_id {pyo3_event.venue_order_id}, ignoring update",
-                )
-            return
-
+    def _handle_order_updated_pyo3(self, pyo3_event: nautilus_pyo3.OrderUpdated) -> None:
         event_dict = pyo3_event.to_dict()
-        event_dict["trader_id"] = order.trader_id.value
-        event_dict["strategy_id"] = order.strategy_id.value
-        event_dict["client_order_id"] = client_order_id.value
 
-        # We use zero as a sentinel indicating no quantity change
-        event_qty = Quantity.from_str(event_dict["quantity"])
-        if event_qty == 0:
-            event_dict["quantity"] = str(order.quantity)
+        # Zero quantity is a sentinel from parse_order_update_msg when BitMEX
+        # omits leaves_qty/cum_qty on partial updates. Replace with cached value.
+        client_order_id = ClientOrderId(event_dict["client_order_id"])
+        if Quantity.from_str(event_dict["quantity"]) == 0:
+            order = self._cache.order(client_order_id)
+            if order is not None:
+                event_dict["quantity"] = str(order.quantity)
 
         event = OrderUpdated.from_dict(event_dict)
         self._send_order_event(event)
 
-    def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
+    def _handle_order_filled_pyo3(self, pyo3_event: nautilus_pyo3.OrderFilled) -> None:
+        event = OrderFilled.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_status_report_pyo3(
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
-        if self._is_external_order(report.client_order_id):
-            self._send_order_status_report(report)
-            return
-
-        order = self._cache.order(report.client_order_id)
-        if order is None:
-            self._log.error(
-                f"Cannot process order status report - order for {report.client_order_id!r} not found",
-            )
-            return
-
-        if order.linked_order_ids is not None:
-            report.linked_order_ids = list(order.linked_order_ids)
-
-        if report.order_status == OrderStatus.REJECTED:
-            pass  # Handled by submit_order
-        elif report.order_status == OrderStatus.ACCEPTED:
-            if report.is_order_updated(order):
-                self.generate_order_updated(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    quantity=report.quantity,
-                    price=report.price,
-                    trigger_price=report.trigger_price,
-                    ts_event=report.ts_last,
-                )
-            else:
-                self.generate_order_accepted(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    ts_event=report.ts_last,
-                )
-        elif report.order_status == OrderStatus.PENDING_CANCEL:
-            if order.status == OrderStatus.PENDING_CANCEL:
-                self._log.debug(
-                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
-                    "order already in pending cancel state locally",
-                )
-            else:
-                self._log.warning(
-                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
-                    f"order status {order.status_string()}",
-                )
-        elif report.order_status == OrderStatus.CANCELED:
-            # Check if this is a post-only order that was canceled (BitMEX specific behavior)
-            # BitMEX cancels post-only orders instead of rejecting them when they would cross the spread
-            # The specific message is "Order had execInst of ParticipateDoNotInitiate"
-            is_post_only_rejection = (
-                report.cancel_reason and "ParticipateDoNotInitiate" in report.cancel_reason
-            )
-
-            if is_post_only_rejection:
+        if (
+            report.order_status == OrderStatus.CANCELED
+            and report.cancel_reason
+            and "ParticipateDoNotInitiate" in report.cancel_reason
+        ):
+            order = self._cache.order(report.client_order_id)
+            if order is not None:
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
@@ -1088,77 +1064,16 @@ class BitmexExecutionClient(LiveExecutionClient):
                     ts_event=report.ts_last,
                     due_post_only=True,
                 )
-            else:
-                self.generate_order_canceled(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    ts_event=report.ts_last,
-                )
-        elif report.order_status == OrderStatus.EXPIRED:
-            self.generate_order_expired(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
-        elif report.order_status == OrderStatus.TRIGGERED:
-            self.generate_order_triggered(
-                strategy_id=order.strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=report.ts_last,
-            )
-        else:
-            # Fills should be handled from FillReports
-            self._log.debug(f"Received unhandled OrderStatusReport: {report}")
+                return
+
+        self._send_order_status_report(report)
 
     def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
         report = FillReport.from_pyo3(pyo3_report)
-
-        if self._is_external_order(report.client_order_id):
-            self._send_fill_report(report)
-            return
-
-        order = self._cache.order(report.client_order_id)
-        if order is None:
-            self._log.error(
-                f"Cannot process fill report - order for {report.client_order_id!r} not found",
-            )
-            return
-
-        instrument = self._cache.instrument(order.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot process fill report - instrument {order.instrument_id} not found",
-            )
-            return
-
-        self.generate_order_filled(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=report.venue_order_id,
-            venue_position_id=report.venue_position_id,
-            trade_id=report.trade_id,
-            order_side=order.side,
-            order_type=order.order_type,
-            last_qty=report.last_qty,
-            last_px=report.last_px,
-            quote_currency=instrument.quote_currency,
-            commission=report.commission,
-            liquidity_side=report.liquidity_side,
-            ts_event=report.ts_event,
-        )
+        self._send_fill_report(report)
 
     def _handle_position_status_report_pyo3(
         self,
         pyo3_report: nautilus_pyo3.PositionStatusReport,
     ) -> None:
         _report = PositionStatusReport.from_pyo3(pyo3_report)
-
-    def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
-        return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)

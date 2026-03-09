@@ -48,8 +48,9 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType},
-    events::OrderEventAny,
-    identifiers::{AccountId, ClientId, ClientOrderId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -65,22 +66,14 @@ use crate::{
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
     common::{
-        enums::{BitmexExecType, BitmexOrderType, BitmexPegPriceType},
+        enums::BitmexPegPriceType,
         parse::{parse_peg_offset_value, parse_peg_price_type},
     },
     config::BitmexExecClientConfig,
-    http::{
-        client::BitmexHttpClient,
-        parse::{InstrumentParseResult, parse_instrument_any},
-    },
+    http::client::BitmexHttpClient,
     websocket::{
         client::BitmexWebSocketClient,
-        enums::BitmexAction,
-        messages::{BitmexTableMessage, BitmexWsMessage, OrderData},
-        parse::{
-            parse_execution_msg, parse_order_msg, parse_order_update_msg, parse_position_msg,
-            parse_wallet_msg,
-        },
+        dispatch::{self, OrderIdentity, WsDispatchState},
     },
 };
 
@@ -92,6 +85,7 @@ pub struct BitmexExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: BitmexHttpClient,
     ws_client: BitmexWebSocketClient,
+    ws_dispatch_state: Arc<WsDispatchState>,
     _submitter: SubmitBroadcaster,
     _canceller: CancelBroadcaster,
     ws_stream_handle: Option<JoinHandle<()>>,
@@ -214,6 +208,7 @@ impl BitmexExecutionClient {
             emitter,
             http_client,
             ws_client,
+            ws_dispatch_state: Arc::new(WsDispatchState::default()),
             _submitter,
             _canceller,
             ws_stream_handle: None,
@@ -251,6 +246,44 @@ impl BitmexExecutionClient {
         for handle in guard.drain(..) {
             handle.abort();
         }
+    }
+
+    /// Populates `order_identities` for an order if not already present.
+    ///
+    /// Needed for cancel/modify commands on orders loaded via reconciliation
+    /// (which bypass `submit_order` and therefore have no identity entry).
+    fn ensure_order_identity(
+        &self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) {
+        if self
+            .ws_dispatch_state
+            .order_identities
+            .contains_key(&client_order_id)
+        {
+            return;
+        }
+
+        let cache = self.core.cache();
+        let (order_side, order_type) = cache
+            .order(&client_order_id)
+            .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
+                (o.order_side(), o.order_type())
+            });
+        drop(cache);
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
+        self.ws_dispatch_state.insert_accepted(client_order_id);
     }
 
     fn start_deadmans_switch(&mut self) {
@@ -386,6 +419,7 @@ impl BitmexExecutionClient {
 
         let stream = self.ws_client.stream();
         let emitter = self.emitter.clone();
+        let state = Arc::clone(&self.ws_dispatch_state);
         let account_id = self.core.account_id;
         let clock = self.clock;
 
@@ -411,10 +445,11 @@ impl BitmexExecutionClient {
             let mut insts_by_symbol = instruments_by_symbol;
 
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(
+                dispatch::dispatch_ws_message(
                     clock.get_time_ns(),
                     message,
                     &emitter,
+                    &state,
                     &mut insts_by_symbol,
                     &mut order_type_cache,
                     &mut order_symbol_cache,
@@ -441,16 +476,28 @@ impl BitmexExecutionClient {
 
         self.emitter.emit_order_submitted(&order);
 
-        let use_broadcaster = submit_tries.is_some_and(|n| n > 1);
-        let http_client = self.http_client.clone();
-        let submitter = self._submitter.clone_for_async();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
         let client_order_id = order.client_order_id();
         let order_side = order.order_side();
         let order_type = order.order_type();
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
+
+        let use_broadcaster = submit_tries.is_some_and(|n| n > 1);
+        let http_client = self.http_client.clone();
+        let submitter = self._submitter.clone_for_async();
+        let ws_dispatch_state = self.ws_dispatch_state.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         let quantity = order.quantity();
         let time_in_force = order.time_in_force();
         let price = order.price();
@@ -515,7 +562,12 @@ impl BitmexExecutionClient {
             };
 
             match result {
-                Ok(report) => emitter.send_order_status_report(report),
+                Ok(_report) => {
+                    // The WS dispatch handles all lifecycle events for tracked orders.
+                    // Forwarding the HTTP response as a report would cause the ExecEngine
+                    // to generate inferred fills that conflict with real fills from the
+                    // Execution table WS stream.
+                }
                 Err(e) => {
                     let error_msg = e.to_string();
 
@@ -529,6 +581,7 @@ impl BitmexExecutionClient {
                         return Ok(());
                     }
 
+                    ws_dispatch_state.order_identities.remove(&client_order_id);
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -942,6 +995,7 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let instrument_id = cmd.instrument_id;
@@ -973,6 +1027,7 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
         let instrument_id = cmd.instrument_id;
@@ -1073,279 +1128,5 @@ impl ExecutionClient for BitmexExecutionClient {
         });
 
         Ok(())
-    }
-}
-
-/// Dispatches a venue WebSocket message by parsing it and routing to the event emitter.
-#[allow(clippy::too_many_arguments)]
-fn dispatch_ws_message(
-    ts_init: UnixNanos,
-    message: BitmexWsMessage,
-    emitter: &ExecutionEventEmitter,
-    instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
-    order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
-    order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
-    account_id: AccountId,
-) {
-    match message {
-        BitmexWsMessage::Table(table_msg) => {
-            match table_msg {
-                BitmexTableMessage::Order { data, .. } => {
-                    handle_order_messages(
-                        data,
-                        emitter,
-                        instruments_by_symbol,
-                        order_type_cache,
-                        order_symbol_cache,
-                        account_id,
-                        ts_init,
-                    );
-                }
-                BitmexTableMessage::Execution { data, .. } => {
-                    handle_execution_messages(
-                        data,
-                        emitter,
-                        instruments_by_symbol,
-                        order_symbol_cache,
-                        ts_init,
-                    );
-                }
-                BitmexTableMessage::Position { data, .. } => {
-                    for pos_msg in data {
-                        let Some(instrument) = instruments_by_symbol.get(&pos_msg.symbol) else {
-                            log::error!(
-                                "Instrument cache miss: position dropped for symbol={}, account={}",
-                                pos_msg.symbol,
-                                pos_msg.account,
-                            );
-                            continue;
-                        };
-                        let report = parse_position_msg(pos_msg, instrument, ts_init);
-                        emitter.send_position_report(report);
-                    }
-                }
-                BitmexTableMessage::Wallet { data, .. } => {
-                    for wallet_msg in data {
-                        let state = parse_wallet_msg(wallet_msg, ts_init);
-                        emitter.send_account_state(state);
-                    }
-                }
-                BitmexTableMessage::Margin { .. } => {
-                    // Skip margin messages - BitMEX uses account-level cross-margin
-                    // which doesn't map well to Nautilus's per-instrument margin model
-                }
-                BitmexTableMessage::Instrument { action, data } => {
-                    if matches!(action, BitmexAction::Partial | BitmexAction::Insert) {
-                        for msg in data {
-                            match msg.try_into() {
-                                Ok(http_inst) => match parse_instrument_any(&http_inst, ts_init) {
-                                    InstrumentParseResult::Ok(boxed) => {
-                                        let inst = *boxed;
-                                        let symbol = inst.symbol().inner();
-                                        instruments_by_symbol.insert(symbol, inst);
-                                    }
-                                    InstrumentParseResult::Unsupported { .. }
-                                    | InstrumentParseResult::Inactive { .. } => {}
-                                    InstrumentParseResult::Failed { symbol, error, .. } => {
-                                        log::warn!("Failed to parse instrument {symbol}: {error}");
-                                    }
-                                },
-                                Err(e) => {
-                                    log::debug!(
-                                        "Skipping instrument (missing required fields): {e}"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                // Ignore data-only tables on execution client
-                BitmexTableMessage::OrderBookL2 { .. }
-                | BitmexTableMessage::OrderBookL2_25 { .. }
-                | BitmexTableMessage::OrderBook10 { .. }
-                | BitmexTableMessage::Quote { .. }
-                | BitmexTableMessage::Trade { .. }
-                | BitmexTableMessage::TradeBin1m { .. }
-                | BitmexTableMessage::TradeBin5m { .. }
-                | BitmexTableMessage::TradeBin1h { .. }
-                | BitmexTableMessage::TradeBin1d { .. }
-                | BitmexTableMessage::Funding { .. } => {
-                    log::debug!("Ignoring BitMEX data message on execution stream");
-                }
-                _ => {
-                    log::warn!("Unhandled table message type on execution stream");
-                }
-            }
-        }
-        BitmexWsMessage::Reconnected => {
-            order_type_cache.clear();
-            order_symbol_cache.clear();
-            log::info!("BitMEX execution websocket reconnected");
-        }
-        BitmexWsMessage::Authenticated => {
-            log::debug!("BitMEX execution websocket authenticated");
-        }
-    }
-}
-
-fn handle_order_messages(
-    data: Vec<OrderData>,
-    emitter: &ExecutionEventEmitter,
-    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
-    order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
-    order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
-    account_id: AccountId,
-    ts_init: UnixNanos,
-) {
-    for order_data in data {
-        match order_data {
-            OrderData::Full(order_msg) => {
-                let Some(instrument) = instruments_by_symbol.get(&order_msg.symbol) else {
-                    log::error!(
-                        "Instrument cache miss: order dropped for symbol={}, order_id={}",
-                        order_msg.symbol,
-                        order_msg.order_id,
-                    );
-                    continue;
-                };
-
-                match parse_order_msg(&order_msg, instrument, order_type_cache, ts_init) {
-                    Ok(report) => {
-                        if let Some(client_order_id) = &order_msg.cl_ord_id {
-                            let client_order_id = ClientOrderId::new(client_order_id);
-
-                            if let Some(ord_type) = &order_msg.ord_type {
-                                let order_type: OrderType = if *ord_type == BitmexOrderType::Pegged
-                                    && order_msg.peg_price_type
-                                        == Some(BitmexPegPriceType::TrailingStopPeg)
-                                {
-                                    if order_msg.price.is_some() {
-                                        OrderType::TrailingStopLimit
-                                    } else {
-                                        OrderType::TrailingStopMarket
-                                    }
-                                } else {
-                                    (*ord_type).into()
-                                };
-                                order_type_cache.insert(client_order_id, order_type);
-                            }
-
-                            order_symbol_cache.insert(client_order_id, order_msg.symbol);
-                        }
-
-                        if report.order_status.is_closed()
-                            && let Some(client_id) = report.client_order_id
-                        {
-                            order_type_cache.remove(&client_id);
-                            order_symbol_cache.remove(&client_id);
-                        }
-
-                        emitter.send_order_status_report(report);
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to parse full order message: \
-                            error={e}, symbol={}, order_id={}, time_in_force={:?}",
-                            order_msg.symbol,
-                            order_msg.order_id,
-                            order_msg.time_in_force,
-                        );
-                    }
-                }
-            }
-            OrderData::Update(msg) => {
-                let Some(instrument) = instruments_by_symbol.get(&msg.symbol) else {
-                    log::error!(
-                        "Instrument cache miss: order update dropped for symbol={}, order_id={}",
-                        msg.symbol,
-                        msg.order_id,
-                    );
-                    continue;
-                };
-
-                // Populate cache for execution message routing
-                if let Some(cl_ord_id) = &msg.cl_ord_id {
-                    let client_order_id = ClientOrderId::new(cl_ord_id);
-                    order_symbol_cache.insert(client_order_id, msg.symbol);
-                }
-
-                if let Some(event) = parse_order_update_msg(&msg, instrument, account_id, ts_init) {
-                    emitter.send_order_event(OrderEventAny::Updated(event));
-                } else {
-                    log::warn!(
-                        "Skipped order update (insufficient data): order_id={}, price={:?}",
-                        msg.order_id,
-                        msg.price,
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn handle_execution_messages(
-    data: Vec<crate::websocket::messages::BitmexExecutionMsg>,
-    emitter: &ExecutionEventEmitter,
-    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
-    order_symbol_cache: &AHashMap<ClientOrderId, Ustr>,
-    ts_init: UnixNanos,
-) {
-    for exec_msg in data {
-        let symbol_opt = if let Some(sym) = &exec_msg.symbol {
-            Some(*sym)
-        } else if let Some(cl_ord_id) = &exec_msg.cl_ord_id {
-            let client_order_id = ClientOrderId::new(cl_ord_id);
-            order_symbol_cache.get(&client_order_id).copied()
-        } else {
-            None
-        };
-
-        let Some(symbol) = symbol_opt else {
-            if let Some(cl_ord_id) = &exec_msg.cl_ord_id {
-                if exec_msg.exec_type == Some(BitmexExecType::Trade) {
-                    log::warn!(
-                        "Execution missing symbol and not in cache: \
-                        cl_ord_id={cl_ord_id}, exec_id={:?}",
-                        exec_msg.exec_id,
-                    );
-                } else {
-                    log::debug!(
-                        "Execution missing symbol and not in cache: \
-                        cl_ord_id={cl_ord_id}, exec_type={:?}",
-                        exec_msg.exec_type,
-                    );
-                }
-            } else if exec_msg.exec_type == Some(BitmexExecType::CancelReject) {
-                log::debug!(
-                    "CancelReject missing symbol/clOrdID (expected with redundant cancels): \
-                    exec_id={:?}, order_id={:?}",
-                    exec_msg.exec_id,
-                    exec_msg.order_id,
-                );
-            } else {
-                log::warn!(
-                    "Execution missing both symbol and clOrdID: \
-                    exec_id={:?}, order_id={:?}, exec_type={:?}",
-                    exec_msg.exec_id,
-                    exec_msg.order_id,
-                    exec_msg.exec_type,
-                );
-            }
-            continue;
-        };
-
-        let Some(instrument) = instruments_by_symbol.get(&symbol) else {
-            log::error!(
-                "Instrument cache miss: execution dropped for symbol={}, exec_id={:?}, exec_type={:?}",
-                symbol,
-                exec_msg.exec_id,
-                exec_msg.exec_type,
-            );
-            continue;
-        };
-
-        if let Some(fill) = parse_execution_msg(exec_msg, instrument, ts_init) {
-            emitter.send_fill_report(fill);
-        }
     }
 }

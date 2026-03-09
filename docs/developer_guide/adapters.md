@@ -953,9 +953,18 @@ these into Nautilus rejection events (`OrderRejected`, `OrderCancelRejected`, et
 
 The data client's message loop matches on `{Venue}WsMessage` variants and calls parse functions
 to produce Nautilus domain types (`Data`, `OrderBookDeltas`, etc.). The execution client's
-dispatch layer handles `OrderResponse`, `SendFailed`, and `Orders` variants, converting them
-into Nautilus order events (`OrderAccepted`, `OrderRejected`, `OrderFilled`, etc.). This keeps
+dispatch layer handles `OrderResponse`, `SendFailed`, and `Orders` variants. This keeps
 the handler focused on I/O and deserialization while the client layers own domain conversion.
+
+The execution dispatch converts order and fill messages using a two-tier routing contract:
+
+1. The handler emits venue-specific order types (e.g., `Orders(Vec<MyOrderMsg>)`).
+2. The client dispatch layer tracks which orders were submitted through this client.
+3. **Tracked order**: convert venue types to order events (`OrderAccepted`, `OrderCanceled`,
+   `OrderFilled`, etc.) and synthesize any missing lifecycle events (e.g., `OrderAccepted`
+   before a fast fill).
+4. **External/unknown order**: convert to reports (`OrderStatusReport` or `FillReport`) for
+   downstream reconciliation.
 
 ### Error handling
 
