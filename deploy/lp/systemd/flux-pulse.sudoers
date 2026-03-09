@@ -11,6 +11,14 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl start flux@service-eth-plume-lp-hedger-band2.service, \
   /usr/bin/systemctl stop flux@service-eth-plume-lp-hedger-band2.service, \
   /usr/bin/systemctl restart flux@service-eth-plume-lp-hedger-band2.service, \
-  /usr/bin/journalctl -u flux@service-eth-plume-lp-hedger-band2.service
+  /usr/bin/journalctl -u flux@service-eth-plume-lp-hedger-band2.service, \
+  /usr/bin/systemctl start flux@service-hedger3.service, \
+  /usr/bin/systemctl stop flux@service-hedger3.service, \
+  /usr/bin/systemctl restart flux@service-hedger3.service, \
+  /usr/bin/journalctl -u flux@service-hedger3.service, \
+  /usr/bin/systemctl start flux@service-hedger4.service, \
+  /usr/bin/systemctl stop flux@service-hedger4.service, \
+  /usr/bin/systemctl restart flux@service-hedger4.service, \
+  /usr/bin/journalctl -u flux@service-hedger4.service
 
 ubuntu ALL=(root) NOPASSWD: FLUX_PULSE

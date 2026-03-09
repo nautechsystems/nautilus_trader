@@ -10,9 +10,10 @@ This directory is the deploy root for the dedicated LP hedger stack.
 - Active checked-in hedgers:
   - `eth_plume_lp_hedger.ini`
   - `eth_plume_lp_hedger_band2.ini`
-- Disabled/template hedgers:
-  - `hype_usdt_lp_hedger.ini.disabled`
-  - `plume_weth_lp_hedger.ini.disabled`
+- Staged checked-in hedgers:
+  - `hype_usdt_lp_hedger.ini`
+  - `plume_weth_lp_hedger.ini`
+- Hidden/template hedgers:
   - `third_lp_hedger.ini.disabled`
   - `lp_hedger.template.ini`
 - Systemd assets:
@@ -27,7 +28,9 @@ This directory is the deploy root for the dedicated LP hedger stack.
 - Run the LP backend as a hidden loopback service at `LP_API_BACKEND_URL=http://127.0.0.1:5025`.
 - Preserve the chainsaw job IDs, hedger IDs, Redis key families, config/env key names, and payload field names.
 - Keep checked-in configs sanitized: same key names as chainsaw, but no live Bybit secrets in git.
-- Auto-enroll only Band1 and Band2. Extra configs stay `.ini.disabled` until pool geometry and credentials are validated.
+- Expose four public `/lp` instances: Band1, Band2, `hype_usdt_lp`, and `plume_weth_lp`.
+- Keep `third_lp` hidden until it has a real identity and config.
+- Auto-start only Band1 and Band2. `service-hedger3` and `service-hedger4` are staged, Pulse-managed, and stopped by default until their configs are ready.
 - Use `docs/runbooks/lp-hedger-production-rollout.md` as the production rollout source of truth for preflight, restart order, smoke validation, and rollback.
 
 ## Production control plane
@@ -57,9 +60,12 @@ Installer behavior:
 - writes `/etc/flux/lp-api.env`
 - writes `/etc/flux/service-eth-plume-lp-hedger.env`
 - writes `/etc/flux/service-eth-plume-lp-hedger-band2.env`
-- rewrites `/etc/systemd/system/flux-lp.target` so the target enrolls `lp-api`, Band1, and Band2 only
+- writes `/etc/flux/service-hedger3.env`
+- writes `/etc/flux/service-hedger4.env`
+- rewrites `/etc/systemd/system/flux-lp.target` so the target auto-starts `lp-api`, Band1, and Band2 only
+- installs `/etc/sudoers.d/flux-pulse` so Pulse can manage `lp-api`, Band1, Band2, `service-hedger3`, and `service-hedger4`
 
-Band1 and Band2 are the only active checked-in production instances for this rollout.
+Band1 and Band2 are the live auto-started production pair for this rollout. `hype_usdt_lp` and `plume_weth_lp` are staged checked-in configs: visible on `/lp`, editable through the shared Hedger surface, and enrolled in Pulse/systemd without joining `flux-lp.target`.
 
 Run the host preflight before starting `flux-lp.target`:
 
@@ -80,6 +86,8 @@ Primary operator surfaces:
 - `http://<host>:5022/lp`
 - `GET /api/v1/hedgers/instances`
 - `GET /api/v1/hedgers/eth_plume_lp`
+- `GET /api/v1/hedgers/hype_usdt_lp`
+- `GET /api/v1/hedgers/plume_weth_lp`
 - `POST /api/v1/hedgers/<hedger_id>/job`
 - `http://<host>:5022/pulse`
 
@@ -117,8 +125,10 @@ ops/scripts/deploy/lp_stack.sh stop
 Expected smoke result:
 
 - `/lp` serves the Fluxboard SPA.
-- `/api/v1/hedgers/instances` returns the active production hedger list for `/lp` (Band1 and Band2 only during this rollout).
+- `/api/v1/hedgers/instances` returns the public `/lp` selector list: `eth_plume_lp`, `eth_plume_lp_band2`, `hype_usdt_lp`, and `plume_weth_lp`.
+- `/api/v1/hedgers/hype_usdt_lp` and `/api/v1/hedgers/plume_weth_lp` report staged readiness fields (`staged`, `config_ready`, `config_readiness_errors`) until operators finish their configs.
 - `/api/v1/hedgers/eth_plume_lp` returns a chainsaw-compatible hedger payload.
+- Pulse shows `service-hedger3` and `service-hedger4` as managed LP jobs, but they remain stopped after install/reboot unless an operator starts them explicitly.
 
 ## Contracts
 
@@ -133,5 +143,10 @@ Expected smoke result:
   - `/lp`
   - `/api/v1/hedgers/*`
   - `LP_API_BACKEND_URL=http://127.0.0.1:5025`
-- Checked-in rollback/template configs remain `.ini.disabled` and are deliberately not auto-enrolled.
-- Band1 and Band2 are the only active checked-in hedgers in this repo snapshot.
+- Public selector contract:
+  - `eth_plume_lp`
+  - `eth_plume_lp_band2`
+  - `hype_usdt_lp`
+  - `plume_weth_lp`
+- `third_lp` remains hidden and template-only as `third_lp_hedger.ini.disabled`.
+- Band1 and Band2 are the only auto-started hedgers in this repo snapshot.

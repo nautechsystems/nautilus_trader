@@ -12,9 +12,13 @@ TARGET_PATH="${SYSTEMD_DIR}/flux-lp.target"
 API_CONFIG="${ROOT_DIR}/deploy/lp/lp.live.toml"
 BAND1_CONFIG="${ROOT_DIR}/deploy/lp/hedgers/eth_plume_lp_hedger.ini"
 BAND2_CONFIG="${ROOT_DIR}/deploy/lp/hedgers/eth_plume_lp_hedger_band2.ini"
+HYPE_CONFIG="${ROOT_DIR}/deploy/lp/hedgers/hype_usdt_lp_hedger.ini"
+PLUME_WETH_CONFIG="${ROOT_DIR}/deploy/lp/hedgers/plume_weth_lp_hedger.ini"
 LP_API_ENV_PATH="${ENV_DIR}/lp-api.env"
 BAND1_ENV_PATH="${ENV_DIR}/service-eth-plume-lp-hedger.env"
 BAND2_ENV_PATH="${ENV_DIR}/service-eth-plume-lp-hedger-band2.env"
+HYPE_ENV_PATH="${ENV_DIR}/service-hedger3.env"
+PLUME_WETH_ENV_PATH="${ENV_DIR}/service-hedger4.env"
 
 require_sudo() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -23,7 +27,18 @@ require_sudo() {
   fi
 }
 
-build_service_ids() {
+build_managed_service_ids() {
+  local -n out_service_ids="$1"
+  out_service_ids=(
+    "lp-api"
+    "service-eth-plume-lp-hedger"
+    "service-eth-plume-lp-hedger-band2"
+    "service-hedger3"
+    "service-hedger4"
+  )
+}
+
+build_target_service_ids() {
   local -n out_service_ids="$1"
   out_service_ids=(
     "lp-api"
@@ -46,7 +61,7 @@ install_sudoers() {
   local tmp_sudoers
   local service_ids=()
   tmp_sudoers="$(mktemp)"
-  build_service_ids service_ids
+  build_managed_service_ids service_ids
   strategy_stack_render_sudoers ubuntu "${tmp_sudoers}" "${service_ids[@]}"
   if command -v visudo >/dev/null 2>&1; then
     visudo -cf "${tmp_sudoers}"
@@ -57,7 +72,7 @@ install_sudoers() {
 
 render_target() {
   local service_ids=()
-  build_service_ids service_ids
+  build_target_service_ids service_ids
   strategy_stack_render_target "${TARGET_PATH}" "Flux LP Stack" "${service_ids[@]}"
 }
 
@@ -93,6 +108,26 @@ render_band2_env() {
     "python3 -m lp.runners.run_hedger --config ${BAND2_CONFIG} --system-config /etc/flux/lp-system.ini"
 }
 
+render_hype_env() {
+  strategy_stack_write_env \
+    "${HYPE_ENV_PATH}" \
+    "Staged HYPE/USDT LP hedger" \
+    "lp" \
+    "LP" \
+    "15" \
+    "python3 -m lp.runners.run_hedger --config ${HYPE_CONFIG} --system-config /etc/flux/lp-system.ini"
+}
+
+render_plume_weth_env() {
+  strategy_stack_write_env \
+    "${PLUME_WETH_ENV_PATH}" \
+    "Staged PLUME/WETH LP hedger" \
+    "lp" \
+    "LP" \
+    "15" \
+    "python3 -m lp.runners.run_hedger --config ${PLUME_WETH_CONFIG} --system-config /etc/flux/lp-system.ini"
+}
+
 enable_stack() {
   systemctl daemon-reload
   systemctl enable flux-lp.target
@@ -106,8 +141,11 @@ main() {
   render_api_env
   render_band1_env
   render_band2_env
+  render_hype_env
+  render_plume_weth_env
   enable_stack
   echo "[lp-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
+  echo "[lp-systemd] staged generic hedgers service-hedger3 and service-hedger4 are Pulse-managed but not part of flux-lp.target"
   echo "[lp-systemd] restart flux@tokenmm-api.service after updating /etc/flux/common.env so LP_API_BACKEND_URL is reloaded before starting flux-lp.target"
 }
 

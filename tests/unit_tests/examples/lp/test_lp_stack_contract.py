@@ -31,8 +31,8 @@ def test_lp_registry_default_paths_use_deploy_root() -> None:
     assert paths == {
         "eth_plume_lp": "deploy/lp/hedgers/eth_plume_lp_hedger.ini",
         "eth_plume_lp_band2": "deploy/lp/hedgers/eth_plume_lp_hedger_band2.ini",
-        "hype_usdt_lp": "deploy/lp/hedgers/hype_usdt_lp_hedger.ini.disabled",
-        "plume_weth_lp": "deploy/lp/hedgers/plume_weth_lp_hedger.ini.disabled",
+        "hype_usdt_lp": "deploy/lp/hedgers/hype_usdt_lp_hedger.ini",
+        "plume_weth_lp": "deploy/lp/hedgers/plume_weth_lp_hedger.ini",
         "third_lp": "deploy/lp/hedgers/third_lp_hedger.ini.disabled",
     }
 
@@ -44,10 +44,12 @@ def test_lp_common_env_mentions_hidden_backend_proxy() -> None:
     assert "LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini" in content
 
 
-def test_disabled_extra_hedgers_are_not_auto_enrolled() -> None:
+def test_staged_extra_hedgers_ship_as_checked_in_configs() -> None:
     assert _active_lp_hedger_ids() == [
         "eth_plume_lp_hedger",
         "eth_plume_lp_hedger_band2",
+        "hype_usdt_lp_hedger",
+        "plume_weth_lp_hedger",
     ]
 
 
@@ -59,6 +61,11 @@ def test_lp_contract_doc_mentions_same_redis_key_family() -> None:
     assert ":events" in doc
     assert ":geometry_overrides" in doc
     assert ":threshold_overrides" in doc
+    assert "hype_usdt_lp" in doc
+    assert "plume_weth_lp" in doc
+    assert "third_lp" in doc
+    assert "config_ready" in doc
+    assert "config_readiness_errors" in doc
 
 
 def test_lp_stack_script_starts_hidden_backend_and_public_proxy() -> None:
@@ -119,34 +126,42 @@ def test_lp_systemd_assets_use_chainsaw_job_ids() -> None:
     assert "Wants=flux@service-eth-plume-lp-hedger.service" in target
     assert "Wants=flux@service-eth-plume-lp-hedger-band2.service" in target
     assert "service-hedger3" not in target
+    assert "service-hedger4" not in target
     assert "/usr/bin/systemctl restart flux@service-eth-plume-lp-hedger.service" in sudoers
     assert "/usr/bin/systemctl restart flux@service-eth-plume-lp-hedger-band2.service" in sudoers
     assert "/usr/bin/systemctl restart flux@lp-api.service" in sudoers
-    assert "service-hedger3" not in sudoers
+    assert "/usr/bin/systemctl restart flux@service-hedger3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@service-hedger4.service" in sudoers
     assert "deploy/lp/systemd/common.env.example" in install_script
     assert "flux-lp.target" in install_script
     assert "lp-api.env" in install_script
     assert "service-eth-plume-lp-hedger.env" in install_script
     assert "service-eth-plume-lp-hedger-band2.env" in install_script
+    assert "service-hedger3.env" in install_script
+    assert "service-hedger4.env" in install_script
 
 
-def test_lp_readme_documents_hidden_backend_and_disabled_configs() -> None:
+def test_lp_readme_documents_hidden_backend_and_staged_configs() -> None:
     readme = _read(_repo_root() / "deploy/lp/README.md")
 
     assert "LP_API_BACKEND_URL=http://127.0.0.1:5025" in readme
     assert "/lp" in readme
     assert "/api/v1/hedgers/*" in readme
-    assert ".ini.disabled" in readme
+    assert "hype_usdt_lp_hedger.ini" in readme
+    assert "plume_weth_lp_hedger.ini" in readme
+    assert "third_lp_hedger.ini.disabled" in readme
+    assert "staged" in readme.lower()
     assert "Band1 and Band2" in readme
 
 
-def test_install_lp_systemd_references_band1_band2_only_and_shared_host_restart_order() -> None:
+def test_install_lp_systemd_enrolls_staged_services_without_auto_start_and_keeps_shared_host_restart_order() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/install_lp_systemd.sh")
 
     assert "lp-api.env" in script
     assert "service-eth-plume-lp-hedger.env" in script
     assert "service-eth-plume-lp-hedger-band2.env" in script
-    assert "service-hedger3" not in script
+    assert "service-hedger3.env" in script
+    assert "service-hedger4.env" in script
     assert "flux@tokenmm-api.service" in script
     assert "LP_API_BACKEND_URL" in script
 

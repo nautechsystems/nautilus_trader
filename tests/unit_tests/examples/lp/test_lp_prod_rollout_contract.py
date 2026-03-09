@@ -112,16 +112,22 @@ def test_lp_prod_runbook_documents_shared_host_topology() -> None:
     assert "flux-lp.target" in text
     assert "service-eth-plume-lp-hedger" in text
     assert "service-eth-plume-lp-hedger-band2" in text
+    assert "service-hedger3" in text
+    assert "service-hedger4" in text
     assert "rollback" in text.lower()
 
 
-def test_lp_prod_docs_keep_band1_band2_as_only_active_instances() -> None:
+def test_lp_prod_docs_distinguish_live_pair_from_staged_generic_instances() -> None:
     text = _read("deploy/lp/README.md")
 
     assert "Band1 and Band2" in text
-    assert ".ini.disabled" in text
+    assert "hype_usdt_lp_hedger.ini" in text
+    assert "plume_weth_lp_hedger.ini" in text
+    assert "third_lp_hedger.ini.disabled" in text
     assert "/api/v1/hedgers/instances" in text
-    assert "active production hedger list" in text
+    assert "staged" in text.lower()
+    assert "service-hedger3" in text
+    assert "service-hedger4" in text
 
 
 def test_lp_preflight_requires_loopback_backend_url_and_system_ini_sections(tmp_path: Path) -> None:
