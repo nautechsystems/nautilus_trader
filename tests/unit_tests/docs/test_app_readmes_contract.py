@@ -24,6 +24,8 @@ def test_pulse_ui_readme_documents_build_test_and_base_path_contract() -> None:
     assert "pnpm --dir pulse-ui build" in readme
     assert "pnpm --dir pulse-ui test" in readme
     assert "/pulse/*" in readme
+    assert "/tokenmm/*" in readme
+    assert "/equities/*" in readme
     assert "PULSE_UI_BASE_PATH" in readme
     assert "flux.runners.tokenmm.run_api" in readme
     assert "flux.runners.equities.run_api" in readme
