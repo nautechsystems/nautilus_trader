@@ -77,6 +77,14 @@ def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
 
 
+def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
+    strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        assert (strategies_dir / f"{strategy_id}.toml").is_file()
+        assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
+
+
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
@@ -109,7 +117,7 @@ def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back
 ):
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
-    assert "TOKENMM_* | BYBIT_* | BINANCE_* | OKX_*" in script
+    assert "TOKENMM_* | BYBIT_* | BINANCE_* | OKX_* | BITGET_*" in script
     assert "MAKERV3_*" not in script
     assert "SHARED_ENV_FALLBACK_PATH" not in script
     assert "[tokenmm-stack] using shared env fallback:" not in script
@@ -128,6 +136,7 @@ def test_tokenmm_stack_script_loads_aws_secrets_before_key_validation() -> None:
     assert 'AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"' in script
     assert 'BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"' in script
     assert 'BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"' in script
+    assert 'BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-/nautilus/tokenmm/bitget}"' in script
     assert 'OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-/nautilus/tokenmm/okx}"' in script
     assert "load_aws_secrets_if_enabled()" in script
 
@@ -163,7 +172,7 @@ def test_tokenmm_stack_script_limits_secret_imports_to_exchange_credentials() ->
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
     load_secret_idx = script.index("load_secret_into_env() {")
-    assert "BYBIT_*|BINANCE_*|OKX_*)" in script[load_secret_idx:]
+    assert "BYBIT_*|BINANCE_*|BITGET_*|OKX_*)" in script[load_secret_idx:]
     assert "warning: skipping unsupported secret key" in script[load_secret_idx:]
 
 
@@ -178,6 +187,7 @@ def test_tokenmm_stack_env_example_defaults_to_safe_paper_without_execution() ->
     assert "TOKENMM_ALLOW_MISSING_KEYS=0" in env_example
     assert "TOKENMM_LOAD_AWS_SECRETS=0" in env_example
     assert "TOKENMM_AWS_REGION=ap-southeast-1" in env_example
+    assert "TOKENMM_BITGET_SECRET_ID=/nautilus/tokenmm/bitget" in env_example
     assert "TOKENMM_OKX_SECRET_ID=/nautilus/tokenmm/okx" in env_example
     assert "TOKENMM_BALANCES_READY_TIMEOUT_SECS=90" in env_example
     assert "TOKENMM_STRICT_BALANCES_READY_CHECK=1" in env_example
@@ -251,7 +261,7 @@ def test_tokenmm_stack_script_only_imports_exchange_secret_keys() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
     assert 'case "${key}" in' in script
-    assert "BYBIT_*|BINANCE_*|OKX_*)" in script
+    assert "BYBIT_*|BINANCE_*|BITGET_*|OKX_*)" in script
     assert "skipping unsupported secret key" in script
 
 
@@ -347,6 +357,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "ExecStart=/bin/bash -lc 'cd \"${WORKDIR:?}\" && exec ${CMD}'" in service_template
     assert 'if [ -n "${PORT:-}" ]; then' in service_template
     assert "SyslogIdentifier=flux-%i" in service_template
+    assert "RestartPreventExitStatus=78" in service_template
     assert "NoNewPrivileges=true" not in service_template
 
     assert "[Install]" in target_unit
@@ -357,7 +368,10 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service" in target_unit
 
     assert "deploy/tokenmm/tokenmm.live.toml" in install_script
     assert "/etc/flux" in install_script
@@ -389,12 +403,17 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env
+    assert "BITGET_API_KEY=" in common_env
+    assert "BITGET_API_PASSPHRASE=" in common_env
     assert "OKX_API_KEY=" in common_env
 
     assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
     assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
     assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
     assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service" in sudoers
     assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
     assert "tokenmm-pulse.service" not in sudoers
     assert "flux@*" not in sudoers
@@ -473,8 +492,24 @@ def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instrum
 
     assert 'instrument_id = "PLUMEUSDT-LINEAR.BYBIT"' in config
     assert 'instrument_id = "PLUMEUSDT-SPOT.BYBIT"' in config
+    assert 'instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"' in config
     assert 'instrument_id = "PLUMEUSDT.BINANCE_SPOT"' in config
+    assert 'instrument_id = "PLUMEUSDT-PERP.BITGET"' in config
+    assert 'instrument_id = "PLUMEUSDT.BITGET"' in config
     assert 'instrument_id = "PLUME-USDT-SWAP.OKX"' in config
+
+
+def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
+    readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+
+    assert "current 7-node PLUME TokenMM stack" in readme
+    assert "- `plumeusdt_binance_perp_makerv3`" in readme
+    assert "- `plumeusdt_bitget_perp_makerv3`" in readme
+    assert "- `plumeusdt_bitget_spot_makerv3`" in readme
+    assert "All seven active strategies price off Binance spot" in readme
+    assert "and the 7 active" in readme
+    assert "`params` returns the 7 allowlisted strategy IDs" in readme
+    assert "`signal` returns seven per-strategy rows." in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:
@@ -507,6 +542,22 @@ def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets(
             'execution_venue = "BINANCE_SPOT"',
             'reference_venue = "BINANCE_SPOT"',
             'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
+        ),
+        "plumeusdt_bitget_perp_makerv3": (
+            'execution_venue = "BITGET"',
+            'reference_venue = "BINANCE_SPOT"',
+            'instrument_id = "PLUMEUSDT-PERP.BITGET"',
+            'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
+            'adapter = "bitget"',
+            'api_passphrase_env = "BITGET_API_PASSPHRASE"',
+        ),
+        "plumeusdt_bitget_spot_makerv3": (
+            'execution_venue = "BITGET"',
+            'reference_venue = "BINANCE_SPOT"',
+            'instrument_id = "PLUMEUSDT.BITGET"',
+            'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
+            'adapter = "bitget"',
+            'api_passphrase_env = "BITGET_API_PASSPHRASE"',
         ),
     }
 

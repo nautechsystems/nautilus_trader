@@ -4,7 +4,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_bitget::{
-    common::{enums::{BitgetEnvironment, BitgetProductType}, signing::ws_login_sign_base64},
+    common::{
+        enums::{BitgetEnvironment, BitgetProductType},
+        signing::ws_login_sign_base64,
+    },
     websocket::client::BitgetWebSocketClient,
 };
 
@@ -40,7 +43,8 @@ fn unsubscribe_message_escapes_untrusted_fields() {
 
 #[test]
 fn subscribe_ticker_message_builds_ticker_channel() {
-    let message = BitgetWebSocketClient::subscribe_ticker_message(BitgetProductType::Spot, "BTCUSDT");
+    let message =
+        BitgetWebSocketClient::subscribe_ticker_message(BitgetProductType::Spot, "BTCUSDT");
     let parsed: serde_json::Value = serde_json::from_str(&message).expect("valid JSON payload");
 
     assert_eq!(parsed["op"], "subscribe");
@@ -63,8 +67,11 @@ fn unsubscribe_ticker_message_builds_ticker_channel() {
 
 #[test]
 fn subscribe_candle_message_prepares_candle_channel() {
-    let message =
-        BitgetWebSocketClient::subscribe_candle_message(BitgetProductType::UsdtFutures, "1m", "BTCUSDT");
+    let message = BitgetWebSocketClient::subscribe_candle_message(
+        BitgetProductType::UsdtFutures,
+        "1m",
+        "BTCUSDT",
+    );
     let parsed: serde_json::Value = serde_json::from_str(&message).expect("valid JSON payload");
 
     assert_eq!(parsed["op"], "subscribe");
@@ -75,8 +82,11 @@ fn subscribe_candle_message_prepares_candle_channel() {
 
 #[test]
 fn unsubscribe_candle_message_prepares_candle_channel() {
-    let message =
-        BitgetWebSocketClient::unsubscribe_candle_message(BitgetProductType::UsdtFutures, "candle1m", "BTCUSDT");
+    let message = BitgetWebSocketClient::unsubscribe_candle_message(
+        BitgetProductType::UsdtFutures,
+        "candle1m",
+        "BTCUSDT",
+    );
     let parsed: serde_json::Value = serde_json::from_str(&message).expect("valid JSON payload");
 
     assert_eq!(parsed["op"], "unsubscribe");
@@ -132,7 +142,10 @@ fn login_message_matches_bitget_private_login_schema() {
     assert_eq!(parsed["args"][0]["apiKey"], api_key);
     assert_eq!(parsed["args"][0]["passphrase"], passphrase);
     assert_eq!(parsed["args"][0]["timestamp"], timestamp_ms.to_string());
-    assert_eq!(parsed["args"][0]["sign"], ws_login_sign_base64(secret, timestamp_ms));
+    assert_eq!(
+        parsed["args"][0]["sign"],
+        ws_login_sign_base64(secret, timestamp_ms)
+    );
 }
 
 #[test]

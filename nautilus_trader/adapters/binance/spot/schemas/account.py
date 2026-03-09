@@ -53,8 +53,67 @@ class BinanceSpotAccountInfo(msgspec.Struct, frozen=True):
     balances: list[BinanceSpotBalanceInfo]
     permissions: list[str]
 
+    @property
+    def can_trade(self) -> bool:
+        return self.canTrade
+
+    @property
+    def event_time_ms(self) -> int | None:
+        return self.updateTime
+
     def parse_to_account_balances(self) -> list[AccountBalance]:
         return [balance.parse_to_account_balance() for balance in self.balances]
+
+
+class BinanceMarginBalanceInfo(msgspec.Struct, frozen=True):
+    """
+    HTTP response inner struct from Binance Cross Margin `GET /sapi/v1/margin/account`.
+    """
+
+    asset: str
+    borrowed: str
+    free: str
+    interest: str
+    locked: str
+    netAsset: str
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        total = Money(Decimal(self.netAsset), currency)
+        locked = Money(Decimal(self.locked), currency)
+        free = Money(Decimal(self.netAsset) - Decimal(self.locked), currency)
+        return AccountBalance(
+            total=total,
+            locked=locked,
+            free=free,
+        )
+
+
+class BinanceMarginAccountInfo(msgspec.Struct, frozen=True):
+    """
+    HTTP response from Binance Cross Margin `GET /sapi/v1/margin/account`.
+    """
+
+    borrowEnabled: bool
+    marginLevel: str
+    totalAssetOfBtc: str
+    totalLiabilityOfBtc: str
+    totalNetAssetOfBtc: str
+    tradeEnabled: bool
+    transferInEnabled: bool
+    transferOutEnabled: bool
+    userAssets: list[BinanceMarginBalanceInfo]
+
+    @property
+    def can_trade(self) -> bool:
+        return self.tradeEnabled
+
+    @property
+    def event_time_ms(self) -> int | None:
+        return None
+
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [balance.parse_to_account_balance() for balance in self.userAssets]
 
 
 class BinanceSpotOrderOco(msgspec.Struct, frozen=True):

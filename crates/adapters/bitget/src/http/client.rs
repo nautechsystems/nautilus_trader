@@ -10,23 +10,23 @@ use std::{
     sync::LazyLock,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT,
-    time::{get_atomic_clock_realtime, AtomicTime},
     UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, Symbol, Venue},
-    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
 };
 #[cfg(feature = "python")]
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
-    python::{data::data_to_pycapsule, instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any}},
+    python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use nautilus_network::{
     http::{HttpClient, USER_AGENT},
@@ -39,14 +39,16 @@ use crate::{
     common::{
         enums::{BitgetEnvironment, BitgetProductType},
         signing::rest_sign_base64,
-        symbol::{nautilus_symbol_for_delivery, nautilus_symbol_for_perp, nautilus_symbol_for_spot},
+        symbol::{
+            nautilus_symbol_for_delivery, nautilus_symbol_for_perp, nautilus_symbol_for_spot,
+        },
         urls::get_http_base_url,
     },
     http::models::{
-        BitgetApiResponse, BitgetContractSymbol, BitgetCurrentFundingRate,
-        BitgetFillInfo, BitgetFundingHistoryPage, BitgetHistoricalFundingRate,
-        BitgetMixFillsPage, BitgetMixOrdersPage, BitgetOrderBookSnapshot, BitgetOrderInfo,
-        BitgetPositionInfo, BitgetSpotSymbol,
+        BitgetApiResponse, BitgetContractSymbol, BitgetCurrentFundingRate, BitgetFillInfo,
+        BitgetFundingHistoryPage, BitgetHistoricalFundingRate, BitgetMixFillsPage,
+        BitgetMixOrdersPage, BitgetOrderBookSnapshot, BitgetOrderInfo, BitgetPositionInfo,
+        BitgetSpotSymbol,
     },
 };
 
@@ -87,10 +89,9 @@ const BITGET_ACCESS_PASSPHRASE_HEADER: &str = "ACCESS-PASSPHRASE";
 const BITGET_LOCALE_HEADER: &str = "locale";
 const BITGET_LOCALE_HEADER_VALUE: &str = "en-US";
 
-pub static BITGET_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| {
-        Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("Bitget quota should be valid")
-    });
+pub static BITGET_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("Bitget quota should be valid")
+});
 
 fn is_success_code(code: &str) -> bool {
     matches!(code, "00000" | "0")
@@ -101,12 +102,15 @@ fn parse_bitget_response<T: DeserializeOwned>(body: &[u8]) -> Result<T> {
         .map_err(|e| anyhow!("Failed to deserialize Bitget response: {e}"))?;
 
     if !is_success_code(&payload.code) {
-        bail!("Bitget API returned error {}: {}", payload.code, payload.msg);
+        bail!(
+            "Bitget API returned error {}: {}",
+            payload.code,
+            payload.msg
+        );
     }
 
-    serde_json::from_value(payload.data).map_err(|e| {
-        anyhow!("Failed to deserialize Bitget response data payload: {e}")
-    })
+    serde_json::from_value(payload.data)
+        .map_err(|e| anyhow!("Failed to deserialize Bitget response data payload: {e}"))
 }
 
 /// Minimal async Bitget HTTP client for public endpoints.
@@ -215,17 +219,38 @@ impl BitgetHttpClient {
     fn rate_limiter_quotas() -> Vec<(String, Quota)> {
         vec![
             (BITGET_GLOBAL_RATE_KEY.to_string(), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_SPOT_SYMBOLS_PATH}"), *BITGET_REST_QUOTA),
+            (
+                format!("bitget:{BITGET_SPOT_SYMBOLS_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
             (
                 format!("bitget:{BITGET_CONTRACT_CONFIG_PATH}"),
                 *BITGET_REST_QUOTA,
             ),
-            (format!("bitget:{BITGET_SPOT_MERGE_DEPTH_PATH}"), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_MIX_MERGE_DEPTH_PATH}"), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_SPOT_CANDLES_PATH}"), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_MIX_CANDLES_PATH}"), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_MIX_CURRENT_FUNDING_RATE_PATH}"), *BITGET_REST_QUOTA),
-            (format!("bitget:{BITGET_V3_HISTORY_FUNDING_RATE_PATH}"), *BITGET_REST_QUOTA),
+            (
+                format!("bitget:{BITGET_SPOT_MERGE_DEPTH_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
+            (
+                format!("bitget:{BITGET_MIX_MERGE_DEPTH_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
+            (
+                format!("bitget:{BITGET_SPOT_CANDLES_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
+            (
+                format!("bitget:{BITGET_MIX_CANDLES_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
+            (
+                format!("bitget:{BITGET_MIX_CURRENT_FUNDING_RATE_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
+            (
+                format!("bitget:{BITGET_V3_HISTORY_FUNDING_RATE_PATH}"),
+                *BITGET_REST_QUOTA,
+            ),
         ]
     }
 
@@ -259,7 +284,10 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!("HTTP request failed with status {}", response.status.as_u16());
+            bail!(
+                "HTTP request failed with status {}",
+                response.status.as_u16()
+            );
         }
 
         parse_bitget_response::<T>(&response.body)
@@ -274,19 +302,16 @@ impl BitgetHttpClient {
             .api_secret
             .as_deref()
             .ok_or_else(|| anyhow!("Bitget API secret is required for authenticated requests"))?;
-        let api_passphrase = self
-            .api_passphrase
-            .as_deref()
-            .ok_or_else(|| anyhow!("Bitget API passphrase is required for authenticated requests"))?;
+        let api_passphrase = self.api_passphrase.as_deref().ok_or_else(|| {
+            anyhow!("Bitget API passphrase is required for authenticated requests")
+        })?;
         Ok((api_key, api_secret, api_passphrase))
     }
 
     fn build_query_string(query: &BTreeMap<String, Vec<String>>) -> String {
         query
             .iter()
-            .flat_map(|(key, values)| {
-                values.iter().map(move |value| format!("{key}={value}"))
-            })
+            .flat_map(|(key, values)| values.iter().map(move |value| format!("{key}={value}")))
             .collect::<Vec<_>>()
             .join("&")
     }
@@ -300,21 +325,12 @@ impl BitgetHttpClient {
     ) -> Result<HashMap<String, String>> {
         let (api_key, api_secret, api_passphrase) = self.credentials()?;
         let timestamp_ms = self.clock.get_time_ms() as i64;
-        let signature = rest_sign_base64(
-            api_secret,
-            timestamp_ms,
-            method,
-            path,
-            query_string,
-            body,
-        );
+        let signature =
+            rest_sign_base64(api_secret, timestamp_ms, method, path, query_string, body);
 
         let mut headers = Self::default_headers(self.environment);
         headers.insert(BITGET_ACCESS_KEY_HEADER.to_string(), api_key.to_string());
-        headers.insert(
-            BITGET_ACCESS_SIGN_HEADER.to_string(),
-            signature,
-        );
+        headers.insert(BITGET_ACCESS_SIGN_HEADER.to_string(), signature);
         headers.insert(
             BITGET_ACCESS_TIMESTAMP_HEADER.to_string(),
             timestamp_ms.to_string(),
@@ -365,7 +381,10 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!("HTTP request failed with status {}", response.status.as_u16());
+            bail!(
+                "HTTP request failed with status {}",
+                response.status.as_u16()
+            );
         }
 
         parse_bitget_response::<Value>(&response.body)
@@ -389,7 +408,10 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!("HTTP request failed with status {}", response.status.as_u16());
+            bail!(
+                "HTTP request failed with status {}",
+                response.status.as_u16()
+            );
         }
 
         parse_bitget_response::<Value>(&response.body)
@@ -440,7 +462,10 @@ impl BitgetHttpClient {
             BitgetProductType::CoinFutures,
             BitgetProductType::UsdcFutures,
         ] {
-            symbols.extend(self.get_contract_config_by_product_type(product_type).await?);
+            symbols.extend(
+                self.get_contract_config_by_product_type(product_type)
+                    .await?,
+            );
         }
 
         Ok(symbols)
@@ -453,7 +478,10 @@ impl BitgetHttpClient {
         product_type: BitgetProductType,
     ) -> Result<Vec<BitgetContractSymbol>> {
         let mut query: HashMap<String, Vec<String>> = HashMap::new();
-        query.insert("productType".to_string(), vec![product_type.as_api_str().to_string()]);
+        query.insert(
+            "productType".to_string(),
+            vec![product_type.as_api_str().to_string()],
+        );
 
         self.request::<Vec<BitgetContractSymbol>>(BITGET_CONTRACT_CONFIG_PATH, Some(&query))
             .await
@@ -532,7 +560,8 @@ impl BitgetHttpClient {
     ) -> Result<Vec<Vec<String>>> {
         match product_type {
             BitgetProductType::Spot => {
-                self.get_spot_candles(symbol, granularity, start_time, end_time, limit).await
+                self.get_spot_candles(symbol, granularity, start_time, end_time, limit)
+                    .await
             }
             BitgetProductType::UsdtFutures
             | BitgetProductType::CoinFutures
@@ -638,7 +667,9 @@ impl BitgetHttpClient {
             BitgetProductType::Spot => self.get_spot_merge_depth(symbol).await,
             BitgetProductType::UsdtFutures
             | BitgetProductType::CoinFutures
-            | BitgetProductType::UsdcFutures => self.get_mix_merge_depth(symbol, product_type).await,
+            | BitgetProductType::UsdcFutures => {
+                self.get_mix_merge_depth(symbol, product_type).await
+            }
         }
     }
 
@@ -659,7 +690,10 @@ impl BitgetHttpClient {
         let mut body = serde_json::Map::new();
         body.insert("symbol".to_string(), Value::String(symbol.to_string()));
         body.insert("side".to_string(), Value::String(side.to_string()));
-        body.insert("orderType".to_string(), Value::String(order_type.to_string()));
+        body.insert(
+            "orderType".to_string(),
+            Value::String(order_type.to_string()),
+        );
         body.insert("size".to_string(), Value::String(size.to_string()));
         if let Some(client_oid) = client_oid {
             body.insert("clientOid".to_string(), Value::String(client_oid));
@@ -681,10 +715,7 @@ impl BitgetHttpClient {
                 if let Some(margin_coin) =
                     Self::effective_margin_coin(product_type, margin_coin.as_deref())
                 {
-                    body.insert(
-                        "marginCoin".to_string(),
-                        Value::String(margin_coin),
-                    );
+                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
                 }
                 body.insert(
                     "reduceOnly".to_string(),
@@ -737,10 +768,7 @@ impl BitgetHttpClient {
                 if let Some(margin_coin) =
                     Self::effective_margin_coin(product_type, margin_coin.as_deref())
                 {
-                    body.insert(
-                        "marginCoin".to_string(),
-                        Value::String(margin_coin),
-                    );
+                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
                 }
                 BITGET_MIX_MODIFY_ORDER_PATH
             }
@@ -776,10 +804,7 @@ impl BitgetHttpClient {
                 if let Some(margin_coin) =
                     Self::effective_margin_coin(product_type, margin_coin.as_deref())
                 {
-                    body.insert(
-                        "marginCoin".to_string(),
-                        Value::String(margin_coin),
-                    );
+                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
                 }
                 BITGET_MIX_CANCEL_ORDER_PATH
             }
@@ -813,10 +838,7 @@ impl BitgetHttpClient {
                 if let Some(margin_coin) =
                     Self::effective_margin_coin(product_type, margin_coin.as_deref())
                 {
-                    body.insert(
-                        "marginCoin".to_string(),
-                        Value::String(margin_coin),
-                    );
+                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
                 }
                 BITGET_MIX_CANCEL_ALL_ORDERS_PATH
             }
@@ -863,15 +885,16 @@ impl BitgetHttpClient {
                 if let Some(margin_coin) =
                     Self::effective_margin_coin(product_type, margin_coin.as_deref())
                 {
-                    body.insert(
-                        "marginCoin".to_string(),
-                        Value::String(margin_coin),
-                    );
+                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
                 }
                 let order_id_list: Vec<Value> = client_oids
                     .into_iter()
                     .map(|client_oid| serde_json::json!({ "clientOid": client_oid }))
-                    .chain(order_ids.into_iter().map(|order_id| serde_json::json!({ "orderId": order_id })))
+                    .chain(
+                        order_ids
+                            .into_iter()
+                            .map(|order_id| serde_json::json!({ "orderId": order_id })),
+                    )
                     .collect();
                 body.insert("orderIdList".to_string(), Value::Array(order_id_list));
                 self.signed_post_value(BITGET_MIX_BATCH_CANCEL_ORDERS_PATH, &Value::Object(body))
@@ -899,7 +922,9 @@ impl BitgetHttpClient {
 
         match product_type {
             BitgetProductType::Spot => {
-                let data = self.signed_get_value(BITGET_SPOT_ORDER_INFO_PATH, &query).await?;
+                let data = self
+                    .signed_get_value(BITGET_SPOT_ORDER_INFO_PATH, &query)
+                    .await?;
                 let reports = serde_json::from_value::<Vec<BitgetOrderInfo>>(data)?;
                 Ok(reports.into_iter().next())
             }
@@ -913,7 +938,9 @@ impl BitgetHttpClient {
                 {
                     query.insert("marginCoin".to_string(), vec![margin_coin]);
                 }
-                let data = self.signed_get_value(BITGET_MIX_ORDER_DETAIL_PATH, &query).await?;
+                let data = self
+                    .signed_get_value(BITGET_MIX_ORDER_DETAIL_PATH, &query)
+                    .await?;
                 Ok(Some(serde_json::from_value::<BitgetOrderInfo>(data)?))
             }
         }
@@ -945,17 +972,19 @@ impl BitgetHttpClient {
 
         match product_type {
             BitgetProductType::Spot => {
-                let mut reports =
-                    serde_json::from_value::<Vec<BitgetOrderInfo>>(
-                        self.signed_get_value(BITGET_SPOT_UNFILLED_ORDERS_PATH, &query).await?,
-                    )?;
+                let mut reports = serde_json::from_value::<Vec<BitgetOrderInfo>>(
+                    self.signed_get_value(BITGET_SPOT_UNFILLED_ORDERS_PATH, &query)
+                        .await?,
+                )?;
                 if !open_only {
-                    let history =
-                        serde_json::from_value::<Vec<BitgetOrderInfo>>(
-                            self.signed_get_value(BITGET_SPOT_HISTORY_ORDERS_PATH, &query).await?,
-                        )?;
-                    let existing: HashSet<String> =
-                        reports.iter().map(|report| report.order_id.clone()).collect();
+                    let history = serde_json::from_value::<Vec<BitgetOrderInfo>>(
+                        self.signed_get_value(BITGET_SPOT_HISTORY_ORDERS_PATH, &query)
+                            .await?,
+                    )?;
+                    let existing: HashSet<String> = reports
+                        .iter()
+                        .map(|report| report.order_id.clone())
+                        .collect();
                     for report in history {
                         if !existing.contains(&report.order_id) {
                             reports.push(report);
@@ -975,16 +1004,20 @@ impl BitgetHttpClient {
                     query.insert("marginCoin".to_string(), vec![margin_coin]);
                 }
                 let mut reports = serde_json::from_value::<BitgetMixOrdersPage>(
-                    self.signed_get_value(BITGET_MIX_ORDERS_PENDING_PATH, &query).await?,
+                    self.signed_get_value(BITGET_MIX_ORDERS_PENDING_PATH, &query)
+                        .await?,
                 )?
                 .entrusted_list;
                 if !open_only {
                     let history = serde_json::from_value::<BitgetMixOrdersPage>(
-                        self.signed_get_value(BITGET_MIX_ORDERS_HISTORY_PATH, &query).await?,
+                        self.signed_get_value(BITGET_MIX_ORDERS_HISTORY_PATH, &query)
+                            .await?,
                     )?
                     .entrusted_list;
-                    let existing: HashSet<String> =
-                        reports.iter().map(|report| report.order_id.clone()).collect();
+                    let existing: HashSet<String> = reports
+                        .iter()
+                        .map(|report| report.order_id.clone())
+                        .collect();
                     for report in history {
                         if !existing.contains(&report.order_id) {
                             reports.push(report);
@@ -1025,7 +1058,8 @@ impl BitgetHttpClient {
 
         match product_type {
             BitgetProductType::Spot => Ok(serde_json::from_value::<Vec<BitgetFillInfo>>(
-                self.signed_get_value(BITGET_SPOT_FILLS_PATH, &query).await?,
+                self.signed_get_value(BITGET_SPOT_FILLS_PATH, &query)
+                    .await?,
             )?),
             _ => {
                 query.insert(
@@ -1038,7 +1072,8 @@ impl BitgetHttpClient {
                     query.insert("marginCoin".to_string(), vec![margin_coin]);
                 }
                 Ok(serde_json::from_value::<BitgetMixFillsPage>(
-                    self.signed_get_value(BITGET_MIX_FILL_HISTORY_PATH, &query).await?,
+                    self.signed_get_value(BITGET_MIX_FILL_HISTORY_PATH, &query)
+                        .await?,
                 )?
                 .fill_list)
             }
@@ -1063,19 +1098,21 @@ impl BitgetHttpClient {
         if let Some(symbol) = symbol {
             query.insert("symbol".to_string(), vec![symbol]);
         }
-        if let Some(margin_coin) = Self::effective_margin_coin(product_type, margin_coin.as_deref()) {
+        if let Some(margin_coin) = Self::effective_margin_coin(product_type, margin_coin.as_deref())
+        {
             query.insert("marginCoin".to_string(), vec![margin_coin]);
         }
 
         Ok(serde_json::from_value::<Vec<BitgetPositionInfo>>(
-            self.signed_get_value(BITGET_MIX_ALL_POSITION_PATH, &query).await?,
+            self.signed_get_value(BITGET_MIX_ALL_POSITION_PATH, &query)
+                .await?,
         )?)
     }
 
     pub fn build_order_book_snapshot_deltas(
         &self,
         snapshot: &BitgetOrderBookSnapshot,
-        instrument: &InstrumentAny,
+        instrument_id: InstrumentId,
         ts_init: UnixNanos,
     ) -> Result<OrderBookDeltas> {
         let millis = snapshot
@@ -1088,7 +1125,7 @@ impl BitgetHttpClient {
         let total_levels = snapshot.bids.len() + snapshot.asks.len();
         let mut deltas = Vec::with_capacity(total_levels + 1);
 
-        let mut clear = OrderBookDelta::clear(instrument.id(), update_id, ts_event, ts_init);
+        let mut clear = OrderBookDelta::clear(instrument_id, update_id, ts_event, ts_init);
         if total_levels == 0 {
             clear.flags |= RecordFlag::F_LAST as u8;
         }
@@ -1110,7 +1147,7 @@ impl BitgetHttpClient {
             );
             deltas.push(
                 OrderBookDelta::new_checked(
-                    instrument.id(),
+                    instrument_id,
                     BookAction::Add,
                     order,
                     flags,
@@ -1130,7 +1167,7 @@ impl BitgetHttpClient {
             push_level(level, OrderSide::Sell)?;
         }
 
-        OrderBookDeltas::new_checked(instrument.id(), deltas)
+        OrderBookDeltas::new_checked(instrument_id, deltas)
             .map_err(|e| anyhow!("failed to assemble Bitget snapshot deltas: {e}"))
     }
 
@@ -1156,7 +1193,10 @@ impl BitgetHttpClient {
         if precision == 0 {
             "1".to_string()
         } else {
-            format!("0.{}1", "0".repeat(usize::from(precision.saturating_sub(1))))
+            format!(
+                "0.{}1",
+                "0".repeat(usize::from(precision.saturating_sub(1)))
+            )
         }
     }
 
@@ -1237,10 +1277,8 @@ impl BitgetHttpClient {
         let raw_symbol = nautilus_symbol_for_spot(&symbol.symbol);
         let price_precision = Self::parse_precision(&symbol.price_precision)?;
         let size_precision = Self::parse_precision(&symbol.quantity_precision)?;
-        let price_increment =
-            Price::from(Self::decimal_step_string(price_precision).as_str());
-        let size_increment =
-            Quantity::from(Self::decimal_step_string(size_precision).as_str());
+        let price_increment = Price::from(Self::decimal_step_string(price_precision).as_str());
+        let size_increment = Quantity::from(Self::decimal_step_string(size_precision).as_str());
         let quote_currency = Currency::get_or_create_crypto_with_context(
             &symbol.quote_coin,
             Some("Bitget spot quote currency"),
@@ -1249,7 +1287,10 @@ impl BitgetHttpClient {
         Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
             self.to_instrument_id(&raw_symbol),
             Symbol::new(&raw_symbol),
-            Currency::get_or_create_crypto_with_context(&symbol.base_coin, Some("Bitget spot base currency")),
+            Currency::get_or_create_crypto_with_context(
+                &symbol.base_coin,
+                Some("Bitget spot base currency"),
+            ),
             quote_currency,
             price_precision,
             size_precision,
@@ -1287,10 +1328,14 @@ impl BitgetHttpClient {
         }
 
         let nautilus_symbol = nautilus_symbol_for_perp(raw_symbol);
-        let base_currency =
-            Currency::get_or_create_crypto_with_context(base_coin, Some("Bitget perpetual base currency"));
-        let quote_currency =
-            Currency::get_or_create_crypto_with_context(quote_coin, Some("Bitget perpetual quote currency"));
+        let base_currency = Currency::get_or_create_crypto_with_context(
+            base_coin,
+            Some("Bitget perpetual base currency"),
+        );
+        let quote_currency = Currency::get_or_create_crypto_with_context(
+            quote_coin,
+            Some("Bitget perpetual quote currency"),
+        );
         let price_precision = symbol
             .price_place
             .as_deref()
@@ -1376,10 +1421,14 @@ impl BitgetHttpClient {
             .and_then(|ms| ms.checked_mul(1_000_000))
             .map(UnixNanos::from)?;
         let nautilus_symbol = nautilus_symbol_for_delivery(raw_symbol, delivery_time_ms);
-        let base_currency =
-            Currency::get_or_create_crypto_with_context(base_coin, Some("Bitget future base currency"));
-        let quote_currency =
-            Currency::get_or_create_crypto_with_context(quote_coin, Some("Bitget future quote currency"));
+        let base_currency = Currency::get_or_create_crypto_with_context(
+            base_coin,
+            Some("Bitget future base currency"),
+        );
+        let quote_currency = Currency::get_or_create_crypto_with_context(
+            quote_coin,
+            Some("Bitget future quote currency"),
+        );
         let price_precision = symbol
             .price_place
             .as_deref()
@@ -1609,12 +1658,11 @@ mod tests {
         );
     }
 
-    fn symbols_contain_product_type(
-        instruments: &[InstrumentAny],
-        raw_symbol: &str,
-    ) -> bool {
+    fn symbols_contain_product_type(instruments: &[InstrumentAny], raw_symbol: &str) -> bool {
         instruments.iter().any(|instrument| match instrument {
-            InstrumentAny::CryptoPerpetual(perpetual) => perpetual.raw_symbol.to_string() == raw_symbol,
+            InstrumentAny::CryptoPerpetual(perpetual) => {
+                perpetual.raw_symbol.to_string() == raw_symbol
+            }
             _ => false,
         })
     }
@@ -1688,7 +1736,14 @@ impl BitgetHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(product_type, &symbol, &granularity, start_time, end_time, limit)
+                .request_bars(
+                    product_type,
+                    &symbol,
+                    &granularity,
+                    start_time,
+                    end_time,
+                    limit,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
             serde_json::to_string(&bars).map_err(nautilus_core::python::to_pyvalue_err)
@@ -1745,7 +1800,12 @@ impl BitgetHttpClient {
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
-        let instrument = pyobject_to_instrument_any(py, instrument)?;
+        let instrument_id = instrument
+            .getattr(py, "id")?
+            .call_method0(py, "__str__")?
+            .extract::<String>(py)?
+            .parse::<InstrumentId>()
+            .map_err(nautilus_core::python::to_pyvalue_err)?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let ts_init = client.clock.get_time_ns();
@@ -1754,7 +1814,7 @@ impl BitgetHttpClient {
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
             let deltas = client
-                .build_order_book_snapshot_deltas(&snapshot, &instrument, ts_init)
+                .build_order_book_snapshot_deltas(&snapshot, instrument_id, ts_init)
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 
             pyo3::Python::attach(|py| {
@@ -1926,7 +1986,13 @@ impl BitgetHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .request_order_status_report(product_type, &symbol, margin_coin, client_oid, order_id)
+                .request_order_status_report(
+                    product_type,
+                    &symbol,
+                    margin_coin,
+                    client_oid,
+                    order_id,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 
@@ -1953,7 +2019,15 @@ impl BitgetHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .request_order_status_reports(product_type, symbol, margin_coin, open_only, start, end, limit)
+                .request_order_status_reports(
+                    product_type,
+                    symbol,
+                    margin_coin,
+                    open_only,
+                    start,
+                    end,
+                    limit,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 
@@ -1977,7 +2051,15 @@ impl BitgetHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .request_fill_reports(product_type, symbol, margin_coin, order_id, start, end, limit)
+                .request_fill_reports(
+                    product_type,
+                    symbol,
+                    margin_coin,
+                    order_id,
+                    start,
+                    end,
+                    limit,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 

@@ -137,12 +137,64 @@ def test_request_order_book_snapshot_fetches_and_emits_data() -> None:
         _product_types={"SPOT"},
         _log=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
     )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
     request = SimpleNamespace(instrument_id=instrument_id)
 
     with patch("nautilus_trader.adapters.bitget.data.capsule_to_data", lambda capsule: f"decoded:{capsule}"):
         asyncio.run(BitgetDataClient._request_order_book_snapshot(dummy, request))  # type: ignore[arg-type]
 
     assert request_calls == [("BTCUSDT", "SPOT", instrument)]
+    assert emitted == ["decoded:capsule"]
+
+
+def test_request_order_book_snapshot_uses_exchange_symbol_for_perp_instruments() -> None:
+    emitted: list[object] = []
+    request_calls: list[tuple[str, object, object]] = []
+    instrument_id = SimpleNamespace(value="BTCUSDT-PERP.BITGET")
+    instrument = SimpleNamespace(
+        raw_symbol=SimpleNamespace(value="BTCUSDT-PERP"),
+        id=instrument_id,
+    )
+
+    class DummyHttpClient:
+        async def request_order_book_snapshot(self, symbol, product_type, actual_instrument):
+            request_calls.append((symbol, product_type, actual_instrument))
+            return "capsule"
+
+    class DummyProvider:
+        def find(self, actual_instrument_id):
+            assert actual_instrument_id is instrument_id
+            return instrument
+
+    dummy = SimpleNamespace(
+        _instrument_provider=DummyProvider(),
+        _instrument_product_type=lambda _instrument: "USDT-FUTURES",
+        _http_client=DummyHttpClient(),
+        _handle_data=emitted.append,
+        _product_types={"USDT-FUTURES"},
+        _log=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+    )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
+    request = SimpleNamespace(instrument_id=instrument_id)
+
+    with patch("nautilus_trader.adapters.bitget.data.capsule_to_data", lambda capsule: f"decoded:{capsule}"):
+        asyncio.run(BitgetDataClient._request_order_book_snapshot(dummy, request))  # type: ignore[arg-type]
+
+    assert request_calls == [("BTCUSDT", "USDT-FUTURES", instrument)]
     assert emitted == ["decoded:capsule"]
 
 
@@ -210,6 +262,129 @@ def test_request_order_book_deltas_delegates_to_snapshot_request() -> None:
     assert calls == [request]
 
 
+def test_handle_ws_message_uses_pyo3_instrument_for_book_messages() -> None:
+    emitted: list[object] = []
+    seen_instruments: list[object] = []
+    instrument = SimpleNamespace(id=SimpleNamespace(value="BTCUSDT.BITGET"))
+    pyo3_instrument = object()
+
+    class DummyState:
+        def apply_message(self, raw, actual_instrument):
+            seen_instruments.append(actual_instrument)
+            return "capsule"
+
+    dummy = SimpleNamespace(
+        _instrument_index={("SPOT", "BTCUSDT"): instrument},
+        _pyo3_instrument_index={("SPOT", "BTCUSDT"): pyo3_instrument},
+        _book_states={("SPOT", "BTCUSDT"): DummyState()},
+        _ticker_subscriptions={},
+        _bar_subscriptions={},
+        _handle_data=emitted.append,
+        _ws_tasks=set(),
+        create_task=lambda *_args, **_kwargs: None,
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    message = (
+        '{"action":"snapshot","arg":{"instType":"SPOT","channel":"books","instId":"BTCUSDT"},'
+        '"data":[{"asks":[],"bids":[],"checksum":0,"ts":"1700000000000","seq":1}]}'
+    )
+
+    with patch("nautilus_trader.adapters.bitget.data.capsule_to_data", lambda capsule: capsule):
+        BitgetDataClient._handle_ws_message(dummy, message.encode("utf-8"))  # type: ignore[arg-type]
+
+    assert seen_instruments == [pyo3_instrument]
+    assert emitted == ["capsule"]
+
+
+def test_rebuild_instrument_index_normalizes_perp_symbol_for_websocket_lookup() -> None:
+    perp_instrument = SimpleNamespace(
+        raw_symbol=SimpleNamespace(value="BTCUSDT-PERP"),
+        id=SimpleNamespace(symbol=SimpleNamespace(value="BTCUSDT-PERP")),
+    )
+    pyo3_perp = object()
+
+    class DummyProvider:
+        def instruments_pyo3(self):
+            return [pyo3_perp]
+
+        def get_all(self):
+            return {"perp": perp_instrument}
+
+    dummy = SimpleNamespace(
+        _instrument_provider=DummyProvider(),
+        _instrument_index={},
+        _pyo3_instrument_index={},
+        _product_types={"USDT-FUTURES"},
+        _instrument_product_type=lambda _instrument: "USDT-FUTURES",
+    )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
+
+    with patch(
+        "nautilus_trader.adapters.bitget.data.instruments_from_pyo3",
+        lambda _raw: [perp_instrument],
+    ):
+        BitgetDataClient._rebuild_instrument_index(dummy)  # type: ignore[arg-type]
+
+    assert dummy._instrument_index[("USDT-FUTURES", "BTCUSDT")] is perp_instrument
+    assert dummy._pyo3_instrument_index[("USDT-FUTURES", "BTCUSDT")] is pyo3_perp
+
+
+def test_subscribe_order_book_uses_exchange_symbol_for_perp_instruments() -> None:
+    sent_messages: list[str] = []
+    instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BITGET")
+    instrument = SimpleNamespace(
+        id=instrument_id,
+        raw_symbol=SimpleNamespace(value="BTCUSDT-PERP"),
+    )
+
+    class DummyProvider:
+        def find(self, actual_instrument_id):
+            assert actual_instrument_id == instrument_id
+            return instrument
+
+    async def send_ws_text(text: str) -> None:
+        sent_messages.append(text)
+
+    dummy = SimpleNamespace(
+        _instrument_provider=DummyProvider(),
+        _instrument_product_type=lambda _instrument: "USDT-FUTURES",
+        _book_states={},
+        _active_book_subs=set(),
+        _send_ws_text=send_ws_text,
+        _log=SimpleNamespace(error=lambda *_args, **_kwargs: None),
+    )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
+
+    with patch(
+        "nautilus_trader.adapters.bitget.data.nautilus_pyo3.BitgetWebSocketClient.subscribe_message",
+        lambda product_type, channel, inst_id: f"{product_type}:{channel}:{inst_id}",
+    ):
+        asyncio.run(BitgetDataClient._subscribe_order_book_by_id(dummy, instrument_id))  # type: ignore[arg-type]
+
+    assert sent_messages == ["USDT-FUTURES:books:BTCUSDT"]
+    assert ("USDT-FUTURES", "BTCUSDT") in dummy._book_states
+    assert instrument_id in dummy._active_book_subs
+
+
 def test_request_instrument_respects_product_type_filter() -> None:
     emitted: list[object] = []
     instrument_id = SimpleNamespace(value="BTCUSDT-PERP.BITGET")
@@ -269,6 +444,7 @@ def test_request_order_book_snapshot_respects_product_type_filter() -> None:
 def test_connect_uses_bitget_websocket_config_helper() -> None:
     captured_configs: list[object] = []
     captured_helper_args: list[tuple[object, object, object]] = []
+    log_messages: list[str] = []
 
     class DummyProvider:
         async def initialize(self):
@@ -293,7 +469,7 @@ def test_connect_uses_bitget_websocket_config_helper() -> None:
         _loop=object(),
         _handle_ws_message=lambda _raw: None,
         _handle_ws_reconnect=lambda: None,
-        _log=SimpleNamespace(info=lambda *_args, **_kwargs: None),
+        _log=SimpleNamespace(info=lambda message, *_args, **_kwargs: log_messages.append(message)),
         _update_instruments_interval_mins=None,
         _update_instruments_task=None,
         _ws_client=None,
@@ -307,7 +483,6 @@ def test_connect_uses_bitget_websocket_config_helper() -> None:
         lambda self, base_url, retry_delay_initial_ms, retry_delay_max_ms: (
             captured_helper_args.append((base_url, retry_delay_initial_ms, retry_delay_max_ms))
             or SimpleNamespace(
-                url=base_url,
                 headers=[],
                 heartbeat=30,
                 heartbeat_msg="rust-ping",
@@ -324,8 +499,9 @@ def test_connect_uses_bitget_websocket_config_helper() -> None:
         asyncio.run(BitgetDataClient._connect(dummy))  # type: ignore[arg-type]
 
     assert captured_helper_args == [("wss://public.example", None, None)]
-    assert captured_configs[0].url == "wss://public.example"
+    assert captured_configs[0].heartbeat == 30
     assert captured_configs[0].heartbeat_msg == "rust-ping"
+    assert log_messages == ["Connected to Bitget WebSocket wss://public.example"]
 
 
 def test_default_products_include_all_bitget_product_families() -> None:
@@ -411,6 +587,14 @@ def test_request_bars_fetches_and_emits_sorted_bars() -> None:
         _product_type_key=BitgetDataClient._product_type_key,
         _log=SimpleNamespace(error=lambda *_args, **_kwargs: None),
     )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
     request = SimpleNamespace(
         bar_type=bar_type,
         start=None,
@@ -465,9 +649,16 @@ def test_request_funding_rates_uses_history_endpoint_and_filters_window() -> Non
         _handle_funding_rates=lambda instrument_id_, rates, request_id, start, end, params: captured.append((instrument_id_, rates, request_id, start, end)),
         _datetime_to_millis=lambda value: value,
         _parse_timestamp_ms=BitgetDataClient._parse_timestamp_ms,
-        _is_spot_product_type=lambda product_type: False,
         _log=SimpleNamespace(error=lambda *_args, **_kwargs: None, warning=lambda *_args, **_kwargs: None),
     )
+    dummy._product_type_key = lambda product_type: BitgetDataClient._product_type_key(dummy, product_type)
+    dummy._is_spot_product_type = lambda product_type: BitgetDataClient._is_spot_product_type(dummy, product_type)
+    dummy._exchange_symbol = lambda actual_instrument, product_type=None: BitgetDataClient._exchange_symbol(
+        dummy,
+        actual_instrument,
+        product_type,
+    )
+    dummy._is_delivery_symbol = BitgetDataClient._is_delivery_symbol
     request = SimpleNamespace(
         instrument_id=instrument_id,
         start=1_699_999_999_999,

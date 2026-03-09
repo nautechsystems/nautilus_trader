@@ -7,3 +7,12 @@ class BinanceListenKey(msgspec.Struct):
     """
 
     listenKey: str
+
+
+class BinanceListenToken(msgspec.Struct):
+    """
+    HTTP response from creating a new Binance margin user listen token.
+    """
+
+    token: str
+    expirationTime: int

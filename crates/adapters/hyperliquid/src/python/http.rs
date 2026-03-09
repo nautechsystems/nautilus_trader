@@ -40,9 +40,14 @@ impl HyperliquidHttpClient {
         dex: Option<String>,
         account_address: Option<String>,
     ) -> PyResult<Self> {
-        let mut client =
-            Self::with_credentials(private_key, vault_address, is_testnet, timeout_secs, proxy_url)
-                .map_err(to_pyvalue_err)?;
+        let mut client = Self::with_credentials(
+            private_key,
+            vault_address,
+            is_testnet,
+            timeout_secs,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)?;
         client.set_account_address(account_address);
         client.set_normalize_prices(normalize_prices);
         client.set_dex(dex);

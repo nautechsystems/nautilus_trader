@@ -35,12 +35,8 @@ pub fn get_http_base_url(environment: BitgetEnvironment) -> Url {
 #[must_use]
 pub fn get_ws_public_url(environment: BitgetEnvironment) -> Url {
     match environment {
-        BitgetEnvironment::Mainnet => {
-            Url::parse(WS_PUBLIC_URL_MAINNET).expect("valid URL")
-        }
-        BitgetEnvironment::Demo => {
-            Url::parse(WS_PUBLIC_URL_DEMO).expect("valid URL")
-        }
+        BitgetEnvironment::Mainnet => Url::parse(WS_PUBLIC_URL_MAINNET).expect("valid URL"),
+        BitgetEnvironment::Demo => Url::parse(WS_PUBLIC_URL_DEMO).expect("valid URL"),
     }
 }
 
@@ -52,12 +48,8 @@ pub fn get_ws_public_url(environment: BitgetEnvironment) -> Url {
 #[must_use]
 pub fn get_ws_private_url(environment: BitgetEnvironment) -> Url {
     match environment {
-        BitgetEnvironment::Mainnet => {
-            Url::parse(WS_PRIVATE_URL_MAINNET).expect("valid URL")
-        }
-        BitgetEnvironment::Demo => {
-            Url::parse(WS_PRIVATE_URL_DEMO).expect("valid URL")
-        }
+        BitgetEnvironment::Mainnet => Url::parse(WS_PRIVATE_URL_MAINNET).expect("valid URL"),
+        BitgetEnvironment::Demo => Url::parse(WS_PRIVATE_URL_DEMO).expect("valid URL"),
     }
 }
 

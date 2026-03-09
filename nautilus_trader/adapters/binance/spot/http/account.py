@@ -13,6 +13,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.account import BinanceOpenOrdersHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceMarginAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotOrderOco
 from nautilus_trader.common.component import LiveClock
@@ -423,6 +424,7 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
+        account_type: BinanceAccountType,
     ):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
@@ -433,7 +435,9 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self._resp_decoder = msgspec.json.Decoder(BinanceSpotAccountInfo)
+        self._resp_decoder = msgspec.json.Decoder(
+            BinanceSpotAccountInfo if account_type.is_spot else BinanceMarginAccountInfo,
+        )
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -451,7 +455,7 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
         timestamp: str
         recvWindow: str | None = None
 
-    async def get(self, params: GetParameters) -> BinanceSpotAccountInfo:
+    async def get(self, params: GetParameters) -> BinanceSpotAccountInfo | BinanceMarginAccountInfo:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         return self._resp_decoder.decode(raw)
@@ -528,15 +532,21 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
     ):
+        if account_type == BinanceAccountType.ISOLATED_MARGIN:
+            raise RuntimeError(
+                "`BinanceAccountType.ISOLATED_MARGIN` is not supported by BinanceSpotAccountHttpAPI; "
+                "use SPOT or cross MARGIN",
+            )
+
         super().__init__(
             client=client,
             clock=clock,
             account_type=account_type,
         )
 
-        if not account_type.is_spot_or_margin:
+        if account_type not in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN or ISOLATED_MARGIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not SPOT or MARGIN, was {account_type}",  # pragma: no cover
             )
 
         # Create endpoints
@@ -548,7 +558,11 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             client,
             self.base_endpoint,
         )
-        self._endpoint_spot_account = BinanceSpotAccountHttp(client, self.base_endpoint)
+        self._endpoint_spot_account = BinanceSpotAccountHttp(
+            client,
+            self.base_endpoint,
+            account_type=account_type,
+        )
         self._endpoint_spot_order_rate_limit = BinanceSpotOrderRateLimitHttp(
             client,
             self.base_endpoint,
@@ -723,7 +737,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     async def query_spot_account_info(
         self,
         recv_window: str | None = None,
-    ) -> BinanceSpotAccountInfo:
+    ) -> BinanceSpotAccountInfo | BinanceMarginAccountInfo:
         """
         Check SPOT/MARGIN Binance account information.
         """

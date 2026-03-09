@@ -20,7 +20,13 @@ pub fn rest_signature_payload(
 ) -> Result<String, Utf8Error> {
     let body = std::str::from_utf8(body_bytes.unwrap_or(b""))?;
 
-    Ok(rest_signature_payload_no_utf8(timestamp_ms, method, request_path, query_string, body))
+    Ok(rest_signature_payload_no_utf8(
+        timestamp_ms,
+        method,
+        request_path,
+        query_string,
+        body,
+    ))
 }
 
 #[must_use]
@@ -50,7 +56,8 @@ pub fn rest_sign_base64(
     query_string: Option<&str>,
     body: Option<&[u8]>,
 ) -> String {
-    let payload = rest_signature_payload_bytes(timestamp_ms, method, request_path, query_string, body);
+    let payload =
+        rest_signature_payload_bytes(timestamp_ms, method, request_path, query_string, body);
     sign_base64_bytes(secret, &payload)
 }
 

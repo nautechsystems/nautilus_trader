@@ -501,7 +501,10 @@ async fn test_http_client_request_instruments_with_explicit_dex() {
     let mut client = HyperliquidHttpClient::new(false, None, None).unwrap();
     client.set_base_info_url(format!("http://{addr}/info"));
 
-    let instruments = client.request_instruments_with_dex(Some("xyz")).await.unwrap();
+    let instruments = client
+        .request_instruments_with_dex(Some("xyz"))
+        .await
+        .unwrap();
 
     assert!(!instruments.is_empty());
 

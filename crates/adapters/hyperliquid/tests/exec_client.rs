@@ -32,8 +32,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
-    config::HyperliquidExecClientConfig,
-    execution::HyperliquidExecutionClient,
+    config::HyperliquidExecClientConfig, execution::HyperliquidExecutionClient,
     http::client::HyperliquidHttpClient,
 };
 use nautilus_live::ExecutionClientCore;
@@ -94,10 +93,7 @@ async fn wait_for_server(addr: SocketAddr, path: &str) {
     .await;
 }
 
-async fn handle_info(
-    State(state): State<TestServerState>,
-    body: axum::body::Bytes,
-) -> Response {
+async fn handle_info(State(state): State<TestServerState>, body: axum::body::Bytes) -> Response {
     let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -785,7 +781,10 @@ async fn test_exec_client_connect_uses_account_address_and_dex_for_clearinghouse
 
     let request_body = state.last_info_request.lock().await.clone().unwrap();
     assert_eq!(request_body["type"], "clearinghouseState");
-    assert_eq!(request_body["user"], "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    assert_eq!(
+        request_body["user"],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
     assert_eq!(request_body["dex"], "xyz");
 
     client.disconnect().await.unwrap();
@@ -798,21 +797,20 @@ async fn test_http_client_request_account_state_with_explicit_dex() {
     let addr = start_mock_server(state.clone()).await;
 
     let mut client =
-        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None)
-            .unwrap();
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
     client.set_base_info_url(format!("http://{addr}/info"));
     client.set_account_id(AccountId::from("HYPERLIQUID-001"));
 
     client
-        .request_account_state_with_dex(
-            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            Some("xyz"),
-        )
+        .request_account_state_with_dex("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Some("xyz"))
         .await
         .unwrap();
 
     let request_body = state.last_info_request.lock().await.clone().unwrap();
     assert_eq!(request_body["type"], "clearinghouseState");
-    assert_eq!(request_body["user"], "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    assert_eq!(
+        request_body["user"],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
     assert_eq!(request_body["dex"], "xyz");
 }

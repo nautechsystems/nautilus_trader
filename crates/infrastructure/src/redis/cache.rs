@@ -653,14 +653,8 @@ async fn drain_buffer(
                     pipe.atomic();
                     has_pipeline_ops = false;
                 }
-                if let Err(e) = delete_account_event(
-                    conn,
-                    trader_key,
-                    &raw_key,
-                    msg.payload,
-                    encoding,
-                )
-                .await
+                if let Err(e) =
+                    delete_account_event(conn, trader_key, &raw_key, msg.payload, encoding).await
                 {
                     log::error!("{e}");
                 }

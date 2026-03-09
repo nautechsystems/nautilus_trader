@@ -47,12 +47,12 @@ class TestBinanceFactories:
         [
             # Live
             (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, False, "https://api.binance.com"),
-            (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, False, "https://sapi.binance.com"),
+            (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, False, "https://api.binance.com"),
             (
                 BinanceAccountType.ISOLATED_MARGIN,
                 BinanceEnvironment.LIVE,
                 False,
-                "https://sapi.binance.com",
+                "https://api.binance.com",
             ),
             (
                 BinanceAccountType.USDT_FUTURES,
@@ -67,12 +67,12 @@ class TestBinanceFactories:
                 "https://dapi.binance.com",
             ),
             (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, True, "https://api.binance.us"),
-            (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "https://sapi.binance.us"),
+            (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "https://api.binance.us"),
             (
                 BinanceAccountType.ISOLATED_MARGIN,
                 BinanceEnvironment.LIVE,
                 True,
-                "https://sapi.binance.us",
+                "https://api.binance.us",
             ),
             (
                 BinanceAccountType.USDT_FUTURES,

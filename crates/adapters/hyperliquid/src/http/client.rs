@@ -1468,7 +1468,9 @@ impl HyperliquidHttpClient {
         user: &str,
         dex: Option<&str>,
     ) -> Result<Value> {
-        self.inner.info_frontend_open_orders_with_dex(user, dex).await
+        self.inner
+            .info_frontend_open_orders_with_dex(user, dex)
+            .await
     }
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
@@ -1481,7 +1483,9 @@ impl HyperliquidHttpClient {
         user: &str,
         dex: Option<&str>,
     ) -> Result<Value> {
-        self.inner.info_clearinghouse_state_with_dex(user, dex).await
+        self.inner
+            .info_clearinghouse_state_with_dex(user, dex)
+            .await
     }
 
     /// Get user fee schedule and effective rates.

@@ -35,7 +35,7 @@ def get_http_base_url(  # noqa: C901 (URL dispatch)
     if account_type.is_spot:
         return f"https://api.binance.{top_level_domain}"
     elif account_type.is_margin:
-        return f"https://sapi.binance.{top_level_domain}"
+        return f"https://api.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.USDT_FUTURES:
         return f"https://fapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.COIN_FUTURES:

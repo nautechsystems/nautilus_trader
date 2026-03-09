@@ -12,6 +12,7 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceMarginAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateMsg
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateData
@@ -83,8 +84,8 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         api_secret: str,
     ) -> None:
         PyCondition.is_true(
-            account_type.is_spot_or_margin,
-            "account_type was not SPOT, MARGIN or ISOLATED_MARGIN",
+            account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN),
+            "account_type was not SPOT or cross MARGIN",
         )
 
         # Spot HTTP API
@@ -128,12 +129,12 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         self._decoder_spot_account_update = msgspec.json.Decoder(BinanceSpotAccountUpdateMsg)
 
     async def _update_account_state(self) -> None:
-        account_info: BinanceSpotAccountInfo = (
+        account_info: BinanceSpotAccountInfo | BinanceMarginAccountInfo = (
             await self._spot_http_account.query_spot_account_info(
                 recv_window=str(5000),
             )
         )
-        if account_info.canTrade:
+        if account_info.can_trade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
             self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")
         else:
@@ -142,7 +143,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             balances=account_info.parse_to_account_balances(),
             margins=[],
             reported=True,
-            ts_event=millis_to_nanos(account_info.updateTime),
+            ts_event=millis_to_nanos(account_info.event_time_ms or self._clock.timestamp_ms()),
         )
 
     async def _init_dual_side_position(self) -> None:
@@ -230,6 +231,12 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
+        if self._binance_account_type.is_margin:
+            # Cross-margin outboundAccountPosition does not include liabilities,
+            # so refresh the full margin account snapshot before publishing balances.
+            self.create_task(self._update_account_state())
+            return
+
         account_msg = self._decoder_spot_account_update.decode(raw)
         account_msg.handle_account_update(self)
 
