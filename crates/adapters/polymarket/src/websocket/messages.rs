@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(order.status, PolymarketOrderStatus::Live);
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.order_type, PolymarketOrderType::GTC);
-        assert_eq!(order.outcome, PolymarketOutcome::Yes);
+        assert_eq!(order.outcome, PolymarketOutcome::yes());
         assert_eq!(order.original_size, "100.0");
         assert_eq!(order.size_matched, "0.0");
         assert!(order.associate_trades.is_none());

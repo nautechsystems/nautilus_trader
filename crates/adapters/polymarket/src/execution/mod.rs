@@ -77,7 +77,8 @@ use crate::{
     },
     config::PolymarketExecClientConfig,
     http::{
-        client::{PolymarketHttpClient, PolymarketRawHttpClient},
+        clob::PolymarketClobHttpClient,
+        gamma::PolymarketGammaHttpClient,
         models::PolymarketOrder,
         query::{GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams},
     },
@@ -96,7 +97,7 @@ pub struct PolymarketExecutionClient {
     clock: &'static AtomicTime,
     config: PolymarketExecClientConfig,
     emitter: ExecutionEventEmitter,
-    http_client: PolymarketRawHttpClient,
+    http_client: PolymarketClobHttpClient,
     order_signer: OrderSigner,
     ws_client: PolymarketWebSocketClient,
     provider: PolymarketInstrumentProvider,
@@ -126,15 +127,14 @@ impl PolymarketExecutionClient {
         )
         .context("failed to resolve Polymarket credentials")?;
 
-        let http_client = PolymarketRawHttpClient::with_credential(
+        let http_client = PolymarketClobHttpClient::new(
             secrets.credential.clone(),
             secrets.address.clone(),
             config.base_url_http.clone(),
-            None, // gamma not needed for execution HTTP client
             Some(config.http_timeout_secs),
         )
         .map_err(|e| anyhow::anyhow!("{e}"))
-        .context("failed to create HTTP client")?;
+        .context("failed to create CLOB HTTP client")?;
 
         let order_signer =
             OrderSigner::new(&secrets.private_key).context("failed to create order signer")?;
@@ -144,14 +144,13 @@ impl PolymarketExecutionClient {
             secrets.credential.clone(),
         );
 
-        let domain_http = PolymarketHttpClient::new(
-            config.base_url_http.clone(),
+        let gamma_http = PolymarketGammaHttpClient::new(
             config.base_url_gamma.clone(),
             Some(config.http_timeout_secs),
         )
         .map_err(|e| anyhow::anyhow!("{e}"))
-        .context("failed to create domain HTTP client")?;
-        let provider = PolymarketInstrumentProvider::new(domain_http);
+        .context("failed to create Gamma HTTP client")?;
+        let provider = PolymarketInstrumentProvider::new(gamma_http);
 
         let clock = get_atomic_clock_realtime();
         let usdc = get_usdc_currency();
@@ -1364,7 +1363,7 @@ fn build_ws_taker_fill_report(
 }
 
 fn spawn_account_refresh(
-    http_client: PolymarketRawHttpClient,
+    http_client: PolymarketClobHttpClient,
     emitter: ExecutionEventEmitter,
     clock: &'static AtomicTime,
     account_id: AccountId,
@@ -1383,7 +1382,7 @@ fn spawn_account_refresh(
 }
 
 async fn fetch_and_emit_account_state(
-    http_client: &PolymarketRawHttpClient,
+    http_client: &PolymarketClobHttpClient,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     signature_type: SignatureType,
