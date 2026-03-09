@@ -5,8 +5,6 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
 SYSTEMD_DIR="/etc/systemd/system"
 ENV_DIR="/etc/flux"
-SUDOERS_DIR="/etc/sudoers.d"
-SUDOERS_PATH="${SUDOERS_DIR}/flux-pulse"
 COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
@@ -22,7 +20,6 @@ require_sudo() {
   fi
 }
 
-
 require_project_python() {
   if [[ ! -x "${TOKENMM_PYTHON_BIN}" ]]; then
     echo "[tokenmm-systemd] missing project python at ${TOKENMM_PYTHON_BIN}; run \`uv sync --active --all-groups --all-extras\` first" >&2
@@ -30,18 +27,22 @@ require_project_python() {
   fi
 }
 
-
 run_rollout_preflight() {
   "${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"
 }
 
 discover_node_strategies() {
-  mapfile -t NODE_STRATEGIES < <(
-    strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml"
-  )
+  local discovered=""
+  discovered="$(strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml")"
+  if [[ -n "${discovered}" ]]; then
+    mapfile -t NODE_STRATEGIES <<< "${discovered}"
+  else
+    NODE_STRATEGIES=()
+  fi
 }
 
 build_service_ids() {
+  # shellcheck disable=SC2178
   local -n out_service_ids="$1"
   # shellcheck disable=SC2034
   out_service_ids=(
@@ -62,21 +63,6 @@ install_units() {
     "${ENV_DIR}" \
     "${ROOT_DIR}/deploy/tokenmm/systemd/common.env.example" \
     "${COMMON_ENV_PATH}"
-  install -d "${SUDOERS_DIR}"
-  install_sudoers
-}
-
-install_sudoers() {
-  local tmp_sudoers
-  local service_ids=()
-  tmp_sudoers="$(mktemp)"
-  build_service_ids service_ids
-  strategy_stack_render_merged_sudoers ubuntu "${tmp_sudoers}" "${SUDOERS_PATH}" "${service_ids[@]}"
-  if command -v visudo > /dev/null 2>&1; then
-    visudo -cf "${tmp_sudoers}"
-  fi
-  install -m 0440 "${tmp_sudoers}" "${SUDOERS_PATH}"
-  rm -f "${tmp_sudoers}"
 }
 
 append_checkout_env_overrides() {
@@ -84,7 +70,6 @@ append_checkout_env_overrides() {
 
   printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${ROOT_DIR}" "${ROOT_DIR}" >> "${env_path}"
 }
-
 
 render_api_env() {
   strategy_stack_write_env \
@@ -148,6 +133,10 @@ render_node_envs() {
   done
 }
 
+rebuild_pulse_sudoers() {
+  "${ROOT_DIR}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
+}
+
 render_jupyter_env() {
   install -m 0640 \
     "${ROOT_DIR}/deploy/tokenmm/systemd/tokenmm-jupyter.env.example" \
@@ -171,6 +160,7 @@ main() {
   render_portfolio_env
   render_bridge_env
   render_node_envs
+  rebuild_pulse_sudoers
   render_jupyter_env
   enable_stack
   echo "[tokenmm-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"

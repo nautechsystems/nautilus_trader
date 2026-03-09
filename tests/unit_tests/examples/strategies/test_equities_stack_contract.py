@@ -232,7 +232,7 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'flux-equities.target' in install_script
     assert 'deploy/equities/systemd/common.env.example' in install_script
     assert '/etc/sudoers.d/flux-pulse' in install_script
-    assert 'strategy_stack_render_merged_sudoers' in install_script
+    assert 'rebuild_flux_pulse_sudoers.sh' in install_script
     assert 'strategy_stack_write_env' in install_script
     assert 'equities-api.env' in install_script
     assert 'equities-portfolio.env' in install_script

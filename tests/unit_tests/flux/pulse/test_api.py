@@ -89,6 +89,47 @@ def test_discover_services_filters_to_pulse_enrolled_env_files(tmp_path: Path) -
     assert services[0].description == "TokenMM API"
 
 
+def test_list_jobs_preserves_custom_group_metadata_from_env_files(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tg-bot-lan-rogue-trader-alert.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=Lan Rogue Trader Alert",
+                "PULSE_GROUP_KEY=tg-bots",
+                "PULSE_GROUP_LABEL=TG Bots",
+                "PULSE_GROUP_ORDER=60",
+                'CMD="python -m flux.runners.tg_bots.run_lan_rogue_trader_alert"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        if cmd[:3] == ["systemctl", "status", "flux@tg-bot-lan-rogue-trader-alert"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="inactive (dead)"))
+        if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tg-bot-lan-rogue-trader-alert"]:
+            return FakeCompletedProcess(cmd, stdout="")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+    app = Flask(__name__)
+    control_plane.register_routes(app)
+
+    response = app.test_client().get("/api/pulse/jobs")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["jobs"][0]["group_key"] == "tg-bots"
+    assert payload["jobs"][0]["group_label"] == "TG Bots"
+    assert payload["jobs"][0]["group_order"] == 60
+
+
 def test_extract_error_info_ignores_socketio_invalid_session_restart_noise() -> None:
     logs_text = "\n".join(
         [
