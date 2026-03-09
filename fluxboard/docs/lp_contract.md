@@ -51,6 +51,7 @@ Each LP hedger uses the same Redis family keyed by `<state_key>`:
 - `/lp` remains the operator-facing home for the shared LP surface on the public `:5022` host.
 - `/api/v1/hedgers/*` remains the only public LP API family.
 - `LP_API_BACKEND_URL=http://127.0.0.1:5025` remains the hidden backend contract.
+- Built Fluxboard static files must resolve from the neutral shared prefix `/static/fluxboard/*`; `/lp` and `/tokenmm` stay SPA entry routes, not asset owners.
 - Band1 and Band2 are the only active checked-in production instances during rollout.
 - The shared surface must keep the Chainsaw-visible controls available: instance selector, state pills, restart, enable/disable, config editing, geometry overrides, threshold overrides, and recent-hedges clear.
 

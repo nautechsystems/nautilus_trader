@@ -47,6 +47,7 @@ from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_PULSE_BASE_PATH = "/pulse"
+DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
 TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
@@ -408,30 +409,17 @@ def _register_fluxboard_spa_base_path(
     def _serve_index() -> Any:
         return send_from_directory(str(dist_root), "index.html")
 
-    def _serve_assets(asset_path: str) -> Any:
-        normalized = asset_path.strip().lstrip("/")
-        candidate = (dist_root / "assets" / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root / "assets"), normalized)
-
     def _serve_asset_or_spa(subpath: str) -> Any:
         normalized = subpath.strip().lstrip("/")
+        if normalized.startswith("assets/"):
+            abort(404)
         candidate = (dist_root / normalized).resolve()
         if candidate.is_file() and _is_within(dist_root, candidate):
             return send_from_directory(str(dist_root), normalized)
-        if normalized.startswith("assets/"):
-            abort(404)
         return _serve_index()
 
     app.add_url_rule(base_path, endpoint=f"{endpoint_prefix}_index", view_func=_serve_index, methods=["GET"])
     app.add_url_rule(f"{base_path}/", endpoint=f"{endpoint_prefix}_index_slash", view_func=_serve_index, methods=["GET"])
-    app.add_url_rule(
-        f"{base_path}/assets/<path:asset_path>",
-        endpoint=f"{endpoint_prefix}_assets",
-        view_func=_serve_assets,
-        methods=["GET"],
-    )
     app.add_url_rule(
         f"{base_path}/<path:subpath>",
         endpoint=f"{endpoint_prefix}_asset_or_spa",
@@ -445,6 +433,13 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
+
+    def _serve_shared_static(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root), normalized)
 
     def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
         target = DEFAULT_TOKENMM_BASE_PATH
@@ -463,6 +458,10 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     @app.get(f"{TOKENMM_ALIAS_BASE_PATH}/<path:subpath>")
     def _tokenm_alias_subpath(subpath: str) -> Any:
         return _redirect_tokenm_alias(subpath)
+
+    @app.get(f"{DEFAULT_FLUXBOARD_STATIC_BASE_PATH}/<path:subpath>")
+    def _fluxboard_shared_static(subpath: str) -> Any:
+        return _serve_shared_static(subpath)
 
     for base_path, endpoint_prefix in FLUXBOARD_SPA_BASE_PATHS:
         _register_fluxboard_spa_base_path(

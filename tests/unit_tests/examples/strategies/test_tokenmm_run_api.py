@@ -148,12 +148,12 @@ def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path
     assert response.headers["Location"] == "/tokenmm/alerts?foo=1"
 
 
-def test_attach_fluxboard_tokenmm_routes_serves_lp_profile_spa_paths(tmp_path: Path) -> None:
+def test_attach_fluxboard_routes_serve_neutral_shared_asset_prefix(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     assets_dir = dist_dir / "assets"
     assets_dir.mkdir(parents=True)
     (dist_dir / "index.html").write_text("<html>fluxboard</html>", encoding="utf-8")
-    (assets_dir / "app.js").write_text("console.log('lp')", encoding="utf-8")
+    (assets_dir / "app.js").write_text("console.log('shared')", encoding="utf-8")
 
     app = Flask(__name__)
     _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_dir)
@@ -163,13 +163,23 @@ def test_attach_fluxboard_tokenmm_routes_serves_lp_profile_spa_paths(tmp_path: P
     assert response.status_code == 200
     assert "fluxboard" in response.get_data(as_text=True)
 
+    response = client.get("/tokenmm")
+    assert response.status_code == 200
+    assert "fluxboard" in response.get_data(as_text=True)
+
     response = client.get("/lp/hedger")
     assert response.status_code == 200
     assert "fluxboard" in response.get_data(as_text=True)
 
-    response = client.get("/lp/assets/app.js")
+    response = client.get("/static/fluxboard/assets/app.js")
     assert response.status_code == 200
-    assert "console.log('lp')" in response.get_data(as_text=True)
+    assert "console.log('shared')" in response.get_data(as_text=True)
+
+    response = client.get("/lp/assets/app.js")
+    assert response.status_code == 404
+
+    response = client.get("/tokenmm/assets/app.js")
+    assert response.status_code == 404
 
 
 def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:
