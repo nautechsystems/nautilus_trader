@@ -17,6 +17,10 @@ from flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_LIVENESS_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_BOOK_UNAVAILABLE
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
+from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
@@ -66,7 +70,20 @@ def handle_stale_quote_block(
         strategy._last_stale_cancel_ns <= 0
         or now_ns - strategy._last_stale_cancel_ns >= cooldown_ns
     ):
-        strategy._cancel_managed_quotes(cancel_reason, managed_orders=managed_orders)
+        strategy._cancel_managed_quotes(
+            cancel_reason,
+            managed_orders=managed_orders,
+            now_ns=now_ns,
+            quote_cycle_id=quote_cycle_id,
+            reason_code={
+                "maker_book_unavailable": REASON_CANCEL_MAKER_BOOK_UNAVAILABLE,
+                "maker_md_stale": REASON_CANCEL_MAKER_MD_STALE,
+                "reference_md_stale": REASON_CANCEL_REFERENCE_MD_STALE,
+            }.get(cancel_reason),
+            decision_context_json=strategy._quote_cycle_decision_context(
+                managed_orders=managed_orders,
+            ),
+        )
         strategy._last_stale_cancel_ns = now_ns
     from_state = getattr(strategy, "_last_state_name", None)
     blocked_transition = not bool(getattr(strategy, "_state_is_blocked", False))
@@ -168,6 +185,11 @@ def handle_portfolio_inventory_block(
     strategy._cancel_managed_quotes(
         "portfolio_inventory_unavailable",
         managed_orders=managed_orders,
+        now_ns=now_ns,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=strategy._quote_cycle_decision_context(
+            managed_orders=managed_orders,
+        ),
     )
     strategy._publish_state(
         state,
@@ -225,7 +247,7 @@ def refresh_quotes(  # noqa: C901
             strategy,
             now_ns=now_ns,
             state="blocked_maker_md",
-            cancel_reason="maker_md_stale",
+            cancel_reason="maker_book_unavailable",
             reason_code=REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE,
             quote_cycle_id=quote_cycle_id,
             warning_message=f"Quoting blocked (maker book unavailable) strategy_id={strategy._external_strategy_id}",
@@ -536,9 +558,22 @@ def refresh_quotes(  # noqa: C901
             "reference_fresh": reference_fresh,
         },
     }
+    per_level_outcomes: list[dict[str, Any]] = []
+    decision_context_json = strategy._quote_cycle_decision_context(
+        runtime_params=runtime_params,
+        managed_orders=active_orders,
+        per_level_outcomes=per_level_outcomes,
+    )
 
     if not desired_buys and not desired_sells:
-        strategy._cancel_managed_quotes("no_targets", managed_orders=active_orders)
+        strategy._cancel_managed_quotes(
+            "no_targets",
+            managed_orders=active_orders,
+            quote_cycle_id=quote_cycle_id,
+            now_ns=now_ns,
+            reason_code=REASON_CANCEL_NO_TARGETS,
+            decision_context_json=decision_context_json,
+        )
         strategy._last_requote_ns = now_ns
         strategy._last_completed_quote_ns = now_ns
         strategy._publish_quote_cycle_event(
@@ -551,6 +586,11 @@ def refresh_quotes(  # noqa: C901
                 "place_count": 0,
                 "bid_levels": 0,
                 "ask_levels": 0,
+                "decision_context_json": strategy._quote_cycle_decision_context(
+                    runtime_params=runtime_params,
+                    managed_orders=active_orders,
+                    per_level_outcomes=per_level_outcomes,
+                ),
             },
         )
         return
@@ -573,6 +613,8 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_buys,
         now_ns=now_ns,
         max_age_ms=max_age_ms,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=decision_context_json,
     )
     cancels += strategy._rebalance_side(
         side=OrderSide.SELL,
@@ -580,6 +622,8 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_sells,
         now_ns=now_ns,
         max_age_ms=max_age_ms,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=decision_context_json,
     )
     if strategy._has_pending_managed_cancels():
         from_state = getattr(strategy, "_last_state_name", None)
@@ -617,6 +661,11 @@ def refresh_quotes(  # noqa: C901
                     "cancel_count": cancels,
                     "place_count": 0,
                     "cleared_orphaned_pending_cancels": list(cleared_orphans),
+                    "decision_context_json": strategy._quote_cycle_decision_context(
+                        runtime_params=runtime_params,
+                        managed_orders=[*active_buys, *active_sells],
+                        per_level_outcomes=per_level_outcomes,
+                    ),
                 },
             )
             return
@@ -642,6 +691,11 @@ def refresh_quotes(  # noqa: C901
                         getattr(strategy, "_pending_cancel_client_order_ids", ()),
                     ),
                     "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
+                    "decision_context_json": strategy._quote_cycle_decision_context(
+                        runtime_params=runtime_params,
+                        managed_orders=[*active_buys, *active_sells],
+                        per_level_outcomes=per_level_outcomes,
+                    ),
                 },
                 oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
             )
@@ -659,6 +713,11 @@ def refresh_quotes(  # noqa: C901
                 "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
                 "bid_levels": len(desired_buys),
                 "ask_levels": len(desired_sells),
+                "decision_context_json": strategy._quote_cycle_decision_context(
+                    runtime_params=runtime_params,
+                    managed_orders=[*active_buys, *active_sells],
+                    per_level_outcomes=per_level_outcomes,
+                ),
             },
             oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
         )
@@ -685,6 +744,10 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_buys,
         best_bid_px=best_bid_px,
         best_ask_px=best_ask_px,
+        now_ns=now_ns,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=decision_context_json,
+        per_level_outcomes=per_level_outcomes,
     )
     places += strategy._place_missing_levels(
         side=OrderSide.SELL,
@@ -692,6 +755,10 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_sells,
         best_bid_px=best_bid_px,
         best_ask_px=best_ask_px,
+        now_ns=now_ns,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=decision_context_json,
+        per_level_outcomes=per_level_outcomes,
     )
 
     strategy._last_requote_ns = now_ns
@@ -707,6 +774,11 @@ def refresh_quotes(  # noqa: C901
             "place_count": places,
             "bid_levels": len(desired_buys),
             "ask_levels": len(desired_sells),
+            "decision_context_json": strategy._quote_cycle_decision_context(
+                runtime_params=runtime_params,
+                managed_orders=[*active_buys, *active_sells],
+                per_level_outcomes=per_level_outcomes,
+            ),
         },
     )
     if cancels or places:
