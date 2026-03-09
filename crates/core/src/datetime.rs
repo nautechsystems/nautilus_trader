@@ -32,6 +32,12 @@ pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 /// Number of nanoseconds in one microsecond.
 pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
+/// Number of nanoseconds in one minute.
+pub const NANOSECONDS_IN_MINUTE: u64 = 60 * NANOSECONDS_IN_SECOND;
+
+/// Number of seconds in one minute.
+pub const SECONDS_IN_MINUTE: u64 = 60;
+
 // Maximum finite seconds input that can be converted to nanoseconds without overflowing `u64`.
 const MAX_SECS_FOR_NANOS: f64 = u64::MAX as f64 / NANOSECONDS_IN_SECOND as f64;
 // Maximum finite seconds input that can be converted to milliseconds without overflowing `u64`.
@@ -51,6 +57,8 @@ const _: () = {
     assert!(NANOSECONDS_IN_MILLISECOND == NANOSECONDS_IN_MICROSECOND * 1_000);
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MILLISECOND == 1_000);
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND == 1_000_000);
+    assert!(SECONDS_IN_MINUTE == 60);
+    assert!(NANOSECONDS_IN_MINUTE == 60 * NANOSECONDS_IN_SECOND);
 };
 
 #[inline]
@@ -120,6 +128,18 @@ pub fn secs_to_millis(secs: f64) -> anyhow::Result<u64> {
 #[must_use]
 pub fn secs_to_nanos_unchecked(secs: f64) -> u64 {
     secs_to_nanos(secs).expect("secs_to_nanos_unchecked: invalid or overflowing input")
+}
+
+/// Converts minutes to seconds.
+#[must_use]
+pub const fn mins_to_secs(mins: u64) -> u64 {
+    mins * SECONDS_IN_MINUTE
+}
+
+/// Converts minutes to nanoseconds.
+#[must_use]
+pub const fn mins_to_nanos(mins: u64) -> u64 {
+    mins * NANOSECONDS_IN_MINUTE
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
@@ -584,6 +604,25 @@ mod tests {
     fn test_micros_to_nanos_non_finite_errors() {
         let err = micros_to_nanos(f64::NAN).unwrap_err();
         assert!(err.to_string().contains("finite"));
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(1, 60)]
+    #[case(5, 300)]
+    #[case(60, 3600)]
+    #[case(1440, 86400)]
+    fn test_mins_to_secs(#[case] mins: u64, #[case] expected: u64) {
+        assert_eq!(mins_to_secs(mins), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(1, 60_000_000_000)]
+    #[case(5, 300_000_000_000)]
+    #[case(60, 3_600_000_000_000)]
+    fn test_mins_to_nanos(#[case] mins: u64, #[case] expected: u64) {
+        assert_eq!(mins_to_nanos(mins), expected);
     }
 
     #[rstest]

@@ -8748,3 +8748,72 @@ fn test_reconcile_execution_mass_status_with_order_reports(mut execution_engine:
     let order = cache.order(&client_order_id).unwrap();
     assert_eq!(order.status(), OrderStatus::Canceled);
 }
+
+#[rstest]
+fn test_get_all_clients_empty(execution_engine: ExecutionEngine) {
+    let clients = execution_engine.get_all_clients();
+
+    assert!(clients.is_empty());
+}
+
+#[rstest]
+fn test_get_all_clients_with_registered_client(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let client_id = stub_client.client_id();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    let clients = execution_engine.get_all_clients();
+
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), client_id);
+}
+
+#[rstest]
+fn test_get_all_clients_includes_default_client(mut execution_engine: ExecutionEngine) {
+    let default_client = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("DEFAULT-ACCOUNT"),
+        Venue::from("DEFAULT"),
+        OmsType::Netting,
+        None,
+    );
+    let default_id = default_client.client_id();
+    execution_engine.register_default_client(Box::new(default_client));
+
+    let clients = execution_engine.get_all_clients();
+
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].client_id(), default_id);
+}
+
+#[rstest]
+fn test_get_all_clients_with_registered_and_default(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let registered_id = stub_client.client_id();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    let default_client = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("DEFAULT-ACCOUNT"),
+        Venue::from("DEFAULT"),
+        OmsType::Netting,
+        None,
+    );
+    let default_id = default_client.client_id();
+    execution_engine.register_default_client(Box::new(default_client));
+
+    let clients = execution_engine.get_all_clients();
+    let client_ids: HashSet<ClientId> = clients.iter().map(|c| c.client_id()).collect();
+
+    assert_eq!(clients.len(), 2);
+    assert!(client_ids.contains(&registered_id));
+    assert!(client_ids.contains(&default_id));
+}

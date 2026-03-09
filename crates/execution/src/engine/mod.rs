@@ -393,6 +393,19 @@ impl ExecutionEngine {
         adapters
     }
 
+    /// Returns all registered execution clients.
+    #[must_use]
+    pub fn get_all_clients(&self) -> Vec<&dyn ExecutionClient> {
+        let mut clients: Vec<&dyn ExecutionClient> =
+            self.clients.values().map(|a| a.client.as_ref()).collect();
+
+        if let Some(default) = &self.default_client {
+            clients.push(default.client.as_ref());
+        }
+
+        clients
+    }
+
     #[must_use]
     /// Returns execution clients that would handle the given orders.
     ///

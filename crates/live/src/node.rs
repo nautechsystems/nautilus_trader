@@ -13,6 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Live trading node built on a single-threaded tokio event loop.
+//!
+//! `LiveNode::run()` drives the system through a `tokio::select!` loop that
+//! multiplexes data events, execution events, trading commands, timers, and
+//! periodic maintenance tasks (reconciliation, purge, prune, audit).
+//!
+//! # Threading model
+//!
+//! The core types (`ExecutionManager`, `ExecutionEngine`, `Cache`) use
+//! `Rc<RefCell<..>>` and are `!Send`. All access happens on the same thread.
+//! The `select!` macro runs one branch to completion (including inner awaits)
+//! before polling the next, so `RefCell` borrows held across `.await` points
+//! within a single branch cannot conflict with borrows in other branches.
+//!
+//! # Reconciliation
+//!
+//! Three sub-checks run on independent intervals: inflight orders, open order
+//! consistency, and position consistency. A single reconciliation timer fires
+//! at the minimum enabled interval. Each tick, the handler checks which
+//! sub-checks are due based on elapsed nanoseconds and runs them in sequence.
+//! The open order and position checks query venues via async HTTP calls,
+//! blocking the select loop for the duration of each query.
+
 use std::{
     fmt::Debug,
     sync::{
@@ -33,7 +56,10 @@ use nautilus_common::{
     },
     timer::TimeEventHandler,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{
+    UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
+};
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{StrategyId, TraderId},
@@ -475,7 +501,6 @@ impl LiveNode {
                         color = LogColor::Blue
                     );
 
-                    // Do not hold the Rc across an await point
                     let exec_engine_rc = self.kernel.exec_engine.clone();
 
                     let result = self
@@ -642,12 +667,120 @@ impl LiveNode {
 
         self.handle.set_state(NodeState::Running);
 
+        let exec_config = &self.config.exec_engine;
+        let inflight_interval_ns =
+            (exec_config.inflight_check_interval_ms as u64) * NANOSECONDS_IN_MILLISECOND;
+        let open_interval_ns = exec_config
+            .open_check_interval_secs
+            .filter(|&s| s > 0.0)
+            .map_or(0, secs_to_nanos_unchecked);
+        let position_interval_ns = exec_config
+            .position_check_interval_secs
+            .filter(|&s| s > 0.0)
+            .map_or(0, secs_to_nanos_unchecked);
+        let has_clients = !self
+            .kernel
+            .exec_engine
+            .borrow()
+            .get_all_clients()
+            .is_empty();
+        let recon_enabled = has_clients
+            && (inflight_interval_ns > 0 || open_interval_ns > 0 || position_interval_ns > 0);
+
+        let recon_min_interval = if recon_enabled {
+            let mut intervals = Vec::new();
+
+            if exec_config.inflight_check_interval_ms > 0 {
+                intervals.push(Duration::from_millis(
+                    exec_config.inflight_check_interval_ms as u64,
+                ));
+            }
+
+            if let Some(s) = exec_config.open_check_interval_secs.filter(|&s| s > 0.0) {
+                intervals.push(Duration::from_secs_f64(s));
+            }
+
+            if let Some(s) = exec_config
+                .position_check_interval_secs
+                .filter(|&s| s > 0.0)
+            {
+                intervals.push(Duration::from_secs_f64(s));
+            }
+            intervals
+                .into_iter()
+                .min()
+                .unwrap_or(Duration::from_secs(1))
+        } else {
+            Duration::from_secs(1) // Unused, timer won't fire
+        };
+
+        let startup_delay = if self.config.exec_engine.reconciliation {
+            Duration::from_secs_f64(exec_config.reconciliation_startup_delay_secs)
+        } else {
+            Duration::ZERO
+        };
+
+        let recon_start = tokio::time::Instant::now() + startup_delay;
+
+        let mut ts_last_inflight = self.exec_manager.generate_timestamp_ns();
+        let mut ts_last_open = ts_last_inflight;
+        let mut ts_last_position = ts_last_inflight;
+
+        // Disabled timers use a far-future interval so they never fire.
+        // All timers start one full interval after the startup delay
+        // so the first tick does not fire immediately.
+        let far_future = Duration::from_secs(86400 * 365 * 100);
+
+        let make_timer = |opt_dur: Option<Duration>| {
+            let dur = opt_dur.unwrap_or(far_future);
+            let mut timer = tokio::time::interval_at(recon_start + dur, dur);
+            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            timer
+        };
+
+        let mut recon_timer = make_timer(if recon_enabled {
+            Some(recon_min_interval)
+        } else {
+            None
+        });
+
+        let mut purge_orders_timer = make_timer(
+            exec_config
+                .purge_closed_orders_interval_mins
+                .filter(|&m| m > 0)
+                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+        );
+
+        let mut purge_positions_timer = make_timer(
+            exec_config
+                .purge_closed_positions_interval_mins
+                .filter(|&m| m > 0)
+                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+        );
+
+        let mut purge_account_timer = make_timer(
+            exec_config
+                .purge_account_events_interval_mins
+                .filter(|&m| m > 0)
+                .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
+        );
+
+        let mut own_books_timer = make_timer(
+            exec_config
+                .own_books_audit_interval_secs
+                .filter(|&s| s > 0.0)
+                .map(Duration::from_secs_f64),
+        );
+
+        let mut prune_fills_timer = make_timer(Some(Duration::from_secs(60)));
+
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
+            let is_running = self.state() == NodeState::Running;
 
             tokio::select! {
                 Some(handler) = time_evt_rx.recv() => {
@@ -677,6 +810,17 @@ impl LiveNode {
                         log::debug!("Residual exec event: {evt:?}");
                         residual_events += 1;
                     }
+
+                    if let ExecutionEvent::Order(ref order_evt) = evt {
+                        self.exec_manager.record_local_activity(order_evt.client_order_id());
+                        if let OrderEventAny::Filled(fill) = order_evt {
+                            self.exec_manager.record_position_activity(
+                                fill.instrument_id,
+                                fill.ts_event,
+                            );
+                        }
+                    }
+
                     AsyncRunner::handle_exec_event(evt);
                 }
                 Some(cmd) = exec_cmd_rx.recv() => {
@@ -686,7 +830,7 @@ impl LiveNode {
                     }
                     AsyncRunner::handle_exec_command(cmd);
                 }
-                result = tokio::signal::ctrl_c(), if self.state() == NodeState::Running => {
+                result = tokio::signal::ctrl_c(), if is_running => {
                     match result {
                         Ok(()) => log::info!("Received SIGINT, shutting down"),
                         Err(e) => log::error!("Failed to listen for SIGINT: {e}"),
@@ -702,7 +846,7 @@ impl LiveNode {
                             return;
                         }
                     }
-                }, if self.state() == NodeState::Running => {
+                }, if is_running => {
                     self.initiate_shutdown();
                 }
                 () = async {
@@ -712,6 +856,33 @@ impl LiveNode {
                     }
                 }, if self.state() == NodeState::ShuttingDown => {
                     break;
+                }
+                _ = recon_timer.tick(), if is_running && recon_enabled => {
+                    if let Err(e) = self.run_reconciliation_checks(
+                        inflight_interval_ns,
+                        open_interval_ns,
+                        position_interval_ns,
+                        &mut ts_last_inflight,
+                        &mut ts_last_open,
+                        &mut ts_last_position,
+                    ).await {
+                        log::error!("Reconciliation check error: {e}");
+                    }
+                }
+                _ = purge_orders_timer.tick(), if is_running => {
+                    self.exec_manager.purge_closed_orders();
+                }
+                _ = purge_positions_timer.tick(), if is_running => {
+                    self.exec_manager.purge_closed_positions();
+                }
+                _ = purge_account_timer.tick(), if is_running => {
+                    self.exec_manager.purge_account_events();
+                }
+                _ = own_books_timer.tick(), if is_running => {
+                    self.kernel.cache().borrow_mut().audit_own_order_books();
+                }
+                _ = prune_fills_timer.tick(), if is_running => {
+                    self.exec_manager.prune_recent_fills_cache(60.0);
                 }
             }
         }
@@ -736,6 +907,28 @@ impl LiveNode {
         log::info!("Event loop stopped");
 
         Ok(())
+    }
+
+    fn process_reconciliation_events(&mut self, events: &[OrderEventAny]) {
+        if events.is_empty() {
+            return;
+        }
+
+        log::info!(
+            "Processing {} reconciliation event{}",
+            events.len(),
+            if events.len() == 1 { "" } else { "s" }
+        );
+
+        for event in events {
+            self.exec_manager
+                .record_local_activity(event.client_order_id());
+            if let OrderEventAny::Filled(fill) = event {
+                self.exec_manager
+                    .record_position_activity(fill.instrument_id, fill.ts_event);
+            }
+            self.kernel.exec_engine.borrow_mut().process(event.clone());
+        }
     }
 
     /// Returns `true` if all engines connected successfully, `false` otherwise.
@@ -870,13 +1063,13 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Gets a reference to the execution manager.
+    /// Returns the execution manager.
     #[must_use]
-    pub const fn exec_manager(&self) -> &ExecutionManager {
+    pub fn exec_manager(&self) -> &ExecutionManager {
         &self.exec_manager
     }
 
-    /// Gets an exclusive reference to the execution manager.
+    /// Returns a mutable reference to the execution manager.
     #[must_use]
     pub fn exec_manager_mut(&mut self) -> &mut ExecutionManager {
         &mut self.exec_manager
@@ -968,6 +1161,71 @@ impl LiveNode {
         }
 
         self.kernel.trader.add_strategy(strategy)
+    }
+
+    // Runs up to three reconciliation sub-checks (inflight, open orders,
+    // positions), each gated by its own interval. A single recon_timer in
+    // the select! loop fires at the minimum enabled interval; this method
+    // then checks which sub-checks are actually due.
+    //
+    // The exec_engine borrow is held across the async venue queries because
+    // get_all_clients() returns references into the engine's client map.
+    // This is safe: select! runs one branch to completion, so no other
+    // branch can borrow the same RefCells concurrently.
+    #[allow(clippy::await_holding_refcell_ref)]
+    #[allow(clippy::too_many_arguments)]
+    async fn run_reconciliation_checks(
+        &mut self,
+        inflight_interval_ns: u64,
+        open_interval_ns: u64,
+        position_interval_ns: u64,
+        ts_last_inflight: &mut UnixNanos,
+        ts_last_open: &mut UnixNanos,
+        ts_last_position: &mut UnixNanos,
+    ) -> anyhow::Result<()> {
+        let ts_now = self.exec_manager.generate_timestamp_ns();
+
+        if inflight_interval_ns > 0 && (ts_now - *ts_last_inflight).as_u64() >= inflight_interval_ns
+        {
+            if self.state() == NodeState::ShuttingDown {
+                return Ok(());
+            }
+            let events = self.exec_manager.check_inflight_orders();
+            self.process_reconciliation_events(&events);
+            *ts_last_inflight = ts_now;
+        }
+
+        if open_interval_ns > 0 && (ts_now - *ts_last_open).as_u64() >= open_interval_ns {
+            if self.state() == NodeState::ShuttingDown {
+                return Ok(());
+            }
+            let eng_ref = self.kernel.exec_engine.borrow();
+            let clients = eng_ref.get_all_clients();
+            let events = self.exec_manager.check_open_orders(&clients).await;
+            drop(clients);
+            drop(eng_ref);
+            self.process_reconciliation_events(&events);
+            *ts_last_open = ts_now;
+        }
+
+        if position_interval_ns > 0 && (ts_now - *ts_last_position).as_u64() >= position_interval_ns
+        {
+            if self.state() == NodeState::ShuttingDown {
+                return Ok(());
+            }
+            let eng_ref = self.kernel.exec_engine.borrow();
+            let clients = eng_ref.get_all_clients();
+            let events = self
+                .exec_manager
+                .check_positions_consistency(&clients)
+                .await;
+            drop(clients);
+            drop(eng_ref);
+            self.process_reconciliation_events(&events);
+            *ts_last_position = ts_now;
+        }
+
+        Ok(())
     }
 }
 

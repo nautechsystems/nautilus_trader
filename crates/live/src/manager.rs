@@ -32,7 +32,10 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, nanos_to_millis},
+    datetime::{
+        NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, mins_to_nanos, mins_to_secs,
+        nanos_to_millis,
+    },
 };
 use nautilus_execution::{
     engine::ExecutionEngine,
@@ -337,6 +340,12 @@ impl ExecutionManager {
             position_recon_retries: AHashMap::new(),
             recent_fills_cache: AHashMap::new(),
         }
+    }
+
+    /// Returns the current clock timestamp in nanoseconds.
+    #[must_use]
+    pub fn generate_timestamp_ns(&self) -> UnixNanos {
+        self.clock.borrow().timestamp_ns()
     }
 
     /// Reconciles orders and fills from a mass status report.
@@ -904,7 +913,7 @@ impl ExecutionManager {
     /// A vector of order events generated to reconcile discrepancies.
     pub async fn check_open_orders(
         &mut self,
-        clients: &[Rc<dyn ExecutionClient>],
+        clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking order consistency between cached-state and venues");
 
@@ -937,13 +946,19 @@ impl ExecutionManager {
         let mut all_reports = Vec::new();
         let mut venue_reported_ids = AHashSet::new();
 
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let start = self.config.open_check_lookback_mins.map(|mins| {
+            let lookback_ns = mins_to_nanos(mins);
+            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
+        });
+
         for client in clients {
             let mut cmd = GenerateOrderStatusReports::new(
                 UUID4::new(),
-                self.clock.borrow().timestamp_ns(),
-                true, // open_only
+                ts_now,
+                self.config.open_check_open_only,
                 None, // instrument_id - query all
-                None, // start
+                start,
                 None, // end
                 None, // params
                 None, // correlation_id
@@ -998,12 +1013,21 @@ impl ExecutionManager {
             }
         }
 
-        // Handle orders missing at venue
+        // Handle orders missing at venue (skip in open_only mode where the
+        // venue response may omit recently closed orders). When a lookback
+        // window is set, only consider orders within that window so older
+        // GTC orders outside the query range are not falsely marked missing.
         if !self.config.open_check_open_only {
-            let cached_ids: AHashSet<ClientOrderId> = filtered_orders
-                .iter()
-                .map(|o| o.client_order_id())
-                .collect();
+            let candidates: Vec<&OrderAny> = if let Some(cutoff) = start {
+                filtered_orders
+                    .iter()
+                    .filter(|o| o.ts_last() >= cutoff)
+                    .collect()
+            } else {
+                filtered_orders.iter().collect()
+            };
+            let cached_ids: AHashSet<ClientOrderId> =
+                candidates.iter().map(|o| o.client_order_id()).collect();
             let missing_at_venue: AHashSet<ClientOrderId> = cached_ids
                 .difference(&venue_reported_ids)
                 .copied()
@@ -1028,7 +1052,7 @@ impl ExecutionManager {
     /// A vector of fill events generated to reconcile position discrepancies.
     pub async fn check_positions_consistency(
         &mut self,
-        clients: &[Rc<dyn ExecutionClient>],
+        clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
 
@@ -1213,7 +1237,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let buffer_secs = (buffer_mins as u64) * 60;
+        let buffer_secs = mins_to_secs(buffer_mins as u64);
 
         self.cache
             .borrow_mut()
@@ -1227,7 +1251,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let buffer_secs = (buffer_mins as u64) * 60;
+        let buffer_secs = mins_to_secs(buffer_mins as u64);
 
         self.cache
             .borrow_mut()
@@ -1241,7 +1265,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let lookback_secs = (lookback_mins as u64) * 60;
+        let lookback_secs = mins_to_secs(lookback_mins as u64);
 
         self.cache
             .borrow_mut()
