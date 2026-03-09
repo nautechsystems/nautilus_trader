@@ -16,6 +16,7 @@ from typing import Any
 import redis
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
@@ -37,6 +38,7 @@ from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
+from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
@@ -105,7 +107,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio"),
+        table_names=("redis", "portfolio", "telemetry_shipper"),
     )
 
 
@@ -232,6 +234,100 @@ def _resolve_graceful_shutdown_on_exception(*, mode: str, node_cfg: dict[str, An
 
 def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return resolve_flux_strategy_id_from_bootstrap(config)
+
+
+def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableActorConfig]:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return []
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return []
+
+    actors: list[ImportableActorConfig] = []
+    balance_snapshots_db_path = _optional_text(telemetry.get("balance_snapshots_db_path"))
+    if balance_snapshots_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path=(
+                    "nautilus_trader.flux.persistence.balance_snapshots.actor:"
+                    "FluxBalanceSnapshotPersistenceActor"
+                ),
+                config_path=(
+                    "nautilus_trader.flux.persistence.balance_snapshots.config:"
+                    "FluxBalanceSnapshotPersistenceActorConfig"
+                ),
+                config={"db_path": balance_snapshots_db_path},
+            ),
+        )
+
+    fills_db_path = _optional_text(telemetry.get("fills_db_path"))
+    if fills_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.persistence.fills.actor:ExecutionFillPersistenceActor",
+                config_path=(
+                    "nautilus_trader.persistence.fills.config:ExecutionFillPersistenceActorConfig"
+                ),
+                config={
+                    "db_path": fills_db_path,
+                    "action_intent_topic": TOPIC_ORDER_INTENT,
+                },
+            ),
+        )
+
+    orders_db_path = _optional_text(telemetry.get("orders_db_path"))
+    if orders_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.persistence.orders.actor:OrderActionPersistenceActor",
+                config_path=(
+                    "nautilus_trader.persistence.orders.config:OrderActionPersistenceActorConfig"
+                ),
+                config={
+                    "db_path": orders_db_path,
+                    "action_intent_topic": TOPIC_ORDER_INTENT,
+                },
+            ),
+        )
+
+    quote_cycles_db_path = _optional_text(telemetry.get("quote_cycles_db_path"))
+    if quote_cycles_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path=(
+                    "nautilus_trader.flux.persistence.quote_cycles.actor:"
+                    "QuoteCyclePersistenceActor"
+                ),
+                config_path=(
+                    "nautilus_trader.flux.persistence.quote_cycles.config:"
+                    "QuoteCyclePersistenceActorConfig"
+                ),
+                config={"db_path": quote_cycles_db_path},
+            ),
+        )
+
+    return actors
+
+
+def _prepare_telemetry_paths(config: dict[str, Any]) -> None:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return
+
+    for key in (
+        "balance_snapshots_db_path",
+        "fills_db_path",
+        "orders_db_path",
+        "quote_cycles_db_path",
+        "portfolio_inventory_db_path",
+        "state_db_path",
+    ):
+        path_value = _optional_text(telemetry.get(key))
+        if path_value is None:
+            continue
+        Path(path_value).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _resolve_strategy_spec() -> FluxStrategySpec:
@@ -364,6 +460,7 @@ def build_node(
             stream_per_topic=True,
             types_filter=[OrderBookDeltas],
         ),
+        actors=_build_telemetry_actor_configs(config),
         data_clients=strategy_venues.data_clients,
         exec_clients=strategy_venues.exec_clients,
         timeout_connection=float(node_cfg.get("timeout_connection", 20.0)),
@@ -468,6 +565,7 @@ def main() -> None:
     args = _parse_args()
     config = _load_runtime_config(args.config, shared_config_path=args.shared_config)
     mode = _resolve_mode(config, args)
+    _prepare_telemetry_paths(config)
 
     node = build_node(
         config,

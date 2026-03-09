@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from typing import Any
 from unittest.mock import MagicMock
@@ -219,6 +220,61 @@ def test_portfolio_aggregator_partial_mode_keeps_partial_sum_for_missing_require
     assert payload["global_qty_base_complete"] is False
     assert payload["global_qty_complete"] is False
     assert payload["missing_required"] == ["plumeusdt_okx_perp_makerv3"]
+
+
+def test_portfolio_aggregator_persists_inventory_history_when_writer_is_configured(tmp_path) -> None:
+    from nautilus_trader.flux.persistence.portfolio_inventory_snapshots.sqlite import (
+        PortfolioInventorySnapshotWriter,
+    )
+
+    now_ms_value = int(time.time() * 1000)
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="plumeusdt_bybit_perp_makerv3",
+                portfolio_id="tokenmm",
+                base_currency="PLUME",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="plumeusdt_bybit_perp_makerv3",
+                    portfolio_id="tokenmm",
+                    base_currency="PLUME",
+                    local_qty_base=36689,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+        },
+    )
+    aggregator = TokenMMPortfolioAggregator.__new__(TokenMMPortfolioAggregator)
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "tokenmm"
+    aggregator._stale_after_ms = 3_000
+    aggregator._strategy_ids = ["plumeusdt_bybit_perp_makerv3"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["PLUME"]
+    aggregator._redis = fake_redis
+    aggregator._log = None
+    aggregator._snapshot_writer = PortfolioInventorySnapshotWriter(
+        db_path=str(tmp_path / "portfolio_inventory.sqlite"),
+        unchanged_heartbeat_ms=5_000,
+    )
+
+    try:
+        aggregator.recompute_once()
+        aggregator.recompute_once()
+    finally:
+        aggregator._snapshot_writer.close()
+
+    conn = sqlite3.connect(tmp_path / "portfolio_inventory.sqlite")
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM portfolio_inventory_snapshot").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 1
 
 
 def test_tokenmm_portfolio_aggregator_publishes_portfolio_snapshot_with_balances_and_partial_inventory() -> None:

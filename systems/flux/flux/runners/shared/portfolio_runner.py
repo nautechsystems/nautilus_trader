@@ -224,6 +224,9 @@ class StrategySetPortfolioAggregator:
             self._redis.set(key, encoded)
             if previous != encoded.encode():
                 self._redis.publish(self._aggregate_channel(base_currency=base_currency), encoded)
+            snapshot_writer = getattr(self, "_snapshot_writer", None)
+            if snapshot_writer is not None:
+                snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
 
             snapshot = build_portfolio_snapshot(
                 portfolio_id=self._portfolio_id,
@@ -244,6 +247,13 @@ class StrategySetPortfolioAggregator:
                 self._redis.publish(self._snapshot_channel(), encoded_snapshot)
 
     def _shutdown(self) -> None:
+        snapshot_writer = getattr(self, "_snapshot_writer", None)
+        if snapshot_writer is not None:
+            try:
+                snapshot_writer.close()
+            except Exception as exc:
+                self._log.warning("Failed to close portfolio inventory snapshot writer cleanly: %s", exc)
+
         close = getattr(self._redis, "close", None)
         if callable(close):
             try:

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from flux.persistence.portfolio_inventory_snapshots.sqlite import PortfolioInventorySnapshotWriter
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
@@ -73,6 +74,27 @@ class TokenMMPortfolioAggregator(StrategySetPortfolioAggregator):
             logger=logger,
             descriptor=TOKENMM_DESCRIPTOR,
         )
+        self._snapshot_writer = _build_portfolio_inventory_snapshot_writer(config)
+
+
+def _build_portfolio_inventory_snapshot_writer(
+    config: dict[str, Any],
+) -> PortfolioInventorySnapshotWriter | None:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return None
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return None
+
+    db_path = _optional_text(telemetry.get("portfolio_inventory_db_path"))
+    if db_path is None:
+        return None
+
+    Path(db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    return PortfolioInventorySnapshotWriter(
+        db_path=db_path,
+        unchanged_heartbeat_ms=int(telemetry.get("portfolio_inventory_unchanged_heartbeat_ms", 60_000)),
+    )
 
 
 def main() -> None:

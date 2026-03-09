@@ -4,6 +4,7 @@ Preflight checks for TokenMM production rollouts.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import importlib
 import sys
 import tomllib
@@ -14,6 +15,11 @@ from typing import Any
 REQUIRED_RUNTIME_FILES = (
     Path("fluxboard/dist/index.html"),
     Path("pulse-ui/dist/index.html"),
+)
+REQUIRED_RUNTIME_MODULES = (
+    "flask",
+    "flask_socketio",
+    "redis",
 )
 
 REQUIRED_NATIVE_EXPORTS_BY_VENUE: dict[str, tuple[str, ...]] = {
@@ -58,10 +64,27 @@ def _import_nautilus_pyo3(repo_root: Path) -> Any:
     return module
 
 
+def _collect_runtime_module_errors(
+    *,
+    import_module: Callable[[str], Any],
+) -> list[str]:
+    errors: list[str] = []
+    for module_name in REQUIRED_RUNTIME_MODULES:
+        try:
+            import_module(module_name)
+        except Exception as exc:
+            errors.append(
+                f"Missing required runtime module `{module_name}`: {exc}. "
+                "Run `uv sync --active --all-groups --all-extras` in this checkout before rollout.",
+            )
+    return errors
+
+
 def collect_rollout_preflight_errors(
     repo_root: Path,
     *,
     nautilus_pyo3: Any | None = None,
+    import_module: Callable[[str], Any] | None = None,
 ) -> list[str]:
     repo_root = repo_root.resolve()
     errors: list[str] = []
@@ -72,6 +95,12 @@ def collect_rollout_preflight_errors(
             errors.append(
                 f"Missing required runtime artifact: {relative_path}. Build it before rollout.",
             )
+
+    errors.extend(
+        _collect_runtime_module_errors(
+            import_module=import_module or importlib.import_module,
+        ),
+    )
 
     required_exports = _required_native_exports(repo_root)
     if not required_exports:

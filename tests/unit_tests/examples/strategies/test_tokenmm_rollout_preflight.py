@@ -82,3 +82,22 @@ def test_collect_rollout_preflight_errors_passes_when_assets_and_native_exports_
     )
 
     assert errors == []
+
+
+def test_collect_rollout_preflight_errors_requires_live_runtime_modules(
+    tmp_path: Path,
+) -> None:
+    _write_repo_fixture(tmp_path)
+
+    def _fake_import(name: str) -> object:
+        if name == "redis":
+            raise ModuleNotFoundError("No module named 'redis'")
+        return object()
+
+    errors = collect_rollout_preflight_errors(
+        tmp_path,
+        nautilus_pyo3=SimpleNamespace(BitgetEnvironment=object()),
+        import_module=_fake_import,
+    )
+
+    assert any("redis" in error for error in errors)

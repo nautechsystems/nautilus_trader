@@ -183,6 +183,19 @@ def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> N
     assert "quote_cycle" in notebook
 
 
+def test_tokenmm_live_runtime_dependencies_are_declared_for_checkout_venv() -> None:
+    pyproject = tomllib.loads(_read(_repo_root() / "pyproject.toml"))
+    dependencies = {
+        str(item).split(">=", 1)[0].split("==", 1)[0].split("[", 1)[0].strip().lower()
+        for item in pyproject["project"]["dependencies"]
+    }
+
+    assert "flask" in dependencies
+    assert "flask-socketio" in dependencies
+    assert "psycopg" in dependencies
+    assert "redis" in dependencies
+
+
 def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None:
     repo_root = _repo_root()
     api_doc = _read(repo_root / "docs/flux/api.md")
@@ -223,6 +236,23 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "cutover" in design_doc
     assert "localhost-only JupyterLab" in design_doc
     assert "telemetry shipper" in design_doc
+
+
+def test_tokenmm_live_config_enables_local_telemetry_persistence_paths() -> None:
+    shared_config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
+
+    assert "[telemetry_shipper]" in shared_config
+    assert "enable_local_persistence = true" in shared_config
+    assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in shared_config
+    assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in shared_config
+    assert (
+        'quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"'
+        in shared_config
+    )
+    assert (
+        'portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"'
+        in shared_config
+    )
 
 
 def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> (
