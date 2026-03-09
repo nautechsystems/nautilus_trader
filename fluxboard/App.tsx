@@ -10,6 +10,7 @@ const PROFILE_SUITE_MAP: Record<PathProfile, FluxboardSuite> = {
   default: 'all',
   tokenmm: 'dex_arb',
   equities: 'equities',
+  lp: 'dex_arb',
 };
 
 function resolveSuiteForProfile(profile: PathProfile): FluxboardSuite {

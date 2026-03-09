@@ -95,6 +95,18 @@ describe('App Layout', () => {
     });
   });
 
+  it('binds lp profile to dex_arb suite', async () => {
+    render(
+      <BrowserRouter>
+        <App profile="lp" />
+      </BrowserRouter>
+    );
+
+    await waitFor(() => {
+      expect(useSuiteStore.getState().suite).toBe('dex_arb');
+    });
+  });
+
   it('binds default profile to all suite', async () => {
     render(
       <BrowserRouter>

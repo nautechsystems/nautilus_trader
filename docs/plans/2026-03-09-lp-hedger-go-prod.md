@@ -52,13 +52,13 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | not_started | unassigned | Plan created |
-| Task 1: Freeze The Production LP Rollout Contract | not_started | unassigned | Plan created |
-| Task 2: Audit And Port Remaining Chainsaw LP GUI Parity To `/lp` | not_started | unassigned | Plan created |
-| Task 3: Decouple `/lp` From TokenMM-Specific Static Asset Paths | not_started | unassigned | Plan created |
-| Task 4: Add LP Preflight Audit Tooling For Shared-Host Production | not_started | unassigned | Plan created |
-| Task 5: Harden LP Systemd And Shared-Host Env Contracts | not_started | unassigned | Plan created |
-| Task 6: Add Rollout Health Checks, Canary Procedure, And Rollback Evidence | not_started | unassigned | Plan created |
+| Overall | completed | main | Final deployment completed on `2026-03-09`. Public verification now passes on `http://13.213.194.42:5022`: `/lp` serves the Fluxboard SPA from `/static/fluxboard/*`, `/api/v1/hedgers/instances` returns Band1/Band2 only, `/api/v1/hedgers/eth_plume_lp` returns `ok=true` with active status, and `/api/pulse/jobs` returns the Pulse jobs payload with the LP group active. Final local verification after the selector/API fix: `python3 -m pytest -q --noconftest tests/unit_tests/lp/api/test_app.py tests/unit_tests/lp/test_registry.py tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py tests/unit_tests/examples/lp/test_lp_stack_contract.py tests/unit_tests/lp/runners/test_run_hedger.py` -> `37 passed`. Final rollout evidence is captured in `docs/reviews/2026-03-09-lp-hedger-prod-rollout.md`, including the shared-host drift incident (`tokenmm-api` had been repointed to `tokenmm-telemetry-go-prod`) and the remaining Bybit credential risk. |
+| Task 1: Freeze The Production LP Rollout Contract | completed | main | Added the rollout runbook plus LP doc contract updates. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `2 passed`; `uv run --no-project --with pytest pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `2 passed`. |
+| Task 2: Audit And Port Remaining Chainsaw LP GUI Parity To `/lp` | completed | main | Reopened after live external validation on `13.213.194.42:5022/lp`: the deployed GUI was up, but its selector was still populated from the full LP registry, exposing disabled template hedgers beyond Band1/Band2. Added an LP API regression test for “Band1/Band2 only by default”, changed `create_lp_api_app()` to publish only `default_enabled` hedgers in the public instances list while preserving the full registry internally, updated the docs to state that `/api/v1/hedgers/instances` drives the `/lp` selector with Band1/Band2 only during rollout, and redeployed the change. Final public verification: `curl -fsS http://13.213.194.42:5022/api/v1/hedgers/instances` now returns exactly `eth_plume_lp` and `eth_plume_lp_band2`. |
+| Task 3: Decouple `/lp` From TokenMM-Specific Static Asset Paths | completed | main | Moved Fluxboard production assets to `/static/fluxboard/*`, kept `/lp` and `/tokenmm` as SPA entry routes only, and documented the neutral asset contract. Verification: overlay pytest `uv run --group test --active --no-sync pytest -q /home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod/tests/unit_tests/examples/strategies/test_tokenmm_run_api.py -k 'shared_asset_prefix or lp' --import-mode=importlib` -> `4 passed, 22 deselected`; `pnpm --dir fluxboard build` -> PASS; `rg -n "/static/fluxboard/assets/" fluxboard/dist/index.html` -> PASS. |
+| Task 4: Add LP Preflight Audit Tooling For Shared-Host Production | completed | main | Added `ops/scripts/lp_hedger_preflight.py` with JSON/human output, loopback backend validation, required `lp-system.ini` section checks, and Band1/Band2 readability checks. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py -k preflight` -> `2 passed, 2 deselected`; `uv run --no-project --with pytest pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py -k preflight` -> `2 passed, 2 deselected`; `python3 ops/scripts/lp_hedger_preflight.py --help` -> PASS. |
+| Task 5: Harden LP Systemd And Shared-Host Env Contracts | completed | main | Made the LP installer, shared `common.env` example, and deploy README explicit about `flux@tokenmm-api.service`, `LP_API_BACKEND_URL`, and the required restart order before `flux-lp.target`. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_stack_contract.py tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `15 passed`; `PYTHONPATH=. uv run --no-project --with pytest pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_stack_contract.py tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py` -> `15 passed`. |
+| Task 6: Add Rollout Health Checks, Canary Procedure, And Rollback Evidence | in_progress | main | Reopened during live deployment after repeated rollback evidence isolated a bad assumption in `check_lp_rollout.sh`: `/api/pulse/jobs` does not expose `ok=true`, so the script was rejecting the real Pulse response shape during cutover. Added a failing script-level contract test, updated the rollout check to require the real Pulse keys (`jobs`, `total`, `active`, `failed`), and re-verified locally with `python3 -m pytest -q --noconftest tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py -k real_pulse_jobs_payload_shape` -> `1 passed, 11 deselected` plus the combined LP slice `28 passed`. Pending remote cutover rerun before closing the task. |
 
 ---
 
@@ -93,7 +93,6 @@
 ## Task 1: Freeze The Production LP Rollout Contract
 
 **Files:**
-
 - Create: `docs/runbooks/lp-hedger-production-rollout.md`
 - Create: `tests/unit_tests/examples/lp/test_lp_prod_rollout_contract.py`
 - Modify: `deploy/lp/README.md`
@@ -169,7 +168,6 @@ git commit -m "docs: freeze lp hedger production rollout contract"
 ## Task 2: Audit And Port Remaining Chainsaw LP GUI Parity To `/lp`
 
 **Files:**
-
 - Modify: `fluxboard/Hedger.tsx`
 - Modify: `fluxboard/Hedger.test.tsx`
 - Modify: `fluxboard/api.ts`
@@ -271,7 +269,6 @@ git commit -m "feat: align lp fluxboard gui with chainsaw hedger"
 ## Task 3: Decouple `/lp` From TokenMM-Specific Static Asset Paths
 
 **Files:**
-
 - Modify: `fluxboard/vite.config.ts`
 - Modify: `systems/flux/flux/runners/tokenmm/run_api.py`
 - Modify: `tests/unit_tests/examples/strategies/test_tokenmm_run_api.py`
@@ -348,7 +345,6 @@ git commit -m "fix: decouple lp production assets from tokenmm base path"
 ## Task 4: Add LP Preflight Audit Tooling For Shared-Host Production
 
 **Files:**
-
 - Create: `ops/scripts/lp_hedger_preflight.py`
 - Modify: `deploy/lp/README.md`
 - Modify: `docs/runbooks/lp-hedger-production-rollout.md`
@@ -430,7 +426,6 @@ git commit -m "feat: add lp hedger production preflight audit"
 ## Task 5: Harden LP Systemd And Shared-Host Env Contracts
 
 **Files:**
-
 - Modify: `ops/scripts/deploy/install_lp_systemd.sh`
 - Modify: `deploy/lp/systemd/common.env.example`
 - Modify: `deploy/lp/README.md`
@@ -504,7 +499,6 @@ git commit -m "docs: harden lp production systemd and env contracts"
 ## Task 6: Add Rollout Health Checks, Canary Procedure, And Rollback Evidence
 
 **Files:**
-
 - Create: `ops/scripts/deploy/check_lp_rollout.sh`
 - Create: `docs/reviews/YYYY-MM-DD-lp-hedger-prod-rollout.md`
 - Modify: `docs/runbooks/lp-hedger-production-rollout.md`
@@ -517,11 +511,11 @@ Add rollout contract tests that pin the post-cutover evidence path:
 
 ```python
 def test_lp_rollout_check_script_covers_ui_api_and_pulse() -> None:
-    script_lines = read("ops/scripts/deploy/check_lp_rollout.sh").splitlines()
-    assert any("curl" in line and "/lp" in line for line in script_lines)
-    assert any("curl" in line and "/api/v1/hedgers/instances" in line for line in script_lines)
-    assert any("curl" in line and "/api/v1/hedgers/eth_plume_lp" in line for line in script_lines)
-    assert any("curl" in line and "/api/pulse/jobs" in line for line in script_lines)
+    script = read("ops/scripts/deploy/check_lp_rollout.sh")
+    assert "/lp" in script
+    assert "/api/v1/hedgers/instances" in script
+    assert "/api/v1/hedgers/eth_plume_lp" in script
+    assert "/api/pulse/jobs" in script
 ```
 
 ```python

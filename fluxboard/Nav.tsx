@@ -22,6 +22,7 @@ export default function Nav({ profile, surface }: NavProps) {
     url: `${protocol}//${host}:${port}${pathSuffix || ''}`,
     label,
   }));
+  const homeRoutePath = activeSurface?.homeRoutePath || '/';
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -29,7 +30,12 @@ export default function Nav({ profile, surface }: NavProps) {
 
   const isActive = (path: string) => {
     const scopedPath = buildProfilePath(profile, path);
-    if (path === '/') return location.pathname === scopedPath;
+    if (path === '/') {
+      return (
+        location.pathname === scopedPath ||
+        location.pathname === buildProfilePath(profile, homeRoutePath)
+      );
+    }
     return location.pathname.startsWith(scopedPath);
   };
 

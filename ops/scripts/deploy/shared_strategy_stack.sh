@@ -14,7 +14,6 @@ strategy_stack_install_base_units() {
   fi
 }
 
-
 strategy_stack_render_target() {
   local target_path="$1"
   local description="$2"
@@ -33,7 +32,6 @@ strategy_stack_render_target() {
     echo 'WantedBy=multi-user.target'
   } > "${target_path}"
 }
-
 
 strategy_stack_write_env() {
   local env_path="$1"
@@ -62,7 +60,6 @@ strategy_stack_write_env() {
   } > "${env_path}"
 }
 
-
 strategy_stack_render_sudoers() {
   local run_as_user="$1"
   local sudoers_path="$2"
@@ -70,7 +67,7 @@ strategy_stack_render_sudoers() {
 
   {
     echo '# Allow the API service user to operate managed Flux services for Pulse.'
-    echo 'Cmnd_Alias FLUX_PULSE = \'
+    echo "Cmnd_Alias FLUX_PULSE = \\"
     local service_id
     local count=$#
     local index=0
@@ -90,16 +87,48 @@ strategy_stack_render_sudoers() {
   } > "${sudoers_path}"
 }
 
+strategy_stack_list_sudoers_service_ids() {
+  local sudoers_path="$1"
+
+  [[ -f "${sudoers_path}" ]] || return 0
+
+  grep -oE 'flux@[^[:space:],]+\.service' "${sudoers_path}" |
+    sed 's/^flux@//; s/\.service$//' |
+    awk 'NF && !seen[$0]++'
+}
+
+strategy_stack_render_merged_sudoers() {
+  local run_as_user="$1"
+  local sudoers_path="$2"
+  local existing_sudoers_path="$3"
+  shift 3
+
+  local service_ids=()
+  if [[ -n "${existing_sudoers_path}" && -f "${existing_sudoers_path}" ]]; then
+    while IFS= read -r service_id; do
+      [[ -n "${service_id}" ]] || continue
+      service_ids+=("${service_id}")
+    done < <(strategy_stack_list_sudoers_service_ids "${existing_sudoers_path}")
+  fi
+
+  local requested_service_id
+  for requested_service_id in "$@"; do
+    [[ -n "${requested_service_id}" ]] || continue
+    service_ids+=("${requested_service_id}")
+  done
+
+  mapfile -t service_ids < <(printf '%s\n' "${service_ids[@]}" | awk 'NF && !seen[$0]++')
+  strategy_stack_render_sudoers "${run_as_user}" "${sudoers_path}" "${service_ids[@]}"
+}
 
 strategy_stack_discover_strategy_ids() {
   local strategies_dir="$1"
   local excluded_template="${2:-*template*}"
 
-  find "${strategies_dir}" -maxdepth 1 -type f -name '*.toml' ! -name "${excluded_template}" -printf '%f\n' \
-    | sed 's/\.toml$//' \
-    | sort
+  find "${strategies_dir}" -maxdepth 1 -type f -name '*.toml' ! -name "${excluded_template}" -printf '%f\n' |
+    sed 's/\.toml$//' |
+    sort
 }
-
 
 strategy_stack_print_strategy_configs() {
   local strategies_dir="$1"
@@ -107,7 +136,6 @@ strategy_stack_print_strategy_configs() {
 
   find "${strategies_dir}" -maxdepth 1 -type f -name '*.toml' ! -name "${excluded_template}" | sort
 }
-
 
 strategy_stack_load_strategy_configs() {
   local -n out_configs="$1"
@@ -132,7 +160,6 @@ strategy_stack_load_strategy_configs() {
     fi
   fi
 }
-
 
 strategy_stack_print_install_hint() {
   local log_prefix="$1"

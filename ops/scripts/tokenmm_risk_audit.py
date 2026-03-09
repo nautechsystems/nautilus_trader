@@ -66,14 +66,14 @@ def _fetch_json(*, base_url: str, path: str, timeout: float) -> Any:
     try:
         with urlopen(url, timeout=timeout) as response:
             body = response.read().decode("utf-8")
-    except HTTPError as exc:  # pragma: no cover - exercised by live operator use
-        raise AuditError(f"{url} returned HTTP {exc.code}") from exc
-    except URLError as exc:  # pragma: no cover - exercised by live operator use
-        raise AuditError(f"{url} could not be reached: {exc.reason}") from exc
+    except HTTPError as e:  # pragma: no cover - exercised by live operator use
+        raise AuditError(f"{url} returned HTTP {e.code}") from e
+    except URLError as e:  # pragma: no cover - exercised by live operator use
+        raise AuditError(f"{url} could not be reached: {e.reason}") from e
     try:
         return json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise AuditError(f"{url} returned invalid JSON: {exc}") from exc
+    except json.JSONDecodeError as e:
+        raise AuditError(f"{url} returned invalid JSON: {e}") from e
 
 
 def _fetch_enveloped_data(*, base_url: str, path: str, timeout: float) -> Mapping[str, Any]:

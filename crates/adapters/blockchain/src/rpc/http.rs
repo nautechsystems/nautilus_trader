@@ -468,16 +468,15 @@ impl BlockchainHttpRpcClient {
                 .await
             {
                 Ok(mut logs) => all_logs.append(&mut logs),
-                Err(error) => {
-                    if current_from < current_to
-                        && is_provider_range_error(error.to_string().as_str())
+                Err(e) => {
+                    if current_from < current_to && is_provider_range_error(e.to_string().as_str())
                     {
                         let midpoint = current_from + ((current_to - current_from) / 2);
                         // Push right first so left sub-range is processed first (LIFO).
                         pending_ranges.push((midpoint + 1, current_to));
                         pending_ranges.push((current_from, midpoint));
                     } else {
-                        return Err(error);
+                        return Err(e);
                     }
                 }
             }

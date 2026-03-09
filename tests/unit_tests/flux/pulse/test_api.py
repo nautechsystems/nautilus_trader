@@ -394,6 +394,81 @@ def test_job_actions_and_logs_use_systemd_units_and_sudo_prefix(tmp_path: Path) 
     ]
 
 
+def test_get_job_status_normalizes_systemctl_status_without_loading_logs(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tokenmm-bridge.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM Bridge",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                'CMD="python -m flux.runners.tokenmm.run_bridge"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        calls.append(cmd)
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-bridge"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="failed"))
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+
+    assert control_plane.get_job_status("tokenmm-bridge") == "failed"
+    assert calls == [["systemctl", "status", "flux@tokenmm-bridge"]]
+
+
+def test_control_job_runs_systemctl_action_and_returns_latest_status(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tokenmm-bridge.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM Bridge",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                'CMD="python -m flux.runners.tokenmm.run_bridge"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        calls.append(cmd)
+        if cmd[:4] == ["sudo", "systemctl", "restart", "flux@tokenmm-bridge"]:
+            return FakeCompletedProcess(cmd, stdout="ok")
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-bridge"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="active (running)", pid=4321, memory="12.3M"))
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+
+    assert control_plane.control_job("tokenmm-bridge", "restart") == "active"
+    assert calls == [
+        ["sudo", "systemctl", "restart", "flux@tokenmm-bridge"],
+        ["systemctl", "status", "flux@tokenmm-bridge"],
+    ]
+
+
 def test_self_stop_is_deferred_and_returns_accepted(tmp_path: Path) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)

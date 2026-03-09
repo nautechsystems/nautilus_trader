@@ -662,7 +662,7 @@ impl BlockchainExecutionClient {
                     .insert(cmd.client_order_id, order_report);
                 Ok(())
             }
-            Err(error) => {
+            Err(e) => {
                 let rejection_venue_order_id =
                     VenueOrderId::new(format!("reject-{}", cmd.client_order_id.as_str()));
                 let ts_event = UnixNanos::from(nanos_since_unix_epoch());
@@ -690,7 +690,7 @@ impl BlockchainExecutionClient {
                 state
                     .order_reports
                     .insert(cmd.client_order_id, order_report);
-                Err(error)
+                Err(e)
             }
         }
     }
@@ -1421,7 +1421,7 @@ async fn send_raw_transaction_with_policy(
     for attempt in 1..=attempts {
         match rpc_client.send_raw_transaction(raw_tx_hex).await {
             Ok(tx_hash) => return Ok(tx_hash),
-            Err(error) => match classify_send_raw_tx_error(&error) {
+            Err(e) => match classify_send_raw_tx_error(&e) {
                 SendRawTxErrorKind::AlreadyKnown => {
                     log::warn!(
                         "sendRawTransaction already known; continuing by computed hash tx_hash={expected_tx_hash}"
@@ -1432,12 +1432,12 @@ async fn send_raw_transaction_with_policy(
                     log::warn!(
                         "sendRawTransaction ambiguous result; continuing by computed hash tx_hash={} error={}",
                         expected_tx_hash,
-                        error
+                        e
                     );
                     return Ok(expected_tx_hash.to_string());
                 }
                 SendRawTxErrorKind::NonceTooLow => {
-                    anyhow::bail!("EXEC_ERR[NONCE_TOO_LOW] sendRawTransaction failed: {error}");
+                    anyhow::bail!("EXEC_ERR[NONCE_TOO_LOW] sendRawTransaction failed: {e}");
                 }
                 SendRawTxErrorKind::Retryable => {
                     if attempt < attempts {
@@ -1448,11 +1448,11 @@ async fn send_raw_transaction_with_policy(
                     anyhow::bail!(
                         "EXEC_ERR[RPC_RETRY_EXHAUSTED] sendRawTransaction failed after {} attempts: {}",
                         attempts,
-                        error
+                        e
                     );
                 }
                 SendRawTxErrorKind::NonRetryable => {
-                    anyhow::bail!("EXEC_ERR[RPC_NON_RETRYABLE] sendRawTransaction failed: {error}");
+                    anyhow::bail!("EXEC_ERR[RPC_NON_RETRYABLE] sendRawTransaction failed: {e}");
                 }
             },
         }

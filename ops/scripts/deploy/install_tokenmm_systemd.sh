@@ -41,9 +41,9 @@ discover_node_strategies() {
   )
 }
 
-
 build_service_ids() {
   local -n out_service_ids="$1"
+  # shellcheck disable=SC2034
   out_service_ids=(
     "tokenmm-api"
     "tokenmm-portfolio"
@@ -54,7 +54,6 @@ build_service_ids() {
     out_service_ids+=("tokenmm-node-${strategy_id}")
   done
 }
-
 
 install_units() {
   strategy_stack_install_base_units \
@@ -72,8 +71,8 @@ install_sudoers() {
   local service_ids=()
   tmp_sudoers="$(mktemp)"
   build_service_ids service_ids
-  strategy_stack_render_sudoers ubuntu "${tmp_sudoers}" "${service_ids[@]}"
-  if command -v visudo >/dev/null 2>&1; then
+  strategy_stack_render_merged_sudoers ubuntu "${tmp_sudoers}" "${SUDOERS_PATH}" "${service_ids[@]}"
+  if command -v visudo > /dev/null 2>&1; then
     visudo -cf "${tmp_sudoers}"
   fi
   install -m 0440 "${tmp_sudoers}" "${SUDOERS_PATH}"
@@ -105,7 +104,6 @@ render_target() {
   build_service_ids service_ids
   strategy_stack_render_target "${TARGET_PATH}" "Flux TokenMM Stack" "${service_ids[@]}"
 }
-
 
 render_portfolio_env() {
   strategy_stack_write_env \

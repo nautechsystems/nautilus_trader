@@ -5,12 +5,12 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Callable
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from typing import Callable
 from typing import Protocol
-from typing import Sequence
 from typing import cast
 
 from flask import Blueprint
@@ -308,6 +308,27 @@ class PulseControlPlane:
             )
 
         app.register_blueprint(blueprint)
+
+    def get_job_status(self, job_id: str) -> str:
+        service = self._service_by_id(job_id)
+        if service is None:
+            return "unknown"
+        result = self._run(
+            ["systemctl", "status", self._unit_name(service.job_id)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return _normalize_status(result.stdout or "")
+
+    def control_job(self, job_id: str, action: str) -> str:
+        if action not in {"start", "stop", "restart"}:
+            raise ValueError(f"Unsupported action: {action}")
+        service = self._service_by_id(job_id)
+        if service is None:
+            return "unknown"
+        self._run_systemctl_action(service.job_id, action)
+        return self.get_job_status(service.job_id)
 
     def _service_by_id(self, job_id: str) -> PulseService | None:
         for service in self.discover_services():

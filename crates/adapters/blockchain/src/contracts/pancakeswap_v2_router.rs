@@ -195,7 +195,7 @@ impl PancakeSwapV2RouterContract {
             .await
         {
             Ok(bytes) => Self::decode_get_amounts_out_response(bytes.as_slice(), expected_path_len),
-            Err(error) => Err(map_quote_call_error(error)),
+            Err(e) => Err(map_quote_call_error(e)),
         }
     }
 
@@ -212,7 +212,7 @@ impl PancakeSwapV2RouterContract {
             .await
         {
             Ok(bytes) => Self::decode_get_amounts_in_response(bytes.as_slice(), expected_path_len),
-            Err(error) => Err(map_quote_call_error(error)),
+            Err(e) => Err(map_quote_call_error(e)),
         }
     }
 }

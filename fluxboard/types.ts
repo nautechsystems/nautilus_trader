@@ -969,6 +969,9 @@ export type HedgerInstanceMeta = {
   state_key?: string | null;
   config_env_var?: string | null;
   config_default_path?: string | null;
+  staged?: boolean;
+  config_ready?: boolean;
+  config_readiness_errors?: string[] | null;
 };
 
 export type HedgerConfig = {
@@ -1018,6 +1021,9 @@ export type HedgerStatus = {
   threshold_effective: HedgerThresholds | null;
   hedger_enabled?: boolean;
   dry_run?: boolean;
+  staged?: boolean;
+  config_ready?: boolean;
+  config_readiness_errors?: string[] | null;
 };
 
 

@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import Nav from './Nav';
 import { getUiSurface } from './config/uiProfiles';
 
-function renderAt(path: string, profile: 'default' | 'tokenmm' | 'equities' = 'default') {
+function renderAt(path: string, profile: 'default' | 'tokenmm' | 'equities' | 'lp' = 'default') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Nav profile={profile} surface={getUiSurface(profile)} />
@@ -29,7 +29,6 @@ describe('Nav', () => {
       'FX',
       'Alerts',
       'Scanners',
-      'Hedger',
     ];
 
     for (const label of expected) {
@@ -114,5 +113,16 @@ describe('Nav', () => {
     expect(alerts).toHaveClass('nav-link--active');
     expect(dashboard).not.toHaveAttribute('aria-current');
     expect(dashboard).not.toHaveClass('nav-link--active');
+  });
+
+  it('renders lp nav with a single hedger link anchored at /lp', () => {
+    renderAt('/lp/hedger', 'lp');
+
+    const hedger = screen.getByRole('link', { name: 'Hedger' });
+
+    expect(hedger).toHaveAttribute('href', '/lp');
+    expect(hedger).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /pulse ↗/i })).not.toBeInTheDocument();
   });
 });

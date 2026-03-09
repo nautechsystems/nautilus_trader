@@ -1,0 +1,44 @@
+[identity]
+id = third_lp
+label = Third LP Hedger
+state_key = third_lp_hedger
+job_id = service-hedger5
+
+[lp_pool]
+mode = synthetic
+chain = plume
+amm = rooster_v3
+pool_address = 0x0000000000000000000000000000000000000000
+token0_symbol = TOKEN0
+token1_symbol = TOKEN1
+token0_decimals = 18
+token1_decimals = 18
+initial_token0 = 1.0
+initial_token1 = 1.0
+price_lower = 0.01
+price_upper = 10
+
+[target]
+target_net_token0 = 0.0
+target_net_token1 = 0.0
+
+[bybit]
+perp_symbol_token0 = TOKEN0USDT
+perp_symbol_token1 = TOKEN1USDT
+order_qty_step_token0 = 0.001
+order_qty_step_token1 = 1
+max_slippage_bps = 30
+api_key =
+api_secret =
+
+[rebalance]
+poll_interval_sec = 3
+price_move_pct = 2.0
+eth_exposure_usd_threshold = 1000.0
+plume_exposure_usd_threshold = 1000.0
+min_order_qty_eth = 0.01
+min_order_qty_plume = 10
+
+[hedge]
+hedge_token0 = 0
+hedge_token1 = 0

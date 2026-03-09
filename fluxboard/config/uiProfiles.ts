@@ -11,7 +11,7 @@ type ExternalLink = {
   pathSuffix?: string;
 };
 
-export type PathProfile = 'default' | 'tokenmm' | 'equities';
+export type PathProfile = 'default' | 'tokenmm' | 'equities' | 'lp';
 export type StableProfile = Exclude<PathProfile, 'default'>;
 
 export type ProfileDefinition = {
@@ -22,6 +22,7 @@ export type ProfileDefinition = {
 
 export type UiSurfaceContract = {
   profile: PathProfile;
+  homeRoutePath: string;
   navLinks: readonly NavLink[];
   externalLinks: readonly ExternalLink[];
   routePaths: readonly string[];
@@ -40,7 +41,6 @@ const TRADER_NAV_LINKS = [
   { path: '/fx', label: 'FX' },
   { path: '/alerts', label: 'Alerts' },
   { path: '/scanners', label: 'Scanners' },
-  { path: '/hedger', label: 'Hedger' },
 ] as const satisfies readonly NavLink[];
 
 const TRADER_ROUTE_PATHS = [
@@ -55,7 +55,6 @@ const TRADER_ROUTE_PATHS = [
   '/fv',
   '/fx',
   '/alerts',
-  '/hedger',
   '/scanners',
   '/scanners-harness',
 ] as const;
@@ -107,10 +106,19 @@ const MAKER_CORE_SURFACE_PROPS = {
 } as const;
 
 const TOKENMM_SURFACE_PROPS = {
+  homeRoutePath: '/dashboard',
   navLinks: TOKENMM_NAV_LINKS,
   externalLinks: [] as const,
   routePaths: TOKENMM_ROUTE_PATHS,
   allowedPanels: MAKER_SUITE_CORE_PANEL_IDS,
+} as const;
+
+const LP_SURFACE_PROPS = {
+  homeRoutePath: '/hedger',
+  navLinks: [{ path: '/', label: 'Hedger' }] as const,
+  externalLinks: [] as const,
+  routePaths: ['/', '/hedger'] as const,
+  allowedPanels: [] as const,
 } as const;
 
 const PROFILE_DEFINITIONS: Record<StableProfile, ProfileDefinition> = {
@@ -124,11 +132,17 @@ const PROFILE_DEFINITIONS: Record<StableProfile, ProfileDefinition> = {
     aliases: ['equities'],
     basePath: '/equities',
   },
+  lp: {
+    profile: 'lp',
+    aliases: ['lp'],
+    basePath: '/lp',
+  },
 } as const;
 
 const SURFACES: Record<PathProfile, UiSurfaceContract> = {
   default: {
     profile: 'default',
+    homeRoutePath: '/dashboard',
     navLinks: TRADER_NAV_LINKS,
     externalLinks: [
       { port: 8090, label: 'Pulse' },
@@ -143,7 +157,12 @@ const SURFACES: Record<PathProfile, UiSurfaceContract> = {
   },
   equities: {
     profile: 'equities',
+    homeRoutePath: '/dashboard',
     ...MAKER_CORE_SURFACE_PROPS,
+  },
+  lp: {
+    profile: 'lp',
+    ...LP_SURFACE_PROPS,
   },
 };
 
