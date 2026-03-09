@@ -25,6 +25,8 @@ SKIP_FLUXBOARD_BUILD="${TOKENMM_SKIP_FLUXBOARD_BUILD:-0}"
 SKIP_PULSE_BUILD="${TOKENMM_SKIP_PULSE_BUILD:-0}"
 STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-1}"
 STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-1}"
+LOCAL_LOG_MAX_MB="${TOKENMM_LOCAL_LOG_MAX_MB:-100}"
+LOCAL_LOG_KEEP="${TOKENMM_LOCAL_LOG_KEEP:-5}"
 PYTHON_BIN="${TOKENMM_PYTHON_BIN:-}"
 LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-0}"
 AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
@@ -64,6 +66,7 @@ Environment overrides:
   TOKENMM_SKIP_FLUXBOARD_BUILD, TOKENMM_SKIP_PULSE_BUILD, TOKENMM_START_TIMEOUT_SECS
   TOKENMM_BALANCES_READY_TIMEOUT_SECS
   TOKENMM_STRICT_PROFILE_CHECK, TOKENMM_STRICT_BALANCES_READY_CHECK
+  TOKENMM_LOCAL_LOG_MAX_MB, TOKENMM_LOCAL_LOG_KEEP
   TOKENMM_LOAD_AWS_SECRETS, TOKENMM_AWS_REGION
   TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID, TOKENMM_BITGET_SECRET_ID
 
@@ -165,6 +168,8 @@ load_env_file() {
   SKIP_PULSE_BUILD="${TOKENMM_SKIP_PULSE_BUILD:-${SKIP_PULSE_BUILD}}"
   STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-${STRICT_PROFILE_CHECK}}"
   STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-${STRICT_BALANCES_READY_CHECK}}"
+  LOCAL_LOG_MAX_MB="${TOKENMM_LOCAL_LOG_MAX_MB:-${LOCAL_LOG_MAX_MB}}"
+  LOCAL_LOG_KEEP="${TOKENMM_LOCAL_LOG_KEEP:-${LOCAL_LOG_KEEP}}"
   LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-${LOAD_AWS_SECRETS}}"
   AWS_REGION="${TOKENMM_AWS_REGION:-${AWS_REGION}}"
   BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
@@ -658,6 +663,59 @@ ensure_dirs() {
   mkdir -p "${LOG_DIR}" "${PID_DIR}"
 }
 
+validate_local_log_retention() {
+  [[ "${LOCAL_LOG_MAX_MB}" =~ ^[0-9]+$ ]] || {
+    echo "[tokenmm-stack] TOKENMM_LOCAL_LOG_MAX_MB must be a non-negative integer" >&2
+    exit 1
+  }
+  [[ "${LOCAL_LOG_KEEP}" =~ ^[0-9]+$ ]] || {
+    echo "[tokenmm-stack] TOKENMM_LOCAL_LOG_KEEP must be a non-negative integer" >&2
+    exit 1
+  }
+}
+
+prune_rotated_logs() {
+  local log="$1"
+  local keep="$2"
+  local dir base
+  dir="$(dirname "${log}")"
+  base="$(basename "${log}")"
+
+  local -a rotated=()
+  mapfile -t rotated < <(
+    find "${dir}" -maxdepth 1 -type f -name "${base}.*" -print | sort -r
+  )
+
+  if ((${#rotated[@]} <= keep)); then
+    return
+  fi
+
+  local file
+  for file in "${rotated[@]:keep}"; do
+    rm -f "${file}"
+  done
+}
+
+rotate_log_if_needed() {
+  local log="$1"
+  local max_size_bytes=$((LOCAL_LOG_MAX_MB * 1024 * 1024))
+
+  if [[ ! -f "${log}" ]]; then
+    prune_rotated_logs "${log}" "${LOCAL_LOG_KEEP}"
+    return
+  fi
+
+  if ((max_size_bytes > 0)); then
+    local size_bytes
+    size_bytes="$(stat -c%s "${log}" 2>/dev/null || echo 0)"
+    if ((size_bytes >= max_size_bytes)); then
+      mv "${log}" "${log}.$(date -u +%Y%m%dT%H%M%SZ)"
+    fi
+  fi
+
+  prune_rotated_logs "${log}" "${LOCAL_LOG_KEEP}"
+}
+
 is_running() {
   local svc="$1"
   local file
@@ -684,6 +742,7 @@ start_process() {
     return
   fi
 
+  rotate_log_if_needed "${log}"
   echo "[tokenmm-stack] starting ${svc}"
   rm -f "${file}"
   (
@@ -891,6 +950,7 @@ start_stack() {
   load_strategy_configs
   validate_strategy_registry_alignment "${pybin}"
   ensure_dirs
+  validate_local_log_retention
 
   resolve_redis_target_from_config "${pybin}"
   start_redis_if_needed "${pybin}"

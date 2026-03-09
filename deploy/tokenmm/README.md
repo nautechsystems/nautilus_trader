@@ -114,6 +114,9 @@ sudo systemctl start flux-tokenmm.target
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
+- Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
+  `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
+  role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
 - The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 active
   node services.
@@ -147,6 +150,10 @@ TOKENMM_REDIS_PASSWORD=... \
 TOKENMM_ALLOW_MISSING_KEYS=1 \
 ops/scripts/deploy/tokenmm_stack.sh start
 ```
+
+Local smoke logs live under `.run/tokenmm-stack/logs`. The script now rotates a log before append when it exceeds the
+configured size budget and keeps only a bounded number of rotated files. Use `TOKENMM_LOCAL_LOG_MAX_MB` and
+`TOKENMM_LOCAL_LOG_KEEP` to override the defaults.
 
 Smoke-check the portfolio surfaces directly:
 

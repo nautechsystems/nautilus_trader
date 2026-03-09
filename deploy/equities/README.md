@@ -71,6 +71,9 @@ Installer behavior:
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`
+- Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
+  `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
+  role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
 - The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
@@ -104,6 +107,10 @@ TWS_USERNAME=... \
 TWS_PASSWORD=... \
 ops/scripts/deploy/equities_stack.sh start
 ```
+
+Local smoke logs live under `.run/equities-stack/logs`. The script now rotates a log before append when it exceeds the
+configured size budget and keeps only a bounded number of rotated files. Use `EQUITIES_LOCAL_LOG_MAX_MB` and
+`EQUITIES_LOCAL_LOG_KEEP` to override the defaults.
 
 Optional local secret loading:
 

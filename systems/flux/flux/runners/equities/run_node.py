@@ -20,7 +20,6 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
-from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
@@ -34,6 +33,7 @@ from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_ta
 from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.logging import build_node_logging_config
 from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -135,6 +135,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--enable-execution", action="store_true")
+    parser.add_argument("--log-level", default=None)
     return parser.parse_args()
 
 
@@ -400,7 +401,13 @@ def _strategy_startup_lock(
         yield
 
 
-def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
+def build_node(
+    config: dict[str, Any],
+    *,
+    mode: str,
+    force_enable_execution: bool,
+    log_level_override: str | None = None,
+) -> TradingNode:
     """
     Build and return a configured trading node for Equities.
     """
@@ -450,9 +457,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
-        logging=LoggingConfig(
-            log_level=str(node_cfg.get("log_level", "INFO")),
-            use_pyo3=True,
+        logging=build_node_logging_config(
+            cli_level=log_level_override,
+            config_level=node_cfg.get("log_level", "INFO"),
         ),
         data_engine=LiveDataEngineConfig(
             graceful_shutdown_on_exception=graceful_shutdown_on_exception,
@@ -626,6 +633,7 @@ def main() -> None:
         config,
         mode=mode,
         force_enable_execution=bool(args.enable_execution),
+        log_level_override=args.log_level,
     )
 
     with _strategy_startup_lock(config):

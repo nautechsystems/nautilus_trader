@@ -71,6 +71,11 @@ MakerV3 publishes structured JSON payloads to canonical topics:
 - `flux.makerv3.fv`: fair-value snapshots (midpoint of maker/reference when available).
 - `flux.makerv3.trade`: order fill notices (for downstream monitoring/analytics).
 
+Operational guidance:
+
+- Keep high-volume quote-cycle, state, and pricing diagnostics on these structured topics.
+- Use process logs for lifecycle events, guardrails, failures, and operator actions rather than repeating hot-path telemetry in text logs.
+
 Quote-cycle events use an envelope with:
 
 - `run_id`: stable per-run identifier

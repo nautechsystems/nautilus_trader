@@ -18,6 +18,8 @@ API_HOST="${EQUITIES_API_HOST:-127.0.0.1}"
 API_PORT="${EQUITIES_API_PORT:-5022}"
 SKIP_FLUXBOARD_BUILD="${EQUITIES_SKIP_FLUXBOARD_BUILD:-0}"
 SKIP_PULSE_BUILD="${EQUITIES_SKIP_PULSE_BUILD:-0}"
+LOCAL_LOG_MAX_MB="${EQUITIES_LOCAL_LOG_MAX_MB:-100}"
+LOCAL_LOG_KEEP="${EQUITIES_LOCAL_LOG_KEEP:-5}"
 LOAD_AWS_SECRETS="${EQUITIES_LOAD_AWS_SECRETS:-0}"
 AWS_REGION="${EQUITIES_AWS_REGION:-ap-southeast-1}"
 TRADE_XYZ_SECRET_ID="${EQUITIES_TRADE_XYZ_SECRET_ID:-/nautilus/equities/trade_xyz}"
@@ -43,6 +45,17 @@ USAGE
 
 ensure_dirs() {
   mkdir -p "${PID_DIR}" "${LOG_DIR}"
+}
+
+validate_local_log_retention() {
+  [[ "${LOCAL_LOG_MAX_MB}" =~ ^[0-9]+$ ]] || {
+    echo "[equities-stack] EQUITIES_LOCAL_LOG_MAX_MB must be a non-negative integer" >&2
+    exit 1
+  }
+  [[ "${LOCAL_LOG_KEEP}" =~ ^[0-9]+$ ]] || {
+    echo "[equities-stack] EQUITIES_LOCAL_LOG_KEEP must be a non-negative integer" >&2
+    exit 1
+  }
 }
 
 load_env_file() {
@@ -93,6 +106,8 @@ load_env_file() {
   API_PORT="${EQUITIES_API_PORT:-${API_PORT}}"
   SKIP_FLUXBOARD_BUILD="${EQUITIES_SKIP_FLUXBOARD_BUILD:-${SKIP_FLUXBOARD_BUILD}}"
   SKIP_PULSE_BUILD="${EQUITIES_SKIP_PULSE_BUILD:-${SKIP_PULSE_BUILD}}"
+  LOCAL_LOG_MAX_MB="${EQUITIES_LOCAL_LOG_MAX_MB:-${LOCAL_LOG_MAX_MB}}"
+  LOCAL_LOG_KEEP="${EQUITIES_LOCAL_LOG_KEEP:-${LOCAL_LOG_KEEP}}"
   LOAD_AWS_SECRETS="${EQUITIES_LOAD_AWS_SECRETS:-${LOAD_AWS_SECRETS}}"
   AWS_REGION="${EQUITIES_AWS_REGION:-${AWS_REGION}}"
   TRADE_XYZ_SECRET_ID="${EQUITIES_TRADE_XYZ_SECRET_ID:-${TRADE_XYZ_SECRET_ID}}"
@@ -224,6 +239,48 @@ build_ui() {
   fi
 }
 
+prune_rotated_logs() {
+  local log_file="$1"
+  local keep="$2"
+  local dir base
+  dir="$(dirname "${log_file}")"
+  base="$(basename "${log_file}")"
+
+  local -a rotated=()
+  mapfile -t rotated < <(
+    find "${dir}" -maxdepth 1 -type f -name "${base}.*" -print | sort -r
+  )
+
+  if ((${#rotated[@]} <= keep)); then
+    return
+  fi
+
+  local file
+  for file in "${rotated[@]:keep}"; do
+    rm -f "${file}"
+  done
+}
+
+rotate_log_if_needed() {
+  local log_file="$1"
+  local max_size_bytes=$((LOCAL_LOG_MAX_MB * 1024 * 1024))
+
+  if [[ ! -f "${log_file}" ]]; then
+    prune_rotated_logs "${log_file}" "${LOCAL_LOG_KEEP}"
+    return
+  fi
+
+  if ((max_size_bytes > 0)); then
+    local size_bytes
+    size_bytes="$(stat -c%s "${log_file}" 2>/dev/null || echo 0)"
+    if ((size_bytes >= max_size_bytes)); then
+      mv "${log_file}" "${log_file}.$(date -u +%Y%m%dT%H%M%SZ)"
+    fi
+  fi
+
+  prune_rotated_logs "${log_file}" "${LOCAL_LOG_KEEP}"
+}
+
 start_process() {
   local name="$1"
   shift
@@ -232,6 +289,7 @@ start_process() {
   if [[ -f "${pid_file}" ]] && kill -0 "$(cat "${pid_file}")" 2>/dev/null; then
     return
   fi
+  rotate_log_if_needed "${log_file}"
   nohup "$@" >>"${log_file}" 2>&1 < /dev/null &
   echo $! > "${pid_file}"
 }
@@ -250,8 +308,9 @@ node_configs() {
 }
 
 start_stack() {
-  ensure_dirs
   load_env_file
+  ensure_dirs
+  validate_local_log_retention
   load_aws_secrets_if_enabled
   validate_mode
   validate_files

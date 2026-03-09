@@ -1,0 +1,38 @@
+{
+  "metrics": {
+    "namespace": "Flux/Hosts",
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "aggregation_dimensions": [
+      [
+        "InstanceId"
+      ]
+    ],
+    "metrics_collected": {
+      "disk": {
+        "resources": [
+          "/"
+        ],
+        "measurement": [
+          "used_percent",
+          "free",
+          "inodes_free"
+        ],
+        "drop_device": false,
+        "ignore_file_system_types": [
+          "sysfs",
+          "devtmpfs",
+          "tmpfs",
+          "overlay",
+          "squashfs"
+        ]
+      },
+      "mem": {
+        "measurement": [
+          "used_percent"
+        ]
+      }
+    }
+  }
+}

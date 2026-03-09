@@ -6,7 +6,6 @@ Run the flux bridge consumer for Equities strategy topics.
 from __future__ import annotations
 
 import argparse
-import logging
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from flux.bridge.handlers import default_topic_handlers
 from flux.bridge.stream_consumer import FluxBridgeStreamConsumer
 from flux.common.config import validate_identifier_part
 from flux.events import TOPIC_EXECUTION_ALERT
+from flux.runners.shared.logging import configure_python_logging
 from flux.strategies.makerv3.constants import TOPIC_ALERT
 from flux.strategies.makerv3.constants import TOPIC_BALANCES
 from flux.strategies.makerv3.constants import TOPIC_EVENT
@@ -155,10 +155,10 @@ def main() -> None:
     redis_cfg = _table(config, "redis")
     bridge_cfg = _table(config, "bridge")
 
-    log_level = str(args.log_level or bridge_cfg.get("log_level", "INFO")).upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    configure_python_logging(
+        cli_level=args.log_level,
+        config_level=bridge_cfg.get("log_level", "INFO"),
+        service_env_var="FLUX_BRIDGE_LOG_LEVEL",
     )
 
     handlers = _build_handlers()

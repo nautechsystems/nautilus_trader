@@ -9,6 +9,7 @@ from typing import Any
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
+from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.portfolio_runner import portfolio_base_assets
@@ -79,10 +80,10 @@ def main() -> None:
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)
     portfolio_cfg = _table(config, "portfolio")
-    log_level = str(args.log_level or portfolio_cfg.get("log_level", "INFO")).upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    configure_python_logging(
+        cli_level=args.log_level,
+        config_level=portfolio_cfg.get("log_level", "INFO"),
+        service_env_var="FLUX_PORTFOLIO_LOG_LEVEL",
     )
     aggregator = EquitiesPortfolioAggregator(
         config=config,

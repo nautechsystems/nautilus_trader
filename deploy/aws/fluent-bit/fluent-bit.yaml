@@ -1,0 +1,24 @@
+service:
+  flush: 5
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: systemd
+      tag: host.journal
+      read_from_tail: true
+      strip_underscores: true
+
+  filters:
+    - name: grep
+      match: host.journal
+      regex: SYSTEMD_UNIT ^flux@.*\\.service$
+
+  outputs:
+    - name: cloudwatch_logs
+      match: host.journal
+      region: ${AWS_REGION}
+      log_group_name: /aws/ec2/flux/journald
+      log_stream_prefix: ${HOSTNAME}-
+      auto_create_group: true
+      log_key: MESSAGE

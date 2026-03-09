@@ -27,6 +27,8 @@ from flux.common.config import validate_identifier_part
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.pulse import PulseControlPlane
+from flux.runners.shared.logging import configure_python_logging
+from flux.runners.shared.logging import emit_startup_banner
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -87,6 +89,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
+    parser.add_argument("--log-level", default=None)
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument(
@@ -441,6 +444,11 @@ def main() -> None:
     mode = _resolve_mode(config, args)
 
     api_cfg = _table(config, "api")
+    configure_python_logging(
+        cli_level=args.log_level,
+        config_level=api_cfg.get("log_level", "INFO"),
+        service_env_var="FLUX_API_LOG_LEVEL",
+    )
     contracts = _build_contract_catalog(config)
     flux_config = _build_flux_config(
         config,
@@ -456,10 +464,9 @@ def main() -> None:
         strategy_name=strategy_spec.strategy_id,
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
-    print(
-        "[equities-run-api] "
-        + _equities_profile_summary(profile_strategy_map, profile_required_strategy_map),
-        flush=True,
+    emit_startup_banner(
+        prefix="equities-run-api",
+        message=_equities_profile_summary(profile_strategy_map, profile_required_strategy_map),
     )
 
     redis_client = redis.Redis(
