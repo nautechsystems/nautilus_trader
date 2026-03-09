@@ -40,7 +40,8 @@ use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
     http::{
-        client::PolymarketRawHttpClient,
+        clob::PolymarketClobHttpClient,
+        gamma::PolymarketGammaRawHttpClient,
         models::PolymarketOrder,
         query::{
             CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaMarketsParams,
@@ -92,26 +93,18 @@ fn test_credential() -> Credential {
     Credential::new("test_api_key", TEST_API_SECRET_B64, "test_pass".to_string()).unwrap()
 }
 
-fn create_authed_client(addr: &SocketAddr) -> PolymarketRawHttpClient {
-    PolymarketRawHttpClient::with_credential(
+fn create_clob_client(addr: &SocketAddr) -> PolymarketClobHttpClient {
+    PolymarketClobHttpClient::new(
         test_credential(),
         TEST_ADDRESS.to_string(),
         Some(format!("http://{addr}")),
-        None,
         Some(5),
     )
     .unwrap()
 }
 
-fn create_client_with_gamma(addr: &SocketAddr) -> PolymarketRawHttpClient {
-    PolymarketRawHttpClient::with_credential(
-        test_credential(),
-        TEST_ADDRESS.to_string(),
-        Some(format!("http://{addr}")),
-        Some(format!("http://{addr}")),
-        Some(5),
-    )
-    .unwrap()
+fn create_gamma_client(addr: &SocketAddr) -> PolymarketGammaRawHttpClient {
+    PolymarketGammaRawHttpClient::new(Some(format!("http://{addr}")), Some(5)).unwrap()
 }
 
 fn extract_headers(headers: &HeaderMap) -> AHashMap<String, String> {
@@ -294,7 +287,7 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 async fn test_get_orders_returns_orders() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -314,7 +307,7 @@ async fn test_get_orders_returns_orders() {
 async fn test_get_trades_returns_trades() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let trades = client.get_trades(GetTradesParams::default()).await.unwrap();
 
@@ -327,7 +320,7 @@ async fn test_get_trades_returns_trades() {
 async fn test_get_balance_allowance_returns_data() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let balance = client
         .get_balance_allowance(GetBalanceAllowanceParams::default())
@@ -346,7 +339,7 @@ async fn test_get_balance_allowance_returns_data() {
 async fn test_cancel_order_sends_order_id_in_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 
     client.cancel_order(order_id).await.unwrap();
@@ -361,7 +354,7 @@ async fn test_cancel_order_sends_order_id_in_body() {
 async fn test_cancel_orders_sends_ids_array() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let id1 = "0x1111111111111111111111111111111111111111111111111111111111111111";
     let id2 = "0x2222222222222222222222222222222222222222222222222222222222222222";
 
@@ -379,7 +372,7 @@ async fn test_cancel_orders_sends_ids_array() {
 async fn test_cancel_all_sends_no_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     client.cancel_all().await.unwrap();
 
@@ -393,7 +386,7 @@ async fn test_cancel_all_sends_no_body() {
 async fn test_cancel_market_orders_sends_market_param() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
 
     let params = CancelMarketOrdersParams {
@@ -419,7 +412,7 @@ async fn test_cancel_market_orders_sends_market_param() {
 async fn test_authenticated_requests_include_poly_headers() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -455,7 +448,7 @@ async fn test_rate_limit_returns_error() {
     let state = TestServerState::default();
     state.rate_limit_after.store(2, Ordering::Relaxed);
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     assert!(client.get_orders(GetOrdersParams::default()).await.is_ok());
     assert!(client.get_orders(GetOrdersParams::default()).await.is_ok());
@@ -516,7 +509,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
     state.orders_pages.lock().await.push_back(page2);
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -536,7 +529,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
 async fn test_post_order_sends_order_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let order = load_json("http_signed_order.json");
     let order: PolymarketOrder = serde_json::from_value(order).unwrap();
@@ -563,7 +556,7 @@ async fn test_get_orders_with_caller_provided_cursor_not_overwritten() {
 
     // The server returns a single page ending with LTE= from the default handler
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     // Pass an explicit cursor; should NOT be overwritten with MA==
     let params = GetOrdersParams {
@@ -584,7 +577,7 @@ async fn test_get_gamma_markets_bare_array_response() {
     *state.gamma_response.lock().await = Some(json!([gamma_market]));
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_client_with_gamma(&addr);
+    let client = create_gamma_client(&addr);
 
     let markets = client
         .get_gamma_markets(GetGammaMarketsParams::default())
@@ -603,7 +596,7 @@ async fn test_get_gamma_markets_wrapped_data_response() {
     *state.gamma_response.lock().await = Some(json!({"data": [gamma_market]}));
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_client_with_gamma(&addr);
+    let client = create_gamma_client(&addr);
 
     let markets = client
         .get_gamma_markets(GetGammaMarketsParams::default())

@@ -15,36 +15,26 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
+use std::{collections::HashMap, result::Result as StdResult, str::from_utf8};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
 
 use crate::{
-    common::{
-        credential::Credential,
-        enums::PolymarketOrderType,
-        urls::{clob_http_url, gamma_api_url},
-    },
+    common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
     http::{
         error::{Error, Result},
-        models::{
-            GammaMarket, PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport,
-            TickSizeResponse,
-        },
-        parse::{create_instrument_from_def, parse_gamma_market},
+        models::{PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport, TickSizeResponse},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
-            GetBalanceAllowanceParams, GetGammaMarketsParams, GetOrdersParams, GetTradesParams,
-            OrderResponse, PaginatedResponse,
+            GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams, OrderResponse,
+            PaginatedResponse,
         },
-        rate_limits::POLYMARKET_REST_QUOTA,
+        rate_limits::POLYMARKET_CLOB_REST_QUOTA,
     },
 };
 
@@ -75,64 +65,30 @@ struct CancelOrderBody<'a> {
     order_id: &'a str,
 }
 
-/// Provides a raw HTTP client for Polymarket CLOB REST API operations.
+/// Provides an authenticated HTTP client for the Polymarket CLOB REST API.
 ///
 /// Handles HTTP transport, L2 HMAC-SHA256 auth signing, pagination, and raw
 /// API calls that closely match Polymarket endpoint specifications.
+/// Credential is always present — the CLOB API requires authentication.
 #[derive(Debug, Clone)]
-pub struct PolymarketRawHttpClient {
+pub struct PolymarketClobHttpClient {
     client: HttpClient,
     base_url: String,
-    gamma_base_url: String,
-    credential: Option<Credential>,
-    address: Option<String>,
+    credential: Credential,
+    address: String,
     clock: &'static AtomicTime,
 }
 
-impl PolymarketRawHttpClient {
-    /// Creates a new unauthenticated [`PolymarketRawHttpClient`].
+impl PolymarketClobHttpClient {
+    /// Creates a new authenticated [`PolymarketClobHttpClient`].
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
     pub fn new(
-        base_url: Option<String>,
-        gamma_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-    ) -> StdResult<Self, HttpClientError> {
-        Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*POLYMARKET_REST_QUOTA),
-                timeout_secs,
-                None,
-            )?,
-            base_url: base_url
-                .unwrap_or_else(|| clob_http_url().to_string())
-                .trim_end_matches('/')
-                .to_string(),
-            gamma_base_url: gamma_base_url
-                .unwrap_or_else(|| gamma_api_url().to_string())
-                .trim_end_matches('/')
-                .to_string(),
-            credential: None,
-            address: None,
-            clock: get_atomic_clock_realtime(),
-        })
-    }
-
-    /// Creates a new authenticated [`PolymarketRawHttpClient`] with L2 credentials.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP client cannot be created.
-    pub fn with_credential(
         credential: Credential,
         address: String,
         base_url: Option<String>,
-        gamma_base_url: Option<String>,
         timeout_secs: Option<u64>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
@@ -140,7 +96,7 @@ impl PolymarketRawHttpClient {
                 Self::default_headers(),
                 vec![],
                 vec![],
-                Some(*POLYMARKET_REST_QUOTA),
+                Some(*POLYMARKET_CLOB_REST_QUOTA),
                 timeout_secs,
                 None,
             )?,
@@ -148,12 +104,8 @@ impl PolymarketRawHttpClient {
                 .unwrap_or_else(|| clob_http_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
-            gamma_base_url: gamma_base_url
-                .unwrap_or_else(|| gamma_api_url().to_string())
-                .trim_end_matches('/')
-                .to_string(),
-            credential: Some(credential),
-            address: Some(address),
+            credential,
+            address,
             clock: get_atomic_clock_realtime(),
         })
     }
@@ -169,39 +121,27 @@ impl PolymarketRawHttpClient {
         format!("{}{path}", self.base_url)
     }
 
-    fn gamma_url(&self, path: &str) -> String {
-        format!("{}{path}", self.gamma_base_url)
-    }
-
     fn timestamp(&self) -> String {
         (self.clock.get_time_ns().as_u64() / 1_000_000_000).to_string()
     }
 
-    fn auth_headers(
-        &self,
-        method: &str,
-        path: &str,
-        body: &str,
-    ) -> Result<HashMap<String, String>> {
-        let cred = self
-            .credential
-            .as_ref()
-            .ok_or_else(|| Error::auth("No credential configured"))?;
-        let address = self
-            .address
-            .as_ref()
-            .ok_or_else(|| Error::auth("No address configured"))?;
-
+    fn auth_headers(&self, method: &str, path: &str, body: &str) -> HashMap<String, String> {
         let timestamp = self.timestamp();
-        let signature = cred.sign(&timestamp, method, path, body);
+        let signature = self.credential.sign(&timestamp, method, path, body);
 
-        Ok(HashMap::from([
-            ("POLY_ADDRESS".to_string(), address.clone()),
+        HashMap::from([
+            ("POLY_ADDRESS".to_string(), self.address.clone()),
             ("POLY_SIGNATURE".to_string(), signature),
             ("POLY_TIMESTAMP".to_string(), timestamp),
-            ("POLY_API_KEY".to_string(), cred.api_key().to_string()),
-            ("POLY_PASSPHRASE".to_string(), cred.passphrase().to_string()),
-        ]))
+            (
+                "POLY_API_KEY".to_string(),
+                self.credential.api_key().to_string(),
+            ),
+            (
+                "POLY_PASSPHRASE".to_string(),
+                self.credential.passphrase().to_string(),
+            ),
+        ])
     }
 
     async fn send_get<P: Serialize, T: DeserializeOwned>(
@@ -211,7 +151,7 @@ impl PolymarketRawHttpClient {
         auth: bool,
     ) -> Result<T> {
         let headers = if auth {
-            Some(self.auth_headers("GET", path, "")?)
+            Some(self.auth_headers("GET", path, ""))
         } else {
             None
         };
@@ -235,7 +175,7 @@ impl PolymarketRawHttpClient {
     async fn send_post<T: DeserializeOwned>(&self, path: &str, body_bytes: Vec<u8>) -> Result<T> {
         let body_str =
             from_utf8(&body_bytes).map_err(|e| Error::decode(format!("UTF-8 error: {e}")))?;
-        let headers = Some(self.auth_headers("POST", path, body_str)?);
+        let headers = Some(self.auth_headers("POST", path, body_str));
         let url = self.url(path);
         let response = self
             .client
@@ -271,7 +211,7 @@ impl PolymarketRawHttpClient {
             .map(|b| from_utf8(b).map_err(|e| Error::decode(format!("UTF-8 error: {e}"))))
             .transpose()?
             .unwrap_or("");
-        let headers = Some(self.auth_headers("DELETE", path, body_str)?);
+        let headers = Some(self.auth_headers("DELETE", path, body_str));
         let url = self.url(path);
         let response = self
             .client
@@ -353,12 +293,7 @@ impl PolymarketRawHttpClient {
         order_type: PolymarketOrderType,
         post_only: bool,
     ) -> Result<OrderResponse> {
-        let owner = self
-            .credential
-            .as_ref()
-            .ok_or_else(|| Error::auth("No credential configured"))?
-            .api_key()
-            .to_string();
+        let owner = self.credential.api_key().to_string();
         let body = PostOrderBody {
             order,
             owner: &owner,
@@ -376,12 +311,7 @@ impl PolymarketRawHttpClient {
         &self,
         orders: &[(&PolymarketOrder, PolymarketOrderType, bool)],
     ) -> Result<Vec<OrderResponse>> {
-        let owner = self
-            .credential
-            .as_ref()
-            .ok_or_else(|| Error::auth("No credential configured"))?
-            .api_key()
-            .to_string();
+        let owner = self.credential.api_key().to_string();
         let entries: Vec<PostOrderBody<'_>> = orders
             .iter()
             .map(|(order, order_type, post_only)| PostOrderBody {
@@ -423,165 +353,9 @@ impl PolymarketRawHttpClient {
             .await
     }
 
-    async fn send_gamma_get<P: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        params: Option<&P>,
-    ) -> Result<T> {
-        let url = self.gamma_url(path);
-        let response = self
-            .client
-            .request_with_params(Method::GET, url, params, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
-    }
-
-    /// Fetches markets from the Gamma API.
-    ///
-    /// Handles both bare array and `{"data": [...]}` response schemas.
-    pub async fn get_gamma_markets(
-        &self,
-        params: GetGammaMarketsParams,
-    ) -> Result<Vec<GammaMarket>> {
-        let value: Value = self.send_gamma_get("/markets", Some(&params)).await?;
-
-        let array = match value {
-            Value::Array(_) => value,
-            Value::Object(ref map) if map.contains_key("data") => {
-                map.get("data").cloned().unwrap_or(Value::Array(vec![]))
-            }
-            _ => {
-                return Err(Error::decode(
-                    "Unrecognized Gamma markets response schema".to_string(),
-                ));
-            }
-        };
-
-        serde_json::from_value(array).map_err(Error::Serde)
-    }
-
-    /// Fetches a single market by ID from the Gamma API.
-    pub async fn get_gamma_market(&self, market_id: &str) -> Result<GammaMarket> {
-        let path = format!("/markets/{market_id}");
-        self.send_gamma_get::<(), _>(&path, None::<&()>).await
-    }
-
     /// Fetches the tick size for a token from the CLOB API.
     pub async fn get_tick_size(&self, token_id: &str) -> Result<TickSizeResponse> {
         let params = [("token_id", token_id)];
         self.send_get("/tick-size", Some(&params), false).await
-    }
-}
-
-/// Provides a domain HTTP client for Polymarket instrument fetching.
-///
-/// Wraps [`PolymarketRawHttpClient`] with instrument parsing: fetch from
-/// the Gamma API and parse into Nautilus types. Stateless with respect to
-/// instrument storage; caching is handled by the instrument provider.
-#[derive(Debug, Clone)]
-pub struct PolymarketHttpClient {
-    inner: Arc<PolymarketRawHttpClient>,
-    clock: &'static AtomicTime,
-}
-
-impl PolymarketHttpClient {
-    /// Creates a new [`PolymarketHttpClient`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the underlying HTTP client cannot be created.
-    pub fn new(
-        base_url: Option<String>,
-        gamma_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-    ) -> StdResult<Self, HttpClientError> {
-        Ok(Self {
-            inner: Arc::new(PolymarketRawHttpClient::new(
-                base_url,
-                gamma_base_url,
-                timeout_secs,
-            )?),
-            clock: get_atomic_clock_realtime(),
-        })
-    }
-
-    /// Wraps an existing raw client.
-    #[must_use]
-    pub fn from_raw(raw_client: Arc<PolymarketRawHttpClient>) -> Self {
-        Self {
-            inner: raw_client,
-            clock: get_atomic_clock_realtime(),
-        }
-    }
-
-    // Fetches all active markets from the Gamma API, paginating automatically
-    async fn fetch_all_gamma_markets(&self) -> anyhow::Result<Vec<GammaMarket>> {
-        const PAGE_LIMIT: u32 = 500;
-        let mut all_markets = Vec::new();
-        let mut offset: u32 = 0;
-
-        loop {
-            let params = GetGammaMarketsParams {
-                active: Some(true),
-                closed: Some(false),
-                limit: Some(PAGE_LIMIT),
-                offset: Some(offset),
-                ..Default::default()
-            };
-
-            let page = self.inner.get_gamma_markets(params).await?;
-            let page_len = page.len() as u32;
-            all_markets.extend(page);
-
-            if page_len < PAGE_LIMIT {
-                break;
-            }
-            offset += PAGE_LIMIT;
-        }
-
-        Ok(all_markets)
-    }
-
-    /// Fetches instruments from the Gamma API and returns Nautilus domain types.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request or parsing fails.
-    pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let markets = self.fetch_all_gamma_markets().await?;
-        let ts_init = self.clock.get_time_ns();
-
-        let mut instruments = Vec::new();
-        for market in &markets {
-            match parse_gamma_market(market) {
-                Ok(defs) => {
-                    for def in defs {
-                        match create_instrument_from_def(&def, ts_init) {
-                            Ok(instrument) => instruments.push(instrument),
-                            Err(e) => log::warn!("Failed to create instrument: {e}"),
-                        }
-                    }
-                }
-                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-            }
-        }
-
-        log::info!("Parsed {} instruments from Gamma API", instruments.len());
-        Ok(instruments)
-    }
-
-    /// Returns a reference to the underlying raw HTTP client.
-    #[must_use]
-    pub fn inner(&self) -> &Arc<PolymarketRawHttpClient> {
-        &self.inner
     }
 }

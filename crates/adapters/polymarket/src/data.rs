@@ -49,7 +49,7 @@ use ustr::Ustr;
 use crate::{
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
-    http::client::{PolymarketHttpClient, PolymarketRawHttpClient},
+    http::gamma::PolymarketGammaHttpClient,
     providers::PolymarketInstrumentProvider,
     websocket::{
         client::PolymarketWebSocketClient,
@@ -102,13 +102,12 @@ impl PolymarketDataClient {
     pub fn new(
         client_id: ClientId,
         config: PolymarketDataClientConfig,
-        http_client: PolymarketRawHttpClient,
+        gamma_client: PolymarketGammaHttpClient,
         ws_client: PolymarketWebSocketClient,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let domain_client = PolymarketHttpClient::from_raw(Arc::new(http_client));
-        let provider = PolymarketInstrumentProvider::new(domain_client);
+        let provider = PolymarketInstrumentProvider::new(gamma_client);
 
         Self {
             clock,

@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP client implementation for the Polymarket CLOB API.
+//! HTTP client implementation for the Polymarket CLOB and Gamma APIs.
 
-pub mod client;
+pub mod clob;
 pub mod error;
+pub mod gamma;
 pub mod models;
 pub mod parse;
 pub mod query;
