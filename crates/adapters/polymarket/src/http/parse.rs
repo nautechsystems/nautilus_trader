@@ -128,9 +128,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
     let mut defs = Vec::with_capacity(2);
 
     for (token_id, outcome_label) in token_ids.iter().zip(outcomes.iter()) {
-        let outcome: PolymarketOutcome = outcome_label
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Unknown outcome label '{outcome_label}'"))?;
+        let outcome = PolymarketOutcome::from(outcome_label.as_str());
 
         let symbol_str = format!("{}-{token_id}", market.condition_id);
 
@@ -188,11 +186,6 @@ pub fn create_instrument_from_def(
     let min_price = Some(Price::from(MIN_PRICE));
     let min_quantity = def.min_size.map(|s| Quantity::from(s.to_string()));
 
-    let outcome_str = match def.outcome {
-        PolymarketOutcome::Yes => "Yes",
-        PolymarketOutcome::No => "No",
-    };
-
     let info: Params = serde_json::from_value(build_info_json(def))?;
 
     let binary_option = BinaryOption::new_checked(
@@ -206,7 +199,7 @@ pub fn create_instrument_from_def(
         6, // size_precision: USDC.e increments
         price_increment,
         size_increment,
-        Some(Ustr::from(outcome_str)),
+        Some(def.outcome.inner()),
         Some(Ustr::from(def.question.as_str())),
         None, // max_quantity
         min_quantity,
@@ -315,8 +308,8 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].outcome, PolymarketOutcome::Yes);
-        assert_eq!(defs[1].outcome, PolymarketOutcome::No);
+        assert_eq!(defs[0].outcome, PolymarketOutcome::yes());
+        assert_eq!(defs[1].outcome, PolymarketOutcome::no());
     }
 
     #[rstest]
@@ -380,23 +373,19 @@ mod tests {
 
         let defs = parse_gamma_market(&market).unwrap();
 
-        assert_eq!(defs[0].outcome, PolymarketOutcome::No);
-        assert_eq!(defs[1].outcome, PolymarketOutcome::Yes);
+        assert_eq!(defs[0].outcome, PolymarketOutcome::no());
+        assert_eq!(defs[1].outcome, PolymarketOutcome::yes());
     }
 
     #[rstest]
-    fn test_parse_gamma_market_unknown_outcome_label_errors() {
+    fn test_parse_gamma_market_accepts_arbitrary_outcome_label() {
         let mut market = load_gamma_market("gamma_market.json");
         market.outcomes = r#"["Maybe", "No"]"#.to_string();
 
-        let result = parse_gamma_market(&market);
+        let defs = parse_gamma_market(&market).unwrap();
 
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("Maybe"),
-            "Error should mention bad label: {err}"
-        );
+        assert_eq!(defs[0].outcome, PolymarketOutcome::from("Maybe"));
+        assert_eq!(defs[1].outcome, PolymarketOutcome::no());
     }
 
     #[rstest]
