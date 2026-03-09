@@ -502,7 +502,8 @@ def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instrum
 def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     readme = _read(_repo_root() / "deploy/tokenmm/README.md")
 
-    assert "current 7-node PLUME TokenMM stack" in readme
+    assert "production deployment root for the TokenMM stack" in readme
+    assert "current 7-node PLUME TokenMM stack" not in readme
     assert "- `plumeusdt_binance_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_spot_makerv3`" in readme
@@ -648,6 +649,7 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "Production deploy docs default to paper/no-exec smoke first." in examples_readme
     assert "`deploy/tokenmm/README.md`" in examples_readme
     assert "Production management lives behind Pulse at `/pulse`." in examples_readme
+    assert "flux.runners.tokenmm.run_portfolio" in examples_readme
     assert "deploy/makerv3" not in examples_readme
     assert "flux.runners.makerv3" not in examples_readme
 

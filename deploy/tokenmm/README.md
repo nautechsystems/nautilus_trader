@@ -1,6 +1,6 @@
 # TokenMM production deploy config
 
-This directory is the production deployment root for the current 7-node PLUME TokenMM stack.
+This directory is the production deployment root for the TokenMM stack.
 
 Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 
@@ -35,10 +35,10 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 
 ## Inventory and balances model
 
-This section defines the target TokenMM production contract for the rollout in
-progress on March 7, 2026. Treat it as the intended end state until Tasks 4-6 in
-`docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md` land and
-the remaining broad verification reds are cleared.
+This section defines the stable TokenMM production contract for the current
+runtime surface. Historical rollout sequencing lives in
+`docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md`, but the
+semantics documented here are the current source of truth.
 
 - `Signal` mirrors exact per-strategy state from MakerV3.
 - `local_qty_base` in strategy state is the canonical maker-leg base exposure for that strategy.
