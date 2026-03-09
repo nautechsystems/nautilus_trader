@@ -6,7 +6,7 @@
 - Shared host base URL: `http://13.213.194.42:5022`
 - Backup root: `/root/flux-lp-rollout-backups/20260309T170510Z-generic-extra`
 - Final successful cutover window: `2026-03-09 17:05-17:08 UTC`
-- Final deployed worktree: `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize` at commit `2a9c95fac`
+- Final deployed worktree: `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize` tracking the PR branch head after the docs-only closeout commits
 
 ## Verification Evidence
 
