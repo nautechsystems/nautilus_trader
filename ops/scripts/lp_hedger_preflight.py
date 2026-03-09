@@ -5,6 +5,10 @@ import argparse
 import configparser
 import ipaddress
 import json
+import os
+import pwd
+import grp
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -66,6 +70,11 @@ def _parse_args() -> argparse.Namespace:
         "--json",
         action="store_true",
         help="Emit machine-readable JSON instead of a human-readable summary.",
+    )
+    parser.add_argument(
+        "--service-user",
+        default="ubuntu",
+        help="System user that must be able to read lp-system.ini at runtime.",
     )
     return parser.parse_args()
 
@@ -142,6 +151,45 @@ def _validate_system_ini(path: Path, *, errors: list[str]) -> None:
         errors.append(f"lp-system.ini is missing required sections: {missing_sections}")
 
 
+def _validate_service_user_readable(
+    path: Path,
+    *,
+    service_user: str,
+    errors: list[str],
+) -> None:
+    try:
+        account = pwd.getpwnam(service_user)
+    except KeyError:
+        errors.append(f"service user does not exist: {service_user}")
+        return
+
+    try:
+        metadata = path.stat()
+    except OSError as exc:
+        errors.append(f"lp-system.ini metadata is not readable: {path} ({exc})")
+        return
+
+    mode = metadata.st_mode
+    user_group_ids = {account.pw_gid}
+    for group in grp.getgrall():
+        if service_user in group.gr_mem:
+            user_group_ids.add(group.gr_gid)
+
+    can_read = False
+    if metadata.st_uid == account.pw_uid and mode & stat.S_IRUSR:
+        can_read = True
+    elif metadata.st_gid in user_group_ids and mode & stat.S_IRGRP:
+        can_read = True
+    elif mode & stat.S_IROTH:
+        can_read = True
+
+    if not can_read:
+        errors.append(
+            "lp-system.ini must be readable by the Flux service user "
+            f"{service_user!r}: {path}",
+        )
+
+
 def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -164,6 +212,11 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     )
     if args.system_ini.is_file():
         _validate_system_ini(args.system_ini, errors=errors)
+        _validate_service_user_readable(
+            args.system_ini,
+            service_user=str(args.service_user).strip(),
+            errors=errors,
+        )
 
     return {
         "ok": not errors,
@@ -178,6 +231,7 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
             "expected_lp_api_port": EXPECTED_LP_API_PORT,
             "expected_public_port": EXPECTED_PUBLIC_PORT,
             "lp_api_backend_url": common_env_values.get("LP_API_BACKEND_URL"),
+            "service_user": str(args.service_user).strip(),
         },
     }
 
@@ -189,6 +243,7 @@ def _print_human_report(report: dict[str, Any]) -> None:
     print(f"  lp-system.ini: {report['checks']['system_ini']}")
     print(f"  Band1 config: {report['checks']['band1_config']}")
     print(f"  Band2 config: {report['checks']['band2_config']}")
+    print(f"  service user: {report['checks']['service_user']}")
     print(f"  LP_API_BACKEND_URL: {report['checks']['lp_api_backend_url'] or '<missing>'}")
     if report["warnings"]:
         print("Warnings:")

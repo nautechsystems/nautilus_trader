@@ -21,22 +21,26 @@ def _run_preflight(
     system_ini: Path,
     band1_config: Path,
     band2_config: Path,
+    service_user: str | None = None,
 ) -> dict[str, Any]:
     script = _repo_root() / "ops/scripts/lp_hedger_preflight.py"
+    command = [
+        sys.executable,
+        str(script),
+        "--json",
+        "--common-env",
+        str(common_env),
+        "--system-ini",
+        str(system_ini),
+        "--band1-config",
+        str(band1_config),
+        "--band2-config",
+        str(band2_config),
+    ]
+    if service_user is not None:
+        command.extend(["--service-user", service_user])
     result = subprocess.run(  # noqa: S603
-        [
-            sys.executable,
-            str(script),
-            "--json",
-            "--common-env",
-            str(common_env),
-            "--system-ini",
-            str(system_ini),
-            "--band1-config",
-            str(band1_config),
-            "--band2-config",
-            str(band2_config),
-        ],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -124,6 +128,49 @@ def test_lp_preflight_accepts_band1_band2_config_contract(tmp_path: Path) -> Non
 
     assert result["ok"] is True
     assert result["errors"] == []
+
+
+def test_lp_preflight_requires_system_ini_readable_by_service_user(tmp_path: Path) -> None:
+    common_env = tmp_path / "common.env"
+    common_env.write_text("LP_API_BACKEND_URL=http://127.0.0.1:5025\n", encoding="utf-8")
+    system_ini = tmp_path / "lp-system.ini"
+    system_ini.write_text(
+        "\n".join(
+            [
+                "[redis]",
+                "url=redis://example",
+                "[plume]",
+                "rpc_url=http://rpc",
+                "[bybit]",
+                "api_key=key",
+                "secret=secret",
+                "[bybit_hedger]",
+                "api_key=key",
+                "secret=secret",
+                "[bybit_hedger_band2]",
+                "api_key=key",
+                "secret=secret",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    system_ini.chmod(0o600)
+    band1_config = tmp_path / "band1.ini"
+    band1_config.write_text("[identity]\nid=band1\n", encoding="utf-8")
+    band2_config = tmp_path / "band2.ini"
+    band2_config.write_text("[identity]\nid=band2\n", encoding="utf-8")
+
+    result = _run_preflight(
+        common_env=common_env,
+        system_ini=system_ini,
+        band1_config=band1_config,
+        band2_config=band2_config,
+        service_user="nobody",
+    )
+
+    assert result["ok"] is False
+    assert any("service user" in error.lower() for error in result["errors"])
 
 
 def test_lp_systemd_contract_documents_shared_host_env_requirements() -> None:

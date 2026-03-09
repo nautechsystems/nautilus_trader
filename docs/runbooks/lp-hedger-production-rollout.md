@@ -35,6 +35,7 @@ Required shared-host values:
 
 - `LP_API_BACKEND_URL=http://127.0.0.1:5025`
 - `LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini`
+- `/etc/flux/lp-system.ini` must be readable by the Flux service user `ubuntu`, for example `root:ubuntu` with mode `0640`
 
 ## Operator Surface Contract
 
@@ -62,8 +63,9 @@ The preflight must report `ok: true` before operators proceed. It checks:
 
 1. `/etc/flux/common.env` points the public host at `LP_API_BACKEND_URL=http://127.0.0.1:5025`.
 2. `/etc/flux/lp-system.ini` contains `[redis]`, `[plume]`, `[bybit]`, `[bybit_hedger]`, and `[bybit_hedger_band2]`.
-3. The Band1 and Band2 hedger INI files exist and are readable.
-4. The shared public host remains on `:5022`, and the LP API remains loopback-bound on `:5025`.
+3. `/etc/flux/lp-system.ini` is readable by the Flux service user `ubuntu`.
+4. The Band1 and Band2 hedger INI files exist and are readable.
+5. The shared public host remains on `:5022`, and the LP API remains loopback-bound on `:5025`.
 
 ## Install And Restart Order
 
@@ -75,7 +77,7 @@ The preflight must report `ok: true` before operators proceed. It checks:
    ```
 
 2. Install or refresh systemd assets with `sudo ops/scripts/deploy/install_lp_systemd.sh`.
-3. Update `/etc/flux/common.env` and `/etc/flux/lp-system.ini`.
+3. Update `/etc/flux/common.env` and `/etc/flux/lp-system.ini`, then ensure `/etc/flux/lp-system.ini` is readable by `ubuntu` (for example `sudo chown root:ubuntu /etc/flux/lp-system.ini && sudo chmod 0640 /etc/flux/lp-system.ini`).
 4. Update the per-service env files for `lp-api`, Band1, and Band2.
 5. Run `sudo systemctl daemon-reload`.
 6. Restart the shared public host so it reloads `LP_API_BACKEND_URL` from `/etc/flux/common.env`.

@@ -40,6 +40,8 @@ pnpm --dir pulse-ui build
 sudo ops/scripts/deploy/install_lp_systemd.sh
 sudoedit /etc/flux/common.env
 sudoedit /etc/flux/lp-system.ini
+sudo chown root:ubuntu /etc/flux/lp-system.ini
+sudo chmod 0640 /etc/flux/lp-system.ini
 sudo systemctl daemon-reload
 sudo systemctl restart flux@tokenmm-api.service
 sudo systemctl start flux-lp.target
@@ -65,7 +67,7 @@ Run the host preflight before starting `flux-lp.target`:
 python3 ops/scripts/lp_hedger_preflight.py --json
 ```
 
-`LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini` is the operator-managed system INI for shared LP runtime settings. It should provide the same chainsaw sections:
+`LP_SYSTEM_CONFIG=/etc/flux/lp-system.ini` is the operator-managed system INI for shared LP runtime settings. It must remain readable by the Flux service user `ubuntu` (for example `root:ubuntu` with mode `0640`). It should provide the same chainsaw sections:
 
 - `[redis]`
 - `[plume]`
