@@ -93,6 +93,26 @@ Then confirm the Pulse-managed service set shows healthy jobs for:
 - `service-eth-plume-lp-hedger`
 - `service-eth-plume-lp-hedger-band2`
 
+Run the scripted rollout check and record the result in `docs/reviews/2026-03-09-lp-hedger-prod-rollout.md`:
+
+```bash
+bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022
+```
+
+## Canary And Go/No-Go
+
+Use Band1 and Band2 on `/lp` as the canary surface before declaring the rollout complete.
+
+Go/no-go gates:
+
+1. `python3 ops/scripts/lp_hedger_preflight.py --json` reports `ok: true`.
+2. `bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022` succeeds.
+3. `/lp` shows Band1 and Band2 with the expected running/stopped, dry-run, and hedging-enabled visibility plus restart, enable/disable, config, geometry, threshold, and clear controls.
+4. Pulse reports healthy jobs for `lp-api`, `service-eth-plume-lp-hedger`, and `service-eth-plume-lp-hedger-band2`.
+5. Any remaining GUI deltas are only the documented monorepo differences in `fluxboard/docs/lp_contract.md`.
+
+If any gate fails, the decision is no-go and operators should execute rollback immediately instead of widening the rollout.
+
 ## Rollback
 
 Rollback keeps the user-facing route contract unchanged:
@@ -101,5 +121,7 @@ Rollback keeps the user-facing route contract unchanged:
 2. Restore the prior `/etc/flux/common.env`, `/etc/flux/lp-system.ini`, and per-service env files.
 3. Restart the shared public host to restore the previous proxy target.
 4. Verify `/lp`, `/api/v1/hedgers/*`, and Pulse behavior against the prior known-good state.
+
+Rollback trigger conditions include any failed scripted rollout check, missing `/lp` operator controls, unhealthy Pulse jobs for Band1/Band2, or any unexpected change to chainsaw-compatible hedger IDs, job IDs, Redis key families, or payload field names.
 
 If the monorepo rollout cannot satisfy the contract quickly, operators may fall back to the prior Chainsaw-managed LP deployment while preserving the same hedger IDs, job IDs, Redis key families, and payload field names.

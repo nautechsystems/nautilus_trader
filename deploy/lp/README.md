@@ -79,6 +79,14 @@ Primary operator surfaces:
 - `POST /api/v1/hedgers/<hedger_id>/job`
 - `http://<host>:5022/pulse`
 
+Post-cutover rollout check:
+
+```bash
+bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022
+```
+
+Capture the go/no-go decision, restart times, smoke evidence, residual risks, and rollback note in `docs/reviews/2026-03-09-lp-hedger-prod-rollout.md`.
+
 For the full production cutover and rollback procedure, follow `docs/runbooks/lp-hedger-production-rollout.md`.
 
 ## Local smoke only

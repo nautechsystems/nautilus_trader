@@ -139,3 +139,31 @@ def test_lp_readme_documents_shared_host_restart_order() -> None:
     assert "/etc/flux/common.env" in text
     assert "flux@tokenmm-api.service" in text
     assert "flux-lp.target" in text
+
+
+def test_lp_rollout_check_script_covers_ui_api_and_pulse() -> None:
+    script = _read("ops/scripts/deploy/check_lp_rollout.sh")
+
+    assert "/lp" in script
+    assert "/api/v1/hedgers/instances" in script
+    assert "/api/v1/hedgers/eth_plume_lp" in script
+    assert "/api/pulse/jobs" in script
+
+
+def test_lp_prod_runbook_documents_go_no_go_and_rollback() -> None:
+    text = _read("docs/runbooks/lp-hedger-production-rollout.md")
+
+    assert "go/no-go" in text.lower()
+    assert "rollback" in text.lower()
+    assert "chainsaw" in text.lower()
+
+
+def test_lp_rollout_review_template_captures_restart_times_and_residual_risks() -> None:
+    text = _read("docs/reviews/2026-03-09-lp-hedger-prod-rollout.md")
+
+    assert "restart" in text.lower()
+    assert "residual risks" in text.lower()
+    assert "/lp" in text
+    assert "/api/v1/hedgers/instances" in text
+    assert "/api/pulse/jobs" in text
+    assert "rollback" in text.lower()
