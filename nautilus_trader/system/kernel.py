@@ -76,7 +76,7 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog import BaseDataCatalog
 from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -505,17 +505,12 @@ class NautilusKernel:
             self._setup_streaming(config=config.streaming)
 
         # Set up data catalog
-        self._catalogs: dict[str, ParquetDataCatalog] = {}
+        self._catalogs: dict[str, BaseDataCatalog] = {}
 
         if config.catalogs:
             catalog_name_index = 0
             for catalog_config in config.catalogs:
-                catalog = ParquetDataCatalog(
-                    path=catalog_config.path,
-                    fs_protocol=catalog_config.fs_protocol,
-                    fs_storage_options=catalog_config.fs_storage_options,
-                    fs_rust_storage_options=catalog_config.fs_rust_storage_options,
-                )
+                catalog = catalog_config.as_catalog()
                 used_catalog_name = catalog_config.name
 
                 if used_catalog_name is None:
@@ -949,13 +944,13 @@ class NautilusKernel:
         return self._writer
 
     @property
-    def catalogs(self) -> dict[str, ParquetDataCatalog]:
+    def catalogs(self) -> dict[str, BaseDataCatalog]:
         """
         Return the kernel's list of data catalogs.
 
         Returns
         -------
-        dict[str, ParquetDataCatalog]
+        dict[str, BaseDataCatalog]
 
         """
         return self._catalogs

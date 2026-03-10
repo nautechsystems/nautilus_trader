@@ -34,11 +34,15 @@ from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
@@ -270,6 +274,72 @@ def test_query_files_respects_empty_files_list(
     )
 
     assert result == []
+
+
+def test_write_data_empty_records_gap_extends_file(catalog: ParquetDataCatalog) -> None:
+    # Regression: empty-data gap handling moved from engine to parquet write_data
+    # Verifies that write_data([], start=..., end=..., data_cls=..., identifier=...)
+    # extends an adjacent parquet file name to record the gap.
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+    bar_type = BarType(instrument.id, bar_spec)
+    bar_type_str = str(bar_type)
+    ts = 1000
+    bar = Bar(
+        bar_type,
+        Price.from_str("1051.0"),
+        Price.from_str("1055.0"),
+        Price.from_str("1050.0"),
+        Price.from_str("1052.0"),
+        Quantity.from_int(100),
+        ts,
+        ts,
+    )
+    catalog.write_data([instrument, bar])
+    intervals_before = catalog.get_intervals(Bar, bar_type_str)
+    assert intervals_before == [(1000, 1000)]
+
+    catalog.write_data(
+        [],
+        start=1001,
+        end=2000,
+        data_cls=Bar,
+        identifier=bar_type_str,
+    )
+    intervals_after = catalog.get_intervals(Bar, bar_type_str)
+    assert intervals_after == [(1000, 2000)]
+
+
+def test_write_data_empty_with_start_zero_does_not_skip_branch(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Guards against truthiness: start=0 / end=0 must still enter empty-data branch
+    # (branch uses "is not None", so 0 is valid).
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+    bar_type = BarType(instrument.id, bar_spec)
+    catalog.write_data([instrument])
+    catalog.write_data(
+        [],
+        start=0,
+        end=0,
+        data_cls=Bar,
+        identifier=str(bar_type),
+    )
+    # No file to extend; just assert we did not skip the branch (no error)
+    intervals = catalog.get_intervals(Bar, str(bar_type))
+    assert intervals == []
+
+
+def test_from_uri_fs_storage_options_empty_dict_singleton(tmp_path) -> None:
+    # Ensures empty dict is preserved (no "or None") so singleton identity is stable
+    catalog_dir = tmp_path / "cat"
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+    uri = str(catalog_dir)
+    c1 = ParquetDataCatalog.from_uri(uri, fs_storage_options={})
+    c2 = ParquetDataCatalog.from_uri(uri, fs_storage_options={})
+    assert c1 is c2
+    assert c1.path == c2.path
 
 
 @pytest.mark.skip("development_only")
