@@ -54,7 +54,7 @@ use ustr::Ustr;
 use super::{
     enums::{BitmexWsAuthAction, BitmexWsAuthChannel, BitmexWsOperation, BitmexWsTopic},
     error::BitmexWsError,
-    handler::{FeedHandler, HandlerCommand},
+    handler::{BitmexWsFeedHandler, HandlerCommand},
     messages::{BitmexAuthentication, BitmexSubscription, BitmexWsMessage},
     parse::{is_index_symbol, topic_from_bar_spec},
 };
@@ -249,7 +249,7 @@ impl BitmexWebSocketClient {
         let cmd_tx_for_reconnect = cmd_tx.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
+            let mut handler = BitmexWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
                 raw_rx,

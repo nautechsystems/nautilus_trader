@@ -37,7 +37,7 @@ use nautilus_network::{
 };
 use ustr::Ustr;
 
-use super::handler::{FeedHandler, HandlerCommand};
+use super::handler::{AxMdWsFeedHandler, HandlerCommand};
 use crate::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::messages::AxDataWsMessage,
@@ -374,7 +374,7 @@ impl AxMdWebSocketClient {
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler =
-                FeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
+                AxMdWsFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
 
             while let Some(msg) = handler.next().await {
                 if matches!(msg, AxDataWsMessage::Reconnected) {

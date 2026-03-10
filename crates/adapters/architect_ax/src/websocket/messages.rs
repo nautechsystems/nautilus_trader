@@ -827,7 +827,7 @@ pub(crate) enum AxWsOrderResponse {
 
 /// Internal raw message from the Ax orders WebSocket.
 #[derive(Debug, Clone)]
-pub(crate) enum AxWsRawMessage {
+pub(crate) enum AxOrdersWsFrame {
     /// Error response message (has "rid" and "err").
     Error(AxWsOrderErrorResponse),
     /// Response message (has "rid" and "res").
@@ -1276,7 +1276,7 @@ mod tests {
     fn test_raw_message_error_variant() {
         let json = include_str!("../../test_data/ws_order_error_response.json");
         let msg = parse_order_message(json).unwrap();
-        assert!(matches!(msg, AxWsRawMessage::Error(_)));
+        assert!(matches!(msg, AxOrdersWsFrame::Error(_)));
     }
 
     #[rstest]
@@ -1285,7 +1285,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::List(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
         ));
     }
 
@@ -1295,7 +1295,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Event(ref e) if matches!(**e, AxWsOrderEvent::Acknowledged(_))
+            AxOrdersWsFrame::Event(ref e) if matches!(**e, AxWsOrderEvent::Acknowledged(_))
         ));
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::PlaceOrder(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::PlaceOrder(_))
         ));
     }
 
@@ -1315,7 +1315,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::CancelOrder(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::CancelOrder(_))
         ));
     }
 
@@ -1325,7 +1325,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::OpenOrders(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(_))
         ));
     }
 }

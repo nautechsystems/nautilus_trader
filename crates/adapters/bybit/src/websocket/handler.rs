@@ -48,9 +48,9 @@ pub enum HandlerCommand {
     SendText { payload: String },
 }
 
-pub(super) struct FeedHandler {
+pub(super) struct BybitWsFeedHandler {
     signal: Arc<AtomicBool>,
-    client: Option<WebSocketClient>,
+    inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     auth_tracker: AuthTracker,
@@ -58,8 +58,8 @@ pub(super) struct FeedHandler {
     retry_manager: RetryManager<BybitWsError>,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl BybitWsFeedHandler {
+    /// Creates a new [`BybitWsFeedHandler`] instance.
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -69,7 +69,7 @@ impl FeedHandler {
     ) -> Self {
         Self {
             signal,
-            client: None,
+            inner: None,
             cmd_rx,
             raw_rx,
             auth_tracker,
@@ -84,7 +84,7 @@ impl FeedHandler {
 
     /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> Result<(), BybitWsError> {
-        if let Some(client) = &self.client {
+        if let Some(client) = &self.inner {
             self.retry_manager
                 .execute_with_retry(
                     "websocket_send",
@@ -115,12 +115,12 @@ impl FeedHandler {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
                             log::debug!("WebSocketClient received by handler");
-                            self.client = Some(client);
+                            self.inner = Some(client);
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
 
-                            if let Some(client) = self.client.take() {
+                            if let Some(client) = self.inner.take() {
                                 client.disconnect().await;
                             }
                         }
@@ -174,7 +174,7 @@ impl FeedHandler {
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
 
-                        if let Some(client) = &self.client
+                        if let Some(client) = &self.inner
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
                             log::warn!("Failed to send pong frame: error={e}");
@@ -423,14 +423,14 @@ mod tests {
     use super::*;
     use crate::common::consts::BYBIT_WS_TOPIC_DELIMITER;
 
-    fn create_test_handler() -> FeedHandler {
+    fn create_test_handler() -> BybitWsFeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let auth_tracker = AuthTracker::new();
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
 
-        FeedHandler::new(signal, cmd_rx, raw_rx, auth_tracker, subscriptions)
+        BybitWsFeedHandler::new(signal, cmd_rx, raw_rx, auth_tracker, subscriptions)
     }
 
     #[rstest]

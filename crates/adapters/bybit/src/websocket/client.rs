@@ -68,7 +68,7 @@ use crate::{
         dispatch::PendingOperation,
         enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
-        handler::{FeedHandler, HandlerCommand},
+        handler::{BybitWsFeedHandler, HandlerCommand},
         messages::{
             BybitAuthRequest, BybitSubscription, BybitWsAmendOrderParams, BybitWsBatchCancelItem,
             BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs,
@@ -438,7 +438,7 @@ impl BybitWebSocketClient {
         let auth_tracker_for_handler = auth_tracker.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
+            let mut handler = BybitWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
                 raw_rx,

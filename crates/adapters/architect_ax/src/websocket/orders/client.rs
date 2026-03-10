@@ -47,7 +47,7 @@ use nautilus_network::{
 };
 use ustr::Ustr;
 
-use super::handler::{FeedHandler, HandlerCommand, WsOrderInfo};
+use super::handler::{AxOrdersWsFeedHandler, HandlerCommand, WsOrderInfo};
 use crate::{
     common::{
         consts::AX_NAUTILUS_TAG,
@@ -467,7 +467,7 @@ impl AxOrdersWebSocketClient {
         let cid_to_client_order_id = Arc::clone(&self.caches.cid_to_client_order_id);
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
+            let mut handler = AxOrdersWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
                 raw_rx,

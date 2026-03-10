@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 use super::{
     enums::{BitmexWsAuthAction, BitmexWsOperation},
     error::BitmexWsError,
-    messages::{BitmexHttpRequest, BitmexRawWsMessage, BitmexWsMessage},
+    messages::{BitmexHttpRequest, BitmexWsFrame, BitmexWsMessage},
 };
 
 /// Commands sent from the outer client to the inner message handler.
@@ -48,9 +48,9 @@ pub enum HandlerCommand {
     Unsubscribe { topics: Vec<String> },
 }
 
-pub(super) struct FeedHandler {
+pub(super) struct BitmexWsFeedHandler {
     signal: Arc<AtomicBool>,
-    client: Option<WebSocketClient>,
+    inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<BitmexWsMessage>,
@@ -59,8 +59,8 @@ pub(super) struct FeedHandler {
     retry_manager: RetryManager<BitmexWsError>,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl BitmexWsFeedHandler {
+    /// Creates a new [`BitmexWsFeedHandler`] instance.
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -71,7 +71,7 @@ impl FeedHandler {
     ) -> Self {
         Self {
             signal,
-            client: None,
+            inner: None,
             cmd_rx,
             raw_rx,
             out_tx,
@@ -91,7 +91,7 @@ impl FeedHandler {
 
     /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
-        if let Some(client) = &self.client {
+        if let Some(client) = &self.inner {
             self.retry_manager
                 .execute_with_retry(
                     "websocket_send",
@@ -120,12 +120,12 @@ impl FeedHandler {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
                             log::debug!("WebSocketClient received by handler");
-                            self.client = Some(client);
+                            self.inner = Some(client);
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
 
-                            if let Some(client) = self.client.take() {
+                            if let Some(client) = self.inner.take() {
                                 client.disconnect().await;
                             }
                         }
@@ -175,7 +175,7 @@ impl FeedHandler {
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
 
-                        if let Some(client) = &self.client
+                        if let Some(client) = &self.inner
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
                             log::warn!("Failed to send pong frame: {e}");
@@ -194,10 +194,10 @@ impl FeedHandler {
                     }
 
                     match event {
-                        BitmexRawWsMessage::Reconnected => {
+                        BitmexWsFrame::Reconnected => {
                             return Some(BitmexWsMessage::Reconnected);
                         }
-                        BitmexRawWsMessage::Subscription {
+                        BitmexWsFrame::Subscription {
                             success,
                             subscribe,
                             request,
@@ -212,10 +212,10 @@ impl FeedHandler {
                                 return Some(msg);
                             }
                         }
-                        BitmexRawWsMessage::Table(table_msg) => {
+                        BitmexWsFrame::Table(table_msg) => {
                             return Some(BitmexWsMessage::Table(table_msg));
                         }
-                        BitmexRawWsMessage::Welcome { .. } | BitmexRawWsMessage::Error { .. } => {}
+                        BitmexWsFrame::Welcome { .. } | BitmexWsFrame::Error { .. } => {}
                     }
                 }
 
@@ -228,12 +228,12 @@ impl FeedHandler {
         }
     }
 
-    fn parse_raw_message(msg: Message) -> Option<BitmexRawWsMessage> {
+    fn parse_raw_message(msg: Message) -> Option<BitmexWsFrame> {
         match msg {
             Message::Text(text) => {
                 if text == RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
-                    return Some(BitmexRawWsMessage::Reconnected);
+                    return Some(BitmexWsFrame::Reconnected);
                 }
 
                 log::trace!("Raw websocket message: {text}");
@@ -245,7 +245,7 @@ impl FeedHandler {
 
                 match serde_json::from_str(&text) {
                     Ok(msg) => match &msg {
-                        BitmexRawWsMessage::Welcome {
+                        BitmexWsFrame::Welcome {
                             version,
                             heartbeat_enabled,
                             limit,
@@ -258,8 +258,8 @@ impl FeedHandler {
                                 limit.remaining,
                             );
                         }
-                        BitmexRawWsMessage::Subscription { .. } => return Some(msg),
-                        BitmexRawWsMessage::Error { status, error, .. } => {
+                        BitmexWsFrame::Subscription { .. } => return Some(msg),
+                        BitmexWsFrame::Error { status, error, .. } => {
                             log::error!(
                                 "Received error from BitMEX: status={status}, error={error}",
                             );
@@ -455,9 +455,13 @@ mod tests {
 
     #[rstest]
     fn test_is_heartbeat_message_detection() {
-        assert!(FeedHandler::is_heartbeat_message("{\"op\":\"ping\"}"));
-        assert!(FeedHandler::is_heartbeat_message("{\"op\":\"pong\"}"));
-        assert!(!FeedHandler::is_heartbeat_message(
+        assert!(BitmexWsFeedHandler::is_heartbeat_message(
+            "{\"op\":\"ping\"}"
+        ));
+        assert!(BitmexWsFeedHandler::is_heartbeat_message(
+            "{\"op\":\"pong\"}"
+        ));
+        assert!(!BitmexWsFeedHandler::is_heartbeat_message(
             "{\"op\":\"subscribe\",\"args\":[\"trade:XBTUSD\"]}"
         ));
     }

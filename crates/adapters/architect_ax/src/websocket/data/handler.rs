@@ -88,9 +88,9 @@ pub enum HandlerCommand {
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
 /// Emits raw venue types for downstream consumers to parse.
-pub(crate) struct FeedHandler {
+pub(crate) struct AxMdWsFeedHandler {
     signal: Arc<AtomicBool>,
-    client: Option<WebSocketClient>,
+    inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     subscriptions: SubscriptionState,
@@ -100,8 +100,8 @@ pub(crate) struct FeedHandler {
     pending_subscribe_requests: AHashMap<i64, String>,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl AxMdWsFeedHandler {
+    /// Creates a new [`AxMdWsFeedHandler`] instance.
     #[must_use]
     pub fn new(
         signal: Arc<AtomicBool>,
@@ -111,7 +111,7 @@ impl FeedHandler {
     ) -> Self {
         Self {
             signal,
-            client: None,
+            inner: None,
             cmd_rx,
             raw_rx,
             subscriptions,
@@ -234,7 +234,7 @@ impl FeedHandler {
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
 
-                        if let Some(client) = &self.client
+                        if let Some(client) = &self.inner
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
                             log::warn!("Failed to send pong frame: {e}");
@@ -259,13 +259,13 @@ impl FeedHandler {
         match cmd {
             HandlerCommand::SetClient(client) => {
                 log::debug!("WebSocketClient received by handler");
-                self.client = Some(client);
+                self.inner = Some(client);
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
 
-                if let Some(client) = self.client.take() {
-                    client.disconnect().await;
+                if let Some(inner) = self.inner.take() {
+                    inner.disconnect().await;
                 }
             }
             HandlerCommand::ReplaySubscriptions => {
@@ -377,14 +377,14 @@ impl FeedHandler {
     }
 
     async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), String> {
-        let Some(client) = &self.client else {
+        let Some(inner) = &self.inner else {
             return Err("No WebSocket client available".to_string());
         };
 
         let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         log::trace!("Sending: {payload}");
 
-        client
+        inner
             .send_text(payload, None)
             .await
             .map_err(|e| e.to_string())

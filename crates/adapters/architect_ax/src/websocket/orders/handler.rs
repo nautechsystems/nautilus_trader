@@ -34,8 +34,8 @@ use crate::{
     common::enums::AxOrderRequestType,
     websocket::{
         messages::{
-            AxOrdersWsMessage, AxWsCancelOrder, AxWsError, AxWsGetOpenOrders, AxWsOrderEvent,
-            AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage, OrderMetadata,
+            AxOrdersWsFrame, AxOrdersWsMessage, AxWsCancelOrder, AxWsError, AxWsGetOpenOrders,
+            AxWsOrderEvent, AxWsOrderResponse, AxWsPlaceOrder, OrderMetadata,
         },
         parse::parse_order_message,
     },
@@ -89,9 +89,9 @@ pub enum HandlerCommand {
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
 /// Emits raw venue types for downstream consumers to parse into domain events.
-pub(crate) struct FeedHandler {
+pub(crate) struct AxOrdersWsFeedHandler {
     signal: Arc<AtomicBool>,
-    client: Option<WebSocketClient>,
+    inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     auth_tracker: AuthTracker,
@@ -103,8 +103,8 @@ pub(crate) struct FeedHandler {
     needs_reauthentication: bool,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl AxOrdersWsFeedHandler {
+    /// Creates a new [`AxOrdersWsFeedHandler`] instance.
     #[must_use]
     pub fn new(
         signal: Arc<AtomicBool>,
@@ -116,7 +116,7 @@ impl FeedHandler {
     ) -> Self {
         Self {
             signal,
-            client: None,
+            inner: None,
             cmd_rx,
             raw_rx,
             auth_tracker,
@@ -181,7 +181,7 @@ impl FeedHandler {
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
 
-                        if let Some(client) = &self.client
+                        if let Some(client) = &self.inner
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
                             log::warn!("Failed to send pong frame: {e}");
@@ -206,14 +206,14 @@ impl FeedHandler {
         match cmd {
             HandlerCommand::SetClient(client) => {
                 log::debug!("WebSocketClient received by handler");
-                self.client = Some(client);
+                self.inner = Some(client);
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
                 self.auth_tracker.fail("Disconnected");
 
-                if let Some(client) = self.client.take() {
-                    client.disconnect().await;
+                if let Some(inner) = self.inner.take() {
+                    inner.disconnect().await;
                 }
             }
             HandlerCommand::Authenticate { token } => {
@@ -299,14 +299,14 @@ impl FeedHandler {
     }
 
     async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), String> {
-        let Some(client) = &self.client else {
+        let Some(inner) = &self.inner else {
             return Err("No WebSocket client available".to_string());
         };
 
         let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         log::trace!("Sending: {payload}");
 
-        client
+        inner
             .send_text(payload, None)
             .await
             .map_err(|e| e.to_string())
@@ -324,7 +324,7 @@ impl FeedHandler {
 
                 log::trace!("Raw websocket message: {text}");
 
-                let raw_msg: AxWsRawMessage = match parse_order_message(&text) {
+                let raw_msg: AxOrdersWsFrame = match parse_order_message(&text) {
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to parse WebSocket message: {e}: {text}");
@@ -346,9 +346,9 @@ impl FeedHandler {
         }
     }
 
-    fn handle_raw_message(&mut self, raw_msg: AxWsRawMessage) -> Option<Vec<AxOrdersWsMessage>> {
+    fn handle_raw_message(&mut self, raw_msg: AxOrdersWsFrame) -> Option<Vec<AxOrdersWsMessage>> {
         match raw_msg {
-            AxWsRawMessage::Error(err) => {
+            AxOrdersWsFrame::Error(err) => {
                 log::warn!(
                     "Order error response: rid={} code={} msg={}",
                     err.rid,
@@ -366,8 +366,8 @@ impl FeedHandler {
 
                 Some(vec![AxOrdersWsMessage::Error(err.into())])
             }
-            AxWsRawMessage::Response(resp) => self.handle_response(resp),
-            AxWsRawMessage::Event(event) => self.handle_event(*event),
+            AxOrdersWsFrame::Response(resp) => self.handle_response(resp),
+            AxOrdersWsFrame::Event(event) => self.handle_event(*event),
         }
     }
 
@@ -424,10 +424,10 @@ mod tests {
     use super::*;
     use crate::websocket::messages::{AxWsPlaceOrderResponse, AxWsPlaceOrderResult};
 
-    fn test_handler() -> FeedHandler {
+    fn test_handler() -> AxOrdersWsFeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
-        FeedHandler::new(
+        AxOrdersWsFeedHandler::new(
             Arc::new(AtomicBool::new(false)),
             cmd_rx,
             raw_rx,

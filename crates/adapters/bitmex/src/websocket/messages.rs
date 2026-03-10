@@ -103,7 +103,7 @@ pub enum BitmexWsMessage {
 /// Represents all possible message types from the BitMEX WebSocket API.
 #[derive(Debug, Display, Deserialize)]
 #[serde(untagged)]
-pub(super) enum BitmexRawWsMessage {
+pub(super) enum BitmexWsFrame {
     /// Table websocket message.
     Table(BitmexTableMessage),
     /// Initial welcome message received when connecting to the WebSocket.
