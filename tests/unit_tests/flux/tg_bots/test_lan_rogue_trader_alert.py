@@ -419,8 +419,32 @@ send_baseline = false
     config = load_config(config_path)
 
     assert config.state_path == Path("state/lan_rogue_trader_alert.json")
-    assert config.binance_spot_base_url == "https://api.binance.com"
     assert config.telegram_thread_id == 42
+
+
+def test_load_config_defaults_spot_base_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "lan_rogue_trader_alert.ini"
+    config_path.write_text(
+        """[lan_rogue_trader_alert]
+binance_base_url = https://papi.binance.com
+api_key_env = BINANCE_API_KEY
+api_secret_env = BINANCE_API_SECRET
+account_label = LanSub: traderX
+telegram_bot_token_env = TELEGRAM_BOT_TOKEN
+telegram_chat_id = -100123
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "k")
+    monkeypatch.setenv("BINANCE_API_SECRET", "s")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+
+    config = load_config(config_path)
+
+    assert config.binance_spot_base_url == "https://api.binance.com"
 
 
 def test_load_config_accepts_legacy_section_name_for_backwards_compat(
@@ -464,6 +488,7 @@ def test_docs_describe_combined_pm_and_spot_balance() -> None:
 
     assert "combined Binance PM + spot `USDT` balance" in runbook_text
     assert "combined Binance PM + spot balance" in readme_text
+    assert "missing spot asset row is treated as zero spot balance" in readme_text
 
 
 def test_repo_root_searches_upwards_for_worktree_git_file(

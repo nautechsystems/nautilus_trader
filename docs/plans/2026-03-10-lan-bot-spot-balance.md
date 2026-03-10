@@ -16,10 +16,10 @@
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
 | Overall | in_progress | main | Executing plan in current session |
-| Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Added red tests plus minimal hook types/config field; `pytest ...test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `3 failed, 12 passed` with only the new spot/combined behavior still unimplemented |
-| Task 2: Implement Spot And Combined Balance Clients | completed | main | Implemented spot account parsing plus combined PM+spot fetcher; `pytest ...test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `16 passed`, `python3 -m py_compile ...` -> exit 0 |
-| Task 3: Wire Runtime Defaults And Operator Docs | completed | main | Added config-template/docs contract tests and updated operator docs; `pytest ...test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `18 passed` |
-| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | not_started | unassigned | Plan created |
+| Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Added dedicated `test_load_config_defaults_spot_base_url`; controlled pre-hook repro by swapping `lan_rogue_trader_alert.py` to `93b165b32` then running `PYTHONPATH=systems/flux uv run --active --no-sync pytest -q tests/unit_tests/flux/tg_bots/test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `2 errors during collection` (`ImportError: cannot import name 'BinanceSpotClient'`), restored current code and reran same command -> `19 passed in 0.12s` |
+| Task 2: Implement Spot And Combined Balance Clients | completed | main | No code changes in this fixup; combined PM+spot implementation remains in place and covered by the same `19 passed` tg-bot slice |
+| Task 3: Wire Runtime Defaults And Operator Docs | completed | main | README now states a missing spot asset row is treated as zero spot balance; docs contract test covers it |
+| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | in_progress | main | Targeted spec-review fix verified locally; commit pending |
 
 ---
 
