@@ -21,12 +21,12 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::HashMap,
     fmt::Debug,
     ops::Add,
     rc::{Rc, Weak},
 };
 
+use ahash::AHashMap;
 use chrono::{Duration, TimeDelta};
 use nautilus_common::{
     clock::{Clock, TestClock},
@@ -1933,13 +1933,13 @@ fn min_size_f64(precision: u8) -> f64 {
 }
 
 /// Provider for vega per leg (option spreads). Returns `None` when greeks are unavailable.
-pub trait VegaProvider: Send {
+pub trait VegaProvider {
     /// Returns vega for the given leg instrument, or `None` if not available.
     fn vega_for_leg(&self, instrument_id: InstrumentId) -> Option<f64>;
 }
 
 /// Rounder for spread bid/ask (e.g. tick scheme). When absent, raw prices are used with instrument precision.
-pub trait SpreadPriceRounder: Send {
+pub trait SpreadPriceRounder {
     /// Rounds raw bid/ask to valid prices (handles negative prices with mirroring when using tick scheme).
     fn round_prices(&self, raw_bid: f64, raw_ask: f64, precision: u8) -> (Price, Price);
 }
@@ -1947,13 +1947,13 @@ pub trait SpreadPriceRounder: Send {
 /// Vega provider that returns leg vegas from a map (e.g. populated from greeks cache).
 #[derive(Debug, Default)]
 pub struct MapVegaProvider {
-    vegas: HashMap<InstrumentId, f64>,
+    vegas: AHashMap<InstrumentId, f64>,
 }
 
 impl MapVegaProvider {
     pub fn new() -> Self {
         Self {
-            vegas: HashMap::new(),
+            vegas: AHashMap::new(),
         }
     }
 
@@ -2033,7 +2033,7 @@ pub struct SpreadQuoteAggregator {
     is_futures_spread: bool,
     price_precision: u8,
     size_precision: u8,
-    last_quotes: HashMap<InstrumentId, QuoteTick>,
+    last_quotes: AHashMap<InstrumentId, QuoteTick>,
     mid_prices: Vec<f64>,
     bid_prices: Vec<f64>,
     ask_prices: Vec<f64>,
@@ -2103,7 +2103,7 @@ impl SpreadQuoteAggregator {
             is_futures_spread,
             price_precision,
             size_precision,
-            last_quotes: HashMap::new(),
+            last_quotes: AHashMap::new(),
             mid_prices: vec![0.0; n_legs],
             bid_prices: vec![0.0; n_legs],
             ask_prices: vec![0.0; n_legs],
@@ -2215,7 +2215,9 @@ impl SpreadQuoteAggregator {
 
     /// Called when the timer fires (live mode). Builds and sends a spread quote using cached leg state.
     pub fn on_timer_fire(&mut self, ts_init: UnixNanos) {
-        self.build_and_send_quote(ts_init);
+        if self.last_quotes.len() == self.n_legs {
+            self.build_and_send_quote(ts_init);
+        }
     }
 
     /// Stops the timer when in timer-driven mode.
@@ -2249,7 +2251,11 @@ impl SpreadQuoteAggregator {
         }
     }
 
-    /// Processes timer events: process previously deferred event first, then events before ts_init; defer event at ts_init (Cython parity).
+    /// Advances the historical clock and collects timer events. Events at `ts_init` are
+    /// deferred until the next call when time advances. The deferred event is only flushed
+    /// when all legs have quotes and time has moved past the deferred timestamp. This
+    /// prevents building a spread quote with stale leg data when multiple legs update at
+    /// the same timestamp (Cython parity).
     fn process_historical_events(&mut self, ts_init: UnixNanos) {
         if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
             let mut clock_borrow = self.clock.borrow_mut();
@@ -2263,10 +2269,14 @@ impl SpreadQuoteAggregator {
         }
 
         if self.last_quotes.len() == self.n_legs
-            && let Some(event) = self.historical_event_at_ts_init.take()
+            && let Some(ref event) = self.historical_event_at_ts_init
+            && event.ts_event < ts_init
         {
+            // Guarded by `let Some(ref event)` above
+            let event = self.historical_event_at_ts_init.take().unwrap();
             self.build_and_send_quote(event.ts_event);
         }
+
         let events = {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
@@ -5657,16 +5667,19 @@ mod tests {
         let rc = Rc::new(RefCell::new(boxed));
         rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
 
-        let ts = UnixNanos::from(2_000_000_000);
+        let ts1 = UnixNanos::from(2_000_000_000);
         rc.borrow_mut()
-            .update(Price::from("100.00"), Quantity::from(1), ts);
-        let bars_before = handler.lock().expect(MUTEX_POISONED).len();
+            .update(Price::from("100.00"), Quantity::from(1), ts1);
+
+        let ts2 = UnixNanos::from(3_000_000_000);
         rc.borrow_mut()
-            .update(Price::from("101.00"), Quantity::from(1), ts);
-        let bars_after = handler.lock().expect(MUTEX_POISONED);
+            .update(Price::from("101.00"), Quantity::from(1), ts2);
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
         assert!(
-            bars_after.len() >= bars_before,
-            "bar built after last data update should include that update (deferred event at ts_init)"
+            !bars.is_empty(),
+            "advancing time from ts1 to ts2 should produce at least one bar"
         );
+        assert_eq!(bars[0].close, Price::from("100.00"));
     }
 }
