@@ -281,7 +281,47 @@ class BinanceSpotClient:
         self.timeout_sec = float(timeout_sec)
 
     def fetch_balance(self) -> Decimal:
-        raise NotImplementedError("Binance spot balance fetching is not implemented yet")
+        now_ms = int(time.time() * 1000)
+        params: list[tuple[str, str]] = [
+            ("timestamp", str(now_ms)),
+            ("recvWindow", str(self.recv_window_ms)),
+        ]
+        signature = BinancePmClient.sign_params(params, self.api_secret)
+        signed_params = list(params)
+        signed_params.append(("signature", signature))
+        headers = {"X-MBX-APIKEY": self.api_key}
+
+        response = self.session.get(
+            f"{self.base_url}/api/v3/account",
+            params=signed_params,
+            headers=headers,
+            timeout=self.timeout_sec,
+        )
+        if response.status_code >= 400:
+            text = _response_text(response)
+            raise RuntimeError(f"Binance spot error HTTP {response.status_code}: {text}")
+
+        payload = response.json()
+        if not isinstance(payload, Mapping):
+            raise RuntimeError("Binance spot account payload is not an object")
+        if "code" in payload and "msg" in payload:
+            raise RuntimeError(f"Binance spot error code {payload.get('code')}: {payload.get('msg')}")
+
+        balances = payload.get("balances")
+        if not isinstance(balances, list):
+            raise RuntimeError("Binance spot account payload missing balances list")
+
+        for row in balances:
+            if not isinstance(row, Mapping):
+                continue
+            row_asset = str(row.get("asset") or "").upper()
+            if row_asset != self.asset:
+                continue
+            free = _as_decimal(row.get("free"), "free")
+            locked = _as_decimal(row.get("locked"), "locked")
+            return free + locked
+
+        return Decimal("0")
 
 
 class CombinedBalanceClient:
@@ -290,7 +330,7 @@ class CombinedBalanceClient:
         self.spot_client = spot_client
 
     def fetch_balance(self) -> Decimal:
-        raise NotImplementedError("Combined balance fetching is not implemented yet")
+        return self.pm_client.fetch_balance() + self.spot_client.fetch_balance()
 
 
 class TelegramNotifier:

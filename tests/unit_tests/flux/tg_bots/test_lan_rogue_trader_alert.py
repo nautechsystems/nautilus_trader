@@ -356,6 +356,24 @@ def test_combined_binance_balance_treats_missing_spot_asset_as_zero() -> None:
     assert client.fetch_balance() == Decimal("120.50")
 
 
+def test_combined_binance_balance_propagates_spot_http_failures() -> None:
+    session = FakeGetSession(FakeGetResponse(500, {"msg": "boom"}))
+    spot_client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=spot_client,
+    )
+
+    with pytest.raises(RuntimeError, match="Binance spot error HTTP 500"):
+        client.fetch_balance()
+
+
 def test_build_http_session_configures_source_style_retries() -> None:
     session = alert_module.build_http_session()
 
