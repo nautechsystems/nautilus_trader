@@ -157,6 +157,7 @@ pub(crate) struct PendingOrderInfo {
 )]
 pub struct OKXWebSocketClient {
     url: String,
+    #[allow(dead_code)] // Read by Python bindings
     pub(crate) account_id: AccountId,
     vip_level: Arc<AtomicU8>,
     credential: Option<Credential>,

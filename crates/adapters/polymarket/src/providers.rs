@@ -75,7 +75,7 @@ impl PolymarketInstrumentProvider {
 
     /// Loads instruments for the given slugs additively into the store.
     ///
-    /// Unlike [`load_all`], this does **not** clear existing instruments or
+    /// Unlike [`Self::load_all`], this does **not** clear existing instruments or
     /// mark the store as initialized, allowing incremental loading of
     /// slug-based markets alongside bulk data.
     ///
