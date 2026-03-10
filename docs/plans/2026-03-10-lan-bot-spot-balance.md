@@ -15,8 +15,8 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | not_started | unassigned | Plan created |
-| Task 1: Lock In Combined PM+Spot Semantics In Tests | not_started | unassigned | Plan created |
+| Overall | in_progress | main | Executing plan in current session |
+| Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Added red tests plus minimal hook types/config field; `pytest ...test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `3 failed, 12 passed` with only the new spot/combined behavior still unimplemented |
 | Task 2: Implement Spot And Combined Balance Clients | not_started | unassigned | Plan created |
 | Task 3: Wire Runtime Defaults And Operator Docs | not_started | unassigned | Plan created |
 | Task 4: Verify End-To-End Behavior And Prepare Branch For Review | not_started | unassigned | Plan created |

@@ -44,6 +44,14 @@ class DummyBinance:
         return item
 
 
+class FixedBalanceClient:
+    def __init__(self, balance: Decimal) -> None:
+        self.balance = balance
+
+    def fetch_balance(self) -> Decimal:
+        return self.balance
+
+
 class FakeResponse:
     def __init__(self, status_code: int, payload: dict[str, Any] | None = None) -> None:
         self.status_code = status_code
@@ -103,6 +111,7 @@ def make_config(tmp_path: Path, **overrides: Any) -> WatchConfig:
         "poll_secs": 60,
         "cooldown_secs": 3600,
         "binance_base_url": "https://papi.binance.com",
+        "binance_spot_base_url": "https://api.binance.com",
         "asset": "USDT",
         "binance_api_key": "k",
         "binance_api_secret": "s",
@@ -288,6 +297,65 @@ def test_binance_fetch_balance_accepts_single_object_payload() -> None:
     assert client.fetch_balance() == Decimal("123.45")
 
 
+def test_binance_spot_fetch_balance_sums_free_and_locked_for_asset() -> None:
+    session = FakeGetSession(
+        FakeGetResponse(
+            200,
+            {
+                "accountType": "SPOT",
+                "balances": [
+                    {"asset": "USDT", "free": "100.25", "locked": "4.75"},
+                ],
+            },
+        )
+    )
+    client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    assert client.fetch_balance() == Decimal("105.00")
+
+
+def test_combined_binance_balance_sums_pm_and_spot_usdt() -> None:
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=FixedBalanceClient(Decimal("4.50")),
+    )
+
+    assert client.fetch_balance() == Decimal("125.00")
+
+
+def test_combined_binance_balance_treats_missing_spot_asset_as_zero() -> None:
+    session = FakeGetSession(
+        FakeGetResponse(
+            200,
+            {
+                "accountType": "SPOT",
+                "balances": [
+                    {"asset": "BTC", "free": "0.10", "locked": "0.00"},
+                ],
+            },
+        )
+    )
+    spot_client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=spot_client,
+    )
+
+    assert client.fetch_balance() == Decimal("120.50")
+
+
 def test_build_http_session_configures_source_style_retries() -> None:
     session = alert_module.build_http_session()
 
@@ -329,6 +397,7 @@ send_baseline = false
     config = load_config(config_path)
 
     assert config.state_path == Path("state/lan_rogue_trader_alert.json")
+    assert config.binance_spot_base_url == "https://api.binance.com"
     assert config.telegram_thread_id == 42
 
 

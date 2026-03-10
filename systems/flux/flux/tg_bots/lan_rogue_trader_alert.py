@@ -95,6 +95,7 @@ class WatchConfig:
     poll_secs: int
     cooldown_secs: int
     binance_base_url: str
+    binance_spot_base_url: str
     asset: str
     binance_api_key: str
     binance_api_secret: str
@@ -258,6 +259,38 @@ class BinancePmClient:
             return _as_decimal(raw_balance, "totalWalletBalance")
 
         raise MissingAssetError(f"Asset {self.asset} missing in Binance PM balance payload")
+
+
+class BinanceSpotClient:
+    def __init__(
+        self,
+        base_url: str,
+        asset: str,
+        api_key: str,
+        api_secret: str,
+        session: requests.Session,
+        recv_window_ms: int = 5000,
+        timeout_sec: float = 10.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.asset = str(asset).upper()
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.session = session
+        self.recv_window_ms = int(recv_window_ms)
+        self.timeout_sec = float(timeout_sec)
+
+    def fetch_balance(self) -> Decimal:
+        raise NotImplementedError("Binance spot balance fetching is not implemented yet")
+
+
+class CombinedBalanceClient:
+    def __init__(self, pm_client: Any, spot_client: Any) -> None:
+        self.pm_client = pm_client
+        self.spot_client = spot_client
+
+    def fetch_balance(self) -> Decimal:
+        raise NotImplementedError("Combined balance fetching is not implemented yet")
 
 
 class TelegramNotifier:
@@ -501,6 +534,9 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
     cooldown_secs = _get_int(cfg, "cooldown_secs", 10800)
 
     binance_base_url = _get_required(cfg, "binance_base_url")
+    binance_spot_base_url = (cfg.get("binance_spot_base_url") or "https://api.binance.com").strip()
+    if not binance_spot_base_url:
+        binance_spot_base_url = "https://api.binance.com"
     asset = (cfg.get("asset", "USDT") or "USDT").strip().upper()
     binance_key_env = _get_required(cfg, "api_key_env")
     binance_secret_env = _get_required(cfg, "api_secret_env")
@@ -528,6 +564,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
         poll_secs=poll_secs,
         cooldown_secs=cooldown_secs,
         binance_base_url=binance_base_url,
+        binance_spot_base_url=binance_spot_base_url,
         asset=asset,
         binance_api_key=binance_api_key,
         binance_api_secret=binance_api_secret,
@@ -706,6 +743,8 @@ def _load_secret(env_key: str) -> str:
 
 __all__ = [
     "BinancePmClient",
+    "BinanceSpotClient",
+    "CombinedBalanceClient",
     "JsonStateStore",
     "LanRogueTraderAlertService",
     "MissingAssetError",
