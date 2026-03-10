@@ -57,6 +57,7 @@ from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
@@ -1066,10 +1067,12 @@ class LiveExecutionEngine(ExecutionEngine):
         venue_report: PositionStatusReport | None,
         instrument_id: InstrumentId,
     ) -> bool:
-        # Calculate cached position quantity
-        cached_qty = Decimal(0)
-        for position in cached_positions:
-            cached_qty += position.signed_decimal_qty()
+        venue_qty = venue_report.signed_decimal_qty if venue_report is not None else None
+        _, _, cached_qty, _ = self._effective_netting_positions_for_venue_qty(
+            positions_open=cached_positions,
+            instrument_id=instrument_id,
+            venue_qty=venue_qty,
+        )
 
         # Handle case where venue has no position report
         if venue_report is None:
@@ -1096,8 +1099,6 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True
             # Both flat - no discrepancy
             return False
-
-        venue_qty = venue_report.signed_decimal_qty
 
         # Check if quantities match (both could be zero)
         if cached_qty == venue_qty:
@@ -2439,6 +2440,119 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return True
 
+    @staticmethod
+    def _sum_position_signed_decimal_qty(positions: list[Position]) -> Decimal:
+        total = Decimal()
+        for position in positions:
+            total += position.signed_decimal_qty()
+
+        return total
+
+    @staticmethod
+    def _calculate_weighted_avg_px(positions: list[Position]) -> Decimal | None:
+        if not positions:
+            return None
+
+        total_value = Decimal(0)
+        total_qty = Decimal(0)
+        for position in positions:
+            qty = abs(position.signed_decimal_qty())
+            if position.avg_px_open and qty > 0:
+                total_value += Decimal(str(position.avg_px_open)) * qty
+                total_qty += qty
+
+        if total_qty == 0:
+            return None
+
+        return total_value / total_qty
+
+    def _is_external_reconciliation_artifact_position(self, position: Position) -> bool:
+        if position.strategy_id.value != "EXTERNAL":
+            return False
+
+        orders = self._cache.orders_for_position(position.id)
+        if not orders:
+            return True
+
+        return all(order.tags is not None and "RECONCILIATION" in order.tags for order in orders)
+
+    def _effective_netting_positions_for_venue_qty(
+        self,
+        positions_open: list[Position],
+        instrument_id: InstrumentId,
+        venue_qty: Decimal | None,
+    ) -> tuple[list[Position], list[Position], Decimal, Decimal]:
+        raw_qty = self._sum_position_signed_decimal_qty(positions_open)
+
+        if venue_qty is None or raw_qty == venue_qty or not positions_open:
+            return positions_open, [], raw_qty, raw_qty
+
+        effective_positions: list[Position] = []
+        artifact_positions: list[Position] = []
+        for position in positions_open:
+            if self._is_external_reconciliation_artifact_position(position):
+                artifact_positions.append(position)
+            else:
+                effective_positions.append(position)
+
+        if not artifact_positions:
+            return positions_open, [], raw_qty, raw_qty
+
+        effective_qty = self._sum_position_signed_decimal_qty(effective_positions)
+        if effective_qty != venue_qty:
+            return positions_open, [], raw_qty, raw_qty
+
+        return effective_positions, artifact_positions, effective_qty, raw_qty
+
+    def _cleanup_stale_external_reconciliation_positions(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        artifact_positions: list[Position],
+        raw_qty: Decimal,
+        effective_qty: Decimal,
+    ) -> bool:
+        stale_position_ids = [position.id.value for position in artifact_positions]
+        self._log.info(
+            f"Closing stale EXTERNAL reconciliation positions for {report.instrument_id}: "
+            f"raw_qty={raw_qty}, effective_qty={effective_qty}, "
+            f"stale_qty={self._sum_position_signed_decimal_qty(artifact_positions)}, "
+            f"position_ids={stale_position_ids}",
+            LogColor.BLUE,
+        )
+
+        for position in artifact_positions:
+            position_qty = position.signed_decimal_qty()
+            diff_quantity = Quantity(abs(position_qty), instrument.size_precision)
+            if diff_quantity == 0:
+                continue
+
+            cleanup_report = PositionStatusReport(
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                venue_position_id=position.id,
+                position_side=PositionSide.FLAT,
+                quantity=Quantity.zero(),
+                report_id=UUID4(),
+                ts_last=report.ts_last,
+                ts_init=report.ts_init,
+            )
+            current_avg_px = Decimal(str(position.avg_px_open)) if position.avg_px_open else None
+            diff_report = self._create_position_reconciliation_report(
+                report=cleanup_report,
+                instrument=instrument,
+                position_signed_decimal_qty=position_qty,
+                diff_quantity=diff_quantity,
+                current_avg_px=current_avg_px,
+            )
+            if diff_report is None:
+                continue
+
+            if not self._reconcile_order_report(diff_report, trades=[], is_external=False):
+                return False
+
+        return True
+
     def _reconcile_position_report_netting(
         self,
         report: PositionStatusReport,
@@ -2457,13 +2571,27 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
         )
 
-        position_signed_decimal_qty: Decimal = Decimal()
-
-        for position in positions_open:
-            position_signed_decimal_qty += position.signed_decimal_qty()
+        effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+            self._effective_netting_positions_for_venue_qty(
+                positions_open=positions_open,
+                instrument_id=report.instrument_id,
+                venue_qty=report.signed_decimal_qty,
+            )
+        )
 
         self._log.info(f"{report.signed_decimal_qty=}", LogColor.BLUE)
+        if raw_position_signed_decimal_qty != position_signed_decimal_qty:
+            self._log.info(f"{raw_position_signed_decimal_qty=}", LogColor.BLUE)
         self._log.info(f"{position_signed_decimal_qty=}", LogColor.BLUE)
+
+        if artifact_positions:
+            return self._cleanup_stale_external_reconciliation_positions(
+                report=report,
+                instrument=instrument,
+                artifact_positions=artifact_positions,
+                raw_qty=raw_position_signed_decimal_qty,
+                effective_qty=position_signed_decimal_qty,
+            )
 
         # Check if quantities match
         quantities_match = position_signed_decimal_qty == report.signed_decimal_qty
@@ -2488,21 +2616,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True
 
             # Calculate current position average price if available (needed for reconciliation)
-            current_avg_px = None
-            if positions_open:
-                # Calculate weighted average price of current positions
-                total_value = Decimal(0)
-                total_qty = Decimal(0)
-
-                for pos in positions_open:
-                    qty = abs(pos.signed_decimal_qty())
-
-                    if pos.avg_px_open and qty > 0:
-                        total_value += Decimal(str(pos.avg_px_open)) * qty
-                        total_qty += qty
-
-                if total_qty > 0:
-                    current_avg_px = total_value / total_qty
+            current_avg_px = self._calculate_weighted_avg_px(effective_positions)
 
             # Check if position crosses through zero (flips from long to short or vice versa)
             crosses_zero = (
@@ -2533,21 +2647,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._reconcile_order_report(diff_report, trades=[], is_external=False)
         elif quantities_match and report.avg_px_open is not None:
             # Quantities match, but verify avg_px_open also matches
-            current_avg_px = None
-            if positions_open:
-                # Calculate weighted average price of current positions
-                total_value = Decimal(0)
-                total_qty = Decimal(0)
-
-                for pos in positions_open:
-                    qty = abs(pos.signed_decimal_qty())
-
-                    if pos.avg_px_open and qty > 0:
-                        total_value += Decimal(str(pos.avg_px_open)) * qty
-                        total_qty += qty
-
-                if total_qty > 0:
-                    current_avg_px = total_value / total_qty
+            current_avg_px = self._calculate_weighted_avg_px(effective_positions)
 
             if current_avg_px is not None:
                 # Check if avg_px matches within tolerance

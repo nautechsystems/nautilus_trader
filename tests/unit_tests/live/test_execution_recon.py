@@ -5327,6 +5327,136 @@ class TestHedgeModeReconciliation:
         assert result is False  # Reconciliation failed
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_closes_stale_external_position_without_orders(
+        self,
+    ):
+        """
+        Test that startup reconciliation closes stale EXTERNAL netting positions when
+        venue truth already matches the owned cached position.
+        """
+        # Arrange
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-OWNED-STARTUP"),
+            last_qty=Quantity.from_int(2_566),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OWNED-STARTUP-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        stale_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-STALE-001"),
+        )
+        stale_external_fill = TestEventStubs.order_filled(
+            stale_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(2_666),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("EXTERNAL-STALE-1"),
+        )
+        stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+        self.cache.add_position(stale_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_566),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.client.add_position_status_report(report)
+
+        # Act
+        result = await self.exec_engine.reconcile_execution_state()
+
+        # Assert
+        assert result is True
+        assert self.cache.is_position_open(stale_external_position.id) is False
+        assert len(self.cache.positions_open(instrument_id=AUDUSD_SIM.id)) == 1
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id)[0].id == owned_position.id
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(2_666)
+        ]
+        assert cleanup_orders
+
+    def test_check_position_discrepancy_ignores_stale_external_position_without_orders(
+        self,
+    ):
+        """
+        Test that background position discrepancy checks also ignore stale EXTERNAL
+        netting positions once venue truth matches the owned cached position.
+        """
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-OWNED-DISCREPANCY"),
+            last_qty=Quantity.from_int(2_566),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OWNED-DISCREPANCY-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        stale_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-DISCREPANCY-001"),
+        )
+        stale_external_fill = TestEventStubs.order_filled(
+            stale_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(2_666),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("EXTERNAL-DISCREPANCY-1"),
+        )
+        stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+        self.cache.add_position(stale_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_566),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        result = self.exec_engine._check_position_discrepancy(
+            self.cache.positions_open(instrument_id=AUDUSD_SIM.id),
+            report,
+            AUDUSD_SIM.id,
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
     async def test_hedge_reconciliation_with_matching_quantities_succeeds(self):
         """
         Test that hedge mode reconciliation succeeds when quantities match.
