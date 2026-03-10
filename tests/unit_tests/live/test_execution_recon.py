@@ -5327,11 +5327,11 @@ class TestHedgeModeReconciliation:
         assert result is False  # Reconciliation failed
 
     @pytest.mark.asyncio
-    async def test_reconcile_execution_state_ignores_stale_external_position_without_orders(
+    async def test_reconcile_execution_state_closes_stale_external_position_without_orders(
         self,
     ):
         """
-        Test that startup reconciliation ignores stale EXTERNAL netting positions when
+        Test that startup reconciliation closes stale EXTERNAL netting positions when
         venue truth already matches the owned cached position.
         """
         # Arrange
@@ -5380,21 +5380,24 @@ class TestHedgeModeReconciliation:
         )
         self.client.add_position_status_report(report)
 
-        reconcile_calls = []
-        original_reconcile = self.exec_engine._reconcile_order_report
-
-        def spy_reconcile(order_report, trades, is_external=True):
-            reconcile_calls.append((order_report, trades, is_external))
-            return original_reconcile(order_report, trades, is_external)
-
-        self.exec_engine._reconcile_order_report = spy_reconcile
-
         # Act
         result = await self.exec_engine.reconcile_execution_state()
 
         # Assert
         assert result is True
-        assert reconcile_calls == []
+        assert self.cache.is_position_open(stale_external_position.id) is False
+        assert len(self.cache.positions_open(instrument_id=AUDUSD_SIM.id)) == 1
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id)[0].id == owned_position.id
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(2_666)
+        ]
+        assert cleanup_orders
 
     def test_check_position_discrepancy_ignores_stale_external_position_without_orders(
         self,
