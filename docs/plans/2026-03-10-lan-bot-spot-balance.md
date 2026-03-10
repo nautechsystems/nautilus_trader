@@ -15,11 +15,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Tasks 1-3 verified locally; pushing branch and creating PR now |
+| Overall | completed | main | Branch pushed and PR #39 opened against main |
 | Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Spec and quality review passed; targeted tg-bot slice verified with `19 passed` |
 | Task 2: Implement Spot And Combined Balance Clients | completed | main | Combined PM+spot client wiring verified; runner slice still blocked locally by missing compiled core extension |
 | Task 3: Wire Runtime Defaults And Operator Docs | completed | main | Config template and docs updated; tg-bot contract tests cover README and runbook text |
-| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | in_progress | main | Fresh verification complete; next step is push + PR creation |
+| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | completed | main | Fresh verification run, branch pushed, and PR #39 opened: https://github.com/clickconfirm/nautilus-trader/pull/39 |
 
 ---
 
