@@ -15,11 +15,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Executing plan in current session |
-| Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Added dedicated `test_load_config_defaults_spot_base_url`; controlled pre-hook repro by swapping `lan_rogue_trader_alert.py` to `93b165b32` then running `PYTHONPATH=systems/flux uv run --active --no-sync pytest -q tests/unit_tests/flux/tg_bots/test_lan_rogue_trader_alert.py --confcutdir=tests/unit_tests/flux/tg_bots` -> `2 errors during collection` (`ImportError: cannot import name 'BinanceSpotClient'`), restored current code and reran same command -> `19 passed in 0.12s` |
-| Task 2: Implement Spot And Combined Balance Clients | completed | main | No code changes in this fixup; combined PM+spot implementation remains in place and covered by the same `19 passed` tg-bot slice |
-| Task 3: Wire Runtime Defaults And Operator Docs | completed | main | README now states a missing spot asset row is treated as zero spot balance; docs contract test covers it |
-| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | in_progress | main | Targeted spec-review fix verified locally; commit pending |
+| Overall | in_progress | main | Tasks 1-3 verified locally; pushing branch and creating PR now |
+| Task 1: Lock In Combined PM+Spot Semantics In Tests | completed | main | Spec and quality review passed; targeted tg-bot slice verified with `19 passed` |
+| Task 2: Implement Spot And Combined Balance Clients | completed | main | Combined PM+spot client wiring verified; runner slice still blocked locally by missing compiled core extension |
+| Task 3: Wire Runtime Defaults And Operator Docs | completed | main | Config template and docs updated; tg-bot contract tests cover README and runbook text |
+| Task 4: Verify End-To-End Behavior And Prepare Branch For Review | in_progress | main | Fresh verification complete; next step is push + PR creation |
 
 ---
 
