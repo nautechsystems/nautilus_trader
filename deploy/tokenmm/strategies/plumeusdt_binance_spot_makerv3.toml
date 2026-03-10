@@ -17,7 +17,7 @@ execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-enable_execution = false
+enable_execution = true
 log_level = "INFO"
 timeout_connection = 20.0
 timeout_reconciliation = 30.0
