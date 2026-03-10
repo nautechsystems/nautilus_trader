@@ -230,8 +230,8 @@ impl PolymarketGammaHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error only if the future joining fails; individual slug
-    /// failures are warned and skipped.
+    /// Returns an error if all slug requests fail. Individual slug failures
+    /// are warned and skipped when at least one slug succeeds.
     pub async fn request_instruments_by_slugs(
         &self,
         slugs: Vec<String>,
@@ -257,7 +257,10 @@ impl PolymarketGammaHttpClient {
 
         let results = futures_util::future::join_all(futures).await;
 
+        let total_slugs = results.len();
+        let succeeded = results.iter().filter(|r| r.is_some()).count();
         let mut instruments = Vec::new();
+
         for result in results.into_iter().flatten() {
             let (slug, markets) = result;
             if markets.is_empty() {
@@ -283,7 +286,11 @@ impl PolymarketGammaHttpClient {
             }
         }
 
-        log::info!("Parsed {} instruments from slug queries", instruments.len(),);
+        if succeeded == 0 && total_slugs > 0 {
+            anyhow::bail!("All {total_slugs} slug requests failed");
+        }
+
+        log::info!("Parsed {} instruments from slug queries", instruments.len());
         Ok(instruments)
     }
 
