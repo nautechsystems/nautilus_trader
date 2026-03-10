@@ -735,7 +735,22 @@ def build_alerts_rows(
 ) -> list[dict[str, Any]]:
     """Return the newest alerts for a strategy."""
 
-    filtered = [dict(row) for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+    filtered: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if strategy_id_from_row(row, strategy_id) != strategy_id:
+            continue
+        out = dict(row)
+        row_id = decode_text(out.get("row_id")).strip()
+        if not row_id:
+            row_id = decode_text(out.get("id")).strip()
+        if not row_id:
+            row_id = decode_text(out.get("entry_id")).strip()
+        if not row_id:
+            ts_ms = coerce_ts_ms(out.get("ts_ms") or out.get("ts") or out.get("timestamp")) or 0
+            row_id = f"{strategy_id}:alert:{ts_ms}:{index}"
+        out["row_id"] = row_id
+        out["id"] = decode_text(out.get("id")).strip() or row_id
+        filtered.append(out)
     filtered.sort(
         key=lambda item: (
             coerce_ts_ms(item.get("ts_ms") or item.get("ts") or item.get("timestamp")) or 0

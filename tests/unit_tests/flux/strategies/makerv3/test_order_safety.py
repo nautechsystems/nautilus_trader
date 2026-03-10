@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -42,6 +43,22 @@ def _cancel_rejected_event(*, reason: str, client_order_id: str = "RESTING-1") -
         account_id=TestIdStubs.account_id(),
         reason=reason,
         ts_event=1,
+        event_id=UUID4(),
+        ts_init=1,
+    )
+
+
+def _order_denied_event(
+    *,
+    reason: str,
+    client_order_id: str = "RESTING-1",
+) -> OrderDenied:
+    return OrderDenied(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("SCALPER-001"),
+        instrument_id=InstrumentId(Symbol("MAKER"), Venue("SIM")),
+        client_order_id=ClientOrderId(client_order_id),
+        reason=reason,
         event_id=UUID4(),
         ts_init=1,
     )
@@ -206,6 +223,24 @@ def test_order_cancel_rejected_nonfatal_reason_sets_retry_cooldown_and_alerts_bu
     assert alerts[-1]["alert_key"] == "order_rejected_burst"
     assert "order_cancel_rejected" in str(alerts[-1]["message"])
     assert stopped == []
+
+
+def test_order_denied_nonfatal_reason_sets_alerts_burst(strategy_factory) -> None:
+    strategy = strategy_factory()
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+
+    alerts: list[dict[str, object]] = []
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_current_state_snapshot = lambda: None
+
+    strategy.on_order_denied(_order_denied_event(reason="NOTIONAL_EXCEEDS_FREE_BALANCE"))
+
+    assert alerts[-1]["alert_key"] == "order_rejected_burst"
+    assert "order_denied" in str(alerts[-1]["message"])
+    assert "NOTIONAL_EXCEEDS_FREE_BALANCE" in str(alerts[-1]["message"])
 
 
 def test_rebalance_side_skips_repeat_cancel_while_cancel_reject_cooldown_is_active(

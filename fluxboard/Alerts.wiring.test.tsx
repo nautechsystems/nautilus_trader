@@ -119,6 +119,33 @@ describe('Alerts wiring', () => {
     });
   });
 
+  it('uses entry_id as fallback identity when websocket alert row_id is missing', () => {
+    render(<Alerts />);
+
+    act(() => {
+      wsHandler?.({
+        alerts: [
+          {
+            entry_id: '1700000000001-0',
+            level: 'ERROR',
+            message: 'missing id and row_id in payload',
+            details: { source: 'redis' },
+            timestamp: 1700000001,
+          },
+        ],
+      });
+    });
+
+    expect(storeState.setRows).toHaveBeenCalledTimes(1);
+    const [[rows]] = storeState.setRows.mock.calls as [Alert[]][];
+    expect(rows[0]).toMatchObject({
+      id: '1700000000001-0',
+      entry_id: '1700000000001-0',
+      level: 'ERROR',
+      message: 'missing id and row_id in payload',
+    });
+  });
+
   it('applies an empty websocket snapshot to clear stale alert rows', () => {
     storeState.rows = [createAlert({ id: 'stale-alert' })];
 

@@ -3471,6 +3471,47 @@ def test_alerts_profile_tokenmm_aggregates_allowlisted_strategies(
     assert [row["strategy_id"] for row in rows] == ["strategy_02", flux_config.identity.strategy_id]
 
 
+def test_alerts_profile_tokenmm_stabilizes_row_id_from_entry_id(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "level": "ERROR",
+                "message": "borrow denied",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["rows"][0]
+    assert row["entry_id"]
+    assert row["row_id"] == row["entry_id"]
+
+
 def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     flux_config,
     redis_client,

@@ -170,10 +170,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log_rejected_due_post_only_as_warning: bool = (
             config.log_rejected_due_post_only_as_warning
         )
+        self._allow_cash_borrowing: bool = bool(config.allow_cash_borrowing)
         self._portfolio_margin_unsupported_reason: str | None = None
         self._recv_window = config.recv_window_ms
         self._max_retries = config.max_retries or 3
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
+        self._log.info(f"{config.allow_cash_borrowing=}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
@@ -754,13 +756,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_id=command.position_id,
             exec_spawn_id=command.order.exec_spawn_id,
         )
-        await self._submit_order_inner(command.order, position_side, command.params)
+        await self._submit_order_inner(
+            command.order,
+            position_side,
+            command.params,
+            command.allow_cash_borrowing,
+        )
 
     async def _submit_order_inner(
         self,
         order: Order,
         position_side: BinanceFuturesPositionSide | None,
         params: dict[str, object] | None = None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
         if order.is_closed:
             self._log.warning(f"Cannot submit already closed order {order}")
@@ -775,6 +783,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         validation_error = self._validate_order_pre_submit(order)
         if validation_error:
             self._deny_order_pre_submit(order, validation_error)
+            return
+
+        cash_borrowing_error = self._validate_cash_borrowing_request(
+            allow_cash_borrowing=allow_cash_borrowing,
+        )
+        if cash_borrowing_error:
+            self._deny_order_pre_submit(order, cash_borrowing_error)
             return
 
         self._log.debug(f"Submitting {order}, position_side={position_side}")
@@ -796,6 +811,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 order,
                 position_side,
                 price_match,
+                allow_cash_borrowing,
             )
             if not retry_manager.result:
                 # Determine if the rejection was specifically due to a POST-ONLY order
@@ -929,11 +945,40 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         return None  # Valid
 
+    def _validate_cash_borrowing_request(
+        self,
+        *,
+        allow_cash_borrowing: bool,
+    ) -> str | None:
+        if not allow_cash_borrowing:
+            return None
+        if not self._binance_account_type.is_margin:
+            return "CASH_BORROWING_NOT_SUPPORTED"
+        if not self._allow_cash_borrowing:
+            return "CASH_BORROWING_NOT_ENABLED"
+        return None
+
+    def _spot_margin_side_effect_fields(
+        self,
+        *,
+        allow_cash_borrowing: bool,
+    ) -> tuple[str | None, str | None]:
+        if (
+            not allow_cash_borrowing
+            or not self._binance_account_type.is_margin
+            or not self._allow_cash_borrowing
+        ):
+            return None, None
+
+        # Binance recommends disabling auto-repay on cancel for high-frequency new/cancel flows.
+        return "AUTO_BORROW_REPAY", "FALSE"
+
     async def _submit_market_order(
         self,
         order: MarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
         assert price_match is None  # type checking
 
@@ -943,6 +988,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             quantity = str(order.quantity)
             quote_order_qty = None
+        side_effect_type, auto_repay_at_cancel = self._spot_margin_side_effect_fields(
+            allow_cash_borrowing=allow_cash_borrowing,
+        )
 
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
@@ -954,6 +1002,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
             position_side=position_side,
+            side_effect_type=side_effect_type,
+            auto_repay_at_cancel=auto_repay_at_cancel,
         )
 
     async def _submit_limit_order(
@@ -961,12 +1011,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: LimitOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
         time_in_force = self._determine_time_in_force(order)
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
             time_in_force = BinanceTimeInForce.GTX
+        side_effect_type, auto_repay_at_cancel = self._spot_margin_side_effect_fields(
+            allow_cash_borrowing=allow_cash_borrowing,
+        )
 
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
@@ -982,6 +1036,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             recv_window=str(self._recv_window),
             position_side=position_side,
             price_match=price_match,
+            side_effect_type=side_effect_type,
+            auto_repay_at_cancel=auto_repay_at_cancel,
         )
 
     async def _submit_stop_limit_order(
@@ -989,6 +1045,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: StopLimitOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
@@ -1003,6 +1060,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
 
         time_in_force = self._determine_time_in_force(order)
+        side_effect_type, auto_repay_at_cancel = self._spot_margin_side_effect_fields(
+            allow_cash_borrowing=allow_cash_borrowing,
+        )
 
         if self._binance_account_type.is_futures:
             await self._http_account.new_algo_order(  # type: ignore [attr-defined]
@@ -1038,6 +1098,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 recv_window=str(self._recv_window),
                 position_side=position_side,
                 price_match=price_match,
+                side_effect_type=side_effect_type,
+                auto_repay_at_cancel=auto_repay_at_cancel,
             )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -1056,13 +1118,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     )
                 return
 
-            await self._submit_order_inner(order, position_side, command.params)
+            await self._submit_order_inner(
+                order,
+                position_side,
+                command.params,
+                command.allow_cash_borrowing,
+            )
 
     async def _submit_stop_market_order(
         self,
         order: StopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
         assert price_match is None  # type checking
 
@@ -1079,6 +1147,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
 
         time_in_force = self._determine_time_in_force(order)
+        side_effect_type, auto_repay_at_cancel = self._spot_margin_side_effect_fields(
+            allow_cash_borrowing=allow_cash_borrowing,
+        )
 
         if self._binance_account_type.is_futures:
             await self._http_account.new_algo_order(  # type: ignore [attr-defined]
@@ -1109,6 +1180,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 new_client_order_id=order.client_order_id.value,
                 recv_window=str(self._recv_window),
                 position_side=position_side,
+                side_effect_type=side_effect_type,
+                auto_repay_at_cancel=auto_repay_at_cancel,
             )
 
     async def _submit_trailing_stop_market_order(
@@ -1116,7 +1189,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: TrailingStopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        allow_cash_borrowing: bool = False,
     ) -> None:
+        _ = allow_cash_borrowing
         assert price_match is None  # type checking
 
         if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_PRICE):

@@ -1,7 +1,7 @@
 /**
  * Alerts Panel - Alerts view with filtering, auto-dismiss, and live updates
  *
- * Displays system alerts with level filtering (CRITICAL, WARNING, INFO).
+ * Displays system alerts with level filtering (CRITICAL, ERROR, WARNING, INFO).
  * Updates via WebSocket with fallback to REST API polling.
  * Auto-dismisses INFO (10s) and WARNING (30s) alerts.
  */
@@ -227,6 +227,7 @@ export default function Alerts({
         options={[
           { label: 'All Levels', value: 'ALL' },
           { label: 'Critical', value: 'CRITICAL' },
+          { label: 'Error', value: 'ERROR' },
           { label: 'Warning', value: 'WARNING' },
           { label: 'Info', value: 'INFO' },
         ]}

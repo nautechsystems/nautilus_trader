@@ -1058,6 +1058,50 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 source_event="order_rejected",
             )
 
+        def on_order_denied(self, event: Any) -> None:
+            """
+            Handle local or venue-side order denials and surface repeated bursts.
+            """
+            self._record_order_event_progress(event)
+            self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
+            reason = _normalized_reject_reason(getattr(event, "reason", None))
+            self._reconcile_managed_order(
+                getattr(event, "client_order_id", None),
+                lifecycle="denied",
+                instrument_id=getattr(event, "instrument_id", None),
+                reason=reason,
+            )
+            self._publish_current_state_snapshot()
+            self.log.warning(
+                f"Order denied strategy_id={self._external_strategy_id} "
+                f"client_order_id={getattr(event, 'client_order_id', None)} "
+                f"reason={reason}",
+            )
+            now_ns = getattr(event, "ts_event", None)
+            if now_ns is None:
+                now_ns = getattr(event, "ts_init", None)
+            if now_ns is None:
+                with suppress(Exception):
+                    now_ns = int(self.clock.timestamp_ns())
+            if now_ns is None:
+                return
+            self._pop_place_intent(getattr(event, "client_order_id", None))
+            if failures_mod.is_venue_protection_reason(reason):
+                failures_mod.handle_venue_protection(
+                    self,
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_denied",
+                    client_order_id=getattr(event, "client_order_id", None),
+                )
+                return
+            self._track_order_rejection_alert(
+                now_ns=int(now_ns),
+                reason=reason,
+                source_event="order_denied",
+            )
+
         def on_order_pending_cancel(self, event: Any) -> None:
             """
             Track managed orders with cancel requests in flight.

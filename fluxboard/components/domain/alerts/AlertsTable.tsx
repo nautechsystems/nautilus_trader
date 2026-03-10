@@ -66,7 +66,7 @@ export interface AlertsTableProps {
  * Map alert level to StatusPill semantic status.
  */
 function getSeverityStatus(level: string): StatusKind {
-  if (level === 'CRITICAL') return 'critical';
+  if (level === 'CRITICAL' || level === 'ERROR') return 'critical';
   if (level === 'WARNING') return 'warning';
   return 'info';
 }
@@ -75,7 +75,7 @@ function getSeverityStatus(level: string): StatusKind {
  * Get severity color for left border
  */
 function getSeverityBorderColor(level: string): string {
-  if (level === 'CRITICAL') return severity.critical.color;
+  if (level === 'CRITICAL' || level === 'ERROR') return severity.critical.color;
   if (level === 'WARNING') return severity.warning.color;
   return severity.info.color;
 }
@@ -372,7 +372,7 @@ const AlertCard = ({ alert, onDismiss, onRowClick }: AlertCardProps) => {
     <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: colors.border.DEFAULT, backgroundColor: colors.bg.surface }}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-1">
-          <Badge variant={level === 'CRITICAL' ? 'danger' : level === 'WARNING' ? 'warning' : 'neutral'} size="xs">
+          <Badge variant={level === 'CRITICAL' || level === 'ERROR' ? 'danger' : level === 'WARNING' ? 'warning' : 'neutral'} size="xs">
             {level}
           </Badge>
           <div className="text-sm font-medium" style={{ color: colors.text.primary }}>{alert.title || alert.message || 'Alert'}</div>

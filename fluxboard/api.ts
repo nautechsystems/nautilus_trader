@@ -938,11 +938,17 @@ function attachAlertsPaginationMetadata(
 function normalizeAlertRow(candidate: unknown): Alert | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const row = candidate as Record<string, unknown>;
-  const id = String(row.id ?? row.row_id ?? '').trim();
+  const id = String(row.id ?? row.row_id ?? row.entry_id ?? '').trim();
   if (!id) return null;
 
   const severityRaw = String(row.severity ?? row.level ?? 'INFO').trim().toUpperCase();
-  const level = severityRaw === 'CRITICAL' || severityRaw === 'WARNING' ? severityRaw : 'INFO';
+  const level = (
+    severityRaw === 'CRITICAL'
+      || severityRaw === 'ERROR'
+      || severityRaw === 'WARNING'
+  )
+    ? severityRaw
+    : 'INFO';
   const tsMsCandidate = toFiniteOptionalNumber(row.ts_ms ?? row.ts_event);
   const timestamp = Math.floor(
     toFiniteNumber(

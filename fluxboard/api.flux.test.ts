@@ -844,6 +844,29 @@ describe('profile-scoped read APIs', () => {
     expect((alerts[0] as any)?.strategy_id).toBe('strategy_from_alt_field');
   });
 
+  it('normalizes alerts rows using entry_id fallback identity and preserves ERROR severity', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            entry_id: '1700000000001-0',
+            level: 'error',
+            message: 'borrow denied',
+            ts_ms: 1_700_000_111_222,
+            strategy_id: 'strategy_error_case',
+          },
+        ],
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.id).toBe('1700000000001-0');
+    expect(alerts[0]?.level).toBe('ERROR');
+    expect((alerts[0] as any)?.strategy_id).toBe('strategy_error_case');
+  });
+
   it('supports alerts payloads using data.alerts in addition to data.rows', async () => {
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,

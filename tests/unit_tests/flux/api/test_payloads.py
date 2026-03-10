@@ -6,6 +6,7 @@ import pytest
 
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
+from nautilus_trader.flux.api.payloads import build_alerts_rows
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
@@ -2088,6 +2089,25 @@ def test_extract_stream_rows_preserves_entry_metadata_for_payload_rows() -> None
             "_stream_seq": 6_963_200_000_004_096,
         },
     ]
+
+
+def test_build_alerts_rows_uses_entry_id_as_stable_row_identity_when_row_id_is_missing() -> None:
+    rows = build_alerts_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "entry_id": "1700000000001-0",
+                "level": "error",
+                "message": "borrow denied",
+                "ts_ms": 1_700_000_000_001,
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+    )
+
+    assert rows[0]["row_id"] == "1700000000001-0"
+    assert rows[0]["id"] == "1700000000001-0"
 
 
 def test_build_signals_payload_emits_makerv4_quote_snapshot() -> None:

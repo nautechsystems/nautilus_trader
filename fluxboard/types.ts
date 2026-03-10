@@ -1092,7 +1092,7 @@ export type ValidationResult = {
 export type ValidationErrors = Record<string, string>;
 
 // Alert types
-export type AlertLevel = 'INFO' | 'WARNING' | 'CRITICAL';
+export type AlertLevel = 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
 
 export type Alert = {
   id: string;

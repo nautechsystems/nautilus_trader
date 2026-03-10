@@ -1048,6 +1048,114 @@ def test_build_node_registers_cash_borrowing_before_trading_node(monkeypatch) ->
         AccountFactory.deregister_cash_borrowing(issuer)
 
 
+def test_build_node_registers_cash_borrowing_for_binance_spot_before_trading_node(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    execution_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT")
+    issuer = str(execution_instrument_id.venue)
+    AccountFactory.deregister_cash_borrowing(issuer)
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            initial_event = AccountState(
+                account_id=AccountId("BINANCE_SPOT-MARGIN-master"),
+                account_type=AccountType.CASH,
+                base_currency=USDT,
+                reported=True,
+                balances=[
+                    AccountBalance(
+                        Money(1000, USDT),
+                        Money(0, USDT),
+                        Money(1000, USDT),
+                    ),
+                ],
+                margins=[],
+                info={},
+                event_id=UUID4(),
+                ts_event=1,
+                ts_init=1,
+            )
+            borrowed_event = AccountState(
+                account_id=AccountId("BINANCE_SPOT-MARGIN-master"),
+                account_type=AccountType.CASH,
+                base_currency=USDT,
+                reported=True,
+                balances=[
+                    AccountBalance(
+                        Money(-5, USDT),
+                        Money(0, USDT),
+                        Money(-5, USDT),
+                    ),
+                ],
+                margins=[],
+                info={},
+                event_id=UUID4(),
+                ts_event=2,
+                ts_init=2,
+            )
+            account = AccountFactory.create(initial_event)
+            account.apply(borrowed_event)
+            captured["allow_borrowing"] = account.allow_borrowing
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=execution_instrument_id,
+            reference_instrument_id=execution_instrument_id,
+            data_clients={},
+            exec_clients={execution_instrument_id.venue: SimpleNamespace(allow_cash_borrowing=True)},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    try:
+        run_node.build_node(
+            {
+                "flux": {"namespace": "flux", "schema_version": "v1"},
+                "identity": {
+                    "strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "external_strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "trader_id": "TOKENMM-LIVE-BINANCE-SPOT",
+                },
+                "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+                "node": {"enable_execution": True},
+                "strategy": {"strategy_id": "plumeusdt_binance_spot_makerv3", "order_qty": "1000"},
+            },
+            mode="live",
+            force_enable_execution=False,
+        )
+        assert captured["allow_borrowing"] is True
+    finally:
+        AccountFactory.deregister_cash_borrowing(issuer)
+
+
 def test_resolve_reconciliation_settings_enforces_live_minimum_startup_delay() -> None:
     lookback, startup_delay = run_node._resolve_reconciliation_settings(
         mode="live",
