@@ -1066,10 +1066,12 @@ class LiveExecutionEngine(ExecutionEngine):
         venue_report: PositionStatusReport | None,
         instrument_id: InstrumentId,
     ) -> bool:
-        # Calculate cached position quantity
-        cached_qty = Decimal(0)
-        for position in cached_positions:
-            cached_qty += position.signed_decimal_qty()
+        venue_qty = venue_report.signed_decimal_qty if venue_report is not None else None
+        _, cached_qty, _ = self._effective_netting_positions_for_venue_qty(
+            positions_open=cached_positions,
+            instrument_id=instrument_id,
+            venue_qty=venue_qty,
+        )
 
         # Handle case where venue has no position report
         if venue_report is None:
@@ -1096,8 +1098,6 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True
             # Both flat - no discrepancy
             return False
-
-        venue_qty = venue_report.signed_decimal_qty
 
         # Check if quantities match (both could be zero)
         if cached_qty == venue_qty:
@@ -2439,6 +2439,60 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return True
 
+    @staticmethod
+    def _sum_position_signed_decimal_qty(positions: list[Position]) -> Decimal:
+        total = Decimal()
+        for position in positions:
+            total += position.signed_decimal_qty()
+
+        return total
+
+    def _is_external_reconciliation_artifact_position(self, position: Position) -> bool:
+        if position.strategy_id.value != "EXTERNAL":
+            return False
+
+        orders = self._cache.orders_for_position(position.id)
+        if not orders:
+            return True
+
+        return all(order.tags is not None and "RECONCILIATION" in order.tags for order in orders)
+
+    def _effective_netting_positions_for_venue_qty(
+        self,
+        positions_open: list[Position],
+        instrument_id: InstrumentId,
+        venue_qty: Decimal | None,
+    ) -> tuple[list[Position], Decimal, Decimal]:
+        raw_qty = self._sum_position_signed_decimal_qty(positions_open)
+
+        if venue_qty is None or raw_qty == venue_qty or not positions_open:
+            return positions_open, raw_qty, raw_qty
+
+        effective_positions: list[Position] = []
+        artifact_positions: list[Position] = []
+        for position in positions_open:
+            if self._is_external_reconciliation_artifact_position(position):
+                artifact_positions.append(position)
+            else:
+                effective_positions.append(position)
+
+        if not artifact_positions:
+            return positions_open, raw_qty, raw_qty
+
+        effective_qty = self._sum_position_signed_decimal_qty(effective_positions)
+        if effective_qty != venue_qty:
+            return positions_open, raw_qty, raw_qty
+
+        stale_position_ids = [position.id.value for position in artifact_positions]
+        self._log.info(
+            f"Ignoring stale EXTERNAL reconciliation positions for {instrument_id}: "
+            f"raw_qty={raw_qty}, effective_qty={effective_qty}, venue_qty={venue_qty}, "
+            f"position_ids={stale_position_ids}",
+            LogColor.BLUE,
+        )
+
+        return effective_positions, effective_qty, raw_qty
+
     def _reconcile_position_report_netting(
         self,
         report: PositionStatusReport,
@@ -2457,12 +2511,17 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
         )
 
-        position_signed_decimal_qty: Decimal = Decimal()
-
-        for position in positions_open:
-            position_signed_decimal_qty += position.signed_decimal_qty()
+        effective_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+            self._effective_netting_positions_for_venue_qty(
+                positions_open=positions_open,
+                instrument_id=report.instrument_id,
+                venue_qty=report.signed_decimal_qty,
+            )
+        )
 
         self._log.info(f"{report.signed_decimal_qty=}", LogColor.BLUE)
+        if raw_position_signed_decimal_qty != position_signed_decimal_qty:
+            self._log.info(f"{raw_position_signed_decimal_qty=}", LogColor.BLUE)
         self._log.info(f"{position_signed_decimal_qty=}", LogColor.BLUE)
 
         # Check if quantities match
@@ -2489,12 +2548,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Calculate current position average price if available (needed for reconciliation)
             current_avg_px = None
-            if positions_open:
+            if effective_positions:
                 # Calculate weighted average price of current positions
                 total_value = Decimal(0)
                 total_qty = Decimal(0)
 
-                for pos in positions_open:
+                for pos in effective_positions:
                     qty = abs(pos.signed_decimal_qty())
 
                     if pos.avg_px_open and qty > 0:
@@ -2534,12 +2593,12 @@ class LiveExecutionEngine(ExecutionEngine):
         elif quantities_match and report.avg_px_open is not None:
             # Quantities match, but verify avg_px_open also matches
             current_avg_px = None
-            if positions_open:
+            if effective_positions:
                 # Calculate weighted average price of current positions
                 total_value = Decimal(0)
                 total_qty = Decimal(0)
 
-                for pos in positions_open:
+                for pos in effective_positions:
                     qty = abs(pos.signed_decimal_qty())
 
                     if pos.avg_px_open and qty > 0:
