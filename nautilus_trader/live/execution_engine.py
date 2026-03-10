@@ -3504,9 +3504,10 @@ class LiveExecutionEngine(ExecutionEngine):
             0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
         )
 
-        # Check if any strategy has claimed external orders for this instrument
-        # This allows strategies to resume managing existing orders on restart
-        strategy_id = self.get_external_order_claim(report.instrument_id)
+        # Only venue-originated external orders should be claimed by strategies.
+        # Synthetic reconciliation orders must remain EXTERNAL so they don't
+        # pollute strategy-owned state when cache is reloaded on restart.
+        strategy_id = self.get_external_order_claim(report.instrument_id) if is_external else None
 
         if strategy_id is None:
             # All unclaimed reconciliation uses EXTERNAL strategy ID

@@ -2189,6 +2189,60 @@ class TestReconciliationEdgeCases:
         assert generated_order.status == OrderStatus.FILLED
 
     @pytest.mark.asyncio
+    async def test_internal_diff_order_not_claimed_by_strategy_external_order_claims(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that synthetic reconciliation orders remain EXTERNAL even when the
+        instrument has external order claims configured for a strategy.
+
+        Claimed external venue orders should be routed to the strategy, but
+        internal reconciliation artifacts must stay tagged as RECONCILIATION so
+        they do not pollute strategy-owned cached state on restart.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        live_exec_engine.generate_missing_orders = True
+        live_exec_engine._external_order_claims[instrument.id] = StrategyId("S-CLAIMED")
+
+        order = TestExecStubs.limit_order(instrument=instrument, order_side=OrderSide.BUY)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-CLAIMED-RECON"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+        )
+        internal_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(internal_position, OmsType.NETTING)
+
+        external_report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(external_report)
+
+        # Assert
+        assert result is True
+
+        generated_order = self.cache.orders()[-1]
+        assert generated_order.strategy_id.value == "EXTERNAL"
+        assert generated_order.tags == ["RECONCILIATION"]
+        assert generated_order.side == OrderSide.BUY
+        assert generated_order.quantity == Quantity.from_int(50)
+        assert generated_order.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
     async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
         self,
         live_exec_engine,
