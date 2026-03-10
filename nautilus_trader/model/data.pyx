@@ -2953,10 +2953,17 @@ cdef class OrderBookDelta(Data):
             if size_prec == 0:
                 size_prec = delta._mem.order.size.precision
 
+            # Use per-delta precision for sentinel values (PRICE_UNDEF has precision=0)
             pyo3_book_order = nautilus_pyo3.BookOrder(
                nautilus_pyo3.OrderSide(order_side_to_str(delta._mem.order.side)),
-               nautilus_pyo3.Price.from_raw(delta._mem.order.price.raw, price_prec),
-               nautilus_pyo3.Quantity.from_raw(delta._mem.order.size.raw, size_prec),
+               nautilus_pyo3.Price.from_raw(
+                   delta._mem.order.price.raw,
+                   delta._mem.order.price.precision if delta._mem.order.price.precision == 0 else price_prec,
+               ),
+               nautilus_pyo3.Quantity.from_raw(
+                   delta._mem.order.size.raw,
+                   delta._mem.order.size.precision if delta._mem.order.size.precision == 0 else size_prec,
+               ),
                delta._mem.order.order_id,
             )
 
