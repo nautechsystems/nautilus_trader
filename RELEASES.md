@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
 - Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
 - Fixed `SimulatedExchange` account balance adjustment mutation (#3704), thanks for reporting @thaning0
+- Fixed Sandbox reconciliation missing `account_id` (#3705), thanks for reporting @eliotOrderson
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
