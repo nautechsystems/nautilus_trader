@@ -21,6 +21,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::HashMap,
     fmt::Debug,
     ops::Add,
     rc::{Rc, Weak},
@@ -42,6 +43,8 @@ use nautilus_model::{
         bar::{Bar, BarType, get_bar_interval_ns, get_time_bar_start},
     },
     enums::{AggregationSource, AggressorSide, BarAggregation, BarIntervalType},
+    identifiers::InstrumentId,
+    instruments::{FixedTickScheme, TickSchemeRule},
     types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
 };
 
@@ -1550,6 +1553,7 @@ pub struct TimeBarAggregator {
     skip_first_non_full_bar: bool,
     pub historical_mode: bool,
     historical_events: Vec<TimeEvent>,
+    historical_event_at_ts_init: Option<TimeEvent>,
     aggregator_weak: Option<Weak<RefCell<Box<dyn BarAggregator>>>>,
 }
 
@@ -1615,6 +1619,7 @@ impl TimeBarAggregator {
             skip_first_non_full_bar,
             historical_mode: false,
             historical_events: Vec::new(),
+            historical_event_at_ts_init: None,
             aggregator_weak: None,
         }
     }
@@ -1815,22 +1820,27 @@ impl TimeBarAggregator {
             self.start_timer_internal(None);
         }
 
-        // Advance this aggregator's independent clock and collect timer events
-        {
+        // Advance this aggregator's independent clock and collect timer events.
+        let events = {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
                 .downcast_mut::<TestClock>()
                 .expect("Expected TestClock in historical mode");
-            self.historical_events = test_clock.advance_time(ts_init, true);
+            test_clock.advance_time(ts_init, true)
+        };
+
+        for event in events {
+            if event.ts_event == ts_init {
+                self.historical_event_at_ts_init = Some(event);
+            } else {
+                self.build_bar(&event);
+            }
         }
     }
 
     fn postprocess_historical_events(&mut self, _ts_init: UnixNanos) {
-        // Process timer events after data processing
-        // Collect events first to avoid borrow checker issues
-        let events: Vec<TimeEvent> = self.historical_events.drain(..).collect();
-        for event in &events {
+        if let Some(ref event) = self.historical_event_at_ts_init.take() {
             self.build_bar(event);
         }
     }
@@ -1922,15 +1932,524 @@ fn min_size_f64(precision: u8) -> f64 {
     10_f64.powi(-(precision as i32))
 }
 
+/// Provider for vega per leg (option spreads). Returns `None` when greeks are unavailable.
+pub trait VegaProvider: Send {
+    /// Returns vega for the given leg instrument, or `None` if not available.
+    fn vega_for_leg(&self, instrument_id: InstrumentId) -> Option<f64>;
+}
+
+/// Rounder for spread bid/ask (e.g. tick scheme). When absent, raw prices are used with instrument precision.
+pub trait SpreadPriceRounder: Send {
+    /// Rounds raw bid/ask to valid prices (handles negative prices with mirroring when using tick scheme).
+    fn round_prices(&self, raw_bid: f64, raw_ask: f64, precision: u8) -> (Price, Price);
+}
+
+/// Vega provider that returns leg vegas from a map (e.g. populated from greeks cache).
+#[derive(Debug, Default)]
+pub struct MapVegaProvider {
+    vegas: HashMap<InstrumentId, f64>,
+}
+
+impl MapVegaProvider {
+    pub fn new() -> Self {
+        Self {
+            vegas: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, instrument_id: InstrumentId, vega: f64) {
+        self.vegas.insert(instrument_id, vega);
+    }
+
+    pub fn get(&self, instrument_id: &InstrumentId) -> Option<f64> {
+        self.vegas.get(instrument_id).copied()
+    }
+}
+
+impl VegaProvider for MapVegaProvider {
+    fn vega_for_leg(&self, instrument_id: InstrumentId) -> Option<f64> {
+        self.vegas.get(&instrument_id).copied()
+    }
+}
+
+/// Rounder that uses a fixed tick size; mirrors negative prices for tick alignment (Cython parity).
+#[derive(Debug)]
+pub struct FixedTickSchemeRounder {
+    scheme: FixedTickScheme,
+}
+
+impl FixedTickSchemeRounder {
+    /// Creates a rounder with the given tick size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `tick` is not positive.
+    pub fn new(tick: f64) -> anyhow::Result<Self> {
+        Ok(Self {
+            scheme: FixedTickScheme::new(tick)?,
+        })
+    }
+
+    fn round_one(&self, raw: f64, precision: u8, use_bid_rounding: bool) -> Price {
+        if raw >= 0.0 {
+            let p = if use_bid_rounding {
+                self.scheme.next_bid_price(raw, 0, precision)
+            } else {
+                self.scheme.next_ask_price(raw, 0, precision)
+            };
+            p.unwrap_or_else(|| price_from_f64(raw, precision))
+        } else {
+            let p = if use_bid_rounding {
+                self.scheme.next_ask_price(-raw, 0, precision)
+            } else {
+                self.scheme.next_bid_price(-raw, 0, precision)
+            };
+            p.map_or_else(
+                || price_from_f64(raw, precision),
+                |q| price_from_f64(-q.as_f64(), precision),
+            )
+        }
+    }
+}
+
+impl SpreadPriceRounder for FixedTickSchemeRounder {
+    fn round_prices(&self, raw_bid: f64, raw_ask: f64, precision: u8) -> (Price, Price) {
+        let bid = self.round_one(raw_bid, precision, true);
+        let ask = self.round_one(raw_ask, precision, false);
+        (bid, ask)
+    }
+}
+
+/// Spread quote aggregator: builds synthetic quotes from leg quotes (Cython parity).
+///
+/// Quote-driven mode (`update_interval_seconds == None`): emits when all legs have quotes.
+/// Timer-driven mode: emits on timer fire when `_has_update` is true.
+/// Historical mode: defers timer event at `ts_init` until after the update.
+pub struct SpreadQuoteAggregator {
+    spread_instrument_id: InstrumentId,
+    leg_ids: Vec<InstrumentId>,
+    ratios: Vec<i64>,
+    n_legs: usize,
+    is_futures_spread: bool,
+    price_precision: u8,
+    size_precision: u8,
+    last_quotes: HashMap<InstrumentId, QuoteTick>,
+    mid_prices: Vec<f64>,
+    bid_prices: Vec<f64>,
+    ask_prices: Vec<f64>,
+    vegas: Vec<f64>,
+    bid_ask_spreads: Vec<f64>,
+    bid_sizes: Vec<f64>,
+    ask_sizes: Vec<f64>,
+    handler: Box<dyn FnMut(QuoteTick)>,
+    clock: Rc<RefCell<dyn Clock>>,
+    historical_mode: bool,
+    update_interval_seconds: Option<u64>,
+    quote_build_delay: u64,
+    has_update: bool,
+    timer_name: String,
+    historical_event_at_ts_init: Option<TimeEvent>,
+    vega_provider: Option<Box<dyn VegaProvider>>,
+    price_rounder: Option<Box<dyn SpreadPriceRounder>>,
+    is_running: bool,
+    aggregator_weak: Option<Weak<RefCell<Self>>>,
+}
+
+impl Debug for SpreadQuoteAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SpreadQuoteAggregator))
+            .field("spread_instrument_id", &self.spread_instrument_id)
+            .field("n_legs", &self.n_legs)
+            .field("is_futures_spread", &self.is_futures_spread)
+            .field("update_interval_seconds", &self.update_interval_seconds)
+            .finish()
+    }
+}
+
+impl SpreadQuoteAggregator {
+    /// Creates a new [`SpreadQuoteAggregator`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `legs` has fewer than 2 entries or any ratio is zero.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        spread_instrument_id: InstrumentId,
+        legs: &[(InstrumentId, i64)],
+        is_futures_spread: bool,
+        price_precision: u8,
+        size_precision: u8,
+        handler: Box<dyn FnMut(QuoteTick)>,
+        clock: Rc<RefCell<dyn Clock>>,
+        historical_mode: bool,
+        update_interval_seconds: Option<u64>,
+        quote_build_delay: u64,
+        vega_provider: Option<Box<dyn VegaProvider>>,
+        price_rounder: Option<Box<dyn SpreadPriceRounder>>,
+    ) -> Self {
+        assert!(legs.len() >= 2, "Spread must have more than one leg");
+        let n_legs = legs.len();
+        let leg_ids: Vec<InstrumentId> = legs.iter().map(|(id, _)| *id).collect();
+        let ratios: Vec<i64> = legs.iter().map(|(_, r)| *r).collect();
+        for &r in &ratios {
+            assert!(r != 0, "Ratio cannot be zero");
+        }
+        let timer_name = format!("spread_quote_{spread_instrument_id}");
+        Self {
+            spread_instrument_id,
+            leg_ids,
+            ratios,
+            n_legs,
+            is_futures_spread,
+            price_precision,
+            size_precision,
+            last_quotes: HashMap::new(),
+            mid_prices: vec![0.0; n_legs],
+            bid_prices: vec![0.0; n_legs],
+            ask_prices: vec![0.0; n_legs],
+            vegas: vec![0.0; n_legs],
+            bid_ask_spreads: vec![0.0; n_legs],
+            bid_sizes: vec![0.0; n_legs],
+            ask_sizes: vec![0.0; n_legs],
+            handler,
+            clock,
+            historical_mode,
+            update_interval_seconds,
+            quote_build_delay,
+            has_update: false,
+            timer_name,
+            historical_event_at_ts_init: None,
+            vega_provider,
+            price_rounder,
+            is_running: false,
+            aggregator_weak: None,
+        }
+    }
+
+    /// Sets the weak reference to this aggregator (used when starting the timer so the callback can call back).
+    /// Prefer [`Self::prepare_for_timer_mode`] so the owner passes the owning `Rc` in one step.
+    pub fn set_aggregator_weak(&mut self, weak: Weak<RefCell<Self>>) {
+        self.aggregator_weak = Some(weak);
+    }
+
+    /// One-step setup for timer-driven mode (live or historical). Call this with the `Rc` that owns
+    /// this aggregator before feeding any quotes when `update_interval_seconds` is set. The timer
+    /// callback will use the stored weak reference to call back into this aggregator; without this,
+    /// [`Self::start_timer`] will panic in historical mode or when called with `None`.
+    pub fn prepare_for_timer_mode(&mut self, self_rc: &Rc<RefCell<Self>>) {
+        self.aggregator_weak = Some(Rc::downgrade(self_rc));
+    }
+
+    /// Sets historical mode and handler (and optionally greeks provider when switching).
+    pub fn set_historical_mode(
+        &mut self,
+        historical_mode: bool,
+        handler: Box<dyn FnMut(QuoteTick)>,
+        vega_provider: Option<Box<dyn VegaProvider>>,
+    ) {
+        self.historical_mode = historical_mode;
+        self.handler = handler;
+
+        if let Some(vp) = vega_provider {
+            self.vega_provider = Some(vp);
+        }
+    }
+
+    pub fn set_running(&mut self, is_running: bool) {
+        self.is_running = is_running;
+    }
+
+    pub fn set_clock(&mut self, clock: Rc<RefCell<dyn Clock>>) {
+        self.clock = clock;
+    }
+
+    /// Starts the timer when `update_interval_seconds` is set (timer-driven mode).
+    /// In live mode pass `Some(rc)` so the weak is set and the timer can call back.
+    /// In historical mode the owner must have called [`Self::prepare_for_timer_mode`] with the
+    /// owning `Rc` before any quote is processed, then call with `None` here.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called with `None` in timer mode without a prior [`Self::prepare_for_timer_mode`] call.
+    pub fn start_timer(&mut self, aggregator_rc: Option<Rc<RefCell<Self>>>) {
+        let Some(interval_secs) = self.update_interval_seconds else {
+            return;
+        };
+        let aggregator_weak = if let Some(rc) = aggregator_rc {
+            let weak = Rc::downgrade(&rc);
+            self.aggregator_weak = Some(weak.clone());
+            weak
+        } else {
+            self.aggregator_weak.as_ref().cloned().expect(
+                "SpreadQuoteAggregator: timer mode requires prepare_for_timer_mode(rc) to be \
+                 called first with the Rc that wraps this aggregator (before feeding quotes in \
+                 historical mode or before start_timer(None)).",
+            )
+        };
+
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
+            if let Some(agg) = aggregator_weak.upgrade() {
+                agg.borrow_mut().on_timer_fire(event.ts_init);
+            }
+        }));
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let interval_ns = interval_secs * 1_000_000_000;
+        let start_ns = (now_ns.as_u64() / interval_ns) * interval_ns;
+        let start_ns = start_ns + self.quote_build_delay * 1_000; // quote_build_delay in microseconds
+        let start_time = UnixNanos::from(start_ns);
+        let fire_immediately = now_ns == start_time;
+        self.clock
+            .borrow_mut()
+            .set_timer_ns(
+                &self.timer_name,
+                interval_ns,
+                Some(start_time),
+                None,
+                Some(callback),
+                Some(true),
+                Some(fire_immediately),
+            )
+            .expect("Failed to set spread quote timer");
+    }
+
+    /// Called when the timer fires (live mode). Builds and sends a spread quote using cached leg state.
+    pub fn on_timer_fire(&mut self, ts_init: UnixNanos) {
+        self.build_and_send_quote(ts_init);
+    }
+
+    /// Stops the timer when in timer-driven mode.
+    pub fn stop_timer(&mut self) {
+        if self.update_interval_seconds.is_none() {
+            return;
+        }
+
+        if self
+            .clock
+            .borrow()
+            .timer_names()
+            .contains(&self.timer_name.as_str())
+        {
+            self.clock.borrow_mut().cancel_timer(&self.timer_name);
+        }
+    }
+
+    /// Handles an incoming leg quote (Cython `handle_quote_tick`).
+    pub fn handle_quote_tick(&mut self, tick: QuoteTick) {
+        let ts_init = tick.ts_init;
+
+        if self.update_interval_seconds.is_some() && self.historical_mode {
+            self.process_historical_events(ts_init);
+        }
+        self.last_quotes.insert(tick.instrument_id, tick);
+        self.has_update = true;
+
+        if self.update_interval_seconds.is_none() && self.last_quotes.len() == self.n_legs {
+            self.build_and_send_quote(ts_init);
+        }
+    }
+
+    /// Processes timer events: process previously deferred event first, then events before ts_init; defer event at ts_init (Cython parity).
+    fn process_historical_events(&mut self, ts_init: UnixNanos) {
+        if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
+            let mut clock_borrow = self.clock.borrow_mut();
+            let test_clock = clock_borrow
+                .as_any_mut()
+                .downcast_mut::<TestClock>()
+                .expect("Expected TestClock in historical mode");
+            test_clock.set_time(ts_init);
+            drop(clock_borrow);
+            self.start_timer(None);
+        }
+
+        if self.last_quotes.len() == self.n_legs
+            && let Some(event) = self.historical_event_at_ts_init.take()
+        {
+            self.build_and_send_quote(event.ts_event);
+        }
+        let events = {
+            let mut clock_borrow = self.clock.borrow_mut();
+            let test_clock = clock_borrow
+                .as_any_mut()
+                .downcast_mut::<TestClock>()
+                .expect("Expected TestClock in historical mode");
+            test_clock.advance_time(ts_init, true)
+        };
+        for event in events {
+            if event.ts_event == ts_init {
+                self.historical_event_at_ts_init = Some(event);
+            } else if self.last_quotes.len() == self.n_legs {
+                self.build_and_send_quote(event.ts_event);
+            }
+        }
+    }
+
+    /// Builds and sends one spread quote (Cython `_build_and_send_quote`).
+    fn build_and_send_quote(&mut self, ts_init: UnixNanos) {
+        if !self.has_update {
+            return;
+        }
+        for (idx, &leg_id) in self.leg_ids.iter().enumerate() {
+            let Some(tick) = self.last_quotes.get(&leg_id) else {
+                log::error!(
+                    "SpreadQuoteAggregator[{}]: Missing quote for leg {}",
+                    self.spread_instrument_id,
+                    leg_id
+                );
+                return;
+            };
+            let ask_price = tick.ask_price.as_f64();
+            let bid_price = tick.bid_price.as_f64();
+            self.bid_prices[idx] = bid_price;
+            self.ask_prices[idx] = ask_price;
+            self.bid_sizes[idx] = tick.bid_size.as_f64();
+            self.ask_sizes[idx] = tick.ask_size.as_f64();
+
+            if !self.is_futures_spread {
+                self.mid_prices[idx] = (ask_price + bid_price) * 0.5;
+                self.bid_ask_spreads[idx] = ask_price - bid_price;
+
+                if let Some(ref vp) = self.vega_provider
+                    && let Some(vega) = vp.vega_for_leg(leg_id)
+                {
+                    self.vegas[idx] = vega;
+                }
+            }
+        }
+        let (raw_bid, raw_ask) = if self.is_futures_spread {
+            self.create_futures_spread_prices()
+        } else {
+            self.create_option_spread_prices()
+        };
+        let spread_quote = self.create_quote_tick_from_raw_prices(raw_bid, raw_ask, ts_init);
+        self.has_update = false;
+        (self.handler)(spread_quote);
+    }
+
+    fn create_option_spread_prices(&self) -> (f64, f64) {
+        let vega_multipliers: Vec<f64> = (0..self.n_legs)
+            .map(|i| {
+                if self.vegas[i] == 0.0 {
+                    0.0
+                } else {
+                    self.bid_ask_spreads[i] / self.vegas[i]
+                }
+            })
+            .collect();
+        let non_zero: Vec<f64> = vega_multipliers
+            .iter()
+            .copied()
+            .filter(|&x| x != 0.0)
+            .collect();
+
+        if non_zero.is_empty() {
+            log::warn!(
+                "No vega information available for the components of {}. Will generate spread quote using component quotes only",
+                self.spread_instrument_id
+            );
+            return self.create_futures_spread_prices();
+        }
+        let vega_multiplier = non_zero.iter().map(|x| x.abs()).sum::<f64>() / non_zero.len() as f64;
+        let spread_vega = self
+            .vegas
+            .iter()
+            .zip(self.ratios.iter())
+            .map(|(v, r)| v * (*r as f64))
+            .sum::<f64>()
+            .abs();
+        let bid_ask_spread = spread_vega * vega_multiplier;
+        let spread_mid_price: f64 = self
+            .mid_prices
+            .iter()
+            .zip(self.ratios.iter())
+            .map(|(m, r)| m * (*r as f64))
+            .sum();
+        let raw_bid = spread_mid_price - bid_ask_spread * 0.5;
+        let raw_ask = spread_mid_price + bid_ask_spread * 0.5;
+        (raw_bid, raw_ask)
+    }
+
+    fn create_futures_spread_prices(&self) -> (f64, f64) {
+        let mut raw_ask = 0.0_f64;
+        let mut raw_bid = 0.0_f64;
+        for i in 0..self.n_legs {
+            let r = self.ratios[i] as f64;
+            if self.ratios[i] >= 0 {
+                raw_ask += r * self.ask_prices[i];
+                raw_bid += r * self.bid_prices[i];
+            } else {
+                raw_ask += r * self.bid_prices[i];
+                raw_bid += r * self.ask_prices[i];
+            }
+        }
+        (raw_bid, raw_ask)
+    }
+
+    fn create_quote_tick_from_raw_prices(
+        &self,
+        raw_bid_price: f64,
+        raw_ask_price: f64,
+        ts_init: UnixNanos,
+    ) -> QuoteTick {
+        let (bid_price, ask_price) = if let Some(ref rounder) = self.price_rounder {
+            rounder.round_prices(raw_bid_price, raw_ask_price, self.price_precision)
+        } else {
+            let bid = price_from_f64(raw_bid_price, self.price_precision);
+            let ask = price_from_f64(raw_ask_price, self.price_precision);
+            (bid, ask)
+        };
+        let mut min_bid_size = f64::INFINITY;
+        let mut min_ask_size = f64::INFINITY;
+        for i in 0..self.n_legs {
+            let abs_ratio = self.ratios[i].unsigned_abs() as f64;
+            if self.ratios[i] >= 0 {
+                let b = self.bid_sizes[i] / abs_ratio;
+                if b < min_bid_size {
+                    min_bid_size = b;
+                }
+                let a = self.ask_sizes[i] / abs_ratio;
+                if a < min_ask_size {
+                    min_ask_size = a;
+                }
+            } else {
+                let b = self.ask_sizes[i] / abs_ratio;
+                if b < min_bid_size {
+                    min_bid_size = b;
+                }
+                let a = self.bid_sizes[i] / abs_ratio;
+                if a < min_ask_size {
+                    min_ask_size = a;
+                }
+            }
+        }
+        let bid_size = Quantity::new(min_bid_size, self.size_precision);
+        let ask_size = Quantity::new(min_ask_size, self.size_precision);
+        QuoteTick::new(
+            self.spread_instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_init,
+            ts_init,
+        )
+    }
+}
+
+fn price_from_f64(v: f64, precision: u8) -> Price {
+    Price::new(v, precision)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use nautilus_common::clock::TestClock;
-    use nautilus_core::{MUTEX_POISONED, UUID4};
+    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
     use nautilus_model::{
-        data::{BarSpecification, BarType},
+        data::{BarSpecification, BarType, QuoteTick},
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
+        identifiers::InstrumentId,
         instruments::{CurrencyPair, Equity, Instrument, InstrumentAny, stubs::*},
         types::{Price, Quantity},
     };
@@ -4458,5 +4977,696 @@ mod tests {
         assert_eq!(results[0], 3); // 3000 / 1000
         assert_eq!(results[1], 2); // 3000 / 1500
         assert_ne!(results[0], results[1]);
+    }
+
+    /// Historical time-bar: event at ts_init is deferred until after the update (Cython parity).
+    #[rstest]
+    fn test_time_bar_historical_defers_event_at_ts_init_until_after_update(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut agg = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            true,
+            true,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+        agg.historical_mode = true;
+        agg.set_clock_internal(clock);
+        let boxed: Box<dyn BarAggregator> = Box::new(agg);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_000_000_000),
+        );
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert!(
+            !bars.is_empty(),
+            "deferred event at ts_init should produce a bar that includes the update"
+        );
+        let last_bar = bars.last().unwrap();
+        assert_eq!(last_bar.close, Price::from("100.00"));
+        assert!(
+            last_bar.volume.as_f64() >= 1.0,
+            "bar built after deferred event should include the update at ts_init"
+        );
+    }
+
+    #[rstest]
+    fn test_spread_quote_quote_driven_emits_when_all_legs_received(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            None,
+            None,
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ));
+        assert_eq!(handler.lock().expect(MUTEX_POISONED).len(), 0);
+
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("99.00"),
+            Price::from("99.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].instrument_id, spread_id);
+        assert!(quotes[0].bid_price < quotes[0].ask_price);
+    }
+
+    #[rstest]
+    fn test_spread_quote_futures_pricing_signed_ratios(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            None,
+            None,
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("20.00"),
+            Price::from("20.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        let q = &quotes[0];
+        assert_eq!(q.instrument_id, spread_id);
+        assert_eq!(q.bid_price, Price::from("-10.10"));
+        assert_eq!(q.ask_price, Price::from("-9.90"));
+    }
+
+    #[rstest]
+    fn test_spread_quote_size_calculation_non_unit_ratios(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 2_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            None,
+            None,
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(40),
+            ts,
+            ts,
+        ));
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(50),
+            Quantity::from(30),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        let q = &quotes[0];
+        assert_eq!(q.bid_size.as_f64(), 30.0);
+        assert_eq!(q.ask_size.as_f64(), 20.0);
+    }
+
+    #[rstest]
+    fn test_spread_quote_timer_driven_emission_cadence(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(0));
+
+        let agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock.clone(),
+            false,
+            Some(1),
+            0,
+            None,
+            None,
+        );
+        let rc = Rc::new(RefCell::new(agg));
+        rc.borrow_mut().prepare_for_timer_mode(&rc);
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        let ts1 = UnixNanos::from(1_000_000_000);
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts1,
+            ts1,
+        ));
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("99.00"),
+            Price::from("99.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts1,
+            ts1,
+        ));
+
+        let ts2 = UnixNanos::from(2_000_000_000);
+        let mut clock_guard = clock.borrow_mut();
+        let events = clock_guard.advance_time(ts2, true);
+        drop(clock_guard);
+        for event in events {
+            rc.borrow_mut().on_timer_fire(event.ts_init);
+        }
+
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert!(
+            !quotes.is_empty(),
+            "timer-driven mode should emit at least one spread quote after advance"
+        );
+    }
+
+    #[rstest]
+    fn test_spread_quote_historical_timer_waits_for_all_legs(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            #[allow(clippy::redundant_clone)] // need clock for set_clock after
+            clock.clone(),
+            true,
+            Some(1),
+            0,
+            None,
+            None,
+        );
+        let rc = Rc::new(RefCell::new(agg));
+        rc.borrow_mut().prepare_for_timer_mode(&rc);
+        rc.borrow_mut().set_clock(clock);
+
+        let ts1 = UnixNanos::from(1_000_000_000);
+        let ts2 = UnixNanos::from(2_000_000_000);
+        let ts3 = UnixNanos::from(3_000_000_000);
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts1,
+            ts1,
+        ));
+        assert_eq!(handler.lock().expect(MUTEX_POISONED).len(), 0);
+
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("99.00"),
+            Price::from("99.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts2,
+            ts2,
+        ));
+        assert_eq!(handler.lock().expect(MUTEX_POISONED).len(), 0);
+
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts3,
+            ts3,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(
+            quotes.len(),
+            1,
+            "deferred event at ts2 is processed when we have all legs and advance to ts3"
+        );
+    }
+
+    #[rstest]
+    fn test_spread_quote_option_vega_weighting(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut vega_provider = MapVegaProvider::new();
+        vega_provider.insert(leg1, 0.15);
+        vega_provider.insert(leg2, 0.12);
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            false,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            Some(Box::new(vega_provider)),
+            None,
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.20"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("11.00"),
+            Price::from("11.20"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        let q = &quotes[0];
+        assert!(q.bid_price < q.ask_price);
+        assert!(q.ask_price.as_f64() - q.bid_price.as_f64() > 0.0);
+    }
+
+    #[rstest]
+    fn test_spread_quote_all_zero_vega_fallback(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut vega_provider = MapVegaProvider::new();
+        vega_provider.insert(leg1, 0.0);
+        vega_provider.insert(leg2, 0.0);
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            false,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            Some(Box::new(vega_provider)),
+            None,
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("20.00"),
+            Price::from("20.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        let q = &quotes[0];
+        assert_eq!(q.bid_price, Price::from("-10.10"));
+        assert_eq!(q.ask_price, Price::from("-9.90"));
+    }
+
+    #[rstest]
+    fn test_spread_quote_negative_prices_tick_scheme(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let rounder = FixedTickSchemeRounder::new(0.01).unwrap();
+
+        let mut agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            2,
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock,
+            false,
+            None,
+            0,
+            None,
+            Some(Box::new(rounder)),
+        );
+
+        let ts = UnixNanos::from(1_000_000_000);
+        agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("20.00"),
+            Price::from("20.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(quotes.len(), 1);
+        let q = &quotes[0];
+        assert!(q.bid_price.as_f64() < 0.0);
+        assert!(q.ask_price.as_f64() < 0.0);
+        assert!(q.bid_price < q.ask_price);
+    }
+
+    #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_on_boundary(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+
+        let mut aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            false,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            true,
+        );
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_000_000_000),
+        );
+        aggregator.build_bar(&TimeEvent::new(
+            Ustr::from("1-SECOND-LAST"),
+            UUID4::new(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        ));
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(2_500_000_000),
+        );
+        aggregator.build_bar(&TimeEvent::new(
+            Ustr::from("1-SECOND-LAST"),
+            UUID4::new(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        ));
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(
+            bars.len(),
+            1,
+            "first bar skipped (skip_first_non_full_bar), second bar emitted"
+        );
+        assert_eq!(bars[0].close, Price::from("100.00"));
+    }
+
+    #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_near_boundary(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
+
+        let mut aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            false,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            true,
+        );
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_500_000_000),
+        );
+        aggregator.build_bar(&TimeEvent::new(
+            Ustr::from("1-SECOND-LAST"),
+            UUID4::new(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        ));
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(2_500_000_000),
+        );
+        aggregator.build_bar(&TimeEvent::new(
+            Ustr::from("1-SECOND-LAST"),
+            UUID4::new(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        ));
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert!(
+            !bars.is_empty(),
+            "first bar skipped (skip_first_non_full_bar), later bar emitted"
+        );
+    }
+
+    #[rstest]
+    fn test_time_bar_historical_prevents_bars_for_timer_before_last_data(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut agg = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            true,
+            true,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+        agg.historical_mode = true;
+        agg.set_clock_internal(clock);
+        let boxed: Box<dyn BarAggregator> = Box::new(agg);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+
+        let ts = UnixNanos::from(2_000_000_000);
+        rc.borrow_mut()
+            .update(Price::from("100.00"), Quantity::from(1), ts);
+        let bars_before = handler.lock().expect(MUTEX_POISONED).len();
+        rc.borrow_mut()
+            .update(Price::from("101.00"), Quantity::from(1), ts);
+        let bars_after = handler.lock().expect(MUTEX_POISONED);
+        assert!(
+            bars_after.len() >= bars_before,
+            "bar built after last data update should include that update (deferred event at ts_init)"
+        );
     }
 }

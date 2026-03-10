@@ -69,4 +69,8 @@ pub mod python;
 pub mod defi;
 
 // Re-exports
+pub use aggregation::{
+    FixedTickSchemeRounder, MapVegaProvider, SpreadPriceRounder, SpreadQuoteAggregator,
+    VegaProvider,
+};
 pub use client::DataClientAdapter;
