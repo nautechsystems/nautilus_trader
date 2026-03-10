@@ -1080,9 +1080,11 @@ class OKXExecutionClient(LiveExecutionClient):
                 order=parent_order,
                 params=command.params,
                 attach_algo_ords=attach_algo_ords,
-                )
+            )
         except Exception as e:
-            self._clear_attached_oco_binding(parent_order.client_order_id if "parent_order" in locals() else None)
+            self._clear_attached_oco_binding(
+                parent_order.client_order_id if "parent_order" in locals() else None,
+            )
             for order in order_list.orders:
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
@@ -1214,7 +1216,7 @@ class OKXExecutionClient(LiveExecutionClient):
             return str(close_fraction)
 
         raise ValueError(
-            f"OKX close_fraction must be a str, int, or float, got {type(close_fraction).__name__}",
+            f"OKX close_fraction must be a str, int, or float, was {type(close_fraction).__name__}",
         )
 
     def _extract_attached_bracket_orders(
@@ -1223,9 +1225,7 @@ class OKXExecutionClient(LiveExecutionClient):
     ) -> tuple[Order, Order | None, Order | None]:
         parent_order = self._extract_attached_bracket_parent(orders)
         child_orders = [
-            order
-            for order in orders
-            if order.parent_order_id == parent_order.client_order_id
+            order for order in orders if order.parent_order_id == parent_order.client_order_id
         ]
         if not child_orders:
             raise ValueError("OKX attached TP/SL requires at least one child protective order")
@@ -1360,7 +1360,9 @@ class OKXExecutionClient(LiveExecutionClient):
         for linked_id in order.linked_order_ids or []:
             add_order(linked_id)
 
-        parent_candidate = self._cache.order(order.parent_order_id) if order.parent_order_id else None
+        parent_candidate = (
+            self._cache.order(order.parent_order_id) if order.parent_order_id else None
+        )
         if parent_candidate is not None:
             add_order(parent_candidate.client_order_id)
             for linked_id in parent_candidate.linked_order_ids or []:
@@ -2148,7 +2150,9 @@ class OKXExecutionClient(LiveExecutionClient):
         values["order_list_id"] = (
             child_order.order_list_id.value if child_order.order_list_id is not None else None
         )
-        values["linked_order_ids"] = [client_order_id.value for client_order_id in linked_order_ids] or None
+        values["linked_order_ids"] = [
+            client_order_id.value for client_order_id in linked_order_ids
+        ] or None
         values["parent_order_id"] = (
             child_order.parent_order_id.value if child_order.parent_order_id is not None else None
         )
@@ -2162,7 +2166,9 @@ class OKXExecutionClient(LiveExecutionClient):
             str(child_order.trigger_price) if child_order.has_trigger_price else None
         )
         values["trigger_type"] = (
-            child_order.trigger_type.value if child_order.has_trigger_price else TriggerType.NO_TRIGGER.value
+            child_order.trigger_type.value
+            if child_order.has_trigger_price
+            else TriggerType.NO_TRIGGER.value
         )
         values["reduce_only"] = child_order.is_reduce_only
 
@@ -2456,7 +2462,11 @@ class OKXExecutionClient(LiveExecutionClient):
         algo_id_for_client = self._algo_order_ids.get(canonical_client_order_id)
 
         if self._is_conditional_order(order):
-            child = None if is_attached_oco_child else self._client_id_children.get(report.client_order_id)
+            child = (
+                None
+                if is_attached_oco_child
+                else self._client_id_children.get(report.client_order_id)
+            )
             venue_changed = (
                 order.venue_order_id is not None
                 and report.venue_order_id is not None

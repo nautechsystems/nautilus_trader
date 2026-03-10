@@ -1195,30 +1195,18 @@ fn parse_algo_order_fields(msg: &OKXAlgoOrderMsg) -> anyhow::Result<AlgoOrderFie
             ord_px: msg.ord_px.as_str(),
         }),
         OKXAlgoOrderType::Conditional | OKXAlgoOrderType::Oco => {
-            if !msg.tp_trigger_px.is_empty() {
-                let ord_px = msg.tp_ord_px.as_str();
-                Ok(AlgoOrderFields {
-                    order_type: if is_market_price(ord_px) {
-                        OrderType::MarketIfTouched
-                    } else {
-                        OrderType::LimitIfTouched
-                    },
-                    trigger_px: msg.tp_trigger_px.as_str(),
-                    trigger_px_type: msg.tp_trigger_px_type,
-                    ord_px,
-                })
-            } else {
-                let (trigger_px, trigger_px_type, ord_px) = if !msg.sl_trigger_px.is_empty() {
-                    (
-                        msg.sl_trigger_px.as_str(),
-                        msg.sl_trigger_px_type,
-                        msg.sl_ord_px.as_str(),
-                    )
-                } else {
+            if msg.tp_trigger_px.is_empty() {
+                let (trigger_px, trigger_px_type, ord_px) = if msg.sl_trigger_px.is_empty() {
                     (
                         msg.trigger_px.as_str(),
                         msg.trigger_px_type,
                         msg.ord_px.as_str(),
+                    )
+                } else {
+                    (
+                        msg.sl_trigger_px.as_str(),
+                        msg.sl_trigger_px_type,
+                        msg.sl_ord_px.as_str(),
                     )
                 };
 
@@ -1230,6 +1218,18 @@ fn parse_algo_order_fields(msg: &OKXAlgoOrderMsg) -> anyhow::Result<AlgoOrderFie
                     },
                     trigger_px,
                     trigger_px_type,
+                    ord_px,
+                })
+            } else {
+                let ord_px = msg.tp_ord_px.as_str();
+                Ok(AlgoOrderFields {
+                    order_type: if is_market_price(ord_px) {
+                        OrderType::MarketIfTouched
+                    } else {
+                        OrderType::LimitIfTouched
+                    },
+                    trigger_px: msg.tp_trigger_px.as_str(),
+                    trigger_px_type: msg.tp_trigger_px_type,
                     ord_px,
                 })
             }
@@ -1908,9 +1908,7 @@ mod tests {
             testing::load_test_json,
         },
         http::models::OKXAccount,
-        websocket::messages::{
-            OKXAlgoOrderMsg, OKXAttachedAlgoOrd, OKXWebSocketArg, OKXWsMessage,
-        },
+        websocket::messages::{OKXAlgoOrderMsg, OKXAttachedAlgoOrd, OKXWebSocketArg, OKXWsMessage},
     };
 
     fn create_stub_instrument() -> CryptoPerpetual {

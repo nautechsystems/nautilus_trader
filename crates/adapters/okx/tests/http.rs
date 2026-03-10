@@ -45,12 +45,13 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
+        enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode, OKXTriggerType},
         models::OKXInstrument,
     },
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
+        models::OKXAttachAlgoOrdRequest,
         query::{
             GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOrderHistoryParams,
             GetOrderListParams, GetOrderParamsBuilder, GetPositionTiersParamsBuilder,
@@ -221,13 +222,12 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 .into_response();
                         }
 
-                        let fixture = if params.get("instId").map(String::as_str)
-                            == Some("ETH-USDT-SWAP")
-                        {
-                            "http_get_orders_pending_with_attached_tp_sl.json"
-                        } else {
-                            "http_get_orders_pending.json"
-                        };
+                        let fixture =
+                            if params.get("instId").map(String::as_str) == Some("ETH-USDT-SWAP") {
+                                "http_get_orders_pending_with_attached_tp_sl.json"
+                            } else {
+                                "http_get_orders_pending.json"
+                            };
 
                         *state.last_pending_orders_query.lock().await = Some(params);
                         Json(load_test_data(fixture)).into_response()
@@ -347,8 +347,10 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                     .into_response();
                             }
 
-                            return Json(load_test_data("http_get_orders_algo_pending_attached_oco.json"))
-                                .into_response();
+                            return Json(load_test_data(
+                                "http_get_orders_algo_pending_attached_oco.json",
+                            ))
+                            .into_response();
                         }
 
                         let fixture = if params.get("algoClOrdId").map(String::as_str)
@@ -366,57 +368,60 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         )
         .route(
             "/api/v5/trade/orders-algo-history",
-            get(move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
-                let state = algo_history_state.clone();
-                async move {
-                    if !has_auth_headers(&headers) {
-                        return (
-                            StatusCode::UNAUTHORIZED,
-                            Json(json!({
-                                "code": "401",
-                                "msg": "Missing authentication headers",
-                                "data": [],
-                            })),
-                        )
-                            .into_response();
-                    }
-
-                    state.algo_history_queries.lock().await.push(params.clone());
-
-                    if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
-                        if params.get("ordType").map(String::as_str) != Some("oco") {
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = algo_history_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
                             return (
-                                StatusCode::BAD_REQUEST,
+                                StatusCode::UNAUTHORIZED,
                                 Json(json!({
-                                    "code": "51000",
-                                    "msg": "Parameter ordType error",
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
                                     "data": [],
                                 })),
                             )
                                 .into_response();
                         }
 
-                        return Json(json!({
-                            "code": "0",
-                            "msg": "",
-                            "data": [],
-                        }))
-                        .into_response();
-                    }
+                        state.algo_history_queries.lock().await.push(params.clone());
 
-                    if params.get("algoClOrdId").map(String::as_str) == Some("O-close-frac-status")
-                    {
-                        return Json(json!({
-                            "code": "0",
-                            "msg": "",
-                            "data": [],
-                        }))
-                        .into_response();
-                    }
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
+                            if params.get("ordType").map(String::as_str) != Some("oco") {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!({
+                                        "code": "51000",
+                                        "msg": "Parameter ordType error",
+                                        "data": [],
+                                    })),
+                                )
+                                    .into_response();
+                            }
 
-                    Json(load_test_data("http_get_orders_algo_history.json")).into_response()
-                }
-            }),
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        if params.get("algoClOrdId").map(String::as_str)
+                            == Some("O-close-frac-status")
+                        {
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        Json(load_test_data("http_get_orders_algo_history.json")).into_response()
+                    }
+                },
+            ),
         )
         .route(
             "/api/v5/trade/order-algo",
@@ -2030,7 +2035,10 @@ async fn test_http_request_algo_order_status_report_queries_attached_oco_with_or
         .unwrap()
         .expect("expected attached OCO algo report");
 
-    assert_eq!(report.client_order_id, Some(ClientOrderId::from("O-attached-oco")));
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-attached-oco"))
+    );
     assert!(report.trigger_price.is_some());
 
     let pending_queries = state.algo_pending_queries.lock().await.clone();
@@ -2038,7 +2046,7 @@ async fn test_http_request_algo_order_status_report_queries_attached_oco_with_or
         pending_queries
             .iter()
             .any(|query| query.get("ordType").map(String::as_str) == Some("oco")),
-        "expected at least one pending algo query with ordType=oco, got {pending_queries:?}",
+        "expected at least one pending algo query with ordType=oco, found {pending_queries:?}",
     );
 }
 
@@ -2196,14 +2204,14 @@ async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
             None,
             None,
             None,
-            Some(vec![nautilus_okx::http::models::OKXAttachAlgoOrdRequest {
+            Some(vec![OKXAttachAlgoOrdRequest {
                 attach_algo_cl_ord_id: Some("O-bracket-sl".to_string()),
                 sl_trigger_px: Some("39000.00".to_string()),
                 sl_ord_px: Some("-1".to_string()),
-                sl_trigger_px_type: Some(nautilus_okx::common::enums::OKXTriggerType::Last),
+                sl_trigger_px_type: Some(OKXTriggerType::Last),
                 tp_trigger_px: Some("41000.00".to_string()),
                 tp_ord_px: Some("-1".to_string()),
-                tp_trigger_px_type: Some(nautilus_okx::common::enums::OKXTriggerType::Last),
+                tp_trigger_px_type: Some(OKXTriggerType::Last),
             }]),
         )
         .await

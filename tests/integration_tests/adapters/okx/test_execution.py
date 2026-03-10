@@ -115,7 +115,9 @@ def exec_client_builder(
     return builder
 
 
-def _build_bracket_order_list(instrument_id: InstrumentId) -> tuple[OrderList, MarketOrder, StopMarketOrder, MarketIfTouchedOrder]:
+def _build_bracket_order_list(
+    instrument_id: InstrumentId,
+) -> tuple[OrderList, MarketOrder, StopMarketOrder, MarketIfTouchedOrder]:
     order_list_id = TestIdStubs.order_list_id()
     entry_order = MarketOrder(
         trader_id=TestIdStubs.trader_id(),
@@ -1141,9 +1143,7 @@ async def test_attached_oco_status_report_accepts_both_logical_children(
 
     # Assert
     accepted_ids = sorted(
-        event.client_order_id
-        for event in captured
-        if isinstance(event, OrderAccepted)
+        event.client_order_id for event in captured if isinstance(event, OrderAccepted)
     )
     assert accepted_ids == sorted([sl_order.client_order_id, tp_order.client_order_id])
     assert not any(isinstance(event, OrderUpdated) for event in captured)
@@ -1220,9 +1220,7 @@ async def test_attached_oco_status_report_rebuilds_binding_from_cached_orders(
 
     # Assert
     accepted_ids = sorted(
-        event.client_order_id
-        for event in captured
-        if isinstance(event, OrderAccepted)
+        event.client_order_id for event in captured if isinstance(event, OrderAccepted)
     )
     assert accepted_ids == sorted([sl_order.client_order_id, tp_order.client_order_id])
     assert client._attached_oco_binding(entry_order.client_order_id) is not None

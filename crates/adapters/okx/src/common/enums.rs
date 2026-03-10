@@ -615,13 +615,24 @@ impl From<TriggerType> for OKXTriggerType {
 mod tests {
     use std::str::FromStr;
 
+    use rstest::rstest;
+
     use super::OKXTriggerType;
 
-    #[test]
+    #[rstest]
     fn test_okx_trigger_type_from_str_accepts_snake_case_values() {
-        assert_eq!(OKXTriggerType::from_str("last").unwrap(), OKXTriggerType::Last);
-        assert_eq!(OKXTriggerType::from_str("mark").unwrap(), OKXTriggerType::Mark);
-        assert_eq!(OKXTriggerType::from_str("index").unwrap(), OKXTriggerType::Index);
+        assert_eq!(
+            OKXTriggerType::from_str("last").unwrap(),
+            OKXTriggerType::Last
+        );
+        assert_eq!(
+            OKXTriggerType::from_str("mark").unwrap(),
+            OKXTriggerType::Mark
+        );
+        assert_eq!(
+            OKXTriggerType::from_str("index").unwrap(),
+            OKXTriggerType::Index
+        );
     }
 }
 

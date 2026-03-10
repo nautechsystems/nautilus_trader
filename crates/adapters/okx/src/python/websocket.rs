@@ -83,9 +83,7 @@ fn extract_optional_trigger_type(
     extract_optional_string(dict, key)?
         .map(|value| {
             OKXTriggerType::from_str(&value).map_err(|_| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid OKX trigger type {value:?} for {key}",
-                ))
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
             })
         })
         .transpose()
@@ -97,31 +95,38 @@ fn parse_attach_algo_ords(
 ) -> PyResult<Option<Vec<WsAttachAlgoOrdParams>>> {
     attach_algo_ords
         .map(|items| {
-            items.into_iter()
+            items
+                .into_iter()
                 .map(|item| {
                     let dict = item.bind(py);
                     let mut builder = WsAttachAlgoOrdParamsBuilder::default();
 
-                    if let Some(value) = extract_optional_string(&dict, "attach_algo_cl_ord_id")? {
+                    if let Some(value) = extract_optional_string(dict, "attach_algo_cl_ord_id")? {
                         builder.attach_algo_cl_ord_id(value);
                     }
-                    if let Some(value) = extract_optional_string(&dict, "sl_trigger_px")? {
+
+                    if let Some(value) = extract_optional_string(dict, "sl_trigger_px")? {
                         builder.sl_trigger_px(value);
                     }
-                    if let Some(value) = extract_optional_string(&dict, "sl_ord_px")? {
+
+                    if let Some(value) = extract_optional_string(dict, "sl_ord_px")? {
                         builder.sl_ord_px(value);
                     }
-                    if let Some(value) = extract_optional_trigger_type(&dict, "sl_trigger_px_type")?
+
+                    if let Some(value) = extract_optional_trigger_type(dict, "sl_trigger_px_type")?
                     {
                         builder.sl_trigger_px_type(value);
                     }
-                    if let Some(value) = extract_optional_string(&dict, "tp_trigger_px")? {
+
+                    if let Some(value) = extract_optional_string(dict, "tp_trigger_px")? {
                         builder.tp_trigger_px(value);
                     }
-                    if let Some(value) = extract_optional_string(&dict, "tp_ord_px")? {
+
+                    if let Some(value) = extract_optional_string(dict, "tp_ord_px")? {
                         builder.tp_ord_px(value);
                     }
-                    if let Some(value) = extract_optional_trigger_type(&dict, "tp_trigger_px_type")?
+
+                    if let Some(value) = extract_optional_trigger_type(dict, "tp_trigger_px_type")?
                     {
                         builder.tp_trigger_px_type(value);
                     }

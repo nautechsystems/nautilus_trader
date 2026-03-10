@@ -1878,9 +1878,7 @@ mod tests {
     #[rstest]
     fn test_ws_post_order_params_serializes_attached_tp_sl() {
         use super::{WsAttachAlgoOrdParamsBuilder, WsPostOrderParamsBuilder};
-        use crate::common::enums::{
-            OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType,
-        };
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType};
 
         let params = WsPostOrderParamsBuilder::default()
             .inst_id(Ustr::from("BTC-USDT-SWAP"))

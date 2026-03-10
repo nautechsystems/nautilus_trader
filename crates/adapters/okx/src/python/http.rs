@@ -56,9 +56,7 @@ fn extract_optional_trigger_type(
     extract_optional_string(dict, key)?
         .map(|value| {
             OKXTriggerType::from_str(&value).map_err(|_| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid OKX trigger type {value:?} for {key}",
-                ))
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
             })
         })
         .transpose()
@@ -70,24 +68,25 @@ fn parse_attach_algo_ords(
 ) -> PyResult<Option<Vec<OKXAttachAlgoOrdRequest>>> {
     attach_algo_ords
         .map(|items| {
-            items.into_iter()
+            items
+                .into_iter()
                 .map(|item| {
                     let dict = item.bind(py);
                     Ok(OKXAttachAlgoOrdRequest {
                         attach_algo_cl_ord_id: extract_optional_string(
-                            &dict,
+                            dict,
                             "attach_algo_cl_ord_id",
                         )?,
-                        sl_trigger_px: extract_optional_string(&dict, "sl_trigger_px")?,
-                        sl_ord_px: extract_optional_string(&dict, "sl_ord_px")?,
+                        sl_trigger_px: extract_optional_string(dict, "sl_trigger_px")?,
+                        sl_ord_px: extract_optional_string(dict, "sl_ord_px")?,
                         sl_trigger_px_type: extract_optional_trigger_type(
-                            &dict,
+                            dict,
                             "sl_trigger_px_type",
                         )?,
-                        tp_trigger_px: extract_optional_string(&dict, "tp_trigger_px")?,
-                        tp_ord_px: extract_optional_string(&dict, "tp_ord_px")?,
+                        tp_trigger_px: extract_optional_string(dict, "tp_trigger_px")?,
+                        tp_ord_px: extract_optional_string(dict, "tp_ord_px")?,
                         tp_trigger_px_type: extract_optional_trigger_type(
-                            &dict,
+                            dict,
                             "tp_trigger_px_type",
                         )?,
                     })
@@ -615,18 +614,23 @@ impl OKXHttpClient {
 
             Python::attach(|py| {
                 let dict = PyDict::new(py);
+
                 if let Some(ord_id) = resp.ord_id {
                     dict.set_item("ord_id", ord_id.as_str())?;
                 }
+
                 if let Some(cl_ord_id) = resp.cl_ord_id {
                     dict.set_item("cl_ord_id", cl_ord_id.as_str())?;
                 }
+
                 if let Some(s_code) = resp.s_code {
                     dict.set_item("s_code", s_code)?;
                 }
+
                 if let Some(s_msg) = resp.s_msg {
                     dict.set_item("s_msg", s_msg)?;
                 }
+
                 Ok(dict.into_py_any_unwrap(py))
             })
         })

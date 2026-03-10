@@ -79,12 +79,12 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse,
-        OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse,
-        OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo,
-        OKXOrderBookSnapshot, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
-        OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest, OKXPlaceOrderResponse, OKXPosition,
-        OKXPositionHistory, OKXPositionTier, OKXServerTime, OKXTransactionDetail,
+        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAttachAlgoOrdRequest,
+        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXFeeRate, OKXFundingRateHistory,
+        OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
+        OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
+        OKXTransactionDetail,
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
@@ -161,9 +161,11 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::resolve_okx_error_message;
 
-    #[test]
+    #[rstest]
     fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
         let body = br#"{
             "code": "1",
@@ -3192,13 +3194,7 @@ impl OKXHttpClient {
 
         let resp: Vec<OKXPlaceOrderResponse> = self
             .inner
-            .send_request::<_, ()>(
-                Method::POST,
-                "/api/v5/trade/order",
-                None,
-                Some(body),
-                true,
-            )
+            .send_request::<_, ()>(Method::POST, "/api/v5/trade/order", None, Some(body), true)
             .await?;
 
         resp.into_iter()
@@ -3468,7 +3464,7 @@ impl OKXHttpClient {
             .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
         let side = OKXSide::from(order_side.as_specified());
-        let pos_side = position_side.map(Into::into).or_else(|| {
+        let pos_side = position_side.map(Into::into).or({
             if matches!(
                 instrument_type,
                 OKXInstrumentType::Swap | OKXInstrumentType::Futures | OKXInstrumentType::Option
@@ -3637,7 +3633,7 @@ impl OKXHttpClient {
                 ),
                 _ => {
                     return Err(OKXHttpError::ValidationError(format!(
-                        "OKX close_fraction is only supported for stop/touched conditional orders, got {order_type:?}"
+                        "OKX close_fraction is only supported for stop/touched conditional orders, received {order_type:?}"
                     )));
                 }
             };
@@ -3805,9 +3801,9 @@ impl OKXHttpClient {
                 params_builder.limit(limit);
             }
 
-            let params = params_builder.build().map_err(|e| {
-                anyhow::anyhow!(format!("Failed to build algo order params: {e}"))
-            })?;
+            let params = params_builder
+                .build()
+                .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
 
             let pending = match self.inner.get_order_algo_pending(params.clone()).await {
                 Ok(result) => result,
