@@ -664,7 +664,6 @@ def on_start(self):
         venue=IB_VENUE,
         update_catalog=True,
         params={
-            "update_catalog": True,
             "ib_contracts": (
                 # SPY options
                 {
@@ -694,6 +693,34 @@ def on_start(self):
                     "build_options_chain": True,
                     "min_expiry_days": 0,
                     "max_expiry_days": 60,
+                },
+                # SPX index options
+                {
+                    "secType": "IND",
+                    "symbol": "SPX",
+                    "exchange": "CBOE",
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 5,
+                },
+                # ES futures chain and futures options
+                {
+                    "secType": "CONTFUT",
+                    "exchange": "CME",
+                    "symbol": "ES",
+                    "build_futures_chain": True,
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 2,
+                },
+                # ESTX50 index options (Eurex)
+                {
+                    "secType": "IND",
+                    "exchange": "EUREX",
+                    "symbol": "ESTX50",
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 2,
                 },
             ),
         },
@@ -725,9 +752,9 @@ bars = await client.request_bars(
 ### Retrieving historical ticks
 
 ```python
-# Request historical tick data
+# Request historical tick data (use tick_type="TRADES" or "BID_ASK" for quote ticks)
 ticks = await client.request_ticks(
-    tick_types=["TRADES", "BID_ASK"],  # Trade ticks and quote ticks
+    tick_type="TRADES",
     start_date_time=datetime.datetime(2023, 11, 6, 9, 30),
     end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
     tz_name="America/New_York",
@@ -798,7 +825,7 @@ async def download_historical_data():
 
     # Request tick data
     ticks = await client.request_ticks(
-        tick_types=["TRADES"],
+        tick_type="TRADES",
         start_date_time=datetime.datetime(2023, 11, 6, 14, 0),
         end_date_time=datetime.datetime(2023, 11, 6, 15, 0),
         tz_name="America/New_York",
@@ -922,6 +949,17 @@ advanced_config = InteractiveBrokersInstrumentProviderConfig(
 )
 ```
 
+#### Filtering security types
+
+Use `filter_sec_types` to ignore specific IB `secType` values. Any contract whose `secType` matches an entry in this frozenset is skipped with a warning (for example unsupported types such as `WAR` or `IOPT`):
+
+```python
+instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
+    load_ids=frozenset(["SPY.ARCA"]),
+    filter_sec_types=frozenset({"WAR", "IOPT"}),  # Opt out from unsupported asset types
+)
+```
+
 ### Integration with external data providers
 
 The Interactive Brokers adapter can be used alongside other data providers for enhanced market data coverage. When using multiple data sources:
@@ -999,6 +1037,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 | `use_regular_trading_hours`     | `True`                                          | Request bars limited to regular trading hours when `True`. |
 | `market_data_type`              | `REALTIME`                                      | Market data feed type (`REALTIME`, `DELAYED`, `DELAYED_FROZEN`, etc.). |
 | `ignore_quote_tick_size_updates`| `False`                                         | Suppress quote ticks where only size changes when `True`. |
+| `handle_revised_bars`           | `False`                                         | When `True`, processes bar revisions from IB (bars can be updated after initial publication). |
 | `dockerized_gateway`            | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
 | `connection_timeout`            | `300`                                           | Seconds to wait for the initial API connection. |
 | `request_timeout_secs`          | `60`                                            | Seconds to wait for historical data requests before timing out. |
