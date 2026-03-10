@@ -106,6 +106,10 @@ class FakeGetSession:
         return self._response
 
 
+def _test_repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
 def make_config(tmp_path: Path, **overrides: Any) -> WatchConfig:
     cfg = {
         "poll_secs": 60,
@@ -442,6 +446,24 @@ telegram_chat_id = -100123
     config = load_config(config_path)
 
     assert config.account_label == "LanSub: traderX"
+
+
+def test_config_template_defaults_spot_base_url() -> None:
+    template_path = _test_repo_root() / "deploy" / "tg_bots" / "lan_rogue_trader_alert.ini"
+    template_text = template_path.read_text(encoding="utf-8")
+
+    assert "binance_spot_base_url = https://api.binance.com" in template_text
+
+
+def test_docs_describe_combined_pm_and_spot_balance() -> None:
+    repo_root = _test_repo_root()
+    runbook_text = (repo_root / "docs" / "runbooks" / "lan-rogue-trader-alert.md").read_text(
+        encoding="utf-8"
+    )
+    readme_text = (repo_root / "deploy" / "tg_bots" / "README.md").read_text(encoding="utf-8")
+
+    assert "combined Binance PM + spot `USDT` balance" in runbook_text
+    assert "combined Binance PM + spot balance" in readme_text
 
 
 def test_repo_root_searches_upwards_for_worktree_git_file(

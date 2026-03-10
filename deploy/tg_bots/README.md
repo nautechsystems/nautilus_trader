@@ -13,6 +13,7 @@ This directory is the production deployment root for Telegram bots enrolled in F
 - Supported production lifecycle: install with systemd, then manage the bot from Pulse.
 - Checked-in configs stay sanitized. Live secrets do not belong in git.
 - The Lan bot uses dedicated env var names so it does not inherit unrelated shared Binance credentials from `/etc/flux/common.env`.
+- The Lan bot watches the combined Binance PM + spot balance for the configured asset using the same Binance API key/secret for both requests.
 
 Dedicated Lan bot environment variables:
 
@@ -46,7 +47,8 @@ Required live values:
 - `LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET`
 - `LAN_ROGUE_TRADER_BOT_TELEGRAM_BOT_TOKEN`
 - `/etc/flux/tg-bot-lan-rogue-trader-alert.ini`
-  Set `telegram_chat_id` and optional `telegram_thread_id` here.
+  Set `telegram_chat_id`, optional `telegram_thread_id`, and optional
+  `binance_spot_base_url` here.
 
 Optional AWS Secrets Manager backup writes:
 

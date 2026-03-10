@@ -8,7 +8,7 @@ Use it with `deploy/tg_bots/README.md` and
 
 ## Purpose and scope
 
-- Watch the Binance PM `USDT` balance for Lan's account.
+- Watch the combined Binance PM + spot `USDT` balance for Lan's account.
 - Send a Telegram baseline plus balance-change alerts with the source bot's
   cooldown, summary, and missing-asset behavior.
 - Expose the service in Pulse under the `TG Bots` group.
@@ -40,6 +40,12 @@ Local config file:
   - `[lan_rogue_trader_alert]`
   - `telegram_chat_id`
   - optional `telegram_thread_id`
+  - optional `binance_spot_base_url` (defaults to `https://api.binance.com`)
+
+The same `LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY` and
+`LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET` are reused for both the PM and spot
+account requests. A missing spot `USDT` row is treated as zero spot balance,
+but request/parsing failures still fail the poll.
 
 ## Install and start
 
