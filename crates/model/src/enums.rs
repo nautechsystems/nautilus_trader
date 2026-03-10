@@ -661,6 +661,14 @@ impl InstrumentClass {
             Self::Future | Self::FuturesSpread | Self::Option | Self::OptionSpread
         )
     }
+
+    /// Returns whether this instrument class allows negative prices.
+    pub const fn allows_negative_price(&self) -> bool {
+        matches!(
+            self,
+            Self::Option | Self::FuturesSpread | Self::OptionSpread
+        )
+    }
 }
 
 /// The type of event for an instrument close.

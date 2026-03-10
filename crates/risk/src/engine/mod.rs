@@ -42,8 +42,8 @@ use nautilus_execution::trailing::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     enums::{
-        InstrumentClass, OrderSide, OrderStatus, PositionSide, TimeInForce, TradingState,
-        TrailingOffsetType, TriggerType,
+        OrderSide, OrderStatus, PositionSide, TimeInForce, TradingState, TrailingOffsetType,
+        TriggerType,
     },
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::{AccountId, InstrumentId},
@@ -426,6 +426,11 @@ impl RiskEngine {
         &self.cache
     }
 
+    /// Returns a mutable reference to the portfolio.
+    pub fn portfolio_mut(&mut self) -> &mut Portfolio {
+        &mut self.portfolio
+    }
+
     /// Returns a reference to the configuration.
     #[must_use]
     pub const fn config(&self) -> &RiskEngineConfig {
@@ -688,6 +693,7 @@ impl RiskEngine {
         match self.trading_state {
             TradingState::Halted => {
                 self.reject_modify_order(&order, "TradingState is HALTED: Cannot modify order");
+                return;
             }
             TradingState::Reducing => {
                 if let Some(quantity) = command.quantity
@@ -702,6 +708,7 @@ impl RiskEngine {
                             instrument.id()
                         ),
                     );
+                    return;
                 }
             }
             _ => {}
@@ -711,6 +718,12 @@ impl RiskEngine {
     }
 
     fn check_order(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
+        if !self.check_order_price(instrument, order)
+            || !self.check_order_quantity(instrument, order)
+        {
+            return false; // Denied
+        }
+
         if order.time_in_force() == TimeInForce::Gtd {
             let expire_time = order.expire_time().expect("GTD has expire time");
             if expire_time <= self.clock.borrow().timestamp_ns() {
@@ -720,12 +733,6 @@ impl RiskEngine {
                 );
                 return false; // Denied
             }
-        }
-
-        if !self.check_order_price(instrument, order)
-            || !self.check_order_quantity(instrument, order)
-        {
-            return false; // Denied
         }
 
         true
@@ -743,7 +750,7 @@ impl RiskEngine {
         if order.trigger_price().is_some() {
             let risk_msg = self.check_price(instrument, order.trigger_price());
             if let Some(risk_msg) = risk_msg {
-                self.deny_order(order, &risk_msg);
+                self.deny_order(order, &format!("trigger {risk_msg}"));
                 return false; // Denied
             }
         }
@@ -804,21 +811,18 @@ impl RiskEngine {
             ));
         }
 
-        // Get account for risk checks: prefer explicit account_id, fall back to venue lookup
+        // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
         let resolved_account = {
             let cache = self.cache.borrow();
 
             if let Some(account_id) = account_id {
-                cache
-                    .account(&account_id)
-                    .or_else(|| cache.account_for_venue(&instrument.id().venue))
-                    .cloned()
+                cache.account(&account_id).cloned()
             } else {
                 cache.account_for_venue(&instrument.id().venue).cloned()
             }
         };
 
-        let account = if let Some(account) = resolved_account {
+        let mut account = if let Some(account) = resolved_account {
             account
         } else {
             log::debug!(
@@ -827,15 +831,19 @@ impl RiskEngine {
             );
             return true;
         };
-        let cash_account = match account {
-            AccountAny::Cash(cash_account) => cash_account,
-            AccountAny::Margin(_) => return true, // TODO: Determine risk controls for margin
+
+        let is_margin = matches!(account, AccountAny::Margin(_));
+        let free = match &account {
+            AccountAny::Cash(cash) => cash.balance_free(Some(instrument.quote_currency())),
+            AccountAny::Margin(margin) => margin.balance_free(Some(instrument.quote_currency())),
         };
-        let free = cash_account.balance_free(Some(instrument.quote_currency()));
-        let allow_borrowing = cash_account.allow_borrowing;
+        let allow_borrowing = match &account {
+            AccountAny::Cash(cash) => cash.allow_borrowing,
+            AccountAny::Margin(_) => false,
+        };
 
         if self.config.debug {
-            log::debug!("Free cash: {free:?}");
+            log::debug!("Free balance: {free:?}");
         }
 
         // Get net LONG position quantity for this instrument (for position-reducing sell checks),
@@ -876,11 +884,51 @@ impl RiskEngine {
             );
         }
 
-        // Track cumulative sell quantity to determine position-reducing vs position-opening sells
+        // For margin accounts, also track SHORT positions for buy-side reduction
+        let available_short_qty_raw = if is_margin {
+            let cache = self.cache.borrow();
+            let short_qty: QuantityRaw = cache
+                .positions_open(
+                    None,
+                    Some(&instrument.id()),
+                    None,
+                    None,
+                    Some(PositionSide::Short),
+                )
+                .iter()
+                .map(|pos| pos.quantity.raw)
+                .sum();
+            let pending_buys: QuantityRaw = cache
+                .orders_open(
+                    None,
+                    Some(&instrument.id()),
+                    None,
+                    None,
+                    Some(OrderSide::Buy),
+                )
+                .iter()
+                .map(|ord| ord.leaves_qty().raw)
+                .sum();
+
+            if self.config.debug && short_qty > 0 {
+                log::debug!(
+                    "Net SHORT qty (raw): {short_qty}, pending buys: {pending_buys}, available: {}",
+                    short_qty.saturating_sub(pending_buys)
+                );
+            }
+
+            short_qty.saturating_sub(pending_buys)
+        } else {
+            0
+        };
+
+        // Track cumulative quantities to determine position-reducing vs position-opening orders
         let mut cum_sell_qty_raw: QuantityRaw = 0;
+        let mut cum_buy_qty_raw: QuantityRaw = 0;
 
         let mut cum_notional_buy: Option<Money> = None;
         let mut cum_notional_sell: Option<Money> = None;
+        let mut cum_margin_required: Option<Money> = None;
         let mut base_currency: Option<Currency> = None;
         for order in orders {
             // Determine last price based on order type
@@ -934,72 +982,61 @@ impl RiskEngine {
                         }
 
                         let trigger_type = order.trigger_type().unwrap();
-                        let cache = self.cache.borrow();
 
-                        if trigger_type == TriggerType::BidAsk {
-                            if let Some(quote) = cache.quote(&instrument.id()) {
-                                match trailing_stop_calculate_with_bid_ask(
-                                    instrument.price_increment(),
-                                    order.trailing_offset_type().unwrap(),
-                                    order.order_side_specified(),
-                                    order.trailing_offset().unwrap(),
-                                    quote.bid_price,
-                                    quote.ask_price,
-                                ) {
-                                    Ok(calculated_trigger) => Some(calculated_trigger),
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {e}",
-                                            order.order_type()
-                                        );
-                                        continue;
-                                    }
-                                }
-                            } else {
-                                log::warn!(
-                                    "Cannot check {} order risk: no trigger price set and no bid/ask quotes available for {}",
-                                    order.order_type(),
-                                    instrument.id()
-                                );
-                                continue;
-                            }
-                        } else if let Some(last_trade) = cache.trade(&instrument.id()) {
-                            match trailing_stop_calculate_with_last(
-                                instrument.price_increment(),
-                                order.trailing_offset_type().unwrap(),
-                                order.order_side_specified(),
-                                order.trailing_offset().unwrap(),
-                                last_trade.price,
-                            ) {
-                                Ok(calculated_trigger) => Some(calculated_trigger),
-                                Err(e) => {
+                        // Compute trailing stop trigger inside a scoped cache borrow
+                        // to avoid RefCell conflict if deny_order is called below
+                        let calc_result: Result<Option<Price>, String> = {
+                            let cache = self.cache.borrow();
+
+                            if trigger_type == TriggerType::BidAsk {
+                                if let Some(quote) = cache.quote(&instrument.id()) {
+                                    trailing_stop_calculate_with_bid_ask(
+                                        instrument.price_increment(),
+                                        order.trailing_offset_type().unwrap(),
+                                        order.order_side_specified(),
+                                        order.trailing_offset().unwrap(),
+                                        quote.bid_price,
+                                        quote.ask_price,
+                                    )
+                                    .map(Some)
+                                    .map_err(|e| e.to_string())
+                                } else {
                                     log::warn!(
-                                        "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {}",
+                                        "Cannot check {} order risk: no trigger price set and no bid/ask quotes available for {}",
                                         order.order_type(),
-                                        e
+                                        instrument.id()
                                     );
-                                    continue;
+                                    Ok(None)
                                 }
-                            }
-                        } else if trigger_type == TriggerType::LastOrBidAsk {
-                            // Fallback to bid/ask when no trade data available
-                            if let Some(quote) = cache.quote(&instrument.id()) {
-                                match trailing_stop_calculate_with_bid_ask(
+                            } else if let Some(last_trade) = cache.trade(&instrument.id()) {
+                                trailing_stop_calculate_with_last(
                                     instrument.price_increment(),
                                     order.trailing_offset_type().unwrap(),
                                     order.order_side_specified(),
                                     order.trailing_offset().unwrap(),
-                                    quote.bid_price,
-                                    quote.ask_price,
-                                ) {
-                                    Ok(calculated_trigger) => Some(calculated_trigger),
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {e}",
-                                            order.order_type()
-                                        );
-                                        continue;
-                                    }
+                                    last_trade.price,
+                                )
+                                .map(Some)
+                                .map_err(|e| e.to_string())
+                            } else if trigger_type == TriggerType::LastOrBidAsk {
+                                if let Some(quote) = cache.quote(&instrument.id()) {
+                                    trailing_stop_calculate_with_bid_ask(
+                                        instrument.price_increment(),
+                                        order.trailing_offset_type().unwrap(),
+                                        order.order_side_specified(),
+                                        order.trailing_offset().unwrap(),
+                                        quote.bid_price,
+                                        quote.ask_price,
+                                    )
+                                    .map(Some)
+                                    .map_err(|e| e.to_string())
+                                } else {
+                                    log::warn!(
+                                        "Cannot check {} order risk: no trigger price set and no market data available for {}",
+                                        order.order_type(),
+                                        instrument.id()
+                                    );
+                                    Ok(None)
                                 }
                             } else {
                                 log::warn!(
@@ -1007,15 +1044,20 @@ impl RiskEngine {
                                     order.order_type(),
                                     instrument.id()
                                 );
+                                Ok(None)
+                            }
+                        };
+                        // Cache borrow dropped here
+
+                        match calc_result {
+                            Ok(Some(trigger)) => Some(trigger),
+                            Ok(None) => {
                                 continue;
                             }
-                        } else {
-                            log::warn!(
-                                "Cannot check {} order risk: no trigger price set and no market data available for {}",
-                                order.order_type(),
-                                instrument.id()
-                            );
-                            continue;
+                            Err(e) => {
+                                self.deny_order(order, &format!("TRAILING_STOP_CALC_FAILED: {e}"));
+                                return false;
+                            }
                         }
                     }
                 }
@@ -1130,141 +1172,240 @@ impl RiskEngine {
                 return false; // Denied
             }
 
-            // Calculate OrderBalanceImpact (valid for CashAccount only)
-            let notional = instrument.calculate_notional_value(effective_quantity, last_px, None);
-            let order_balance_impact = match order.order_side() {
-                OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
-                OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
-                OrderSide::NoOrderSide => {
-                    panic!("invalid `OrderSide`, was {}", order.order_side());
-                }
-            };
-
-            if self.config.debug {
-                log::debug!("Balance impact: {order_balance_impact}");
-            }
-
-            // Skip balance check when borrowing is enabled (e.g. spot margin trading)
-            if !allow_borrowing
-                && let Some(free_val) = free
-                && (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO
-            {
-                self.deny_order(
-                    order,
-                    &format!(
-                        "NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_val:?}, notional={notional:?}"
-                    ),
-                );
-                return false;
-            }
-
-            if base_currency.is_none() {
-                base_currency = instrument.base_currency();
-            }
-
-            if order.is_buy() {
-                match cum_notional_buy.as_mut() {
-                    Some(cum_notional_buy_val) => {
-                        cum_notional_buy_val.raw += -order_balance_impact.raw;
-                    }
-                    None => {
-                        cum_notional_buy = Some(Money::from_raw(
-                            -order_balance_impact.raw,
-                            order_balance_impact.currency,
-                        ));
-                    }
-                }
+            if is_margin {
+                // Margin account: check initial margin requirement
+                let margin_req = match &mut account {
+                    AccountAny::Margin(margin) => margin
+                        .calculate_initial_margin(instrument, effective_quantity, last_px, None)
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to calculate initial margin: {e}");
+                            Money::new(0.0, instrument.quote_currency())
+                        }),
+                    _ => unreachable!(),
+                };
 
                 if self.config.debug {
-                    log::debug!("Cumulative notional BUY: {cum_notional_buy:?}");
+                    log::debug!("Initial margin required: {margin_req}");
                 }
 
-                if !allow_borrowing
-                    && let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
-                    && cum_notional_buy > free
-                {
-                    self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
-                    return false; // Denied
-                }
-            } else if order.is_sell() {
-                let is_position_reducing_sell = order.is_reduce_only()
-                    || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
-                cum_sell_qty_raw += effective_quantity.raw;
+                // Determine if order is position-reducing
+                let is_reducing = order.is_reduce_only()
+                    || (order.is_sell()
+                        && (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw)
+                    || (order.is_buy()
+                        && (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw);
 
-                if is_position_reducing_sell {
+                if order.is_sell() {
+                    cum_sell_qty_raw += effective_quantity.raw;
+                } else if order.is_buy() {
+                    cum_buy_qty_raw += effective_quantity.raw;
+                }
+
+                if is_reducing {
                     if self.config.debug {
-                        log::debug!("Position-reducing SELL skips balance check");
+                        log::debug!("Position-reducing order skips margin check");
                     }
                     continue;
                 }
 
-                if cash_account.base_currency.is_some() {
-                    match cum_notional_sell.as_mut() {
+                // Look up free balance in the margin requirement's currency
+                // (handles inverse instruments where collateral is base currency)
+                let margin_free = match &account {
+                    AccountAny::Margin(margin) => margin.balance_free(Some(margin_req.currency)),
+                    _ => unreachable!(),
+                };
+
+                let margin_free_val = match margin_free {
+                    Some(val) => val,
+                    None => {
+                        if self.config.debug {
+                            log::debug!(
+                                "No balance for margin currency {}, skipping margin check",
+                                margin_req.currency
+                            );
+                        }
+                        continue;
+                    }
+                };
+
+                // Per-order margin check
+                if margin_req > margin_free_val {
+                    self.deny_order(
+                        order,
+                        &format!(
+                            "MARGIN_EXCEEDS_FREE_BALANCE: free={margin_free_val}, margin_required={margin_req}"
+                        ),
+                    );
+                    return false;
+                }
+
+                // Cumulative margin check
+                match cum_margin_required.as_mut() {
+                    Some(cum) => cum.raw += margin_req.raw,
+                    None => cum_margin_required = Some(margin_req),
+                }
+
+                if self.config.debug {
+                    log::debug!("Cumulative margin required: {cum_margin_required:?}");
+                }
+
+                if let Some(cum_margin) = cum_margin_required
+                    && cum_margin > margin_free_val
+                {
+                    self.deny_order(
+                        order,
+                        &format!(
+                            "CUM_MARGIN_EXCEEDS_FREE_BALANCE: free={margin_free_val}, cum_margin={cum_margin}"
+                        ),
+                    );
+                    return false;
+                }
+            } else {
+                // Cash account: check full notional value
+                let notional =
+                    instrument.calculate_notional_value(effective_quantity, last_px, None);
+                let order_balance_impact = match order.order_side() {
+                    OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
+                    OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
+                    OrderSide::NoOrderSide => {
+                        panic!("invalid `OrderSide`, was {}", order.order_side());
+                    }
+                };
+
+                if self.config.debug {
+                    log::debug!("Balance impact: {order_balance_impact}");
+                }
+
+                // Skip balance check when borrowing is enabled (e.g. spot margin trading)
+                if !allow_borrowing
+                    && let Some(free_val) = free
+                    && (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO
+                {
+                    self.deny_order(
+                        order,
+                        &format!(
+                            "NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_val:?}, notional={notional:?}"
+                        ),
+                    );
+                    return false;
+                }
+
+                if base_currency.is_none() {
+                    base_currency = instrument.base_currency();
+                }
+
+                if order.is_buy() {
+                    match cum_notional_buy.as_mut() {
                         Some(cum_notional_buy_val) => {
-                            cum_notional_buy_val.raw += order_balance_impact.raw;
+                            cum_notional_buy_val.raw += -order_balance_impact.raw;
                         }
                         None => {
-                            cum_notional_sell = Some(Money::from_raw(
-                                order_balance_impact.raw,
+                            cum_notional_buy = Some(Money::from_raw(
+                                -order_balance_impact.raw,
                                 order_balance_impact.currency,
                             ));
                         }
                     }
 
                     if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                        log::debug!("Cumulative notional BUY: {cum_notional_buy:?}");
                     }
 
                     if !allow_borrowing
-                        && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
-                        && cum_notional_sell > free
+                        && let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
+                        && cum_notional_buy > free
                     {
-                        self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
                         return false; // Denied
                     }
-                }
-                // Account is already of type Cash, so no check
-                else if let Some(base_currency) = base_currency {
-                    let cash_value = Money::from_raw(
-                        effective_quantity
-                            .raw
-                            .try_into()
-                            .map_err(|e| log::error!("Unable to convert Quantity to f64: {e}"))
-                            .unwrap(),
-                        base_currency,
-                    );
+                } else if order.is_sell() {
+                    let is_position_reducing_sell = order.is_reduce_only()
+                        || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
+                    cum_sell_qty_raw += effective_quantity.raw;
 
-                    if self.config.debug {
-                        log::debug!("Cash value: {cash_value:?}");
-                        log::debug!(
-                            "Total: {:?}",
-                            cash_account.balance_total(Some(base_currency))
-                        );
-                        log::debug!(
-                            "Locked: {:?}",
-                            cash_account.balance_locked(Some(base_currency))
-                        );
-                        log::debug!("Free: {:?}", cash_account.balance_free(Some(base_currency)));
-                    }
-
-                    match cum_notional_sell {
-                        Some(mut value) => {
-                            value.raw += cash_value.raw;
-                            cum_notional_sell = Some(value);
+                    if is_position_reducing_sell {
+                        if self.config.debug {
+                            log::debug!("Position-reducing SELL skips balance check");
                         }
-                        None => cum_notional_sell = Some(cash_value),
+                        continue;
                     }
 
-                    if self.config.debug {
-                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
-                    }
+                    let has_base_currency = match &account {
+                        AccountAny::Cash(cash) => cash.base_currency.is_some(),
+                        _ => false,
+                    };
 
-                    if !allow_borrowing
-                        && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
-                        && cum_notional_sell.raw > free.raw
-                    {
-                        self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                        return false; // Denied
+                    if has_base_currency {
+                        match cum_notional_sell.as_mut() {
+                            Some(cum_notional_sell_val) => {
+                                cum_notional_sell_val.raw += order_balance_impact.raw;
+                            }
+                            None => {
+                                cum_notional_sell = Some(Money::from_raw(
+                                    order_balance_impact.raw,
+                                    order_balance_impact.currency,
+                                ));
+                            }
+                        }
+
+                        if self.config.debug {
+                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                        }
+
+                        if !allow_borrowing
+                            && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                            && cum_notional_sell > free
+                        {
+                            self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                            return false; // Denied
+                        }
+                    } else if let Some(base_currency) = base_currency {
+                        let cash_value = Money::from_raw(
+                            effective_quantity
+                                .raw
+                                .try_into()
+                                .map_err(|e| {
+                                    log::error!("Unable to convert Quantity to f64: {e}");
+                                })
+                                .unwrap(),
+                            base_currency,
+                        );
+
+                        // Use base-currency free balance for sell checks
+                        let base_free = match &account {
+                            AccountAny::Cash(cash) => cash.balance_free(Some(base_currency)),
+                            AccountAny::Margin(_) => None,
+                        };
+
+                        if self.config.debug
+                            && let AccountAny::Cash(cash) = &account
+                        {
+                            log::debug!("Cash value: {cash_value:?}");
+                            log::debug!("Total: {:?}", cash.balance_total(Some(base_currency)));
+                            log::debug!("Locked: {:?}", cash.balance_locked(Some(base_currency)));
+                            log::debug!("Free: {base_free:?}");
+                        }
+
+                        match cum_notional_sell {
+                            Some(mut value) => {
+                                value.raw += cash_value.raw;
+                                cum_notional_sell = Some(value);
+                            }
+                            None => cum_notional_sell = Some(cash_value),
+                        }
+
+                        if self.config.debug {
+                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                        }
+
+                        if !allow_borrowing
+                            && let (Some(base_free), Some(cum_notional_sell)) =
+                                (base_free, cum_notional_sell)
+                            && cum_notional_sell.raw > base_free.raw
+                        {
+                            self.deny_order(order, &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={base_free}, cum_notional={cum_notional_sell}"));
+                            return false; // Denied
+                        }
                     }
                 }
             }
@@ -1286,13 +1427,7 @@ impl RiskEngine {
             ));
         }
 
-        if !matches!(
-            instrument.instrument_class(),
-            InstrumentClass::Option
-                | InstrumentClass::FuturesSpread
-                | InstrumentClass::OptionSpread
-        ) && price_val.raw <= 0
-        {
+        if !instrument.instrument_class().allows_negative_price() && price_val.raw <= 0 {
             return Some(format!("price {price_val} invalid (<= 0)"));
         }
 
@@ -1462,62 +1597,72 @@ impl RiskEngine {
                 }
                 _ => {}
             },
-            TradingState::Reducing => match command {
-                TradingCommand::SubmitOrder(submit_order) => {
-                    let order = {
-                        let cache = self.cache.borrow();
-                        cache.order(&submit_order.client_order_id).cloned()
-                    };
+            TradingState::Reducing => {
+                match &command {
+                    TradingCommand::SubmitOrder(submit_order) => {
+                        let order = {
+                            let cache = self.cache.borrow();
+                            cache.order(&submit_order.client_order_id).cloned()
+                        };
 
-                    if let Some(ref order) = order {
-                        if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
-                            self.deny_order(
-                                order,
-                                &format!(
-                                    "BUY when TradingState::REDUCING and LONG {}",
-                                    instrument.id()
-                                ),
-                            );
-                        } else if order.is_sell() && self.portfolio.is_net_short(&instrument.id()) {
-                            self.deny_order(
-                                order,
-                                &format!(
-                                    "SELL when TradingState::REDUCING and SHORT {}",
-                                    instrument.id()
-                                ),
-                            );
+                        if let Some(ref order) = order {
+                            if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
+                                self.deny_order(
+                                    order,
+                                    &format!(
+                                        "BUY when TradingState::REDUCING and LONG {}",
+                                        instrument.id()
+                                    ),
+                                );
+                                return;
+                            } else if order.is_sell()
+                                && self.portfolio.is_net_short(&instrument.id())
+                            {
+                                self.deny_order(
+                                    order,
+                                    &format!(
+                                        "SELL when TradingState::REDUCING and SHORT {}",
+                                        instrument.id()
+                                    ),
+                                );
+                                return;
+                            }
                         }
                     }
-                }
-                TradingCommand::SubmitOrderList(submit_order_list) => {
-                    let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
-                        &submit_order_list.order_list.client_order_ids,
-                        &submit_order_list,
-                    );
-                    for order in &orders {
-                        if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
-                            self.deny_order_list(
-                                &orders,
-                                &format!(
-                                    "BUY when TradingState::REDUCING and LONG {}",
-                                    instrument.id()
-                                ),
-                            );
-                            return;
-                        } else if order.is_sell() && self.portfolio.is_net_short(&instrument.id()) {
-                            self.deny_order_list(
-                                &orders,
-                                &format!(
-                                    "SELL when TradingState::REDUCING and SHORT {}",
-                                    instrument.id()
-                                ),
-                            );
-                            return;
+                    TradingCommand::SubmitOrderList(submit_order_list) => {
+                        let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
+                            &submit_order_list.order_list.client_order_ids,
+                            &submit_order_list,
+                        );
+                        for order in &orders {
+                            if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
+                                self.deny_order_list(
+                                    &orders,
+                                    &format!(
+                                        "BUY when TradingState::REDUCING and LONG {}",
+                                        instrument.id()
+                                    ),
+                                );
+                                return;
+                            } else if order.is_sell()
+                                && self.portfolio.is_net_short(&instrument.id())
+                            {
+                                self.deny_order_list(
+                                    &orders,
+                                    &format!(
+                                        "SELL when TradingState::REDUCING and SHORT {}",
+                                        instrument.id()
+                                    ),
+                                );
+                                return;
+                            }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
-            },
+                // Not denied: forward to throttler
+                self.throttled_submit.send(command);
+            }
             TradingState::Active => match command {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
                     self.throttled_submit.send(command);
