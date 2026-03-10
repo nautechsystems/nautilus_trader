@@ -44,6 +44,14 @@ class DummyBinance:
         return item
 
 
+class FixedBalanceClient:
+    def __init__(self, balance: Decimal) -> None:
+        self.balance = balance
+
+    def fetch_balance(self) -> Decimal:
+        return self.balance
+
+
 class FakeResponse:
     def __init__(self, status_code: int, payload: dict[str, Any] | None = None) -> None:
         self.status_code = status_code
@@ -98,11 +106,16 @@ class FakeGetSession:
         return self._response
 
 
+def _test_repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
 def make_config(tmp_path: Path, **overrides: Any) -> WatchConfig:
     cfg = {
         "poll_secs": 60,
         "cooldown_secs": 3600,
         "binance_base_url": "https://papi.binance.com",
+        "binance_spot_base_url": "https://api.binance.com",
         "asset": "USDT",
         "binance_api_key": "k",
         "binance_api_secret": "s",
@@ -288,6 +301,83 @@ def test_binance_fetch_balance_accepts_single_object_payload() -> None:
     assert client.fetch_balance() == Decimal("123.45")
 
 
+def test_binance_spot_fetch_balance_sums_free_and_locked_for_asset() -> None:
+    session = FakeGetSession(
+        FakeGetResponse(
+            200,
+            {
+                "accountType": "SPOT",
+                "balances": [
+                    {"asset": "USDT", "free": "100.25", "locked": "4.75"},
+                ],
+            },
+        )
+    )
+    client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    assert client.fetch_balance() == Decimal("105.00")
+
+
+def test_combined_binance_balance_sums_pm_and_spot_usdt() -> None:
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=FixedBalanceClient(Decimal("4.50")),
+    )
+
+    assert client.fetch_balance() == Decimal("125.00")
+
+
+def test_combined_binance_balance_treats_missing_spot_asset_as_zero() -> None:
+    session = FakeGetSession(
+        FakeGetResponse(
+            200,
+            {
+                "accountType": "SPOT",
+                "balances": [
+                    {"asset": "BTC", "free": "0.10", "locked": "0.00"},
+                ],
+            },
+        )
+    )
+    spot_client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=spot_client,
+    )
+
+    assert client.fetch_balance() == Decimal("120.50")
+
+
+def test_combined_binance_balance_propagates_spot_http_failures() -> None:
+    session = FakeGetSession(FakeGetResponse(500, {"msg": "boom"}))
+    spot_client = alert_module.BinanceSpotClient(
+        base_url="https://api.binance.com",
+        asset="USDT",
+        api_key="k",
+        api_secret="s",
+        session=session,  # type: ignore[arg-type]
+    )
+    client = alert_module.CombinedBalanceClient(
+        pm_client=FixedBalanceClient(Decimal("120.50")),
+        spot_client=spot_client,
+    )
+
+    with pytest.raises(RuntimeError, match="Binance spot error HTTP 500"):
+        client.fetch_balance()
+
+
 def test_build_http_session_configures_source_style_retries() -> None:
     session = alert_module.build_http_session()
 
@@ -332,6 +422,31 @@ send_baseline = false
     assert config.telegram_thread_id == 42
 
 
+def test_load_config_defaults_spot_base_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "lan_rogue_trader_alert.ini"
+    config_path.write_text(
+        """[lan_rogue_trader_alert]
+binance_base_url = https://papi.binance.com
+api_key_env = BINANCE_API_KEY
+api_secret_env = BINANCE_API_SECRET
+account_label = LanSub: traderX
+telegram_bot_token_env = TELEGRAM_BOT_TOKEN
+telegram_chat_id = -100123
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "k")
+    monkeypatch.setenv("BINANCE_API_SECRET", "s")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+
+    config = load_config(config_path)
+
+    assert config.binance_spot_base_url == "https://api.binance.com"
+
+
 def test_load_config_accepts_legacy_section_name_for_backwards_compat(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -355,6 +470,25 @@ telegram_chat_id = -100123
     config = load_config(config_path)
 
     assert config.account_label == "LanSub: traderX"
+
+
+def test_config_template_defaults_spot_base_url() -> None:
+    template_path = _test_repo_root() / "deploy" / "tg_bots" / "lan_rogue_trader_alert.ini"
+    template_text = template_path.read_text(encoding="utf-8")
+
+    assert "binance_spot_base_url = https://api.binance.com" in template_text
+
+
+def test_docs_describe_combined_pm_and_spot_balance() -> None:
+    repo_root = _test_repo_root()
+    runbook_text = (repo_root / "docs" / "runbooks" / "lan-rogue-trader-alert.md").read_text(
+        encoding="utf-8"
+    )
+    readme_text = (repo_root / "deploy" / "tg_bots" / "README.md").read_text(encoding="utf-8")
+
+    assert "combined Binance PM + spot `USDT` balance" in runbook_text
+    assert "combined Binance PM + spot balance" in readme_text
+    assert "missing spot asset row is treated as zero spot balance" in readme_text
 
 
 def test_repo_root_searches_upwards_for_worktree_git_file(

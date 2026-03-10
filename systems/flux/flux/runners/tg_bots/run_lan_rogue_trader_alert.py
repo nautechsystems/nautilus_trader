@@ -6,6 +6,8 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from flux.tg_bots.lan_rogue_trader_alert import BinanceSpotClient
+from flux.tg_bots.lan_rogue_trader_alert import CombinedBalanceClient
 from flux.runners.shared.logging import configure_service_logging
 from flux.tg_bots.lan_rogue_trader_alert import BinancePmClient
 from flux.tg_bots.lan_rogue_trader_alert import JsonStateStore
@@ -43,13 +45,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     session = build_http_session()
     try:
-        client = BinancePmClient(
+        pm_client = BinancePmClient(
             base_url=config.binance_base_url,
             asset=config.asset,
             api_key=config.binance_api_key,
             api_secret=config.binance_api_secret,
             session=session,
         )
+        spot_client = BinanceSpotClient(
+            base_url=config.binance_spot_base_url,
+            asset=config.asset,
+            api_key=config.binance_api_key,
+            api_secret=config.binance_api_secret,
+            session=session,
+        )
+        client = CombinedBalanceClient(pm_client=pm_client, spot_client=spot_client)
         notifier = TelegramNotifier(
             bot_token=config.telegram_bot_token,
             chat_id=config.telegram_chat_id,

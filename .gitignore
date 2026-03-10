@@ -129,6 +129,7 @@ tests/test_data/**/backtest/**
 
 /.worktrees/
 .run/
+/state/
 
 # Vendored Fluxboard artifacts
 fluxboard/node_modules/

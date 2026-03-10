@@ -16,6 +16,7 @@ from decimal import Decimal
 from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any
+from typing import Protocol
 from urllib.parse import urlencode
 
 import requests
@@ -60,6 +61,11 @@ def _redact_secret_text(text: str, *secrets: str) -> str:
     return redacted
 
 
+def _sign_binance_params(params: Sequence[tuple[str, str]], secret: str) -> str:
+    query = urlencode(list(params))
+    return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def build_http_session() -> requests.Session:
     """Build a local equivalent of the source retrying engine HTTP session."""
     session = requests.Session()
@@ -95,6 +101,7 @@ class WatchConfig:
     poll_secs: int
     cooldown_secs: int
     binance_base_url: str
+    binance_spot_base_url: str
     asset: str
     binance_api_key: str
     binance_api_secret: str
@@ -214,8 +221,7 @@ class BinancePmClient:
 
     @staticmethod
     def sign_params(params: Sequence[tuple[str, str]], secret: str) -> str:
-        query = urlencode(list(params))
-        return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+        return _sign_binance_params(params, secret)
 
     def fetch_balance(self) -> Decimal:
         now_ms = int(time.time() * 1000)
@@ -258,6 +264,82 @@ class BinancePmClient:
             return _as_decimal(raw_balance, "totalWalletBalance")
 
         raise MissingAssetError(f"Asset {self.asset} missing in Binance PM balance payload")
+
+
+class BinanceSpotClient:
+    def __init__(
+        self,
+        base_url: str,
+        asset: str,
+        api_key: str,
+        api_secret: str,
+        session: requests.Session,
+        recv_window_ms: int = 5000,
+        timeout_sec: float = 10.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.asset = str(asset).upper()
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.session = session
+        self.recv_window_ms = int(recv_window_ms)
+        self.timeout_sec = float(timeout_sec)
+
+    def fetch_balance(self) -> Decimal:
+        now_ms = int(time.time() * 1000)
+        params: list[tuple[str, str]] = [
+            ("timestamp", str(now_ms)),
+            ("recvWindow", str(self.recv_window_ms)),
+        ]
+        signature = _sign_binance_params(params, self.api_secret)
+        signed_params = list(params)
+        signed_params.append(("signature", signature))
+        headers = {"X-MBX-APIKEY": self.api_key}
+
+        response = self.session.get(
+            f"{self.base_url}/api/v3/account",
+            params=signed_params,
+            headers=headers,
+            timeout=self.timeout_sec,
+        )
+        if response.status_code >= 400:
+            text = _response_text(response)
+            raise RuntimeError(f"Binance spot error HTTP {response.status_code}: {text}")
+
+        payload = response.json()
+        if not isinstance(payload, Mapping):
+            raise RuntimeError("Binance spot account payload is not an object")
+        if "code" in payload and "msg" in payload:
+            raise RuntimeError(f"Binance spot error code {payload.get('code')}: {payload.get('msg')}")
+
+        balances = payload.get("balances")
+        if not isinstance(balances, list):
+            raise RuntimeError("Binance spot account payload missing balances list")
+
+        for row in balances:
+            if not isinstance(row, Mapping):
+                continue
+            row_asset = str(row.get("asset") or "").upper()
+            if row_asset != self.asset:
+                continue
+            free = _as_decimal(row.get("free"), "free")
+            locked = _as_decimal(row.get("locked"), "locked")
+            return free + locked
+
+        return Decimal("0")
+
+
+class BalanceClient(Protocol):
+    def fetch_balance(self) -> Decimal: ...
+
+
+class CombinedBalanceClient:
+    def __init__(self, pm_client: BalanceClient, spot_client: BalanceClient) -> None:
+        self.pm_client = pm_client
+        self.spot_client = spot_client
+
+    def fetch_balance(self) -> Decimal:
+        return self.pm_client.fetch_balance() + self.spot_client.fetch_balance()
 
 
 class TelegramNotifier:
@@ -501,6 +583,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
     cooldown_secs = _get_int(cfg, "cooldown_secs", 10800)
 
     binance_base_url = _get_required(cfg, "binance_base_url")
+    binance_spot_base_url = (cfg.get("binance_spot_base_url") or "").strip() or "https://api.binance.com"
     asset = (cfg.get("asset", "USDT") or "USDT").strip().upper()
     binance_key_env = _get_required(cfg, "api_key_env")
     binance_secret_env = _get_required(cfg, "api_secret_env")
@@ -528,6 +611,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
         poll_secs=poll_secs,
         cooldown_secs=cooldown_secs,
         binance_base_url=binance_base_url,
+        binance_spot_base_url=binance_spot_base_url,
         asset=asset,
         binance_api_key=binance_api_key,
         binance_api_secret=binance_api_secret,
@@ -706,6 +790,8 @@ def _load_secret(env_key: str) -> str:
 
 __all__ = [
     "BinancePmClient",
+    "BinanceSpotClient",
+    "CombinedBalanceClient",
     "JsonStateStore",
     "LanRogueTraderAlertService",
     "MissingAssetError",
