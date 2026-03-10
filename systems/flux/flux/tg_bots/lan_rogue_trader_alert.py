@@ -16,6 +16,7 @@ from decimal import Decimal
 from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any
+from typing import Protocol
 from urllib.parse import urlencode
 
 import requests
@@ -58,6 +59,11 @@ def _redact_secret_text(text: str, *secrets: str) -> str:
         if secret:
             redacted = redacted.replace(secret, "[REDACTED]")
     return redacted
+
+
+def _sign_binance_params(params: Sequence[tuple[str, str]], secret: str) -> str:
+    query = urlencode(list(params))
+    return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def build_http_session() -> requests.Session:
@@ -215,8 +221,7 @@ class BinancePmClient:
 
     @staticmethod
     def sign_params(params: Sequence[tuple[str, str]], secret: str) -> str:
-        query = urlencode(list(params))
-        return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+        return _sign_binance_params(params, secret)
 
     def fetch_balance(self) -> Decimal:
         now_ms = int(time.time() * 1000)
@@ -286,7 +291,7 @@ class BinanceSpotClient:
             ("timestamp", str(now_ms)),
             ("recvWindow", str(self.recv_window_ms)),
         ]
-        signature = BinancePmClient.sign_params(params, self.api_secret)
+        signature = _sign_binance_params(params, self.api_secret)
         signed_params = list(params)
         signed_params.append(("signature", signature))
         headers = {"X-MBX-APIKEY": self.api_key}
@@ -324,8 +329,12 @@ class BinanceSpotClient:
         return Decimal("0")
 
 
+class BalanceClient(Protocol):
+    def fetch_balance(self) -> Decimal: ...
+
+
 class CombinedBalanceClient:
-    def __init__(self, pm_client: Any, spot_client: Any) -> None:
+    def __init__(self, pm_client: BalanceClient, spot_client: BalanceClient) -> None:
         self.pm_client = pm_client
         self.spot_client = spot_client
 
@@ -574,9 +583,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
     cooldown_secs = _get_int(cfg, "cooldown_secs", 10800)
 
     binance_base_url = _get_required(cfg, "binance_base_url")
-    binance_spot_base_url = (cfg.get("binance_spot_base_url") or "https://api.binance.com").strip()
-    if not binance_spot_base_url:
-        binance_spot_base_url = "https://api.binance.com"
+    binance_spot_base_url = (cfg.get("binance_spot_base_url") or "").strip() or "https://api.binance.com"
     asset = (cfg.get("asset", "USDT") or "USDT").strip().upper()
     binance_key_env = _get_required(cfg, "api_key_env")
     binance_secret_env = _get_required(cfg, "api_secret_env")
