@@ -287,7 +287,7 @@ version = "1.7.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-trie]]
-version = "0.9.4"
+version = "0.9.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-tx-macros]]
@@ -1698,12 +1698,8 @@ criteria = "safe-to-deploy"
 version = "0.6.4"
 criteria = "safe-to-deploy"
 
-[[exemptions.objc2-core-foundation]]
-version = "0.3.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.objc2-io-kit]]
-version = "0.3.1"
+version = "0.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.object_store]]
@@ -2163,7 +2159,7 @@ version = "0.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.schannel]]
-version = "0.1.28"
+version = "0.1.29"
 criteria = "safe-to-deploy"
 
 [[exemptions.schemars]]
@@ -2943,7 +2939,7 @@ version = "0.8.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
-version = "0.8.40"
+version = "0.8.42"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy-derive]]

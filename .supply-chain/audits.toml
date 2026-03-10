@@ -29,6 +29,12 @@ criteria = "safe-to-deploy"
 delta = "0.38.2 -> 0.38.3"
 notes = "macOS memory reporting fix, cosmetic changes only. No new deps or unsafe."
 
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.38.3 -> 0.38.4"
+notes = "Unpins objc2-* deps, fixes Linux disk size (f_frsize vs f_bsize), adapts to updated objc2-io-kit APIs. No new unsafe."
+
 [[audits.tokio-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -46,6 +52,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.7.14 -> 0.7.15"
 notes = "Doc fixes, lint renames, new unordered_seq macro, expression combinator updates. No unsafe changes."
+
+[[audits.zerocopy-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.40 -> 0.8.42"
+notes = "Version bump only, no code changes."
 
 [[audits.zlib-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
