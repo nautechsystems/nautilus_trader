@@ -23,7 +23,12 @@ crate-type = ["rlib"]
 
 [features]
 high-precision = ["nautilus-model/high-precision"]
-python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-system/python",
+  "pyo3",
+]
 
 [package.metadata.docs.rs]
 features = ["high-precision"]
@@ -37,6 +42,7 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }

@@ -530,6 +530,7 @@ impl DataClient for BetfairDataClient {
         self.stream_client = None;
         self.race_stream_client = None;
         self.provider.store_mut().clear();
+        self.subscribed_market_ids.clear();
 
         if let Ok(mut guard) = self.instruments.write() {
             guard.clear();
@@ -677,6 +678,8 @@ impl DataClient for BetfairDataClient {
 
         // Spawn periodic keep-alive to prevent session expiry
         let keep_alive_client = Arc::clone(&self.http_client);
+        let keep_alive_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+        let keep_alive_app_key = self.credential.app_key().to_string();
         self.keep_alive_handle = Some(get_runtime().spawn(async move {
             let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
             loop {
@@ -685,6 +688,9 @@ impl DataClient for BetfairDataClient {
                 if let Err(e) = keep_alive_client.keep_alive().await {
                     log::warn!("Betfair keep-alive failed: {e}");
                 } else {
+                    if let Some(token) = keep_alive_client.session_token().await {
+                        keep_alive_stream.update_auth(&keep_alive_app_key, token);
+                    }
                     log::debug!("Betfair session keep-alive sent");
                 }
             }

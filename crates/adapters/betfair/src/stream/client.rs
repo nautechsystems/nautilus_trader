@@ -43,6 +43,12 @@ use crate::common::{credential::BetfairCredential, enums::StatusErrorCode};
 ///
 /// On connect, authenticates immediately. On reconnection, replays authentication
 /// and any active subscriptions with the latest `clk` token for delta resumption.
+///
+/// Auth bytes are prepended to every subscription send to guarantee auth-first
+/// ordering even when bytes land in the reconnect buffer. The auth bytes are
+/// stored in a watch channel so the caller can push refreshed session tokens via
+/// [`update_auth`](Self::update_auth) after keep-alive or HTTP reconnect. The
+/// `closed` flag distinguishes permanent shutdown from transient reconnect.
 #[derive(Debug)]
 pub struct BetfairStreamClient {
     socket: SocketClient,
@@ -55,10 +61,7 @@ pub struct BetfairStreamClient {
     market_active_sub_id: Arc<AtomicU64>,
     order_active_sub_id: Arc<AtomicU64>,
     request_id: AtomicU64,
-    // Serialized auth bytes, prepended to every subscription send to guarantee
-    // auth-first ordering even when bytes land in the reconnect buffer.
-    auth_bytes: Bytes,
-    // Set to true by close() to distinguish permanent shutdown from transient reconnect
+    auth_bytes_tx: watch::Sender<Bytes>,
     closed: AtomicBool,
 }
 
@@ -77,6 +80,7 @@ impl BetfairStreamClient {
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
         let auth_bytes_vec = serde_json::to_vec(&auth)?;
         let auth_bytes = Bytes::from(auth_bytes_vec.clone());
+        let (auth_bytes_tx, auth_bytes_rx) = watch::channel(auth_bytes);
         let mode = if config.use_tls {
             Mode::Tls
         } else {
@@ -170,19 +174,19 @@ impl BetfairStreamClient {
             handler(data);
         });
 
-        let auth_bytes_reconnect = auth_bytes.clone();
+        let auth_bytes_reconnect = auth_bytes_rx;
         let shared_tx_reconnect = Arc::clone(&shared_tx);
         let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let Some(tx) = shared_tx_reconnect.get() else {
                 return;
             };
 
+            let auth = auth_bytes_reconnect.borrow().clone();
             let market_sub = market_sub_rx.borrow().clone();
             let order_sub = order_sub_rx.borrow().clone();
 
             if market_sub.is_none() && order_sub.is_none() {
-                // No subscriptions yet — re-authenticate only
-                let _ = tx.send(WriterCommand::Send(auth_bytes_reconnect.clone()));
+                let _ = tx.send(WriterCommand::Send(auth));
                 return;
             }
 
@@ -193,9 +197,8 @@ impl BetfairStreamClient {
                 sub.clk = market_clk_rx.borrow().clone();
                 sub.initial_clk = market_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let mut combined =
-                        Vec::with_capacity(auth_bytes_reconnect.len() + 2 + sub_bytes.len());
-                    combined.extend_from_slice(&auth_bytes_reconnect);
+                    let mut combined = Vec::with_capacity(auth.len() + 2 + sub_bytes.len());
+                    combined.extend_from_slice(&auth);
                     combined.extend_from_slice(b"\r\n");
                     combined.extend_from_slice(&sub_bytes);
                     let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
@@ -206,9 +209,8 @@ impl BetfairStreamClient {
                 sub.clk = order_clk_rx.borrow().clone();
                 sub.initial_clk = order_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let mut combined =
-                        Vec::with_capacity(auth_bytes_reconnect.len() + 2 + sub_bytes.len());
-                    combined.extend_from_slice(&auth_bytes_reconnect);
+                    let mut combined = Vec::with_capacity(auth.len() + 2 + sub_bytes.len());
+                    combined.extend_from_slice(&auth);
                     combined.extend_from_slice(b"\r\n");
                     combined.extend_from_slice(&sub_bytes);
                     let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
@@ -261,7 +263,7 @@ impl BetfairStreamClient {
             market_active_sub_id,
             order_active_sub_id,
             request_id: AtomicU64::new(1),
-            auth_bytes,
+            auth_bytes_tx,
             closed: AtomicBool::new(false),
         })
     }
@@ -313,8 +315,9 @@ impl BetfairStreamClient {
         // via writer_tx (not send_bytes) avoids the reconnect-wait, so a subscription made
         // while reconnecting is also buffered correctly with auth preceding it.
         let sub_bytes = serde_json::to_vec(&sub)?;
-        let mut combined = Vec::with_capacity(self.auth_bytes.len() + 2 + sub_bytes.len());
-        combined.extend_from_slice(&self.auth_bytes);
+        let auth = self.auth_bytes_tx.borrow().clone();
+        let mut combined = Vec::with_capacity(auth.len() + 2 + sub_bytes.len());
+        combined.extend_from_slice(&auth);
         combined.extend_from_slice(b"\r\n");
         combined.extend_from_slice(&sub_bytes);
         self.socket
@@ -361,8 +364,9 @@ impl BetfairStreamClient {
         let _ = self.order_sub_tx.send(Some(sub.clone()));
 
         let sub_bytes = serde_json::to_vec(&sub)?;
-        let mut combined = Vec::with_capacity(self.auth_bytes.len() + 2 + sub_bytes.len());
-        combined.extend_from_slice(&self.auth_bytes);
+        let auth = self.auth_bytes_tx.borrow().clone();
+        let mut combined = Vec::with_capacity(auth.len() + 2 + sub_bytes.len());
+        combined.extend_from_slice(&auth);
         combined.extend_from_slice(b"\r\n");
         combined.extend_from_slice(&sub_bytes);
         self.socket
@@ -376,6 +380,15 @@ impl BetfairStreamClient {
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.socket.is_active()
+    }
+
+    /// Pushes refreshed auth bytes so the next reconnection or subscription uses
+    /// the current session token instead of the one from initial connect.
+    pub fn update_auth(&self, app_key: &str, session_token: String) {
+        let auth = Authentication::new(app_key.to_string(), session_token);
+        if let Ok(bytes) = serde_json::to_vec(&auth) {
+            let _ = self.auth_bytes_tx.send(Bytes::from(bytes));
+        }
     }
 
     /// Closes the stream connection.

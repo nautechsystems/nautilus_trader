@@ -4937,6 +4937,7 @@ dependencies = [
  "nautilus-network",
  "nautilus-persistence-macros",
  "nautilus-serialization",
+ "nautilus-system",
  "nautilus-testkit",
  "pyo3",
  "rstest",

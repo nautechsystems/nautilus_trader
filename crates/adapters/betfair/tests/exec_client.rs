@@ -24,13 +24,17 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     live::runner::{set_data_event_sender, set_exec_event_sender},
-    messages::{DataEvent, ExecutionEvent},
+    messages::{DataEvent, ExecutionEvent, execution::cancel::CancelOrder},
 };
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     data::Data,
     enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId, Venue},
+    events::OrderEventAny,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
+    },
     types::Currency,
 };
 use rstest::rstest;
@@ -179,10 +183,17 @@ async fn test_ocm_handler_emits_order_status_report() {
 
     let ocm_fixture = load_fixture("stream/ocm_FILLED.json");
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
 
-        // Allow subscribe_orders to complete before sending data
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Wait for the subscribe_orders combined write (auth + subscription)
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        line.clear();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
 
         tokio::io::AsyncWriteExt::write_all(
             &mut write_half,
@@ -222,8 +233,18 @@ async fn test_ocm_voided_order_emits_data_event() {
 
     let ocm_fixture = load_fixture("stream/ocm_VOIDED.json");
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        // Wait for the subscribe_orders combined write (auth + subscription)
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        line.clear();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
         tokio::io::AsyncWriteExt::write_all(
             &mut write_half,
             format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
@@ -245,6 +266,198 @@ async fn test_ocm_voided_order_emits_data_event() {
     assert!(
         matches!(event, DataEvent::Data(Data::Custom(_))),
         "Expected Custom data event for voided order, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+fn make_cancel_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+) -> CancelOrder {
+    CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BETFAIR")),
+        StrategyId::from("S-001"),
+        InstrumentId::from(instrument_id),
+        ClientOrderId::from(client_order_id),
+        Some(VenueOrderId::from(venue_order_id)),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_bet_taken_or_lapsed.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/cancelOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
+    client.cancel_order(&cmd).unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let event = rx.try_recv();
+    assert!(
+        event.is_err(),
+        "BetTakenOrLapsed should not emit cancel rejected, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_instruction_failure_emits_rejected() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_error.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/cancelOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-002", "1");
+    client.cancel_order(&cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for cancel rejected")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-002"));
+            assert!(
+                rejected.reason.as_str().contains("ErrorInOrder"),
+                "Expected ErrorInOrder reason, found: {}",
+                rejected.reason,
+            );
+        }
+        other => panic!("Expected CancelRejected event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_result_failure_no_instructions_emits_rejected() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_result_failure.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/cancelOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003", "1");
+    client.cancel_order(&cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for cancel rejected")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-003"));
+            assert!(
+                rejected.reason.as_str().contains("MarketSuspended"),
+                "Expected MarketSuspended reason, found: {}",
+                rejected.reason,
+            );
+        }
+        other => panic!("Expected CancelRejected event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_success_no_rejected_event() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_success.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/cancelOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-004", "1");
+    client.cancel_order(&cmd).unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let event = rx.try_recv();
+    assert!(
+        event.is_err(),
+        "Successful cancel should not emit rejected event, found: {event:?}"
     );
 
     client.disconnect().await.unwrap();
