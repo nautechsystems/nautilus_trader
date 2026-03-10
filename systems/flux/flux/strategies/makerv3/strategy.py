@@ -30,7 +30,11 @@ from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
 from flux.strategies.makerv3.constants import (
     ALERT_COOLDOWN_ORDER_REJECTED_BURST_MS,
 )
+from flux.strategies.makerv3.constants import (
+    ALERT_COOLDOWN_TERMINAL_ORDER_DENIED_MS,
+)
 from flux.strategies.makerv3.constants import ALERT_KEY_ORDER_REJECTED_BURST
+from flux.strategies.makerv3.constants import ALERT_KEY_TERMINAL_ORDER_DENIED
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
@@ -252,6 +256,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._order_rejections_ns_by_reason: dict[str, list[int]] = {}
             self._quote_failures_ns: list[int] = []
             self._quote_failure_circuit_open = False
+            self._terminal_order_denial_circuit_open = False
             self._venue_protection_circuit_open = False
             self._last_stale_cancel_ns = 0
             self._last_completed_quote_ns = 0
@@ -341,6 +346,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             except Exception as e:
                 self._fail_fast_runtime_params(context="on_start", exc=e)
                 return
+            self._terminal_order_denial_circuit_open = False
             self._last_bot_on = self._effective_bot_on()
             self.clock.set_timer(
                 name=self._params_timer_name,
@@ -715,6 +721,32 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _apply_runtime_param_updates(self, updates: dict[str, Any]) -> None:
             runtime_params_mod.apply_runtime_param_updates(self, updates)
+            if "bot_on" in updates and self._effective_bot_on():
+                self._terminal_order_denial_circuit_open = False
+
+        def _persist_runtime_param_updates(
+            self,
+            updates: dict[str, Any],
+            *,
+            now_ns: int | None = None,
+        ) -> None:
+            if now_ns is None:
+                now_ns = int(self.clock.timestamp_ns())
+
+            manager = self._ensure_params_manager()
+            if manager is None:
+                self._apply_runtime_param_updates(updates)
+                return
+
+            update_fn = getattr(manager, "update", None)
+            publish_fn = getattr(manager, "publish_update", None)
+            if not callable(update_fn) or not callable(publish_fn):
+                self._apply_runtime_param_updates(updates)
+                return
+
+            applied_updates = update_fn(updates)
+            publish_fn(applied_updates, ts_ms=int(now_ns // 1_000_000))
+            self._apply_runtime_param_updates(applied_updates)
 
         def _refresh_runtime_params(
             self,
@@ -1052,6 +1084,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     client_order_id=getattr(event, "client_order_id", None),
                 )
                 return
+            if failures_mod.is_terminal_order_denial_reason(reason):
+                self._handle_terminal_order_denial(
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_rejected",
+                    client_order_id=getattr(event, "client_order_id", None),
+                )
+                return
             self._track_order_rejection_alert(
                 now_ns=int(now_ns),
                 reason=reason,
@@ -1090,6 +1130,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if failures_mod.is_venue_protection_reason(reason):
                 failures_mod.handle_venue_protection(
                     self,
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_denied",
+                    client_order_id=getattr(event, "client_order_id", None),
+                )
+                return
+            if failures_mod.is_terminal_order_denial_reason(reason):
+                self._handle_terminal_order_denial(
                     now_ns=int(now_ns),
                     reason=reason,
                     source_event="order_denied",
@@ -1259,6 +1307,76 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 cooldown_ms=ALERT_COOLDOWN_ORDER_REJECTED_BURST_MS,
                 transition=rejection_key,
                 now_ns=now_ns,
+            )
+
+        def _handle_terminal_order_denial(
+            self,
+            *,
+            now_ns: int,
+            reason: str,
+            source_event: str,
+            client_order_id: ClientOrderId | str | None,
+        ) -> None:
+            if self._terminal_order_denial_circuit_open:
+                return
+
+            self._terminal_order_denial_circuit_open = True
+            normalized_reason = failures_mod.normalize_reason_text(reason) or "unknown"
+            raw_reason = str(reason or "")
+            client_order_id_text = str(client_order_id or "")
+            cancelable_managed_orders = [
+                order
+                for order in self._managed_orders()
+                if getattr(order, "venue_order_id", None) is not None
+            ]
+
+            def _safe(effect: Any) -> None:
+                with suppress(Exception):
+                    effect()
+
+            _safe(lambda: self._persist_runtime_param_updates({"bot_on": False}))
+            self._last_bot_on = False
+            _safe(
+                lambda: self._cancel_managed_quotes(
+                    "terminal_order_denied",
+                    force=True,
+                    managed_orders=cancelable_managed_orders,
+                ),
+            )
+            _safe(lambda: self._publish_state("bot_off"))
+            _safe(
+                lambda: self._publish_actionable_alert(
+                    alert_key=ALERT_KEY_TERMINAL_ORDER_DENIED,
+                    message=(
+                        "terminal_order_denied "
+                        f"source_event={source_event} reason={normalized_reason!r} action='bot_off'"
+                    ),
+                    level="error",
+                    reason_code=ALERT_KEY_TERMINAL_ORDER_DENIED,
+                    cooldown_ms=ALERT_COOLDOWN_TERMINAL_ORDER_DENIED_MS,
+                    transition=f"{source_event}:{normalized_reason}",
+                    now_ns=now_ns,
+                    source_event=source_event,
+                    raw_reason=raw_reason,
+                    client_order_id=client_order_id_text,
+                ),
+            )
+            _safe(
+                lambda: self._publish_event(
+                    "terminal_order_denied",
+                    source_event=source_event,
+                    reason=normalized_reason,
+                    raw_reason=raw_reason,
+                    client_order_id=client_order_id_text,
+                ),
+            )
+            _safe(
+                lambda: self.log.error(
+                    "Terminal order denial triggered bot_off "
+                    f"strategy_id={self._external_strategy_id} "
+                    f"source_event={source_event} client_order_id={client_order_id_text or 'unknown'} "
+                    f"reason={raw_reason}",
+                ),
             )
 
         def _inventory_cache(self) -> Any | None:
@@ -2111,6 +2229,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             places = 0
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
             for level_index, (target_price, cancel_px, match_tol) in enumerate(desired_levels):
+                if self._terminal_order_denial_circuit_open or not self._effective_bot_on():
+                    break
                 target_px = _price_to_decimal(target_price)
                 if side == OrderSide.BUY and target_px >= best_ask_px:
                     if per_level_outcomes is not None:

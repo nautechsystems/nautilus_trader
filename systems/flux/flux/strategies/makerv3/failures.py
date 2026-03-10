@@ -42,6 +42,17 @@ def normalize_reason_text(reason: object) -> str:
     return " ".join(normalized.split())
 
 
+def is_terminal_order_denial_reason(reason: object) -> bool:
+    """
+    Return True when `reason` indicates a persistent incompatibility which
+    should stop further quote attempts until manually re-enabled.
+    """
+    normalized = normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return normalized.startswith("unsupported_account_mode")
+
+
 def _normalized_reason_tokens(normalized_reason: str) -> set[str]:
     return {
         token

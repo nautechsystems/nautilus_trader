@@ -3832,6 +3832,10 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
     @classmethod
+    def _is_terminal_reject_reason(cls, reason: str) -> bool:
+        return reason.startswith("unsupported_account_mode")
+
+    @classmethod
     def _is_cancel_state_mismatch_reason(cls, reason: str) -> bool:
         return any(
             text in reason
@@ -3892,6 +3896,34 @@ class LiveExecutionEngine(ExecutionEngine):
             payload["venue_order_id"] = venue_order_id.value
         return payload
 
+    def _publish_execution_alert_with_cooldown(
+        self,
+        *,
+        event: OrderEvent,
+        strategy_id: StrategyId,
+        reason: str,
+        alert_key: str,
+        message: str,
+        cooldown_ns: int,
+    ) -> None:
+        normalized_reason = self._normalize_alert_reason(reason) or "unknown"
+        now_ns = int(event.ts_event or self._clock.timestamp_ns())
+        cooldown_key = (strategy_id.value, alert_key, normalized_reason)
+        last_sent_ns = self._execution_alert_last_sent_ns.get(cooldown_key, 0)
+        if last_sent_ns and now_ns - last_sent_ns < cooldown_ns:
+            return
+
+        self._execution_alert_last_sent_ns[cooldown_key] = now_ns
+        self._publish_execution_alert(
+            self._build_execution_alert_payload(
+                event=event,
+                strategy_id=strategy_id,
+                alert_key=alert_key,
+                message=message,
+                reason=reason,
+            ),
+        )
+
     def _publish_burst_execution_alert_if_needed(
         self,
         *,
@@ -3942,14 +3974,13 @@ class LiveExecutionEngine(ExecutionEngine):
         reason = self._normalize_alert_reason(getattr(event, "reason", None))
 
         if isinstance(event, OrderDenied):
-            self._publish_execution_alert(
-                self._build_execution_alert_payload(
-                    event=event,
-                    strategy_id=strategy_id,
-                    alert_key="order_denied",
-                    message=f"Order denied before exchange submission on {event.instrument_id.venue}: {event.reason}",
-                    reason=event.reason,
-                ),
+            self._publish_execution_alert_with_cooldown(
+                event=event,
+                strategy_id=strategy_id,
+                alert_key="order_denied",
+                message=f"Order denied before exchange submission on {event.instrument_id.venue}: {event.reason}",
+                reason=event.reason,
+                cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
             )
             return
 
@@ -3965,6 +3996,15 @@ class LiveExecutionEngine(ExecutionEngine):
                         message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
                         reason=event.reason,
                     ),
+                )
+            elif self._is_terminal_reject_reason(reason):
+                self._publish_execution_alert_with_cooldown(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_rejected",
+                    message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                    cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
                 )
             else:
                 self._publish_execution_alert(

@@ -772,6 +772,82 @@ class TestLiveExecutionEngine:
         assert payload["event_type"] == "OrderDenied"
 
     @pytest.mark.asyncio
+    async def test_order_denied_repeated_same_reason_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        for _ in range(4):
+            order = self.strategy.order_factory.limit(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=AUDUSD_SIM.make_price(0.70000),
+            )
+
+            event = OrderDenied(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+                event_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "order_denied"
+        assert payload["reason"] == "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI"
+        assert payload["event_type"] == "OrderDenied"
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_repeated_same_terminal_reason_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        for _ in range(4):
+            order = self.strategy.order_factory.limit(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=AUDUSD_SIM.make_price(0.70000),
+            )
+
+            event = OrderRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+                reconciliation=False,
+                due_post_only=False,
+            )
+
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected"
+        assert payload["reason"] == "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI"
+        assert payload["event_type"] == "OrderRejected"
+
+    @pytest.mark.asyncio
     async def test_reconciled_order_rejected_does_not_publish_execution_alert(self):
         published: list[object] = []
         self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)

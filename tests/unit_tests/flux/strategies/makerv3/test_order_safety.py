@@ -7,6 +7,7 @@ from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -61,6 +62,25 @@ def _order_denied_event(
         reason=reason,
         event_id=UUID4(),
         ts_init=1,
+    )
+
+
+def _order_rejected_event(
+    *,
+    reason: str,
+    client_order_id: str = "RESTING-1",
+) -> OrderRejected:
+    return OrderRejected(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("SCALPER-001"),
+        instrument_id=InstrumentId(Symbol("MAKER"), Venue("SIM")),
+        client_order_id=ClientOrderId(client_order_id),
+        account_id=TestIdStubs.account_id(),
+        reason=reason,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=1,
+        due_post_only=False,
     )
 
 
@@ -241,6 +261,228 @@ def test_order_denied_nonfatal_reason_sets_alerts_burst(strategy_factory) -> Non
     assert alerts[-1]["alert_key"] == "order_rejected_burst"
     assert "order_denied" in str(alerts[-1]["message"])
     assert "NOTIONAL_EXCEEDS_FREE_BALANCE" in str(alerts[-1]["message"])
+
+
+def test_order_denied_terminal_reason_flips_bot_off_and_skips_burst_alert(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+    strategy = strategy_factory()
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+    strategy.set_params_manager(_ParamsManager())
+
+    canceled: list[tuple[str, bool]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    fake_clock = SimpleNamespace(timestamp_ns=lambda: 1_700_000_000_000_000_000)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append(
+        (reason, force),
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy._publish_current_state_snapshot = lambda: None
+
+    strategy.on_order_denied(
+        _order_denied_event(
+            reason=(
+                "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires "
+                "PAPI spot/margin endpoints"
+            ),
+        ),
+    )
+
+    manager = strategy._params_manager
+    assert manager.update_calls == [{"bot_on": False}]
+    assert manager.publish_calls == [({"bot_on": False}, 1_700_000_000_000)]
+    assert strategy._effective_bot_on() is False
+    assert canceled == [("terminal_order_denied", True)]
+    assert states[-1] == "bot_off"
+    assert alerts[-1]["alert_key"] == "terminal_order_denied"
+    assert alerts[-1]["source_event"] == "order_denied"
+    assert "UNSUPPORTED_ACCOUNT_MODE" in str(alerts[-1]["raw_reason"])
+    assert events[-1][0] == "terminal_order_denied"
+    assert all(alert["alert_key"] != "order_rejected_burst" for alert in alerts)
+
+
+def test_place_missing_levels_stops_when_terminal_circuit_opens_mid_batch(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory()
+    strategy._order_qty = object()
+    strategy._register_managed_order = lambda _order: None
+    fake_clock = SimpleNamespace(timestamp_ns=lambda: 1_700_000_000_000_000_000)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    submitted: list[str] = []
+    next_order_id = 0
+
+    def _limit(**kwargs):
+        nonlocal next_order_id
+        next_order_id += 1
+        return SimpleNamespace(
+            client_order_id=f"NEW-{next_order_id}",
+            price=kwargs["price"],
+            side=kwargs["order_side"],
+        )
+
+    def _submit(order, **_kwargs):
+        submitted.append(str(order.client_order_id))
+        if len(submitted) == 1:
+            strategy._terminal_order_denial_circuit_open = True
+            strategy._runtime_params["bot_on"] = False
+            strategy._last_bot_on = False
+
+    fake_factory = SimpleNamespace(limit=_limit)
+    monkeypatch.setattr(type(strategy), "order_factory", property(lambda _self: fake_factory))
+    strategy.submit_order = _submit
+
+    place_count = strategy._place_missing_levels(
+        side=OrderSide.BUY,
+        active_orders=[],
+        desired_levels=[
+            (Decimal("99"), Decimal("99"), Decimal("0")),
+            (Decimal("98"), Decimal("98"), Decimal("0")),
+        ],
+        best_bid_px=Decimal("97"),
+        best_ask_px=Decimal("101"),
+    )
+
+    assert place_count == 1
+    assert submitted == ["NEW-1"]
+
+
+def test_order_rejected_terminal_reason_flips_bot_off_and_skips_burst_alert(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+    strategy = strategy_factory()
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+    strategy.set_params_manager(_ParamsManager())
+
+    canceled: list[tuple[str, bool]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    fake_clock = SimpleNamespace(timestamp_ns=lambda: 1_700_000_000_000_000_000)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append(
+        (reason, force),
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy._publish_current_state_snapshot = lambda: None
+
+    strategy.on_order_rejected(
+        _order_rejected_event(
+            reason=(
+                "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires "
+                "PAPI spot/margin endpoints"
+            ),
+        ),
+    )
+
+    manager = strategy._params_manager
+    assert manager.update_calls == [{"bot_on": False}]
+    assert manager.publish_calls == [({"bot_on": False}, 1_700_000_000_000)]
+    assert strategy._effective_bot_on() is False
+    assert canceled == [("terminal_order_denied", True)]
+    assert states[-1] == "bot_off"
+    assert alerts[-1]["alert_key"] == "terminal_order_denied"
+    assert alerts[-1]["source_event"] == "order_rejected"
+    assert "UNSUPPORTED_ACCOUNT_MODE" in str(alerts[-1]["raw_reason"])
+    assert events[-1][0] == "terminal_order_denied"
+    assert all(alert["alert_key"] != "order_rejected_burst" for alert in alerts)
+
+
+def test_runtime_bot_on_reenable_clears_terminal_order_denial_circuit(strategy_factory) -> None:
+    strategy = strategy_factory(bot_on=False)
+    strategy._terminal_order_denial_circuit_open = True
+
+    strategy._apply_runtime_param_updates({"bot_on": True})
+
+    assert strategy._effective_bot_on() is True
+    assert strategy._terminal_order_denial_circuit_open is False
+
+
+def test_terminal_order_denial_only_cancels_orders_with_venue_ids(strategy_factory) -> None:
+    strategy = strategy_factory()
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(client_order_id="RESTING-1", venue_order_id=None),
+        SimpleNamespace(client_order_id="RESTING-2", venue_order_id=VenueOrderId("V-2")),
+    ]
+
+    canceled_batches: list[list[str]] = []
+    strategy._cancel_managed_quotes = (
+        lambda _reason, force=False, managed_orders=None, **_kwargs: canceled_batches.append(
+            [
+                str(getattr(order, "client_order_id", ""))
+                for order in (managed_orders or [])
+            ],
+        )
+    )
+    strategy._publish_actionable_alert = lambda **_kwargs: True
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._handle_terminal_order_denial(
+        now_ns=1,
+        reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+        source_event="order_rejected",
+        client_order_id="RESTING-1",
+    )
+
+    assert canceled_batches == [["RESTING-2"]]
 
 
 def test_rebalance_side_skips_repeat_cancel_while_cancel_reject_cooldown_is_active(
