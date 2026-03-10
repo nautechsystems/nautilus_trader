@@ -39,7 +39,7 @@ from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.model.enums import RecordFlag
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog import BaseDataCatalog
 from nautilus_trader.persistence.funcs import parse_filters_expr
 
 from cpython.datetime cimport datetime
@@ -201,7 +201,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
         self._external_clients: set[ClientId] = set()
-        self._catalogs: dict[str, ParquetDataCatalog] = {}
+        self._catalogs: dict[str, BaseDataCatalog] = {}
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[tuple[BarType, UUID4], BarAggregator] = {}
         self._spread_quote_aggregators: dict[tuple[InstrumentId, UUID4], SpreadQuoteAggregator] = {}
@@ -375,13 +375,13 @@ cdef class DataEngine(Component):
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
-    def register_catalog(self, catalog: ParquetDataCatalog, name: str = "catalog_0") -> None:
+    def register_catalog(self, catalog: BaseDataCatalog, name: str = "catalog_0") -> None:
         """
         Register the given data catalog with the engine.
 
         Parameters
         ----------
-        catalog : ParquetDataCatalog
+        catalog : BaseDataCatalog
             The data catalog to register.
         name : str, default 'catalog_0'
             The name of the catalog to register.
@@ -3051,12 +3051,13 @@ cdef class DataEngine(Component):
             self._log.warning("No catalog available for appending data.")
             return
 
-        if len(data) == 0 and data_cls and start and end:
-            # identifier can be None for custom data
-            used_catalog.extend_file_name(data_cls, identifier, start, end)
-            return
-
-        used_catalog.write_data(data, start, end)
+        used_catalog.write_data(
+            data,
+            start,
+            end,
+            data_cls=data_cls,
+            identifier=str(identifier) if identifier is not None else None,
+        )
 
     cpdef tuple[datetime, object] _catalog_last_timestamp(
         self,

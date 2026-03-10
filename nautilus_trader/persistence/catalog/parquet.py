@@ -47,7 +47,6 @@ from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import Bar
@@ -241,10 +240,12 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def write_data(
         self,
-        data: list[Data | Event] | list[NautilusRustDataType],
+        data: list,
         start: int | None = None,
         end: int | None = None,
-        skip_disjoint_check: bool = False,
+        data_cls: type | None = None,
+        identifier: str | None = None,
+        **kwargs: Any,
     ) -> None:
         """
         Write the given `data` to the catalog.
@@ -252,6 +253,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         The function categorizes the data based on their class name and, when applicable, their
         associated instrument ID. It then delegates the actual writing process to the
         `write_chunk` method.
+
+        When `data` is empty but `start`, `end`, and `data_cls` are provided, extends existing
+        parquet file names to record the gap (parquet-specific behavior).
 
         Parameters
         ----------
@@ -261,8 +265,12 @@ class ParquetDataCatalog(BaseDataCatalog):
             The start timestamp for the data chunk.
         end : int, optional
             The end timestamp for the data chunk.
-        skip_disjoint_check : bool, default False
-            If True, skip the disjoint intervals check.
+        data_cls : type, optional
+            Data class for the empty-data case (e.g. when recording a gap).
+        identifier : str, optional
+            Identifier (e.g. instrument_id or bar_type string) for the empty-data case.
+        **kwargs : Any
+            Additional implementation-specific keyword arguments (e.g. skip_disjoint_check).
 
         Warnings
         --------
@@ -275,6 +283,8 @@ class ParquetDataCatalog(BaseDataCatalog):
          - Instrument-specific data should have either an `instrument_id` attribute or be an instance of `Instrument`.
          - The `Bar` class is treated as a special case, being grouped based on its `bar_type` attribute.
          - The input data list must be non-empty, and all data items must be of the appropriate class type.
+         - Pass ``skip_disjoint_check=True`` in ``**kwargs`` to skip the disjoint-intervals check when writing
+           (e.g. when consolidating or re-writing chunks where you manage intervals explicitly).
 
         Raises
         ------
@@ -282,6 +292,15 @@ class ParquetDataCatalog(BaseDataCatalog):
             If data of the same type is not monotonically increasing (or non-decreasing) based on `ts_init`.
 
         """
+        skip_disjoint_check: bool = kwargs.pop("skip_disjoint_check", False)
+        if len(data) == 0 and start is not None and end is not None and data_cls is not None:
+            self.extend_file_name(
+                data_cls=data_cls,
+                identifier=identifier,
+                start=start,
+                end=end,
+            )
+            return
 
         def identifier_function(obj: Any) -> tuple[str, str | None]:
             if isinstance(obj, CustomData):

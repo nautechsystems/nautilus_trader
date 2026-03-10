@@ -823,7 +823,7 @@ catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
 # With storage options
 catalog = ParquetDataCatalog.from_uri(
     "s3://my-bucket/nautilus-data/",
-    storage_options={
+    fs_storage_options={
         "access_key_id": "your-key",
         "secret_access_key": "your-secret"
     }
