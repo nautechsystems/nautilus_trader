@@ -91,6 +91,17 @@ Stop:
 sudo systemctl stop flux@tg-bot-lan-rogue-trader-alert.service
 ```
 
+Reset the baseline to the current balance:
+
+```bash
+rm -f state/lan_rogue_trader_alert.json
+sudo systemctl restart flux@tg-bot-lan-rogue-trader-alert.service
+```
+
+This bot does not expose a separate baseline-reset command. Removing the
+persisted state file forces the next successful poll to treat the current
+combined PM + spot balance as a new baseline.
+
 Disable the whole group target:
 
 ```bash
