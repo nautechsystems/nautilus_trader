@@ -36,7 +36,12 @@ extension-module = [
   "nautilus-model/extension-module",
   "pyo3/extension-module",
 ]
-python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-persistence?/python",
+  "pyo3",
+]
 defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]

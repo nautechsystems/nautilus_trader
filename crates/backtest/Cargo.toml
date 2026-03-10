@@ -47,6 +47,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-persistence?/python",
   "nautilus-trading/python",
   "pyo3",
   "streaming",

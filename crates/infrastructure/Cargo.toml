@@ -76,7 +76,7 @@ redis = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-persistence = { path = "../persistence" }
-nautilus-serialization = { path = "../serialization" }
+nautilus-persistence = { workspace = true }
+nautilus-serialization = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
