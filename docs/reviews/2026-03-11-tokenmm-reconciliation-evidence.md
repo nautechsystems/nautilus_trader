@@ -44,20 +44,12 @@ From the restart journal window around `2026-03-11 06:30:18 UTC`:
 
 This is not a pure position-only mismatch.
 
-Evidence points to an order/cache-linked startup discrepancy:
+Observed supporting facts:
 
 - the engine registered one `EXTERNAL` position id and external order claims
 - the cache warned that order `4c4fe5a4-543c-4a23-8c85-c9b8fd81831f` was missing
   for position `PLUMEUSDT-LINEAR.BYBIT-EXTERNAL`
-- there were no fresh fill reports during this restart window, so the mismatch
-  does not look like an in-flight fill race at startup
-
-Current best reading:
-
-- the failing state includes at least one owned strategy position
-- the failing state also includes `EXTERNAL`-linked reconciliation state
-- the immediate failure is cache lineage / missing-order-linked, not fresh fill
-  arrival during restart
+- there were no fresh fill reports during this restart window
 
 ### Raw failure lines
 
@@ -89,22 +81,14 @@ From the restart journal window around `2026-03-11 06:29:40 UTC`:
 
 ### Mismatch classification
 
-This mismatch is clearly order/fill-linked and restart-racy.
+This mismatch is order/fill-linked.
 
-Evidence points to a mixed startup state containing:
+Observed supporting facts:
 
-- owned strategy state
 - `EXTERNAL`-linked reconciliation state
 - fresh fill processing during startup
 - missing cached order lineage for `EXTERNAL` positions
-
-Current best reading:
-
-- this is not just stale cached position math
-- the restart is processing real fills and order reports while the engine still
-  sees `EXTERNAL`-linked cache artifacts
-- the mismatch likely depends on reconciliation ordering or effective-quantity
-  calculation across owned plus artifact positions
+- a strategy-owned `PositionChanged` event during the same startup window
 
 ### Raw failure lines
 
@@ -133,7 +117,7 @@ Important difference:
 
 - Bybit perp restart shows no fresh fills arriving during startup
 - OKX perp restart does show fresh fills and order reports arriving during
-  startup, so its failure shape is more sequencing-sensitive
+  startup
 
 ## Evidence commands used
 
@@ -143,10 +127,3 @@ Primary commands used to collect this note:
 - `journalctl -u flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service --since '2026-03-11 06:29:35 UTC' --until '2026-03-11 06:29:41 UTC' --no-pager`
 - `systemctl status --no-pager flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service`
 - `systemctl status --no-pager flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service`
-
-## Root-cause hypothesis to test next
-
-The next task should assume the likely bug is in startup reconciliation of
-netting positions when owned strategy positions coexist with `EXTERNAL`
-reconciliation artifacts and, for OKX, fresh fill/order events land during the
-same restart window.
