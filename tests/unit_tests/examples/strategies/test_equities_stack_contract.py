@@ -462,6 +462,15 @@ def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
     assert 'append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"' in install_script
 
 
+def test_equities_installer_cleans_all_generated_envs_before_reinstall() -> None:
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
+
+    assert 'rm -f "${ENV_DIR}/equities-api.env"' in install_script
+    assert 'rm -f "${ENV_DIR}/equities-portfolio.env"' in install_script
+    assert 'rm -f "${ENV_DIR}/equities-bridge.env"' in install_script
+    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
+
+
 def test_equities_shared_fluxboard_contract_uses_neutral_static_prefix() -> None:
     repo_root = _repo_root()
     install_script = _read(repo_root / "ops/scripts/deploy/install_equities_systemd.sh")
