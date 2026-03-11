@@ -104,6 +104,9 @@ from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from nautilus_trader.persistence._execution_timing import CANCEL_ACTION_TYPE
+from nautilus_trader.persistence._execution_timing import PLACE_ACTION_TYPE
+from nautilus_trader.persistence._execution_timing import publish_command_execution_timing
 
 
 # Monkey patch to fix IB API bug where PriceCondition.__str__ is a property instead of a method
@@ -884,12 +887,29 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
+        publish_command_execution_timing(
+            self._msgbus,
+            command=command,
+            client_order_id=command.order.client_order_id.value,
+            action_type=PLACE_ACTION_TYPE,
+            strategy_id=command.order.strategy_id.value,
+            clock=self._clock,
+            stamp_adapter_submit_start=True,
+        )
 
         try:
             ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
             ib_order.orderId = self._client.next_order_id()
             self._client.place_order(ib_order)
-            self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
+            submit_ts_ns = self._client._order_latency_by_order_ref.get(
+                command.order.client_order_id.value,
+                {},
+            ).get("ts_submit_gateway_send_ns")
+            self._handle_order_event(
+                status=OrderStatus.SUBMITTED,
+                order=command.order,
+                ts_event_ns=submit_ts_ns,
+            )
         except ValueError as e:
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
@@ -899,6 +919,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         PyCondition.type(command, SubmitOrderList, "command")
+        for order in command.order_list.orders:
+            publish_command_execution_timing(
+                self._msgbus,
+                command=command,
+                client_order_id=order.client_order_id.value,
+                action_type=PLACE_ACTION_TYPE,
+                strategy_id=order.strategy_id.value,
+                clock=self._clock,
+                stamp_adapter_submit_start=True,
+            )
 
         order_id_map = {}
         client_id_to_orders = {}
@@ -944,9 +974,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Place orders
             order_ref = ib_order.orderRef
             self._client.place_order(ib_order)
+            submit_ts_ns = self._client._order_latency_by_order_ref.get(
+                order_ref,
+                {},
+            ).get("ts_submit_gateway_send_ns")
             self._handle_order_event(
                 status=OrderStatus.SUBMITTED,
                 order=client_id_to_orders[order_ref],
+                ts_event_ns=submit_ts_ns,
             )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
@@ -1276,6 +1311,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
+        publish_command_execution_timing(
+            self._msgbus,
+            command=command,
+            client_order_id=command.client_order_id.value,
+            action_type=CANCEL_ACTION_TYPE,
+            strategy_id=command.strategy_id.value,
+            clock=self._clock,
+            stamp_adapter_submit_start=True,
+        )
 
         venue_order_id = command.venue_order_id
 
@@ -1364,13 +1408,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         order: Order,
         ib_order: IBOrder | None = None,
         reason: str = "",
+        ts_event_ns: int | None = None,
     ) -> None:
+        event_ts_ns = self._clock.timestamp_ns() if ts_event_ns is None else int(ts_event_ns)
         if status == OrderStatus.SUBMITTED:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                ts_event=self._clock.timestamp_ns(),
+                ts_event=event_ts_ns,
             )
         elif status == OrderStatus.ACCEPTED:
             # Skip if order is already ACCEPTED or in a later state (PARTIALLY_FILLED, FILLED)
@@ -1386,7 +1432,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=get_venue_order_id(ib_order.orderId, ib_order.permId),
-                    ts_event=self._clock.timestamp_ns(),
+                    ts_event=event_ts_ns,
                 )
             else:
                 self._log.debug(f"Order {order.client_order_id} already accepted")
@@ -1404,7 +1450,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
-                    ts_event=self._clock.timestamp_ns(),
+                    ts_event=event_ts_ns,
                 )
         elif status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
@@ -1413,7 +1459,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     reason=reason,
-                    ts_event=self._clock.timestamp_ns(),
+                    ts_event=event_ts_ns,
                 )
         else:
             self._log.warning(
@@ -1425,7 +1471,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         report = await self._parse_ib_order_to_order_status_report(ib_order)
         self._send_order_status_report(report)
 
-    def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState) -> None:
+    def _on_open_order(
+        self,
+        order_ref: str,
+        order: IBOrder,
+        order_state: IBOrderState,
+        ts_open_order_recv_ns: int | None = None,
+    ) -> None:
         if not order.orderRef:
             self._log.warning(
                 f"ClientOrderId not available, order={order.__dict__}, state={order_state.__dict__}",
@@ -1445,6 +1497,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 status=OrderStatus.REJECTED,
                 order=nautilus_order,
                 reason=json.dumps({"whatIf": order_state.__dict__}, default=str),
+                ts_event_ns=ts_open_order_recv_ns,
             )
         elif order_state.status in [
             "PreSubmitted",
@@ -1494,13 +1547,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     quantity=total_qty,
                     price=price,
                     trigger_price=trigger_price,
-                    ts_event=self._clock.timestamp_ns(),
+                    ts_event=self._clock.timestamp_ns() if ts_open_order_recv_ns is None else int(ts_open_order_recv_ns),
                     venue_order_id_modified=venue_order_id_modified,
                 )
             self._handle_order_event(
                 status=OrderStatus.ACCEPTED,
                 order=nautilus_order,
                 ib_order=order,
+                ts_event_ns=ts_open_order_recv_ns,
             )
 
     def _on_order_status(  # noqa: C901 (complexity unavoidable due to IB status handling)
@@ -1512,6 +1566,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         remaining: Decimal = Decimal(0),
         reason: str = "",
         venue_order_id: VenueOrderId | None = None,
+        ts_order_status_recv_ns: int | None = None,
     ) -> None:
         # Cache filled quantity for use in OrderStatusReport generation during reconciliation.
         # IB's openOrder callback doesn't include accurate filledQuantity, but orderStatus does.
@@ -1573,7 +1628,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 status=status,
                 order=nautilus_order,
                 reason=reason,
+                ts_event_ns=ts_order_status_recv_ns,
             )
+            if status in (
+                OrderStatus.EXPIRED,
+                OrderStatus.CANCELED,
+                OrderStatus.REJECTED,
+            ):
+                self._client._evict_order_latency(order_ref)
 
             if venue_order_id is not None and status in (
                 OrderStatus.FILLED,
@@ -1591,6 +1653,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         execution: Execution,
         commission_report: CommissionAndFeesReport,
         contract: IBContract,
+        ts_exec_details_recv_ns: int | None = None,
     ) -> None:
         if not execution.orderRef:
             self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
@@ -1643,6 +1706,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         info = {}
         if nautilus_order.client_order_id in self._order_avg_prices:
             info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
+        ib_latency = dict(self._client._order_latency_by_order_ref.get(order_ref, {}))
+        if ts_exec_details_recv_ns is not None:
+            ib_latency["ts_exec_details_recv_ns"] = int(ts_exec_details_recv_ns)
+        if ib_latency:
+            info["ib_latency"] = ib_latency
 
         self.generate_order_filled(
             strategy_id=nautilus_order.strategy_id,
@@ -1664,6 +1732,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=timestring_to_timestamp(execution.time).value,
             info=info or None,
         )
+        is_closed = getattr(nautilus_order, "is_closed", False)
+        if callable(is_closed):
+            is_closed = is_closed()
+        if is_closed:
+            self._client._evict_order_latency(order_ref)
 
         # Update position tracking to avoid duplicate processing
         self._update_position_tracking_from_execution(contract, execution)

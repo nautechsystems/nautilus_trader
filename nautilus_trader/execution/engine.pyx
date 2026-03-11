@@ -21,6 +21,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
+from nautilus_trader.persistence._execution_timing import record_command_timing
 
 from libc.stdint cimport uint64_t
 
@@ -1136,6 +1137,7 @@ cdef class ExecutionEngine(Component):
             self._add_own_book_order(order)
 
         # Send to execution client
+        record_command_timing(command, field="ts_exec_forward_ns", clock=self._clock)
         client.submit_order(command)
 
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
@@ -1185,18 +1187,21 @@ cdef class ExecutionEngine(Component):
                     self._add_own_book_order(order)
 
         # Send to execution client
+        record_command_timing(command, field="ts_exec_forward_ns", clock=self._clock)
         client.submit_order_list(command)
 
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
 
     cpdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command):
+        record_command_timing(command, field="ts_exec_forward_ns", clock=self._clock)
         client.cancel_order(command)
 
     cpdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command):
         client.cancel_all_orders(command)
 
     cpdef void _handle_batch_cancel_orders(self, ExecutionClient client, BatchCancelOrders command):
+        record_command_timing(command, field="ts_exec_forward_ns", clock=self._clock)
         client.batch_cancel_orders(command)
 
     cpdef void _handle_query_account(self, ExecutionClient client, QueryAccount command):

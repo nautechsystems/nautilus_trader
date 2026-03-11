@@ -11,7 +11,10 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Event
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.persistence._execution_timing import record_command_timing
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.risk.engine import RiskEngine
 
@@ -245,6 +248,12 @@ class LiveRiskEngine(RiskEngine):
                     command: Command | None = await self._cmd_queue.get()
                     if command is self._sentinel:
                         break
+                    if isinstance(command, (SubmitOrder, SubmitOrderList)):
+                        record_command_timing(
+                            command,
+                            field="ts_risk_recv_ns",
+                            clock=self._clock,
+                        )
 
                     self._execute_command(command)
                 except asyncio.CancelledError:

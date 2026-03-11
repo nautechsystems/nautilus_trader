@@ -12,10 +12,14 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence._execution_timing import EXECUTION_TIMING_TOPIC
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -246,6 +250,164 @@ async def test_submit_order(
     assert cache.order(client_order_id).quantity == expected.quantity
     assert cache.order(client_order_id).price == expected.price
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
+
+
+@pytest.mark.asyncio
+async def test_submit_order_uses_gateway_send_timestamp_for_order_submitted_event(
+    mocker,
+    monkeypatch,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    mock_connection_setup,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    mock_connection_setup()
+    exec_client.connect()
+    await asyncio.sleep(0.1)
+
+    submit_gateway_send_ns = 1_704_067_201_000_000_000
+    post_send_clock_ns = submit_gateway_send_ns + 1_000
+    emitted_events = []
+
+    monkeypatch.setattr(exec_client, "_send_order_event", emitted_events.append)
+    exec_client._clock.set_time(submit_gateway_send_ns)
+
+    def advance_clock_after_gateway_send(*_args, **_kwargs):
+        exec_client._clock.set_time(post_send_clock_ns)
+
+    mocker.patch.object(
+        exec_client._client._eclient,
+        "placeOrder",
+        side_effect=advance_clock_after_gateway_send,
+    )
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+
+    # Act
+    command = TestCommandStubs.submit_order_command(order=order)
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    # Assert
+    submitted = next(event for event in emitted_events if isinstance(event, OrderSubmitted))
+    assert submitted.ts_event == submit_gateway_send_ns
+
+
+@pytest.mark.asyncio
+async def test_submit_order_publishes_generic_execution_timing_payload(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    mock_connection_setup,
+):
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    mock_connection_setup()
+    exec_client.connect()
+    await asyncio.sleep(0.1)
+
+    payloads = []
+    exec_client._msgbus.subscribe(topic=EXECUTION_TIMING_TOPIC, handler=payloads.append)
+
+    mocker.patch.object(exec_client._client._eclient, "placeOrder", return_value=None)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+    command = TestCommandStubs.submit_order_command(order=order)
+    command.params["nautilus.execution_timing"] = {
+        "ts_risk_recv_ns": 100,
+        "ts_risk_forward_ns": 110,
+        "ts_exec_recv_ns": 120,
+        "ts_exec_forward_ns": 130,
+    }
+
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    assert payloads
+    payload = payloads[-1]
+    assert payload["strategy_id"] == order.strategy_id.value
+    assert payload["client_order_id"] == order.client_order_id.value
+    assert payload["action_type"] == "PLACE"
+    assert payload["ts_command_init_ns"] == command.ts_init
+    assert payload["ts_risk_recv_ns"] == 100
+    assert payload["ts_risk_forward_ns"] == 110
+    assert payload["ts_exec_recv_ns"] == 120
+    assert payload["ts_exec_forward_ns"] == 130
+    assert payload["ts_client_submit_ns"] is not None
+    assert payload["ts_adapter_submit_start_ns"] is not None
+
+
+@pytest.mark.asyncio
+async def test_open_order_uses_receipt_timestamp_for_order_accepted_event(
+    monkeypatch,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    emitted_events = []
+    monkeypatch.setattr(exec_client, "_send_order_event", emitted_events.append)
+
+    venue_order_id = VenueOrderId("101")
+    order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.SUBMITTED,
+    )
+
+    open_order_recv_ns = 1_704_067_202_000_000_000
+    exec_client._clock.set_time(open_order_recv_ns + 5_000)
+
+    ib_order = IBTestExecStubs.aapl_buy_ib_order(order_id=int(venue_order_id.value))
+    ib_order.contract = IBTestContractStubs.aapl_equity_ib_contract()
+    ib_order.orderRef = f"{client_order_id.value}:{venue_order_id.value}"
+    order_state = IBTestExecStubs.ib_order_state(state="Submitted")
+
+    # Act
+    exec_client._on_open_order(
+        order_ref=client_order_id.value,
+        order=ib_order,
+        order_state=order_state,
+        ts_open_order_recv_ns=open_order_recv_ns,
+    )
+
+    # Assert
+    accepted = next(event for event in emitted_events if isinstance(event, OrderAccepted))
+    assert accepted.ts_event == open_order_recv_ns
 
 
 @pytest.mark.asyncio
@@ -790,6 +952,68 @@ async def test_on_exec_details_uses_stored_avg_px(
     assert exec_client._order_avg_prices[
         cache.order(client_order_id).client_order_id
     ] == Price.from_str("99.75")
+
+
+@pytest.mark.asyncio
+async def test_exec_details_fill_info_contains_ib_latency_metadata(
+    monkeypatch,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    emitted_events = []
+    monkeypatch.setattr(exec_client, "_send_order_event", emitted_events.append)
+
+    venue_order_id = VenueOrderId("101")
+    order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+
+    exec_client._client._order_latency_by_order_ref = {
+        client_order_id.value: {
+            "ts_submit_gateway_send_ns": 1_704_067_201_000_000_000,
+            "ts_open_order_recv_ns": 1_704_067_202_000_000_000,
+            "ts_order_status_recv_ns": 1_704_067_203_000_000_000,
+        },
+    }
+
+    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution.orderRef = f"{client_order_id.value}:{venue_order_id.value}"
+    commission_report = IBTestExecStubs.commission()
+    commission_report.execId = execution.execId
+    contract = contract_details.contract
+    exec_details_recv_ns = 1_704_067_204_000_000_000
+
+    # Act
+    exec_client._on_exec_details(
+        order_ref=client_order_id.value,
+        execution=execution,
+        commission_report=commission_report,
+        contract=contract,
+        ts_exec_details_recv_ns=exec_details_recv_ns,
+    )
+
+    # Assert
+    fill = next(event for event in emitted_events if isinstance(event, OrderFilled))
+    assert fill.info["ib_latency"] == {
+        "ts_submit_gateway_send_ns": 1_704_067_201_000_000_000,
+        "ts_open_order_recv_ns": 1_704_067_202_000_000_000,
+        "ts_order_status_recv_ns": 1_704_067_203_000_000_000,
+        "ts_exec_details_recv_ns": exec_details_recv_ns,
+    }
 
 
 @pytest.mark.asyncio

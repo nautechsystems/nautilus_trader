@@ -32,7 +32,11 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import QueryOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
@@ -41,6 +45,7 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from flux.events import FluxBusPayload
 from flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
+from nautilus_trader.persistence._execution_timing import record_command_timing
 from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
 from nautilus_trader.live.reconciliation import create_inferred_order_filled_event
@@ -599,6 +604,12 @@ class LiveExecutionEngine(ExecutionEngine):
                     command: Command | None = await self._cmd_queue.get()
                     if command is self._sentinel:
                         break
+                    if isinstance(command, (SubmitOrder, SubmitOrderList, CancelOrder, BatchCancelOrders)):
+                        record_command_timing(
+                            command,
+                            field="ts_exec_recv_ns",
+                            clock=self._clock,
+                        )
 
                     self._execute_command(command)
                 except asyncio.CancelledError:

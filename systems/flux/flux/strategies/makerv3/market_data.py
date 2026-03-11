@@ -64,6 +64,8 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
     if bbo_changed:
         strategy._last_bbo[deltas.instrument_id] = (bid_dec, ask_dec)
     strategy._last_bbo_ts_ns[deltas.instrument_id] = now_ns
+    strategy._last_bbo_event_ts_ns[deltas.instrument_id] = int(getattr(deltas, "ts_event", 0) or 0)
+    strategy._last_bbo_init_ts_ns[deltas.instrument_id] = int(getattr(deltas, "ts_init", 0) or 0)
 
     should_publish_bbo = should_publish_market_bbo(
         bbo_changed=bbo_changed,
@@ -95,31 +97,43 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
     is_maker_delta = strategy.config.maker_instrument_id == deltas.instrument_id
 
     if is_maker_delta and not bot_on_now:
+        quote_cycle = strategy._begin_quote_cycle(
+            now_ns=now_ns,
+            trigger_source="maker_bbo_update",
+            trigger_instrument_id=deltas.instrument_id,
+            trigger_md_ts_event_ns=int(getattr(deltas, "ts_event", 0) or 0),
+            trigger_md_ts_init_ns=int(getattr(deltas, "ts_init", 0) or 0),
+        )
         state_name = (
             "blocked_startup_cleanup"
             if bool(getattr(strategy, "_startup_cleanup_pending", False))
             else "bot_off"
         )
         strategy._publish_state(state_name)
-        quote_cycle_id = strategy._next_quote_cycle_id(now_ns=now_ns)
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_BOT_OFF,
-            quote_cycle_id=quote_cycle_id,
+            quote_cycle=quote_cycle,
         )
         return
     if not bot_on_now:
         return
 
     now_ns = int(strategy.clock.timestamp_ns())
-    quote_cycle_id = strategy._next_quote_cycle_id(now_ns=now_ns)
+    quote_cycle = strategy._begin_quote_cycle(
+        now_ns=now_ns,
+        trigger_source="maker_bbo_update",
+        trigger_instrument_id=deltas.instrument_id,
+        trigger_md_ts_event_ns=int(getattr(deltas, "ts_event", 0) or 0),
+        trigger_md_ts_init_ns=int(getattr(deltas, "ts_init", 0) or 0),
+    )
     if now_ns - strategy._last_requote_ns < strategy.INTERNAL_REQUOTE_THROTTLE_MS * 1_000_000:
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_REQUOTE_THROTTLED,
-            quote_cycle_id=quote_cycle_id,
+            quote_cycle=quote_cycle,
             payload={
                 "throttle_ms": strategy.INTERNAL_REQUOTE_THROTTLE_MS,
             },
@@ -130,11 +144,15 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_QUOTE_FAIL_CIRCUIT_OPEN,
-            quote_cycle_id=quote_cycle_id,
+            quote_cycle=quote_cycle,
         )
         return
     try:
-        strategy._refresh_quotes(now_ns=now_ns, quote_cycle_id=quote_cycle_id)
+        strategy._refresh_quotes(
+            now_ns=now_ns,
+            quote_cycle_id=quote_cycle.quote_cycle_id,
+            quote_cycle=quote_cycle,
+        )
         strategy._quote_failures_ns.clear()
     except Exception as e:
         strategy._handle_quote_failure(now_ns=now_ns, exc=e, context="on_order_book_deltas")

@@ -69,7 +69,33 @@ MakerV3 publishes structured JSON payloads to canonical topics:
 - `flux.makerv3.alert`: actionable operator alerts (cooldown/transition gated).
 - `flux.makerv3.market_bbo`: top-of-book snapshots (change-driven + heartbeat).
 - `flux.makerv3.fv`: fair-value snapshots (midpoint of maker/reference when available).
-- `flux.makerv3.trade`: order fill notices (for downstream monitoring/analytics).
+- `flux.makerv3.order_intent`: per-order place/cancel intent payloads used to enrich persistent
+  `order_action` and `execution_fill` rows.
+- `flux.makerv3.trade`: order fill notices for downstream monitoring/analytics, including decision
+  correlation fields when available.
+
+MakerV3 telemetry is persisted across three surfaces:
+
+- `quote_cycle` for every decision pass, including no-order cycles.
+- `order_action` for actual lifecycle events enriched from `flux.makerv3.order_intent`.
+- `execution_fill` for fills enriched with the same correlation metadata plus IB gateway
+  send/receipt timestamps when available.
+
+Generic execution-pipeline timing is emitted on `events.execution.timing` for all live strategies
+which traverse the standard `Strategy -> RiskEngine -> ExecutionEngine -> LiveExecutionClient`
+path. `order_action` and `execution_fill` subscribe to that stream and persist:
+
+- `ts_command_init_ns`
+- `ts_risk_recv_ns`, `ts_risk_forward_ns`
+- `ts_exec_recv_ns`, `ts_exec_forward_ns`
+- `ts_client_submit_ns`
+- `ts_adapter_submit_start_ns`
+
+This gives MakerV3 a v1 latency breakdown without inventing a strategy-specific transport layer.
+The strategy-specific surfaces remain:
+
+- `quote_cycle` for no-order decisions and pricing audit
+- `order_intent` for per-order reason/correlation metadata
 
 Operational guidance:
 
@@ -79,9 +105,51 @@ Operational guidance:
 Quote-cycle events use an envelope with:
 
 - `run_id`: stable per-run identifier
-- `quote_cycle_id`: monotonically increasing per run
+- `quote_cycle_id`: `{run_id}:{quote_cycle_seq}`
+- `quote_cycle_seq`: numeric cycle sequence
 - `quote_cycle_event`: `skipped|blocked|completed`
 - `reason_code`: machine-readable reason for operator/debugging
+- `trigger_source`, `trigger_instrument_id`, `trigger_md_ts_event_ns`, `trigger_md_ts_init_ns`
+- `ts_cycle_start_ns`, `ts_cycle_end_ns`
+- `state_from`, `state_to`
+- `cancel_count`, `place_count`
+- optional `decision_context_json` for blocked/completed or action-taking cycles
+
+Order-intent payloads carry:
+
+- `intent_type`: `PLACE` or `CANCEL`
+- `client_order_id`, `run_id`, `quote_cycle_id`, `reason_code`, `level_index`
+- local decision timestamps such as `ts_decision_ns`, `ts_submit_local_ns`,
+  `ts_cancel_request_local_ns`
+- trigger timestamps `ts_market_data_event_ns` and `ts_market_data_recv_ns`
+
+Clock-domain note:
+
+- `ts_market_data_event_ns` comes from the triggering market-data event and is not assumed to be in
+  the same clock domain as local strategy timestamps.
+- `ts_market_data_recv_ns`, `ts_decision_ns`, `ts_submit_local_ns`, the generic execution timing
+  fields, and the IB adapter callback timestamps are local-clock measurements intended for latency
+  analysis.
+- `ts_submit_gateway_send_ns` / `ts_cancel_gateway_send_ns` are best-effort local pre-dispatch
+  timestamps taken immediately before the `ibapi` call, not confirmed gateway/network send
+  receipts.
+- Cancel commands currently bypass the generic risk stage on the standard live path, so
+  `ts_risk_recv_ns` and `ts_risk_forward_ns` are expected to be `NULL` on cancel rows.
+
+Safe v1 latency cuts for MakerV3 include:
+
+- local tick receive -> decision: `ts_decision_ns - ts_market_data_recv_ns`
+- local tick receive -> strategy submit: `ts_submit_local_ns - ts_market_data_recv_ns`
+- command init -> risk/exec/client/adapter segments using the persisted `ts_*` execution fields
+- local tick receive -> IB pre-dispatch: `ts_submit_gateway_send_ns - ts_market_data_recv_ns`
+- IB pre-dispatch -> callback receipt: `ts_open_order_recv_ns - ts_submit_gateway_send_ns` or
+  `ts_order_status_recv_ns - ts_submit_gateway_send_ns`
+- IB pre-dispatch -> fill receipt: `ts_exec_details_recv_ns - ts_submit_gateway_send_ns`
+
+Not safe in v1 without explicit clock normalization:
+
+- `ts_market_data_event_ns` minus any local-clock field
+- `execution_fill.ts_event` minus any local-clock field when treating `ts_event` as venue time
 
 ## Ops playbook (quick)
 

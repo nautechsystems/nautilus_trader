@@ -27,7 +27,7 @@ Add tests that show:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/unit_tests/trading/test_strategy.py -k "allowed_instrument or market_exit"`  
+Run: `pytest tests/unit_tests/trading/test_strategy.py -k "allowed_instrument or market_exit"`
 Expected: FAIL because no submit allowlist exists yet.
 
 **Step 3: Write minimal implementation**
@@ -36,7 +36,7 @@ Add a config field for allowed submit instruments, parse it on strategy init, an
 
 **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/unit_tests/trading/test_strategy.py -k "allowed_instrument or market_exit"`  
+Run: `pytest tests/unit_tests/trading/test_strategy.py -k "allowed_instrument or market_exit"`
 Expected: PASS.
 
 ### Task 2: Enable TokenMM graceful stop/crash defaults
@@ -54,7 +54,7 @@ Add tests that show `build_node()` sets:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k "manage_stop or graceful_shutdown or allowed_submit"`  
+Run: `pytest tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k "manage_stop or graceful_shutdown or allowed_submit"`
 Expected: FAIL because the runner does not currently wire these defaults.
 
 **Step 3: Write minimal implementation**
@@ -63,7 +63,7 @@ Populate those fields in `MakerV3StrategyConfig` and `TradingNodeConfig` creatio
 
 **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k "manage_stop or graceful_shutdown or allowed_submit"`  
+Run: `pytest tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k "manage_stop or graceful_shutdown or allowed_submit"`
 Expected: PASS.
 
 ### Task 3: Regression verification
