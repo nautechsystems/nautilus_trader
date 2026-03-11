@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Balance and portfolio payload normalization helpers."""
+
+from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence

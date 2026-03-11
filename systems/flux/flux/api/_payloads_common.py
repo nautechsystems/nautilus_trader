@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Shared types and pure helpers for Flux API payload assembly."""
+
+from __future__ import annotations
 
 import json
 import time

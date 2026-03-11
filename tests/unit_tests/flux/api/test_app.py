@@ -10,10 +10,10 @@ from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.payloads import StrategyMetadata
-from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
+from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
 
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
