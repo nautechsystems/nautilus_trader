@@ -2676,6 +2676,107 @@ def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_pres
     ]
 
 
+def test_balances_profile_equities_prefers_portfolio_snapshot_v2(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="equities",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "equities",
+            "inventory_by_asset": {
+                "ABC": {
+                    "portfolio_id": "equities",
+                    "base_currency": "ABC",
+                    "global_qty_base": "10",
+                    "global_qty": "10",
+                    "aggregation_mode": "partial",
+                    "global_qty_base_complete": False,
+                    "global_qty_complete": False,
+                    "ts_ms": 123_000,
+                    "stale_after_ms": 3_000,
+                    "components": [],
+                    "missing_required": [],
+                    "stale_required": [],
+                    "null_qty_required": [],
+                    "degraded": False,
+                },
+            },
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "equities:cash:venue_a:main:ABC",
+                        "exchange": "venue_a",
+                        "account": "main",
+                        "asset": "ABC",
+                        "free": "10",
+                        "total": "10",
+                        "mark_raw": 1.5,
+                        "mv_raw": 15.0,
+                        "ts_ms": 123_000,
+                    },
+                ],
+            },
+            "accounts": {
+                "rows": [
+                    {
+                        "exchange": "venue_b",
+                        "account": "main",
+                        "asset": "USDT",
+                        "free": "20",
+                        "total": "20",
+                        "ts_ms": 123_100,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "venue_b.reference.main",
+                        "source_strategy_ids": [
+                            flux_config.identity.strategy_id,
+                            "strategy_02",
+                        ],
+                        "strategy_id": "equities",
+                    },
+                ],
+            },
+            "server_ts_ms": 123_200,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id, "strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot_v2"
+    assert {row["asset"] for row in body["data"]["rows"]} == {"ABC", "USDT"}
+
+
 def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
     monkeypatch,
     flux_config,

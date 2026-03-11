@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 """Balance and portfolio payload normalization helpers."""
 
 from collections.abc import Mapping
@@ -19,6 +20,7 @@ from ._payloads_common import canonical_naming_fields
 from ._payloads_common import coerce_ts_ms
 from ._payloads_common import contract_id_for_leg
 from ._payloads_common import decode_text
+from ._payloads_common import decode_text_list
 from ._payloads_common import enrich_row_with_canonical_naming
 from ._payloads_common import normalize_symbol_parts
 from ._payloads_common import safe_float
@@ -910,6 +912,122 @@ def merge_portfolio_balances_rows(
     return collapse_balance_display_rows(
         [enrich_row_with_canonical_naming(row) for row in merged_rows],
     )
+
+
+def _portfolio_snapshot_row_source_scope(row: Mapping[str, Any], *, default_source_scope: str) -> str:
+    scope = decode_text(row.get("source_scope") or row.get("scope")).strip().lower()
+    if scope in {"strategy", "shared_account", "portfolio"}:
+        return scope
+    return default_source_scope
+
+
+def _normalize_portfolio_snapshot_row(
+    row: Mapping[str, Any],
+    *,
+    default_source_scope: str,
+) -> dict[str, Any]:
+    normalized = dict(row)
+    source_scope = _portfolio_snapshot_row_source_scope(
+        normalized,
+        default_source_scope=default_source_scope,
+    )
+    normalized["source_scope"] = source_scope
+    normalized.pop("scope", None)
+
+    account_scope_id = decode_text(normalized.get("account_scope_id")).strip()
+    if account_scope_id:
+        normalized["account_scope_id"] = account_scope_id
+    else:
+        normalized.pop("account_scope_id", None)
+
+    source_strategy_ids = decode_text_list(normalized.get("source_strategy_ids"))
+    if source_scope == "strategy":
+        strategy_id = decode_text(normalized.get("strategy_id")).strip()
+        if strategy_id and not source_strategy_ids:
+            source_strategy_ids = [strategy_id]
+    else:
+        normalized.pop("strategy_id", None)
+
+    if source_strategy_ids:
+        normalized["source_strategy_ids"] = source_strategy_ids
+    else:
+        normalized.pop("source_strategy_ids", None)
+    return normalized
+
+
+def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
+    row_id = decode_text(row.get("row_id")).strip()
+    if row_id:
+        return ("row_id", row_id)
+
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    account = decode_text(row.get("account") or row.get("account_id")).strip().upper()
+    if _is_position_row(dict(row)):
+        instrument = decode_text(
+            row.get("instrument_id")
+            or row.get("symbol")
+            or row.get("asset")
+            or row.get("coin")
+            or row.get("base"),
+        ).strip().upper()
+        if not instrument:
+            return None
+        return ("position", exchange, account, instrument)
+
+    asset = decode_text(
+        row.get("asset")
+        or row.get("currency")
+        or row.get("coin")
+        or row.get("base"),
+    ).strip().upper()
+    if not asset:
+        return None
+    kind = decode_text(row.get("kind")).strip().lower() or "cash"
+    return (kind, exchange, account, asset)
+
+
+def _portfolio_snapshot_row_priority(row: Mapping[str, Any]) -> tuple[int, int, int]:
+    scope = decode_text(row.get("source_scope")).strip().lower()
+    scope_rank = {
+        "portfolio": 0,
+        "strategy": 1,
+        "shared_account": 2,
+    }.get(scope, 0)
+    ts_ms = _row_ts_ms(row)
+    has_mark = 1 if safe_float(row.get("mark_raw") or row.get("mark")) is not None else 0
+    return (scope_rank, ts_ms, has_mark)
+
+
+def combine_portfolio_snapshot_rows(
+    *,
+    balance_rows: Sequence[Mapping[str, Any]],
+    account_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    combined_by_identity: dict[tuple[Any, ...], dict[str, Any]] = {}
+    passthrough_rows: list[dict[str, Any]] = []
+
+    for default_source_scope, source_rows in (
+        ("portfolio", balance_rows),
+        ("shared_account", account_rows),
+    ):
+        for source_row in source_rows:
+            if not isinstance(source_row, Mapping):
+                continue
+            normalized = _normalize_portfolio_snapshot_row(
+                source_row,
+                default_source_scope=default_source_scope,
+            )
+            identity = _portfolio_snapshot_row_identity(normalized)
+            if identity is None:
+                passthrough_rows.append(normalized)
+                continue
+            previous = combined_by_identity.get(identity)
+            if previous is None or _portfolio_snapshot_row_priority(normalized) >= (
+                _portfolio_snapshot_row_priority(previous)
+            ):
+                combined_by_identity[identity] = normalized
+
+    return collapse_balance_display_rows([*combined_by_identity.values(), *passthrough_rows])
 
 
 _STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})

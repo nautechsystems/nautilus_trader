@@ -136,6 +136,20 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
+def decode_text_list(value: Any) -> list[str]:
+    """Normalize a scalar or sequence into a de-duplicated list of non-empty text values."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in as_list(value):
+        text = decode_text(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
 def safe_int(value: Any) -> int | None:
     """Return ``int(value)`` when possible, otherwise ``None``."""
 
