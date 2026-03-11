@@ -117,6 +117,17 @@ render_bridge_env() {
   append_checkout_env_overrides "${ENV_DIR}/tokenmm-bridge.env"
 }
 
+render_telemetry_shipper_env() {
+  cat > "${ENV_DIR}/tokenmm-telemetry-shipper.env" <<EOF
+PULSE_ENABLED=1
+PULSE_DESCRIPTION=TokenMM telemetry shipper
+PULSE_GROUP_KEY=tokenmm
+PULSE_GROUP_LABEL=TokenMM
+PULSE_GROUP_ORDER=10
+CMD="python3 -m nautilus_trader.persistence.shipper.run --config ${SHARED_CONFIG}"
+EOF
+}
+
 render_node_envs() {
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
@@ -159,6 +170,7 @@ main() {
   render_api_env
   render_portfolio_env
   render_bridge_env
+  render_telemetry_shipper_env
   render_node_envs
   rebuild_pulse_sudoers
   render_jupyter_env

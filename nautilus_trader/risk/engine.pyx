@@ -3,6 +3,7 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.persistence._execution_timing import record_command_timing
 
 from libc.stdint cimport uint64_t
 
@@ -1185,6 +1186,7 @@ cdef class RiskEngine(Component):
 
     # Needs to be `cpdef` due being called from throttler
     cpdef void _send_to_execution(self, TradingCommand command):
+        record_command_timing(command, field="ts_risk_forward_ns", clock=self._clock)
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cpdef void _reject_modify_order(self, Order order, str reason):

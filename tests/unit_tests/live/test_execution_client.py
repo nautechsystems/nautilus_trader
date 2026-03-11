@@ -1,18 +1,25 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.persistence._execution_timing import EXECUTION_TIMING_PARAMS_KEY
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -242,3 +249,24 @@ class TestLiveExecutionClient:
 
         for task in tasks:
             assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_submit_order_stamps_ts_client_submit_ns_before_adapter_task_runs(self):
+        order = TestExecStubs.limit_order(
+            client_order_id=TestIdStubs.client_order_id(),
+        )
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            order=order,
+            command_id=UUID4(),
+            ts_init=1_000,
+            params={},
+        )
+
+        with patch.object(self.client, "_submit_order", side_effect=self.client._submit_order) as submit_mock:
+            self.client.submit_order(command)
+            await eventually(lambda: submit_mock.called)
+
+        assert command.params[EXECUTION_TIMING_PARAMS_KEY]["ts_client_submit_ns"] > 0
+        await self.client.cancel_pending_tasks(timeout_secs=1.0)

@@ -459,8 +459,12 @@ The tracing subscriber can only be initialized once per process. When using `use
 
 - `run_id`: Strategy run/session identity.
 - `quote_cycle_id`: Monotonic quote-loop ID inside a run.
+- `quote_cycle_seq`: Monotonic quote-loop sequence number inside a run.
 - `quote_cycle_event`: One of `skipped`, `blocked`, or `completed`.
 - `reason_code`: Machine-readable reason for the cycle outcome.
+- `trigger_source`: `maker_bbo_update` or `timer_guard`.
+- `trigger_md_ts_event_ns` / `trigger_md_ts_init_ns`: Market-data timestamps that triggered the cycle.
+- `ts_cycle_start_ns` / `ts_cycle_end_ns`: Local-cycle timing envelope.
 - `ts_event` / `ts_ms`: Event timestamp in nanoseconds/milliseconds.
 
 Current `reason_code` values:
@@ -470,6 +474,25 @@ Current `reason_code` values:
 - Completed: `completed_no_targets`, `completed_no_actions`, `completed_rebalanced`.
 
 For blocked cycles, payloads include transition metadata (`from_state`, `to_state`, `blocked_transition`) and managed-order counts for operator triage.
+
+`decision_context_json` is intentionally gated:
+
+- Skip paths such as `skip_requote_throttled`, `skip_bot_off`, and `skip_quote_fail_circuit_open`
+  stay lightweight.
+- Blocked and completed cycles may carry heavier strategy audit context such as `pricing_debug`,
+  runtime params, maker quote status, maker role map, and per-level outcomes.
+
+MakerV3 also emits `flux.makerv3.order_intent` for actual per-order actions:
+
+- `intent_type`: `PLACE` or `CANCEL`
+- `run_id` / `quote_cycle_id`: correlation back to the decision pass
+- `reason_code`: canonical MakerV3 taxonomy (`place_missing_level`, `cancel_maker_md_stale`,
+  `cancel_excess_level`, `cancel_free_slot_for_missing_level`, etc.)
+- `ts_market_data_event_ns`, `ts_market_data_recv_ns`, `ts_decision_ns`,
+  `ts_submit_local_ns` / `ts_cancel_request_local_ns`
+
+This topic is the bridge between high-level quote-cycle observability and low-level order/fill
+SQL persistence.
 
 `flux.makerv3.alert` emissions are reserved for actionable conditions and de-noised via transition/cooldown gating (for example, repeated blocked market-data loops do not emit repeated alerts until a meaningful transition occurs).
 

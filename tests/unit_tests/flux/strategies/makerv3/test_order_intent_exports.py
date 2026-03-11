@@ -97,7 +97,19 @@ def test_refresh_quotes_emits_place_order_intent_payloads_with_runtime_strategy_
     payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
-    strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:7")
+    quote_cycle = strategy._quote_cycle_context_from_id(
+        now_ns=1_000_000_000,
+        quote_cycle_id="RUN-42:7",
+        trigger_source="timer_guard",
+        trigger_instrument_id=strategy.config.maker_instrument_id,
+        trigger_md_ts_event_ns=111_111_111,
+        trigger_md_ts_init_ns=222_222_222,
+    )
+    strategy._refresh_quotes(
+        now_ns=1_000_000_000,
+        quote_cycle_id=quote_cycle.quote_cycle_id,
+        quote_cycle=quote_cycle,
+    )
 
     place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
     assert place_payloads
@@ -111,17 +123,19 @@ def test_refresh_quotes_emits_place_order_intent_payloads_with_runtime_strategy_
     assert place_payload["target_px"]
     assert place_payload["cancel_px"]
     assert place_payload["match_tol"]
+    assert place_payload["ts_market_data_event_ns"] == 111_111_111
+    assert place_payload["ts_market_data_recv_ns"] == 222_222_222
     assert place_payload["ts_decision_ns"] == 1_000_000_000
     assert place_payload["ts_submit_local_ns"] >= place_payload["ts_decision_ns"]
-    assert place_payload["decision_context_json"]["pricing"]["place_bid"] == place_payload["target_px"]
+    assert place_payload["decision_context_json"] is None
 
 
-def test_refresh_quotes_emits_blocked_cancel_intents_with_runtime_strategy_id(
+def test_refresh_quotes_emits_distinct_blocked_cancel_intents_with_runtime_strategy_id(
     clocked_strategy_factory,
     monkeypatch,
 ) -> None:
-    strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
-    strategy._managed_orders = lambda: [
+    unavailable_strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
+    unavailable_strategy._managed_orders = lambda: [
         SimpleNamespace(
             client_order_id="RESTING-BOOK-1",
             side=OrderSide.BUY,
@@ -130,26 +144,53 @@ def test_refresh_quotes_emits_blocked_cancel_intents_with_runtime_strategy_id(
             ts_init=1,
         ),
     ]
-    strategy.cancel_order = lambda _order: None
-    strategy._best_bid_ask = lambda instrument_id: (
+    unavailable_strategy.cancel_order = lambda _order: None
+    unavailable_strategy._best_bid_ask = lambda instrument_id: (
         None
-        if instrument_id == strategy.config.maker_instrument_id
+        if instrument_id == unavailable_strategy.config.maker_instrument_id
         else (Decimal(100), Decimal(101))
     )
 
-    payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
-    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+    stale_strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
+    stale_strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="RESTING-STALE-1",
+            side=OrderSide.BUY,
+            price=Decimal("100"),
+            quantity=Decimal("1"),
+            ts_init=1,
+        ),
+    ]
+    stale_strategy.cancel_order = lambda _order: None
+    stale_strategy._last_bbo_ts_ns[stale_strategy.config.maker_instrument_id] = 700_000_000
 
-    strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:8")
+    unavailable_payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
+    stale_payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
+    unavailable_strategy._publish_json = lambda topic, payload: unavailable_payloads.append(
+        (topic, payload),
+    )
+    stale_strategy._publish_json = lambda topic, payload: stale_payloads.append((topic, payload))
 
-    cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
-    assert cancel_payloads
-    cancel_payload = cancel_payloads[0]
-    assert cancel_payload["strategy_id"] == strategy.runtime_strategy_id
-    assert cancel_payload["external_strategy_id"] == strategy._external_strategy_id
-    assert cancel_payload["reason_code"] == "cancel_maker_book_unavailable"
-    assert cancel_payload["quote_cycle_id"] == "RUN-42:8"
-    assert cancel_payload["ts_cancel_request_local_ns"] == 1_000_000_000
+    unavailable_strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:8")
+    stale_strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:9")
+
+    unavailable_intents = _collect_order_intents(unavailable_payloads, intent_type="CANCEL")
+    stale_intents = _collect_order_intents(stale_payloads, intent_type="CANCEL")
+
+    assert unavailable_intents
+    assert stale_intents
+    assert unavailable_intents[0]["strategy_id"] == unavailable_strategy.runtime_strategy_id
+    assert unavailable_intents[0]["external_strategy_id"] == unavailable_strategy._external_strategy_id
+    assert unavailable_intents[0]["reason_code"] == "cancel_maker_book_unavailable"
+    assert unavailable_intents[0]["quote_cycle_id"] == "RUN-42:8"
+    assert unavailable_intents[0]["ts_cancel_request_local_ns"] == 1_000_000_000
+    assert unavailable_intents[0]["decision_context_json"] is None
+    assert stale_intents[0]["strategy_id"] == stale_strategy.runtime_strategy_id
+    assert stale_intents[0]["external_strategy_id"] == stale_strategy._external_strategy_id
+    assert stale_intents[0]["reason_code"] == "cancel_maker_md_stale"
+    assert stale_intents[0]["quote_cycle_id"] == "RUN-42:9"
+    assert stale_intents[0]["ts_cancel_request_local_ns"] == 1_000_000_000
+    assert stale_intents[0]["decision_context_json"] is None
 
 
 def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy(
@@ -170,6 +211,8 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
     strategy.cancel_order = lambda _order: None
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 0
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 990_000_000
+    strategy._last_bbo_event_ts_ns[strategy.config.maker_instrument_id] = 333_333_333
+    strategy._last_bbo_init_ts_ns[strategy.config.maker_instrument_id] = 444_444_444
 
     payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
@@ -182,7 +225,10 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
     assert cancel_payload["strategy_id"] == strategy.runtime_strategy_id
     assert cancel_payload["external_strategy_id"] == strategy._external_strategy_id
     assert cancel_payload["reason_code"] == "cancel_maker_book_unavailable"
-    assert cancel_payload["decision_context_json"]["maker_quote_status"]["bid_open"] == 1
+    assert cancel_payload["quote_cycle_id"]
+    assert cancel_payload["ts_market_data_event_ns"] == 333_333_333
+    assert cancel_payload["ts_market_data_recv_ns"] == 444_444_444
+    assert cancel_payload["decision_context_json"] is None
 
 
 @pytest.mark.parametrize(

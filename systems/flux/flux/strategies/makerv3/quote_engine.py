@@ -32,6 +32,7 @@ from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
 from flux.strategies.makerv3.constants import REASON_SKIPPED_CANCEL_REJECT_COOLDOWN
 from flux.strategies.makerv3.constants import REASON_SKIPPED_PENDING_CANCELS
+from flux.strategies.makerv3.wire import QuoteCycleContext
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 
@@ -58,7 +59,8 @@ def handle_stale_quote_block(
     state: str,
     cancel_reason: str,
     reason_code: str,
-    quote_cycle_id: str,
+    quote_cycle: QuoteCycleContext | None = None,
+    quote_cycle_id: str | None = None,
     warning_message: str,
 ) -> None:
     """
@@ -74,6 +76,7 @@ def handle_stale_quote_block(
             cancel_reason,
             managed_orders=managed_orders,
             now_ns=now_ns,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             reason_code={
                 "maker_book_unavailable": REASON_CANCEL_MAKER_BOOK_UNAVAILABLE,
@@ -96,6 +99,7 @@ def handle_stale_quote_block(
         now_ns=now_ns,
         quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
         reason_code=reason_code,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         payload={
             "from_state": from_state,
@@ -140,7 +144,8 @@ def handle_startup_cleanup_block(
     strategy: MakerV3Strategy,
     *,
     now_ns: int,
-    quote_cycle_id: str,
+    quote_cycle: QuoteCycleContext | None = None,
+    quote_cycle_id: str | None = None,
     managed_orders: list[Any],
 ) -> None:
     """
@@ -157,6 +162,7 @@ def handle_startup_cleanup_block(
         now_ns=now_ns,
         quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
         reason_code=REASON_BLOCKED_STARTUP_CLEANUP,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         payload={
             "from_state": from_state,
@@ -173,7 +179,8 @@ def handle_portfolio_inventory_block(
     strategy: MakerV3Strategy,
     *,
     now_ns: int,
-    quote_cycle_id: str,
+    quote_cycle: QuoteCycleContext | None = None,
+    quote_cycle_id: str | None = None,
     managed_orders: list[Any],
 ) -> None:
     """
@@ -186,6 +193,7 @@ def handle_portfolio_inventory_block(
         "portfolio_inventory_unavailable",
         managed_orders=managed_orders,
         now_ns=now_ns,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         decision_context_json=strategy._quote_cycle_decision_context(
             managed_orders=managed_orders,
@@ -200,6 +208,7 @@ def handle_portfolio_inventory_block(
         now_ns=now_ns,
         quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
         reason_code=REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         payload={
             "from_state": from_state,
@@ -229,6 +238,7 @@ def refresh_quotes(  # noqa: C901
     *,
     now_ns: int,
     quote_cycle_id: str | None = None,
+    quote_cycle: QuoteCycleContext | None = None,
 ) -> None:
     """
     Compute desired quote ladder and rebalance managed orders to match it.
@@ -237,8 +247,26 @@ def refresh_quotes(  # noqa: C901
         return
     if strategy._maker_instrument is None or strategy._order_qty is None:
         return
-    if quote_cycle_id is None:
-        quote_cycle_id = strategy._next_quote_cycle_id(now_ns=now_ns)
+    if quote_cycle is None:
+        if quote_cycle_id is None:
+            quote_cycle = strategy._begin_quote_cycle(
+                now_ns=now_ns,
+                trigger_source="timer_guard",
+                trigger_instrument_id=strategy.config.maker_instrument_id,
+                trigger_md_ts_event_ns=int(
+                    strategy._last_bbo_event_ts_ns.get(strategy.config.maker_instrument_id, 0) or 0,
+                )
+                or None,
+                trigger_md_ts_init_ns=int(
+                    strategy._last_bbo_init_ts_ns.get(strategy.config.maker_instrument_id, 0) or 0,
+                )
+                or None,
+            )
+        else:
+            quote_cycle = strategy._quote_cycle_context_from_id(
+                now_ns=now_ns,
+                quote_cycle_id=quote_cycle_id,
+            )
     runtime_params = strategy._quote_runtime_params_snapshot()
 
     maker_bbo = strategy._best_bid_ask(strategy.config.maker_instrument_id)
@@ -249,6 +277,7 @@ def refresh_quotes(  # noqa: C901
             state="blocked_maker_md",
             cancel_reason="maker_book_unavailable",
             reason_code=REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             warning_message=f"Quoting blocked (maker book unavailable) strategy_id={strategy._external_strategy_id}",
         )
@@ -277,6 +306,7 @@ def refresh_quotes(  # noqa: C901
             state="blocked_maker_md",
             cancel_reason="maker_md_stale",
             reason_code=REASON_BLOCKED_MAKER_MD_STALE,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             warning_message=(
                 f"Quoting blocked (maker data stale) strategy_id={strategy._external_strategy_id} "
@@ -293,6 +323,7 @@ def refresh_quotes(  # noqa: C901
             state="blocked_reference_md",
             cancel_reason="reference_md_stale",
             reason_code=REASON_BLOCKED_REFERENCE_MD_STALE,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             warning_message=(
                 f"Quoting blocked (reference data stale) strategy_id={strategy._external_strategy_id} "
@@ -322,6 +353,7 @@ def refresh_quotes(  # noqa: C901
         handle_startup_cleanup_block(
             strategy,
             now_ns=now_ns,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             managed_orders=active_orders,
         )
@@ -337,6 +369,7 @@ def refresh_quotes(  # noqa: C901
             handle_portfolio_inventory_block(
                 strategy,
                 now_ns=now_ns,
+                quote_cycle=quote_cycle,
                 quote_cycle_id=quote_cycle_id,
                 managed_orders=active_orders,
             )
@@ -355,6 +388,7 @@ def refresh_quotes(  # noqa: C901
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_CANCEL_REJECT_COOLDOWN,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             payload={
                 "managed_orders": len(active_orders),
@@ -569,6 +603,7 @@ def refresh_quotes(  # noqa: C901
         strategy._cancel_managed_quotes(
             "no_targets",
             managed_orders=active_orders,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             now_ns=now_ns,
             reason_code=REASON_CANCEL_NO_TARGETS,
@@ -580,6 +615,7 @@ def refresh_quotes(  # noqa: C901
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
             reason_code=REASON_COMPLETED_NO_TARGETS,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             payload={
                 "cancel_count": len(active_orders),
@@ -613,6 +649,7 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_buys,
         now_ns=now_ns,
         max_age_ms=max_age_ms,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         decision_context_json=decision_context_json,
     )
@@ -622,6 +659,7 @@ def refresh_quotes(  # noqa: C901
         desired_levels=desired_sells,
         now_ns=now_ns,
         max_age_ms=max_age_ms,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         decision_context_json=decision_context_json,
     )
@@ -656,6 +694,7 @@ def refresh_quotes(  # noqa: C901
                 now_ns=now_ns,
                 quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
                 reason_code=REASON_COMPLETED_NO_ACTIONS,
+                quote_cycle=quote_cycle,
                 quote_cycle_id=quote_cycle_id,
                 payload={
                     "cancel_count": cancels,
@@ -684,6 +723,7 @@ def refresh_quotes(  # noqa: C901
                 now_ns=now_ns,
                 quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
                 reason_code=REASON_SKIPPED_PENDING_CANCELS,
+                quote_cycle=quote_cycle,
                 quote_cycle_id=quote_cycle_id,
                 payload={
                     "cancel_count": cancels,
@@ -706,6 +746,7 @@ def refresh_quotes(  # noqa: C901
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
             reason_code=REASON_BLOCKED_PENDING_CANCEL,
+            quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             payload={
                 "cancel_count": cancels,
@@ -745,6 +786,7 @@ def refresh_quotes(  # noqa: C901
         best_bid_px=best_bid_px,
         best_ask_px=best_ask_px,
         now_ns=now_ns,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         decision_context_json=decision_context_json,
         per_level_outcomes=per_level_outcomes,
@@ -756,6 +798,7 @@ def refresh_quotes(  # noqa: C901
         best_bid_px=best_bid_px,
         best_ask_px=best_ask_px,
         now_ns=now_ns,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         decision_context_json=decision_context_json,
         per_level_outcomes=per_level_outcomes,
@@ -768,6 +811,7 @@ def refresh_quotes(  # noqa: C901
         now_ns=now_ns,
         quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
         reason_code=cycle_reason,
+        quote_cycle=quote_cycle,
         quote_cycle_id=quote_cycle_id,
         payload={
             "cancel_count": cancels,

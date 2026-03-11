@@ -12,6 +12,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.persistence._execution_timing import EXECUTION_TIMING_PARAMS_KEY
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -557,12 +558,46 @@ class TestLiveRiskEngine:
 
                 # Wait for processing and os._exit call
                 await eventually(lambda: exit_mock.called)
-
-                # Assert
                 exit_mock.assert_called_once_with(1)
 
             engine.stop()
             await eventually(lambda: engine.evt_qsize() == 0)
+
+    @pytest.mark.asyncio
+    async def test_submit_order_stamps_risk_and_execution_stage_timings_on_forwarded_command(self):
+        self.risk_engine.start()
+        self.exec_engine.start()
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order)
+
+        await eventually(lambda: len(self.exec_client.commands) == 1)
+
+        command = self.exec_client.commands[0]
+        timing = command.params[EXECUTION_TIMING_PARAMS_KEY]
+
+        assert timing["ts_risk_recv_ns"] >= command.ts_init
+        assert timing["ts_risk_forward_ns"] >= timing["ts_risk_recv_ns"]
+        assert timing["ts_exec_recv_ns"] >= timing["ts_risk_forward_ns"]
+        assert timing["ts_exec_forward_ns"] >= timing["ts_exec_recv_ns"]
+
+        self.risk_engine.stop()
+        self.exec_engine.stop()
 
     @pytest.mark.asyncio
     async def test_trailing_stop_market_order_uses_quotes_when_no_trade_data(self):

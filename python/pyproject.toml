@@ -24,6 +24,7 @@ dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.3.3,<3.0.0",
   "pyarrow>=23.0.1",
+  "psycopg[binary]>=3.2.12,<4.0.0",
   "python-dotenv>=1.2.1",
   "pytz>=2025.2.0",
 ]

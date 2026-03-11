@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -17,15 +18,23 @@ from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_REQUOTE_THROTTLED
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_BALANCES
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
+
+
+def _json_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 def test_makerv3_role_map_payload_keeps_ref_as_hedge_leg(monkeypatch) -> None:
@@ -95,6 +104,58 @@ def test_quote_cycle_skipped_event_has_envelope_and_reason_code(clocked_strategy
     assert quote_cycle_events[0]["ts_ms"] == 1_000
 
 
+def test_quote_cycle_skipped_event_exports_trigger_timestamps(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 1_000_000_000])
+    strategy._last_requote_ns = 900_000_000
+    strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
+
+    class _Book:
+        def apply_deltas(self, _deltas: object) -> None:
+            return
+
+        def best_bid_price(self) -> Decimal:
+            return Decimal(100)
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    strategy._books = {strategy.config.maker_instrument_id: _Book()}
+    strategy._last_bbo = {strategy.config.maker_instrument_id: None}
+    strategy._last_market_bbo_publish_ns = {strategy.config.maker_instrument_id: 0}
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._recompute_and_publish_fv = lambda: None
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy.on_order_book_deltas(
+        SimpleNamespace(
+            instrument_id=strategy.config.maker_instrument_id,
+            ts_event=111_111_111,
+            ts_init=222_222_222,
+        ),
+    )
+
+    quote_cycle_events = [
+        payload
+        for topic, payload in payloads
+        if topic == TOPIC_EVENT and payload.get("event") == "quote_cycle"
+    ]
+    assert len(quote_cycle_events) == 1
+    assert quote_cycle_events[0]["instrument_id"] == str(strategy.config.maker_instrument_id)
+    assert quote_cycle_events[0]["quote_cycle_seq"] == 1
+    assert quote_cycle_events[0]["trigger_source"] == "maker_bbo_update"
+    assert quote_cycle_events[0]["trigger_md_ts_event_ns"] == 111_111_111
+    assert quote_cycle_events[0]["trigger_md_ts_init_ns"] == 222_222_222
+    assert quote_cycle_events[0]["ts_cycle_start_ns"] == 1_000_000_000
+    assert quote_cycle_events[0]["ts_cycle_end_ns"] == 1_000_000_000
+    assert "decision_context_json" not in quote_cycle_events[0]
+
+
 def test_quote_cycle_blocked_event_has_transition_details(clocked_strategy_factory) -> None:
     strategy = clocked_strategy_factory(
         [1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004],
@@ -156,6 +217,105 @@ def test_quote_cycle_completed_event_contains_action_counts(clocked_strategy_fac
     assert quote_cycle_events[0]["reason_code"] == REASON_COMPLETED_REBALANCED
     assert quote_cycle_events[0]["cancel_count"] == 2
     assert quote_cycle_events[0]["place_count"] == 4
+
+
+def test_quote_cycle_completed_event_exports_cycle_timing(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 1_000_500_000])
+    strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_450_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+
+    class _Book:
+        def apply_deltas(self, _deltas: object) -> None:
+            return
+
+        def best_bid_price(self) -> Decimal:
+            return Decimal(100)
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    strategy._books = {strategy.config.maker_instrument_id: _Book()}
+    strategy._last_bbo = {strategy.config.maker_instrument_id: None}
+    strategy._last_market_bbo_publish_ns = {strategy.config.maker_instrument_id: 0}
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._recompute_and_publish_fv = lambda: None
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy.on_order_book_deltas(
+        SimpleNamespace(
+            instrument_id=strategy.config.maker_instrument_id,
+            ts_event=333_333_333,
+            ts_init=444_444_444,
+        ),
+    )
+
+    quote_cycle_events = [
+        payload
+        for topic, payload in payloads
+        if topic == TOPIC_EVENT and payload.get("event") == "quote_cycle"
+    ]
+    assert len(quote_cycle_events) == 1
+    assert quote_cycle_events[0]["quote_cycle_event"] == QUOTE_CYCLE_EVENT_COMPLETED
+    assert quote_cycle_events[0]["reason_code"] == REASON_COMPLETED_NO_ACTIONS
+    assert quote_cycle_events[0]["quote_cycle_seq"] == 1
+    assert quote_cycle_events[0]["trigger_source"] == "maker_bbo_update"
+    assert quote_cycle_events[0]["trigger_md_ts_event_ns"] == 333_333_333
+    assert quote_cycle_events[0]["trigger_md_ts_init_ns"] == 444_444_444
+    assert quote_cycle_events[0]["ts_cycle_start_ns"] <= quote_cycle_events[0]["ts_cycle_end_ns"]
+    decision_context = _json_mapping(quote_cycle_events[0]["decision_context_json"])
+    assert decision_context["pricing"]["maker_top_bid"] == "100"
+
+
+def test_on_order_filled_releases_cached_place_intent_after_trade_publish(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    client_order_id = "CLIENT-1"
+    strategy._latest_place_intent_by_client_order_id[client_order_id] = {
+        "run_id": "run-telemetry-001",
+        "quote_cycle_id": "run-telemetry-001:11",
+        "reason_code": "place_missing_level",
+        "level_index": 2,
+    }
+
+    strategy.on_order_filled(
+        SimpleNamespace(
+            client_order_id=client_order_id,
+            trade_id="TRADE-1",
+            instrument_id=strategy.config.maker_instrument_id,
+            order_side=OrderSide.BUY,
+            last_qty=Decimal("1"),
+            last_px=Decimal("100.25"),
+            ts_event=1_000_123_000,
+        ),
+    )
+
+    trade_payloads = [payload for topic, payload in payloads if topic == TOPIC_TRADE]
+    assert len(trade_payloads) == 1
+    assert trade_payloads[0]["run_id"] == "run-telemetry-001"
+    assert trade_payloads[0]["quote_cycle_id"] == "run-telemetry-001:11"
+    assert trade_payloads[0]["reason_code"] == "place_missing_level"
+    assert client_order_id not in strategy._latest_place_intent_by_client_order_id
 
 
 def test_blocked_alerts_are_rate_limited_until_unblocked_transition(
