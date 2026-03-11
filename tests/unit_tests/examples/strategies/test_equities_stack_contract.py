@@ -277,6 +277,23 @@ def test_equities_contract_doc_keeps_equities_routes_spa_only() -> None:
     assert "`/equities` stays a SPA route, not the asset prefix." in contract
 
 
+def test_equities_deploy_docs_keep_equities_routes_spa_only() -> None:
+    repo_root = _repo_root()
+    readme = _read(repo_root / "deploy/equities/README.md")
+    strategies_readme = _read(repo_root / "deploy/equities/strategies/README.md")
+
+    assert "currently exposes `/equities/assets/*` route capability" not in readme
+    assert "currently exposes `/equities/assets/*` route capability" not in strategies_readme
+    assert (
+        "The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`."
+        in readme
+    )
+    assert (
+        "The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`."
+        in strategies_readme
+    )
+
+
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
     repo_root = _repo_root()
     shared = _read(repo_root / "ops/scripts/deploy/shared_strategy_stack.sh")
