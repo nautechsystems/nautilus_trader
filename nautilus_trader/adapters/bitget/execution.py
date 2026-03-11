@@ -1257,6 +1257,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
                     getattr(self, "_config", None),
                 ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
             return BitgetExecutionClient._build_order_status_report(
                 self,
@@ -1309,6 +1315,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                         getattr(self, "_config", None),
                     ),
                     allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    position_mode=BitgetExecutionClient._position_mode_from_config(
                         getattr(self, "_config", None),
                     ),
                 )
@@ -1366,6 +1378,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                         getattr(self, "_config", None),
                     ),
                     allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    position_mode=BitgetExecutionClient._position_mode_from_config(
                         getattr(self, "_config", None),
                     ),
                 )
@@ -1428,6 +1446,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                         else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
                     ),
                     account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    position_mode=BitgetExecutionClient._position_mode_from_config(
                         getattr(self, "_config", None),
                     ),
                 )
@@ -1691,6 +1715,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
                     getattr(self, "_config", None),
                 ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
@@ -1725,6 +1755,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                     getattr(self, "_config", None),
                 ),
                 allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
                     getattr(self, "_config", None),
                 ),
             )

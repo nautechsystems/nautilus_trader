@@ -921,6 +921,8 @@ impl BitgetHttpClient {
         order_id: Option<String>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Value> {
         let mut body = serde_json::Map::new();
         if let Some(client_oid) = client_oid {
@@ -967,6 +969,8 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Value> {
         let mut body = serde_json::Map::new();
         let path = match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
@@ -1071,6 +1075,8 @@ impl BitgetHttpClient {
         order_id: Option<String>,
         account_mode: Option<String>,
         _allow_cash_borrowing: bool,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Option<BitgetOrderInfo>> {
         let mut query = BTreeMap::new();
         if let Some(client_oid) = client_oid {
@@ -1125,6 +1131,8 @@ impl BitgetHttpClient {
         limit: Option<u32>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Vec<BitgetOrderInfo>> {
         let mut query = BTreeMap::new();
         if let Some(start) = start {
@@ -1244,6 +1252,8 @@ impl BitgetHttpClient {
         limit: Option<u32>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Vec<BitgetFillInfo>> {
         let mut query = BTreeMap::new();
         if let Some(order_id) = order_id {
@@ -1311,6 +1321,8 @@ impl BitgetHttpClient {
         symbol: Option<String>,
         margin_coin: Option<String>,
         account_mode: Option<String>,
+        _margin_mode: Option<String>,
+        _position_mode: Option<String>,
     ) -> Result<Vec<BitgetPositionInfo>> {
         if matches!(product_type, BitgetProductType::Spot) {
             return Ok(Vec::new());
@@ -2337,6 +2349,8 @@ impl BitgetHttpClient {
         order_id: Option<String>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
@@ -2351,6 +2365,8 @@ impl BitgetHttpClient {
                     order_id,
                     account_mode,
                     allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2368,6 +2384,8 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
@@ -2379,6 +2397,8 @@ impl BitgetHttpClient {
                     margin_coin,
                     account_mode,
                     allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2421,6 +2441,8 @@ impl BitgetHttpClient {
         order_id: Option<String>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
@@ -2435,6 +2457,8 @@ impl BitgetHttpClient {
                     order_id,
                     account_mode,
                     allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2459,6 +2483,8 @@ impl BitgetHttpClient {
         limit: Option<u32>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
@@ -2474,6 +2500,8 @@ impl BitgetHttpClient {
                     limit,
                     account_mode,
                     allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2495,6 +2523,8 @@ impl BitgetHttpClient {
         limit: Option<u32>,
         account_mode: Option<String>,
         allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
@@ -2510,6 +2540,8 @@ impl BitgetHttpClient {
                     limit,
                     account_mode,
                     allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2526,12 +2558,21 @@ impl BitgetHttpClient {
         symbol: Option<String>,
         margin_coin: Option<String>,
         account_mode: Option<String>,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .request_position_status_reports(product_type, symbol, margin_coin, account_mode)
+                .request_position_status_reports(
+                    product_type,
+                    symbol,
+                    margin_coin,
+                    account_mode,
+                    margin_mode,
+                    position_mode,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 

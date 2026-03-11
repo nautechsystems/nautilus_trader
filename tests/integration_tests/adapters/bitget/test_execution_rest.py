@@ -418,6 +418,8 @@ async def test_generate_order_status_report_maps_uta_spot_payload() -> None:
         assert kwargs["symbol"] == "BTCUSDT"
         assert kwargs["account_mode"] == "UTA"
         assert kwargs["allow_cash_borrowing"] is True
+        assert kwargs["margin_mode"] == "cross"
+        assert kwargs["position_mode"] == "one_way"
         return {
             "orderId": "12345",
             "clientOid": "CID-UTA-001",
@@ -435,7 +437,12 @@ async def test_generate_order_status_report_maps_uta_spot_payload() -> None:
 
     dummy = SimpleNamespace(
         account_id=AccountId("BITGET-001"),
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=True),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _http_client=SimpleNamespace(request_order_status_report=request_order_status_report),
         _cache=SimpleNamespace(
             instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
@@ -478,6 +485,8 @@ async def test_generate_order_status_reports_maps_uta_history_payload() -> None:
         assert kwargs["symbol"] == "BTCUSDT"
         assert kwargs["account_mode"] == "UTA"
         assert kwargs["allow_cash_borrowing"] is True
+        assert kwargs["margin_mode"] == "cross"
+        assert kwargs["position_mode"] == "one_way"
         return [
             {
                 "orderId": "12345",
@@ -497,7 +506,12 @@ async def test_generate_order_status_reports_maps_uta_history_payload() -> None:
 
     dummy = SimpleNamespace(
         account_id=AccountId("BITGET-001"),
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=True),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _product_types=(nautilus_pyo3.BitgetProductType.SPOT,),
         _http_client=SimpleNamespace(request_order_status_reports=request_order_status_reports),
         _cache=SimpleNamespace(
@@ -595,6 +609,8 @@ async def test_generate_fill_reports_maps_uta_payload_and_filters_order_id() -> 
         assert kwargs["symbol"] == "BTCUSDT"
         assert kwargs["account_mode"] == "UTA"
         assert kwargs["allow_cash_borrowing"] is True
+        assert kwargs["margin_mode"] == "cross"
+        assert kwargs["position_mode"] == "one_way"
         return [
             {
                 "orderId": "12345",
@@ -627,7 +643,12 @@ async def test_generate_fill_reports_maps_uta_payload_and_filters_order_id() -> 
 
     dummy = SimpleNamespace(
         account_id=AccountId("BITGET-001"),
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=True),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _http_client=SimpleNamespace(request_fill_reports=request_fill_reports),
         _cache=SimpleNamespace(
             instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
@@ -709,6 +730,8 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
     async def request_position_status_reports(**kwargs):
         assert kwargs["symbol"] is None
         assert kwargs["account_mode"] == "UTA"
+        assert kwargs["margin_mode"] == "cross"
+        assert kwargs["position_mode"] == "one_way"
         return [
             {
                 "symbol": "BTCUSDT",
@@ -723,7 +746,12 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
 
     dummy = SimpleNamespace(
         account_id=AccountId("BITGET-001"),
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=False),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=False,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _product_types=(nautilus_pyo3.BitgetProductType.USDT_FUTURES,),
         _http_client=SimpleNamespace(request_position_status_reports=request_position_status_reports),
         _cache=SimpleNamespace(
@@ -853,6 +881,8 @@ async def test_cancel_all_orders_routes_to_http_endpoint() -> None:
             "margin_coin": None,
             "account_mode": None,
             "allow_cash_borrowing": False,
+            "margin_mode": None,
+            "position_mode": None,
         },
     ]
 
@@ -867,7 +897,12 @@ async def test_cancel_all_orders_passes_uta_margin_fields_for_spot_borrowing() -
         return [{"clientOid": "CID-001"}]
 
     dummy = SimpleNamespace(
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=True),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _http_client=SimpleNamespace(cancel_all_orders=cancel_all_orders),
         _cache=SimpleNamespace(
             instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
@@ -892,6 +927,8 @@ async def test_cancel_all_orders_passes_uta_margin_fields_for_spot_borrowing() -
             "margin_coin": None,
             "account_mode": "UTA",
             "allow_cash_borrowing": True,
+            "margin_mode": "cross",
+            "position_mode": "one_way",
         },
     ]
 
@@ -949,12 +986,19 @@ async def test_cancel_order_passes_uta_margin_fields_and_normalizes_http_error()
     async def cancel_order(**kwargs):
         assert kwargs["account_mode"] == "UTA"
         assert kwargs["allow_cash_borrowing"] is True
+        assert kwargs["margin_mode"] == "cross"
+        assert kwargs["position_mode"] == "one_way"
         raise RuntimeError(
             'HTTP request failed with status 400 body={"code":"22001","msg":"insufficient balance"}',
         )
 
     dummy = SimpleNamespace(
-        _config=SimpleNamespace(account_mode="UTA", allow_cash_borrowing=True),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
         _http_client=SimpleNamespace(cancel_order=cancel_order),
         _cache=SimpleNamespace(
             instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
