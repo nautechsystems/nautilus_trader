@@ -37,6 +37,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Block {
     #[getter]
     #[pyo3(name = "chain")]
@@ -138,6 +139,7 @@ impl Block {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolSwap {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -277,6 +279,7 @@ impl PoolSwap {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolLiquidityUpdate {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -463,6 +466,7 @@ impl PoolLiquidityUpdate {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFeeCollect {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -620,6 +624,7 @@ impl PoolFeeCollect {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFlash {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -782,6 +787,7 @@ impl PoolFlash {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Transaction {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]

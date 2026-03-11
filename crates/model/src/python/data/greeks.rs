@@ -22,6 +22,7 @@ use crate::data::greeks::{
 
 #[cfg(feature = "python")]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BlackScholesGreeksResult {
     #[getter]
     fn price(&self) -> f64 {
@@ -64,6 +65,7 @@ impl BlackScholesGreeksResult {
 /// # Errors
 ///
 /// Returns a `PyErr` if the greeks calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "black_scholes_greeks")]
 #[allow(clippy::too_many_arguments)]
@@ -84,6 +86,7 @@ pub fn py_black_scholes_greeks(
 /// # Errors
 ///
 /// Returns a `PyErr` if implied volatility calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "imply_vol")]
 pub fn py_imply_vol(
@@ -105,6 +108,7 @@ pub fn py_imply_vol(
 /// # Errors
 ///
 /// Returns a `PyErr` if calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "imply_vol_and_greeks")]
 #[allow(clippy::too_many_arguments)]
@@ -127,6 +131,7 @@ pub fn py_imply_vol_and_greeks(
 /// # Errors
 ///
 /// Returns a `PyErr` if calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "refine_vol_and_greeks")]
 #[allow(clippy::too_many_arguments)]

@@ -20,6 +20,7 @@ use pyo3::prelude::*;
 use crate::accounts::margin_model::{LeveragedMarginModel, StandardMarginModel};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl StandardMarginModel {
     #[new]
     fn py_new() -> Self {
@@ -32,6 +33,7 @@ impl StandardMarginModel {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LeveragedMarginModel {
     #[new]
     fn py_new() -> Self {

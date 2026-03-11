@@ -26,6 +26,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use crate::types::{Currency, Money, money::MoneyRaw};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Money {
     #[new]
     fn py_new(amount: f64, currency: Currency) -> PyResult<Self> {

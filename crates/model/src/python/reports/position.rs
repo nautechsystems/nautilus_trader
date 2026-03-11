@@ -28,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionStatusReport {
     #[new]
     #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]

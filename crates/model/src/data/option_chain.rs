@@ -135,6 +135,10 @@ impl StrikeRange {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct OptionGreeks {
     /// The instrument ID these Greeks apply to.
     pub instrument_id: InstrumentId,
@@ -207,6 +211,10 @@ impl Display for OptionGreeks {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct OptionStrikeData {
     /// The latest quote for this strike.
     pub quote: QuoteTick,
@@ -219,6 +227,10 @@ pub struct OptionStrikeData {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OptionChainSlice {
     /// The option series identifier.

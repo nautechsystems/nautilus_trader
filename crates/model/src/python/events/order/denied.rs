@@ -28,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderDenied {
     #[allow(clippy::too_many_arguments)]
     #[new]

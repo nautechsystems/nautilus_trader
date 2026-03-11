@@ -25,6 +25,7 @@ use crate::data::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CustomData {
     #[new]
     #[pyo3(signature = (data_type, data))]
@@ -63,16 +64,6 @@ impl CustomData {
         serde_json::to_vec(self).map_err(to_pyvalue_err)
     }
 
-    /// Deserializes CustomData from JSON bytes (full CustomData format).
-    #[classmethod]
-    #[pyo3(name = "from_json_bytes")]
-    fn py_from_json_bytes_py(
-        _cls: pyo3::Bound<'_, pyo3::types::PyType>,
-        bytes: &[u8],
-    ) -> PyResult<Self> {
-        parse_custom_data_from_json_bytes(bytes).map_err(to_pyvalue_err)
-    }
-
     #[allow(clippy::needless_pass_by_value)]
     fn __richcmp__(
         &self,
@@ -106,6 +97,20 @@ impl CustomData {
     }
 }
 
+#[pymethods]
+impl CustomData {
+    /// Deserializes CustomData from JSON bytes (full CustomData format).
+    #[classmethod]
+    #[pyo3(name = "from_json_bytes")]
+    fn py_from_json_bytes_py(
+        _cls: pyo3::Bound<'_, pyo3::types::PyType>,
+        bytes: &[u8],
+    ) -> PyResult<Self> {
+        parse_custom_data_from_json_bytes(bytes).map_err(to_pyvalue_err)
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 pub fn custom_data_backend_kind(custom: &CustomData) -> &'static str {
     if custom

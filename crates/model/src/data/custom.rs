@@ -359,6 +359,10 @@ pub fn ensure_custom_data_json_registered<T: CustomDataTrait + Sized>() -> anyho
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 #[derive(Clone, Debug)]
 pub struct CustomData {
     /// The actual data object implementing [`CustomDataTrait`].

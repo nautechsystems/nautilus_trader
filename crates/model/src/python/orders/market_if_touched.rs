@@ -36,6 +36,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarketIfTouchedOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]

@@ -30,6 +30,7 @@ use pyo3::{
 use crate::identifiers::{InstrumentId, Symbol, Venue};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentId {
     #[new]
     fn py_new(symbol: Symbol, venue: Venue) -> Self {

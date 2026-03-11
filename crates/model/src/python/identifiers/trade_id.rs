@@ -29,6 +29,7 @@ use pyo3::{
 use crate::identifiers::TradeId;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TradeId {
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {

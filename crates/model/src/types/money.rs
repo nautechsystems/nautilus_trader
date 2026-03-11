@@ -148,6 +148,10 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct Money {
     /// Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
     pub raw: MoneyRaw,

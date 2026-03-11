@@ -161,6 +161,7 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
 /// This function involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 #[cfg(feature = "ffi")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[allow(unsafe_code)]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
@@ -174,6 +175,7 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
 }
 
 #[cfg(not(feature = "ffi"))]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 /// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
 ///
@@ -515,6 +517,7 @@ fn py_decode_record_batch_to_custom_data(
 /// register_custom_data_class(MarketTickPython)
 /// ```
 #[cfg(feature = "python")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()> {
     use std::sync::Arc;

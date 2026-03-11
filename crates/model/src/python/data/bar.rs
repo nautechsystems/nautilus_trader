@@ -48,6 +48,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BarSpecification {
     #[new]
     fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> PyResult<Self> {
@@ -100,6 +101,7 @@ impl BarSpecification {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BarType {
     #[new]
     #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External)
@@ -242,6 +244,7 @@ impl Bar {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[allow(clippy::too_many_arguments)]
 impl Bar {
     #[new]
@@ -372,18 +375,6 @@ impl Bar {
         from_dict_pyo3(py, values)
     }
 
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: &[u8]) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Bar` object.
     ///
     /// This function takes the current object (assumed to be of a type that can be represented as
@@ -420,6 +411,21 @@ impl Bar {
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    }
+}
+
+#[pymethods]
+impl Bar {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_msgpack")]
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 }
 

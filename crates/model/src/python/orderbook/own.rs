@@ -32,6 +32,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OwnBookOrder {
     #[pyo3(signature = (trader_id, client_order_id, side, price, size, order_type, time_in_force, status, ts_last, ts_accepted, ts_submitted, ts_init, venue_order_id=None))]
     #[new]
@@ -156,6 +157,7 @@ impl OwnBookOrder {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OwnOrderBook {
     #[new]
     fn py_new(instrument_id: InstrumentId) -> Self {

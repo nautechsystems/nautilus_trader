@@ -29,6 +29,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ExecutionMassStatus {
     #[new]
     #[pyo3(signature = (client_id, account_id, venue, ts_init, report_id=None))]

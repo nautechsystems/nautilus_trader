@@ -36,12 +36,14 @@ use crate::{
     module = "nautilus_trader.core.nautilus_pyo3.model",
     from_py_object
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 #[derive(Clone, Debug)]
 pub struct PyStrikeRange {
     pub inner: RustStrikeRange,
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyStrikeRange {
     /// Creates a `StrikeRange::Fixed` variant.
     #[staticmethod]
@@ -83,6 +85,7 @@ impl PyStrikeRange {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionGreeks {
     #[new]
     #[pyo3(signature = (instrument_id, delta, gamma, vega, theta, rho=0.0, mark_iv=None, bid_iv=None, ask_iv=None, underlying_price=None, open_interest=None, ts_event=0, ts_init=0))]
@@ -250,6 +253,7 @@ impl OptionGreeks {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionStrikeData {
     #[new]
     #[pyo3(signature = (quote, greeks=None))]
@@ -278,6 +282,7 @@ impl OptionStrikeData {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionChainSlice {
     #[new]
     #[pyo3(signature = (series_id, atm_strike=None, ts_event=0, ts_init=0))]

@@ -27,6 +27,7 @@ use crate::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
 };
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderRejected {
     #[allow(clippy::too_many_arguments)]
     #[new]

@@ -26,6 +26,10 @@ use crate::defi::tick_map::full_math::{FullMath, Q128};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolPosition {
     /// The owner of the position

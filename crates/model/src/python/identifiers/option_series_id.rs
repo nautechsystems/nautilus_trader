@@ -26,6 +26,7 @@ use ustr::Ustr;
 use crate::identifiers::{OptionSeriesId, Venue};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionSeriesId {
     #[new]
     fn py_new(

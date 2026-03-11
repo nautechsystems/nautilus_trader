@@ -39,6 +39,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BookOrder {
     #[new]
     fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
@@ -118,18 +119,6 @@ impl BookOrder {
         from_dict_pyo3(py, values)
     }
 
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: &[u8]) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
     /// Converts the `BookOrder` into a Python dict representation.
     ///
     /// # Errors
@@ -150,6 +139,21 @@ impl BookOrder {
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    }
+}
+
+#[pymethods]
+impl BookOrder {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_msgpack")]
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 }
 

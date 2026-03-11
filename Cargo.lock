@@ -6993,6 +6993,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "pyo3",
  "pyo3-stub-gen-derive",
+ "rust_decimal",
  "rustpython-parser",
  "serde",
  "serde_json",

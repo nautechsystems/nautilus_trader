@@ -25,6 +25,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SyntheticInstrument {
     #[new]
     #[pyo3(signature = (symbol, price_precision, components, formula, ts_event, ts_init))]

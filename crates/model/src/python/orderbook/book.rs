@@ -28,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBook {
     #[new]
     fn py_new(instrument_id: InstrumentId, book_type: BookType) -> Self {

@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Chain {
     #[new]
     fn py_new(name: Blockchain, chain_id: u32) -> Self {
@@ -116,6 +117,7 @@ impl Chain {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Token {
     #[new]
     #[allow(clippy::needless_pass_by_value)]
@@ -185,6 +187,7 @@ impl Token {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Dex {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -297,6 +300,7 @@ impl Dex {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Pool {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]

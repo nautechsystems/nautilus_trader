@@ -95,6 +95,10 @@ fn check_formula_variables(tree: &Node, variables: &[String]) -> anyhow::Result<
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct SyntheticInstrument {
     /// The unique identifier for the synthetic instrument.
     pub id: InstrumentId,

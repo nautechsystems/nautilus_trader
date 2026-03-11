@@ -28,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Bet {
     #[new]
     fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> Self {
@@ -144,6 +145,7 @@ impl Bet {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetPosition {
     #[new]
     fn py_new() -> Self {
@@ -228,6 +230,7 @@ impl BetPosition {
 /// # Errors
 ///
 /// Returns a `PyErr` if the PnL calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "calc_bets_pnl")]
 #[allow(clippy::needless_pass_by_value)]
@@ -240,6 +243,7 @@ pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
 /// # Errors
 ///
 /// Returns a `PyErr` if the input parameters are invalid.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "probability_to_bet")]
 pub fn py_probability_to_bet(
@@ -255,6 +259,7 @@ pub fn py_probability_to_bet(
 /// # Errors
 ///
 /// Returns a `PyErr` if the input parameters are invalid.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "inverse_probability_to_bet")]
 pub fn py_inverse_probability_to_bet(

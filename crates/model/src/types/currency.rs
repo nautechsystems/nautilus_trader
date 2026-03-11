@@ -46,6 +46,10 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct Currency {
     /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
     pub code: Ustr,

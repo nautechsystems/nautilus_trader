@@ -25,6 +25,10 @@ use crate::defi::{chain::Chain, hex::deserialize_hex_number};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct Transaction {
     /// The blockchain network identifier where this transaction occurred.
     #[serde(rename = "chainId", deserialize_with = "deserialize_chain")]

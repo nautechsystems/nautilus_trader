@@ -26,6 +26,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use crate::types::{Quantity, quantity::QuantityRaw};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Quantity {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {

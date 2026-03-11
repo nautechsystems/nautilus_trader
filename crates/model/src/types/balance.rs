@@ -36,6 +36,10 @@ use crate::{
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct AccountBalance {
     /// The account balance currency.
     pub currency: Currency,
@@ -128,6 +132,10 @@ impl Display for AccountBalance {
         eq,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct MarginBalance {
     pub initial: Money,

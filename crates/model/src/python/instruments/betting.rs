@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BettingInstrument {
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[new]

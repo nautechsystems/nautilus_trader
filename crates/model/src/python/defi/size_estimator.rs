@@ -20,6 +20,7 @@ use pyo3::prelude::*;
 use crate::defi::pool_analysis::size_estimator::SizeForImpactResult;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SizeForImpactResult {
     #[getter]
     #[pyo3(name = "target_impact_bps")]

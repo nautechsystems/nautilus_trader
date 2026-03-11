@@ -29,6 +29,7 @@ use pyo3::{
 use crate::identifiers::symbol::Symbol;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Symbol {
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {

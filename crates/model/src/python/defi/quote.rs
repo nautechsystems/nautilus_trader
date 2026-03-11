@@ -18,6 +18,7 @@ use pyo3::prelude::*;
 use crate::defi::pool_analysis::quote::SwapQuote;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SwapQuote {
     #[getter]
     #[pyo3(name = "amount0")]

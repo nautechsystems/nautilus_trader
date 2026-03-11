@@ -20,6 +20,7 @@ use rust_decimal::Decimal;
 use crate::{data::forward::ForwardPrice, identifiers::InstrumentId};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ForwardPrice {
     #[new]
     #[pyo3(signature = (instrument_id, forward_price, underlying_index=None, ts_event=0, ts_init=0))]

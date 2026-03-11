@@ -39,6 +39,7 @@ use rust_decimal::Decimal;
 use crate::{data::FundingRateUpdate, identifiers::InstrumentId, python::common::PY_MODULE_MODEL};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FundingRateUpdate {
     #[new]
     #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, next_funding_ns=None))]
@@ -208,18 +209,6 @@ impl FundingRateUpdate {
         ))
     }
 
-    #[pyo3(name = "from_json")]
-    #[staticmethod]
-    fn py_from_json(data: &[u8]) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "from_msgpack")]
-    #[staticmethod]
-    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
     #[pyo3(name = "to_json")]
     fn py_to_json(&self) -> PyResult<Vec<u8>> {
         self.to_json_bytes()
@@ -289,6 +278,21 @@ impl FundingRateUpdate {
             UnixNanos::default(),
             UnixNanos::default(),
         )
+    }
+}
+
+#[pymethods]
+impl FundingRateUpdate {
+    #[pyo3(name = "from_json")]
+    #[staticmethod]
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "from_msgpack")]
+    #[staticmethod]
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 }
 
