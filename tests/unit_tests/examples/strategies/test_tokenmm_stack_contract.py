@@ -28,7 +28,7 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
-CANONICAL_DEPLOY_ROOT = "/home/ubuntu/nautilus-trader"
+DEPLOY_ROOT_PLACEHOLDER = "/absolute/path/to/deploy-root"
 
 
 def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
@@ -128,19 +128,25 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
 
     assert "rebuild_flux_pulse_sudoers.sh" in script
     assert "strategy_stack_write_env" in script
-    assert f'CANONICAL_DEPLOY_ROOT="{CANONICAL_DEPLOY_ROOT}"' in script
-    assert 'echo "[tokenmm-systemd] canonical deploy root missing: ${CANONICAL_DEPLOY_ROOT}" >&2' in script
-    assert script.index('if [[ ! -d "${CANONICAL_DEPLOY_ROOT}" ]]; then') < script.index(
-        'source "${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"',
+    assert 'ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in script
+    assert 'DEPLOY_ROOT_OVERRIDE="${TOKENMM_DEPLOY_ROOT:-}"' in script
+    assert "resolve_deploy_root() {" in script
+    assert "path_is_git_worktree() {" in script
+    assert 'DEPLOY_ROOT="$(resolve_deploy_root)"' in script
+    assert 'echo "[tokenmm-systemd] deploy root missing or not a directory: ${DEPLOY_ROOT}" >&2' in script
+    assert 'echo "[tokenmm-systemd] deploy root must not be a git worktree: ${DEPLOY_ROOT}" >&2' in script
+    assert script.index('DEPLOY_ROOT="$(resolve_deploy_root)"') < script.index(
+        'source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"',
     )
-    assert 'source "${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"' in script
-    assert 'TOKENMM_PYTHON_BIN="${CANONICAL_DEPLOY_ROOT}/.venv/bin/python"' in script
-    assert 'SHARED_CONFIG="${CANONICAL_DEPLOY_ROOT}/deploy/tokenmm/tokenmm.live.toml"' in script
-    assert 'STRATEGIES_DIR="${CANONICAL_DEPLOY_ROOT}/deploy/tokenmm/strategies"' in script
+    assert 'source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"' in script
+    assert 'TOKENMM_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"' in script
+    assert 'SHARED_CONFIG="${DEPLOY_ROOT}/deploy/tokenmm/tokenmm.live.toml"' in script
+    assert 'STRATEGIES_DIR="${DEPLOY_ROOT}/deploy/tokenmm/strategies"' in script
+    assert "CANONICAL_DEPLOY_ROOT" not in script
     assert "append_checkout_env_overrides" not in script
     assert (
-        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${CANONICAL_DEPLOY_ROOT}" '
-        '"${CANONICAL_DEPLOY_ROOT}"'
+        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${DEPLOY_ROOT}" '
+        '"${DEPLOY_ROOT}"'
     ) in script
     assert '"tokenmm"' in script
     assert '"TokenMM"' in script
@@ -153,10 +159,14 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
     assert "http://127.0.0.1:5022/pulse" in _read(
         _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
     )
-    assert "`~/nautilus-trader`" in readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in readme
+    assert "`/etc/flux/common.env`" in readme
+    assert "non-worktree deploy root" in readme
     assert "pins each TokenMM env file to the checkout used during install" not in readme
-    assert "pins each TokenMM env file to `~/nautilus-trader`" in readme
-    assert "`~/nautilus-trader`" in runbook
+    assert "pins each TokenMM env file to the resolved deploy root" in readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in runbook
+    assert "`/etc/flux/common.env`" in runbook
+    assert "non-worktree deploy root" in runbook
     assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
 
 
@@ -192,11 +202,11 @@ def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> N
     assert "tokenmm_rollout_preflight.py" in install_script
     assert (
         '"${TOKENMM_PYTHON_BIN}" '
-        '"${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/tokenmm_rollout_preflight.py"'
+        '"${DEPLOY_ROOT}/ops/scripts/deploy/tokenmm_rollout_preflight.py"'
     ) in install_script
     assert (
-        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${CANONICAL_DEPLOY_ROOT}" '
-        '"${CANONICAL_DEPLOY_ROOT}"'
+        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${DEPLOY_ROOT}" '
+        '"${DEPLOY_ROOT}"'
     ) in install_script
     assert "python3 -m nautilus_trader.flux.runners.tokenmm" not in install_script
 
@@ -263,8 +273,9 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "pnpm --dir pulse-ui install --frozen-lockfile" in deploy_readme
     assert "pnpm --dir pulse-ui build" in deploy_readme
     assert "make build" in deploy_readme
-    assert "`~/nautilus-trader`" in deploy_readme
-    assert "`~/nautilus-trader`" in runbook
+    assert "`TOKENMM_DEPLOY_ROOT`" in deploy_readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in runbook
+    assert DEPLOY_ROOT_PLACEHOLDER in _read(_repo_root() / "deploy/tokenmm/systemd/common.env.example")
 
     assert "orders.sqlite" in telemetry_runbook
     assert "fills.sqlite" in telemetry_runbook
