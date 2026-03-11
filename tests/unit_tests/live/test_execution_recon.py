@@ -5562,6 +5562,243 @@ class TestHedgeModeReconciliation:
         )
         assert cleanup_qty == Decimal("13000")
 
+    def test_check_position_discrepancy_does_not_ignore_external_positions_with_cached_venue_order_lineage_bybit_shape(
+        self,
+    ):
+        """
+        Exact-match EXTERNAL cleanup is startup-only.
+
+        Background discrepancy checks must continue surfacing the captured Bybit
+        shape instead of silently stripping EXTERNAL inventory outside startup.
+        """
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-BYBIT-OWNED"),
+            last_qty=Quantity.from_int(71_875),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+
+        missing_lineage_fill = TestEventStubs.order_filled(
+            TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("EXTERNAL"),
+                client_order_id=ClientOrderId("BYBIT-MISSING-EXTERNAL-001"),
+                tags=["VENUE"],
+            ),
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-MISSING"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(12_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-MISSING-EXTERNAL-1"),
+        )
+        missing_lineage_position = Position(instrument=AUDUSD_SIM, fill=missing_lineage_fill)
+
+        linked_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("BYBIT-LINKED-EXTERNAL-001"),
+            tags=["VENUE"],
+        )
+        linked_external_fill = TestEventStubs.order_filled(
+            linked_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-LINKED"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-LINKED-EXTERNAL-1"),
+        )
+        linked_external_position = Position(instrument=AUDUSD_SIM, fill=linked_external_fill)
+        self.cache.add_order(linked_external_order, position_id=linked_external_position.id)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(71_875),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        assert (
+            self.exec_engine._check_position_discrepancy(
+                [owned_position, missing_lineage_position, linked_external_position],
+                report,
+                AUDUSD_SIM.id,
+            )
+            is True
+        )
+
+    def test_reconcile_execution_report_runtime_does_not_cleanup_external_positions_with_cached_venue_order_lineage_bybit_shape(
+        self,
+    ):
+        """
+        Runtime position reports must not take the startup-only EXTERNAL cleanup path.
+        """
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-BYBIT-OWNED"),
+            last_qty=Quantity.from_int(71_875),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        missing_lineage_fill = TestEventStubs.order_filled(
+            TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("EXTERNAL"),
+                client_order_id=ClientOrderId("BYBIT-MISSING-EXTERNAL-001"),
+                tags=["VENUE"],
+            ),
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-MISSING"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(12_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-MISSING-EXTERNAL-1"),
+        )
+        missing_lineage_position = Position(instrument=AUDUSD_SIM, fill=missing_lineage_fill)
+        self.cache.add_position(missing_lineage_position, OmsType.NETTING)
+
+        linked_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("BYBIT-LINKED-EXTERNAL-001"),
+            tags=["VENUE"],
+        )
+        linked_external_fill = TestEventStubs.order_filled(
+            linked_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-LINKED"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-LINKED-EXTERNAL-1"),
+        )
+        linked_external_position = Position(instrument=AUDUSD_SIM, fill=linked_external_fill)
+        self.cache.add_order(linked_external_order, position_id=linked_external_position.id)
+        self.cache.add_position(linked_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(71_875),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        assert self.exec_engine.reconcile_execution_report(report) is False
+        assert self.cache.is_position_open(missing_lineage_position.id) is True
+        assert self.cache.is_position_open(linked_external_position.id) is True
+
+    def test_reconcile_execution_mass_status_runtime_does_not_cleanup_external_positions_with_cached_venue_order_lineage_bybit_shape(
+        self,
+    ):
+        """
+        The public mass-status entrypoint must stay strict outside startup.
+        """
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-BYBIT-OWNED"),
+            last_qty=Quantity.from_int(71_875),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        missing_lineage_fill = TestEventStubs.order_filled(
+            TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("EXTERNAL"),
+                client_order_id=ClientOrderId("BYBIT-MISSING-EXTERNAL-001"),
+                tags=["VENUE"],
+            ),
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-MISSING"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(12_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-MISSING-EXTERNAL-1"),
+        )
+        missing_lineage_position = Position(instrument=AUDUSD_SIM, fill=missing_lineage_fill)
+        self.cache.add_position(missing_lineage_position, OmsType.NETTING)
+
+        linked_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("BYBIT-LINKED-EXTERNAL-001"),
+            tags=["VENUE"],
+        )
+        linked_external_fill = TestEventStubs.order_filled(
+            linked_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL-LINKED"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-LINKED-EXTERNAL-1"),
+        )
+        linked_external_position = Position(instrument=AUDUSD_SIM, fill=linked_external_fill)
+        self.cache.add_order(linked_external_order, position_id=linked_external_position.id)
+        self.cache.add_position(linked_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(71_875),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=self.account_id,
+            report_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        mass_status.add_position_reports([report])
+
+        self.exec_engine.reconcile_execution_mass_status(mass_status)
+
+        assert self.cache.is_position_open(missing_lineage_position.id) is True
+        assert self.cache.is_position_open(linked_external_position.id) is True
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL" and order.tags == ["RECONCILIATION"]
+        ]
+        assert not cleanup_orders
+
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_closes_stale_external_position_with_multiple_cached_venue_orders_okx_shape(
         self,

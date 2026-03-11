@@ -113,6 +113,9 @@ semantics documented here are the current source of truth.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
 - `risk_delta` remains diagnostic only and must not silently replace `local_qty_base` for spot local inventory.
 - startup reconciliation failure means degraded or blocked trading, not best-effort stale-cache trading.
+- startup reconciliation may discard stale cached `EXTERNAL` netting positions only when removing them makes
+  the non-`EXTERNAL` cached quantity exactly match the venue-reported quantity; this cleanup is limited to the
+  startup reconciliation path and does not relax continuous discrepancy checks.
 - `global_qty_base` may be complete or partial; consumers must use explicit completeness metadata instead of
   inferring status from nullability alone.
 - live execution-enabled TokenMM nodes must keep `exec_reconciliation = true` and

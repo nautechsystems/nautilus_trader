@@ -1713,7 +1713,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
                 client_id = mass_status.client_id
                 # venue = mass_status.venue
-                result = self._reconcile_execution_mass_status(mass_status)
+                result = self._reconcile_execution_mass_status(
+                    mass_status,
+                    allow_startup_external_cleanup=True,
+                )
 
                 if not result and self.filter_position_reports:
                     self._log_reconciliation_result(client_id, result)
@@ -1788,7 +1791,10 @@ class LiveExecutionEngine(ExecutionEngine):
 
                         task_result = cast("list[PositionStatusReport]", task_result_or_exception)
                         for report in task_result:
-                            position_result = self._reconcile_position_report(report)
+                            position_result = self._reconcile_position_report(
+                                report,
+                                allow_startup_external_cleanup=True,
+                            )
                             self._log_reconciliation_result(report.instrument_id, position_result)
                             position_results.append(position_result)
 
@@ -1832,7 +1838,10 @@ class LiveExecutionEngine(ExecutionEngine):
         elif isinstance(report, FillReport):
             result = self._reconcile_fill_report_single(report)
         elif isinstance(report, PositionStatusReport):
-            result = self._reconcile_position_report(report)
+            result = self._reconcile_position_report(
+                report,
+                allow_startup_external_cleanup=False,
+            )
         else:
             self._log.error(  # pragma: no cover (design-time error)
                 f"Cannot handle unrecognized report: {report}",  # pragma: no cover (design-time error)
@@ -1852,11 +1861,15 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         Entry point for mass status reconciliation.
         """
-        self._reconcile_execution_mass_status(report)
+        self._reconcile_execution_mass_status(
+            report,
+            allow_startup_external_cleanup=False,
+        )
 
     def _reconcile_execution_mass_status(
         self,
         mass_status: ExecutionMassStatus,
+        allow_startup_external_cleanup: bool = False,
     ) -> bool:
         self._log.debug(f"<--[RPT] {mass_status}")
         self.report_count += 1
@@ -1934,7 +1947,10 @@ class LiveExecutionEngine(ExecutionEngine):
                         self._log_skipping_reconciliation_on_instrument_id(report)
                         continue
 
-                    result = self._reconcile_position_report(report)
+                    result = self._reconcile_position_report(
+                        report,
+                        allow_startup_external_cleanup=allow_startup_external_cleanup,
+                    )
                     results.append(result)
 
         # Publish mass status
@@ -2308,7 +2324,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
     # -- POSITION RECONCILIATION -------------------------------------------------------------------
 
-    def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
+    def _reconcile_position_report(
+        self,
+        report: PositionStatusReport,
+        allow_startup_external_cleanup: bool = False,
+    ) -> bool:
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
@@ -2319,7 +2339,10 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
-            return self._reconcile_position_report_netting(report)
+            return self._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=allow_startup_external_cleanup,
+            )
 
     def _consider_for_reconciliation(self, instrument_id: InstrumentId) -> bool:
         if self.reconciliation_instrument_ids:
@@ -2515,6 +2538,49 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return effective_positions, artifact_positions, effective_qty, raw_qty
 
+    def _startup_effective_netting_positions_for_venue_qty(
+        self,
+        positions_open: list[Position],
+        instrument_id: InstrumentId,
+        venue_qty: Decimal | None,
+    ) -> tuple[list[Position], list[Position], Decimal, Decimal]:
+        effective_positions, artifact_positions, effective_qty, raw_qty = (
+            self._effective_netting_positions_for_venue_qty(
+                positions_open=positions_open,
+                instrument_id=instrument_id,
+                venue_qty=venue_qty,
+            )
+        )
+
+        if (
+            venue_qty is None
+            or raw_qty == venue_qty
+            or not positions_open
+            or artifact_positions
+        ):
+            return effective_positions, artifact_positions, effective_qty, raw_qty
+
+        external_positions = [
+            position for position in positions_open if position.strategy_id.value == "EXTERNAL"
+        ]
+        if not external_positions:
+            return positions_open, [], raw_qty, raw_qty
+
+        effective_positions = [
+            position for position in positions_open if position.strategy_id.value != "EXTERNAL"
+        ]
+        effective_qty = self._sum_position_signed_decimal_qty(effective_positions)
+        if effective_qty != venue_qty:
+            return positions_open, [], raw_qty, raw_qty
+
+        self._log.info(
+            f"Treating EXTERNAL netting positions as stale startup reconciliation artifacts for "
+            f"{instrument_id}: raw_qty={raw_qty}, effective_qty={effective_qty}, "
+            f"external_qty={self._sum_position_signed_decimal_qty(external_positions)}",
+            LogColor.BLUE,
+        )
+        return effective_positions, external_positions, effective_qty, raw_qty
+
     def _cleanup_stale_external_reconciliation_positions(
         self,
         report: PositionStatusReport,
@@ -2567,6 +2633,7 @@ class LiveExecutionEngine(ExecutionEngine):
     def _reconcile_position_report_netting(
         self,
         report: PositionStatusReport,
+        allow_startup_external_cleanup: bool = False,
     ) -> bool:
         self._log.info(f"Reconciling NET position for {report.instrument_id}", LogColor.BLUE)
 
@@ -2582,13 +2649,22 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
         )
 
-        effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
-            self._effective_netting_positions_for_venue_qty(
-                positions_open=positions_open,
-                instrument_id=report.instrument_id,
-                venue_qty=report.signed_decimal_qty,
+        if allow_startup_external_cleanup:
+            effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+                self._startup_effective_netting_positions_for_venue_qty(
+                    positions_open=positions_open,
+                    instrument_id=report.instrument_id,
+                    venue_qty=report.signed_decimal_qty,
+                )
             )
-        )
+        else:
+            effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+                self._effective_netting_positions_for_venue_qty(
+                    positions_open=positions_open,
+                    instrument_id=report.instrument_id,
+                    venue_qty=report.signed_decimal_qty,
+                )
+            )
 
         self._log.info(f"{report.signed_decimal_qty=}", LogColor.BLUE)
         if raw_position_signed_decimal_qty != position_signed_decimal_qty:

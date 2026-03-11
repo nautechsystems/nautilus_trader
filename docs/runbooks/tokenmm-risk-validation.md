@@ -91,6 +91,32 @@ When the shared or local view is incomplete, degraded metadata must explain why.
 Profile degradation without `missing_required`, `stale_required`, or
 `null_qty_required` is an audit failure.
 
+## Startup reconciliation mismatch triage
+
+Use this when a node fails closed during startup with `status=78/CONFIG` and the
+journal shows a netting quantity mismatch.
+
+1. Pull the startup window from `journalctl -u flux@tokenmm-node-<strategy>.service`.
+2. Check whether the mismatch includes `EXTERNAL`-linked state, such as:
+   - `Order ... missing in cache for position ...-EXTERNAL`
+   - `External order ... claimed by strategy ...`
+   - `position net qty ... != reported net qty ...`
+3. If the venue-reported quantity is already explained by non-`EXTERNAL`
+   cached positions, the engine may now auto-clean stale `EXTERNAL` startup
+   artifacts and continue.
+4. Confirm the recovery signature in logs:
+   - `Treating EXTERNAL netting positions as stale startup reconciliation artifacts`
+   - `Closing stale EXTERNAL reconciliation positions`
+5. If the node still exits after one restart, treat the mismatch as genuine venue
+   drift or missing history and keep trading disabled until the account/cache
+   state is reconciled manually.
+
+Important:
+
+- This cleanup is startup-only.
+- Continuous/background position discrepancy checks stay strict and must still
+  surface quantity drift after startup.
+
 ## Data unavailable vs true zero
 
 - `true zero` means the canonical quantity field is explicitly zero.
@@ -114,6 +140,9 @@ Run these checks after a Pulse restart and before enabling trading:
 5. Confirm the local strategy view, per-strategy debug balances view, and shared
    portfolio component agree for each strategy.
 6. Confirm degraded metadata is either absent or explicitly explained.
+7. For any node that previously failed startup reconciliation, confirm the
+   journal shows either a clean startup with no mismatch or the startup-only
+   stale-`EXTERNAL` cleanup signature above.
 
 ## Rollout and acceptance gates
 
