@@ -11,6 +11,8 @@ This directory holds one TOML file per equities node process enrolled into the P
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
 - The checked-in rollback file is `aapl_tradexyz_makerv3.toml.disabled`; leave it disabled so the installer discovers only the MakerV4 canary.
+- The active checked-in strategy file is `aapl_tradexyz_makerv4.toml`. MakerV3 is not the current contract; it is rollback-only unless an operator explicitly restores the disabled file.
+- Strategy-file swaps must not change the outer GUI contract: `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
 
 ## Required TOML keys per file
 

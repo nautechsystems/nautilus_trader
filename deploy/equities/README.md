@@ -28,6 +28,13 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 
+## March 11, 2026 live contract freeze
+
+- Treat MakerV4 as the current equities contract. `deploy/equities/equities.live.toml` keeps `api.strategy_class = "maker_v4"` / `param_set = "makerv4"` and allowlists only `aapl_tradexyz_makerv4`.
+- Treat `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` as rollback-only material. Do not re-enable it unless you are intentionally rolling the host back off MakerV4.
+- On the shared host, `/equities` is an SPA entry route, not an asset owner. The HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
+- The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
+
 ## MakerV4 contract
 
 - `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v4"`, the equities allowlist points only to `aapl_tradexyz_makerv4`, and the shared contract metadata publishes `AAPL.NASDAQ` for the active IBKR leg.
@@ -81,6 +88,18 @@ Runtime registration is explicit:
 - `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
+
+Required host sanity checks after install or repoint:
+
+- `sed -n '1,120p' /etc/flux/equities-api.env`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
+- `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/'`
+
+Expected results:
+
+- the generated envs point at the intended live checkout, not `/.worktrees/makerv3-mono-pr`
+- equities API and node commands use `--mode live --confirm-live` for the production path
+- `/equities` emits `/static/fluxboard/assets/*`, never `/tokenmm/assets/*`
 
 Primary operator surfaces:
 
