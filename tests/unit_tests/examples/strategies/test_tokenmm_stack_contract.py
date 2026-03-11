@@ -103,6 +103,36 @@ def test_tokenmm_binance_spot_strategy_pins_supported_cross_margin_contract() ->
     assert strategy_config["strategy"]["bot_on"] is False
 
 
+def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_bitget_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
+    assert strategy_config["node"]["venues"]["BITGET"]["allow_cash_borrowing"] is True
+    assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
+    assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
+    assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "sell_only"
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
+    assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_bitget_perp_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
+    assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
+    assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
+    assert strategy_config["strategy"]["bot_on"] is False
+
+
 def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
 

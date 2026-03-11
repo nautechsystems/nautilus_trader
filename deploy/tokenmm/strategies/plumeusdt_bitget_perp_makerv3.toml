@@ -46,6 +46,9 @@ api_key_env = "BITGET_API_KEY"
 api_secret_env = "BITGET_API_SECRET"
 api_passphrase_env = "BITGET_API_PASSPHRASE"
 product_type = "USDT_FUTURES"
+account_mode = "UTA"
+margin_mode = "cross"
+position_mode = "one_way"
 demo = false
 
 [node.venues.BINANCE_SPOT]
