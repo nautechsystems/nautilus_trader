@@ -131,7 +131,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--serve-fluxboard",
         action="store_true",
-        help="Serve built Fluxboard static assets at /tokenmm/* with SPA fallback.",
+        help="Serve Fluxboard SPA entry routes at /tokenmm and /lp, with shared static assets at /static/fluxboard/*.",
     )
     parser.add_argument(
         "--fluxboard-dist",
@@ -413,9 +413,6 @@ def _register_fluxboard_spa_base_path(
         normalized = subpath.strip().lstrip("/")
         if normalized.startswith("assets/"):
             abort(404)
-        candidate = (dist_root / normalized).resolve()
-        if candidate.is_file() and _is_within(dist_root, candidate):
-            return send_from_directory(str(dist_root), normalized)
         return _serve_index()
 
     app.add_url_rule(base_path, endpoint=f"{endpoint_prefix}_index", view_func=_serve_index, methods=["GET"])
