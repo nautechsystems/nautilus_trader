@@ -94,7 +94,7 @@ Required host sanity checks after install or repoint:
 
 - `sed -n '1,120p' /etc/flux/equities-api.env`
 - `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
-- `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/'`
+- `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
 
 Expected results:
 

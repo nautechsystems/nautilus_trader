@@ -68,13 +68,21 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
   - Result: `CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 /home/ubuntu/nautilus_trader/.venv/bin/python -m nautilus_trader.flux.runners.tokenmm.run_api --config /home/ubuntu/nautilus_trader/deploy/tokenmm/tokenmm.live.toml --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse"`
 - `ps -ef | rg 'flux\.runners\.tokenmm\.run_api'`
   - Result: the running public `tokenmm-api` process comes from `/home/ubuntu/nautilus_trader/.venv/bin/python` with `--config /home/ubuntu/nautilus_trader/deploy/tokenmm/tokenmm.live.toml --mode live`
+- `sudo sed -n '1,160p' /etc/flux/common.env | rg '^EQUITIES_API_BACKEND_URL='`
+  - Result: `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`
+- `tokenmm_pid=$(pgrep -f 'flux.runners.tokenmm.run_api' | head -n1); tr '\0' '\n' </proc/"$tokenmm_pid"/environ | rg '^EQUITIES_API_BACKEND_URL=|^WORKDIR=|^PYTHONPATH=|^CMD='`
+  - Result: includes `WORKDIR=/home/ubuntu/nautilus_trader`
+  - Result: includes `CMD=env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 /home/ubuntu/nautilus_trader/.venv/bin/python -m nautilus_trader.flux.runners.tokenmm.run_api --config /home/ubuntu/nautilus_trader/deploy/tokenmm/tokenmm.live.toml --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse`
+  - Result: includes `PYTHONPATH=/home/ubuntu/nautilus_trader`
+  - Result: includes `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`
+  - Note: only non-secret provenance envs are recorded here
 - `sed -n '1,120p' /etc/flux/equities-api.env`
   - Result: `CMD="env FLUXBOARD_SERVE_DIST=1 ${EQUITIES_PYTHON_BIN:-python3} -m nautilus_trader.flux.runners.equities.run_api --config /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml --mode paper --host 127.0.0.1 --port 5024 --serve-fluxboard"`
 - `ps -ef | rg 'flux\.runners\.equities\.run_api'`
   - Result: the running loopback equities backend comes from `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/.venvs/equities/bin/python` with `--config /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml --mode paper --host 127.0.0.1 --port 5024 --serve-fluxboard`
-- `readlink -f /proc/2518130/cwd`
+- `equities_pid=$(pgrep -f 'flux.runners.equities.run_api' | head -n1); readlink -f /proc/"$equities_pid"/cwd`
   - Result: `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
-- `tr '\0' '\n' < /proc/2518130/environ | rg '^(WORKDIR|PYTHONPATH|FLUXBOARD_SERVE_DIST|EQUITIES_API_BACKEND_URL)='`
+- `equities_pid=$(pgrep -f 'flux.runners.equities.run_api' | head -n1); tr '\0' '\n' </proc/"$equities_pid"/environ | rg '^(WORKDIR|PYTHONPATH|FLUXBOARD_SERVE_DIST|EQUITIES_API_BACKEND_URL)='`
   - Result: includes `WORKDIR=/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
   - Result: includes `PYTHONPATH=/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
   - Result: includes `FLUXBOARD_SERVE_DIST=1`
@@ -91,7 +99,7 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
   - Result: main checkout currently uses `/static/fluxboard/assets/index-Dh7RM63S.js` and `/static/fluxboard/assets/index-BCpW5E6y.css`
   - Result: those main-checkout asset hashes do not match the public `/equities` shell
 
-These provenance checks close the remaining gap: public `tokenmm-api` is running from the main checkout in live mode, but the loopback equities backend running from `/.worktrees/makerv3-mono-pr` in paper mode is the source whose stale `/tokenmm/assets/*` HTML matches the public `/equities` shell.
+These provenance checks close the remaining gap: public `tokenmm-api` is running from the main checkout in live mode and is explicitly configured with `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`, while the loopback equities backend running from `/.worktrees/makerv3-mono-pr` in paper mode is the source whose stale `/tokenmm/assets/*` HTML matches the public `/equities` shell.
 
 ## Frozen Contract Record
 
