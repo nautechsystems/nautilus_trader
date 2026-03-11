@@ -40,6 +40,7 @@ use nautilus_model::{
     events::OrderFilled,
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    position::Position,
     types::{Money, Price, Quantity},
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore};
@@ -200,6 +201,95 @@ impl Strategy for EmaCross {
     }
 }
 
+struct SnapshotNettingFlip {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    tick_count: usize,
+}
+
+impl SnapshotNettingFlip {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SNAPSHOT-FLIP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            tick_count: 0,
+        }
+    }
+
+    fn submit_market(&mut self, side: OrderSide) -> anyhow::Result<()> {
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            side,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None)
+    }
+}
+
+impl Deref for SnapshotNettingFlip {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for SnapshotNettingFlip {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl Debug for SnapshotNettingFlip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SnapshotNettingFlip)).finish()
+    }
+}
+
+impl DataActor for SnapshotNettingFlip {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.tick_count += 1;
+
+        match self.tick_count {
+            2 => self.submit_market(OrderSide::Buy)?,
+            4 => self.submit_market(OrderSide::Sell)?,
+            6 => self.submit_market(OrderSide::Sell)?,
+            8 => self.submit_market(OrderSide::Buy)?,
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+impl Strategy for SnapshotNettingFlip {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
+    }
+}
+
 fn create_engine() -> BacktestEngine {
     let config = BacktestEngineConfig::default();
     let mut engine = BacktestEngine::new(config).unwrap();
@@ -296,6 +386,97 @@ fn test_run_processes_quote_ticks(crypto_perpetual_ethusdt: CryptoPerpetual) {
 
     let bt_result = engine.get_result();
     assert_eq!(bt_result.iterations, 3);
+}
+
+#[rstest]
+fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    fn sum_realized(positions: &[&Position]) -> f64 {
+        positions
+            .iter()
+            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+            .sum()
+    }
+
+    fn sum_realized_from_snapshot_bytes(snapshot_bytes: &[u8]) -> f64 {
+        serde_json::de::Deserializer::from_slice(snapshot_bytes)
+            .into_iter::<Position>()
+            .filter_map(Result::ok)
+            .filter_map(|p| p.realized_pnl.map(|m| m.as_f64()))
+            .sum()
+    }
+
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let strategy = SnapshotNettingFlip::new(instrument_id, Quantity::from("1.000"));
+    engine.add_strategy(strategy).unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+        quote(instrument_id, "998.00", "999.00", 4_000_000_000),
+        quote(instrument_id, "998.00", "999.00", 5_000_000_000),
+        quote(instrument_id, "997.00", "998.00", 6_000_000_000),
+        quote(instrument_id, "997.00", "998.00", 7_000_000_000),
+        quote(instrument_id, "999.00", "1000.00", 8_000_000_000),
+        quote(instrument_id, "999.00", "1000.00", 9_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true);
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let positions = cache.positions(None, None, None, None, None);
+
+    let cache_realized = sum_realized(&positions);
+    let cache_realized_count = positions
+        .iter()
+        .filter(|p| p.realized_pnl.is_some())
+        .count() as f64;
+
+    let snapshots_realized: f64 = positions
+        .iter()
+        .filter_map(|p| cache.position_snapshot_bytes(&p.id))
+        .map(|bytes| sum_realized_from_snapshot_bytes(&bytes))
+        .sum();
+    let snapshots_realized_count: f64 = positions
+        .iter()
+        .filter_map(|p| cache.position_snapshot_bytes(&p.id))
+        .map(|bytes| {
+            serde_json::de::Deserializer::from_slice(&bytes)
+                .into_iter::<Position>()
+                .filter_map(Result::ok)
+                .filter(|p| p.realized_pnl.is_some())
+                .count() as f64
+        })
+        .sum();
+
+    assert!(
+        snapshots_realized.abs() > 0.0,
+        "expected non-zero snapshot realized history"
+    );
+
+    let expected_total = cache_realized + snapshots_realized;
+    let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
+    drop(cache);
+
+    let bt_result = engine.get_result();
+    let expectancy = bt_result
+        .stats_pnls
+        .values()
+        .find_map(|pnls| pnls.get("Expectancy").copied())
+        .expect("Expectancy stat must exist");
+
+    assert!(
+        (expectancy - expected_expectancy).abs() < 1e-9,
+        "expected Expectancy={} to include snapshot history {}, got {}",
+        expected_expectancy,
+        snapshots_realized,
+        expectancy
+    );
 }
 
 #[rstest]
