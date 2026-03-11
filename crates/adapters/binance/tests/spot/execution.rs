@@ -26,9 +26,11 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_binance::{
-    common::sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
     config::BinanceExecClientConfig,
-    spot::execution::BinanceSpotExecutionClient,
+    spot::{
+        execution::BinanceSpotExecutionClient,
+        sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
+    },
 };
 use nautilus_common::{
     cache::Cache,
@@ -564,6 +566,7 @@ fn create_test_execution_client(
         trader_id,
         account_id,
         base_url_http: Some(base_url),
+        use_ws_trading: false,
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         ..Default::default()

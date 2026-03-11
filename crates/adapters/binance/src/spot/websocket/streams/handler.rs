@@ -263,7 +263,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle trades stream event.
     fn handle_trades_event(
         &self,
-        event: &crate::common::sbe::stream::TradesStreamEvent,
+        event: &crate::spot::sbe::stream::TradesStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -285,7 +285,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle best bid/ask event.
     fn handle_bbo_event(
         &self,
-        event: &crate::common::sbe::stream::BestBidAskStreamEvent,
+        event: &crate::spot::sbe::stream::BestBidAskStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -303,7 +303,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle depth snapshot event.
     fn handle_depth_snapshot(
         &self,
-        event: &crate::common::sbe::stream::DepthSnapshotStreamEvent,
+        event: &crate::spot::sbe::stream::DepthSnapshotStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -326,7 +326,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle depth diff event.
     fn handle_depth_diff(
         &self,
-        event: &crate::common::sbe::stream::DepthDiffStreamEvent,
+        event: &crate::spot::sbe::stream::DepthDiffStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 

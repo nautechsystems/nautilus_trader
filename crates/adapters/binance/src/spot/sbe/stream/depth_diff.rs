@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Depth snapshot stream event decoder.
+//! Depth diff stream event decoder.
 //!
 //! Message layout (after 8-byte header):
 //! - eventTime: i64 (microseconds)
-//! - bookUpdateId: i64
+//! - firstBookUpdateId: i64
+//! - lastBookUpdateId: i64
 //! - priceExponent: i8
 //! - qtyExponent: i8
 //! - bids group (groupSize16Encoding: u16 blockLength + u16 numInGroup):
@@ -31,30 +32,32 @@
 use ustr::Ustr;
 
 use super::{MessageHeader, PriceLevel, StreamDecodeError};
-use crate::common::sbe::cursor::SbeCursor;
+use crate::spot::sbe::cursor::SbeCursor;
 
-/// Depth snapshot stream event (top N levels of order book).
+/// Depth diff stream event (incremental order book updates).
 #[derive(Debug, Clone)]
-pub struct DepthSnapshotStreamEvent {
+pub struct DepthDiffStreamEvent {
     /// Event timestamp in microseconds.
     pub event_time_us: i64,
-    /// Book update ID for sequencing.
-    pub book_update_id: i64,
+    /// First book update ID in this diff.
+    pub first_book_update_id: i64,
+    /// Last book update ID in this diff.
+    pub last_book_update_id: i64,
     /// Price exponent (prices = mantissa * 10^exponent).
     pub price_exponent: i8,
     /// Quantity exponent (quantities = mantissa * 10^exponent).
     pub qty_exponent: i8,
-    /// Bid levels (best bid first).
+    /// Bid level updates (qty=0 means remove level).
     pub bids: Vec<PriceLevel>,
-    /// Ask levels (best ask first).
+    /// Ask level updates (qty=0 means remove level).
     pub asks: Vec<PriceLevel>,
     /// Trading symbol.
     pub symbol: Ustr,
 }
 
-impl DepthSnapshotStreamEvent {
+impl DepthDiffStreamEvent {
     /// Fixed block length (excluding header, groups, and variable-length data).
-    pub const BLOCK_LENGTH: usize = 18;
+    pub const BLOCK_LENGTH: usize = 26;
 
     /// Decode from SBE buffer (including 8-byte header).
     ///
@@ -77,7 +80,8 @@ impl DepthSnapshotStreamEvent {
     #[inline]
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, StreamDecodeError> {
         let event_time_us = cursor.read_i64_le()?;
-        let book_update_id = cursor.read_i64_le()?;
+        let first_book_update_id = cursor.read_i64_le()?;
+        let last_book_update_id = cursor.read_i64_le()?;
         let price_exponent = cursor.read_i8()?;
         let qty_exponent = cursor.read_i8()?;
 
@@ -91,7 +95,8 @@ impl DepthSnapshotStreamEvent {
 
         Ok(Self {
             event_time_us,
-            book_update_id,
+            first_book_update_id,
+            last_book_update_id,
             price_exponent,
             qty_exponent,
             bids,
@@ -120,11 +125,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::sbe::stream::{STREAM_SCHEMA_ID, template_id};
+    use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer(num_bids: usize, num_asks: usize) -> Vec<u8> {
         let level_block_len = 16u16;
-        let body_size = 18
+        let body_size = 26
             + 4
             + (num_bids * level_block_len as usize)
             + 4
@@ -133,19 +138,20 @@ mod tests {
         let mut buf = vec![0u8; 8 + body_size];
 
         // Header
-        buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
-        buf[2..4].copy_from_slice(&template_id::DEPTH_SNAPSHOT_STREAM_EVENT.to_le_bytes());
+        buf[0..2].copy_from_slice(&26u16.to_le_bytes()); // block_length
+        buf[2..4].copy_from_slice(&template_id::DEPTH_DIFF_STREAM_EVENT.to_le_bytes());
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
         buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
 
         // Body
         let body = &mut buf[8..];
         body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
-        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
-        body[16] = (-2i8) as u8; // price_exponent
-        body[17] = (-8i8) as u8; // qty_exponent
+        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // first_book_update_id
+        body[16..24].copy_from_slice(&12350i64.to_le_bytes()); // last_book_update_id
+        body[24] = (-2i8) as u8; // price_exponent
+        body[25] = (-8i8) as u8; // qty_exponent
 
-        let mut offset = 18;
+        let mut offset = 26;
 
         // Bids group header
         body[offset..offset + 2].copy_from_slice(&level_block_len.to_le_bytes());
@@ -180,20 +186,21 @@ mod tests {
 
     #[rstest]
     fn test_decode_valid() {
-        let buf = make_valid_buffer(5, 5);
-        let event = DepthSnapshotStreamEvent::decode(&buf).unwrap();
+        let buf = make_valid_buffer(3, 2);
+        let event = DepthDiffStreamEvent::decode(&buf).unwrap();
 
         assert_eq!(event.event_time_us, 1000000);
-        assert_eq!(event.book_update_id, 12345);
-        assert_eq!(event.bids.len(), 5);
-        assert_eq!(event.asks.len(), 5);
+        assert_eq!(event.first_book_update_id, 12345);
+        assert_eq!(event.last_book_update_id, 12350);
+        assert_eq!(event.bids.len(), 3);
+        assert_eq!(event.asks.len(), 2);
         assert_eq!(event.symbol, "BTCUSDT");
     }
 
     #[rstest]
-    fn test_decode_empty_books() {
+    fn test_decode_empty_updates() {
         let buf = make_valid_buffer(0, 0);
-        let event = DepthSnapshotStreamEvent::decode(&buf).unwrap();
+        let event = DepthDiffStreamEvent::decode(&buf).unwrap();
 
         assert!(event.bids.is_empty());
         assert!(event.asks.is_empty());
@@ -201,29 +208,36 @@ mod tests {
 
     #[rstest]
     fn test_decode_truncated() {
-        let mut buf = make_valid_buffer(10, 10);
-        buf.truncate(100); // Truncate in the middle
-        let err = DepthSnapshotStreamEvent::decode(&buf).unwrap_err();
+        let mut buf = make_valid_buffer(5, 5);
+        buf.truncate(60); // Truncate in the middle
+        let err = DepthDiffStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::BufferTooShort { .. }));
     }
 
     #[rstest]
     fn test_decode_wrong_schema() {
-        let mut buf = make_valid_buffer(5, 5);
+        let mut buf = make_valid_buffer(3, 2);
         buf[4..6].copy_from_slice(&99u16.to_le_bytes());
-        let err = DepthSnapshotStreamEvent::decode(&buf).unwrap_err();
+        let err = DepthDiffStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
     }
 
     #[rstest]
     fn test_decode_validated_matches_decode() {
-        let buf = make_valid_buffer(2, 3);
+        let buf = make_valid_buffer(3, 2);
 
-        let decode_event = DepthSnapshotStreamEvent::decode(&buf).unwrap();
-        let validated_event = DepthSnapshotStreamEvent::decode_validated(&buf).unwrap();
+        let decode_event = DepthDiffStreamEvent::decode(&buf).unwrap();
+        let validated_event = DepthDiffStreamEvent::decode_validated(&buf).unwrap();
 
         assert_eq!(validated_event.event_time_us, decode_event.event_time_us);
-        assert_eq!(validated_event.book_update_id, decode_event.book_update_id);
+        assert_eq!(
+            validated_event.first_book_update_id,
+            decode_event.first_book_update_id
+        );
+        assert_eq!(
+            validated_event.last_book_update_id,
+            decode_event.last_book_update_id
+        );
         assert_eq!(validated_event.price_exponent, decode_event.price_exponent);
         assert_eq!(validated_event.qty_exponent, decode_event.qty_exponent);
         assert_eq!(validated_event.bids.len(), decode_event.bids.len());

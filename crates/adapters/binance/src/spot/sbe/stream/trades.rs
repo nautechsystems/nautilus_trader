@@ -30,7 +30,7 @@
 use ustr::Ustr;
 
 use super::{MessageHeader, StreamDecodeError};
-use crate::common::sbe::{cursor::SbeCursor, error::SbeDecodeError};
+use crate::spot::sbe::{cursor::SbeCursor, error::SbeDecodeError};
 
 /// Individual trade within a trades stream event.
 #[derive(Debug, Clone, Copy)]
@@ -145,7 +145,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::sbe::stream::{STREAM_SCHEMA_ID, template_id};
+    use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer(num_trades: usize) -> Vec<u8> {
         let trade_block_len = 25u16;

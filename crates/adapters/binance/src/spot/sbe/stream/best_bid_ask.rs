@@ -29,7 +29,7 @@
 use ustr::Ustr;
 
 use super::{MessageHeader, StreamDecodeError};
-use crate::common::sbe::cursor::SbeCursor;
+use crate::spot::sbe::cursor::SbeCursor;
 
 /// Best bid/ask stream event.
 #[derive(Debug, Clone)]
@@ -138,7 +138,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::sbe::stream::{STREAM_SCHEMA_ID, template_id};
+    use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer() -> Vec<u8> {
         let mut buf = vec![0u8; 70];

@@ -26,7 +26,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::common::sbe::spot::{
+use crate::spot::sbe::spot::{
     order_side::OrderSide, order_status::OrderStatus, order_type::OrderType,
     self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce,
 };

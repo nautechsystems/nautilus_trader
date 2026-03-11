@@ -27,7 +27,7 @@ use super::{
         BinancePriceLevel, BinanceSymbolFiltersSbe, BinanceSymbolSbe, BinanceTrade, BinanceTrades,
     },
 };
-use crate::common::sbe::{
+use crate::spot::sbe::{
     cursor::SbeCursor,
     spot::{
         SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,

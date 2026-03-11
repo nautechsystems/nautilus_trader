@@ -34,10 +34,10 @@ pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE)
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
 
-/// Binance Link and Trade broker ID for Futures (TBD: awaiting separate ID from Binance).
+/// Binance Link and Trade broker ID for Futures.
 ///
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
-pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "TD67BGP9";
+pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "aHRE4BCj";
 
 /// Binance Spot API base URL (mainnet).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";

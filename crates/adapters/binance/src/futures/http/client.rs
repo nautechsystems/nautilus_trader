@@ -70,7 +70,7 @@ use crate::common::{
     enums::{
         BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
         BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType, BinanceSide,
-        BinanceTimeInForce,
+        BinanceTimeInForce, BinanceWorkingType,
     },
     models::BinanceErrorResponse,
     parse::{parse_coinm_instrument, parse_usdm_instrument},
@@ -1072,10 +1072,6 @@ impl BinanceFuturesInstrument {
 
 /// Binance Futures HTTP client for USD-M and COIN-M perpetuals.
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
-)]
 pub struct BinanceFuturesHttpClient {
     raw: BinanceRawFuturesHttpClient,
     product_type: BinanceProductType,
@@ -1608,6 +1604,9 @@ impl BinanceFuturesHttpClient {
         trigger_price: Option<Price>,
         reduce_only: bool,
         position_side: Option<BinancePositionSide>,
+        activation_price: Option<Price>,
+        callback_rate: Option<String>,
+        working_type: Option<BinanceWorkingType>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
@@ -1644,12 +1643,12 @@ impl BinanceFuturesHttpClient {
             } else {
                 None
             },
-            working_type: None,
+            working_type,
             close_position: None,
             price_protect: None,
             reduce_only: if reduce_only { Some(true) } else { None },
-            activation_price: None,
-            callback_rate: None,
+            activation_price: activation_price.map(|p| p.to_string()),
+            callback_rate,
             client_algo_id: Some(client_id_str),
             good_till_date: None,
             recv_window: None,

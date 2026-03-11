@@ -13,17 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common types, constants, and utilities for the Binance adapter.
+//! Integration tests for Binance Futures adapter.
 
-pub mod consts;
-pub mod credential;
-pub mod dispatch;
-pub mod encoder;
-pub mod enums;
-pub mod models;
-pub mod parse;
-pub mod symbol;
-pub mod urls;
-
-#[cfg(test)]
-pub mod testing;
+#[path = "futures/websocket.rs"]
+mod websocket;

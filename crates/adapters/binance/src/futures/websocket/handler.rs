@@ -45,7 +45,7 @@ use super::{
         BinanceFuturesWsSubscribeRequest, BinanceFuturesWsSubscribeResponse, DataHandlerCommand,
         NautilusDataWsMessage, NautilusWsMessage,
     },
-    parse::{
+    parse_data::{
         extract_event_type, extract_symbol, parse_agg_trade, parse_book_ticker, parse_depth_update,
         parse_kline, parse_mark_price, parse_trade,
     },

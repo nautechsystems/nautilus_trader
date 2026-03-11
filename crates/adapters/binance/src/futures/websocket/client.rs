@@ -52,7 +52,7 @@ use ustr::Ustr;
 
 use super::{
     error::{BinanceWsError, BinanceWsResult},
-    handler_data::BinanceFuturesDataWsFeedHandler,
+    handler::BinanceFuturesDataWsFeedHandler,
     messages::{DataHandlerCommand, NautilusWsMessage},
 };
 use crate::common::{
@@ -70,10 +70,6 @@ pub const MAX_STREAMS_PER_CONNECTION: usize = 200;
 
 /// Binance Futures WebSocket client for JSON market data streams.
 #[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
-)]
 pub struct BinanceFuturesWebSocketClient {
     clock: &'static AtomicTime,
     url: String,

@@ -29,7 +29,7 @@ use std::{error::Error, fmt::Display};
 /// Re-exported generic varString/group decoders shared across SBE adapters.
 pub use nautilus_serialization::sbe::{GroupSize16Encoding, GroupSizeEncoding, decode_var_string8};
 
-use crate::common::sbe::{cursor::SbeCursor, error::SbeDecodeError};
+use crate::spot::sbe::{cursor::SbeCursor, error::SbeDecodeError};
 
 mod best_bid_ask;
 mod depth_diff;
@@ -213,7 +213,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::sbe::error::SbeDecodeError;
+    use crate::spot::sbe::error::SbeDecodeError;
 
     #[rstest]
     fn test_mantissa_to_f64() {

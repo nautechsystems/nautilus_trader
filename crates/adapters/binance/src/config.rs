@@ -85,8 +85,12 @@ pub struct BinanceExecClientConfig {
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
-    /// Optional base URL override for WebSocket.
+    /// Optional base URL override for WebSocket user data stream.
     pub base_url_ws: Option<String>,
+    /// Optional base URL override for WebSocket trading API (Spot only).
+    pub base_url_ws_trading: Option<String>,
+    /// Whether to use the WebSocket trading API for order operations (Spot only).
+    pub use_ws_trading: bool,
     /// API key (Ed25519 required, uses env var if not provided).
     pub api_key: Option<String>,
     /// API secret (Ed25519 base64-encoded, required, uses env var if not provided).
@@ -102,6 +106,8 @@ impl Default for BinanceExecClientConfig {
             environment: BinanceEnvironment::Mainnet,
             base_url_http: None,
             base_url_ws: None,
+            base_url_ws_trading: None,
+            use_ws_trading: true,
             api_key: None,
             api_secret: None,
         }

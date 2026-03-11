@@ -541,7 +541,7 @@ impl ExecutionEngine {
         let results = join_all(futures).await;
 
         for error in results.into_iter().filter_map(Result::err) {
-            log::error!("Failed to connect execution client: {error}");
+            log::error!("Failed to connect execution client: {error:#}");
         }
     }
 

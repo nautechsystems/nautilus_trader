@@ -46,16 +46,17 @@ use crate::{
         consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
         encoder::decode_broker_id,
         enums::{BinanceContractStatus, BinanceKlineInterval, BinanceTradingStatus},
-        fixed::{mantissa_to_price, mantissa_to_quantity},
+    },
+    futures::http::models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
+    spot::{
+        http::models::{
+            BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
+            BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolSbe, BinanceTrades,
+        },
         sbe::spot::{
             order_side::OrderSide as SbeOrderSide, order_status::OrderStatus as SbeOrderStatus,
             order_type::OrderType as SbeOrderType, time_in_force::TimeInForce as SbeTimeInForce,
         },
-    },
-    futures::http::models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
-    spot::http::models::{
-        BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
-        BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolSbe, BinanceTrades,
     },
 };
 
@@ -327,10 +328,11 @@ fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
 fn parse_sbe_price_filter(filter: &BinancePriceFilterSbe) -> (Price, Option<Price>, Option<Price>) {
     let precision = sbe_mantissa_precision(filter.tick_size, filter.price_exponent);
 
-    let tick_size = mantissa_to_price(filter.tick_size, filter.price_exponent, precision);
+    let tick_size =
+        Price::from_mantissa_exponent(filter.tick_size, filter.price_exponent, precision);
 
     let max_price = if filter.max_price != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             filter.max_price,
             filter.price_exponent,
             precision,
@@ -340,7 +342,7 @@ fn parse_sbe_price_filter(filter: &BinancePriceFilterSbe) -> (Price, Option<Pric
     };
 
     let min_price = if filter.min_price != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             filter.min_price,
             filter.price_exponent,
             precision,
@@ -358,11 +360,12 @@ fn parse_sbe_lot_size_filter(
 ) -> (Quantity, Option<Quantity>, Option<Quantity>) {
     let precision = sbe_mantissa_precision(filter.step_size, filter.qty_exponent);
 
-    let step_size = mantissa_to_quantity(filter.step_size, filter.qty_exponent, precision);
+    let step_size =
+        Quantity::from_mantissa_exponent(filter.step_size as u64, filter.qty_exponent, precision);
 
     let max_qty = if filter.max_qty != 0 {
-        Some(mantissa_to_quantity(
-            filter.max_qty,
+        Some(Quantity::from_mantissa_exponent(
+            filter.max_qty as u64,
             filter.qty_exponent,
             precision,
         ))
@@ -371,8 +374,8 @@ fn parse_sbe_lot_size_filter(
     };
 
     let min_qty = if filter.min_qty != 0 {
-        Some(mantissa_to_quantity(
-            filter.min_qty,
+        Some(Quantity::from_mantissa_exponent(
+            filter.min_qty as u64,
             filter.qty_exponent,
             precision,
         ))
@@ -480,8 +483,16 @@ pub fn parse_spot_trades_sbe(
     let mut result = Vec::with_capacity(trades.trades.len());
 
     for trade in &trades.trades {
-        let price = mantissa_to_price(trade.price_mantissa, trades.price_exponent, price_precision);
-        let size = mantissa_to_quantity(trade.qty_mantissa, trades.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            trade.price_mantissa,
+            trades.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            trade.qty_mantissa as u64,
+            trades.qty_exponent,
+            size_precision,
+        );
 
         // is_buyer_maker means the buyer was the maker, so the aggressor was selling
         let aggressor_side = if trade.is_buyer_maker {
@@ -577,7 +588,7 @@ pub fn parse_order_status_report_sbe(
     let size_precision = instrument.size_precision();
 
     let price = if order.price_mantissa != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             order.price_mantissa,
             order.price_exponent,
             price_precision,
@@ -586,10 +597,13 @@ pub fn parse_order_status_report_sbe(
         None
     };
 
-    let quantity =
-        mantissa_to_quantity(order.orig_qty_mantissa, order.qty_exponent, size_precision);
-    let filled_qty = mantissa_to_quantity(
-        order.executed_qty_mantissa,
+    let quantity = Quantity::from_mantissa_exponent(
+        order.orig_qty_mantissa as u64,
+        order.qty_exponent,
+        size_precision,
+    );
+    let filled_qty = Quantity::from_mantissa_exponent(
+        order.executed_qty_mantissa as u64,
         order.qty_exponent,
         size_precision,
     );
@@ -615,7 +629,7 @@ pub fn parse_order_status_report_sbe(
     // Parse trigger price for stop orders
     let trigger_price = order.stop_price_mantissa.and_then(|mantissa| {
         if mantissa != 0 {
-            Some(mantissa_to_price(
+            Some(Price::from_mantissa_exponent(
                 mantissa,
                 order.price_exponent,
                 price_precision,
@@ -720,7 +734,7 @@ pub fn parse_new_order_response_sbe(
     let size_precision = instrument.size_precision();
 
     let price = if response.price_mantissa != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             response.price_mantissa,
             response.price_exponent,
             price_precision,
@@ -729,13 +743,13 @@ pub fn parse_new_order_response_sbe(
         None
     };
 
-    let quantity = mantissa_to_quantity(
-        response.orig_qty_mantissa,
+    let quantity = Quantity::from_mantissa_exponent(
+        response.orig_qty_mantissa as u64,
         response.qty_exponent,
         size_precision,
     );
-    let filled_qty = mantissa_to_quantity(
-        response.executed_qty_mantissa,
+    let filled_qty = Quantity::from_mantissa_exponent(
+        response.executed_qty_mantissa as u64,
         response.qty_exponent,
         size_precision,
     );
@@ -761,7 +775,7 @@ pub fn parse_new_order_response_sbe(
 
     let trigger_price = response.stop_price_mantissa.and_then(|mantissa| {
         if mantissa != 0 {
-            Some(mantissa_to_price(
+            Some(Price::from_mantissa_exponent(
                 mantissa,
                 response.price_exponent,
                 price_precision,
@@ -860,8 +874,13 @@ pub fn parse_fill_report_sbe(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let last_px = mantissa_to_price(trade.price_mantissa, trade.price_exponent, price_precision);
-    let last_qty = mantissa_to_quantity(trade.qty_mantissa, trade.qty_exponent, size_precision);
+    let last_px =
+        Price::from_mantissa_exponent(trade.price_mantissa, trade.price_exponent, price_precision);
+    let last_qty = Quantity::from_mantissa_exponent(
+        trade.qty_mantissa as u64,
+        trade.qty_exponent,
+        size_precision,
+    );
 
     // Commission still uses Decimal → f64 since Money::new takes f64
     let comm_exp = trade.commission_exponent as i32;
@@ -920,10 +939,17 @@ pub fn parse_klines_to_bars(
     let mut bars = Vec::with_capacity(klines.klines.len());
 
     for kline in &klines.klines {
-        let open = mantissa_to_price(kline.open_price, klines.price_exponent, price_precision);
-        let high = mantissa_to_price(kline.high_price, klines.price_exponent, price_precision);
-        let low = mantissa_to_price(kline.low_price, klines.price_exponent, price_precision);
-        let close = mantissa_to_price(kline.close_price, klines.price_exponent, price_precision);
+        let open =
+            Price::from_mantissa_exponent(kline.open_price, klines.price_exponent, price_precision);
+        let high =
+            Price::from_mantissa_exponent(kline.high_price, klines.price_exponent, price_precision);
+        let low =
+            Price::from_mantissa_exponent(kline.low_price, klines.price_exponent, price_precision);
+        let close = Price::from_mantissa_exponent(
+            kline.close_price,
+            klines.price_exponent,
+            price_precision,
+        );
 
         // Volume is 128-bit so we still use Decimal path for now
         let volume_mantissa = i128::from_le_bytes(kline.volume);

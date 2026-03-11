@@ -43,14 +43,14 @@ use super::{
     messages::{HandlerCommand, NautilusWsApiMessage, RequestMeta, WsApiRequest, method},
 };
 use crate::{
-    common::{
-        credential::Credential,
+    common::credential::Credential,
+    spot::{
+        http::{models::BinanceCancelOrderResponse, parse},
         sbe::spot::{
             ReadBuf, message_header_codec,
             web_socket_response_codec::{SBE_TEMPLATE_ID, WebSocketResponseDecoder},
         },
     },
-    spot::http::{models::BinanceCancelOrderResponse, parse},
 };
 
 /// Binance Spot WebSocket API handler.
@@ -431,7 +431,7 @@ impl BinanceSpotWsApiHandler {
                     orig_qty_mantissa: 0,
                     executed_qty_mantissa: 0,
                     cummulative_quote_qty_mantissa: 0,
-                    status: crate::common::sbe::spot::order_status::OrderStatus::Canceled,
+                    status: crate::spot::sbe::spot::order_status::OrderStatus::Canceled,
                     time_in_force: new_order_response.time_in_force,
                     order_type: new_order_response.order_type,
                     side: new_order_response.side,
@@ -462,7 +462,7 @@ impl BinanceSpotWsApiHandler {
     fn parse_envelope(&self, data: &[u8]) -> Result<(String, u16, Vec<u8>), BinanceWsApiError> {
         if data.len() < message_header_codec::ENCODED_LENGTH {
             return Err(BinanceWsApiError::DecodeError(
-                crate::common::sbe::error::SbeDecodeError::BufferTooShort {
+                crate::spot::sbe::error::SbeDecodeError::BufferTooShort {
                     expected: message_header_codec::ENCODED_LENGTH,
                     actual: data.len(),
                 },
@@ -477,7 +477,7 @@ impl BinanceSpotWsApiHandler {
 
         if template_id != SBE_TEMPLATE_ID {
             return Err(BinanceWsApiError::DecodeError(
-                crate::common::sbe::error::SbeDecodeError::UnknownTemplateId(template_id),
+                crate::spot::sbe::error::SbeDecodeError::UnknownTemplateId(template_id),
             ));
         }
 

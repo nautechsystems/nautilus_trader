@@ -34,10 +34,10 @@ use nautilus_binance::{
     common::{
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceProductType},
-        sbe::stream::mantissa_to_f64,
     },
     spot::{
         http::client::BinanceSpotHttpClient,
+        sbe::stream::mantissa_to_f64,
         websocket::streams::{
             client::BinanceSpotWebSocketClient,
             messages::{BinanceSpotWsMessage, NautilusSpotDataWsMessage},

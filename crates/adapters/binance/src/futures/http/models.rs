@@ -1658,7 +1658,7 @@ mod tests {
             "orderId": 12345678,
             "symbol": "BTCUSDT",
             "status": "NEW",
-            "clientOrderId": "x-TD67BGP9-T0000000000000",
+            "clientOrderId": "x-aHRE4BCj-T0000000000000",
             "price": "50000.00",
             "avgPrice": "0.00",
             "origQty": "0.001",
@@ -1700,7 +1700,7 @@ mod tests {
     fn test_algo_order_to_report_decodes_broker_id() {
         let json = r#"{
             "algoId": 123456789,
-            "clientAlgoId": "x-TD67BGP9-Rmy-algo-order-1",
+            "clientAlgoId": "x-aHRE4BCj-Rmy-algo-order-1",
             "algoType": "CONDITIONAL",
             "type": "STOP_MARKET",
             "symbol": "BTCUSDT",

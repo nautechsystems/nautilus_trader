@@ -85,16 +85,18 @@ use crate::{
             parse_new_order_response_sbe, parse_order_status_report_sbe, parse_spot_instrument_sbe,
             parse_spot_trades_sbe,
         },
+        urls::get_http_base_url,
+    },
+    spot::{
+        enums::{
+            BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType,
+            order_type_to_binance_spot, time_in_force_to_binance_spot,
+        },
         sbe::spot::{
             ReadBuf, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,
             error_response_codec::{self, ErrorResponseDecoder},
             message_header_codec::MessageHeaderDecoder,
         },
-        urls::get_http_base_url,
-    },
-    spot::enums::{
-        BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType,
-        order_type_to_binance_spot, time_in_force_to_binance_spot,
     },
 };
 
@@ -1281,10 +1283,6 @@ impl BinanceRawSpotHttpClient {
 /// Wraps [`BinanceRawSpotHttpClient`] and provides domain-level methods:
 /// - Simple types (ping, server_time): Pass through from raw client.
 /// - Complex types (instruments, orders): Transform to Nautilus domain types.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
-)]
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
     clock: &'static AtomicTime,
