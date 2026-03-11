@@ -1,11 +1,16 @@
 import asyncio
+import json
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import msgspec
 import pytest
 
+from flux.events import FluxBusPayload
+from flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
@@ -29,10 +34,15 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -47,6 +57,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -87,6 +99,7 @@ class TestLiveExecutionEngine:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
+            serializer=MsgSpecSerializer(encoding=msgspec.msgpack),
         )
 
         self.cache = TestComponentStubs.cache()
@@ -578,6 +591,559 @@ class TestLiveExecutionEngine:
         assert order.status == OrderStatus.CANCELED
 
     @pytest.mark.asyncio
+    async def test_order_rejected_with_insufficient_margin_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Order failed. Insufficient account balance.",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=False,
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected_insufficient_margin"
+        assert payload["source"] == "execution"
+        assert payload["event_type"] == "OrderRejected"
+        assert payload["instrument_id"] == order.instrument_id.value
+        assert payload["client_order_id"] == order.client_order_id.value
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_with_generic_exchange_error_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Binance error -2010: NEW_ORDER_REJECTED",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=False,
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected"
+        assert payload["reason"] == "Binance error -2010: NEW_ORDER_REJECTED"
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_publishes_execution_alert_to_external_listener(self):
+        published: list[tuple[str, bytes]] = []
+
+        class DummyListener:
+            def is_closed(self):
+                return False
+
+            def publish(self, topic, payload):
+                published.append((topic, payload))
+
+        self.msgbus.add_listener(DummyListener())
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Binance error -3055: Invalid requests for Portfolio Margin user.",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=False,
+        )
+
+        self.exec_engine._publish_execution_alert_if_relevant(event)
+
+        assert len(published) == 1
+        topic, payload_bytes = published[0]
+        assert topic == TOPIC_EXECUTION_ALERT
+        msg = self.msgbus.serializer.deserialize(payload_bytes)
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected"
+        assert payload["reason"] == "Binance error -3055: Invalid requests for Portfolio Margin user."
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_due_post_only_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="POST_ONLY_WOULD_CROSS",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=True,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_order_denied_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+            event_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "order_denied"
+        assert payload["reason"] == "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI"
+        assert payload["event_type"] == "OrderDenied"
+
+    @pytest.mark.asyncio
+    async def test_order_denied_repeated_same_reason_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        for _ in range(4):
+            order = self.strategy.order_factory.limit(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=AUDUSD_SIM.make_price(0.70000),
+            )
+
+            event = OrderDenied(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+                event_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "order_denied"
+        assert payload["reason"] == "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI"
+        assert payload["event_type"] == "OrderDenied"
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_repeated_same_terminal_reason_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        for _ in range(4):
+            order = self.strategy.order_factory.limit(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=AUDUSD_SIM.make_price(0.70000),
+            )
+
+            event = OrderRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+                reconciliation=False,
+                due_post_only=False,
+            )
+
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected"
+        assert payload["reason"] == "UNSUPPORTED_ACCOUNT_MODE: Binance Portfolio Margin account requires PAPI"
+        assert payload["event_type"] == "OrderRejected"
+
+    @pytest.mark.asyncio
+    async def test_reconciled_order_rejected_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Order failed. Insufficient account balance.",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=True,
+            due_post_only=False,
+        )
+
+        self.exec_engine._publish_execution_alert_if_relevant(event)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_for_external_order_does_not_publish_execution_alert(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        event = OrderCancelRejected(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("EXTERNAL"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("EXT-001"),
+            venue_order_id=VenueOrderId("venue-ext-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=True,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_with_generic_exchange_error_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("venue-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="Binance error -2011: CANCEL_REJECTED",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_cancel_rejected"
+        assert payload["reason"] == "Binance error -2011: CANCEL_REJECTED"
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("venue-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_unknown_order_sent_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("venue-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="Unknown order sent",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_closes_cached_accepted_order(self):
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        await eventually(lambda: order.status == OrderStatus.ACCEPTED)
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+
+        await eventually(lambda: order.status == OrderStatus.REJECTED)
+        assert self.cache.is_order_closed(order.client_order_id)
+        assert not self.cache.is_order_open(order.client_order_id)
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_closes_cached_pending_cancel_order(self):
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
+        await eventually(lambda: order.status == OrderStatus.PENDING_CANCEL)
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+
+        await eventually(lambda: order.status == OrderStatus.CANCELED)
+        assert self.cache.is_order_closed(order.client_order_id)
+        assert not self.cache.is_order_open(order.client_order_id)
+
+    @pytest.mark.asyncio
+    async def test_modify_rejected_repeated_exchange_errors_publish_immediate_alerts(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        await eventually(lambda: order.status == OrderStatus.ACCEPTED)
+
+        for idx in range(4):
+            event = OrderModifyRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="AMEND_WINDOW_CLOSED",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns() + idx,
+                ts_init=self.clock.timestamp_ns() + idx,
+                reconciliation=False,
+            )
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 4)
+
+        payloads = [json.loads(msg.payload) for msg in published if isinstance(msg, FluxBusPayload)]
+        assert len(payloads) == 4
+        assert {payload["alert_key"] for payload in payloads} == {"exchange_order_modify_rejected"}
+        assert {payload["event_type"] for payload in payloads} == {"OrderModifyRejected"}
+
+    @pytest.mark.asyncio
+    async def test_modify_rejected_with_generic_exchange_error_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderModifyRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("venue-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="Binance error -2038: ORDER_AMEND_REJECTED",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_modify_rejected"
+        assert payload["reason"] == "Binance error -2038: ORDER_AMEND_REJECTED"
+
+    @pytest.mark.asyncio
     async def test_graceful_shutdown_cmd_queue_exception_enabled_calls_shutdown_system(self):
         """
         Test that when graceful_shutdown_on_exception=True, shutdown_system is called on
@@ -816,6 +1382,104 @@ class TestLiveExecutionEngine:
 
         # Cleanup
         self.exec_engine.stop()
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_times_out_when_mass_status_generation_hangs(self):
+        """
+        Test startup reconciliation fails closed when mass-status generation exceeds the timeout.
+        """
+
+        async def slow_generate_mass_status(_lookback_mins):
+            await asyncio.sleep(60)
+            return ExecutionMassStatus(
+                client_id=self.client.id,
+                account_id=self.client.account_id,
+                venue=self.client.venue,
+                report_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+        self.client.generate_mass_status = slow_generate_mass_status
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await asyncio.wait_for(
+            self.exec_engine.reconcile_execution_state(timeout_secs=0.01),
+            timeout=0.2,
+        )
+
+        assert result is False
+        assert self.exec_engine._startup_reconciliation_event.is_set() is True
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_times_out_when_position_report_generation_hangs(self):
+        """
+        Test startup reconciliation fails closed when follow-up position reports exceed the timeout.
+        """
+        position_report_requests: list[InstrumentId] = []
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100_000),
+        )
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order, ts_event=0))
+        self.cache.update_order(order)
+        order.apply(
+            TestEventStubs.order_accepted(
+                order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-POS-1"),
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(order)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-TIMEOUT-1"),
+            trade_id=TradeId("T-TIMEOUT-1"),
+            ts_event=0,
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+        self.cache.add_position(Position(instrument=AUDUSD_SIM, fill=fill), OmsType.NETTING)
+
+        async def generate_mass_status(_lookback_mins):
+            return ExecutionMassStatus(
+                client_id=self.client.id,
+                account_id=self.client.account_id,
+                venue=self.client.venue,
+                report_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+        async def slow_generate_position_status_reports(command):
+            position_report_requests.append(command.instrument_id)
+            await asyncio.sleep(60)
+            return []
+
+        original_client = self.exec_engine._clients[self.client.id]
+        self.exec_engine._clients.clear()
+        self.exec_engine._clients[self.client.id] = SimpleNamespace(
+            account_id=None,
+            generate_mass_status=generate_mass_status,
+            generate_position_status_reports=slow_generate_position_status_reports,
+        )
+        self.exec_engine._reconcile_execution_mass_status = lambda _mass_status: True
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await asyncio.wait_for(
+                self.exec_engine.reconcile_execution_state(timeout_secs=0.01),
+                timeout=0.2,
+            )
+        finally:
+            self.exec_engine._clients.clear()
+            self.exec_engine._clients[self.client.id] = original_client
+
+        assert result is False
+        assert position_report_requests == [AUDUSD_SIM.id]
+        assert self.exec_engine._startup_reconciliation_event.is_set() is True
 
     @pytest.mark.asyncio
     async def test_filled_qty_mismatch_with_zero_report(self):

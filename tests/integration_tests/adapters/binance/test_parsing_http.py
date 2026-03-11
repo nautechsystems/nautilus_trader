@@ -1,8 +1,10 @@
 import pkgutil
+from decimal import Decimal
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceMarginAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -64,3 +66,26 @@ class TestBinanceHttpParsing:
         assert data[1].isAutoAddMargin is True
         assert data[1].leverage == 25
         assert data[1].maxNotionalValue == "2000000"
+
+    def test_parse_cross_margin_account_info_negative_net_asset(self):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_margin_cross_account.json",
+        )
+        assert raw
+        decoder = msgspec.json.Decoder(BinanceMarginAccountInfo)
+
+        # Act
+        data = decoder.decode(raw)
+        plume_balance = next(
+            balance
+            for balance in data.parse_to_account_balances()
+            if balance.currency.code == "PLUME"
+        )
+
+        # Assert
+        assert data.can_trade
+        assert plume_balance.total.as_decimal() == Decimal("-30139.05291039")
+        assert plume_balance.locked.as_decimal() == 0
+        assert plume_balance.free.as_decimal() == Decimal("-30139.05291039")

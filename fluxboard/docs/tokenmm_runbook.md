@@ -172,6 +172,9 @@ The installer seeds:
 - `/etc/flux/tokenmm-node-*.env`
 - `/etc/sudoers.d/flux-pulse`
 
+Each TokenMM env file also pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`, so a TokenMM rollout
+does not require repointing the shared `/etc/flux/common.env`.
+
 3. Bootstrap the deployment if this host is coming up cold:
 
 ```bash
@@ -186,6 +189,59 @@ supported through Pulse.
 - `http://127.0.0.1:5022/pulse`
 - `GET http://127.0.0.1:5022/api/pulse/jobs`
 - `POST http://127.0.0.1:5022/api/pulse/jobs/group/tokenmm/restart`
+
+## Telemetry Cutover
+
+1. Prepare the rollout checkout before touching systemd envs:
+
+```bash
+make build
+pnpm --dir fluxboard install --frozen-lockfile
+pnpm --dir fluxboard build
+pnpm --dir pulse-ui install --frozen-lockfile
+pnpm --dir pulse-ui build
+.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py
+```
+
+2. Create the local telemetry directory on the host:
+
+```bash
+sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm
+```
+
+3. Restart the live services in this order so portfolio aggregation and bridge consumers are ready before the
+   seven execution nodes:
+
+```bash
+sudo systemctl restart flux@tokenmm-portfolio.service
+sudo systemctl restart flux@tokenmm-bridge.service
+sudo systemctl restart flux@tokenmm-api.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service
+sudo systemctl restart flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service
+```
+
+4. Verify that persistence is live:
+
+```bash
+sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite "SELECT COUNT(*) FROM order_action;"
+sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite "SELECT COUNT(*) FROM execution_fill;"
+sqlite3 /var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite "SELECT COUNT(*) FROM quote_cycle;"
+curl -fsS http://127.0.0.1:5022/api/pulse/jobs
+```
+
+5. Optional localhost-only JupyterLab for research:
+
+```bash
+sudo systemctl start flux@tokenmm-jupyter.service
+sudo journalctl -u flux@tokenmm-jupyter.service -n 20 --no-pager
+```
+
+Open `http://127.0.0.1:8888/lab` or use the logged tokenized URL, then load `research/tokenmm/notebooks/tokenmm_trade_data.ipynb`.
 
 ## Quick smoke checks
 

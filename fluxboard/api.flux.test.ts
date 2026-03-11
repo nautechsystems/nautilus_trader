@@ -412,6 +412,59 @@ describe('profile-scoped read APIs', () => {
     expect(path).toContain('profile=tokenmm');
   });
 
+  it('appends profile to params request on equities routes', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValue({ ok: true, data: [] });
+
+    await api.getParams();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to trades request on equities routes', async () => {
+    setPathname('/equities/trades');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0, limit: 50, offset: 0 },
+    });
+
+    await api.getTrades(1, 50, { sort: 'ts_desc' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/trades?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to balances request on equities routes', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0 },
+    });
+
+    await api.getBalances();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/balances?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to alerts request on equities routes', async () => {
+    setPathname('/equities/alerts');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0, limit: 25, offset: 0 },
+    });
+
+    await api.getAlerts();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/alerts?');
+    expect(path).toContain('profile=equities');
+  });
+
   it('normalizes tokenmm signal payloads with state bot_on and bid/ask legs', async () => {
     setPathname('/tokenmm/signal');
     fetchJSONMock.mockResolvedValue({
@@ -514,6 +567,68 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('preserves signed bid edge bounds from Flux params schema for the Params UI', async () => {
+    setPathname('/tokenmm/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          bid_edge1: {
+            type: 'number',
+            description: 'Band 1 bid edge in bps.',
+            minimum: -100,
+            maximum: 1000,
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    const schema = await api.getParamSchema();
+    expect(schema.params.bid_edge1).toMatchObject({
+      key: 'bid_edge1',
+      label: 'bid_edge1',
+      type: 'float',
+      min_value: -100,
+      max_value: 1000,
+    });
+  });
+
+  it('defaults equities params schema normalization to MakerV3 short labels', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          bot_on: {
+            type: 'boolean',
+            description: 'Enable quote publishing and management.',
+          },
+          bid_edge1: {
+            type: 'number',
+            description: 'Band 1 bid edge in bps.',
+            minimum: -100,
+            maximum: 1000,
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    const schema = await api.getParamSchema();
+    expect(schema.params.bot_on).toMatchObject({
+      key: 'bot_on',
+      label: 'bot_on',
+      options: [['0', 'Off (0)'], ['1', 'On (1)']],
+    });
+    expect(schema.params.bid_edge1).toMatchObject({
+      key: 'bid_edge1',
+      label: 'bid_edge1',
+      min_value: -100,
+      max_value: 1000,
+    });
+  });
+
   it('normalizes typed params payload values to string map used by Params editor', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({
@@ -539,7 +654,7 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
-  it('derives params running flag from bot_on when backend omits running', async () => {
+  it('does not derive params running flag from bot_on when backend omits running', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
@@ -562,9 +677,9 @@ describe('profile-scoped read APIs', () => {
     const rows = await api.getParams();
     expect(rows).toHaveLength(2);
     expect(rows[0].strategy_id).toBe('run_on');
-    expect(rows[0].running).toBe(true);
+    expect(rows[0].running).toBeNull();
     expect(rows[1].strategy_id).toBe('run_off');
-    expect(rows[1].running).toBe(false);
+    expect(rows[1].running).toBeNull();
   });
 
   it('derives trade mv from price*qty when incoming notional/mv is zero', async () => {
@@ -727,6 +842,29 @@ describe('profile-scoped read APIs', () => {
     expect(alerts[0]?.id).toBe('alert-row-ts-ms');
     expect(alerts[0]?.timestamp).toBe(1_700_000_111);
     expect((alerts[0] as any)?.strategy_id).toBe('strategy_from_alt_field');
+  });
+
+  it('normalizes alerts rows using entry_id fallback identity and preserves ERROR severity', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            entry_id: '1700000000001-0',
+            level: 'error',
+            message: 'borrow denied',
+            ts_ms: 1_700_000_111_222,
+            strategy_id: 'strategy_error_case',
+          },
+        ],
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.id).toBe('1700000000001-0');
+    expect(alerts[0]?.level).toBe('ERROR');
+    expect((alerts[0] as any)?.strategy_id).toBe('strategy_error_case');
   });
 
   it('supports alerts payloads using data.alerts in addition to data.rows', async () => {

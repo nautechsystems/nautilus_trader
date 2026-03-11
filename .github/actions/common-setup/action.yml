@@ -88,7 +88,7 @@ runs:
       id: rust-toolchain
       shell: bash
       run: |
-        echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> $GITHUB_ENV
+        echo "TOOLCHAIN=$(bash tooling/dev/rust-toolchain.sh)" >> $GITHUB_ENV
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
@@ -159,12 +159,12 @@ runs:
     - name: Get Python version
       shell: bash
       run: |
-        echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
+        echo "PYTHON_VERSION=$(bash tooling/dev/python-version.sh)" >> $GITHUB_ENV
 
     - name: Get pre-commit version
       shell: bash
       run: |
-        echo "PRE_COMMIT_VERSION=$(bash scripts/pre-commit-version.sh)" >> $GITHUB_ENV
+        echo "PRE_COMMIT_VERSION=$(bash tooling/dev/pre-commit-version.sh)" >> $GITHUB_ENV
 
     - name: Cache Python site-packages
       id: cached-site-packages

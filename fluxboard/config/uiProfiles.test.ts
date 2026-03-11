@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildProfilePath, getUiSurface, resolvePathProfile, resolvePathnameProfile } from './uiProfiles';
+import {
+  buildProfilePath,
+  getProfileDefinition,
+  getUiSurface,
+  resolvePathProfile,
+  resolvePathnameProfile,
+} from './uiProfiles';
 
 describe('uiProfiles', () => {
   it('resolves default path profile for empty/unknown segments', () => {
@@ -18,10 +24,33 @@ describe('uiProfiles', () => {
     expect(resolvePathProfile('equities')).toBe('equities');
   });
 
+  it('maps lp segment to lp profile', () => {
+    expect(resolvePathProfile('lp')).toBe('lp');
+  });
+
+  it('exposes stable maker profile definitions', () => {
+    expect(getProfileDefinition('tokenmm')).toMatchObject({
+      profile: 'tokenmm',
+      aliases: ['tokenmm', 'tokenm'],
+      basePath: '/tokenmm',
+    });
+    expect(getProfileDefinition('equities')).toMatchObject({
+      profile: 'equities',
+      aliases: ['equities'],
+      basePath: '/equities',
+    });
+    expect(getProfileDefinition('lp')).toMatchObject({
+      profile: 'lp',
+      aliases: ['lp'],
+      basePath: '/lp',
+    });
+  });
+
   it('resolves profile consistently from pathname', () => {
     expect(resolvePathnameProfile('/tokenmm/trades')).toBe('tokenmm');
     expect(resolvePathnameProfile('/tokenm/signal')).toBe('tokenmm');
     expect(resolvePathnameProfile('/equities/alerts')).toBe('equities');
+    expect(resolvePathnameProfile('/lp/hedger')).toBe('lp');
     expect(resolvePathnameProfile('/trades')).toBe('default');
     expect(resolvePathnameProfile(undefined)).toBe('default');
   });
@@ -70,8 +99,16 @@ describe('uiProfiles', () => {
     const surface = getUiSurface('default');
     expect(surface.routePaths).not.toContain('/equities');
     expect(surface.routePaths).toContain('/market-data');
-    expect(surface.routePaths).toContain('/hedger');
+    expect(surface.routePaths).not.toContain('/hedger');
     expect(surface.externalLinks.length).toBeGreaterThan(0);
+  });
+
+  it('exposes dedicated lp hedger surface', () => {
+    const surface = getUiSurface('lp');
+    expect(surface.homeRoutePath).toBe('/hedger');
+    expect(surface.routePaths).toEqual(['/', '/hedger']);
+    expect(surface.navLinks).toEqual([{ path: '/', label: 'Hedger' }]);
+    expect(surface.externalLinks).toEqual([]);
   });
 
   it('builds profile-scoped paths', () => {
@@ -80,5 +117,7 @@ describe('uiProfiles', () => {
     expect(buildProfilePath('tokenmm', '/')).toBe('/tokenmm');
     expect(buildProfilePath('tokenmm', '/signal')).toBe('/tokenmm/signal');
     expect(buildProfilePath('equities', '/alerts')).toBe('/equities/alerts');
+    expect(buildProfilePath('lp', '/')).toBe('/lp');
+    expect(buildProfilePath('lp', '/hedger')).toBe('/lp/hedger');
   });
 });

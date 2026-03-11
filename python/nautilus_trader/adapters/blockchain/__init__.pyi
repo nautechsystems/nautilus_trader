@@ -10,6 +10,7 @@ from nautilus_trader import model
 __all__ = [
     "BlockchainDataClientConfig",
     "BlockchainDataClientFactory",
+    "BlockchainExecutionClientConfig",
     "BlockchainExecutionClientFactory",
     "DexPoolFilters",
 ]
@@ -69,6 +70,59 @@ class BlockchainDataClientFactory:
     This factory creates `BlockchainDataClient` instances configured for different blockchain networks
     (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
     """
+
+@typing.final
+class BlockchainExecutionClientConfig:
+    r"""
+    Configuration for blockchain execution clients.
+    """
+
+    def __init__(
+        self,
+        trader_id: model.TraderId,
+        client_id: model.AccountId,
+        venue: model.Venue,
+        chain: model.Chain,
+        wallet_address: builtins.str,
+        http_rpc_url: builtins.str,
+        tokens: typing.Sequence[builtins.str] | None = None,
+        rpc_requests_per_second: builtins.int | None = None,
+    ) -> None:
+        r"""
+        Creates a new `BlockchainExecutionClientConfig` instance.
+        """
+    def trader_id(self) -> model.TraderId:
+        r"""
+        Returns the trader ID.
+        """
+    def client_id(self) -> model.AccountId:
+        r"""
+        Returns the account ID.
+        """
+    def venue(self) -> model.Venue:
+        r"""
+        Returns the execution venue.
+        """
+    def chain(self) -> model.Chain:
+        r"""
+        Returns the chain configuration.
+        """
+    def wallet_address(self) -> builtins.str:
+        r"""
+        Returns the wallet address.
+        """
+    def tokens(self) -> typing.Sequence[builtins.str] | None:
+        r"""
+        Returns the token addresses to monitor.
+        """
+    def http_rpc_url(self) -> builtins.str:
+        r"""
+        Returns the HTTP RPC URL.
+        """
+    def rpc_requests_per_second(self) -> builtins.int | None:
+        r"""
+        Returns the RPC requests per second limit.
+        """
 
 @typing.final
 class BlockchainExecutionClientFactory:

@@ -56,6 +56,9 @@ pub struct RpcError {
     pub code: i32,
     /// Error message.
     pub message: String,
+    /// Optional provider-specific error payload.
+    #[serde(default)]
+    pub data: Option<serde_json::Value>,
 }
 
 /// Log entry in standard Ethereum JSON-RPC format.
@@ -206,5 +209,95 @@ mod tests {
             log.topics[3],
             "0x00000000000000000000000000000000000000000000000000000000000001f4"
         );
+    }
+
+    #[rstest]
+    fn test_rpc_error_deserialize_with_data_object() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32000,
+                "message": "execution reverted",
+                "data": {
+                    "reason": "INSUFFICIENT_OUTPUT_AMOUNT"
+                }
+            }
+        }"#;
+
+        let response: RpcNodeHttpResponse<serde_json::Value> =
+            serde_json::from_str(json).expect("Failed to deserialize error response");
+        let error = response.error.expect("Expected error payload");
+
+        assert_eq!(error.code, -32000);
+        assert_eq!(error.message, "execution reverted");
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!({
+                "reason": "INSUFFICIENT_OUTPUT_AMOUNT"
+            }))
+        );
+    }
+
+    #[rstest]
+    fn test_rpc_error_deserialize_with_data_string() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32000,
+                "message": "execution reverted",
+                "data": "underpriced"
+            }
+        }"#;
+
+        let response: RpcNodeHttpResponse<serde_json::Value> =
+            serde_json::from_str(json).expect("Failed to deserialize error response");
+        let error = response.error.expect("Expected error payload");
+
+        assert_eq!(error.code, -32000);
+        assert_eq!(error.message, "execution reverted");
+        assert_eq!(error.data, Some(serde_json::json!("underpriced")));
+    }
+
+    #[rstest]
+    fn test_rpc_error_deserialize_with_data_array() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32000,
+                "message": "execution reverted",
+                "data": ["retry", "backoff"]
+            }
+        }"#;
+
+        let response: RpcNodeHttpResponse<serde_json::Value> =
+            serde_json::from_str(json).expect("Failed to deserialize error response");
+        let error = response.error.expect("Expected error payload");
+
+        assert_eq!(error.code, -32000);
+        assert_eq!(error.message, "execution reverted");
+        assert_eq!(error.data, Some(serde_json::json!(["retry", "backoff"])));
+    }
+
+    #[rstest]
+    fn test_rpc_error_deserialize_without_data() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32602,
+                "message": "invalid params"
+            }
+        }"#;
+
+        let response: RpcNodeHttpResponse<serde_json::Value> =
+            serde_json::from_str(json).expect("Failed to deserialize error response");
+        let error = response.error.expect("Expected error payload");
+
+        assert_eq!(error.code, -32602);
+        assert_eq!(error.message, "invalid params");
+        assert!(error.data.is_none());
     }
 }

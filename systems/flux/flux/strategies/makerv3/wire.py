@@ -7,51 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
-try:
-    from nautilus_trader.serialization import register_serializable_type
-except Exception:  # pragma: no cover - fallback test environments
-    register_serializable_type = None
-
-
-@dataclass(frozen=True, slots=True)
-class FluxBusPayload:
-    """
-    Wrap a JSON payload for transport over Nautilus message bus.
-    """
-
-    topic: str
-    payload: str
-    ts_event: int = 0
-    ts_init: int = 0
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Return a serializable dictionary representation.
-        """
-        return {
-            "type": "FluxBusPayload",
-            "topic": self.topic,
-            "payload": self.payload,
-            "ts_event": self.ts_event,
-            "ts_init": self.ts_init,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FluxBusPayload:
-        """
-        Build a payload object from its dictionary representation.
-        """
-        return cls(
-            topic=data.get("topic", ""),
-            payload=data.get("payload", ""),
-            ts_event=int(data.get("ts_event", 0)),
-            ts_init=int(data.get("ts_init", 0)),
-        )
-
-
-if register_serializable_type is not None:
-    register_serializable_type(FluxBusPayload, FluxBusPayload.to_dict, FluxBusPayload.from_dict)
+from flux.events import FluxBusPayload
 
 
 @dataclass(frozen=True, slots=True)

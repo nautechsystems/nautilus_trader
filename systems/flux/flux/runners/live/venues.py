@@ -11,6 +11,13 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.bitget import BITGET
+from nautilus_trader.adapters.bitget import BitgetDataClientConfig
+from nautilus_trader.adapters.bitget import BitgetExecClientConfig
+from nautilus_trader.adapters.bitget import BitgetLiveDataClientFactory
+from nautilus_trader.adapters.bitget import BitgetLiveExecClientFactory
+from nautilus_trader.adapters.bitget.constants import BITGET_DEFAULT_PRODUCTS
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -59,6 +66,7 @@ class VenueAdapterSpec:
     field_coercers: dict[str, FieldCoercer]
     secret_fields: tuple[tuple[str, str], ...]
     mode_defaults: dict[str, Callable[[str], Any]]
+    instrument_provider_factory: Callable[[InstrumentId], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -156,12 +164,26 @@ def _coerce_bybit_product_types(raw_value: Any, venue_name: str) -> tuple[Any, .
     )
 
 
+def _coerce_bitget_product_types(raw_value: Any, venue_name: str) -> tuple[Any, ...]:
+    return _enum_tuple_member(
+        type(BITGET_DEFAULT_PRODUCTS[0]),
+        raw_value,
+        field_name=f"node.venues.{venue_name}.product_type",
+    )
+
+
 def _coerce_binance_account_type(raw_value: Any, venue_name: str) -> Any:
     return _enum_member(
         BinanceAccountType,
         raw_value,
         field_name=f"node.venues.{venue_name}.account_type",
     )
+
+
+def _default_binance_environment(mode: str) -> Any:
+    if mode == "live":
+        return None
+    return BinanceEnvironment.TESTNET
 
 
 def _coerce_recv_window_ms(raw_value: Any, venue_name: str) -> int:
@@ -216,6 +238,58 @@ def _coerce_okx_vip_level(raw_value: Any, venue_name: str) -> Any:
     )
 
 
+def _load_interactive_brokers_spec() -> VenueAdapterSpec:
+    from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        DockerizedIBGatewayConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersDataClientConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersInstrumentProviderConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
+    from nautilus_trader.adapters.interactive_brokers.factories import (
+        InteractiveBrokersLiveDataClientFactory,
+    )
+
+    def _coerce_ibg_client_id(raw_value: Any, venue_name: str) -> int:
+        return _positive_int(raw_value, field_name=f"node.venues.{venue_name}.ibg_client_id")
+
+    def _coerce_dockerized_gateway(raw_value: Any, venue_name: str) -> Any:
+        if raw_value is None or isinstance(raw_value, DockerizedIBGatewayConfig):
+            return raw_value
+        if not isinstance(raw_value, dict):
+            raise ValueError(
+                f"node.venues.{venue_name}.dockerized_gateway must be a TOML table",
+            )
+        return DockerizedIBGatewayConfig(**raw_value)
+
+    def _build_instrument_provider(instrument_id: InstrumentId) -> Any:
+        return InteractiveBrokersInstrumentProviderConfig(
+            load_ids=frozenset([instrument_id]),
+            symbology_method=SymbologyMethod.IB_SIMPLIFIED,
+        )
+
+    return VenueAdapterSpec(
+        adapter_id="interactive_brokers",
+        venue_key=IB_VENUE,
+        data_config_cls=InteractiveBrokersDataClientConfig,
+        data_factory_cls=InteractiveBrokersLiveDataClientFactory,
+        exec_config_cls=None,
+        exec_factory_cls=None,
+        field_aliases={},
+        field_coercers={
+            "ibg_client_id": _coerce_ibg_client_id,
+            "dockerized_gateway": _coerce_dockerized_gateway,
+        },
+        secret_fields=(),
+        mode_defaults={},
+        instrument_provider_factory=_build_instrument_provider,
+    )
+
+
 SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
     "binance": VenueAdapterSpec(
         adapter_id="binance",
@@ -229,7 +303,25 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
             "account_type": _coerce_binance_account_type,
         },
         secret_fields=(("api_key", "api_key_env"), ("api_secret", "api_secret_env")),
-        mode_defaults={},
+        mode_defaults={"environment": _default_binance_environment},
+    ),
+    "bitget": VenueAdapterSpec(
+        adapter_id="bitget",
+        venue_key=BITGET,
+        data_config_cls=BitgetDataClientConfig,
+        data_factory_cls=BitgetLiveDataClientFactory,
+        exec_config_cls=BitgetExecClientConfig,
+        exec_factory_cls=BitgetLiveExecClientFactory,
+        field_aliases={"product_types": "product_type"},
+        field_coercers={
+            "product_types": _coerce_bitget_product_types,
+        },
+        secret_fields=(
+            ("api_key", "api_key_env"),
+            ("api_secret", "api_secret_env"),
+            ("api_passphrase", "api_passphrase_env"),
+        ),
+        mode_defaults={"demo": lambda mode: mode != "live"},
     ),
     "bybit": VenueAdapterSpec(
         adapter_id="bybit",
@@ -255,7 +347,11 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
         exec_factory_cls=HyperliquidLiveExecClientFactory,
         field_aliases={},
         field_coercers={},
-        secret_fields=(("private_key", "private_key_env"), ("vault_address", "vault_address_env")),
+        secret_fields=(
+            ("private_key", "private_key_env"),
+            ("account_address", "account_address_env"),
+            ("vault_address", "vault_address_env"),
+        ),
         mode_defaults={"testnet": lambda mode: mode != "live"},
     ),
     "kraken": VenueAdapterSpec(
@@ -295,9 +391,17 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
             ("api_secret", "api_secret_env"),
             ("api_passphrase", "api_passphrase_env"),
         ),
-        mode_defaults={},
+        mode_defaults={"is_demo": lambda mode: mode != "live"},
     ),
 }
+
+try:
+    _interactive_brokers_spec = _load_interactive_brokers_spec()
+except ImportError:
+    _interactive_brokers_spec = None
+else:
+    SUPPORTED_VENUE_ADAPTERS["interactive_brokers"] = _interactive_brokers_spec
+    SUPPORTED_VENUE_ADAPTERS["ibkr"] = _interactive_brokers_spec
 
 
 def _instrument_id_from_entry(
@@ -324,11 +428,17 @@ def _build_client_config(
 ) -> Any:
     parameter_names = _signature_parameter_names(config_cls)
     kwargs: dict[str, Any] = {}
+    routing_venues = frozenset({venue_name, str(instrument_id.venue).upper()})
 
     if "instrument_provider" in parameter_names:
-        kwargs["instrument_provider"] = InstrumentProviderConfig(load_ids=frozenset([instrument_id]))
+        if spec.instrument_provider_factory is not None:
+            kwargs["instrument_provider"] = spec.instrument_provider_factory(instrument_id)
+        else:
+            kwargs["instrument_provider"] = InstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+            )
     if "routing" in parameter_names:
-        kwargs["routing"] = RoutingConfig(default=default_routing, venues=frozenset([venue_name]))
+        kwargs["routing"] = RoutingConfig(default=default_routing, venues=routing_venues)
     if "venue" in parameter_names:
         kwargs["venue"] = Venue(venue_name)
 

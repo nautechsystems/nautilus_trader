@@ -1,18 +1,16 @@
 import type { SignalStrategy, StrategyRunState } from '@/types';
 
-const SIGNAL_RUN_STALE_AFTER_MS = 3_000;
+const SIGNAL_RUN_STATE_STALE_MS = 5_000;
 
-function coerceTimestampMs(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 1_000_000_000_000_000 ? Math.trunc(value / 1_000_000) : value;
+function toFiniteTimestampMs(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
   }
   if (typeof value === 'string') {
-    const parsed = Number(value.trim());
-    if (Number.isFinite(parsed)) {
-      return parsed > 1_000_000_000_000_000 ? Math.trunc(parsed / 1_000_000) : parsed;
-    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
-  return undefined;
+  return null;
 }
 
 export function resolveSignalRunning(
@@ -36,10 +34,10 @@ export function resolveSignalRunning(
     return false;
   }
 
-  const tsMs = coerceTimestampMs(
-    (state as Record<string, unknown>).ts_ms ?? (state as Record<string, unknown>).ts_event,
+  const tsMs = toFiniteTimestampMs(
+    (state as Record<string, unknown>).ts_ms ?? (state as Record<string, unknown>).tsMs,
   );
-  if (tsMs !== undefined && nowMs - tsMs > SIGNAL_RUN_STALE_AFTER_MS) {
+  if (tsMs != null && nowMs - tsMs > SIGNAL_RUN_STATE_STALE_MS) {
     return false;
   }
 
@@ -55,4 +53,3 @@ export function deriveSignalRunState(
   if (running === false) return 'stopped';
   return 'unknown';
 }
-

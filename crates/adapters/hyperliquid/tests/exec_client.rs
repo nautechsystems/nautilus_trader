@@ -33,6 +33,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     config::HyperliquidExecClientConfig, execution::HyperliquidExecutionClient,
+    http::client::HyperliquidHttpClient,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -50,6 +51,7 @@ use serde_json::{Value, json};
 struct TestServerState {
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
+    last_info_request: Arc<tokio::sync::Mutex<Option<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     rate_limit_after: Arc<AtomicUsize>,
 }
@@ -59,6 +61,7 @@ impl Default for TestServerState {
         Self {
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
+            last_info_request: Arc::new(tokio::sync::Mutex::new(None)),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
         }
@@ -90,7 +93,7 @@ async fn wait_for_server(addr: SocketAddr, path: &str) {
     .await;
 }
 
-async fn handle_info(body: axum::body::Bytes) -> Response {
+async fn handle_info(State(state): State<TestServerState>, body: axum::body::Bytes) -> Response {
     let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -98,6 +101,8 @@ async fn handle_info(body: axum::body::Bytes) -> Response {
         )
             .into_response();
     };
+
+    *state.last_info_request.lock().await = Some(request_body.clone());
 
     let request_type = request_body
         .get("type")
@@ -738,4 +743,74 @@ async fn test_exec_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_exec_client_connect_uses_account_address_and_dex_for_clearinghouse_state() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let client_id = ClientId::from("HYPERLIQUID");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("HYPERLIQUID"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let mut config = create_test_exec_config(addr);
+    config.account_address = Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
+    config.dex = Some("xyz".to_string());
+
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = HyperliquidExecutionClient::new(core, config).unwrap();
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.connect().await.unwrap();
+
+    let request_body = state.last_info_request.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "clearinghouseState");
+    assert_eq!(
+        request_body["user"],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert_eq!(request_body["dex"], "xyz");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_request_account_state_with_explicit_dex() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+
+    client
+        .request_account_state_with_dex("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Some("xyz"))
+        .await
+        .unwrap();
+
+    let request_body = state.last_info_request.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "clearinghouseState");
+    assert_eq!(
+        request_body["user"],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert_eq!(request_body["dex"], "xyz");
 }

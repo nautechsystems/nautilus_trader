@@ -81,7 +81,11 @@ class FluxRedisKeys:
         safe_schema_version = validate_schema_version(schema_version, "schema_version")
         safe_strategy_id = validate_identifier_part(strategy_id, "strategy_id")
         safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
-        safe_base_currency = validate_symbol_part(base_currency, "base_currency").upper()
+        safe_base_currency = validate_symbol_part(
+            base_currency,
+            "base_currency",
+            allow_colon=True,
+        ).upper()
         return (
             f"{safe_namespace}:{safe_schema_version}:portfolio:inventory:component:"
             f"{safe_portfolio_id}:{safe_base_currency}:{safe_strategy_id}"
@@ -99,7 +103,11 @@ class FluxRedisKeys:
         safe_namespace = validate_identifier_part(namespace, "namespace")
         safe_schema_version = validate_schema_version(schema_version, "schema_version")
         safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
-        safe_base_currency = validate_symbol_part(base_currency, "base_currency").upper()
+        safe_base_currency = validate_symbol_part(
+            base_currency,
+            "base_currency",
+            allow_colon=True,
+        ).upper()
         return (
             f"{safe_namespace}:{safe_schema_version}:portfolio:inventory:"
             f"{safe_portfolio_id}:{safe_base_currency}"
@@ -124,6 +132,36 @@ class FluxRedisKeys:
             + ":changed"
         )
 
+    @classmethod
+    def portfolio_snapshot(
+        cls,
+        *,
+        portfolio_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
+        return f"{safe_namespace}:{safe_schema_version}:portfolio:snapshot:{safe_portfolio_id}"
+
+    @classmethod
+    def portfolio_snapshot_channel(
+        cls,
+        *,
+        portfolio_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.portfolio_snapshot(
+                portfolio_id=portfolio_id,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
     def market_last(
         self,
         exchange: str,
@@ -132,11 +170,15 @@ class FluxRedisKeys:
         instrument_id: str | None = None,
     ) -> str:
         safe_exchange = validate_identifier_part(exchange, "exchange").lower()
-        safe_instrument_id = validate_symbol_part(instrument_id, "instrument_id").upper() if instrument_id else ""
+        safe_instrument_id = (
+            validate_symbol_part(instrument_id, "instrument_id", allow_colon=True).upper()
+            if instrument_id
+            else ""
+        )
         if safe_instrument_id:
             return f"{self.prefix}:market:last:{self._strategy_id}:{safe_exchange}:{safe_instrument_id}"
-        safe_base = validate_symbol_part(base, "base").upper()
-        safe_quote = validate_symbol_part(quote, "quote").upper()
+        safe_base = validate_symbol_part(base, "base", allow_colon=True).upper()
+        safe_quote = validate_symbol_part(quote, "quote", allow_colon=True).upper()
         return f"{self.prefix}:market:last:{self._strategy_id}:{safe_exchange}:{safe_base}_{safe_quote}"
 
     def params_hash_key(self) -> str:

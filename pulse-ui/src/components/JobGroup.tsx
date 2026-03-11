@@ -9,9 +9,11 @@ interface JobGroupProps {
   groupLabel: string;
   jobs: Job[];
   busyJobIds: Set<string>;
+  busy: boolean;
   onAction: (jobId: string, action: "start" | "stop" | "restart") => void;
   onGroupAction: (groupKey: string, action: "start" | "stop" | "restart") => void;
   onViewLogs: (job: Job) => void;
+  onViewError: (job: Job) => void;
 }
 
 export function JobGroup({
@@ -19,9 +21,11 @@ export function JobGroup({
   groupLabel,
   jobs,
   busyJobIds,
+  busy,
   onAction,
   onGroupAction,
   onViewLogs,
+  onViewError,
 }: JobGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const activeCount = jobs.filter((job) => (job.status || job.state) === "active").length;
@@ -48,7 +52,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "start")}
-                disabled={!hasStartable}
+                disabled={!hasStartable || busy}
                 aria-label={`Start All ${groupLabel}`}
               >
                 <Play size={14} />
@@ -58,7 +62,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "stop")}
-                disabled={!hasRunning}
+                disabled={!hasRunning || busy}
                 aria-label={`Stop All ${groupLabel}`}
               >
                 <Square size={14} />
@@ -68,7 +72,7 @@ export function JobGroup({
                 type="button"
                 className="button"
                 onClick={() => onGroupAction(groupKey, "restart")}
-                disabled={!hasRunning}
+                disabled={!hasRunning || busy}
                 aria-label={`Restart All ${groupLabel}`}
               >
                 <RotateCw size={14} />
@@ -88,6 +92,7 @@ export function JobGroup({
               busy={busyJobIds.has(job.id || job.name)}
               onAction={onAction}
               onViewLogs={onViewLogs}
+              onViewError={onViewError}
             />
           ))}
     </>

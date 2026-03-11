@@ -2,17 +2,46 @@
 Flux-specific persistence surfaces.
 """
 
-from flux.persistence.balance_snapshots import FluxBalanceSnapshotPersistenceActor
-from flux.persistence.balance_snapshots import FluxBalanceSnapshotPersistenceActorConfig
-from flux.persistence.portfolio_inventory_snapshots import PortfolioInventorySnapshotWriter
-from flux.persistence.quote_cycles import QuoteCyclePersistenceActor
-from flux.persistence.quote_cycles import QuoteCyclePersistenceActorConfig
+from __future__ import annotations
+
+from typing import Any
 
 
-__all__ = [
+__all__ = (
     "FluxBalanceSnapshotPersistenceActor",
     "FluxBalanceSnapshotPersistenceActorConfig",
     "PortfolioInventorySnapshotWriter",
     "QuoteCyclePersistenceActor",
     "QuoteCyclePersistenceActorConfig",
-]
+)
+
+
+def __getattr__(name: str) -> Any:
+    if name in {
+        "FluxBalanceSnapshotPersistenceActor",
+        "FluxBalanceSnapshotPersistenceActorConfig",
+    }:
+        from flux.persistence.balance_snapshots import (
+            FluxBalanceSnapshotPersistenceActor,
+            FluxBalanceSnapshotPersistenceActorConfig,
+        )
+
+        return {
+            "FluxBalanceSnapshotPersistenceActor": FluxBalanceSnapshotPersistenceActor,
+            "FluxBalanceSnapshotPersistenceActorConfig": FluxBalanceSnapshotPersistenceActorConfig,
+        }[name]
+    if name == "PortfolioInventorySnapshotWriter":
+        from flux.persistence.portfolio_inventory_snapshots import PortfolioInventorySnapshotWriter
+
+        return PortfolioInventorySnapshotWriter
+    if name in {
+        "QuoteCyclePersistenceActor",
+        "QuoteCyclePersistenceActorConfig",
+    }:
+        from flux.persistence.quote_cycles import QuoteCyclePersistenceActor, QuoteCyclePersistenceActorConfig
+
+        return {
+            "QuoteCyclePersistenceActor": QuoteCyclePersistenceActor,
+            "QuoteCyclePersistenceActorConfig": QuoteCyclePersistenceActorConfig,
+        }[name]
+    raise AttributeError(name)

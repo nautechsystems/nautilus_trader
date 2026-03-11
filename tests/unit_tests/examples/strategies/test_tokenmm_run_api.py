@@ -2,17 +2,21 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 from flask import Flask
 
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
+from flux.runners.tokenmm.run_api import _attach_profile_router_proxy
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _load_config
 from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
+from flux.runners.tokenmm.run_api import _should_enable_pulse_routes
 from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 
@@ -82,6 +86,17 @@ def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset
     assert required_map == {"tokenmm": ["strategy_a"]}
 
 
+def test_tokenmm_descriptor_exposes_stable_profile_contract() -> None:
+    descriptor = get_strategy_set_descriptor("tokenmm")
+
+    assert descriptor.profile == "tokenmm"
+    assert descriptor.aliases == ("tokenmm", "tokenm")
+    assert descriptor.base_path == "/tokenmm"
+    assert descriptor.route_aliases == ("/tokenm",)
+    assert descriptor.strategy_ids_field == "tokenmm_strategy_ids"
+    assert descriptor.required_strategy_ids_field == "tokenmm_required_strategy_ids"
+
+
 def test_build_profile_strategy_maps_requires_non_empty_tokenmm_allowlist() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         _build_profile_strategy_maps({})
@@ -133,6 +148,40 @@ def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path
     assert response.headers["Location"] == "/tokenmm/alerts?foo=1"
 
 
+def test_attach_fluxboard_routes_serve_neutral_shared_asset_prefix(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html>fluxboard</html>", encoding="utf-8")
+    (assets_dir / "app.js").write_text("console.log('shared')", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/lp")
+    assert response.status_code == 200
+    assert "fluxboard" in response.get_data(as_text=True)
+
+    response = client.get("/tokenmm")
+    assert response.status_code == 200
+    assert "fluxboard" in response.get_data(as_text=True)
+
+    response = client.get("/lp/hedger")
+    assert response.status_code == 200
+    assert "fluxboard" in response.get_data(as_text=True)
+
+    response = client.get("/static/fluxboard/assets/app.js")
+    assert response.status_code == 200
+    assert "console.log('shared')" in response.get_data(as_text=True)
+
+    response = client.get("/lp/assets/app.js")
+    assert response.status_code == 404
+
+    response = client.get("/tokenmm/assets/app.js")
+    assert response.status_code == 404
+
+
 def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     assets_dir = dist_dir / "assets"
@@ -155,6 +204,297 @@ def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path
     response = client.get("/pulse/jobs/tokenmm-api")
     assert response.status_code == 200
     assert "pulse" in response.get_data(as_text=True)
+
+
+def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return _FakeResponse(
+            status=200,
+            body=b"<html>equities</html>",
+            headers={"Content-Type": "text/html"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/equities")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<html>equities</html>"
+    assert captured["url"] == "http://127.0.0.1:5024/equities"
+    assert captured["method"] == "GET"
+
+
+def test_attach_profile_router_proxy_forwards_equities_profile_api_requests(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return _FakeResponse(
+            status=200,
+            body=b'{"ok":true}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/api/v1/params?profile=equities")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert captured["url"] == "http://127.0.0.1:5024/api/v1/params?profile=equities"
+    assert captured["method"] == "GET"
+
+
+def test_attach_profile_router_proxy_forwards_equities_socketio_requests(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        captured["body"] = req.data
+        return _FakeResponse(
+            status=200,
+            body=b"ok",
+            headers={"Content-Type": "text/plain"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.post(
+        "/socket.io/?profile=equities&EIO=4&transport=polling",
+        data=b"40",
+        content_type="text/plain",
+    )
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "ok"
+    assert captured["url"] == "http://127.0.0.1:5024/socket.io/?profile=equities&EIO=4&transport=polling"
+    assert captured["method"] == "POST"
+    assert captured["body"] == b"40"
+
+
+def test_attach_profile_router_proxy_leaves_tokenmm_requests_unhandled() -> None:
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/api/v1/params?profile=tokenmm")
+
+    assert response.status_code == 404
+
+
+def test_attach_profile_router_proxy_returns_bad_gateway_on_backend_error(monkeypatch) -> None:
+    def _fake_urlopen(req, timeout: float):
+        raise HTTPError(req.full_url, 502, "bad gateway", hdrs=None, fp=None)
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/equities")
+
+    assert response.status_code == 502
+
+
+def test_attach_profile_router_proxy_leaves_lp_ui_routes_unhandled(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        raise AssertionError("lp UI routes should not proxy to the hidden backend")
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"lp": "http://127.0.0.1:5025"},
+    )
+    client = app.test_client()
+
+    response = client.get("/lp")
+
+    assert response.status_code == 404
+    assert captured == {}
+
+
+def test_attach_profile_router_proxy_forwards_lp_hedger_api_requests(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return _FakeResponse(
+            status=200,
+            body=b'{"ok":true}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"lp": "http://127.0.0.1:5025"},
+    )
+    client = app.test_client()
+
+    response = client.get("/api/v1/hedgers/instances")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True}
+    assert captured["url"] == "http://127.0.0.1:5025/api/v1/hedgers/instances"
+    assert captured["method"] == "GET"
+
+
+def test_attach_profile_router_proxy_prefers_lp_path_over_stale_profile_query(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return _FakeResponse(
+            status=200,
+            body=b'{"surface":"lp"}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={
+            "equities": "http://127.0.0.1:5015",
+            "lp": "http://127.0.0.1:5025",
+        },
+    )
+    client = app.test_client()
+
+    response = client.get("/api/v1/hedgers/instances?profile=equities")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"surface": "lp"}
+    assert captured["url"] == "http://127.0.0.1:5025/api/v1/hedgers/instances?profile=equities"
+    assert captured["method"] == "GET"
+
+
+def test_should_enable_pulse_routes_defaults_to_disabled() -> None:
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=False), {}) is False
+
+
+def test_should_enable_pulse_routes_honors_cli_or_config_enablement() -> None:
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=True), {}) is True
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=False), {"enable_pulse_routes": True}) is True
 
 
 def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:

@@ -196,6 +196,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "bitget";
+    let submodule = pyo3::wrap_pymodule!(nautilus_bitget::python::bitget);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "bitmex";
     let submodule = pyo3::wrap_pymodule!(nautilus_bitmex::python::bitmex);
     m.add_wrapped(submodule)?;

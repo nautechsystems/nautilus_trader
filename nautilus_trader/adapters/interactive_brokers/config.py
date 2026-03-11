@@ -42,6 +42,16 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
         The VNC port for the container. Set to None to disable VNC access.
         The VNC server provides remote desktop access to the IB Gateway interface.
         Examples: 5900, 5901, 5902, etc.
+    auto_restart_time : str, optional
+        Daily restart time understood by IBC, for example ``11:45 PM``.
+    time_zone : str, optional
+        Time zone name used for the scheduled restart, for example
+        ``America/New_York``.
+    relogin_after_twofa_timeout : bool, optional, default False
+        Whether IBC should restart the login flow if second-factor approval times out.
+    twofa_timeout_action : {"exit", "restart"}, optional
+        Action for the container after a second-factor timeout. If omitted and
+        `auto_restart_time` is set, the gateway defaults to ``restart``.
 
     """
 
@@ -52,6 +62,10 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     timeout: int = 300
     container_image: str = "ghcr.io/gnzsnz/ib-gateway:stable"
     vnc_port: int | None = None
+    auto_restart_time: str | None = None
+    time_zone: str | None = None
+    relogin_after_twofa_timeout: bool = False
+    twofa_timeout_action: Literal["exit", "restart"] | None = None
 
     def __repr__(self):
         masked_username = self._mask_sensitive_info(self.username)
@@ -59,7 +73,8 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
         return (
             f"DockerizedIBGatewayConfig(username={masked_username}, "
             f"password=********, trading_mode='{self.trading_mode}', "
-            f"read_only_api={self.read_only_api}, timeout={self.timeout})"
+            f"read_only_api={self.read_only_api}, timeout={self.timeout}, "
+            f"auto_restart_time={self.auto_restart_time!r}, time_zone={self.time_zone!r})"
         )
 
     @staticmethod

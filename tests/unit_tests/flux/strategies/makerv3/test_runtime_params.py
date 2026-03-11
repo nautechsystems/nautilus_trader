@@ -11,6 +11,41 @@ from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig
 from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+
+
+def _okx_linear_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("PLUME-USDT-SWAP"),
+            venue=Venue("OKX"),
+        ),
+        raw_symbol=Symbol("PLUME-USDT-SWAP"),
+        base_currency=Currency.from_str("PLUME"),
+        quote_currency=Currency.from_str("USDT"),
+        settlement_currency=Currency.from_str("USDT"),
+        is_inverse=False,
+        price_precision=6,
+        size_precision=0,
+        price_increment=Price.from_str("0.000001"),
+        size_increment=Quantity.from_str("1"),
+        multiplier=Quantity.from_str("10"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={
+            "okx_ct_val": "10",
+            "okx_ct_val_ccy": "PLUME",
+            "okx_ct_type": "linear",
+            "okx_lot_sz": "1",
+            "base_exposure_mode": "exact_multiplier",
+        },
+    )
 
 
 def test_refresh_runtime_params_is_idempotent_and_noop_when_unchanged(strategy_factory) -> None:
@@ -73,6 +108,25 @@ def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config()
 
     assert runtime_params["order_reject_alert_after_count"] == 5
     assert runtime_params["order_reject_alert_after_s"] == Decimal(12)
+
+
+def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        pending_cancel_grace_ms=250,
+        pending_cancel_block_after_ms=1_500,
+        quote_liveness_stall_after_ms=3_000,
+        quote_liveness_recover_after_ms=900,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["pending_cancel_grace_ms"] == 250
+    assert runtime_params["pending_cancel_block_after_ms"] == 1_500
+    assert runtime_params["quote_liveness_stall_after_ms"] == 3_000
+    assert runtime_params["quote_liveness_recover_after_ms"] == 900
 
 
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
@@ -151,6 +205,50 @@ def test_apply_runtime_param_updates_rejects_non_positive_qty_without_mutating_s
         strategy._apply_runtime_param_updates({"qty": Decimal(0)})
 
     assert strategy._runtime_params["qty"] == Decimal(1)
+    assert strategy._order_qty is sentinel_order_qty
+
+
+def test_apply_runtime_param_updates_qty_unit_venue_preserves_direct_make_qty(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(qty_unit="venue")
+    seen_values: list[Decimal] = []
+    strategy._maker_instrument = SimpleNamespace(
+        make_qty=lambda value: seen_values.append(Decimal(str(value))) or f"qty:{value}",
+    )
+
+    strategy._apply_runtime_param_updates({"qty": Decimal(7)})
+
+    assert strategy._runtime_params["qty"] == Decimal(7)
+    assert seen_values == [Decimal(7)]
+    assert strategy._order_qty == "qty:7.0"
+
+
+def test_apply_runtime_param_updates_qty_unit_base_converts_before_make_qty(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(qty_unit="base")
+    strategy._maker_instrument = _okx_linear_perpetual()
+
+    strategy._apply_runtime_param_updates({"qty": Decimal(3430)})
+
+    assert strategy._runtime_params["qty"] == Decimal(3430)
+    assert strategy._order_qty.as_decimal() == Decimal(343)
+
+
+def test_apply_runtime_param_updates_qty_unit_base_rejects_non_integral_venue_qty(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(qty_unit="base")
+    strategy._runtime_params["qty"] = Decimal(1000)
+    sentinel_order_qty = object()
+    strategy._order_qty = sentinel_order_qty
+    strategy._maker_instrument = _okx_linear_perpetual()
+
+    with pytest.raises(RuntimeError, match="non_integral_venue_qty"):
+        strategy._apply_runtime_param_updates({"qty": Decimal(3435)})
+
+    assert strategy._runtime_params["qty"] == Decimal(1000)
     assert strategy._order_qty is sentinel_order_qty
 
 

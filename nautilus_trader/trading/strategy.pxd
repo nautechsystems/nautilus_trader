@@ -51,6 +51,7 @@ cdef class Strategy(Actor):
     cdef OrderManager _manager
     cdef bint _is_exiting
     cdef bint _pending_stop
+    cdef bint _immediate_stop_requested
     cdef int _market_exit_attempts
     cdef str _market_exit_tag
     cdef str _market_exit_timer_name
@@ -70,6 +71,8 @@ cdef class Strategy(Actor):
     """If hyphens should be used in generated client order ID values.\n\n:returns: `bool`"""
     cdef readonly OmsType oms_type
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
+    cdef readonly list allowed_submit_instrument_ids
+    """The allowed submit instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
     cdef readonly list external_order_claims
     """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
     cdef readonly bint manage_contingent_orders
@@ -89,6 +92,8 @@ cdef class Strategy(Actor):
     )
     cpdef void change_id(self, StrategyId strategy_id)
     cpdef void change_order_id_tag(self, str order_id_tag)
+    cpdef void request_immediate_stop(self, bint value=*)
+    cpdef void stop_immediately(self)
     cpdef void stop(self)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
@@ -116,6 +121,8 @@ cdef class Strategy(Actor):
     cpdef void on_position_opened(self, PositionOpened event)
     cpdef void on_position_changed(self, PositionChanged event)
     cpdef void on_position_closed(self, PositionClosed event)
+    cdef bint _is_submit_instrument_allowed(self, InstrumentId instrument_id)
+    cdef bint _is_market_exit_cleanup_order(self, Order order)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -125,6 +132,7 @@ cdef class Strategy(Actor):
         PositionId position_id=*,
         ClientId client_id=*,
         dict[str, object] params=*,
+        bint allow_cash_borrowing=*,
     )
     cpdef void submit_order_list(
         self,
@@ -132,6 +140,7 @@ cdef class Strategy(Actor):
         PositionId position_id=*,
         ClientId client_id=*,
         dict[str, object] params=*,
+        bint allow_cash_borrowing=*,
     )
     cpdef void modify_order(
         self,
@@ -177,4 +186,6 @@ cdef class Strategy(Actor):
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
     cdef void _deny_order(self, Order order, str reason)
+    cdef void _deny_order_locally(self, Order order, str reason)
     cdef void _deny_order_list(self, OrderList order_list, str reason)
+    cdef void _deny_order_list_locally(self, OrderList order_list, str reason)

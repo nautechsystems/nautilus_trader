@@ -33,6 +33,10 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs.
+    allowed_submit_instrument_ids : list[InstrumentId], optional
+        The instrument IDs this strategy may actively submit orders for.
+        If ``None`` or empty then submissions are unrestricted.
+        Market-exit cleanup orders may still be submitted during strategy exit.
     external_order_claims : list[InstrumentId], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
@@ -72,6 +76,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     use_uuid_client_order_ids: bool = False
     use_hyphens_in_client_order_ids: bool = True
     oms_type: str | None = None
+    allowed_submit_instrument_ids: list[InstrumentId] | None = None
     external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False

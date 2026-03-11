@@ -1,0 +1,65 @@
+[flux]
+mode = "live"
+confirm_live = true
+namespace = "flux"
+schema_version = "v1"
+
+[identity]
+strategy_id = "equities_api"
+strategy_instance_id = "equities_api"
+trader_id = "EQUITIES-API-001"
+external_strategy_id = "equities_api"
+
+[redis]
+host = "127.0.0.1"
+port = 6379
+db = 0
+username = "default"
+password = ""
+ssl = false
+connect_timeout_secs = 5.0
+read_timeout_secs = 5.0
+
+[venues]
+execution_venue = "HYPERLIQUID"
+reference_venue = "IBKR"
+execution_symbol = "AAPL"
+reference_symbol = "AAPL/USD"
+
+[bridge]
+log_level = "INFO"
+scan_interval_sec = 3.0
+block_ms = 1000
+read_count = 200
+start_id = "$"
+
+[api]
+# Stable equities API surface: keep `/equities` and `profile=equities`.
+host = "0.0.0.0"
+port = 5022
+strategy_class = "maker_v4"
+param_set = "makerv4"
+strategy_groups = "equities"
+base_asset = "AAPL"
+quote_asset = "USD"
+equities_strategy_ids = [
+  "aapl_tradexyz_makerv4",
+]
+equities_required_strategy_ids = [
+  "aapl_tradexyz_makerv4",
+]
+
+[portfolio]
+# Stable portfolio identity for the equities rollout.
+portfolio_id = "equities"
+inventory_stale_after_ms = 3000
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "AAPL/USD"
+instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "AAPL/USD"
+instrument_id = "AAPL.NASDAQ"

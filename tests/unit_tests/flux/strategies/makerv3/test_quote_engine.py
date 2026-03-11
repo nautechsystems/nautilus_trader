@@ -3,7 +3,23 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, bytes] = {}
+
+    def get(self, key: str) -> bytes | None:
+        return self.values.get(key)
+
+    def set(self, key: str, value: str | bytes) -> bool:
+        self.values[key] = value.encode() if isinstance(value, str) else value
+        return True
 
 
 def test_refresh_quotes_blocks_when_maker_market_data_is_stale(strategy_factory) -> None:
@@ -208,6 +224,321 @@ def test_refresh_quotes_recovers_from_blocked_state_without_rebalance(
     assert state_transitions[0]["to_state"] == "running"
     assert strategy._state_is_blocked is False
     assert strategy._last_state_name == "running"
+
+
+def test_refresh_quotes_records_last_completed_quote_progress(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_001])
+
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000 - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000 - 10_000_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    assert strategy._last_completed_quote_ns == 1_000_000_000
+
+
+def test_refresh_quotes_skips_when_cancel_reject_cooldown_is_active(strategy_factory) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="RESTING-1",
+            price=Decimal("100"),
+            side=OrderSide.BUY,
+            ts_init=0,
+        ),
+    ]
+    strategy._cancel_reject_retry_after_ns_by_client_order_id = {
+        "RESTING-1": now_ns + 1_000_000_000,
+    }
+
+    events: list[dict[str, object]] = []
+    strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert events[-1]["quote_cycle_event"] == "skipped"
+    assert events[-1]["reason_code"] == "skip_cancel_reject_cooldown"
+
+
+def test_refresh_quotes_blocks_when_pending_cancel_is_old_and_no_quote_progress(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: []
+    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
+    strategy._last_state_name = "running"
+    strategy._cache = SimpleNamespace(
+        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+    )
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    states: list[str] = []
+    events: list[dict[str, object]] = []
+    alerts: list[dict[str, object]] = []
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert states == ["blocked_pending_cancel"]
+    assert events[-1]["quote_cycle_event"] == "blocked"
+    assert events[-1]["reason_code"] == "pending_cancel_stuck"
+    assert alerts[-1]["alert_key"] == "quote_liveness_blocked"
+    assert alerts[-1]["reason_code"] == "pending_cancel_stuck"
+    assert alerts[-1]["transition"] == "running->blocked_pending_cancel"
+
+
+def test_refresh_quotes_skips_when_pending_cancel_is_recent(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: []
+    strategy._runtime_params["pending_cancel_block_after_ms"] = 500
+    strategy._last_state_name = "running"
+    strategy._cache = SimpleNamespace(
+        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+    )
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+    strategy._track_pending_cancel("RESTING-1", now_ns=now_ns - 100_000_000)
+
+    states: list[str] = []
+    events: list[dict[str, object]] = []
+    alerts: list[dict[str, object]] = []
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert states == ["running"]
+    assert events[-1]["quote_cycle_event"] == "skipped"
+    assert events[-1]["reason_code"] == "skip_pending_cancels"
+    assert events[-1]["oldest_pending_cancel_age_ms"] == 100
+    assert events[-1]["payload"]["oldest_pending_cancel_age_ms"] == 100
+    assert alerts == []
+
+
+def test_refresh_quotes_clears_orphaned_pending_cancel_when_cache_has_no_live_order(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: []
+    strategy._pending_cancel_client_order_ids = {"ORPHAN-1"}
+    strategy._last_state_name = "running"
+    strategy._cache = SimpleNamespace(order=lambda _client_order_id: None)
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert strategy._pending_cancel_client_order_ids == set()
+
+
+def test_refresh_quotes_blocks_when_shared_portfolio_inventory_is_degraded(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=strategy.config.maker_instrument_id,
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: strategy._maker_instrument,
+        strategy.config.reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=strategy.config.reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = list
+
+    fake_redis = _FakeRedis()
+    aggregate_key = FluxRedisKeys.portfolio_inventory(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+    )
+    fake_redis.set(
+        aggregate_key,
+        encode_portfolio_inventory(
+            {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty": None,
+                "ts_ms": 1_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+                "missing_required": ["strategy_02"],
+                "degraded": True,
+            },
+        ),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    alerts: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == ["portfolio_inventory_unavailable:False"]
+    assert states == ["blocked_portfolio_inventory"]
+    assert alerts[-1]["reason_code"] == "blocked_portfolio_inventory_unavailable"
+
+
+def test_refresh_quotes_allows_partial_shared_portfolio_inventory_when_enabled(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_500_000_000])
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=strategy.config.maker_instrument_id,
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: strategy._maker_instrument,
+        strategy.config.reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=strategy.config.reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = list
+    strategy._refresh_quotes_to_target = lambda *_args, **_kwargs: None
+    strategy._compute_fv = lambda *_args, **_kwargs: Decimal("100.5")
+    strategy._managed_orders = lambda: []
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    fake_redis = _FakeRedis()
+    aggregate_key = FluxRedisKeys.portfolio_inventory(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+    )
+    fake_redis.set(
+        aggregate_key,
+        encode_portfolio_inventory(
+            {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty": "129016.69578451",
+                "aggregation_mode": "partial",
+                "global_qty_complete": False,
+                "ts_ms": 1_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+                "missing_required": ["strategy_02"],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": True,
+            },
+        ),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+        allow_partial_global_risk=True,
+    )
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    alerts: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == []
+    assert states == []
+    assert alerts == []
 
 
 def test_refresh_quotes_uses_runtime_snapshot_without_runtime_getters(
@@ -475,3 +806,27 @@ def test_refresh_quotes_calls_managed_orders_once_per_quote_cycle(clocked_strate
     strategy._refresh_quotes(now_ns=1_000_000_000)
 
     assert calls["count"] == 1
+
+
+def test_allow_cash_borrowing_sell_only_policy_enables_only_spot_sells(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT-SPOT.BYBIT"),
+        spot_cash_borrowing_policy="sell_only",
+    )
+    assert strategy._should_allow_cash_borrowing(OrderSide.SELL) is True
+    assert strategy._should_allow_cash_borrowing(OrderSide.BUY) is False
+
+
+def test_allow_cash_borrowing_both_sides_policy_enables_spot_buys_and_sells(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT-SPOT.BYBIT"),
+        spot_cash_borrowing_policy="both_sides",
+    )
+    assert strategy._should_allow_cash_borrowing(OrderSide.SELL) is True
+    assert strategy._should_allow_cash_borrowing(OrderSide.BUY) is True

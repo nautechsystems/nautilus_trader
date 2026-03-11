@@ -3,9 +3,42 @@ import pytest
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
+
+
+TEST_PRIVATE_KEY = "0x" + ("11" * 32)
+TEST_VAULT_ADDRESS = "0x" + ("22" * 20)
 
 
 class TestHyperliquidInstrumentProvider:
+    def test_http_client_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        client = nautilus_pyo3.HyperliquidHttpClient(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            False,
+            10,
+            None,
+        )
+
+        # Assert
+        assert client.get_user_address().startswith("0x")
+        assert callable(client.request_account_state)
+
+    def test_http_client_from_credentials_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        client = nautilus_pyo3.HyperliquidHttpClient.from_credentials(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            False,
+            10,
+            None,
+        )
+
+        # Assert
+        assert client.get_user_address().startswith("0x")
+        assert callable(client.request_account_state)
+
     def test_provider_initialization(self, mock_http_client):
         # Arrange & Act
         provider = HyperliquidInstrumentProvider(
@@ -98,6 +131,24 @@ class TestHyperliquidInstrumentProvider:
 
         # Assert
         mock_http_client.load_instrument_definitions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_load_all_async_passes_trade_xyz_dex(self, mock_http_client):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(filters={"dex": "xyz"}),
+        )
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_http_client.load_instrument_definitions.assert_called_once_with(
+            include_perp=True,
+            include_spot=True,
+            dex="xyz",
+        )
 
     def test_instruments_pyo3_returns_list(self, mock_http_client):
         # Arrange

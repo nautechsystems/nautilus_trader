@@ -5,12 +5,12 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Callable
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from typing import Callable
 from typing import Protocol
-from typing import Sequence
 from typing import cast
 
 from flask import Blueprint
@@ -23,6 +23,9 @@ ERROR_MESSAGE_PATTERN = re.compile(
     r"\b(ERROR|CRITICAL|EXCEPTION|TRACEBACK|FAILED TO START|FAILED WITH RESULT)\b",
     re.IGNORECASE,
 )
+JOURNAL_SHORT_ISO_TIMESTAMP_PATTERN = re.compile(
+    r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))\s+",
+)
 BENIGN_LOG_PATTERNS = (
     re.compile(
         r"Invalid session\s+\S+\s+\(further occurrences of this error will be logged with level INFO\)",
@@ -33,6 +36,18 @@ ACTION_PAST_TENSE = {
     "start": "started",
     "stop": "stopped",
     "restart": "restarted",
+}
+SHELL_LINK_SUFFIXES = (
+    ("Dashboard", ""),
+    ("Signal", "signal"),
+    ("Params", "params"),
+    ("Balances", "balances"),
+    ("Trades", "trades"),
+    ("Alerts", "alerts"),
+)
+SHELL_SURFACE_LABELS = {
+    "tokenmm": "TokenMM",
+    "equities": "Equities",
 }
 
 
@@ -127,16 +142,29 @@ def _extract_active_since(output: str, *, status: str) -> str | None:
 
 
 def _extract_error_info(logs_text: str) -> dict[str, Any]:
-    matches = [
-        line.strip()
-        for line in logs_text.splitlines()
-        if ERROR_MESSAGE_PATTERN.search(line)
-        and not any(pattern.search(line) for pattern in BENIGN_LOG_PATTERNS)
-    ]
-    preview = matches[-1] if matches else None
+    matches: list[tuple[str | None, str]] = []
+    for raw_line in logs_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        timestamp_match = JOURNAL_SHORT_ISO_TIMESTAMP_PATTERN.match(line)
+        timestamp = timestamp_match.group("timestamp") if timestamp_match else None
+        _, separator, message = line.partition(": ")
+        normalized_message = message.strip() if separator else line
+
+        if not ERROR_MESSAGE_PATTERN.search(normalized_message):
+            continue
+        if any(pattern.search(normalized_message) for pattern in BENIGN_LOG_PATTERNS):
+            continue
+
+        matches.append((timestamp, normalized_message))
+
+    preview = matches[-1][1] if matches else None
+    last_seen = matches[-1][0] if matches else None
     return {
         "count": len(matches),
-        "last_seen": None,
+        "last_seen": last_seen,
         "preview": preview,
     }
 
@@ -196,10 +224,12 @@ class PulseControlPlane:
 
         @blueprint.get("/jobs")
         def list_jobs() -> Any:
-            jobs = [self._service_payload(service) for service in self.discover_services()]
+            services = self.discover_services()
+            jobs = [self._service_payload(service) for service in services]
             return jsonify(
                 {
                     "jobs": jobs,
+                    "shell_links": self._shell_links(services),
                     "total": len(jobs),
                     "active": sum(1 for job in jobs if job["status"] == "active"),
                     "failed": sum(1 for job in jobs if job["status"] == "failed"),
@@ -279,6 +309,27 @@ class PulseControlPlane:
 
         app.register_blueprint(blueprint)
 
+    def get_job_status(self, job_id: str) -> str:
+        service = self._service_by_id(job_id)
+        if service is None:
+            return "unknown"
+        result = self._run(
+            ["systemctl", "status", self._unit_name(service.job_id)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return _normalize_status(result.stdout or "")
+
+    def control_job(self, job_id: str, action: str) -> str:
+        if action not in {"start", "stop", "restart"}:
+            raise ValueError(f"Unsupported action: {action}")
+        service = self._service_by_id(job_id)
+        if service is None:
+            return "unknown"
+        self._run_systemctl_action(service.job_id, action)
+        return self.get_job_status(service.job_id)
+
     def _service_by_id(self, job_id: str) -> PulseService | None:
         for service in self.discover_services():
             if service.job_id == job_id:
@@ -287,6 +338,51 @@ class PulseControlPlane:
 
     def _unit_name(self, job_id: str) -> str:
         return f"{self._unit_prefix}@{job_id}"
+
+    def _read_env_registry(self) -> dict[str, dict[str, str]]:
+        registry: dict[str, dict[str, str]] = {}
+        if not self._env_dir.exists():
+            return registry
+
+        for env_path in sorted(self._env_dir.glob("*.env")):
+            try:
+                registry[env_path.stem] = _parse_env_lines(env_path.read_text(encoding="utf-8").splitlines())
+            except OSError:
+                continue
+        return registry
+
+    def _shell_surfaces(self, services: Sequence[PulseService]) -> list[str]:
+        surfaces: list[str] = []
+        seen: set[str] = set()
+
+        for service in services:
+            surface = service.group_key.strip().lower()
+            if surface not in SHELL_SURFACE_LABELS or surface in seen:
+                continue
+            seen.add(surface)
+            surfaces.append(surface)
+
+        env_registry = self._read_env_registry()
+        common_env = env_registry.get("common", {})
+        if common_env.get("EQUITIES_API_BACKEND_URL") and "equities" not in seen:
+            surfaces.append("equities")
+
+        return surfaces
+
+    def _shell_links(self, services: Sequence[PulseService]) -> list[dict[str, str]]:
+        links: list[dict[str, str]] = []
+        for surface in self._shell_surfaces(services):
+            surface_label = SHELL_SURFACE_LABELS[surface]
+            for link_label, suffix in SHELL_LINK_SUFFIXES:
+                path = surface if not suffix else f"{surface}/{suffix}"
+                links.append(
+                    {
+                        "label": f"{surface_label} {link_label}",
+                        "path": path,
+                        "surface": surface,
+                    },
+                )
+        return links
 
     def _service_payload(self, service: PulseService) -> dict[str, Any]:
         result = self._run(
@@ -310,6 +406,8 @@ class PulseControlPlane:
             journal_cmd.extend(["--since", active_since])
         journal_cmd.extend(
             [
+                "-o",
+                "short-iso",
                 "-n",
                 "300",
                 "--no-pager",

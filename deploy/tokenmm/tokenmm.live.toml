@@ -35,11 +35,14 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
+exec_generate_missing_orders = false
 # Shared-account persisted-cache startup guardrail:
-# avoid full-history replay storms on busy venues.
+# live execution-enabled TokenMM nodes must keep reconciliation on and must not
+# filter maker position reports; avoid full-history replay storms on busy venues.
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
+# enforced guardrail for live execution-enabled nodes:
 filter_position_reports = false
 # Optional cache persistence guardrail:
 # cache_flush_on_start = false
@@ -60,12 +63,13 @@ adapter = "binance"
 instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
-account_type = "SPOT"
+account_type = "MARGIN"
 
 [strategy]
 strategy_id = "tokenmm_api"
 order_qty = "1000"
 qty = "1000"
+qty_unit = "base"
 bot_on = false
 max_age_ms = 10000
 des_qty_global = 0.0
@@ -103,7 +107,7 @@ read_count = 200
 start_id = "$"
 
 [api]
-host = "0.0.0.0"
+host = "127.0.0.1"
 port = 5022
 strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
@@ -111,19 +115,25 @@ base_asset = "PLUME"
 quote_asset = "USDT"
 # Phase 1 TokenMM registry contract:
 # - `tokenmm_strategy_ids` values are Flux strategy IDs (`[identity].strategy_id` in per-node configs).
-# - `tokenmm_required_strategy_ids` are used for degraded/missing-required checks in API portfolio views.
-# - Keep this list to the 5 PLUME MakerV3 instances only.
+# - `tokenmm_required_strategy_ids` are the expected contributors to the shared TokenMM portfolio snapshot.
+# - Keep this list to the 7 PLUME MakerV3 instances only.
 tokenmm_strategy_ids = [
   "plumeusdt_bybit_perp_makerv3",
   "plumeusdt_bybit_spot_makerv3",
   "plumeusdt_okx_perp_makerv3",
+  "plumeusdt_binance_perp_makerv3",
   "plumeusdt_binance_spot_makerv3",
+  "plumeusdt_bitget_perp_makerv3",
+  "plumeusdt_bitget_spot_makerv3",
 ]
 tokenmm_required_strategy_ids = [
   "plumeusdt_bybit_perp_makerv3",
   "plumeusdt_bybit_spot_makerv3",
   "plumeusdt_okx_perp_makerv3",
+  "plumeusdt_binance_perp_makerv3",
   "plumeusdt_binance_spot_makerv3",
+  "plumeusdt_bitget_perp_makerv3",
+  "plumeusdt_bitget_spot_makerv3",
 ]
 
 [telemetry_shipper]
@@ -143,11 +153,18 @@ prune_retention_hours = 168
 [portfolio]
 portfolio_id = "tokenmm"
 inventory_stale_after_ms = 3000
+inventory_aggregation_mode = "partial"
+allow_partial_global_risk = true
 # Naming convention:
 # - Flux strategy IDs: <execution_venue>_<product>_plumeusdt_makerv3
 # - Reference pricing stays on Binance spot via the `BINANCE_SPOT` venue alias.
 # - TokenMM strategy file names match Flux strategy IDs exactly.
 # - Production deploy configs use descriptive Nautilus strategy IDs, not generic numeric tags.
+# Shared portfolio policy:
+# - `run_portfolio` owns the canonical shared TokenMM portfolio snapshot.
+# - `inventory_aggregation_mode = "partial"` keeps a usable `global_qty` from fresh contributors and
+#   exposes incompleteness through metadata rather than nulling the quantity.
+# - `allow_partial_global_risk = true` allows strategies to consume partial shared inventory intentionally.
 
 [[contracts]]
 exchange = "bybit"
@@ -160,9 +177,24 @@ symbol = "PLUME/USDT"
 instrument_id = "PLUMEUSDT-SPOT.BYBIT"
 
 [[contracts]]
+exchange = "binance_perp"
+symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
+
+[[contracts]]
 exchange = "binance_spot"
 symbol = "PLUME/USDT"
 instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+
+[[contracts]]
+exchange = "bitget"
+symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT-PERP.BITGET"
+
+[[contracts]]
+exchange = "bitget"
+symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT.BITGET"
 
 [[contracts]]
 exchange = "okx"

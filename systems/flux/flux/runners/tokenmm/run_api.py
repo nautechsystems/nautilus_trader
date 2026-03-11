@@ -5,11 +5,18 @@ from __future__ import annotations
 import argparse
 import os
 import tomllib
+import urllib.request as urllib_request
 from pathlib import Path
 from typing import Any
 from typing import cast
+from urllib.error import HTTPError
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 import redis
+from flask import Response
 from flask import abort
 from flask import redirect
 from flask import request
@@ -27,13 +34,41 @@ from flux.common.config import FluxRedisConfig
 from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
 from flux.pulse import PulseControlPlane
+from flux.runners.shared.logging import configure_python_logging
+from flux.runners.shared.logging import emit_startup_banner
+from flux.runners.shared.strategy_set import build_profile_strategy_maps
+from flux.runners.shared.strategy_set import build_profile_summary
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.runners.shared.surface_proxy import SurfaceProxyDescriptor
+from flux.runners.shared.surface_proxy import resolve_surface_backends
+from flux.runners.shared.surface_proxy import resolve_surface_proxy_descriptor
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
-TOKENMM_ALIAS_BASE_PATH = "/tokenm"
 DEFAULT_PULSE_BASE_PATH = "/pulse"
+DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
+TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
+DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
+TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
+FLUXBOARD_SPA_BASE_PATHS: tuple[tuple[str, str], ...] = (
+    (DEFAULT_TOKENMM_BASE_PATH, "tokenmm"),
+    ("/lp", "lp"),
+)
+SURFACE_PROXY_DESCRIPTORS: tuple[SurfaceProxyDescriptor, ...] = (
+    SurfaceProxyDescriptor(
+        surface="equities",
+        base_paths=("/equities",),
+        backend_env_var="EQUITIES_API_BACKEND_URL",
+        api_prefixes=("/api/v1", "/socket.io"),
+        profile_names=("equities",),
+    ),
+    SurfaceProxyDescriptor(
+        surface="lp",
+        base_paths=("/api/v1/hedgers",),
+        backend_env_var="LP_API_BACKEND_URL",
+    ),
+)
 
 
 def _repo_root() -> Path:
@@ -48,6 +83,19 @@ def _repo_root() -> Path:
 
 DEFAULT_FLUXBOARD_DIST = _repo_root() / "fluxboard" / "dist"
 DEFAULT_PULSE_DIST = _repo_root() / "pulse-ui" / "dist"
+PROXY_TIMEOUT_SECS = 30.0
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "content-length",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+}
 
 
 def _optional_text(value: Any) -> str | None:
@@ -77,6 +125,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
+    parser.add_argument("--log-level", default=None)
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument(
@@ -215,68 +264,24 @@ def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
     return str(args.host or api_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
 
 
-def _coerce_strategy_ids(raw_value: Any, *, field_name: str) -> list[str]:
-    if raw_value is None:
-        return []
-    if not isinstance(raw_value, list):
-        raise ValueError(f"`{field_name}` must be a TOML array of strategy IDs")
-
-    out: list[str] = []
-    seen: set[str] = set()
-    for index, value in enumerate(raw_value):
-        text = _optional_text(value)
-        if not text:
-            continue
-        strategy_id = validate_identifier_part(text, f"{field_name}[{index}]")
-        if strategy_id in seen:
-            continue
-        seen.add(strategy_id)
-        out.append(strategy_id)
-    return out
-
-
 def _build_profile_strategy_maps(
     api_cfg: dict[str, Any],
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    strategy_ids = _coerce_strategy_ids(
-        api_cfg.get("tokenmm_strategy_ids"),
-        field_name="api.tokenmm_strategy_ids",
+    return build_profile_strategy_maps(
+        api_cfg,
+        descriptor=TOKENMM_DESCRIPTOR,
+        validate_identifier=validate_identifier_part,
     )
-    required_ids = _coerce_strategy_ids(
-        api_cfg.get("tokenmm_required_strategy_ids"),
-        field_name="api.tokenmm_required_strategy_ids",
-    )
-
-    if not strategy_ids:
-        raise ValueError("`api.tokenmm_strategy_ids` must be a non-empty TOML array")
-
-    if required_ids:
-        strategy_id_set = set(strategy_ids)
-        unknown = sorted(strategy_id for strategy_id in required_ids if strategy_id not in strategy_id_set)
-        if unknown:
-            raise ValueError(
-                "`api.tokenmm_required_strategy_ids` must be a subset of `api.tokenmm_strategy_ids`; "
-                f"unknown={unknown}",
-            )
-
-    profile_strategy_map: dict[str, list[str]] = {}
-    profile_required_strategy_map: dict[str, list[str]] = {}
-    profile_strategy_map["tokenmm"] = strategy_ids
-    if required_ids:
-        profile_required_strategy_map["tokenmm"] = required_ids
-    return profile_strategy_map, profile_required_strategy_map
 
 
 def _tokenmm_profile_summary(
     profile_strategy_map: dict[str, list[str]],
     profile_required_strategy_map: dict[str, list[str]],
 ) -> str:
-    strategy_ids = list(profile_strategy_map.get("tokenmm", []))
-    required_ids = list(profile_required_strategy_map.get("tokenmm", strategy_ids))
-    return (
-        f"tokenmm_strategy_count={len(strategy_ids)} "
-        f"tokenmm_strategy_ids={strategy_ids} "
-        f"tokenmm_required_strategy_ids={required_ids}"
+    return build_profile_summary(
+        TOKENMM_DESCRIPTOR,
+        profile_strategy_map,
+        profile_required_strategy_map,
     )
 
 
@@ -285,6 +290,77 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_surface_proxy_backends() -> dict[str, str]:
+    return resolve_surface_backends(SURFACE_PROXY_DESCRIPTORS)
+
+
+def _proxy_request_to_backend(backend_url: str) -> Response:
+    incoming = urlsplit(request.url)
+    backend = urlsplit(backend_url)
+    query = urlencode(list(request.args.items(multi=True)), doseq=True)
+    target_url = urlunsplit(
+        (
+            backend.scheme,
+            backend.netloc,
+            request.path,
+            query,
+            "",
+        ),
+    )
+    body = request.get_data(cache=True)
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in HOP_BY_HOP_HEADERS
+    }
+    headers["X-Forwarded-Proto"] = incoming.scheme
+    headers["X-Forwarded-Host"] = incoming.netloc
+    headers["X-Forwarded-For"] = request.remote_addr or "127.0.0.1"
+    proxy_request = urllib_request.Request(
+        target_url,
+        data=body if body else None,
+        headers=headers,
+        method=request.method,
+    )
+    try:
+        with urllib_request.urlopen(proxy_request, timeout=PROXY_TIMEOUT_SECS) as upstream:
+            response = Response(upstream.read(), status=upstream.status)
+            for key, value in upstream.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+            return response
+    except HTTPError as exc:
+        body = exc.read() if exc.fp is not None else b"Bad gateway"
+        response = Response(body, status=exc.code)
+        if exc.headers is not None:
+            for key, value in exc.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+        return response
+    except URLError:
+        return Response("Bad gateway", status=502, content_type="text/plain")
+
+
+def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) -> None:
+    @app.before_request
+    def _proxy_surface_requests() -> Response | None:
+        descriptor = resolve_surface_proxy_descriptor(
+            path=request.path,
+            profile=_optional_text(request.args.get("profile")),
+            descriptors=SURFACE_PROXY_DESCRIPTORS,
+        )
+        if descriptor is None:
+            return None
+
+        backend_url = surface_backends.get(descriptor.surface)
+        if not backend_url:
+            return None
+
+        return _proxy_request_to_backend(backend_url)
 
 
 def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
@@ -311,6 +387,10 @@ def _resolve_pulse_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) 
     return DEFAULT_PULSE_DIST
 
 
+def _should_enable_pulse_routes(args: argparse.Namespace, api_cfg: dict[str, Any]) -> bool:
+    return bool(args.serve_pulse or api_cfg.get("enable_pulse_routes", False))
+
+
 def _is_within(parent: Path, candidate: Path) -> bool:
     try:
         candidate.relative_to(parent)
@@ -319,14 +399,47 @@ def _is_within(parent: Path, candidate: Path) -> bool:
     return True
 
 
+def _register_fluxboard_spa_base_path(
+    app: Any,
+    *,
+    dist_root: Path,
+    base_path: str,
+    endpoint_prefix: str,
+) -> None:
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    def _serve_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        if normalized.startswith("assets/"):
+            abort(404)
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        return _serve_index()
+
+    app.add_url_rule(base_path, endpoint=f"{endpoint_prefix}_index", view_func=_serve_index, methods=["GET"])
+    app.add_url_rule(f"{base_path}/", endpoint=f"{endpoint_prefix}_index_slash", view_func=_serve_index, methods=["GET"])
+    app.add_url_rule(
+        f"{base_path}/<path:subpath>",
+        endpoint=f"{endpoint_prefix}_asset_or_spa",
+        view_func=_serve_asset_or_spa,
+        methods=["GET"],
+    )
+
+
 def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
 
-    def _serve_index() -> Any:
-        return send_from_directory(str(dist_root), "index.html")
+    def _serve_shared_static(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root), normalized)
 
     def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
         target = DEFAULT_TOKENMM_BASE_PATH
@@ -346,28 +459,17 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
     def _tokenm_alias_subpath(subpath: str) -> Any:
         return _redirect_tokenm_alias(subpath)
 
-    @app.get(DEFAULT_TOKENMM_BASE_PATH)
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/")
-    def _tokenmm_index() -> Any:
-        return _serve_index()
+    @app.get(f"{DEFAULT_FLUXBOARD_STATIC_BASE_PATH}/<path:subpath>")
+    def _fluxboard_shared_static(subpath: str) -> Any:
+        return _serve_shared_static(subpath)
 
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/assets/<path:asset_path>")
-    def _tokenmm_assets(asset_path: str) -> Any:
-        normalized = asset_path.strip().lstrip("/")
-        candidate = (dist_root / "assets" / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root / "assets"), normalized)
-
-    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/<path:subpath>")
-    def _tokenmm_asset_or_spa(subpath: str) -> Any:
-        normalized = subpath.strip().lstrip("/")
-        candidate = (dist_root / normalized).resolve()
-        if candidate.is_file() and _is_within(dist_root, candidate):
-            return send_from_directory(str(dist_root), normalized)
-        if normalized.startswith("assets/"):
-            abort(404)
-        return _serve_index()
+    for base_path, endpoint_prefix in FLUXBOARD_SPA_BASE_PATHS:
+        _register_fluxboard_spa_base_path(
+            app,
+            dist_root=dist_root,
+            base_path=base_path,
+            endpoint_prefix=f"fluxboard_{endpoint_prefix}",
+        )
 
 
 def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
@@ -434,6 +536,11 @@ def main() -> None:
     mode = _resolve_mode(config, args)
 
     api_cfg = _table(config, "api")
+    configure_python_logging(
+        cli_level=args.log_level,
+        config_level=api_cfg.get("log_level", "INFO"),
+        service_env_var="FLUX_API_LOG_LEVEL",
+    )
     contracts = _build_contract_catalog(config)
     flux_config = _build_flux_config(
         config,
@@ -443,15 +550,17 @@ def main() -> None:
 
     metadata = StrategyMetadata(
         strategy_class=str(api_cfg.get("strategy_class", "maker_v3")),
-        strategy_groups=str(api_cfg.get("strategy_groups", "tokenmm")),
+        strategy_groups=str(api_cfg.get("strategy_groups", TOKENMM_DESCRIPTOR.profile)),
         base_asset=str(api_cfg.get("base_asset", "BASE")),
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
-    print(
-        "[tokenmm-run-api] "
-        + _tokenmm_profile_summary(profile_strategy_map, profile_required_strategy_map),
-        flush=True,
+    emit_startup_banner(
+        prefix="tokenmm-run-api",
+        message=_tokenmm_profile_summary(profile_strategy_map, profile_required_strategy_map),
     )
 
     redis_client = redis.Redis(
@@ -474,14 +583,17 @@ def main() -> None:
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
     )
-    PulseControlPlane().register_routes(app)
+    if _should_enable_pulse_routes(args, api_cfg):
+        PulseControlPlane().register_routes(app)
+    surface_backends = _resolve_surface_proxy_backends()
+    if surface_backends:
+        _attach_profile_router_proxy(app, surface_backends=surface_backends)
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
         _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
-    serve_pulse = args.serve_pulse or _env_flag("PULSE_SERVE_DIST", default=False)
-    if serve_pulse:
+    if args.serve_pulse:
         dist_path = _resolve_pulse_dist_path(args, api_cfg)
         _attach_pulse_routes(app, dist_dir=dist_path)
 

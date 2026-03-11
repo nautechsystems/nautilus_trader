@@ -2,6 +2,11 @@ import pytest
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
+from nautilus_trader.core import nautilus_pyo3
+
+
+TEST_PRIVATE_KEY = "0x" + ("11" * 32)
+TEST_VAULT_ADDRESS = "0x" + ("22" * 20)
 
 
 class TestHyperliquidDataClientConfig:
@@ -46,6 +51,13 @@ class TestHyperliquidDataClientConfig:
         # Assert
         assert config.http_proxy_url == "http://proxy:8080"
 
+    def test_trade_xyz_dex_config(self):
+        # Arrange & Act
+        config = HyperliquidDataClientConfig(dex="xyz")
+
+        # Assert
+        assert config.dex == "xyz"
+
 
 class TestHyperliquidExecClientConfig:
     def test_default_config(self):
@@ -54,7 +66,9 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.private_key is None
+        assert config.account_address is None
         assert config.vault_address is None
+        assert config.dex is None
         assert config.testnet is False
         assert config.http_timeout_secs == 10
 
@@ -75,6 +89,17 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.vault_address == "0xabcdef1234567890abcdef1234567890abcdef12"
+
+    def test_with_account_address_and_dex(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(
+            account_address="0xabcdef1234567890abcdef1234567890abcdef12",
+            dex="xyz",
+        )
+
+        # Assert
+        assert config.account_address == "0xabcdef1234567890abcdef1234567890abcdef12"
+        assert config.dex == "xyz"
 
     def test_testnet_config(self):
         # Arrange & Act
@@ -104,6 +129,28 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.base_url_ws == "wss://custom.ws.com"
+
+    def test_pyo3_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        config = nautilus_pyo3.HyperliquidExecClientConfig(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            None,
+            True,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+
+        # Assert
+        config_repr = repr(config)
+        assert TEST_PRIVATE_KEY in config_repr
+        assert TEST_VAULT_ADDRESS in config_repr
+        assert "account_address: None" in config_repr
+        assert "is_testnet: true" in config_repr
+        assert "http_timeout_secs: 10" in config_repr
 
 
 class TestConfigValidation:

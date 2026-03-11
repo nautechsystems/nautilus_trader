@@ -1,0 +1,23 @@
+{
+  "arg": {
+    "instType": "USDT-FUTURES",
+    "channel": "trade",
+    "instId": "BTCUSDT"
+  },
+  "data": [
+    {
+      "tradeId": "123456",
+      "price": "100.25",
+      "size": "0.40",
+      "side": "buy",
+      "ts": "1700000000200"
+    },
+    {
+      "tradeId": "123457",
+      "price": "100.20",
+      "size": "0.10",
+      "side": "sell",
+      "ts": "1700000000300"
+    }
+  ]
+}

@@ -16,10 +16,15 @@ This repository is organized by ownership boundary, not by language alone.
 
 - `engine/` owns the `nautilus_trader` runtime identity.
 - `systems/flux/` owns Flux strategy/runtime code and Flux-specific documentation.
-- `apps/fluxboard/` and `apps/pulse-ui/` own the operator UI surfaces.
+- `apps/fluxboard/` and `apps/pulse-ui/` own the operator UI surfaces and
+  documentation entrypoints.
 - `ops/` owns deployment wiring such as systemd units, env files, and operational shell scripts.
 - `tooling/` owns developer, CI, and release automation.
 - `research/` owns non-production examples and exploratory artifacts.
+
+Today `apps/fluxboard` and `apps/pulse-ui` resolve to the existing top-level
+`fluxboard/` and `pulse-ui/` trees. Prefer the `apps/*` paths when linking docs
+or wiring automation, and treat the repo-root app paths as mirrored worktrees.
 
 ## Namespace split
 
@@ -37,15 +42,16 @@ Use these rules before adding a file or directory:
 - Put deploy/run/ops artifacts in `ops/`.
 - Put developer, CI, and release automation in `tooling/`.
 - Put notebooks, prototypes, benchmarks, and ad hoc analysis in `research/`.
+- Use `ops/scripts/` for operational scripts and `tooling/{dev,ci,release}/` for helper scripts; `scripts/` exists only as a compatibility layer.
 - Do not create new top-level domains without updating `docs/repo/`.
 
 ## Recommended next cleanup steps
 
 The current migration preserves compatibility paths. The next structure improvements should be:
 
-1. Retire the legacy `scripts/` compatibility layer after internal callers move to canonical `tooling/` and `ops/` paths.
+1. Retire the legacy `scripts/` compatibility layer after the remaining compatibility callers are removed.
 2. Introduce a `contracts/` domain if API payloads, socket schemas, or shared config schemas become reused across `systems/` and `apps/`.
-3. Move additional app-specific docs beside the owning app once remaining links are updated.
+3. Collapse the mirrored repo-root app paths once all callers consistently use `apps/*`.
 4. Retire compatibility import paths after consumers stop relying on legacy module names.
 
 ## Anti-patterns

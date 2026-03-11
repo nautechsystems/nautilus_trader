@@ -15,6 +15,7 @@ import { useEffect, useState, useMemo, useCallback, memo, useRef, useLayoutEffec
 import { Check, RotateCcw, Power, Copy } from 'lucide-react';
 import type {
   DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent
 } from 'react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
@@ -177,6 +178,26 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
+type SchemaCacheKey = 'default' | 'prefer_key_label';
+
+function resolveSchemaCacheKey(preferKeyLabel: boolean): SchemaCacheKey {
+  return preferKeyLabel ? 'prefer_key_label' : 'default';
+}
+
+function resolveSchemaProfile(
+  rows: Array<Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>>,
+  fallbackProfile: ParamsProfileId,
+): ParamsProfileId {
+  const availableProfiles = listParamsProfiles().filter((profile) =>
+    rows.some((row) => deriveStrategyProfile(row) === profile)
+  );
+  return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
+}
+
+function shouldPreferKeyLabel(profile: ParamsProfileId): boolean {
+  return profile === 'maker_v3' || profile === 'maker_v4';
+}
+
 type DragPosition = 'before' | 'after';
 type DragState = 'idle' | 'dragging' | 'over-before' | 'over-after';
 type BulkChangeOp = {
@@ -239,6 +260,7 @@ type StrategyRowProps = {
   onParamBlur: (strategyId: string, paramKey: string) => void;
   onParamFocus: (strategyId: string, paramKey: string, rowIndex: number, columnIndex: number) => void;
   onParamBlurForFocus: () => void;
+  onTradingFocus: (strategyId: string, rowIndex: number) => void;
   onSave: (strategyId: string) => void;
   onRevert: (strategyId: string) => void;
   onConflictKeepMine: (strategyId: string) => void;
@@ -329,6 +351,7 @@ const MemoizedStrategyRow = memo(function StrategyRow({
   onParamBlur,
   onParamFocus,
   onParamBlurForFocus,
+  onTradingFocus,
   onSave,
   onRevert,
   onConflictKeepMine,
@@ -576,6 +599,7 @@ const MemoizedStrategyRow = memo(function StrategyRow({
             size="sm"
             checked={tradingEnabled}
             onCheckedChange={handleTradingChange}
+            onFocus={() => onTradingFocus(strategy.strategy_id, idx)}
             disabled={isSaving}
             aria-label={`Toggle trading for ${strategy.strategy_id}`}
             data-testid={`trading-toggle-${strategy.strategy_id}`}
@@ -937,6 +961,7 @@ export default function Params({
   const selectionRef = useRef(selectedStrategies);
   const anchorIndexRef = useRef<number | null>(null);
   const dragSelectingRef = useRef(false);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const headerRowRef = useRef<HTMLTableRowElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -946,7 +971,7 @@ export default function Params({
   const remoteUpdateTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const originalValuesRef = useRef<Map<string, Record<string, string>>>(new Map());
   const paramValuesRef = useRef(paramValues);
-  const schemaCacheRef = useRef<ParamSchema | null>(null);
+  const schemaCacheRef = useRef<Partial<Record<SchemaCacheKey, ParamSchema>>>({});
   const conflictRowsRef = useRef(conflictRows);
 
   // Sync CSS variable with actual header height to keep bulk row flush under the header.
@@ -1039,7 +1064,7 @@ export default function Params({
   }, [diffStrategyId, conflictRows]);
 
   const columnOrder = useMemo(() => {
-    const forceCanonicalOrder = activeProfile === 'maker_v3';
+    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
     if (forceCanonicalOrder) {
       return defaultColumnOrder;
     }
@@ -1056,7 +1081,7 @@ export default function Params({
 
   useEffect(() => {
     if (!schema) return;
-    const forceCanonicalOrder = activeProfile === 'maker_v3';
+    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
     if (forceCanonicalOrder) {
       const persistedOrder = Array.isArray(columnPrefs.order) ? columnPrefs.order : [];
       if (!arraysShallowEqual(persistedOrder, defaultColumnOrder)) {
@@ -1131,36 +1156,26 @@ export default function Params({
       const prevOriginals = originalValuesRef.current;
       const prevParamValues = paramValuesRef.current;
       let schemaData: ParamSchema;
-      let paramsData: import('./types').ParamsResponse[];
+      const paramsResp = await api.getParams();
+      if (!Array.isArray(paramsResp)) {
+        throw new Error('Invalid params response: expected array');
+      }
+      const paramsData = paramsResp;
+      const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile);
+      const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
+      const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
 
-      if (!schemaCacheRef.current) {
-        const [schemaResp, paramsResp] = await Promise.all([
-          api.getParamSchema(),
-          api.getParams()
-        ]);
-
+      schemaData = schemaCacheRef.current[schemaCacheKey] ?? null;
+      if (!schemaData) {
+        const schemaResp = await api.getParamSchema({ preferKeyLabel });
         if (!schemaResp || !schemaResp.params) {
           throw new Error('Invalid schema response: missing params');
         }
-        if (!Array.isArray(paramsResp)) {
-          throw new Error('Invalid params response: expected array');
-        }
-
-        schemaCacheRef.current = schemaResp;
+        schemaCacheRef.current[schemaCacheKey] = schemaResp;
         schemaData = schemaResp;
-        paramsData = paramsResp;
-      } else {
-        schemaData = schemaCacheRef.current;
-        const paramsResp = await api.getParams();
-        if (!Array.isArray(paramsResp)) {
-          throw new Error('Invalid params response: expected array');
-        }
-        paramsData = paramsResp;
       }
 
-      if (!schema) {
-        setSchema(schemaData);
-      }
+      setSchema(schemaData);
 
       // Transform params data with validation
       const strategyRows: StrategyRow[] = paramsData
@@ -1328,7 +1343,7 @@ export default function Params({
         console.warn('[params] Autorefresh failed, will retry on next interval');
       }
     }
-  }, [initialLoadDone, schema, markLastUpdate]); // dirtyParams removed - use dirtyRef instead
+  }, [activeProfile, initialLoadDone, markLastUpdate]); // dirtyParams removed - use dirtyRef instead
 
   // Initial load on component mount
   useEffect(() => {
@@ -1464,6 +1479,17 @@ export default function Params({
     setHasInputFocus(false);
     setLastFocusedCell(null);
   }, [setLastFocusedCell]);
+
+  const handleTradingFocus = useCallback((strategyId: string, rowIndex: number) => {
+    const currentSelection = selectionRef.current;
+    if (currentSelection.length === 0 || !currentSelection.includes(strategyId)) {
+      const nextSelection = [strategyId];
+      selectionRef.current = nextSelection;
+      setSelectedStrategies(nextSelection);
+    }
+    anchorIndexRef.current = rowIndex;
+    setAnchorStrategyId(strategyId);
+  }, [setSelectedStrategies, setAnchorStrategyId]);
 
   const applyRemoteKeys = useCallback((strategyId: string, keys: string[]) => {
     if (!strategyId || keys.length === 0) return;
@@ -1956,6 +1982,16 @@ export default function Params({
     }
   }, [selectedStrategies, dirtyParams, ensureNoValidationErrors, collectBulkUpdates, performBulkSave, clearSelection]);
 
+  const handleSurfaceKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
+    const modifier = isMac ? event.metaKey : event.ctrlKey;
+    if (!modifier || event.shiftKey || event.altKey || event.key !== 'Enter') return;
+    if (selectionRef.current.length === 0) return;
+
+    event.preventDefault();
+    void saveAllSelected();
+  }, [saveAllSelected]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -2441,23 +2477,6 @@ export default function Params({
   }, [familyScopedStrategies, selectedStrategies, setSelectedStrategies, clearSelection]);
 
   useEffect(() => {
-    if (visibleStrategies.length !== 1) {
-      return;
-    }
-    const onlyStrategyId = visibleStrategies[0]?.strategy_id;
-    if (!onlyStrategyId) {
-      return;
-    }
-    if (selectedStrategies.length === 1 && selectedStrategies[0] === onlyStrategyId) {
-      return;
-    }
-    selectionRef.current = [onlyStrategyId];
-    setSelectedStrategies([onlyStrategyId]);
-    setAnchorStrategyId(onlyStrategyId);
-    anchorIndexRef.current = 0;
-  }, [visibleStrategies, selectedStrategies, setSelectedStrategies, setAnchorStrategyId]);
-
-  useEffect(() => {
     const handleMouseUp = () => {
       if (dragSelectingRef.current) {
         dragSelectingRef.current = false;
@@ -2639,6 +2658,49 @@ export default function Params({
     ),
     [strategies]
   );
+  const availableProfiles = useMemo(
+    () => profileIds.filter((profile) => familyCounts[profile] > 0),
+    [familyCounts, profileIds]
+  );
+  const lockedSingleProfile = availableProfiles.length === 1 ? availableProfiles[0] : null;
+
+  useEffect(() => {
+    if (!lockedSingleProfile) return;
+    if (activeProfile === lockedSingleProfile) return;
+    setActiveProfile(lockedSingleProfile);
+  }, [activeProfile, lockedSingleProfile, setActiveProfile]);
+
+  useEffect(() => {
+    if (!initialLoadDone) return;
+
+    const effectiveProfile = lockedSingleProfile ?? activeProfile;
+    const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
+    const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
+    const cachedSchema = schemaCacheRef.current[schemaCacheKey];
+
+    if (cachedSchema) {
+      if (schema !== cachedSchema) {
+        setSchema(cachedSchema);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    api.getParamSchema({ preferKeyLabel })
+      .then((schemaResp) => {
+        if (cancelled || !schemaResp?.params) return;
+        schemaCacheRef.current[schemaCacheKey] = schemaResp;
+        setSchema(schemaResp);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to refresh params schema view', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile, initialLoadDone, lockedSingleProfile, schema]);
 
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];
@@ -2664,6 +2726,7 @@ export default function Params({
           <select
             value={activeProfile}
             onChange={(event) => setActiveProfile(event.target.value as ParamsProfileId)}
+            disabled={Boolean(lockedSingleProfile)}
             className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
             style={{ borderColor: colors.border.DEFAULT }}
             aria-label="Params family"
@@ -2677,7 +2740,7 @@ export default function Params({
         </label>
       </div>
     ),
-    [activeProfile, familyCounts, profileIds, setActiveProfile]
+    [activeProfile, familyCounts, lockedSingleProfile, profileIds, setActiveProfile]
   );
 
   const panelHeaderActions = useMemo(() => {
@@ -2712,6 +2775,34 @@ export default function Params({
         >
           Refresh
         </Button>
+        {selectedCount > 0 && (
+          <div
+            className="flex items-center gap-2 rounded-full px-2 py-1"
+            style={{
+              backgroundColor: `${colors.semantic.success.DEFAULT}1a`,
+              border: `1px solid ${colors.semantic.success.DEFAULT}55`,
+            }}
+          >
+            <span className="text-[11px] font-medium" style={{ color: colors.semantic.success.light }}>
+              {`${selectedCount} ${selectedCount === 1 ? 'strategy' : 'strategies'} selected`}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={handleClearSelectionToolbar}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="success"
+              size="xs"
+              onClick={saveAllSelected}
+              disabled={isSavingAll || selectedDirtyCount === 0}
+            >
+              Save Selected
+            </Button>
+          </div>
+        )}
         <Button
           variant={showAdvanced ? 'default' : 'secondary'}
           size="xs"
@@ -2768,7 +2859,33 @@ export default function Params({
         )}
       </div>
     );
-  }, [showHeader, handleSaveAll, hasDirtyParams, isSavingAll, hasErrors, dirtyCount, handleRevertAll, handleRefresh, loading, refreshing, handleToggleAdvanced, showAdvanced, customizeColumns, handleResetColumns, canResetColumns, handleClearSort, isSortActive, auto, autoRefreshActive, autoPauseLabel, setAuto]);
+  }, [
+    showHeader,
+    handleSaveAll,
+    hasDirtyParams,
+    isSavingAll,
+    hasErrors,
+    dirtyCount,
+    handleRevertAll,
+    handleRefresh,
+    loading,
+    refreshing,
+    selectedCount,
+    selectedDirtyCount,
+    handleClearSelectionToolbar,
+    saveAllSelected,
+    handleToggleAdvanced,
+    showAdvanced,
+    customizeColumns,
+    handleResetColumns,
+    canResetColumns,
+    handleClearSort,
+    isSortActive,
+    auto,
+    autoRefreshActive,
+    autoPauseLabel,
+    setAuto,
+  ]);
 
   const panelHeaderSlots = usePanelHeaderSlots();
 
@@ -2828,7 +2945,12 @@ export default function Params({
   }
 
   const mobileContent = (
-    <div className="flex flex-col h-full" style={{ backgroundColor: colors.bg.base }}>
+    <div
+      ref={surfaceRef}
+      className="flex flex-col h-full"
+      style={{ backgroundColor: colors.bg.base }}
+      onKeyDownCapture={handleSurfaceKeyDownCapture}
+    >
       <header
         className="sticky top-0 z-20"
         style={{
@@ -3049,7 +3171,7 @@ export default function Params({
   );
 
   const desktopContent = (
-    <div className="flex flex-col h-full">
+    <div ref={surfaceRef} className="flex flex-col h-full" onKeyDownCapture={handleSurfaceKeyDownCapture}>
       {showHeader && (
         <ParamsHeader
           hasDirtyParams={hasDirtyParams}
@@ -3074,6 +3196,11 @@ export default function Params({
           autoRefreshIntervalSec={INTERVALS.PARAMS_POLL / 1000}
           lastFetchedAt={lastUpdate}
           isStale={lastUpdate ? Date.now() - lastUpdate > STALE_THRESHOLDS.FAST : false}
+          selectedCount={selectedCount}
+          selectedDirtyCount={selectedDirtyCount}
+          isSaveSelectedInProgress={isSavingAll}
+          onClearSelection={handleClearSelectionToolbar}
+          onSaveSelected={saveAllSelected}
           loading={loading}
           refreshing={refreshing}
           onRefresh={handleRefresh}
@@ -3082,63 +3209,6 @@ export default function Params({
       <span className="sr-only" aria-live="polite">
         {selectionAnnouncement}
       </span>
-
-      {/* Bulk Actions Toolbar (appears when strategies selected) */}
-      {selectedCount > 0 && (
-        <div
-          className="sticky top-12 z-20 flex items-center gap-3 px-4 py-2 border-b"
-          style={{
-            backgroundColor: colors.bg.surface,
-            borderBottomColor: colors.border.DEFAULT,
-          }}
-        >
-          <div
-            className="flex items-center gap-2 rounded-full px-3 py-1"
-            style={{
-              backgroundColor: `${colors.semantic.success.DEFAULT}1a`,
-              border: `1px solid ${colors.semantic.success.DEFAULT}55`,
-            }}
-            title="Shift-click to select range; Ctrl/Cmd-click to toggle rows"
-          >
-            <span style={{ fontSize: typography.fontSize.sm, color: colors.semantic.success.light, fontWeight: typography.fontWeight.semibold }}>
-              {selectedCount} selected
-            </span>
-            <button
-              type="button"
-              onClick={handleClearSelectionToolbar}
-              className="text-[12px] font-semibold hover:underline"
-              style={{
-                color: colors.semantic.success.light,
-                textUnderlineOffset: '2px',
-              }}
-            >
-              Clear
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={saveAllSelected}
-            disabled={isSavingAll || selectedDirtyCount === 0}
-            className="px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              fontSize: typography.fontSize.sm,
-              color: colors.bg.base,
-              backgroundColor: colors.semantic.success.DEFAULT,
-            }}
-          >
-            Save Selected
-          </button>
-
-          <div className="flex-1" />
-
-          {dirtyCount > 0 && (
-            <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>
-              {dirtyCount} unsaved changes
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Filter Controls - using reusable TableFilter component */}
       <TableFilter
@@ -3461,6 +3531,7 @@ export default function Params({
                       onParamBlur={handleParamBlur}
                       onParamFocus={handleParamFocus}
                       onParamBlurForFocus={handleParamBlurForFocus}
+                      onTradingFocus={handleTradingFocus}
                       onSave={saveStrategy}
                       onRevert={handleRevertRow}
                       onConflictKeepMine={handleKeepMine}

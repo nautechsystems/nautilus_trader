@@ -42,6 +42,7 @@ import { computeStrategyAge } from '@/utils/age';
 import { buildLegDeltaPatch, getLegForSlot, getOrderedLegEntries, resolveRoleSlot } from '@/utils/signalLegs';
 import { formatAbsoluteTime, formatLocal } from '@/utils/time';
 import { useVisibleNowMs } from './useVisibleNowMs';
+import MakerV4SignalTable from './MakerV4SignalTable';
 import type {
   BalanceSummary,
   MakerRoleMap,
@@ -61,17 +62,18 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { colors, spacing, typography, STALE_THRESHOLDS } from '@/lib/tokens';
 import { cn } from '@/lib/utils';
 import { useMobileLayout } from '@/hooks/useMobileLayout';
+import { deriveStrategyProfile } from '@/config/paramsProfiles';
 import { resolvePathProfile, type PathProfile } from '@/config/uiProfiles';
 import { EMPTY_SNAPSHOT_HOLD_MS, evaluateEmptySnapshotPolicy } from './emptySnapshotPolicy';
 import {
   deriveStrategyStatus,
   describeTradingStatus,
-  parseTradingEnabled,
   statusToFilterValue,
   TRADING_FILTER_VALUES,
   type TradingFilterValue,
   type TradingFlagInput,
 } from '@/utils/strategyStatus';
+import { resolveSignalRunning } from '@/utils/signalRunState';
 
 // =============================================================================
 // TYPES
@@ -97,14 +99,24 @@ type EnrichedRow = SignalStrategy & {
   exchange: string;  // Combined exchanges from legs
   coin: string;  // Combined coins from legs
   market_type: string;
+  asset: string;
+  maker_venue: string;
+  maker_market: string;
+  reference_venue: string;
+  reference_market: string;
+  strategy_class: string;
   // Flattened classification metadata for filtering/grouping
   class?: string;
   venue_prefix?: string;
   chain?: string;
 };
 
-type SignalStrategyFamily = 'maker_v3' | 'maker_v2' | 'taker';
+type SignalStrategyFamily = 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
 type SignalFamilyScope = 'all' | SignalStrategyFamily;
+type SignalLegResolutionRow = Pick<
+  SignalStrategy,
+  'legs' | 'legs_order' | 'maker_role_map' | 'maker_v2' | 'maker_v3'
+>;
 
 function resolveQuoteSnapshot(row: Pick<SignalStrategy, 'maker_v2' | 'maker_v3'>): MakerV2QuoteSnapshot | undefined {
   return row.maker_v2?.quote_snapshot ?? row.maker_v3?.quote_snapshot;
@@ -122,7 +134,7 @@ const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
 
 type BalanceStatus = 'OK' | 'WARN' | 'FAIL' | 'UNKNOWN';
 
-const SIGNAL_FILTERS: ColumnFilter[] = [
+const GENERIC_SIGNAL_FILTERS: ColumnFilter[] = [
   { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
   { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
@@ -137,6 +149,8 @@ const SIGNAL_FILTERS: ColumnFilter[] = [
   },
   { key: 'chain', label: 'Chain', type: 'select', options: ['plume', 'sei', 'bnb', 'tron', 'equities'] },
 ];
+
+const MAKER_SUITE_SIGNAL_PROFILES = new Set<PathProfile>(['tokenmm', 'equities']);
 
 const TRADING_SORT_ORDER: Record<TradingFilterValue, number> = {
   Enabled: 2,
@@ -199,16 +213,30 @@ function parseStrategyGroups(rawGroups: unknown): Set<PathProfile> {
 }
 
 const MAKER_V3_CLASSES = new Set(['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3']);
+const MAKER_V4_CLASSES = new Set(['maker_v4', 'equity_perp_maker_v4']);
 const MAKER_V2_CLASSES = new Set(['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker']);
 
 function deriveStrategyFamily(strategy: Pick<SignalStrategy, 'strategy_family' | 'meta'>): SignalStrategyFamily {
   const explicit = String(strategy.strategy_family || '').trim().toLowerCase();
-  if (explicit === 'maker_v3' || explicit === 'maker_v2' || explicit === 'taker') {
+  if (explicit === 'maker_v4' || explicit === 'maker_v3' || explicit === 'maker_v2' || explicit === 'taker') {
     return explicit;
   }
+  const metaFamily = String(strategy.meta?.strategy_family || '').trim().toLowerCase();
+  const metaVersion = String(strategy.meta?.strategy_version || '').trim().toLowerCase();
+  if (metaFamily === 'maker_v4' || metaFamily === 'maker_v3' || metaFamily === 'maker_v2' || metaFamily === 'taker') {
+    return metaFamily;
+  }
+  if (metaFamily === 'maker' && metaVersion === 'v4') return 'maker_v4';
+  if (metaFamily === 'maker' && metaVersion === 'v3') return 'maker_v3';
+  if (metaFamily === 'maker' && metaVersion === 'v2') return 'maker_v2';
   const cls = String(strategy.meta?.class || '').trim().toLowerCase();
+  if (MAKER_V4_CLASSES.has(cls)) return 'maker_v4';
   if (MAKER_V3_CLASSES.has(cls)) return 'maker_v3';
   if (MAKER_V2_CLASSES.has(cls)) return 'maker_v2';
+  const profile = deriveStrategyProfile({ meta: strategy.meta });
+  if (profile === 'maker_v4') return 'maker_v4';
+  if (profile === 'maker_v3') return 'maker_v3';
+  if (profile === 'maker_v2') return 'maker_v2';
   return 'taker';
 }
 
@@ -230,6 +258,10 @@ function defaultFamilyScopeForProfile(profile: PathProfile): SignalFamilyScope {
   return profile === 'tokenmm' ? 'maker_v3' : 'all';
 }
 
+function isMakerSuiteSignalProfile(profile: PathProfile): boolean {
+  return MAKER_SUITE_SIGNAL_PROFILES.has(profile);
+}
+
 function getLegDisplayLabel(leg: SignalLeg | null | undefined): string {
   if (!leg) return 'N/A';
   return String(
@@ -244,6 +276,84 @@ function getLegUnderlying(leg: SignalLeg | null | undefined): string {
 
 function getLegMarketType(leg: SignalLeg | null | undefined): string {
   return String(leg?.product_type ?? leg?.market_type ?? '').trim().toLowerCase();
+}
+
+function normalizeFacetValue(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeAssetFacet(value: unknown): string {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function uniqueFilterOptions(values: Array<string | null | undefined>): string[] {
+  const normalized = values
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function legMatchesSnapshotHint(
+  leg: SignalLeg | null | undefined,
+  {
+    exchange,
+    symbol,
+  }: {
+    exchange: string;
+    symbol: string;
+  },
+): boolean {
+  if (!leg) return false;
+  const legSymbol = (leg as SignalLeg & { symbol?: string }).symbol;
+  const legExchange = normalizeFacetValue(leg.exchange);
+  if (exchange && legExchange !== exchange) return false;
+  if (!symbol) return true;
+  const candidates = [
+    legSymbol,
+    leg.instrument_id,
+    leg.contract_id?.split(':').slice(1).join(':'),
+    leg.raw_symbol,
+    leg.pair?.replace('/', ''),
+  ]
+    .map((candidate) => normalizeSnapshotSymbol(candidate))
+    .filter((candidate) => candidate.length > 0);
+  return candidates.includes(symbol);
+}
+
+function resolveMakerV3RoleLegs(row: SignalLegResolutionRow): { makerLeg: SignalLeg | null; referenceLeg: SignalLeg | null } {
+  const makerSlot = resolveRoleSlot(row.maker_role_map?.maker_leg, row);
+  const referenceSlot = resolveRoleSlot(row.maker_role_map?.ref_leg, row);
+  let makerLeg = makerSlot ? getLegForSlot(row, makerSlot) : null;
+  let referenceLeg = referenceSlot ? getLegForSlot(row, referenceSlot) : null;
+
+  if (makerLeg && referenceLeg) {
+    return { makerLeg, referenceLeg };
+  }
+
+  const orderedLegs = getOrderedLegEntries(row);
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  const makerExchange = normalizeFacetValue(quoteSnapshot?.maker_exchange);
+  const makerSymbol = normalizeSnapshotSymbol(quoteSnapshot?.maker_symbol);
+  const referenceExchange = normalizeFacetValue(quoteSnapshot?.ref_exchange);
+  const referenceSymbol = normalizeSnapshotSymbol(quoteSnapshot?.ref_symbol);
+
+  if (!makerLeg) {
+    makerLeg = orderedLegs.find(({ leg }) =>
+      legMatchesSnapshotHint(leg, { exchange: makerExchange, symbol: makerSymbol }),
+    )?.leg ?? null;
+  }
+  if (!referenceLeg) {
+    referenceLeg = orderedLegs.find(({ leg }) =>
+      legMatchesSnapshotHint(leg, { exchange: referenceExchange, symbol: referenceSymbol }),
+    )?.leg ?? null;
+  }
+
+  if (!makerLeg) makerLeg = orderedLegs[0]?.leg ?? null;
+  if (!referenceLeg) {
+    referenceLeg = orderedLegs.find(({ leg }) => leg !== makerLeg)?.leg ?? null;
+  }
+
+  return { makerLeg, referenceLeg };
 }
 
 function getBalanceStatus(row: EnrichedRow) {
@@ -368,9 +478,22 @@ function resolveTradingValue(row: Partial<SignalStrategy> & Record<string, any>)
   const fromParams = row?.params?.bot_on;
   if (fromParams !== undefined && fromParams !== null) return fromParams;
   const fromState = row?.state?.bot_on;
-  if (fromState !== undefined && fromState !== null) return fromState;
+  if (
+    typeof fromState === 'string'
+    || typeof fromState === 'number'
+    || typeof fromState === 'boolean'
+    || fromState === null
+  ) {
+    return fromState;
+  }
   if (typeof row?.tradeable === 'boolean') return row.tradeable ? 1 : 0;
   return undefined;
+}
+
+function resolveTradingBlocked(row: Partial<SignalStrategy> & Record<string, any>): boolean {
+  if (typeof row?.blocked === 'boolean') return row.blocked;
+  if (typeof row?.tradeable === 'boolean') return !row.tradeable;
+  return false;
 }
 
 function normalizeDeltaLegs(legs: unknown): unknown {
@@ -441,23 +564,7 @@ function shouldShowHedgeQuoteCounts(row: EnrichedRow): boolean {
   return cls.includes('maker') || !!resolveQuoteSnapshot(row);
 }
 
-function shouldSuppressQuoteCounts(row: EnrichedRow): boolean {
-  const tradingEnabled = parseTradingEnabled(resolveTradingValue(row));
-  const quoteSnapshot = resolveQuoteSnapshot(row) as any;
-  const mode = String(quoteSnapshot?.mode ?? '').trim().toUpperCase();
-  const reason = String(quoteSnapshot?.reason ?? '').trim().toLowerCase();
-  return !tradingEnabled || mode === 'OFF' || reason === 'bot_off';
-}
-
-function zeroCounts(
-  counts?: { bidOpen: number; bidDepth: number; bidBlocked: number; askOpen: number; askDepth: number; askBlocked: number }
-) {
-  if (!counts) return undefined;
-  return zeroQuoteCounts();
-}
-
 function getQuoteCounts(row: EnrichedRow): QuoteCounts {
-  const suppress = shouldSuppressQuoteCounts(row);
   const stacks = (row as any).quote_stacks;
   if (stacks && typeof stacks === 'object') {
     const makerBands = (stacks.maker?.bands ?? []) as any[];
@@ -484,8 +591,8 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
       const hedgeFallback = shouldShowHedgeQuoteCounts(row) ? (hedgeCounts ?? zeroQuoteCounts()) : hedgeCounts;
       return {
         source: 'quote_stacks',
-        maker: suppress ? zeroCounts(maker) : maker,
-        hedge: suppress ? zeroCounts(hedgeFallback) : hedgeFallback,
+        maker,
+        hedge: hedgeFallback,
       };
     }
   }
@@ -503,8 +610,8 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
     const hedge = shouldShowHedgeQuoteCounts(row) ? zeroQuoteCounts() : undefined;
     return {
       source: 'maker_quote_status',
-      maker: suppress ? zeroCounts(maker) : maker,
-      hedge: suppress ? zeroCounts(hedge) : hedge,
+      maker,
+      hedge,
     };
   }
 
@@ -612,7 +719,9 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
 
 function resolveInventoryQuantities(row: SignalStrategy): { globalQty: number | null; localQty: number | null } {
   const adj = findInventorySkewAdjustment(row.pricing_adjustments);
-  const globalQty = coerceFiniteNumber(adj?.curr_qty ?? row.risk_delta) ?? null;
+  const globalQty = adj
+    ? (coerceFiniteNumber(adj.global_qty ?? adj.curr_qty) ?? null)
+    : (coerceFiniteNumber(row.risk_delta) ?? null);
   const localQty = coerceFiniteNumber(adj?.local_qty) ?? null;
   return { globalQty, localQty };
 }
@@ -693,12 +802,14 @@ export function buildInventorySkewTooltip(
  * @param fallback - Fallback text if readiness is missing
  * @returns Formatted tooltip text with newlines
  */
-function buildBalanceTooltip(readiness?: SignalStrategy['balance_readiness'], fallback?: string): string {
+export function buildBalanceTooltip(readiness?: SignalStrategy['balance_readiness'], fallback?: string): string {
   if (!readiness) {
     return fallback || 'No readiness data yet';
   }
 
   const lines: string[] = [];
+  const qty = String(readiness.qty ?? '').trim() || '—';
+  const multiplier = String(readiness.multiplier ?? '').trim() || '—';
 
   // Status / summary first so operators immediately see the key message.
   if (readiness.summary) {
@@ -718,22 +829,39 @@ function buildBalanceTooltip(readiness?: SignalStrategy['balance_readiness'], fa
       const hasAvail = req.available != null;
       const available = hasAvail ? Number(req.available).toFixed(2) : 'N/A';
       const coverage = formatCoveragePercent(req.coverage);
-      lines.push(`  ${req.location} ${req.token}: ${available}/${required} (${coverage})`);
+      const kind = String(req.kind ?? '').trim();
+      lines.push(`  ${req.location} ${req.token}${kind ? ` [${kind}]` : ''}: ${available}/${required} (${coverage})`);
     });
   } else if (readiness.missing && readiness.missing.length > 0) {
     lines.push('');
     lines.push('Top gaps:');
     readiness.missing.forEach(req => {
-      lines.push(`  ${req.location} ${req.token} ${formatCoveragePercent(req.coverage)}`);
+      const kind = String(req.kind ?? '').trim();
+      lines.push(`  ${req.location} ${req.token}${kind ? ` [${kind}]` : ''} ${formatCoveragePercent(req.coverage)}`);
     });
   }
 
-  // Compact methodology footer for operators who want to understand thresholds.
+  // Keep methodology factual to the payload instead of hardcoding backend policy.
   lines.push('');
-  lines.push('Methodology: Coverage = Avail/Reqd (10× qty buffer)');
-  lines.push('OK: ≥100% | WARN: 80-100% | FAIL: <80% | UNKNOWN: No pricing');
+  lines.push('Methodology: Coverage = available / required');
+  lines.push(`Sizing basis: qty ${qty} × multiplier ${multiplier}`);
 
   return lines.join('\n');
+}
+
+export function buildStrategyParamTooltip(
+  row: Pick<SignalStrategy, 'params'>,
+): string {
+  return [
+    'Edge thresholds (minimum edge to trade):',
+    `  cex_bid_edge: ${row.params?.cex_bid_edge ?? 'N/A'} bps`,
+    `  cex_ask_edge: ${row.params?.cex_ask_edge ?? 'N/A'} bps`,
+    `  pool_edge: ${row.params?.pool_edge ?? 'N/A'} bps`,
+    '',
+    'Trading params:',
+    `  qty: ${row.params?.qty ?? 'N/A'}`,
+    `  slippage: ${row.params?.slippage_bps ?? 'N/A'} bps`,
+  ].join('\n');
 }
 
 // =============================================================================
@@ -1025,7 +1153,17 @@ function normalizeSnapshotSymbol(value: unknown): string {
   return stripSnapshotContractSuffix(instrumentText).replace(/[/_-]/g, '');
 }
 
-function matchesSnapshotLeg(
+function extractSnapshotBaseAsset(value: unknown): string {
+  const text = String(value ?? '').trim().toUpperCase();
+  if (!text) return '';
+  const contractText = text.includes(':') ? (text.split(':', 2)[1] ?? text) : text;
+  const instrumentText = contractText.split('.', 1)[0] ?? contractText;
+  const stripped = stripSnapshotContractSuffix(instrumentText);
+  const pairBase = stripped.split(/[\/_-]/, 1)[0] ?? stripped;
+  return pairBase.replace(/[/_-]/g, '');
+}
+
+function getSnapshotLegMatchScore(
   leg: SignalLeg | null | undefined,
   {
     exchange,
@@ -1034,11 +1172,11 @@ function matchesSnapshotLeg(
     exchange: string | undefined;
     symbol: string | undefined;
   },
-): boolean {
-  if (!leg) return false;
+): number {
+  if (!leg) return 0;
   const legExchange = String(leg.exchange ?? '').trim().toLowerCase();
   const targetExchange = String(exchange ?? '').trim().toLowerCase();
-  if (!legExchange || !targetExchange || legExchange !== targetExchange) return false;
+  if (!legExchange || !targetExchange || legExchange !== targetExchange) return 0;
 
   const legSymbolCandidates = [
     leg.pair,
@@ -1049,12 +1187,25 @@ function matchesSnapshotLeg(
     .map((candidate) => normalizeSnapshotSymbol(candidate))
     .filter((candidate) => candidate.length > 0);
   const targetSymbol = normalizeSnapshotSymbol(symbol);
-  if (!targetSymbol) return true;
-  return legSymbolCandidates.includes(targetSymbol);
+  if (!targetSymbol) return 1;
+  if (legSymbolCandidates.includes(targetSymbol)) return 2;
+
+  const targetBase = extractSnapshotBaseAsset(symbol);
+  if (!targetBase) return 0;
+
+  const legBaseCandidates = [
+    leg.pair,
+    leg.base_asset,
+    leg.inventory_asset,
+    leg.coin,
+  ]
+    .map((candidate) => extractSnapshotBaseAsset(candidate))
+    .filter((candidate) => candidate.length > 0);
+  return legBaseCandidates.includes(targetBase) ? 1 : 0;
 }
 
 function resolveMakerAwareLeg(
-  row: EnrichedRow,
+  row: SignalLegResolutionRow,
   legKey: LegKey,
   quoteSnapshot: MakerV2QuoteSnapshot,
 ): SignalLeg | null {
@@ -1067,13 +1218,76 @@ function resolveMakerAwareLeg(
 
   const targetExchange = legKey === 'A' ? quoteSnapshot.maker_exchange : quoteSnapshot.ref_exchange;
   const targetSymbol = legKey === 'A' ? quoteSnapshot.maker_symbol : quoteSnapshot.ref_symbol;
+  const looseMatches: SignalLeg[] = [];
   for (const entry of getOrderedLegEntries(row)) {
-    if (matchesSnapshotLeg(entry.leg, { exchange: targetExchange, symbol: targetSymbol })) {
+    const score = getSnapshotLegMatchScore(entry.leg, { exchange: targetExchange, symbol: targetSymbol });
+    if (score >= 2) {
       return entry.leg;
+    }
+    if (score === 1 && entry.leg) {
+      looseMatches.push(entry.leg);
     }
   }
 
+  if (looseMatches.length === 1) return looseMatches[0];
+
   return getLegForSlot(row, legKey);
+}
+
+function resolveDisplayedLeg(
+  row: SignalLegResolutionRow,
+  legKey: LegKey,
+): SignalLeg | null {
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  return quoteSnapshot ? resolveMakerAwareLeg(row, legKey, quoteSnapshot) : getLegForSlot(row, legKey);
+}
+
+function midpointFromValues(bid: unknown, ask: unknown): number | null {
+  const bidPx = coerceFiniteNumber(bid);
+  const askPx = coerceFiniteNumber(ask);
+  if (bidPx == null || askPx == null) return null;
+  return (bidPx + askPx) / 2;
+}
+
+function resolveDisplayedLegMid(leg: SignalLeg | null | undefined): number | null {
+  if (!leg) return null;
+  return midpointFromValues(
+    leg.decision_bid ?? leg.fv_bid ?? leg.raw_bid,
+    leg.decision_ask ?? leg.fv_ask ?? leg.raw_ask
+  );
+}
+
+function resolveVisibleStrategyMarketMid(row: SignalStrategy): number | null {
+  const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'A'));
+  if (displayedMid != null) return displayedMid;
+
+  const quoteSnapshot = resolveQuoteSnapshot(row) as any;
+  if (!quoteSnapshot) return null;
+
+  return midpointFromValues(
+    quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid ?? quoteSnapshot.place_bid,
+    quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask ?? quoteSnapshot.place_ask
+  );
+}
+
+function resolveVisibleStrategyFvMid(row: SignalStrategy): number | null {
+  const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'B'));
+  if (displayedMid != null) return displayedMid;
+
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  const snapshotMid = quoteSnapshot
+    ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
+    : null;
+  if (snapshotMid != null) return snapshotMid;
+
+  return coerceFiniteNumber((row as any).fv_row?.fv) ?? null;
+}
+
+function spreadMarketVsFvBps(row: SignalStrategy): number | null {
+  const marketMid = resolveVisibleStrategyMarketMid(row);
+  const fvMid = resolveVisibleStrategyFvMid(row);
+  if (marketMid == null || fvMid == null || !Number.isFinite(fvMid) || fvMid === 0) return null;
+  return ((marketMid - fvMid) / fvMid) * 10_000;
 }
 
 function buildMakerTruthRow(
@@ -1368,7 +1582,7 @@ const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: bool
 }) => {
   const quoteSnapshot = resolveQuoteSnapshot(row);
   const hasMakerOverlay = !!quoteSnapshot;
-  const leg = quoteSnapshot ? resolveMakerAwareLeg(row, legKey, quoteSnapshot) : getLegForSlot(row, legKey);
+  const leg = resolveDisplayedLeg(row, legKey);
 
   if (!hasMakerOverlay) {
     return <LegCell leg={leg} showQuoted={showQuoted} />;
@@ -1483,6 +1697,7 @@ export default function SignalTable({
     const firstSegment = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
     return resolvePathProfile(firstSegment);
   }, [location.pathname]);
+  const isMakerSuiteProfile = useMemo(() => isMakerSuiteSignalProfile(pathProfile), [pathProfile]);
   const [familyScope, setFamilyScope] = useState<SignalFamilyScope>(() => defaultFamilyScopeForProfile(pathProfile));
 
   useEffect(() => {
@@ -1493,8 +1708,9 @@ export default function SignalTable({
     return matchesSignalProfile(pathProfile, strategy);
   }, [pathProfile]);
   const isFamilyVisible = useCallback((strategy: SignalStrategy): boolean => {
-    if (familyScope === 'all') return true;
-    return deriveStrategyFamily(strategy) === familyScope;
+    const effectiveFamilyScope: SignalFamilyScope = familyScope;
+    if (effectiveFamilyScope === 'all') return true;
+    return deriveStrategyFamily(strategy) === effectiveFamilyScope;
   }, [familyScope]);
   // Select from zustand store with shallow equality to reduce re-renders
   const rows = useSignalStore(selectSignalRows, shallow);
@@ -1547,6 +1763,7 @@ export default function SignalTable({
     const base = (rows || []).filter(isStrategyVisible);
     return {
       all: base.length,
+      maker_v4: base.filter((r) => deriveStrategyFamily(r) === 'maker_v4').length,
       maker_v3: base.filter((r) => deriveStrategyFamily(r) === 'maker_v3').length,
       maker_v2: base.filter((r) => deriveStrategyFamily(r) === 'maker_v2').length,
       taker: base.filter((r) => deriveStrategyFamily(r) === 'taker').length,
@@ -2027,11 +2244,15 @@ export default function SignalTable({
         return null;
       }
 
-      const status = deriveStrategyStatus({ trading: resolveTradingValue(row as any) });
+      const status = deriveStrategyStatus({
+        running: resolveSignalRunning(row, serverNowMs),
+        trading: resolveTradingValue(row as any),
+        blocked: resolveTradingBlocked(row as any),
+      });
       const tradingFilter = statusToFilterValue(status);
       const orderedLegs = getOrderedLegEntries(row);
-      const legA = getLegForSlot(row, 'A');
-      const legB = getLegForSlot(row, 'B');
+      const legA = resolveDisplayedLeg(row, 'A');
+      const legB = resolveDisplayedLeg(row, 'B');
       const fallbackEdgeLeg = orderedLegs.find((entry) => {
         const value = entry.leg?.net_edge_bps;
         return typeof value === 'number' && Number.isFinite(value);
@@ -2045,9 +2266,10 @@ export default function SignalTable({
         ?? legB?.net_edge_bps
         ?? 0;
       const edge2 = row.edge2_bps ?? null;
-      const spreadNet = coerceFiniteNumber((row as any).spread_net_bps) ?? null;
+      const spreadNet = spreadMarketVsFvBps(row);
       const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
       const { globalQty, localQty } = resolveInventoryQuantities(row);
+      const { makerLeg, referenceLeg } = resolveMakerV3RoleLegs(row);
 
       // Extract filterable fields (exchange and coin from legs)
       const exchanges = orderedLegs
@@ -2068,6 +2290,13 @@ export default function SignalTable({
         .find((value): value is string => typeof value === 'string' && value.length > 0);
 
       const meta = row.meta || {};
+      const strategyClass = normalizeFacetValue(meta.class);
+      const asset = normalizeAssetFacet(meta.base_asset) || normalizeAssetFacet(getLegUnderlying(makerLeg)) || normalizeAssetFacet(getLegUnderlying(referenceLeg));
+      const makerVenue = normalizeFacetValue(makerLeg?.exchange ?? resolveQuoteSnapshot(row)?.maker_exchange);
+      const makerMarket = normalizeFacetValue(getLegMarketType(makerLeg));
+      const referenceVenue = normalizeFacetValue(referenceLeg?.exchange ?? resolveQuoteSnapshot(row)?.ref_exchange);
+      const referenceMarket = normalizeFacetValue(getLegMarketType(referenceLeg));
+      const normalizedChain = normalizeFacetValue(meta.chain);
 
       return {
         ...row,
@@ -2091,35 +2320,62 @@ export default function SignalTable({
         exchange: exchanges,
         coin: coins,
         market_type: marketTypes,
+        asset,
+        maker_venue: makerVenue,
+        maker_market: makerMarket,
+        reference_venue: referenceVenue,
+        reference_market: referenceMarket,
+        strategy_class: strategyClass,
         class: meta.class,
         venue_prefix: meta.venue_prefix,
-        chain: meta.chain,
+        chain: normalizedChain,
       };
     }).filter((row) => row !== null)) as EnrichedRow[];
   }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, rows]);
 
+  const signalFilters = useMemo<ColumnFilter[]>(() => {
+    if (!isMakerSuiteProfile) {
+      return GENERIC_SIGNAL_FILTERS;
+    }
+
+    const assetOptions = uniqueFilterOptions(enrichedRows.map((row) => row.asset));
+    const makerVenueOptions = uniqueFilterOptions(enrichedRows.map((row) => row.maker_venue));
+    const makerMarketOptions = uniqueFilterOptions(enrichedRows.map((row) => row.maker_market));
+    const referenceVenueOptions = uniqueFilterOptions(enrichedRows.map((row) => row.reference_venue));
+    const referenceMarketOptions = uniqueFilterOptions(enrichedRows.map((row) => row.reference_market));
+    const strategyClassOptions = uniqueFilterOptions(enrichedRows.map((row) => row.strategy_class));
+    const chainOptions = uniqueFilterOptions(enrichedRows.map((row) => row.chain));
+
+    const filters: ColumnFilter[] = [
+      { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
+      { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
+      { key: 'asset', label: 'Asset', type: 'select', options: assetOptions },
+      { key: 'maker_venue', label: 'Maker Venue', type: 'select', options: makerVenueOptions },
+      { key: 'maker_market', label: 'Maker Market', type: 'select', options: makerMarketOptions },
+      { key: 'reference_venue', label: 'Reference Venue', type: 'select', options: referenceVenueOptions },
+      { key: 'reference_market', label: 'Reference Market', type: 'select', options: referenceMarketOptions },
+      { key: 'strategy_class', label: 'Class', type: 'select', options: strategyClassOptions },
+    ];
+
+    if (chainOptions.length > 0) {
+      filters.push({ key: 'chain', label: 'Chain', type: 'select', options: chainOptions });
+    }
+
+    return filters;
+  }, [enrichedRows, isMakerSuiteProfile]);
+
   // Apply filters
   const filteredRows = useMemo(() => {
-    return applyFilters(enrichedRows, filters, { columns: SIGNAL_FILTERS });
-  }, [enrichedRows, filters]);
+    return applyFilters(enrichedRows, filters, { columns: signalFilters });
+  }, [enrichedRows, filters, signalFilters]);
+
+  const shouldUseMakerV4Table = useMemo(() => {
+    if (familyScope === 'maker_v4') return true;
+    return filteredRows.length > 0 && filteredRows.every((row) => row._strategyFamily === 'maker_v4');
+  }, [familyScope, filteredRows]);
 
   // Column definitions (TanStack Table format)
   const columns = useMemo<ColumnDef<EnrichedRow>[]>(() => {
-    const paramTooltip = (row: EnrichedRow) => [
-      'Edge thresholds (minimum edge to trade):',
-      `  cex_bid_edge: ${row.params?.cex_bid_edge ?? 'N/A'} bps`,
-      `  cex_ask_edge: ${row.params?.cex_ask_edge ?? 'N/A'} bps`,
-      `  pool_edge: ${row.params?.pool_edge ?? 'N/A'} bps`,
-      '',
-      'Trading params:',
-      `  qty: ${row.params?.qty ?? 'N/A'}`,
-      `  slippage: ${row.params?.slippage_bps ?? 'N/A'} bps`,
-      '',
-      'Decision prices (generic) = fees-in, FX-normalized',
-      'Quoted prices (generic) = decision ± edge bias',
-      'MakerV2 quoting truth (if present) = Our quotes / Ref used row (planned; not necessarily posted).',
-    ].join('\n');
-
     const buildQuotesInfo = (row: EnrichedRow) => {
       const counts = getQuoteCounts(row);
       const maker = counts.maker;
@@ -2139,7 +2395,7 @@ export default function SignalTable({
       lines.push('');
       lines.push('open = active orders');
       lines.push('depth = unique price levels');
-      lines.push('blocked = cooldown');
+      lines.push('blocked = target levels not currently open');
 
       return {
         summaryLines: [makerSummary],
@@ -2161,7 +2417,7 @@ export default function SignalTable({
         ),
         enableSorting: true,
         cell: ({ row }) => (
-          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{paramTooltip(row.original)}</pre>} delay={150}>
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{buildStrategyParamTooltip(row.original)}</pre>} delay={150}>
             <span className="font-mono cursor-help">
               {row.original.id}
             </span>
@@ -2175,11 +2431,11 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Trading"
             tooltip={[
-              'Trading gate derived from bot_on.',
+              'Trading gate derived from bot_on intent plus live tradeability.',
               'Separate from runner liveness.',
-              'Enabled = bot_on=1 and runner confirmed.',
+              'Enabled = bot_on=1 and strategy is tradeable.',
               'Paused = bot_on=0 (runner may still be on).',
-              'Pending = gate enabled but runner not confirmed, or explicit cooling.',
+              'Pending = bot_on=1, but runner is not ready or trading is blocked.',
             ].join('\n')}
           />
         ),
@@ -2194,11 +2450,12 @@ export default function SignalTable({
             `- State: ${descriptor.label}`,
             `- Runner: ${descriptor.subLabel}`,
             `- Resolved: ${rawStr} (params.bot_on | state.bot_on | tradeable)`,
+            `- Blocked: ${resolveTradingBlocked(row.original as any) ? 'yes' : 'no'}`,
             '',
             'Semantics:',
-            '  Enabled: bot_on=1 (new orders allowed)',
+            '  Enabled: bot_on=1 and strategy tradeable',
             '  Paused: bot_on=0 (new orders blocked)',
-            '  Pending: gate enabled but runner not confirmed',
+            '  Pending: gate enabled but runner not confirmed or strategy blocked',
             '',
             'Change in Params → bot_on'
           ].join('\n');
@@ -2229,24 +2486,11 @@ export default function SignalTable({
           />
         ),
         enableSorting: true,
-        cell: ({ row }) => {
-          const globalQty = row.original._globalQty;
-          const riskTsMs = coerceFiniteNumber(row.original.risk_delta_ts_ms);
-          const tooltip = [
-            'Global inventory quantity:',
-            `value: ${globalQty != null ? formatRiskDelta(globalQty) : '—'}`,
-            `ts: ${riskTsMs != null ? formatAbsoluteTime(riskTsMs) : '—'}`,
-            '',
-            'Source: inventory_skew.curr_qty (fallback: risk_delta)',
-          ].join('\n');
-          return (
-            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
-              <span className="text-right font-mono inline-flex w-full items-center justify-end cursor-help text-neutral-200">
-                {globalQty != null ? formatRiskDelta(globalQty) : '—'}
-              </span>
-            </SimpleTooltip>
-          );
-        },
+        cell: ({ row }) => (
+          <span className="text-right font-mono inline-flex w-full items-center justify-end text-neutral-200">
+            {row.original._globalQty != null ? formatRiskDelta(row.original._globalQty) : '—'}
+          </span>
+        ),
       },
       {
         accessorFn: (row) => row._localQty,
@@ -2262,35 +2506,11 @@ export default function SignalTable({
           />
         ),
         enableSorting: true,
-        cell: ({ row }) => {
-          const adj = findInventorySkewAdjustment(row.original.pricing_adjustments);
-          const localQty = row.original._localQty;
-          const localQtyKey = adj?.local_qty_key;
-          const venueRoot = localQtyKey && typeof localQtyKey === 'object'
-            ? String(localQtyKey.venue_root ?? '').trim() || '—'
-            : '—';
-          const instrumentType = localQtyKey && typeof localQtyKey === 'object'
-            ? String(localQtyKey.instrument_type ?? '').trim() || '—'
-            : '—';
-          const base = localQtyKey && typeof localQtyKey === 'object'
-            ? String(localQtyKey.base ?? '').trim() || '—'
-            : '—';
-          const matched = coerceFiniteNumber(adj?.local_qty_matched_rows);
-          const missing = coerceFiniteNumber(adj?.local_qty_missing_snapshot);
-          const tooltip = [
-            'Local inventory quantity:',
-            `value: ${localQty != null ? formatRiskDelta(localQty) : '—'}`,
-            `key: ${venueRoot}/${instrumentType}/${base}`,
-            `matched_rows / missing_snapshot: ${matched != null ? Math.trunc(matched) : '—'} / ${missing != null ? Math.trunc(missing) : '—'}`,
-          ].join('\n');
-          return (
-            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
-              <span className="text-right font-mono inline-flex w-full items-center justify-end cursor-help text-neutral-200">
-                {localQty != null ? formatRiskDelta(localQty) : '—'}
-              </span>
-            </SimpleTooltip>
-          );
-        },
+        cell: ({ row }) => (
+          <span className="text-right font-mono inline-flex w-full items-center justify-end text-neutral-200">
+            {row.original._localQty != null ? formatRiskDelta(row.original._localQty) : '—'}
+          </span>
+        ),
       },
       {
         id: 'quotes',
@@ -2363,10 +2583,10 @@ export default function SignalTable({
             label="Strategy market"
             tooltip={[
               'Venue prices for market A (as defined in configs/relations.ini).',
-              'For MakerV2 rows: this is typically the market we quote (maker leg).',
-              'Top row = Market BBO (raw).',
-              'MakerV2 rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
-              'Hover the info icon in the cell for raw/decision/quoted breakdown.',
+              'For maker rows: this is typically the market we quote (maker leg).',
+              'Top row = decision prices (or quoted bid/ask when "Show quoted prices" is on).',
+              'Maker quote snapshot rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
+              'Hover the info icon in the cell for raw market -> decision breakdown.',
             ].join('\n')}
           />
         ),
@@ -2382,10 +2602,10 @@ export default function SignalTable({
             label="FV market"
             tooltip={[
               'Venue prices for market B (as defined in configs/relations.ini).',
-              'For MakerV2 rows: this is typically the reference market used for fair value (ref leg).',
-              'Top row = Market BBO (raw).',
-              'MakerV2 rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
-              'Hover the info icon in the cell for raw/decision/quoted breakdown.',
+              'For maker rows: this is typically the reference market used for fair value (ref leg).',
+              'Top row = decision prices (or quoted bid/ask when "Show quoted prices" is on).',
+              'Maker quote snapshot rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
+              'Hover the info icon in the cell for raw market -> decision breakdown.',
             ].join('\n')}
           />
         ),
@@ -2395,6 +2615,61 @@ export default function SignalTable({
         ),
       },
       {
+        accessorFn: (row) => row._spreadNet,
+        id: 'spread_net_bps',
+        header: () => (
+          <ColumnHeaderWithTooltip
+            label="Spread"
+            tooltip={[
+              'Signed midpoint spread: strategy market mid vs FV mid.',
+              'Formula: (strategy_market_mid - fv_mid) / fv_mid * 10000.',
+              'Positive = rich to FV. Negative = cheap to FV.',
+              'Not the same as required edge or edge2.',
+            ].join('\n')}
+          />
+        ),
+        enableSorting: true,
+        cell: ({ row }) => {
+          const spreadBps = row.original._spreadNet;
+          const marketMid = resolveVisibleStrategyMarketMid(row.original);
+          const fvMid = resolveVisibleStrategyFvMid(row.original);
+          const displayedFvMid = resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'B'));
+          const quoteSnapshot = resolveQuoteSnapshot(row.original);
+          const snapshotFvMid = quoteSnapshot
+            ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
+            : null;
+          const explicitFv = coerceFiniteNumber((row.original as any).fv_row?.fv);
+          const fvSource = displayedFvMid != null
+            ? 'visible ref market'
+            : snapshotFvMid != null
+              ? 'quote snapshot ref'
+              : explicitFv != null
+                ? 'fv_row.fv'
+                : '—';
+          const requiredEdge = coerceFiniteNumber(row.original.required_edge_bps);
+          const spreadText = spreadBps != null && Number.isFinite(spreadBps) ? `${formatBps(spreadBps)} bps` : '—';
+          const tooltip = [
+            'Market vs FV midpoint spread',
+            `Strategy mid: ${marketMid != null ? fmtPriceTooltip(marketMid) : '—'}`,
+            `FV mid: ${fvMid != null ? fmtPriceTooltip(fvMid) : '—'} (${fvSource})`,
+            `Spread: ${spreadText}`,
+            '',
+            `Required edge: ${requiredEdge != null ? `${requiredEdge.toFixed(1)} bps` : '—'}`,
+            `Edge2 surplus: ${row.original._edge2 != null ? `${row.original._edge2.toFixed(1)} bps` : '—'}`,
+          ].join('\n');
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span
+                className="font-mono text-xs cursor-help"
+                style={{ color: getSpreadNetColor(spreadBps) }}
+              >
+                {spreadText}
+              </span>
+            </SimpleTooltip>
+          );
+        },
+      },
+      {
         accessorKey: '_maxAge',
         id: 'age_ms',
         header: () => (
@@ -2402,7 +2677,7 @@ export default function SignalTable({
             label="Age"
             tooltip={[
               'Age = worst freshness (oldest leg).',
-              'Computed as max(now - tsA, now - tsB) using server time.',
+              'Uses the best available timestamp per leg (md_ts_ms, md_age_ms, update_ts_ms, or update_time).',
               'Colors: >10s red, >3s yellow.',
             ].join('\n')}
           />
@@ -2423,7 +2698,7 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Last Updated"
             tooltip={[
-              'Timestamp of the newest leg update (server time-derived).',
+              'Timestamp of the newest best-available leg update.',
               'Suffix shows recency for that newest leg (min age).',
             ].join('\n')}
           />
@@ -2528,7 +2803,7 @@ export default function SignalTable({
         />
       )}
       <TableFilter
-        columns={SIGNAL_FILTERS}
+        columns={signalFilters}
         onFilterChange={handleFilterChange}
         dense={true}
         customControls={
@@ -2540,66 +2815,63 @@ export default function SignalTable({
               color: colors.text.muted,
             }}
           >
-            <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
-              <span>Family</span>
-              <select
-                value={familyScope}
-                onChange={(e) => setFamilyScope(e.target.value as SignalFamilyScope)}
-                className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
-                style={{ borderColor: colors.border.DEFAULT }}
-              >
-                <option value="all">All ({familyCounts.all})</option>
-                <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
-                <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
-                <option value="taker">Taker ({familyCounts.taker})</option>
-              </select>
-            </label>
-            <label className="flex items-center select-none cursor-pointer" style={{ gap: spacing.gap.xs }}>
-              <input
-                type="checkbox"
-                className="cursor-pointer"
-                style={{ accentColor: colors.semantic.success.DEFAULT }}
-                checked={showQuoted}
-                onChange={(e) => setShowQuoted(e.target.checked)}
-              />
-              Show quoted prices (edge bias)
-            </label>
+            {!isMakerSuiteProfile && (
+              <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
+                <span>Family</span>
+                <select
+                  value={familyScope}
+                  onChange={(e) => setFamilyScope(e.target.value as SignalFamilyScope)}
+                  className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
+                  style={{ borderColor: colors.border.DEFAULT }}
+                >
+                  <option value="all">All ({familyCounts.all})</option>
+                  <option value="maker_v4">Maker V4 ({familyCounts.maker_v4})</option>
+                  <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
+                  <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
+                  <option value="taker">Taker ({familyCounts.taker})</option>
+                </select>
+              </label>
+            )}
+            {!shouldUseMakerV4Table && (
+              <label className="flex items-center select-none cursor-pointer" style={{ gap: spacing.gap.xs }}>
+                <input
+                  type="checkbox"
+                  className="cursor-pointer"
+                  style={{ accentColor: colors.semantic.success.DEFAULT }}
+                  checked={showQuoted}
+                  onChange={(e) => setShowQuoted(e.target.checked)}
+                />
+                Show quoted prices (edge bias)
+              </label>
+            )}
           </div>
         }
       />
       <PanelBody ref={handleVisibilityRootRef}>
-        <DataTable
-          data={filteredRows}
-          columns={columns}
-          getRowId={(row) => (row as any).id}
-          sortable
-          initialSorting={initialSorting}
-          sortingState={sortingState}
-          onSortingStateChange={setSortingState}
-          dense={false}
-          loading={loading}
-          emptyMessage={loading ? 'Loading strategies...' : (wsConnected ? 'Waiting for pricing…' : 'No strategies found')}
-          className={tableClassName}
-          widthMode="content"
-          columnWidthMode="explicit"
-          mobileMode="cards"
-          renderMobileRow={renderMobileRow}
-        />
+        {shouldUseMakerV4Table ? (
+          <MakerV4SignalTable rows={filteredRows} loading={loading} />
+        ) : (
+          <DataTable
+            data={filteredRows}
+            columns={columns}
+            getRowId={(row) => (row as any).id}
+            sortable
+            initialSorting={initialSorting}
+            sortingState={sortingState}
+            onSortingStateChange={setSortingState}
+            dense={false}
+            loading={loading}
+            emptyMessage={loading ? 'Loading strategies...' : (wsConnected ? 'Waiting for pricing…' : 'No strategies found')}
+            className={tableClassName}
+            widthMode="content"
+            columnWidthMode="explicit"
+            mobileMode="cards"
+            renderMobileRow={renderMobileRow}
+          />
+        )}
       </PanelBody>
     </>
   );
-
-  if (showHeader) {
-    // Full-page view: Signal route wraps in its own panel-style container
-    return (
-      <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: colors.bg.base }}>
-        {content}
-      </div>
-    );
-  }
-
-  // Dashboard mode: PanelWrapper already provides header + panel chrome.
-  // We only render the filter + table content so the panel body can own vertical scrolling.
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: colors.bg.base }}>
       {content}
@@ -2633,12 +2905,9 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
   const lastTrade = row.last_trade;
   const lastTradeNotional = coerceFiniteNumber(lastTrade?.notional);
   const lastTradeBps = coerceFiniteNumber(lastTrade?.realized_bps) ?? 0;
-  const isMaker = !!resolveQuoteSnapshot(row);
   const spreadNet = row._spreadNet ?? row._netEdge ?? null;
   const spreadText = spreadNet != null && Number.isFinite(spreadNet) ? `${spreadNet.toFixed(1)} bps` : '—';
-  const edge2Text = isMaker
-    ? 'N/A (Maker)'
-    : (row._edge2 != null ? `${row._edge2.toFixed(1)} bps` : '—');
+  const edge2Text = row._edge2 != null ? `${row._edge2.toFixed(1)} bps` : '—';
   const skewAdj = findInventorySkewAdjustment(row.pricing_adjustments);
   const skewSummary = buildInventorySkewSummary(skewAdj) ?? '—';
   const skewTooltip = buildInventorySkewTooltip(skewAdj, row.params);
@@ -2683,7 +2952,7 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
           <span className="text-[10px] uppercase text-neutral-500">Edge2</span>
           <span
             className="font-mono text-lg"
-            style={{ color: isMaker ? colors.text.secondary : getEdge2Color(row._netEdge, row._edge2) }}
+            style={{ color: row._edge2 != null ? getEdge2Color(row._netEdge, row._edge2) : colors.text.secondary }}
           >
             {edge2Text}
           </span>

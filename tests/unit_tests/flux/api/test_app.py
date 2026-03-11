@@ -10,6 +10,7 @@ from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.payloads import StrategyMetadata
+from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
@@ -201,6 +202,30 @@ def test_readyz_returns_200_when_flux_schema_is_ready(
     assert all(bool(value) for value in body["data"]["required_keys"].values())
 
 
+def test_create_app_exposes_registered_strategy_set_descriptors(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    descriptors = app.extensions["flux_strategy_set_descriptors"]
+
+    assert descriptors["equities"] == get_strategy_set_descriptor("equities")
+    assert descriptors["tokenmm"] == get_strategy_set_descriptor("tokenmm")
+
+
 def test_signals_uses_batched_pipeline_for_key_lookup(
     flux_config,
     redis_client,
@@ -324,6 +349,65 @@ def test_signals_metadata_binds_to_requested_strategy_id(
     strategy = body["data"]["strategies"][0]
     assert strategy["id"] == "strategy_02"
     assert strategy["meta"]["strategy_id"] == "strategy_02"
+
+
+def test_signals_rejects_unallowlisted_tokenmm_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"strategy": "strategy_02"})
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+    assert redis_client.pipeline_exec_count == 0
+
+
+def test_signals_rejects_unallowlisted_equities_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/signals",
+            query_string={"profile": "equities", "strategy": "strategy_02"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+    assert redis_client.pipeline_exec_count == 0
 
 
 def test_trades_delta_uses_timestamp_seq_fallback_for_seq_less_rows(
@@ -491,6 +575,31 @@ def test_create_app_allows_same_exchange_pair_when_instrument_ids_differ(
                 exchange="bybit",
                 symbol="PLUME/USDT",
                 instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    assert app is not None
+
+
+def test_create_app_allows_trade_xyz_prefixed_hyperliquid_instrument_id(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             ),
         ),
         strategy_metadata=strategy_metadata,
@@ -1662,6 +1771,161 @@ def test_balances_profile_tokenmm_aggregates_cash_and_positions(
     assert position_row["strategy_id"] == "tokenmm"
 
 
+def test_balances_endpoint_defaults_position_qty_to_base_when_dual_unit_fields_present(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "okx",
+                "kind": "position",
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "signed_qty": "343",
+                "quantity": "343",
+                "signed_qty_venue": "343",
+                "quantity_venue": "343",
+                "signed_qty_base": "3430",
+                "quantity_base": "3430",
+                "side": "LONG",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "instrument.info:base_exposure_mode=exact_multiplier",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]["rows"]
+    assert len(rows) == 1
+    position_row = rows[0]
+    assert position_row["signed_qty"] == "3430"
+    assert position_row["quantity"] == "3430"
+    assert position_row["signed_qty_base"] == "3430"
+    assert position_row["quantity_base"] == "3430"
+    assert position_row["signed_qty_venue"] == "343"
+    assert position_row["quantity_venue"] == "343"
+    assert position_row["qty_conversion_status"] == "exact_multiplier"
+    assert (
+        position_row["qty_conversion_source"]
+        == "instrument.info:base_exposure_mode=exact_multiplier"
+    )
+
+
+def test_balances_profile_tokenmm_aggregates_base_first_position_aliases_and_preserves_venue_fields(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "2.0"})
+
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "venue_a",
+                "kind": "position",
+                "instrument_id": "ABCUSDT-LINEAR.VENUE_A",
+                "signed_qty": "343",
+                "quantity": "343",
+                "signed_qty_venue": "343",
+                "quantity_venue": "343",
+                "signed_qty_base": "3430",
+                "quantity_base": "3430",
+                "side": "LONG",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "instrument.info:base_exposure_mode=exact_multiplier",
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "venue_a",
+                "kind": "position",
+                "instrument_id": "ABCUSDT-LINEAR.VENUE_A",
+                "signed_qty": "-100",
+                "quantity": "100",
+                "signed_qty_venue": "-100",
+                "quantity_venue": "100",
+                "signed_qty_base": "-1000",
+                "quantity_base": "1000",
+                "side": "SHORT",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "instrument.info:base_exposure_mode=exact_multiplier",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]["rows"]
+    assert len(rows) == 1
+    position_row = rows[0]
+    assert position_row["row_id"] == "tokenmm:pos:venue_a:ABCUSDT-LINEAR.VENUE_A"
+    assert position_row["signed_qty"] == "2430"
+    assert position_row["quantity"] == "2430"
+    assert position_row["signed_qty_base"] == "2430"
+    assert position_row["quantity_base"] == "2430"
+    assert position_row["signed_qty_venue"] == "243"
+    assert position_row["quantity_venue"] == "243"
+    assert position_row["side"] == "LONG"
+    assert position_row["qty_conversion_status"] == "exact_multiplier"
+    assert (
+        position_row["qty_conversion_source"]
+        == "instrument.info:base_exposure_mode=exact_multiplier"
+    )
+
+
 def test_balances_profile_tokenmm_prioritizes_non_zero_rows_before_limit(
     flux_config,
     redis_client,
@@ -1824,6 +2088,149 @@ def test_balances_profile_tokenmm_filters_unrelated_shared_account_assets(
     assert "tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT" in row_ids
     assert "tokenmm:cash:bybit:main:ZENT" not in row_ids
     assert "tokenmm:pos:bybit:BTCUSDT-LINEAR.BYBIT" not in row_ids
+
+
+def test_balances_profile_tokenmm_prefers_cash_row_over_duplicate_spot_position(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "account": "main",
+                "asset": "PLUME",
+                "free": "-59110.34159317",
+                "total": "-59110.34159317",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                "signed_qty": "-228161.2",
+                "quantity": "228161.2",
+                "side": "SHORT",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "signed_qty": "84919",
+                "quantity": "84919",
+                "side": "LONG",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        keys.market_last(exchange="bybit", base="PLUME", quote="USDT"),
+        {"bid": 0.0110, "ask": 0.0111, "ts_ms": 2_000},
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row_ids = {row["row_id"] for row in body["data"]["rows"]}
+    assert "tokenmm:cash:bybit:main:PLUME" in row_ids
+    assert "tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT" in row_ids
+    assert "tokenmm:pos:bybit:PLUMEUSDT-SPOT.BYBIT" not in row_ids
+
+
+def test_balances_profile_tokenmm_keeps_duplicate_spot_position_when_cash_row_is_other_account(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "account": "acctA",
+                "asset": "PLUME",
+                "free": "-59110.34159317",
+                "total": "-59110.34159317",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "account": "acctB",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                "signed_qty": "-228161.2",
+                "quantity": "228161.2",
+                "side": "SHORT",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        keys.market_last(exchange="bybit", base="PLUME", quote="USDT"),
+        {"bid": 0.0110, "ask": 0.0111, "ts_ms": 2_000},
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row_ids = {row["row_id"] for row in body["data"]["rows"]}
+    assert "tokenmm:cash:bybit:acctA:PLUME" in row_ids
+    assert "tokenmm:pos:bybit:PLUMEUSDT-SPOT.BYBIT" in row_ids
 
 
 def test_balances_mark_cash_assets_and_positions_from_market_data(
@@ -2079,6 +2486,699 @@ def test_balances_profile_tokenmm_marks_missing_required_components_as_degraded(
     assert components["strategy_02"]["stale"] is True
 
 
+def test_balances_profile_tokenmm_prefers_canonical_portfolio_snapshot_when_present(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "asset": "USDT",
+                "free": "999",
+                "total": "999",
+                "mv_raw": 999.0,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "129016.69578451",
+                "global_qty": "129016.69578451",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "usable_component_count": 4,
+                "expected_component_count": 7,
+                "missing_required": ["strategy_02"],
+                "stale_required": ["strategy_03"],
+                "null_qty_required": ["strategy_04"],
+                "degraded": True,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "15.000000",
+                        "local_qty": "15.000000",
+                        "ts_ms": 122_000,
+                        "state": "running",
+                    },
+                    {
+                        "strategy_id": "strategy_02",
+                        "local_qty_base": None,
+                        "local_qty": None,
+                        "ts_ms": 122_000,
+                        "state": "running",
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "15.000000",
+                    "local_qty": "15.000000",
+                    "ts_ms": 122_000,
+                    "state": "running",
+                },
+                {
+                    "strategy_id": "strategy_02",
+                    "local_qty_base": None,
+                    "local_qty": None,
+                    "ts_ms": 122_000,
+                    "state": "running",
+                },
+            ],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:bybit:ABC",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bybit",
+                        "asset": "ABC",
+                        "free": "15",
+                        "total": "15",
+                        "mv_raw": 21.0,
+                        "mark_raw": 1.4,
+                        "ts_ms": 122_000,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 21.0,
+                    "mv_display": "$21.00",
+                },
+            },
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["server_ts_ms"] == 122_500
+    assert body["data"]["global_qty_base"] == "129016.69578451"
+    assert body["data"]["global_qty"] == "129016.69578451"
+    assert body["data"]["aggregation_mode"] == "partial"
+    assert body["data"]["global_qty_base_complete"] is False
+    assert body["data"]["global_qty_complete"] is False
+    assert body["data"]["missing_required"] == ["strategy_02"]
+    assert body["data"]["stale_required"] == ["strategy_03"]
+    assert body["data"]["null_qty_required"] == ["strategy_04"]
+    assert body["data"]["rows"][0]["total"] == "15"
+    assert body["data"]["totals"]["mv_raw"] == 21.0
+    assert body["data"]["components"] == [
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "local_qty_base": "15.000000",
+            "local_qty": "15.000000",
+            "ts_ms": 122_000,
+            "state": "running",
+        },
+        {
+            "strategy_id": "strategy_02",
+            "local_qty_base": None,
+            "local_qty": None,
+            "ts_ms": 122_000,
+            "state": "running",
+        },
+    ]
+
+
+def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "venue_a",
+                "account": "ACC-1",
+                "asset": "USDT",
+                "free": "10",
+                "total": "10",
+                "mark_raw": 1.0,
+                "mv_raw": 10.0,
+                "ts_ms": 123_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "venue_a",
+                "account": "ACC-1",
+                "asset": "ABC",
+                "free": "5",
+                "total": "5",
+                "mark_raw": 2.0,
+                "mv_raw": 10.0,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "venue_b",
+                "account": "ACC-2",
+                "asset": "USDT",
+                "free": "7",
+                "total": "7",
+                "mark_raw": 1.0,
+                "mv_raw": 7.0,
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    by_row_id = {row["row_id"]: row for row in body["data"]["rows"]}
+    assert by_row_id["tokenmm:cash:venue_a:ACC-1:USDT"]["risk_key"] == "USD_CASH"
+    assert by_row_id["tokenmm:cash:venue_a:ACC-1:USDT"]["risk_label"] == "USD Cash"
+    assert by_row_id["tokenmm:cash:venue_b:ACC-2:USDT"]["risk_key"] == "USD_CASH"
+    abc_row = next(row for row in body["data"]["rows"] if row["asset"] == "ABC")
+    assert abc_row["risk_key"] == "ABC"
+
+    risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
+    assert risk_groups["USD_CASH"]["label"] == "USD Cash"
+    assert risk_groups["USD_CASH"]["net_mv"] == pytest.approx(17.0)
+    assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(17.0)
+    assert set(risk_groups["USD_CASH"]["sources"]) == {"venue_a", "venue_b"}
+    assert len(risk_groups["USD_CASH"]["rows"]) == 2
+    assert {row["coin"] for row in risk_groups["USD_CASH"]["rows"]} == {"USDT"}
+    assert risk_groups["ABC"]["gross_mv"] == pytest.approx(10.0)
+    assert [row["coin"] for row in risk_groups["ABC"]["rows"]] == ["ABC"]
+
+
+@pytest.mark.parametrize(
+    ("server_ts_ms", "inventory_ts_ms"),
+    [
+        (119_000, 122_500),
+        (122_500, 119_000),
+    ],
+)
+def test_balances_profile_tokenmm_rejects_stale_portfolio_snapshot_and_falls_back_to_live_balances(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+    server_ts_ms,
+    inventory_ts_ms,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "venue_a",
+                "asset": "ABC",
+                "free": "5",
+                "total": "5",
+                "mark_raw": 1.5,
+                "mv_raw": 7.5,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "venue_a",
+                "asset": "USDT",
+                "free": "12",
+                "total": "12",
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "999",
+                "global_qty": "999",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "ts_ms": inventory_ts_ms,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:ABC",
+                        "strategy_id": "tokenmm",
+                        "exchange": "venue_a",
+                        "asset": "ABC",
+                        "free": "999",
+                        "total": "999",
+                        "mark_raw": 1.0,
+                        "mv_raw": 999.0,
+                        "ts_ms": 122_500,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 999.0,
+                    "mv_display": "$999.00",
+                },
+            },
+            "server_ts_ms": server_ts_ms,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"].get("source") is None
+    assert body["data"]["server_ts_ms"] == 123_456
+    by_row_id = {row["row_id"]: row for row in body["data"]["rows"]}
+    assert by_row_id["tokenmm:cash:venue_a::ABC"]["total"] == "5"
+    assert by_row_id["tokenmm:cash:venue_a::ABC"]["mv_raw"] == pytest.approx(7.5)
+    assert by_row_id["tokenmm:cash:venue_a::USDT"]["total"] == "12"
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(19.5)
+
+
+def test_balances_profile_tokenmm_portfolio_snapshot_uses_market_rows_from_all_profile_strategies(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        secondary_keys.market_last(exchange="venue_a", base="ABC", quote="USDT"),
+        {
+            "bid": 1.5,
+            "ask": 2.5,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "5",
+                "global_qty": "5",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "ts_ms": 99_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:ABC",
+                        "strategy_id": "tokenmm",
+                        "exchange": "venue_a",
+                        "asset": "ABC",
+                        "free": "5",
+                        "total": "5",
+                        "ts_ms": 99_000,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 0.0,
+                    "mv_display": "$0.00",
+                },
+            },
+            "server_ts_ms": 99_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["rows"][0]["mark_raw"] == pytest.approx(2.0)
+    assert body["data"]["rows"][0]["mv_raw"] == pytest.approx(10.0)
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(10.0)
+
+
+def test_balances_profile_tokenmm_portfolio_snapshot_preserves_non_null_market_quotes_across_strategies(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_001_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.market_last(
+            exchange="bybit",
+            base="PLUME",
+            quote="USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        {
+            "bid": 0.0112,
+            "ask": 0.0113,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    redis_client.set_json(
+        secondary_keys.market_last(
+            exchange="bybit",
+            base="PLUME",
+            quote="USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        {
+            "bid": None,
+            "ask": None,
+            "ts_ms": 1_700_000_000_100,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "USDT",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "USDT",
+                "global_qty_base": "0",
+                "global_qty": "0",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "ts_ms": 1_700_000_000_900,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:bybit:BYBIT-UNIFIED:spot:PLUME",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bybit",
+                        "account_id": "BYBIT-UNIFIED",
+                        "account": "BYBIT-UNIFIED",
+                        "asset": "PLUME",
+                        "coin": "PLUME",
+                        "base": "PLUME",
+                        "free": "-62331.89500742",
+                        "locked": "0.00000000",
+                        "total": "-62331.89500742",
+                        "product_type": "spot",
+                        "market_type": "spot",
+                        "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                        "ts_ms": 1_700_000_000_000,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 0.0,
+                    "mv_display": "$0.00",
+                },
+            },
+            "server_ts_ms": 1_700_000_000_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["rows"][0]["row_id"] == "tokenmm:cash:bybit:BYBIT-UNIFIED:spot:PLUME"
+    assert body["data"]["rows"][0]["mark_raw"] == pytest.approx(0.01125)
+    assert body["data"]["rows"][0]["mv_raw"] == pytest.approx(-701.233818833475)
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(-701.233818833475)
+
+
+def test_balances_profile_tokenmm_portfolio_snapshot_prefers_newest_non_null_market_quote_across_strategies(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_001_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.market_last(
+            exchange="venue_a",
+            base="ABC",
+            quote="USDT",
+        ),
+        {
+            "bid": 1.0,
+            "ask": 3.0,
+            "ts_ms": 1_700_000_000_900,
+        },
+    )
+    redis_client.set_json(
+        secondary_keys.market_last(
+            exchange="venue_a",
+            base="ABC",
+            quote="USDT",
+        ),
+        {
+            "bid": 9.0,
+            "ask": 11.0,
+            "ts_ms": 1_700_000_000_100,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "USDT",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "USDT",
+                "global_qty_base": "0",
+                "global_qty": "0",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "ts_ms": 1_700_000_000_900,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:main:ABC",
+                        "strategy_id": "tokenmm",
+                        "exchange": "venue_a",
+                        "account": "main",
+                        "asset": "ABC",
+                        "free": "5",
+                        "total": "5",
+                        "ts_ms": 1_700_000_000_800,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 0.0,
+                    "mv_display": "$0.00",
+                },
+            },
+            "server_ts_ms": 1_700_000_000_950,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["rows"][0]["mark_raw"] == pytest.approx(2.0)
+    assert body["data"]["rows"][0]["mv_raw"] == pytest.approx(10.0)
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(10.0)
+
+
 def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     monkeypatch,
     flux_config,
@@ -2141,6 +3241,83 @@ def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     assert body["data"]["degraded"] is False
     assert body["data"]["missing_required"] == []
     assert all(component["stale"] is False for component in body["data"]["components"])
+
+
+def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product_scopes(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "500",
+                "locked": "0",
+                "total": "500",
+                "product_type": "spot",
+                "ts_ms": 1_700_000_000_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "0",
+                "locked": "0",
+                "total": "0",
+                "product_type": "perp",
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "plumeusdt_bitget_perp_makerv3"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    bitget_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    ]
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
 
 
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(
@@ -2294,6 +3471,47 @@ def test_alerts_profile_tokenmm_aggregates_allowlisted_strategies(
     assert [row["strategy_id"] for row in rows] == ["strategy_02", flux_config.identity.strategy_id]
 
 
+def test_alerts_profile_tokenmm_stabilizes_row_id_from_entry_id(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "level": "ERROR",
+                "message": "borrow denied",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["rows"][0]
+    assert row["entry_id"]
+    assert row["row_id"] == row["entry_id"]
+
+
 def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     flux_config,
     redis_client,
@@ -2340,3 +3558,60 @@ def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
         flux_config.identity.strategy_id: 0,
         "strategy_02": 0,
     }
+
+
+def test_strategy_parameters_update_rejects_unallowlisted_tokenmm_strategy_path(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/strategies/strategy_02/parameters",
+            json={"updates": {"qty": 2}},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+
+
+def test_alerts_delete_rejects_unallowlisted_tokenmm_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.delete("/api/v1/alerts", query_string={"strategy": "strategy_02"})
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"

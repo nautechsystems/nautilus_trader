@@ -499,7 +499,7 @@ impl TestHttpClient {
     }
 
     async fn info_meta(&self) -> Result<PerpMeta, String> {
-        let request = InfoRequest::meta();
+        let request = InfoRequest::meta(None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
@@ -511,7 +511,7 @@ impl TestHttpClient {
     }
 
     async fn get_perp_meta_and_ctxs(&self) -> Result<PerpMetaAndCtxs, String> {
-        let request = InfoRequest::meta_and_asset_ctxs();
+        let request = InfoRequest::meta_and_asset_ctxs(None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
@@ -529,18 +529,18 @@ impl TestHttpClient {
     }
 
     async fn info_user_fills(&self, user: &str) -> Result<HyperliquidFills, String> {
-        let request = InfoRequest::user_fills(user);
+        let request = InfoRequest::user_fills(user, None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
 
     async fn info_open_orders(&self, user: &str) -> Result<Value, String> {
-        let request = InfoRequest::open_orders(user);
+        let request = InfoRequest::open_orders(user, None);
         self.send_info_request(&request).await
     }
 
     async fn info_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
-        let request = InfoRequest::clearinghouse_state(user);
+        let request = InfoRequest::clearinghouse_state(user, None);
         self.send_info_request(&request).await
     }
 

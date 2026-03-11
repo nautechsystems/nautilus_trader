@@ -58,6 +58,9 @@ cdef class ExecutionReportCommand(Command):
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
         Additional parameters for the command.
+    allow_cash_borrowing : bool, default False
+        If the order may borrow from a cash account when the venue/account
+        supports it.
 
     Warnings
     --------
@@ -754,6 +757,7 @@ cdef class SubmitOrder(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        bint allow_cash_borrowing = False,
         UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
@@ -770,6 +774,7 @@ cdef class SubmitOrder(TradingCommand):
         self.order = order
         self.exec_algorithm_id = order.exec_algorithm_id
         self.position_id = position_id
+        self.allow_cash_borrowing = allow_cash_borrowing
 
     def __str__(self) -> str:
         return (
@@ -808,6 +813,7 @@ cdef class SubmitOrder(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            allow_cash_borrowing=values.get("allow_cash_borrowing", False),
             correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
@@ -823,6 +829,7 @@ cdef class SubmitOrder(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "allow_cash_borrowing": bool(obj.allow_cash_borrowing),
             "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
@@ -882,6 +889,9 @@ cdef class SubmitOrderList(TradingCommand):
         The execution client ID for the command.
     params : dict[str, object], optional
         Additional parameters for the command.
+    allow_cash_borrowing : bool, default False
+        If the order list may borrow from a cash account when the venue/account
+        supports it.
 
     References
     ----------
@@ -898,6 +908,7 @@ cdef class SubmitOrderList(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        bint allow_cash_borrowing = False,
         UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
@@ -914,6 +925,7 @@ cdef class SubmitOrderList(TradingCommand):
         self.order_list = order_list
         self.exec_algorithm_id = order_list.first.exec_algorithm_id
         self.position_id = position_id
+        self.allow_cash_borrowing = allow_cash_borrowing
         self.has_emulated_order = True if any(o.emulation_trigger != TriggerType.NO_TRIGGER for o in order_list.orders) else False
 
     def __str__(self) -> str:
@@ -955,6 +967,7 @@ cdef class SubmitOrderList(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            allow_cash_borrowing=values.get("allow_cash_borrowing", False),
             correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
@@ -972,6 +985,7 @@ cdef class SubmitOrderList(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "allow_cash_borrowing": bool(obj.allow_cash_borrowing),
             "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 

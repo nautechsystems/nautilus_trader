@@ -31,6 +31,7 @@ use nautilus_hyperliquid::{
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
     http::{
+        client::HyperliquidHttpClient,
         models::{HyperliquidL2Book, PerpMeta},
         query::InfoRequest,
     },
@@ -48,6 +49,7 @@ use serde_json::{Value, json};
 struct TestServerState {
     info_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_type: Arc<tokio::sync::Mutex<Option<String>>>,
+    last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 fn data_path() -> PathBuf {
@@ -94,6 +96,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         .to_string();
 
     *state.last_request_type.lock().await = Some(request_type.clone());
+    *state.last_request_body.lock().await = Some(request_body.clone());
 
     match request_type.as_str() {
         "meta" => {
@@ -209,7 +212,7 @@ impl TestHttpClient {
     }
 
     async fn info_meta(&self) -> Result<PerpMeta, String> {
-        let request = InfoRequest::meta();
+        let request = InfoRequest::meta(None);
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }
@@ -221,7 +224,7 @@ impl TestHttpClient {
     }
 
     async fn info_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
-        let request = InfoRequest::clearinghouse_state(user);
+        let request = InfoRequest::clearinghouse_state(user, None);
         self.send_info_request(&request).await
     }
 }
@@ -466,6 +469,48 @@ async fn test_data_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_connect_sends_dex_scoped_meta_request() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let mut config = create_data_client_config(addr);
+    config.dex = Some("xyz".to_string());
+
+    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    client.connect().await.unwrap();
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "meta");
+    assert_eq!(request_body["dex"], "xyz");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_request_instruments_with_explicit_dex() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client = HyperliquidHttpClient::new(false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+
+    let instruments = client
+        .request_instruments_with_dex(Some("xyz"))
+        .await
+        .unwrap();
+
+    assert!(!instruments.is_empty());
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "meta");
+    assert_eq!(request_body["dex"], "xyz");
 }
 
 #[rstest]

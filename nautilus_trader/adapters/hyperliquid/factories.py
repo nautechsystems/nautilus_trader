@@ -20,11 +20,13 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 @lru_cache(1)
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
+    account_address: str | None = None,
     vault_address: str | None = None,
     timeout_secs: int = 10,
     testnet: bool = False,
     proxy_url: str | None = None,
     normalize_prices: bool = True,
+    dex: str | None = None,
 ) -> nautilus_pyo3.HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
@@ -60,11 +62,13 @@ def get_cached_hyperliquid_http_client(
     """
     return nautilus_pyo3.HyperliquidHttpClient(
         private_key=private_key,
+        account_address=account_address,
         vault_address=vault_address,
         is_testnet=testnet,
         timeout_secs=timeout_secs,
         proxy_url=proxy_url,
         normalize_prices=normalize_prices,
+        dex=dex,
     )
 
 
@@ -137,6 +141,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
             proxy_url=config.http_proxy_url,
+            dex=config.dex,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
@@ -193,11 +198,13 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         """
         client = get_cached_hyperliquid_http_client(
             private_key=config.private_key,
+            account_address=config.account_address,
             vault_address=config.vault_address,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
             proxy_url=config.http_proxy_url,
             normalize_prices=config.normalize_prices,
+            dex=config.dex,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,

@@ -236,11 +236,9 @@ Notes:
 
 ### Error handling (configurable)
 
-1. `FAIL_FAST`: mark persistence failed on the first write error; with `propagate_errors_to_bus=True`
-   this raises into the caller, otherwise persistence disables new ingress.
+1. `FAIL_FAST`: raise an exception when a write fails (node shuts down).
 1. `LOG_AND_DROP`: log the error and drop the fill (not recommended for audit).
-1. `BUFFER_UNTIL_FULL_THEN_FAIL`: retry writes with backoff; when queue is full, disable new ingress
-   or raise immediately if `propagate_errors_to_bus=True`.
+1. `BUFFER_UNTIL_FULL_THEN_FAIL`: retry writes; when queue is full, fail fast.
 
 ### SQLite operational notes
 
@@ -294,9 +292,9 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 | Item | Status | Notes | PR/Link |
 | --- | --- | --- | --- |
 | Task 1: Lock MVP scope and decisions | TODO | Decide: SQLite-only vs SQLite+streaming; choose default failure policy | |
-| Task 2: SQLite fills store | DONE | Schema + writer + idempotency complete; precision as TEXT; indexes added | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
-| Task 3: Fill persistence actor | DONE | Non-blocking enqueue; bounded flush; overflow + DB-down tests complete | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
-| Task 4: Usage docs | DONE | Node config example + streaming/ingestion notes added | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
+| Task 2: SQLite fills store | TODO | Schema + writer + idempotency; keep decimals as TEXT; add key indexes | |
+| Task 3: Fill persistence actor | TODO | Non-blocking enqueue; bounded flush; overflow + DB-down tests | |
+| Task 4: Usage docs | TODO | Node config example; streaming/ArcticDB ingestion note; Redis stream filtering nuance | |
 
 ## Implementation plan (tasks)
 
@@ -472,10 +470,8 @@ In `tests/unit_tests/persistence/test_execution_fill_persistence_actor.py`:
 1. Assert the DB contains the row.
 1. Add overflow tests using a tiny `max_queue_size` to validate the configured `on_error` policy.
 1. Add DB-down tests by injecting a writer/repo stub which raises on insert:
-1. `FAIL_FAST`: first write failure marks persistence failed; raises only when
-   `propagate_errors_to_bus=True`.
-1. `BUFFER_UNTIL_FULL_THEN_FAIL`: fills stay queued with retry backoff; once queue is full the actor
-   disables new ingress or raises immediately if propagation is enabled.
+1. `FAIL_FAST`: first write failure raises and actor transitions to stopped/failed.
+1. `BUFFER_UNTIL_FULL_THEN_FAIL`: fills stay queued; actor keeps retrying; once queue is full the actor fails.
 1. `LOG_AND_DROP`: dropped counter increments; DB row count matches non-dropped events.
 
 **Step 4: Run tests**

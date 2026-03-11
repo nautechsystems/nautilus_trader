@@ -149,6 +149,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         strategyType : int, optional
             Only for SPOT/MARGIN orders
             The client strategy type for the request. Cannot be less than 1000000
+        sideEffectType : str, optional
+            Only for margin orders.
+            Controls borrow/repay side effects such as ``AUTO_BORROW_REPAY``.
         stopPrice : str, optional
             Mandatory for STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, TAKE_PROFIT_LIMIT,
             STOP, STOP_MARKET, TAKE_PROFIT_MARKET.
@@ -185,6 +188,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             Only for FUTURES orders
             Whether price protection is active.
             Defaults to 'false'
+        autoRepayAtCancel : str ('TRUE', 'FALSE'), optional
+            Only for margin orders.
+            Controls whether margin auto-repay executes if the order is canceled after taking effect.
         newOrderRespType : NewOrderRespType, optional
             The response type for the order request.
             SPOT/MARGIN MARKET, LIMIT orders default to FULL.
@@ -214,6 +220,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         newClientOrderId: str | None = None
         strategyId: int | None = None
         strategyType: int | None = None
+        sideEffectType: str | None = None
         stopPrice: str | None = None
         trailingDelta: str | None = None
         icebergQty: str | None = None
@@ -223,6 +230,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         callbackRate: str | None = None
         workingType: str | None = None
         priceProtect: str | None = None
+        autoRepayAtCancel: str | None = None
         newOrderRespType: BinanceNewOrderRespType | None = None
         goodTillDate: int | None = None
         recvWindow: str | None = None
@@ -518,8 +526,11 @@ class BinanceAccountHttpAPI:
         self.client = client
         self._clock = clock
 
-        if account_type.is_spot_or_margin:
+        if account_type.is_spot:
             self.base_endpoint = "/api/v3/"
+            user_trades_url = self.base_endpoint + "myTrades"
+        elif account_type == BinanceAccountType.MARGIN:
+            self.base_endpoint = "/sapi/v1/margin/"
             user_trades_url = self.base_endpoint + "myTrades"
         elif account_type == BinanceAccountType.USDT_FUTURES:
             self.base_endpoint = "/fapi/v1/"
@@ -616,6 +627,7 @@ class BinanceAccountHttpAPI:
         new_client_order_id: str | None = None,
         strategy_id: int | None = None,
         strategy_type: int | None = None,
+        side_effect_type: str | None = None,
         stop_price: str | None = None,
         trailing_delta: str | None = None,
         iceberg_qty: str | None = None,
@@ -625,6 +637,7 @@ class BinanceAccountHttpAPI:
         callback_rate: str | None = None,
         working_type: str | None = None,
         price_protect: str | None = None,
+        auto_repay_at_cancel: str | None = None,
         good_till_date: int | None = None,
         new_order_resp_type: BinanceNewOrderRespType | None = None,
         recv_window: str | None = None,
@@ -647,6 +660,7 @@ class BinanceAccountHttpAPI:
                 newClientOrderId=new_client_order_id,
                 strategyId=strategy_id,
                 strategyType=strategy_type,
+                sideEffectType=side_effect_type,
                 stopPrice=stop_price,
                 trailingDelta=trailing_delta,
                 icebergQty=iceberg_qty,
@@ -656,6 +670,7 @@ class BinanceAccountHttpAPI:
                 callbackRate=callback_rate,
                 workingType=working_type,
                 priceProtect=price_protect,
+                autoRepayAtCancel=auto_repay_at_cancel,
                 goodTillDate=good_till_date,
                 newOrderRespType=new_order_resp_type,
                 recvWindow=recv_window,

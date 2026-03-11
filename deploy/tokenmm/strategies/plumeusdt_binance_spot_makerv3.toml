@@ -17,7 +17,7 @@ execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-enable_execution = false
+enable_execution = true
 log_level = "INFO"
 timeout_connection = 20.0
 timeout_reconciliation = 30.0
@@ -25,10 +25,18 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
+exec_generate_missing_orders = false
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
 filter_position_reports = false
+purge_closed_orders_interval_mins = 10
+purge_closed_orders_buffer_mins = 15
+purge_closed_positions_interval_mins = 10
+purge_closed_positions_buffer_mins = 15
+purge_account_events_interval_mins = 10
+purge_account_events_lookback_mins = 15
+purge_from_database = true
 
 [node.venues.BINANCE_SPOT]
 adapter = "binance"
@@ -36,12 +44,17 @@ instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 execution = true
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
-account_type = "SPOT"
+account_type = "MARGIN"
+allow_cash_borrowing = true
 
 [strategy]
 strategy_id = "plumeusdt_binance_spot_makerv3"
+manage_stop = false
+spot_cash_borrowing_policy = "both_sides"
+force_bot_off_on_start = true
 order_qty = "1000"
 qty = "1000"
+qty_unit = "base"
 bot_on = false
 max_age_ms = 10000
 des_qty_global = 0.0

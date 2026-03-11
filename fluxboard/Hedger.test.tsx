@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -22,6 +24,12 @@ const mockApi = vi.hoisted(() => ({
   setHedgerJobStateById: vi.fn(),
   getHedgerConfig: vi.fn(),
   patchHedgerConfig: vi.fn(),
+  setHedgerGeometryOverridesById: vi.fn(),
+  clearHedgerGeometryOverridesById: vi.fn(),
+  setHedgerThresholdOverridesById: vi.fn(),
+  clearHedgerThresholdOverridesById: vi.fn(),
+  setHedgerEnabledById: vi.fn(),
+  clearHedgerEventsById: vi.fn(),
   getEthPlumeHedgerStatus: vi.fn(),
   setEthPlumeHedgerJobState: vi.fn(),
   setHedgerGeometryOverrides: vi.fn(),
@@ -162,7 +170,6 @@ describe('Hedger layout', () => {
       { id: 'eth_plume_lp_band2', label: 'ETH/PLUME LP Band2' },
       { id: 'hype_usdt_lp', label: 'HYPE/USDT LP Hedger' },
       { id: 'plume_weth_lp', label: 'PLUME/WETH LP Hedger' },
-      { id: 'third_lp', label: 'Third LP Hedger' },
     ]);
     mockApi.getHedgerStatusById.mockResolvedValue(buildStatus());
   });
@@ -197,14 +204,16 @@ describe('Hedger layout', () => {
     expect(pageTitle).toBeInTheDocument();
   });
 
-  it('renders hedger selector with all instances', async () => {
+  it('renders hedger selector with the public lp instances only', async () => {
     render(<Hedger />);
     const selector = await screen.findByLabelText(/Hedger/i);
     const options = (selector as HTMLSelectElement).querySelectorAll('option');
-    expect(options.length).toBeGreaterThanOrEqual(5);
-    expect(Array.from(options).map(o => o.value)).toEqual(
-      expect.arrayContaining(['eth_plume_lp', 'eth_plume_lp_band2', 'hype_usdt_lp', 'plume_weth_lp', 'third_lp'])
-    );
+    expect(Array.from(options).map(o => o.value)).toEqual([
+      'eth_plume_lp',
+      'eth_plume_lp_band2',
+      'hype_usdt_lp',
+      'plume_weth_lp',
+    ]);
   });
 
   it('calls getHedgerStatusById when a different hedger is selected', async () => {
@@ -218,13 +227,74 @@ describe('Hedger layout', () => {
     });
   });
 
-  it('hides config edit for eth hedgers and enables for non-eth', async () => {
+  it('enables config edit for both eth and non-eth hedgers', async () => {
+    const user = userEvent.setup();
+    mockApi.getHedgerStatusById.mockImplementation(async (hedgerId: string) =>
+      hedgerId === 'hype_usdt_lp'
+        ? buildStatus({
+            id: 'hype_usdt_lp',
+            job_status: 'stopped',
+            hedger_enabled: false,
+            staged: true,
+            config_ready: false,
+            config_readiness_errors: ['Pool address must be set to a non-zero value.'],
+            config_summary: {
+              label: 'HYPE/USDT LP Hedger',
+              token0_symbol: 'HYPE',
+              token1_symbol: 'USDT',
+            },
+          })
+        : buildStatus()
+    );
     render(<Hedger />);
     const editButton = await screen.findByRole('button', { name: /Edit Config/i });
-    expect(editButton).toBeDisabled();
-    const selector = await screen.findByLabelText(/Hedger/i);
-    await userEvent.selectOptions(selector, 'hype_usdt_lp');
     expect(editButton).not.toBeDisabled();
+    const selector = await screen.findByLabelText(/Hedger/i);
+    await user.selectOptions(selector, 'hype_usdt_lp');
+    expect(editButton).not.toBeDisabled();
+  });
+
+  it('shows staged readiness errors and disables restart and enable controls for not-ready generic hedgers', async () => {
+    const user = userEvent.setup();
+    mockApi.getHedgerStatusById.mockImplementation(async (hedgerId: string) =>
+      hedgerId === 'hype_usdt_lp'
+        ? buildStatus({
+            id: 'hype_usdt_lp',
+            job_status: 'stopped',
+            hedger_enabled: false,
+            staged: true,
+            config_ready: false,
+            config_readiness_errors: [
+              'Pool address must be set to a non-zero value.',
+              'Bybit API key source is missing.',
+            ],
+            config_summary: {
+              label: 'HYPE/USDT LP Hedger',
+              token0_symbol: 'HYPE',
+              token1_symbol: 'USDT',
+            },
+          })
+        : buildStatus()
+    );
+
+    render(<Hedger />);
+
+    const selector = await screen.findByLabelText(/Hedger/i);
+    await user.selectOptions(selector, 'hype_usdt_lp');
+
+    expect(await screen.findByText(/Staged config incomplete/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pool address must be set to a non-zero value\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Bybit API key source is missing\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Edit Config/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Restart$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Enable Hedger/i })).toBeDisabled();
+  });
+
+  it('documents the intentional monorepo lp deltas from Chainsaw', () => {
+    const contract = readFileSync(resolve(process.cwd(), 'docs/lp_contract.md'), 'utf-8');
+
+    expect(contract).toContain('non-ETH hedgers use the same generic by-ID operator controls');
+    expect(contract).toContain('Edit Config remains available for ETH/PLUME Band1 and Band2 on `/lp`');
   });
 
   it('allows disabling hedging for token1 in the config drawer', async () => {
@@ -278,6 +348,10 @@ describe('Hedger layout', () => {
           price_lower: '0.1',
           price_upper: '10',
         },
+        target: {
+          target_net_token0: '0',
+          target_net_token1: '0',
+        },
         hedge: { hedge_token0: true, hedge_token1: false },
         bybit: {
           perp_symbol_token0: 'HYPEUSDT',
@@ -287,7 +361,7 @@ describe('Hedger layout', () => {
     });
   }, 10000);
 
-  it('omits pool address and decimals when saving config edits', async () => {
+  it('omits pool address and decimals while preserving target values when saving config edits', async () => {
     const user = userEvent.setup();
     const cfg = {
       id: 'hype_usdt_lp',
@@ -297,6 +371,10 @@ describe('Hedger layout', () => {
         token1_symbol: 'USDT',
         token0_decimals: 18,
         token1_decimals: 6,
+      },
+      target: {
+        target_net_token0: '1.5',
+        target_net_token1: '250',
       },
       hedge: { hedge_token0: true, hedge_token1: true },
     };
@@ -316,9 +394,85 @@ describe('Hedger layout', () => {
       expect(lpPool.mode).toBeUndefined();
       expect(lpPool.token0_decimals).toBeUndefined();
       expect(lpPool.token1_decimals).toBeUndefined();
-      expect((payload as any).target).toBeUndefined();
+      expect((payload as any).target).toEqual({
+        target_net_token0: '1.5',
+        target_net_token1: '250',
+      });
     });
   });
+
+  it('uses the same generic config payload path for eth hedgers', async () => {
+    const user = userEvent.setup();
+    const cfg = {
+      id: 'eth_plume_lp',
+      label: 'ETH/PLUME LP Hedger',
+      lp_pool: {
+        token0_symbol: 'WETH',
+        token1_symbol: 'WPLUME',
+        initial_token0: '1.6085',
+        initial_token1: '169377',
+        price_lower: '85000',
+        price_upper: '111000',
+      },
+      target: {
+        target_net_token0: '0.25',
+        target_net_token1: '500',
+      },
+      hedge: { hedge_token0: true, hedge_token1: true },
+      bybit: {
+        perp_symbol_token0: 'ETHUSDT',
+        perp_symbol_token1: 'PLUMEUSDT',
+      },
+    };
+    mockApi.getHedgerConfig.mockResolvedValue(cfg as any);
+    mockApi.patchHedgerConfig.mockResolvedValue(cfg as any);
+
+    render(<Hedger />);
+
+    const editButton = await screen.findByRole('button', { name: /Edit Config/i });
+    expect(editButton).not.toBeDisabled();
+    await user.click(editButton);
+
+    const target0 = await screen.findByLabelText(/Target Net Token0/i);
+    const target1 = screen.getByLabelText(/Target Net Token1/i);
+    const perp0 = screen.getByLabelText(/Perp Symbol Token0/i);
+    const perp1 = screen.getByLabelText(/Perp Symbol Token1/i);
+
+    expect(target0).not.toHaveAttribute('readonly');
+    expect(target1).not.toHaveAttribute('readonly');
+    expect(perp0).toHaveValue('ETHUSDT');
+    expect(perp1).toHaveValue('PLUMEUSDT');
+    expect(screen.queryByText(/Derived from initial LP/i)).toBeNull();
+
+    await user.clear(target0);
+    await user.type(target0, '0.5');
+    await user.clear(target1);
+    await user.type(target1, '750');
+    await user.click(screen.getByRole('button', { name: /Save & Restart/i }));
+
+    await waitFor(() => {
+      expect(mockApi.patchHedgerConfig).toHaveBeenCalledWith('eth_plume_lp', {
+        label: 'ETH/PLUME LP Hedger',
+        lp_pool: {
+          token0_symbol: 'WETH',
+          token1_symbol: 'WPLUME',
+          initial_token0: '1.6085',
+          initial_token1: '169377',
+          price_lower: '85000',
+          price_upper: '111000',
+        },
+        target: {
+          target_net_token0: '0.5',
+          target_net_token1: '750',
+        },
+        hedge: { hedge_token0: true, hedge_token1: true },
+        bybit: {
+          perp_symbol_token0: 'ETHUSDT',
+          perp_symbol_token1: 'PLUMEUSDT',
+        },
+      });
+    });
+  }, 10000);
 
   it('shows perp inputs for non-ETH hedgers and sends bybit payload on save', async () => {
     const user = userEvent.setup();
@@ -333,6 +487,7 @@ describe('Hedger layout', () => {
         price_lower: '0.1',
         price_upper: '10',
       },
+      target: { target_net_token0: '0', target_net_token1: '0' },
       hedge: { hedge_token0: true, hedge_token1: false },
       bybit: { perp_symbol_token0: 'PLUMEUSDT', perp_symbol_token1: '' },
     };
@@ -362,17 +517,22 @@ describe('Hedger layout', () => {
     expect(perp0).toHaveValue('PLUMEUSDT');
     const perp1 = screen.getByLabelText(/Perp Symbol Token1/i);
     expect(perp1).toHaveValue('');
-    expect(screen.queryByLabelText(/Target Net Token0/i)).toBeNull();
-    expect(screen.queryByLabelText(/Target Net Token1/i)).toBeNull();
+    expect(screen.getByLabelText(/Target Net Token0/i)).toHaveValue('0');
+    expect(screen.getByLabelText(/Target Net Token1/i)).toHaveValue('0');
+    expect(screen.queryByText(/Derived from initial LP/i)).toBeNull();
 
     await user.clear(perp0);
     await user.type(perp0, 'PLUMEUSDT');
     await user.click(screen.getByRole('button', { name: /Save & Restart/i }));
 
     await waitFor(() => {
-      expect(mockApi.patchHedgerConfig).toHaveBeenCalledWith('hype_usdt_lp', expect.objectContaining({
-        bybit: { perp_symbol_token0: 'PLUMEUSDT', perp_symbol_token1: '' },
-      }));
+      expect(mockApi.patchHedgerConfig).toHaveBeenCalledWith(
+        'hype_usdt_lp',
+        expect.objectContaining({
+          target: { target_net_token0: '0', target_net_token1: '0' },
+          bybit: { perp_symbol_token0: 'PLUMEUSDT', perp_symbol_token1: '' },
+        })
+      );
     });
   }, 15000);
 });
@@ -521,6 +681,26 @@ describe('Hedger selector switching', () => {
       expect(mockApi.getHedgerStatusById).toHaveBeenCalledWith('eth_plume_lp_band2');
     });
   });
+
+  it('toggles a non-band hedger through the generic enabled endpoint', async () => {
+    const user = userEvent.setup();
+    mockApi.listHedgerInstances.mockResolvedValue([
+      { id: 'eth_plume_lp', label: 'ETH/PLUME LP Hedger' },
+      { id: 'hype_usdt_lp', label: 'HYPE/USDT LP Hedger' },
+    ]);
+    mockApi.getHedgerStatusById.mockResolvedValue(buildStatus());
+    mockApi.setHedgerEnabledById.mockResolvedValue({ hedger_enabled: false });
+
+    render(<Hedger />);
+    const selector = await screen.findByLabelText(/Hedger/i);
+    await user.selectOptions(selector, 'hype_usdt_lp');
+    const disableButton = await screen.findByRole('button', { name: /Disable Hedger/i });
+    await user.click(disableButton);
+
+    await waitFor(() => {
+      expect(mockApi.setHedgerEnabledById).toHaveBeenCalledWith('hype_usdt_lp', false);
+    });
+  });
 });
 
 describe('Hedger recent hedges controls', () => {
@@ -560,7 +740,7 @@ describe('Hedger recent hedges controls', () => {
     });
     expect(status.recent_events).toHaveLength(1);
     mockApi.getHedgerStatusById.mockResolvedValue(status);
-    mockApi.clearHedgerEvents.mockResolvedValue({ cleared: 1 });
+    mockApi.clearHedgerEventsById.mockResolvedValue({ cleared: 1 });
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const user = userEvent.setup();
@@ -577,7 +757,7 @@ describe('Hedger recent hedges controls', () => {
     await user.click(clearButton);
 
     await waitFor(() => {
-      expect(mockApi.clearHedgerEvents).toHaveBeenCalledTimes(1);
+      expect(mockApi.clearHedgerEventsById).toHaveBeenCalledWith('eth_plume_lp');
     });
     expect(confirmSpy).toHaveBeenCalled();
     confirmSpy.mockRestore();
@@ -612,8 +792,37 @@ describe('Hedger recent hedges controls', () => {
 
     const clearButton = screen.getByRole('button', { name: /clear/i });
     await user.click(clearButton);
-    expect(mockApi.clearHedgerEvents).not.toHaveBeenCalled();
+    expect(mockApi.clearHedgerEventsById).not.toHaveBeenCalled();
     expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('clears events for non-band hedgers through the generic endpoint', async () => {
+    const status = buildStatus({
+      id: 'hype_usdt_lp',
+      recent_events: [
+        {
+          timestamp: 1700000000,
+          asset: 'PLUME',
+          side: 'sell',
+          qty: '10',
+        },
+      ],
+    });
+    mockApi.getHedgerStatusById.mockResolvedValue(status);
+    mockApi.clearHedgerEventsById.mockResolvedValue({ cleared: 1 });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+
+    render(<Hedger />);
+    const selector = await screen.findByLabelText(/Hedger/i);
+    await user.selectOptions(selector, 'hype_usdt_lp');
+    const clearButton = await screen.findByRole('button', { name: /clear/i });
+    await user.click(clearButton);
+
+    await waitFor(() => {
+      expect(mockApi.clearHedgerEventsById).toHaveBeenCalledWith('hype_usdt_lp');
+    });
     confirmSpy.mockRestore();
   });
 });

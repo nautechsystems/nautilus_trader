@@ -42,16 +42,23 @@ def validate_schema_version(value: str, field_name: str = "schema_version") -> s
     return value
 
 
-def validate_symbol_part(value: str, field_name: str) -> str:
+def validate_symbol_part(
+    value: str,
+    field_name: str,
+    *,
+    allow_colon: bool = False,
+) -> str:
     """
     Validate that a symbol-like value is safe for use in Redis key segments.
     """
     if not isinstance(value, str) or not value:
         raise ValueError(f"`{field_name}` must be a non-empty string")
-    if _SYMBOL_SAFE_PATTERN.fullmatch(value) is None:
+    pattern = _SYMBOL_SAFE_PATTERN if not allow_colon else re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]*$")
+    if pattern.fullmatch(value) is None:
         raise ValueError(
             f"`{field_name}` was not identifier-safe: {value!r}. "
-            "Allowed characters are letters, digits, '.', '_', '-' and '/'.",
+            "Allowed characters are letters, digits, '.', '_', '-', '/'"
+            + (" and ':'." if allow_colon else "."),
         )
     return value
 

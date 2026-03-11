@@ -50,7 +50,7 @@ nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["k256"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -69,6 +69,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
+url = { workspace = true }
 ustr = { workspace = true }
 
 hypersync-client = { workspace = true, optional = true }
@@ -78,6 +79,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
+axum = { workspace = true }
 rstest = { workspace = true }
 turmoil = { workspace = true }
 

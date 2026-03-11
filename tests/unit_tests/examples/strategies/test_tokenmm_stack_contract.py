@@ -65,6 +65,51 @@ def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     assert 'service_status_line "portfolio"' in script
 
 
+def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
+    shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+
+
+def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
+    assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
+
+
+def test_tokenmm_binance_spot_strategy_pins_supported_cross_margin_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
+    assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
+    assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
+    strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        assert (strategies_dir / f"{strategy_id}.toml").is_file()
+        assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
+
+
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
@@ -75,12 +120,161 @@ def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     assert '"PULSE_SERVE_DIST=1"' in script
 
 
+def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert "rebuild_flux_pulse_sudoers.sh" in script
+    assert "strategy_stack_write_env" in script
+    assert 'TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in script
+    assert "append_checkout_env_overrides" in script
+    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in script
+    assert '"tokenmm"' in script
+    assert '"TokenMM"' in script
+    assert '"10"' in script
+    assert '"tokenmm-api"' in script
+    assert "--serve-pulse" in script
+    assert "--serve-fluxboard" in script
+    assert '${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api' in script
+    assert "--port 5022 --serve-fluxboard --serve-pulse" in script
+    assert "http://127.0.0.1:5022/pulse" in _read(
+        _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
+    )
+    assert "http://<host>:5022/pulse" in _read(_repo_root() / "deploy/tokenmm/README.md")
+
+
+def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
+    repo_root = _repo_root()
+    pyproject = _read(repo_root / "pyproject.toml")
+    install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    preflight_wrapper = _read(repo_root / "ops/scripts/deploy/tokenmm_rollout_preflight.py")
+    preflight_module = _read(repo_root / "systems/flux/flux/runners/tokenmm/rollout_preflight.py")
+    common_env = _read(repo_root / "deploy/tokenmm/systemd/common.env.example")
+    jupyter_env = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-jupyter.env.example")
+    readme = _read(repo_root / "deploy/tokenmm/README.md")
+    research_readme = _read(repo_root / "research/tokenmm/README.md")
+    notebook = _read(repo_root / "research/tokenmm/notebooks/tokenmm_trade_data.ipynb")
+
+    assert "notebook = [" in pyproject
+    assert "jupyterlab>=" in pyproject
+    assert "ipykernel>=" in pyproject
+
+    assert "TOKENMM_TELEMETRY_DIR=/var/lib/nautilus/telemetry/tokenmm" in common_env
+
+    assert "PULSE_ENABLED=0" in jupyter_env
+    assert "PORT=8888" in jupyter_env
+    assert 'CMD="uv run --group notebook jupyter lab' in jupyter_env
+    assert "bash -lc" not in jupyter_env
+    assert "--ip=127.0.0.1" in jupyter_env
+    assert "--ServerApp.allow_remote_access=False" in jupyter_env
+    assert "--ServerApp.root_dir=research/tokenmm" in jupyter_env
+
+    assert "render_jupyter_env()" in install_script
+    assert "tokenmm-jupyter.env" in install_script
+    assert "tokenmm-jupyter.env.example" in install_script
+    assert "tokenmm_rollout_preflight.py" in install_script
+    assert '"${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"' in install_script
+    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in install_script
+    assert "python3 -m nautilus_trader.flux.runners.tokenmm" not in install_script
+
+    assert "rollout_preflight" in preflight_wrapper
+    assert "collect_rollout_preflight_errors" in preflight_module
+    assert "fluxboard/dist/index.html" in preflight_module
+    assert "pulse-ui/dist/index.html" in preflight_module
+    assert "BitgetEnvironment" in preflight_module
+
+    assert "tokenmm-jupyter.env.example" in readme
+    assert "flux@tokenmm-jupyter.service" in readme
+    assert "tokenmm_trade_data.ipynb" in readme
+    assert "http://127.0.0.1:8888/lab" in readme
+
+    assert "execution_fill" in research_readme
+    assert "order_action" in research_readme
+    assert "quote_cycle" in research_readme
+
+    assert '"nbformat": 4' in notebook
+    assert "execution_fill" in notebook
+    assert "order_action" in notebook
+    assert "quote_cycle" in notebook
+
+
+def test_tokenmm_live_runtime_dependencies_are_declared_for_checkout_venv() -> None:
+    pyproject = tomllib.loads(_read(_repo_root() / "pyproject.toml"))
+    dependencies = {
+        str(item).split(">=", 1)[0].split("==", 1)[0].split("[", 1)[0].strip().lower()
+        for item in pyproject["project"]["dependencies"]
+    }
+
+    assert "flask" in dependencies
+    assert "flask-socketio" in dependencies
+    assert "psycopg" in dependencies
+    assert "redis" in dependencies
+
+
+def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None:
+    repo_root = _repo_root()
+    api_doc = _read(repo_root / "docs/flux/api.md")
+    runbook = _read(repo_root / "docs/fluxboard/tokenmm_runbook.md")
+    deploy_readme = _read(repo_root / "deploy/tokenmm/README.md")
+    telemetry_runbook = _read(repo_root / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
+    design_doc = _read(
+        repo_root / "docs/plans/2026-03-09-tokenmm-telemetry-jupyter-go-prod-design.md",
+    )
+
+    assert "binds to `127.0.0.1` by default" in api_doc
+    assert "localhost/internal deployments" in api_doc
+
+    assert "flux@tokenmm-jupyter.service" in runbook
+    assert "fills.sqlite" in runbook
+    assert "orders.sqlite" in runbook
+    assert "quote_cycles.sqlite" in runbook
+    assert "POST http://127.0.0.1:5022/api/pulse/jobs/group/tokenmm/restart" in runbook
+    assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in runbook
+    assert "http://127.0.0.1:8888/lab" in runbook
+
+    assert "TOKENMM_TELEMETRY_DIR" in deploy_readme
+    assert "tokenmm-jupyter.env.example" in deploy_readme
+    assert "pnpm --dir fluxboard install --frozen-lockfile" in deploy_readme
+    assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in deploy_readme
+    assert "pnpm --dir fluxboard build" in deploy_readme
+    assert "pnpm --dir pulse-ui install --frozen-lockfile" in deploy_readme
+    assert "pnpm --dir pulse-ui build" in deploy_readme
+    assert "make build" in deploy_readme
+
+    assert "orders.sqlite" in telemetry_runbook
+    assert "fills.sqlite" in telemetry_runbook
+    assert "quote_cycles.sqlite" in telemetry_runbook
+    assert "telemetry" in telemetry_runbook
+    assert "psql" in telemetry_runbook
+    assert 'export POSTGRES_URL="postgresql://' in telemetry_runbook
+
+    assert "cutover" in design_doc
+    assert "localhost-only JupyterLab" in design_doc
+    assert "telemetry shipper" in design_doc
+
+
+def test_tokenmm_live_config_enables_local_telemetry_persistence_paths() -> None:
+    shared_config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
+
+    assert "[telemetry_shipper]" in shared_config
+    assert "enable_local_persistence = true" in shared_config
+    assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in shared_config
+    assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in shared_config
+    assert (
+        'quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"'
+        in shared_config
+    )
+    assert (
+        'portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"'
+        in shared_config
+    )
+
+
 def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> (
     None
 ):
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
-    assert "TOKENMM_* | BYBIT_* | BINANCE_* | OKX_*" in script
+    assert "TOKENMM_* | BYBIT_* | BINANCE_* | OKX_* | BITGET_*" in script
     assert "MAKERV3_*" not in script
     assert "SHARED_ENV_FALLBACK_PATH" not in script
     assert "[tokenmm-stack] using shared env fallback:" not in script
@@ -99,6 +293,7 @@ def test_tokenmm_stack_script_loads_aws_secrets_before_key_validation() -> None:
     assert 'AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"' in script
     assert 'BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"' in script
     assert 'BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"' in script
+    assert 'BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-/nautilus/tokenmm/bitget}"' in script
     assert 'OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-/nautilus/tokenmm/okx}"' in script
     assert "load_aws_secrets_if_enabled()" in script
 
@@ -134,7 +329,7 @@ def test_tokenmm_stack_script_limits_secret_imports_to_exchange_credentials() ->
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
     load_secret_idx = script.index("load_secret_into_env() {")
-    assert "BYBIT_*|BINANCE_*|OKX_*)" in script[load_secret_idx:]
+    assert "BYBIT_*|BINANCE_*|BITGET_*|OKX_*)" in script[load_secret_idx:]
     assert "warning: skipping unsupported secret key" in script[load_secret_idx:]
 
 
@@ -149,6 +344,7 @@ def test_tokenmm_stack_env_example_defaults_to_safe_paper_without_execution() ->
     assert "TOKENMM_ALLOW_MISSING_KEYS=0" in env_example
     assert "TOKENMM_LOAD_AWS_SECRETS=0" in env_example
     assert "TOKENMM_AWS_REGION=ap-southeast-1" in env_example
+    assert "TOKENMM_BITGET_SECRET_ID=/nautilus/tokenmm/bitget" in env_example
     assert "TOKENMM_OKX_SECRET_ID=/nautilus/tokenmm/okx" in env_example
     assert "TOKENMM_BALANCES_READY_TIMEOUT_SECS=90" in env_example
     assert "TOKENMM_STRICT_BALANCES_READY_CHECK=1" in env_example
@@ -222,7 +418,7 @@ def test_tokenmm_stack_script_only_imports_exchange_secret_keys() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
     assert 'case "${key}" in' in script
-    assert "BYBIT_*|BINANCE_*|OKX_*)" in script
+    assert "BYBIT_*|BINANCE_*|BITGET_*|OKX_*)" in script
     assert "skipping unsupported secret key" in script
 
 
@@ -318,46 +514,66 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "ExecStart=/bin/bash -lc 'cd \"${WORKDIR:?}\" && exec ${CMD}'" in service_template
     assert 'if [ -n "${PORT:-}" ]; then' in service_template
     assert "SyslogIdentifier=flux-%i" in service_template
+    assert "RestartPreventExitStatus=78" in service_template
     assert "NoNewPrivileges=true" not in service_template
 
+    assert "[Install]" in target_unit
+    assert "WantedBy=multi-user.target" in target_unit
     assert "Wants=flux@tokenmm-api.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
-    assert "Wants=flux@tokenmm-telemetry-shipper.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service" in target_unit
 
     assert "deploy/tokenmm/tokenmm.live.toml" in install_script
     assert "/etc/flux" in install_script
     assert "/etc/sudoers.d/flux-pulse" in install_script
+    assert "strategy_stack_discover_strategy_ids" in install_script
+    assert "plumeusdt_bybit_perp_makerv3" not in install_script
     assert (
-        'CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api'
+        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
+        'nautilus_trader.flux.runners.tokenmm.run_api'
         in install_script
     )
-    assert "tokenmm-telemetry-shipper" in install_script
-    assert "nautilus_trader.persistence.shipper.run" in install_script
+    assert "--serve-fluxboard" in install_script
+    assert "--serve-pulse" in install_script
+    assert "--host 127.0.0.1" in install_script
+    assert (
+        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
+        'nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} '
+        '--mode live --confirm-live --host 127.0.0.1 --port 5022 '
+        '--serve-fluxboard --serve-pulse'
+        in install_script
+    )
     assert "tokenmm-portfolio" in install_script
+    assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
     assert "tokenmm-api" in install_script
+    assert "--strategy-id ${strategy_id}" in install_script
+    assert "--all-strategies" not in install_script
 
-    assert "NAUTILUS_TELEMETRY_PG_HOST=" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_PORT=5432" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_DATABASE=nautilus_telemetry" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_SCHEMA=telemetry" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_USERNAME=" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_PASSWORD=" in common_env
-    assert "NAUTILUS_TELEMETRY_PG_SSLMODE=require" in common_env
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env
+    assert "BITGET_API_KEY=" in common_env
+    assert "BITGET_API_PASSPHRASE=" in common_env
     assert "OKX_API_KEY=" in common_env
 
-    assert "/usr/bin/systemctl start flux@*" in sudoers
-    assert "/usr/bin/systemctl stop flux@*" in sudoers
-    assert "/usr/bin/systemctl restart flux@*" in sudoers
-    assert "/usr/bin/journalctl -u flux@*" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
+    assert "tokenmm-pulse.service" not in sudoers
+    assert "flux@*" not in sudoers
 
 
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> (
@@ -375,6 +591,31 @@ def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_
         assert "exec_reconciliation_lookback_mins = 15" in config
         assert "filter_unclaimed_external_orders = true" in config
         assert "filter_position_reports = false" in config
+
+
+def test_tokenmm_strategy_configs_explicitly_set_manage_stop_false() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in config_paths:
+        config = _read(path)
+        assert "manage_stop = false" in config
+
+
+def test_tokenmm_live_configs_explicitly_disable_generate_missing_orders() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/tokenmm.live.toml",
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in config_paths:
+        config = _read(path)
+        assert "exec_generate_missing_orders = false" in config
 
 
 def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
@@ -400,26 +641,7 @@ def test_tokenmm_registry_uses_execution_scoped_ids_not_tokenmm_clone_ids() -> N
     for strategy_id in TOKENMM_STRATEGY_IDS:
         assert f'"{strategy_id}"' in config
     assert "tokenmm_plume_makerv3" not in config
-    assert 'host = "0.0.0.0"' in config
-
-
-def test_tokenmm_live_config_defines_shared_telemetry_shipper_paths() -> None:
-    config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
-
-    assert "[telemetry_shipper]" in config
-    assert 'source_profile = "tokenmm"' in config
-    assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in config
-    assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in config
-    assert 'quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"' in config
-    assert (
-        'balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"'
-        in config
-    )
-    assert (
-        'portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"'
-        in config
-    )
-    assert 'state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"' in config
+    assert 'host = "127.0.0.1"' in config
 
 
 def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instruments() -> None:
@@ -427,8 +649,25 @@ def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instrum
 
     assert 'instrument_id = "PLUMEUSDT-LINEAR.BYBIT"' in config
     assert 'instrument_id = "PLUMEUSDT-SPOT.BYBIT"' in config
+    assert 'instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"' in config
     assert 'instrument_id = "PLUMEUSDT.BINANCE_SPOT"' in config
+    assert 'instrument_id = "PLUMEUSDT-PERP.BITGET"' in config
+    assert 'instrument_id = "PLUMEUSDT.BITGET"' in config
     assert 'instrument_id = "PLUME-USDT-SWAP.OKX"' in config
+
+
+def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
+    readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+
+    assert "production deployment root for the TokenMM stack" in readme
+    assert "current 7-node PLUME TokenMM stack" not in readme
+    assert "- `plumeusdt_binance_perp_makerv3`" in readme
+    assert "- `plumeusdt_bitget_perp_makerv3`" in readme
+    assert "- `plumeusdt_bitget_spot_makerv3`" in readme
+    assert "All seven active strategies price off Binance spot" in readme
+    assert "and the 7 active" in readme
+    assert "`params` returns the 7 allowlisted strategy IDs" in readme
+    assert "`signal` returns seven per-strategy rows." in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:
@@ -462,6 +701,22 @@ def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets(
             'reference_venue = "BINANCE_SPOT"',
             'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
         ),
+        "plumeusdt_bitget_perp_makerv3": (
+            'execution_venue = "BITGET"',
+            'reference_venue = "BINANCE_SPOT"',
+            'instrument_id = "PLUMEUSDT-PERP.BITGET"',
+            'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
+            'adapter = "bitget"',
+            'api_passphrase_env = "BITGET_API_PASSPHRASE"',
+        ),
+        "plumeusdt_bitget_spot_makerv3": (
+            'execution_venue = "BITGET"',
+            'reference_venue = "BINANCE_SPOT"',
+            'instrument_id = "PLUMEUSDT.BITGET"',
+            'instrument_id = "PLUMEUSDT.BINANCE_SPOT"',
+            'adapter = "bitget"',
+            'api_passphrase_env = "BITGET_API_PASSPHRASE"',
+        ),
     }
 
     for strategy_id, required_lines in expectations.items():
@@ -470,6 +725,15 @@ def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets(
         config = _read(_strategy_config_path(strategy_id))
         for line in required_lines:
             assert line in config
+
+
+def test_tokenmm_okx_perp_configs_default_to_cross_margin() -> None:
+    repo_root = _repo_root()
+    template = _read(repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml")
+    okx_config = _read(_strategy_config_path("plumeusdt_okx_perp_makerv3"))
+
+    assert 'margin_mode = "CROSS"' in okx_config
+    assert 'OKX perp configs should set `margin_mode = "CROSS"`' in template
 
 
 def test_deploy_env_examples_default_to_safe_paper_profiles_and_direct_prod_rejection() -> None:
@@ -526,12 +790,6 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "flux.runners.tokenmm.run_portfolio" in readme
     assert "flux.runners.tokenmm.run_bridge" in readme
     assert "flux.runners.tokenmm.run_api" in readme
-    assert "Redis remains latest-only for live operational state." in readme
-    assert "Historical portfolio reconciliation now comes from RDS via the local SQLite shipper." in readme
-    assert "`flux_balance_snapshot` / `flux_balance_snapshot_row`" in readme
-    assert "`portfolio_inventory_snapshot`" in readme
-    assert "shared one physical Postgres database" in readme
-    assert "`source_profile`" in readme
     assert "deploy/makerv3" not in readme
     assert "runners.makerv3" not in readme
 
@@ -548,6 +806,7 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "Production deploy docs default to paper/no-exec smoke first." in examples_readme
     assert "`deploy/tokenmm/README.md`" in examples_readme
     assert "Production management lives behind Pulse at `/pulse`." in examples_readme
+    assert "flux.runners.tokenmm.run_portfolio" in examples_readme
     assert "deploy/makerv3" not in examples_readme
     assert "flux.runners.makerv3" not in examples_readme
 
@@ -556,8 +815,6 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     api_doc = _read(_repo_root() / "systems/flux/docs/api.md")
     bridge_doc = _read(_repo_root() / "systems/flux/docs/bridge.md")
     runbook = _read(_repo_root() / "apps/fluxboard/docs/tokenmm_runbook.md")
-    telemetry_runbook = _read(_repo_root() / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
-    execution_doc = _read(_repo_root() / "docs/concepts/execution.md")
 
     assert "flux.runners.tokenmm.run_api" in api_doc
     assert "flux.runners.makerv3.run_api" not in api_doc
@@ -572,14 +829,3 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     assert "supported production lifecycle is Pulse-first" in runbook
     assert "bootstrap or disaster recovery only" in runbook
     assert "flux.runners.makerv3" not in runbook
-
-    assert "balance_snapshots_db_path" in telemetry_runbook
-    assert "portfolio_inventory_db_path" in telemetry_runbook
-    assert "telemetry.flux_balance_snapshot" in telemetry_runbook
-    assert "telemetry.flux_balance_snapshot_row" in telemetry_runbook
-    assert "telemetry.portfolio_inventory_snapshot" in telemetry_runbook
-    assert "one physical Postgres database" in telemetry_runbook
-    assert "`source_profile`" in telemetry_runbook
-
-    assert "Redis remains latest-only" in execution_doc
-    assert "portfolio reconciliation now comes from the shipped historical tables" in execution_doc

@@ -1,30 +1,83 @@
 import { Activity, AlertTriangle, RefreshCw, Server } from "lucide-react";
 
-import type { JobStats } from "../api";
+import type { JobStats, ShellLink } from "../api";
+import { buildPulseHref, buildShellHref } from "../basePath";
 import { REFRESH_INTERVAL_MS } from "../theme";
 import { StatusPill } from "./StatusPill";
 
 interface TopBarProps {
   stats: JobStats;
+  shellLinks: ShellLink[];
   autoRefresh: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
   onToggleAutoRefresh: () => void;
 }
 
+interface SurfaceLink {
+  label: string;
+  path: string;
+}
+
+function fallbackSurfaceLabel(surface: string): string {
+  return surface
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function stackLinks(shellLinks: ShellLink[]): SurfaceLink[] {
+  const unique = new Map<string, SurfaceLink>();
+
+  for (const link of shellLinks) {
+    if (unique.has(link.surface)) {
+      continue;
+    }
+
+    const topLevelLabel = link.label.replace(/\s+Dashboard$/i, "").trim();
+    unique.set(link.surface, {
+      label: topLevelLabel || fallbackSurfaceLabel(link.surface),
+      path: link.surface,
+    });
+  }
+
+  return Array.from(unique.values());
+}
+
 export function TopBar({
   stats,
+  shellLinks,
   autoRefresh,
   isRefreshing,
   onRefresh,
   onToggleAutoRefresh,
 }: TopBarProps) {
+  const pulseHref = buildPulseHref();
+  const surfaceLinks = stackLinks(shellLinks);
+
   return (
     <header className="topbar">
+      <div className="suite-nav" aria-label="Primary">
+        <div className="suite-nav__brand" aria-label="flux">
+          flux
+        </div>
+
+        <div className="suite-nav__links">
+          {surfaceLinks.map((link) => (
+            <a key={link.path} href={buildShellHref(link.path)} className="nav-link nav-link--primary">
+              {link.label}
+            </a>
+          ))}
+          <a href={pulseHref} className="nav-link nav-link--primary nav-link--active" aria-current="page">
+            Pulse
+          </a>
+        </div>
+      </div>
+
       <div className="topbar__title-row">
         <div>
           <h1 className="topbar__title">Pulse</h1>
-          <p className="topbar__subtitle">Flux deployment control for process jobs</p>
         </div>
 
         <div className="topbar__controls">

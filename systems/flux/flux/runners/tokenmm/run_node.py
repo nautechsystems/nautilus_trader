@@ -6,52 +6,57 @@ Run a live TokenMM trading node using canonical MakerV3 strategy exports.
 from __future__ import annotations
 
 import argparse
-import fcntl
-import os
-import tomllib
 from contextlib import contextmanager
+from contextlib import suppress
 from decimal import Decimal
+import logging
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import redis
 
-from flux.common.config import FLUX_DEFAULT_NAMESPACE
-from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.runners.live import resolve_strategy_venues
-from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
-from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
+from flux.common.config import FLUX_DEFAULT_NAMESPACE
+from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.runners.live import resolve_strategy_venues
+from flux.runners.shared.bootstrap import build_redis_client_kwargs
+from flux.runners.shared.bootstrap import build_redis_database_config
+from flux.runners.shared.bootstrap import load_runtime_config as load_shared_runtime_config
+from flux.runners.shared.bootstrap import load_config as load_shared_config
+from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
+from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
+from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
+from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.logging import build_node_logging_config
+from flux.runners.shared.qty_units import resolve_runner_qty_unit
+from flux.runners.shared.bootstrap import table as shared_table
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.strategies import FluxStrategySpec
+from flux.strategies import get_strategy_spec
+from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
+from flux.strategies.makerv3 import runtime_params as runtime_params_mod
+from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
-try:
-    from flux.strategies import MakerV3Strategy
-    from flux.strategies import MakerV3StrategyConfig
-    from flux.strategies.makerv3 import runtime_params as runtime_params_mod
-    from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
-except ModuleNotFoundError:  # pragma: no cover - optional web deps may be absent in unit tests
-    MakerV3Strategy = None
-
-    def _fallback_makerv3_strategy_config(**kwargs):
-        return kwargs
-
-    MakerV3StrategyConfig = _fallback_makerv3_strategy_config
-    TOPIC_ORDER_INTENT = "flux.makerv3.order_intent"
-    runtime_params_mod = SimpleNamespace(params_manager_factory=None)
-
-
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS = 30
+TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
+_MAKERV3_SPEC = get_strategy_spec("makerv3")
+LOGGER = logging.getLogger(__name__)
+MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
+MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 
 
 def _repo_root() -> Path:
@@ -72,12 +77,16 @@ def _client_order_id_config(instrument_id: InstrumentId) -> dict[str, Any]:
     return {}
 
 
+def _register_cash_borrowing_venues(*, exec_clients: dict[Any, Any]) -> None:
+    for venue, client_config in exec_clients.items():
+        if not bool(getattr(client_config, "allow_cash_borrowing", False)):
+            continue
+        with suppress(KeyError):
+            AccountFactory.register_cash_borrowing(str(venue))
+
+
 def _load_config(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
-    if not isinstance(data, dict):
-        raise ValueError(f"Config root must be a table: {path}")
-    return apply_redis_env_overrides(data)
+    return load_shared_config(path, env_prefix=TOKENMM_DESCRIPTOR.env_prefix)
 
 
 def _merge_shared_tables(
@@ -86,34 +95,24 @@ def _merge_shared_tables(
     shared_config: dict[str, Any],
     table_names: tuple[str, ...],
 ) -> dict[str, Any]:
-    merged = dict(config)
-    for table_name in table_names:
-        if table_name in merged:
-            continue
-        value = shared_config.get(table_name)
-        if isinstance(value, dict):
-            merged[table_name] = dict(value)
-    return merged
+    return merge_shared_tables_from_bootstrap(
+        config=config,
+        shared_config=shared_config,
+        table_names=table_names,
+    )
 
 
 def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) -> dict[str, Any]:
-    config = _load_config(path)
-    if shared_config_path is None:
-        return config
-
-    shared_config = _load_config(shared_config_path)
-    return _merge_shared_tables(
-        config=config,
-        shared_config=shared_config,
+    return load_shared_runtime_config(
+        path,
+        shared_config_path=shared_config_path,
+        load_config=_load_config,
         table_names=("redis", "portfolio", "telemetry_shipper"),
     )
 
 
 def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
-    value = data.get(name, {})
-    if not isinstance(value, dict):
-        raise ValueError(f"[{name}] must be a TOML table")
-    return value
+    return shared_table(data, name)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -125,17 +124,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--enable-execution", action="store_true")
+    parser.add_argument("--log-level", default=None)
     return parser.parse_args()
 
 
 def _resolve_mode(config: dict[str, Any], args: argparse.Namespace) -> str:
-    flux = _table(config, "flux")
-    mode = str(args.mode or flux.get("mode", "paper")).strip().lower()
-    if mode not in SAFE_MODES:
-        raise ValueError(f"Invalid mode {mode!r}; expected one of {sorted(SAFE_MODES)}")
-    if mode == "live" and not args.confirm_live:
-        raise ValueError("Live mode requires explicit --confirm-live")
-    return mode
+    return resolve_shared_mode(config, args, safe_modes=SAFE_MODES)
 
 
 def _attach_runtime_params_manager(
@@ -145,17 +139,7 @@ def _attach_runtime_params_manager(
     namespace: str,
     schema_version: str,
 ) -> None:
-    redis_client = redis.Redis(
-        host=str(redis_cfg.get("host", "127.0.0.1")),
-        port=int(redis_cfg.get("port", 6380)),
-        db=int(redis_cfg.get("db", 0)),
-        username=_optional_text(redis_cfg.get("username")),
-        password=_optional_text(redis_cfg.get("password")),
-        ssl=bool(redis_cfg.get("ssl", False)),
-        socket_connect_timeout=float(redis_cfg.get("connect_timeout_secs", 5.0)),
-        socket_timeout=float(redis_cfg.get("read_timeout_secs", 5.0)),
-        decode_responses=False,
-    )
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
     strategy.set_params_manager_factory(
         runtime_params_mod.params_manager_factory(
             redis_client=redis_client,
@@ -174,38 +158,20 @@ def _attach_portfolio_inventory_feed(
     schema_version: str,
 ) -> None:
     portfolio_cfg = _table(config, "portfolio")
-    portfolio_id = _optional_text(portfolio_cfg.get("portfolio_id"))
-    if portfolio_id is None:
-        return
-    redis_client = redis.Redis(
-        host=str(redis_cfg.get("host", "127.0.0.1")),
-        port=int(redis_cfg.get("port", 6380)),
-        db=int(redis_cfg.get("db", 0)),
-        username=_optional_text(redis_cfg.get("username")),
-        password=_optional_text(redis_cfg.get("password")),
-        ssl=bool(redis_cfg.get("ssl", False)),
-        socket_connect_timeout=float(redis_cfg.get("connect_timeout_secs", 5.0)),
-        socket_timeout=float(redis_cfg.get("read_timeout_secs", 5.0)),
-        decode_responses=False,
-    )
+    portfolio_id = _optional_text(portfolio_cfg.get("portfolio_id")) or TOKENMM_DESCRIPTOR.default_portfolio_id
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
     strategy.configure_portfolio_inventory_feed(
         redis_client=redis_client,
         portfolio_id=portfolio_id,
         namespace=namespace,
         schema_version=schema_version,
         stale_after_ms=int(portfolio_cfg.get("inventory_stale_after_ms", 3_000)),
+        allow_partial_global_risk=bool(portfolio_cfg.get("allow_partial_global_risk", False)),
     )
 
 
 def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
-    return DatabaseConfig(
-        type="redis",
-        host=str(redis_cfg.get("host", "127.0.0.1")),
-        port=int(redis_cfg.get("port", 6380)),
-        username=_optional_text(redis_cfg.get("username")),
-        password=_optional_text(redis_cfg.get("password")),
-        ssl=bool(redis_cfg.get("ssl", False)),
-    )
+    return build_redis_database_config(redis_cfg)
 
 
 def _resolve_reconciliation_settings(*, mode: str, node_cfg: dict[str, Any]) -> tuple[int, float]:
@@ -224,6 +190,33 @@ def _resolve_execution_filter_settings(node_cfg: dict[str, Any]) -> tuple[bool, 
     )
 
 
+def _enforce_live_startup_reconciliation_guardrails(
+    *,
+    mode: str,
+    node_cfg: dict[str, Any],
+    enable_execution: bool,
+) -> None:
+    if mode != "live" or not enable_execution:
+        return
+
+    if not bool(node_cfg.get("exec_reconciliation", True)):
+        raise ValueError(
+            "live TokenMM nodes with execution enabled require exec_reconciliation=true",
+        )
+
+    if bool(node_cfg.get("filter_position_reports", False)):
+        raise ValueError(
+            "live TokenMM nodes with execution enabled require filter_position_reports=false",
+        )
+
+
+def _optional_int(node_cfg: dict[str, Any], field_name: str) -> int | None:
+    value = node_cfg.get(field_name)
+    if value is None:
+        return None
+    return int(value)
+
+
 def _resolve_message_bus_autotrim_mins(*, mode: str, node_cfg: dict[str, Any]) -> int | None:
     raw_value = node_cfg.get("message_bus_autotrim_mins")
     if raw_value is None:
@@ -235,9 +228,12 @@ def _resolve_message_bus_autotrim_mins(*, mode: str, node_cfg: dict[str, Any]) -
     return DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS if mode == "live" else None
 
 
+def _resolve_graceful_shutdown_on_exception(*, mode: str, node_cfg: dict[str, Any]) -> bool:
+    return bool(node_cfg.get("graceful_shutdown_on_exception", mode == "live"))
+
+
 def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
-    identity = _table(config, "identity")
-    return _optional_text(identity.get("strategy_id")) or "makerv3"
+    return resolve_flux_strategy_id_from_bootstrap(config)
 
 
 def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableActorConfig]:
@@ -252,8 +248,14 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
     if balance_snapshots_db_path is not None:
         actors.append(
             ImportableActorConfig(
-                actor_path="nautilus_trader.flux.persistence.balance_snapshots.actor.FluxBalanceSnapshotPersistenceActor",
-                config_path="nautilus_trader.flux.persistence.balance_snapshots.config.FluxBalanceSnapshotPersistenceActorConfig",
+                actor_path=(
+                    "nautilus_trader.flux.persistence.balance_snapshots.actor:"
+                    "FluxBalanceSnapshotPersistenceActor"
+                ),
+                config_path=(
+                    "nautilus_trader.flux.persistence.balance_snapshots.config:"
+                    "FluxBalanceSnapshotPersistenceActorConfig"
+                ),
                 config={"db_path": balance_snapshots_db_path},
             ),
         )
@@ -262,8 +264,10 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
     if fills_db_path is not None:
         actors.append(
             ImportableActorConfig(
-                actor_path="nautilus_trader.persistence.fills.actor.ExecutionFillPersistenceActor",
-                config_path="nautilus_trader.persistence.fills.config.ExecutionFillPersistenceActorConfig",
+                actor_path="nautilus_trader.persistence.fills.actor:ExecutionFillPersistenceActor",
+                config_path=(
+                    "nautilus_trader.persistence.fills.config:ExecutionFillPersistenceActorConfig"
+                ),
                 config={
                     "db_path": fills_db_path,
                     "action_intent_topic": TOPIC_ORDER_INTENT,
@@ -275,8 +279,10 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
     if orders_db_path is not None:
         actors.append(
             ImportableActorConfig(
-                actor_path="nautilus_trader.persistence.orders.actor.OrderActionPersistenceActor",
-                config_path="nautilus_trader.persistence.orders.config.OrderActionPersistenceActorConfig",
+                actor_path="nautilus_trader.persistence.orders.actor:OrderActionPersistenceActor",
+                config_path=(
+                    "nautilus_trader.persistence.orders.config:OrderActionPersistenceActorConfig"
+                ),
                 config={
                     "db_path": orders_db_path,
                     "action_intent_topic": TOPIC_ORDER_INTENT,
@@ -288,8 +294,14 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
     if quote_cycles_db_path is not None:
         actors.append(
             ImportableActorConfig(
-                actor_path="nautilus_trader.flux.persistence.quote_cycles.actor.QuoteCyclePersistenceActor",
-                config_path="nautilus_trader.flux.persistence.quote_cycles.config.QuoteCyclePersistenceActorConfig",
+                actor_path=(
+                    "nautilus_trader.flux.persistence.quote_cycles.actor:"
+                    "QuoteCyclePersistenceActor"
+                ),
+                config_path=(
+                    "nautilus_trader.flux.persistence.quote_cycles.config:"
+                    "QuoteCyclePersistenceActorConfig"
+                ),
                 config={"db_path": quote_cycles_db_path},
             ),
         )
@@ -309,11 +321,17 @@ def _prepare_telemetry_paths(config: dict[str, Any]) -> None:
         "fills_db_path",
         "orders_db_path",
         "quote_cycles_db_path",
+        "portfolio_inventory_db_path",
+        "state_db_path",
     ):
         path_value = _optional_text(telemetry.get(key))
         if path_value is None:
             continue
         Path(path_value).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_strategy_spec() -> FluxStrategySpec:
+    return get_strategy_spec("makerv3")
 
 
 @contextmanager
@@ -322,35 +340,22 @@ def _strategy_startup_lock(
     *,
     lock_dir: Path | None = None,
 ):
-    strategy_id = _resolve_flux_strategy_id(config)
-    root = lock_dir or (_repo_root() / ".run" / "tokenmm-strategy-locks")
-    root.mkdir(parents=True, exist_ok=True)
-    lock_path = root / f"{strategy_id}.lock"
-    lock_handle = lock_path.open("a+", encoding="utf-8")
-    try:
-        try:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            lock_handle.seek(0)
-            owner = lock_handle.read().strip()
-            detail = f" ({owner})" if owner else ""
-            raise RuntimeError(
-                f"TokenMM strategy `{strategy_id}` is already running{detail}",
-            ) from exc
-
-        lock_handle.seek(0)
-        lock_handle.truncate()
-        lock_handle.write(f"pid={os.getpid()}\n")
-        lock_handle.flush()
+    with strategy_startup_lock(
+        config,
+        descriptor=TOKENMM_DESCRIPTOR,
+        repo_root=_repo_root(),
+        lock_dir=lock_dir,
+    ):
         yield
-    finally:
-        try:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-        finally:
-            lock_handle.close()
 
 
-def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
+def build_node(
+    config: dict[str, Any],
+    *,
+    mode: str,
+    force_enable_execution: bool,
+    log_level_override: str | None = None,
+) -> TradingNode:
     """
     Build and return a configured trading node for TokenMM.
     """
@@ -367,6 +372,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
     enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
+    _enforce_live_startup_reconciliation_guardrails(
+        mode=mode,
+        node_cfg=node_cfg,
+        enable_execution=enable_execution,
+    )
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )
@@ -374,28 +384,66 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         node_cfg,
     )
     message_bus_autotrim_mins = _resolve_message_bus_autotrim_mins(mode=mode, node_cfg=node_cfg)
+    graceful_shutdown_on_exception = _resolve_graceful_shutdown_on_exception(
+        mode=mode,
+        node_cfg=node_cfg,
+    )
     redis_database = _redis_database_config(redis_cfg)
     strategy_venues = resolve_strategy_venues(
         config=config,
         mode=mode,
         enable_execution=enable_execution,
     )
+    _register_cash_borrowing_venues(exec_clients=strategy_venues.exec_clients)
     maker_instrument_id = strategy_venues.execution_instrument_id
     reference_instrument_id = strategy_venues.reference_instrument_id
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
-        logging=LoggingConfig(
-            log_level=str(node_cfg.get("log_level", "INFO")),
-            use_pyo3=True,
+        logging=build_node_logging_config(
+            cli_level=log_level_override,
+            config_level=node_cfg.get("log_level", "INFO"),
+        ),
+        data_engine=LiveDataEngineConfig(
+            graceful_shutdown_on_exception=graceful_shutdown_on_exception,
+        ),
+        risk_engine=LiveRiskEngineConfig(
+            graceful_shutdown_on_exception=graceful_shutdown_on_exception,
         ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
+            generate_missing_orders=bool(node_cfg.get("exec_generate_missing_orders", False)),
             reconciliation_lookback_mins=reconciliation_lookback_mins,
             reconciliation_instrument_ids=[maker_instrument_id],
             reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,
             filter_unclaimed_external_orders=filter_unclaimed_external_orders,
             filter_position_reports=filter_position_reports,
+            graceful_shutdown_on_exception=graceful_shutdown_on_exception,
+            purge_closed_orders_interval_mins=_optional_int(
+                node_cfg,
+                "purge_closed_orders_interval_mins",
+            ),
+            purge_closed_orders_buffer_mins=_optional_int(
+                node_cfg,
+                "purge_closed_orders_buffer_mins",
+            ),
+            purge_closed_positions_interval_mins=_optional_int(
+                node_cfg,
+                "purge_closed_positions_interval_mins",
+            ),
+            purge_closed_positions_buffer_mins=_optional_int(
+                node_cfg,
+                "purge_closed_positions_buffer_mins",
+            ),
+            purge_account_events_interval_mins=_optional_int(
+                node_cfg,
+                "purge_account_events_interval_mins",
+            ),
+            purge_account_events_lookback_mins=_optional_int(
+                node_cfg,
+                "purge_account_events_lookback_mins",
+            ),
+            purge_from_database=bool(node_cfg.get("purge_from_database", False)),
         ),
         cache=CacheConfig(
             database=redis_database,
@@ -425,18 +473,24 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
     qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
-    if MakerV3Strategy is None:
-        raise ModuleNotFoundError(
-            "TokenMM node runtime requires the Flux MakerV3 strategy dependencies to be installed.",
-        )
+    qty_unit = resolve_runner_qty_unit(
+        strategy_cfg,
+        strategy_id=external_strategy_id,
+        logger=LOGGER,
+    )
+    strategy_spec = _resolve_strategy_spec()
 
-    strategy = MakerV3Strategy(
-        config=MakerV3StrategyConfig(
+    strategy = strategy_spec.strategy_cls(
+        config=strategy_spec.config_cls(
             strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
             maker_instrument_id=maker_instrument_id,
             reference_instrument_id=reference_instrument_id,
             external_strategy_id=external_strategy_id,
+            allowed_submit_instrument_ids=[maker_instrument_id],
+            external_order_claims=[maker_instrument_id],
+            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
             order_qty=order_qty,
+            qty_unit=qty_unit,
             qty=qty,
             bot_on=bool(strategy_cfg.get("bot_on", False)),
             des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
@@ -467,6 +521,15 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             ),
             quote_fail_critical_after_s=float(
                 strategy_cfg.get("quote_fail_critical_after_s", 60.0),
+            ),
+            spot_cash_borrowing_policy=str(
+                strategy_cfg.get("spot_cash_borrowing_policy", "none"),
+            ),
+            force_bot_off_on_start=bool(
+                strategy_cfg.get("force_bot_off_on_start", False),
+            ),
+            cancel_all_instrument_orders=bool(
+                strategy_cfg.get("cancel_all_instrument_orders", False),
             ),
             **_client_order_id_config(maker_instrument_id),
         ),
@@ -508,13 +571,19 @@ def main() -> None:
         config,
         mode=mode,
         force_enable_execution=bool(args.enable_execution),
+        log_level_override=args.log_level,
     )
 
     with _strategy_startup_lock(config):
+        fatal_error: TradingNodeFatalError | None = None
         try:
             node.run()
+        except TradingNodeFatalError as exc:
+            fatal_error = exc
         finally:
             node.dispose()
+        if fatal_error is not None:
+            raise SystemExit(fatal_error.exit_code)
 
 
 if __name__ == "__main__":

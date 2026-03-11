@@ -26,11 +26,23 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
+exec_generate_missing_orders = false
 # Shared-account persisted-cache startup guardrail for multi-node live.
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
 filter_position_reports = false
+purge_closed_orders_interval_mins = 10
+purge_closed_orders_buffer_mins = 15
+purge_closed_positions_interval_mins = 10
+purge_closed_positions_buffer_mins = 15
+purge_account_events_interval_mins = 10
+purge_account_events_lookback_mins = 15
+purge_from_database = true
+
+# OKX perp configs should set `margin_mode = "CROSS"` in `[node.venues.OKX]`
+# so long/short exposure nets in the shared cross book instead of fragmenting
+# margin across isolated and cross buckets.
 
 [node.venues.BYBIT]
 instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
@@ -52,8 +64,12 @@ account_type = "SPOT"
 [strategy]
 # Nautilus StrategyId / order tag seed. Keep unique across all node processes.
 strategy_id = "plumeusdt_bybit_perp_makerv3"
+manage_stop = false
+# Persist `bot_on = false` on startup so restarts never resume quoting accidentally.
+force_bot_off_on_start = true
 order_qty = "1000"
 qty = "1000"
+qty_unit = "base"
 bot_on = false
 max_age_ms = 10000
 des_qty_global = 0.0

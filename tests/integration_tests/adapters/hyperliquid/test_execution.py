@@ -42,7 +42,12 @@ def exec_client_builder(
     live_clock,
     mock_instrument_provider,
 ):
-    def builder(monkeypatch, *, config_kwargs: dict | None = None):
+    def builder(
+        monkeypatch,
+        *,
+        config_kwargs: dict | None = None,
+        http_client_setup=None,
+    ):
         ws_client = _create_ws_mock()
         ws_iter = iter([ws_client])
 
@@ -62,6 +67,8 @@ def exec_client_builder(
             return_value="0x1234567890abcdef1234567890abcdef12345678",
         )
         mock_http_client.get_spot_fill_coin_mapping = MagicMock(return_value={})
+        if http_client_setup is not None:
+            http_client_setup(mock_http_client)
         mock_instrument_provider.initialize.reset_mock()
         mock_instrument_provider.instruments_pyo3.reset_mock()
         mock_instrument_provider.instruments_pyo3.return_value = []
@@ -147,6 +154,99 @@ async def test_account_id_set_on_initialization(exec_client_builder, monkeypatch
         await client._disconnect()
 
 
+def test_initialization_prefers_account_address_for_user_scoped_updates(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "vault_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "dex": "xyz",
+        },
+    )
+
+    # Assert
+    assert client._config.dex == "xyz"
+    assert client._user_address == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_account_address_for_account_state_and_ws_updates(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "vault_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "dex": "xyz",
+        },
+    )
+
+    # Act
+    await client._connect()
+
+    try:
+        # Assert
+        instrument_provider.initialize.assert_awaited_once()
+        http_client.request_account_state.assert_awaited_once_with(
+            account_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            dex="xyz",
+        )
+        ws_client.subscribe_order_updates.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        ws_client.subscribe_user_events.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_account_address_without_signer(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "dex": "xyz",
+        },
+        http_client_setup=lambda http_client: setattr(
+            http_client,
+            "get_user_address",
+            MagicMock(side_effect=RuntimeError("No signer configured")),
+        ),
+    )
+
+    # Act
+    await client._connect()
+
+    try:
+        # Assert
+        instrument_provider.initialize.assert_awaited_once()
+        http_client.request_account_state.assert_awaited_once_with(
+            account_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            dex="xyz",
+        )
+        ws_client.subscribe_order_updates.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        ws_client.subscribe_user_events.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+    finally:
+        await client._disconnect()
+
+
 @pytest.mark.asyncio
 async def test_generate_order_status_reports_converts_results(
     exec_client_builder,
@@ -181,6 +281,41 @@ async def test_generate_order_status_reports_converts_results(
     # Assert
     http_client.request_order_status_reports.assert_awaited_once()
     assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_passes_account_address(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "dex": "xyz",
+        },
+    )
+    http_client.request_order_status_reports.return_value = []
+
+    command = GenerateOrderStatusReports(
+        instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await client.generate_order_status_reports(command)
+
+    # Assert
+    http_client.request_order_status_reports.assert_awaited_once_with(
+        instrument_id="BTC-USD-PERP.HYPERLIQUID",
+        account_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        dex="xyz",
+    )
 
 
 @pytest.mark.asyncio
@@ -260,6 +395,39 @@ async def test_generate_fill_reports_handles_failure(exec_client_builder, monkey
 
     # Assert
     assert reports == []
+
+
+@pytest.mark.asyncio
+async def test_request_and_process_fills_for_order_passes_account_address_and_dex(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "dex": "xyz",
+        },
+    )
+    http_client.request_fill_reports.return_value = []
+
+    order = MagicMock()
+    order.instrument_id = InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE)
+    order.client_order_id = ClientOrderId("O-123")
+
+    # Act
+    await client._request_and_process_fills_for_order(
+        order=order,
+        venue_order_id=VenueOrderId("123456"),
+    )
+
+    # Assert
+    http_client.request_fill_reports.assert_awaited_once_with(
+        instrument_id="BTC-USD-PERP.HYPERLIQUID",
+        account_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        dex="xyz",
+    )
 
 
 @pytest.mark.asyncio

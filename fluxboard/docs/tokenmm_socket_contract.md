@@ -2,8 +2,13 @@
 
 # TokenMM Socket.IO Contract (`tokenmm:v1`)
 
-This document freezes the TokenMM Socket.IO contract for Fluxboard migration.
+This document freezes the target TokenMM Socket.IO contract for Fluxboard migration.
 REST remains authoritative for initial load and recovery.
+
+As of March 7, 2026, this document is the rollout target rather than a claim that every
+TokenMM producer already emits the full contract before Tasks 4-6 in
+`docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md` land and the
+remaining verification gaps are closed.
 
 ## Scope
 
@@ -72,6 +77,50 @@ Compatibility rules:
 3. Unknown fields are allowed; clients must ignore them.
 4. Socket events use `strategy_id`; this is the same identity as HTTP `signals.strategies[].id`.
 
+## Quantity Semantics
+
+Socket payloads follow the same unit rules as TokenMM HTTP.
+
+1. Venue/native size is used for execution, position reconciliation, and raw trade rows.
+2. Base-exposure size is used for strategy risk, balances, and inventory.
+3. When socket payloads expose risk-facing quantity fields, they must use:
+   - `position_qty_venue`
+   - `position_qty_base`
+   - `local_qty_venue`
+   - `local_qty_base`
+   - `global_qty_base`
+   - `order_qty_venue`
+   - `order_qty_base`
+   - `qty_conversion_status`
+   - `qty_conversion_source`
+4. Bare `qty` in trade payloads remains venue/native size unless a paired explicit base field is also present.
+5. The current `qty_conversion_status` space is:
+   - `identity`
+   - `exact_multiplier`
+   - `price_based`
+   - `unsupported`
+   - `missing_metadata`
+   - `missing_price`
+   - `non_integral_venue_qty`
+
+## Shared Portfolio Ownership
+
+For `profile=tokenmm`, socket risk-facing fields must align with the shared portfolio snapshot owned by
+`run_portfolio`.
+
+1. Shared `global_qty_base` and shared completeness metadata come from the portfolio snapshot, not from a client-side recomputation.
+2. `signal_delta` may carry portfolio-derived fields, but their semantics must match the shared portfolio snapshot exactly.
+3. When present, clients must honor:
+   - `aggregation_mode`
+   - `global_qty_base_complete`
+   - `missing_required`
+   - `stale_required`
+   - `null_qty_required`
+4. `global_qty_base` may be present while `global_qty_base_complete = false` in `partial` mode.
+5. Compatibility aliases `global_qty` and `global_qty_complete` may remain temporarily, but they must mirror `global_qty_base` and `global_qty_base_complete`.
+6. Clients must not treat `global_qty_base` presence alone as proof of completeness.
+7. Fluxboard risk drilldown stays API-driven: backend-authored `risk_groups`, `risk_groups[].rows`, and row-level `risk_key` / `risk_label` semantics come from REST and must not be reconstructed from socket-side coin bucketing.
+
 ## Sequence (`seq`) Semantics
 
 1. `seq` comes from one shared stream per normalized profile room (`profile:tokenmm`).
@@ -83,6 +132,17 @@ Compatibility rules:
    - `seq <= last_seq`: treat as duplicate/stale and ignore
    - `seq > last_seq + 1`: gap detected, trigger REST resync
 6. If server restarts and sequence appears reset, treat as a gap and run REST resync.
+
+## Fluxboard Resync Completion Ownership
+
+Fluxboard's global resync completion contract is owned by [`stores.ts`](../stores.ts).
+
+1. The authoritative acknowledgement consumers are `trades` and `order-view`.
+2. `bumpGlobalResync` opens a new resync epoch and `markGlobalResyncApplied` records per-consumer acknowledgement for that epoch.
+3. `isResyncing` must remain `true` until both `trades` and `order-view` have acknowledged the current epoch.
+4. One consumer acknowledging the current epoch must not clear the resync by itself.
+5. A stale acknowledgement from an older epoch may remain recorded for that consumer, but it must not clear a newer active epoch.
+6. Trades and Order View own only their local apply decisions; they do not own the global clear rule.
 
 ## Event: `market_update`
 
@@ -130,6 +190,8 @@ Patch rules:
 3. `patch.legs_order` is optional and controls deterministic ordering.
 4. Missing field means no change.
 5. Explicit `null` means delete.
+6. Quantity fields that affect risk must use explicit `*_venue` / `*_base` names and include conversion metadata when derived.
+7. Shared risk/completeness fields must preserve the exact semantics of the shared portfolio snapshot.
 
 Payload example:
 
@@ -212,6 +274,11 @@ Upsert example:
   }
 }
 ```
+
+Trade quantity note:
+
+1. `trade.qty` is venue/native size.
+2. If the socket contract later includes normalized trade exposure, it must use a convention-consistent explicit `*_venue` / `*_base` pair together with `qty_conversion_status` and `qty_conversion_source`, rather than changing the meaning of `qty`.
 
 Delete example:
 

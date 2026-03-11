@@ -108,6 +108,7 @@ impl HyperliquidDataClient {
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());
         }
+        http_client.set_dex(config.dex.clone());
 
         let ws_url = config.base_url_ws.clone();
         let ws_client = HyperliquidWebSocketClient::new(ws_url, config.is_testnet, None);

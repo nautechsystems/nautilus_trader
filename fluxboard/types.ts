@@ -360,6 +360,9 @@ export type StrategyMeta = {
   quote_asset?: string;
   chain?: string;
   strategy_groups?: string;
+  param_set?: string;
+  strategy_family?: string;
+  strategy_version?: string;
 };
 
 export type StrategyRunState = 'running' | 'stopped' | 'unknown';
@@ -367,6 +370,7 @@ export type StrategyRunState = 'running' | 'stopped' | 'unknown';
 export type StrategyStatus = {
   runState: StrategyRunState;
   tradingEnabled: boolean;
+  blocked?: boolean;
   coolingDown?: boolean;
 };
 
@@ -446,6 +450,8 @@ export type BalanceChildRow = CanonicalNamingFields & {
   form_source?: string;
   chain?: string | null;
   contract?: string | null;
+  risk_key?: string | null;
+  risk_label?: string | null;
 };
 
 export type BalanceParentRow = {
@@ -499,6 +505,18 @@ export type RiskGroup = {
   abs_net_mv?: number | null;
   hedge_ratio?: number | null;
   sources?: string[];
+  rows?: Array<{
+    row_id?: string | null;
+    venue: string;
+    coin: string;
+    qty_raw: number;
+    mv_raw: number;
+    mark_raw?: number | null;
+    time_display?: string | null;
+    label?: string | null;
+    wallet?: string | null;
+    address?: string | null;
+  }>;
 };
 
 export type BalancesPayload = {
@@ -606,6 +624,7 @@ export type PricingAdjustment = {
   inv_skew_global?: number;
   inv_ratio_local?: number;
   inv_skew_local?: number;
+  global_qty?: number | null;
   curr_qty?: number | null;
   local_qty?: number | null;
   local_qty_key?: {
@@ -661,6 +680,39 @@ export type MakerV2QuoteSnapshot = {
   eff_ask_edge_bps?: string | number | null;
   place_edge_bps?: string | number | null;
 
+  [key: string]: unknown;
+};
+
+export type MakerV4LegSnapshot = {
+  venue?: string;
+  route?: string | null;
+  symbol?: string;
+  instrument_id?: string;
+  bid?: string | number | null;
+  ask?: string | number | null;
+  mid?: string | number | null;
+  ts_ms?: string | number | null;
+  age_ms?: string | number | null;
+  [key: string]: unknown;
+};
+
+export type MakerV4QuoteSnapshot = {
+  ts_ms?: string | number | null;
+  maker_leg?: MakerV4LegSnapshot;
+  hedge_leg?: MakerV4LegSnapshot;
+  ref_leg?: MakerV4LegSnapshot;
+  effective_spread_bps?: string | number | null;
+  quoted_spread_bps?: string | number | null;
+  expected_maker_fee_bps?: string | number | null;
+  assumed_hedge_fee_bps?: string | number | null;
+  hedge_ready?: boolean | null;
+  hedge_route?: string | null;
+  effective_account_source?: string | null;
+  hedge_disabled_reason?: string | null;
+  ibkr_quote_age_ms?: string | number | null;
+  fee_snapshot_age_s?: string | number | null;
+  hedge_latency_ms?: string | number | null;
+  hedge_slippage_bps_vs_mid?: string | number | null;
   [key: string]: unknown;
 };
 
@@ -723,7 +775,10 @@ export type SignalStrategy = {
   maker_v3?: {
     quote_snapshot?: MakerV2QuoteSnapshot;
   };
-  strategy_family?: 'maker_v3' | 'maker_v2' | 'taker';
+  maker_v4?: {
+    quote_snapshot?: MakerV4QuoteSnapshot;
+  };
+  strategy_family?: 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
   risk_delta?: number;
   risk_delta_ts_ms?: number;
   // Static strategy classification metadata (optional, from configs/strategies.ini)
@@ -914,6 +969,9 @@ export type HedgerInstanceMeta = {
   state_key?: string | null;
   config_env_var?: string | null;
   config_default_path?: string | null;
+  staged?: boolean;
+  config_ready?: boolean;
+  config_readiness_errors?: string[] | null;
 };
 
 export type HedgerConfig = {
@@ -963,6 +1021,9 @@ export type HedgerStatus = {
   threshold_effective: HedgerThresholds | null;
   hedger_enabled?: boolean;
   dry_run?: boolean;
+  staged?: boolean;
+  config_ready?: boolean;
+  config_readiness_errors?: string[] | null;
 };
 
 
@@ -1031,7 +1092,7 @@ export type ValidationResult = {
 export type ValidationErrors = Record<string, string>;
 
 // Alert types
-export type AlertLevel = 'INFO' | 'WARNING' | 'CRITICAL';
+export type AlertLevel = 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
 
 export type Alert = {
   id: string;

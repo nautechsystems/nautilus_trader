@@ -407,6 +407,18 @@ type ResyncStore = {
   resetResyncState: () => void;
 };
 
+export const RESYNC_ACK_CONSUMERS = ['trades', 'order-view'] as const;
+
+const hasCurrentResyncAckFromAllConsumers = (
+  resyncId: number,
+  appliedBy: Record<string, number>,
+): boolean => {
+  if (resyncId <= 0) {
+    return false;
+  }
+  return RESYNC_ACK_CONSUMERS.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
+};
+
 export const useResyncStore = create<ResyncStore>((set, get) => ({
   resyncId: 0,
   isResyncing: false,
@@ -439,12 +451,11 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       }
 
       const appliedBy = { ...state.appliedBy, [normalizedConsumer]: normalizedResyncId };
-      const hasAppliedCurrent = normalizedResyncId >= state.resyncId;
+      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(state.resyncId, appliedBy);
 
-      // TODO(PR1767): tighten this clear rule once we formalize multi-consumer resync completion policy.
       return {
         appliedBy,
-        isResyncing: hasAppliedCurrent ? false : state.isResyncing,
+        isResyncing: isResyncComplete ? false : state.isResyncing,
       };
     }),
 
@@ -1200,6 +1211,39 @@ type BalancesStore = {
   setRiskSort: (column: BalancesStore['riskSort']['column'], direction: 'asc' | 'desc') => void;
 };
 
+function balanceChildMetadataEqual(a: BalanceChildRow, b: BalanceChildRow): boolean {
+  return (
+    a.coin === b.coin
+    && (a.display_name_short ?? null) === (b.display_name_short ?? null)
+    && (a.display_name_long ?? null) === (b.display_name_long ?? null)
+    && (a.inventory_asset ?? null) === (b.inventory_asset ?? null)
+    && (a.base_asset ?? null) === (b.base_asset ?? null)
+    && (a.quote_asset ?? null) === (b.quote_asset ?? null)
+    && (a.product_type ?? null) === (b.product_type ?? null)
+    && (a.market_type ?? null) === (b.market_type ?? null)
+    && (a.form ?? null) === (b.form ?? null)
+    && (a.chain ?? null) === (b.chain ?? null)
+    && (a.contract ?? null) === (b.contract ?? null)
+    && (a.venue ?? null) === (b.venue ?? null)
+    && (a.wallet ?? null) === (b.wallet ?? null)
+    && (a.label ?? null) === (b.label ?? null)
+    && (a.address ?? null) === (b.address ?? null)
+    && (a.risk_key ?? null) === (b.risk_key ?? null)
+    && (a.risk_label ?? null) === (b.risk_label ?? null)
+  );
+}
+
+function balanceParentMetadataEqual(a: BalanceParentRow, b: BalanceParentRow): boolean {
+  return (
+    a.coin === b.coin
+    && a.canonical === b.canonical
+    && a.is_parent === b.is_parent
+    && a.stable === b.stable
+    && (a.time_display ?? null) === (b.time_display ?? null)
+    && (a.time_iso ?? null) === (b.time_iso ?? null)
+  );
+}
+
 function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[]): boolean {
   if (prev.length !== next.length) return false;
   for (let i = 0; i < prev.length; i += 1) {
@@ -1212,6 +1256,7 @@ function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[])
       a.mv_raw !== b.mv_raw ||
       (a.mark_raw ?? null) !== (b.mark_raw ?? null) ||
       (a.last_ts ?? null) !== (b.last_ts ?? null) ||
+      !balanceParentMetadataEqual(a, b) ||
       a.children.length !== b.children.length
     ) {
       return false;
@@ -1225,7 +1270,8 @@ function balanceParentsEqual(prev: BalanceParentRow[], next: BalanceParentRow[])
         ca.qty_raw !== cb.qty_raw ||
         ca.mv_raw !== cb.mv_raw ||
         (ca.mark_raw ?? null) !== (cb.mark_raw ?? null) ||
-        (ca.last_ts ?? null) !== (cb.last_ts ?? null)
+        (ca.last_ts ?? null) !== (cb.last_ts ?? null) ||
+        !balanceChildMetadataEqual(ca, cb)
       ) {
         return false;
       }
@@ -1283,6 +1329,29 @@ function riskGroupsEqual(prev: RiskGroup[], next: RiskGroup[]): boolean {
     if (aSources.length !== bSources.length) return false;
     for (let j = 0; j < aSources.length; j += 1) {
       if (aSources[j] !== bSources[j]) {
+        return false;
+      }
+    }
+
+    const aRows = a.rows ?? [];
+    const bRows = b.rows ?? [];
+    if (aRows.length !== bRows.length) return false;
+    for (let j = 0; j < aRows.length; j += 1) {
+      const ar = aRows[j];
+      const br = bRows[j];
+      if (
+        !br
+        || (ar.row_id ?? null) !== (br.row_id ?? null)
+        || ar.venue !== br.venue
+        || ar.coin !== br.coin
+        || ar.qty_raw !== br.qty_raw
+        || ar.mv_raw !== br.mv_raw
+        || (ar.mark_raw ?? null) !== (br.mark_raw ?? null)
+        || (ar.time_display ?? null) !== (br.time_display ?? null)
+        || (ar.label ?? null) !== (br.label ?? null)
+        || (ar.wallet ?? null) !== (br.wallet ?? null)
+        || (ar.address ?? null) !== (br.address ?? null)
+      ) {
         return false;
       }
     }
@@ -1470,12 +1539,14 @@ const createDefaultColumnPrefsByProfile = (): ParamsColumnPrefsByProfile => ({
   taker: createDefaultColumnPrefs(),
   maker_v2: createDefaultColumnPrefs(),
   maker_v3: createDefaultColumnPrefs(),
+  maker_v4: createDefaultColumnPrefs(),
 });
 
 function normalizeParamsProfileId(value: unknown): ParamsProfileId {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'maker_v2') return 'maker_v2';
   if (normalized === 'maker_v3') return 'maker_v3';
+  if (normalized === 'maker_v4') return 'maker_v4';
   return 'taker';
 }
 
@@ -1494,6 +1565,7 @@ const normalizeColumnPrefsByProfile = (
         : takerLegacy,
     maker_v2: normalizeColumnPrefs(prefs?.maker_v2 ?? defaults.maker_v2),
     maker_v3: normalizeColumnPrefs(prefs?.maker_v3 ?? defaults.maker_v3),
+    maker_v4: normalizeColumnPrefs(prefs?.maker_v4 ?? defaults.maker_v4),
   };
 };
 
@@ -1612,6 +1684,7 @@ export const useParamsStore = create<ParamsStore>()(
           normalizedPrefsByProfile.taker = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v2 = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v3 = cloneLegacyPrefs();
+          normalizedPrefsByProfile.maker_v4 = cloneLegacyPrefs();
         }
         const activeProfile = normalizeParamsProfileId(
           version < 3

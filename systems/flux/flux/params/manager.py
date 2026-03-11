@@ -183,6 +183,25 @@ class FluxParamsManager:
                 )
             return parsed_num
 
+        if schema_type == "select":
+            parsed_text = self._decode(value).strip()
+            raw_options = schema.get("options")
+            if isinstance(raw_options, (list, tuple)):
+                valid_values = {
+                    str(option[0]).strip()
+                    for option in raw_options
+                    if isinstance(option, (list, tuple)) and len(option) >= 1
+                }
+                if valid_values and parsed_text not in valid_values:
+                    raise ValueError(
+                        f"Invalid option value for parameter {name!r}: {value!r}",
+                    )
+            if not parsed_text:
+                raise ValueError(
+                    f"Invalid option value for parameter {name!r}: {value!r}",
+                )
+            return parsed_text
+
         return self._decode(value)
 
     @staticmethod

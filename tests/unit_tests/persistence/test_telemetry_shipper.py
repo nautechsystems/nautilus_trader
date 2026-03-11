@@ -219,10 +219,19 @@ def _create_portfolio_inventory_snapshot_source(path: Path) -> None:
               base_currency TEXT NOT NULL,
               snapshot_id TEXT NOT NULL,
               snapshot_hash TEXT NOT NULL,
+              global_qty_base TEXT,
               global_qty TEXT,
+              aggregation_mode TEXT NOT NULL DEFAULT 'strict',
+              global_qty_base_complete INTEGER NOT NULL DEFAULT 0,
+              global_qty_complete INTEGER NOT NULL DEFAULT 0,
               degraded INTEGER NOT NULL DEFAULT 0,
               missing_required_json TEXT NOT NULL DEFAULT '[]',
+              stale_required_json TEXT NOT NULL DEFAULT '[]',
+              null_qty_required_json TEXT NOT NULL DEFAULT '[]',
               components_json TEXT NOT NULL DEFAULT '[]',
+              usable_component_count INTEGER NOT NULL DEFAULT 0,
+              expected_component_count INTEGER NOT NULL DEFAULT 0,
+              stale_after_ms INTEGER NOT NULL DEFAULT 0,
               ts_ms INTEGER NOT NULL,
               ts_ingest_ns INTEGER NOT NULL,
               created_at TEXT NOT NULL
@@ -232,9 +241,11 @@ def _create_portfolio_inventory_snapshot_source(path: Path) -> None:
         conn.execute(
             """
             INSERT INTO portfolio_inventory_snapshot (
-              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty, degraded,
-              missing_required_json, components_json, ts_ms, ts_ingest_ns, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty_base, global_qty,
+              aggregation_mode, global_qty_base_complete, global_qty_complete, degraded,
+              missing_required_json, stale_required_json, null_qty_required_json, components_json,
+              usable_component_count, expected_component_count, stale_after_ms, ts_ms, ts_ingest_ns, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "tokenmm",
@@ -242,9 +253,18 @@ def _create_portfolio_inventory_snapshot_source(path: Path) -> None:
                 "portfolio-snapshot-1",
                 "portfolio-hash-1",
                 "26883",
+                "26883",
+                "partial",
+                0,
+                0,
                 0,
                 "[]",
+                '["maker_v3_02"]',
+                "[]",
                 '[{"strategy_id":"maker_v3_01","local_qty":"26883"}]',
+                1,
+                2,
+                3000,
                 123_000,
                 124_000_000_000,
                 "2099-01-01T00:00:00.000Z",
@@ -370,10 +390,19 @@ def _create_portfolio_inventory_source(path: Path) -> None:
               base_currency TEXT NOT NULL,
               snapshot_id TEXT NOT NULL,
               snapshot_hash TEXT NOT NULL,
+              global_qty_base TEXT,
               global_qty TEXT,
+              aggregation_mode TEXT NOT NULL DEFAULT 'strict',
+              global_qty_base_complete INTEGER NOT NULL DEFAULT 0,
+              global_qty_complete INTEGER NOT NULL DEFAULT 0,
               degraded INTEGER NOT NULL,
               missing_required_json TEXT NOT NULL,
+              stale_required_json TEXT NOT NULL,
+              null_qty_required_json TEXT NOT NULL,
               components_json TEXT NOT NULL,
+              usable_component_count INTEGER NOT NULL,
+              expected_component_count INTEGER NOT NULL,
+              stale_after_ms INTEGER NOT NULL,
               ts_ms INTEGER NOT NULL,
               ts_ingest_ns INTEGER NOT NULL,
               created_at TEXT NOT NULL
@@ -383,9 +412,11 @@ def _create_portfolio_inventory_source(path: Path) -> None:
         conn.execute(
             """
             INSERT INTO portfolio_inventory_snapshot (
-              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty, degraded,
-              missing_required_json, components_json, ts_ms, ts_ingest_ns, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty_base, global_qty,
+              aggregation_mode, global_qty_base_complete, global_qty_complete, degraded,
+              missing_required_json, stale_required_json, null_qty_required_json, components_json,
+              usable_component_count, expected_component_count, stale_after_ms, ts_ms, ts_ingest_ns, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "tokenmm",
@@ -393,9 +424,18 @@ def _create_portfolio_inventory_source(path: Path) -> None:
                 "portfolio-snapshot-1",
                 "portfolio-hash-1",
                 "26883",
+                "26883",
+                "partial",
+                0,
+                0,
                 0,
                 "[]",
+                '["maker_v3_02"]',
+                "[]",
                 '[{"strategy_id":"maker_v3_01","local_qty":"26883"}]',
+                1,
+                2,
+                3000,
                 1_000,
                 1_100_000,
                 "2025-01-01T00:00:00.000Z",
@@ -532,6 +572,10 @@ def test_shipper_ships_balance_snapshot_and_portfolio_inventory_tables(tmp_path:
         "flux_balance_snapshot_row",
         "portfolio_inventory_snapshot",
     ]
+    portfolio_row = dict(sink.insert_calls[-1][1][0])
+    assert portfolio_row["aggregation_mode"] == "partial"
+    assert portfolio_row["stale_required_json"] == '["maker_v3_02"]'
+    assert portfolio_row["expected_component_count"] == 2
 
 
 def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_path: Path) -> None:
@@ -574,9 +618,11 @@ def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_
         conn.execute(
             """
             INSERT INTO portfolio_inventory_snapshot (
-              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty, degraded,
-              missing_required_json, components_json, ts_ms, ts_ingest_ns, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              portfolio_id, base_currency, snapshot_id, snapshot_hash, global_qty_base, global_qty,
+              aggregation_mode, global_qty_base_complete, global_qty_complete, degraded,
+              missing_required_json, stale_required_json, null_qty_required_json, components_json,
+              usable_component_count, expected_component_count, stale_after_ms, ts_ms, ts_ingest_ns, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "tokenmm",
@@ -584,9 +630,18 @@ def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_
                 "portfolio-snapshot-2",
                 "portfolio-hash-2",
                 "30000",
+                "30000",
+                "strict",
+                1,
+                1,
                 0,
                 "[]",
+                "[]",
+                "[]",
                 '[{"strategy_id":"maker_v3_01","local_qty":"30000"}]',
+                2,
+                2,
+                3000,
                 124_000,
                 125_000_000_000,
                 "2099-01-01T00:00:00.000Z",

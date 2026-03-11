@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -27,9 +28,15 @@ from flux.api.payloads import coerce_ts_ms
 from flux.api.payloads import decode_text
 from flux.api.payloads import now_ms
 from flux.api.payloads import safe_int
+from flux.runners.shared.strategy_set import normalize_profile as normalize_strategy_set_profile
+from flux.runners.shared.strategy_set import supported_profile_ids as supported_strategy_set_profiles
+
+if __name__ == "flux.api.socketio":
+    sys.modules.setdefault("nautilus_trader.flux.api.socketio", sys.modules[__name__])
+elif __name__ == "nautilus_trader.flux.api.socketio":
+    sys.modules.setdefault("flux.api.socketio", sys.modules[__name__])
 
 
-TOKENMM_PROFILE_ALIASES: frozenset[str] = frozenset({"tokenm", "tokenmm"})
 SOCKETIO_DEFAULT_PATH = "/socket.io"
 SOCKETIO_DEFAULT_POLL_INTERVAL_S = 0.75
 SOCKETIO_TRADE_POLL_LIMIT = 200
@@ -63,10 +70,11 @@ def normalize_profile(profile: Any) -> str:
     """
     Normalize inbound profile IDs for room and payload scoping.
     """
-    text = decode_text(profile).strip().lower()
-    if text in TOKENMM_PROFILE_ALIASES:
-        return "tokenmm"
-    return text
+    return normalize_strategy_set_profile(decode_text(profile))
+
+
+def supported_profile_ids() -> tuple[str, ...]:
+    return supported_strategy_set_profiles()
 
 
 def profile_room(profile: Any) -> str:
@@ -396,8 +404,7 @@ class FluxSocketEmitter:
 
     def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:
         ids: list[str] = []
-        normalized_profile = normalize_profile(profile)
-        if normalized_profile == "tokenmm" and self._strategy_ids_resolver is not None:
+        if self._strategy_ids_resolver is not None:
             raw_values = self._strategy_ids_resolver(profile)
             if isinstance(raw_values, Sequence) and not isinstance(raw_values, str | bytes):
                 candidates = list(raw_values)
@@ -712,8 +719,7 @@ def create_flux_socket_server(  # noqa: C901
     )
 
     def _profile_supported(profile: str) -> bool:
-        normalized_profile = normalize_profile(profile)
-        if normalized_profile == "tokenmm" and strategy_ids_resolver is not None:
+        if strategy_ids_resolver is not None:
             raw_values = strategy_ids_resolver(profile)
             if isinstance(raw_values, Sequence) and not isinstance(raw_values, str | bytes):
                 for value in raw_values:
@@ -828,4 +834,5 @@ __all__ = [
     "create_flux_socket_server",
     "normalize_profile",
     "profile_room",
+    "supported_profile_ids",
 ]

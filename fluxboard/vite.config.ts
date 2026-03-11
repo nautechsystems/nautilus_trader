@@ -7,7 +7,7 @@ const DEFAULT_DEV_HOST = '127.0.0.1';
 const DEFAULT_DEV_PORT = 5173;
 const DEFAULT_PREVIEW_PORT = 4173;
 const DEFAULT_FLUXAPI_PORT = '5022';
-const DEFAULT_FLUXBOARD_BASE_PATH = '/tokenmm/';
+const DEFAULT_FLUXBOARD_BASE_PATH = '/static/fluxboard/';
 
 function toPort(rawValue: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);

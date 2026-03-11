@@ -86,6 +86,7 @@ dependencies = [
  "alloy-network",
  "alloy-provider",
  "alloy-rpc-client",
+ "alloy-rpc-types",
  "alloy-transport",
  "alloy-transport-http",
 ]
@@ -227,6 +228,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "borsh",
+ "k256",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -436,6 +438,18 @@ dependencies = [
  "tower",
  "tracing",
  "wasmtimer",
+]
+
+[[package]]
+name = "alloy-rpc-types"
+version = "1.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bdcbf9dfd5eea8bfeb078b1d906da8cd3a39c4d4dbe7a628025648e323611f6"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
+ "serde",
 ]
 
 [[package]]
@@ -4993,6 +5007,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-bitget"
+version = "0.54.0"
+dependencies = [
+ "anyhow",
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "chrono",
+ "crc32fast",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "url",
+]
+
+[[package]]
 name = "nautilus-bitmex"
 version = "0.54.0"
 dependencies = [
@@ -5047,6 +5085,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "axum",
  "bytes",
  "dotenvy",
  "enum_dispatch",
@@ -5075,6 +5114,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "turmoil",
+ "url",
  "ustr",
 ]
 
@@ -5812,6 +5852,7 @@ dependencies = [
  "nautilus-architect-ax",
  "nautilus-backtest",
  "nautilus-binance",
+ "nautilus-bitget",
  "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-bybit",

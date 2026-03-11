@@ -1,3 +1,4 @@
+from . import payloads as payloads
 from flux.api.app import DEFAULT_PARAMS_DEFAULTS
 from flux.api.app import DEFAULT_PARAMS_SCHEMA
 from flux.api.app import FluxApiStore

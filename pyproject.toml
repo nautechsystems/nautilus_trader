@@ -22,14 +22,17 @@ readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
   "click>=8.0.0,<9.0.0",
+  "flask>=3.0.0,<4.0.0",
+  "flask-socketio>=5.3.6,<6.0.0",
   "fsspec>=2025.2.0,<=2026.1.0",
   "msgspec>=0.20.0,<1.0.0",
   "numpy>=1.26.4",
   "pandas>=2.3.3,<3.0.0",
   "portion>=2.6.1",
-  "psycopg[binary]>=3.2.12,<4.0.0",
+  "psycopg[binary]>=3.3.2,<4.0.0",
   "pyarrow>=22.0.0",
   "pytz>=2025.2.0",
+  "redis>=5.0.0,<6.0.0",
   "tqdm>=4.67.3,<5.0.0",
   "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned to 0.22.1 for stability
 ]
@@ -107,6 +110,10 @@ docs = [
   "myst-parser>=5.0.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
   "sphinx-markdown-builder>=0.6.9,<1.0.0",
+]
+notebook = [
+  "ipykernel>=6.29.5,<7.0.0",
+  "jupyterlab>=4.4.7,<5.0.0",
 ]
 
 [tool.isort]

@@ -10,6 +10,7 @@ The following integrations are currently supported:
 | [Architect](https://architect.co)                                            | `ARCHITECT`           | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planned-gray)    | -                         |
 | [Betfair](https://betfair.com)                                               | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](betfair.md)       |
 | [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](binance.md)       |
+| [Bitget](https://bitget.com)                                                 | `BITGET`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](bitget.md)        |
 | [BitMEX](https://www.bitmex.com)                                             | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](bitmex.md)        |
 | [Bybit](https://www.bybit.com)                                               | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](bybit.md)         |
 | [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](databento.md)     |
@@ -19,6 +20,7 @@ The following integrations are currently supported:
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](ib.md)            |
 | [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](kraken.md)        |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](okx.md)           |
+| [PancakeSwap](https://pancakeswap.finance)                                     | `Bsc:PancakeSwapV2`   | AMM Exchange (DEX)      | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](pancakeswap.md)   |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](polymarket.md)    |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](tardis.md)        |
 

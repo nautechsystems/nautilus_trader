@@ -1,0 +1,28 @@
+[flux]
+mode = "live"
+confirm_live = true
+namespace = "flux"
+schema_version = "v1"
+
+[identity]
+strategy_id = "lp_api"
+strategy_instance_id = "lp_api"
+trader_id = "LP-API-001"
+external_strategy_id = "lp_api"
+
+[redis]
+host = "127.0.0.1"
+port = 6379
+db = 0
+username = "default"
+password = ""
+ssl = false
+connect_timeout_secs = 5.0
+read_timeout_secs = 5.0
+
+[api]
+host = "127.0.0.1"
+port = 5025
+surface = "lp"
+public_base_path = "/lp"
+hedger_api_base = "/api/v1/hedgers"

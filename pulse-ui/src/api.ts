@@ -24,8 +24,15 @@ export interface Job {
   errors?: ErrorInfo;
 }
 
+export interface ShellLink {
+  label: string;
+  path: string;
+  surface: string;
+}
+
 export interface JobsResponse {
   jobs: Job[];
+  shell_links?: ShellLink[];
   total: number;
   active: number;
   failed: number;

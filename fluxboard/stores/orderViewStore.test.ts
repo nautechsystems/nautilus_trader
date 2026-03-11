@@ -6,6 +6,7 @@ import {
   ORDER_VIEW_MARKET_TRADES_CAP,
   useOrderViewStore,
 } from './orderViewStore';
+import { useResyncStore } from '@/stores';
 
 const makeSnapshot = (overrides: Partial<any> = {}) => ({
   room_id: 'order_view:strat-1:maker:book:0:depth:20',
@@ -76,6 +77,7 @@ const makeDelta = (seq: number, overrides: Partial<any> = {}) => ({
 describe('orderViewStore', () => {
   beforeEach(() => {
     useOrderViewStore.getState().clear();
+    useResyncStore.getState().resetResyncState();
   });
 
   it('applies snapshot then full-refresh order lifecycle deltas', () => {
@@ -182,6 +184,48 @@ describe('orderViewStore', () => {
     const stale = store.applyDelta(makeDelta(2), 1);
     expect(stale.staleRejected).toBe(true);
     expect(useOrderViewStore.getState().lastSeq).toBe(1);
+  });
+
+  it('keeps global resync active after order view acknowledges until trades also acknowledges', () => {
+    const store = useOrderViewStore.getState();
+    const currentResyncId = useResyncStore.getState().bumpResync('order-view-current');
+    expect(currentResyncId).toBe(1);
+
+    const snapshot = store.applySnapshot(makeSnapshot({ snapshot_id: 'snap-resync', seq: 0 }), currentResyncId);
+    expect(snapshot.applied).toBe(true);
+    expect(useOrderViewStore.getState().appliedResyncId).toBe(currentResyncId);
+
+    useResyncStore.getState().markResyncApplied('order-view', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('does not clear the current order-view resync when trades only replays an older epoch acknowledgement', () => {
+    const store = useOrderViewStore.getState();
+
+    const firstEpoch = useResyncStore.getState().bumpResync('order-view-epoch-1');
+    expect(firstEpoch).toBe(1);
+    expect(store.applySnapshot(makeSnapshot({ snapshot_id: 'snap-1', seq: 0 }), firstEpoch).applied).toBe(true);
+    useResyncStore.getState().markResyncApplied('order-view', firstEpoch);
+    useResyncStore.getState().markResyncApplied('trades', firstEpoch);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+
+    const secondEpoch = useResyncStore.getState().bumpResync('order-view-epoch-2');
+    expect(secondEpoch).toBe(2);
+    expect(store.applySnapshot(makeSnapshot({ snapshot_id: 'snap-2', seq: 0, state_rev: 'rev-2' }), secondEpoch).applied).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('order-view', secondEpoch);
+    useResyncStore.getState().markResyncApplied('trades', firstEpoch);
+
+    const state = useResyncStore.getState();
+    expect(state.appliedBy['order-view']).toBe(secondEpoch);
+    expect(state.appliedBy.trades).toBe(firstEpoch);
+    expect(state.isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('trades', secondEpoch);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
   });
 
   it('sets and clears normalized cross-panel focus state', () => {

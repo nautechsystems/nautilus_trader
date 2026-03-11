@@ -1,6 +1,8 @@
 # TokenMM production deploy config
 
-This directory is the production deployment root for the current 4-node PLUME TokenMM stack.
+This directory is the production deployment root for the TokenMM stack.
+
+Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 
 ## Layout
 
@@ -12,12 +14,14 @@ This directory is the production deployment root for the current 4-node PLUME To
   - `flux.runners.tokenmm.run_portfolio`
   - `flux.runners.tokenmm.run_bridge`
   - `flux.runners.tokenmm.run_api`
-  - `nautilus_trader.persistence.shipper.run`
 - Active production strategy topology:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
   - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_binance_perp_makerv3`
   - `plumeusdt_binance_spot_makerv3`
+  - `plumeusdt_bitget_perp_makerv3`
+  - `plumeusdt_bitget_spot_makerv3`
 - Disabled strategy configs stay in `strategies/*.toml.disabled` until they are re-enrolled.
 
 ## Intent
@@ -27,36 +31,132 @@ This directory is the production deployment root for the current 4-node PLUME To
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
-- Execution telemetry stays off the hot path: nodes write local SQLite under `/var/lib/nautilus/telemetry/tokenmm`, and a separate shipper service mirrors those files into RDS PostgreSQL.
-- Redis remains latest-only for live operational state.
-- Historical portfolio reconciliation now comes from RDS via the local SQLite shipper.
-- Historical balance and portfolio inventory surfaces are persisted as `flux_balance_snapshot` / `flux_balance_snapshot_row` and `portfolio_inventory_snapshot`.
-- All four active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- All seven active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+
+## Binance Spot Margin Recovery Canary
+
+Use this checklist when restoring `plumeusdt_binance_spot_makerv3` after a borrowing or alerting regression.
+
+Preconditions:
+
+- Deploy the branch that contains:
+  - `allow_cash_borrowing = true` under `[node.venues.BINANCE_SPOT]`
+  - `spot_cash_borrowing_policy = "both_sides"` under `[strategy]`
+  - the Binance adapter borrow-on-submit fix
+  - the MakerV3/API/Fluxboard alert surfacing fix
+- Keep `force_bot_off_on_start = true` and `bot_on = false` in the strategy TOML for the first restart.
+
+Canary order:
+
+1. Restart only the Binance spot node while it is still bot-off:
+   - `sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service`
+2. Check service health and fresh API state:
+   - `journalctl -u flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service --since "10 min ago" --no-pager`
+   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3"`
+   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=20"`
+3. Verify before enabling quoting:
+   - startup completes without borrow-mode or submit-shape errors
+   - the signals payload is fresh
+   - the alerts payload is readable and rows expose stable `id` / `row_id`
+4. Enable quoting through the approved runtime control path only after the bot-off checks pass.
+5. Watch the canary continuously for at least one quote-replacement window and one denial/rejection window:
+   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3" | jq '.data.rows[0]'`
+   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50" | jq '.data.rows'`
+
+Acceptance criteria:
+
+- `maker_quote_status` shows working/open orders on at least one side instead of only blocked counts.
+- Binance spot orders are accepted or working; they are no longer denied for zero free quote/base when borrowing is requested.
+- Fresh denials or rejections appear in Fluxboard Alerts with visible `ERROR`/`CRITICAL` severity.
+- Journals stay clear of venue-protection and borrow-mode configuration errors.
+
+Rollback immediately if any release gate fails:
+
+1. Put the strategy back to bot-off using the approved runtime control path.
+2. Restart the strategy service if in-flight state needs clearing.
+3. Revert the offending deploy or config change before another canary.
+4. Preserve `journalctl`, `/api/v1/signals`, and `/api/v1/alerts` evidence in the incident notes before retrying.
 
 ## Inventory and balances model
 
+This section defines the stable TokenMM production contract for the current
+runtime surface. Historical rollout sequencing lives in
+`docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md`, but the
+semantics documented here are the current source of truth.
+
 - `Signal` mirrors exact per-strategy state from MakerV3.
-- `local_qty` in strategy state is the maker leg only for that strategy.
-- `global_qty` in strategy state is the TokenMM portfolio aggregate for the base asset.
-- `run_portfolio` owns that aggregate. Each strategy publishes a maker-leg inventory component, and the
-  sidecar recomputes the shared portfolio quantity in Redis.
-- `GET /api/v1/balances?profile=tokenmm` remains a portfolio API projection built from allowlisted strategy
-  balance snapshots.
+- `local_qty_base` in strategy state is the canonical maker-leg base exposure for that strategy.
+- `global_qty_base` in strategy state is the canonical TokenMM portfolio aggregate for the base asset.
+- temporary compatibility aliases such as `local_qty` and `global_qty` must mirror the corresponding `*_base` fields exactly.
+- `run_portfolio` owns the shared TokenMM portfolio snapshot. Each strategy publishes a maker-leg inventory
+  component, and the sidecar recomputes the shared portfolio quantity, contributor diagnostics, merged
+  balances rows, and merged balances totals in Redis.
+- `GET /api/v1/balances?profile=tokenmm` must consume that shared portfolio snapshot rather than recomputing
+  shared balances semantics independently.
+- `GET /api/v1/balances?profile=tokenmm` may report `source = "portfolio_snapshot"` only when the shared
+  snapshot is fresh enough: `server_ts_ms` and inventory `ts_ms` must both be within `stale_after_ms`.
+  If that gate fails, the API falls back to the live per-strategy merge path.
+- `GET /api/v1/signals?profile=tokenmm` must render strategy-local and portfolio-global quantities from
+  canonical strategy state plus portfolio metadata, not derive them from balances except in explicit
+  compatibility fallback mode.
+- Fluxboard balances/risk drilldown consumes backend-authored `risk_groups`, `risk_groups[].rows`, and row
+  `risk_key` / `risk_label` semantics from the API payload. It must not locally infer buckets from coin text.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
-- Redis powers the latest-only operational projection. Historical balance and portfolio reconciliation
-  should query the shipped RDS tables instead of Redis.
+- `risk_delta` remains diagnostic only and must not silently replace `local_qty_base` for spot local inventory.
+- startup reconciliation failure means degraded or blocked trading, not best-effort stale-cache trading.
+- `global_qty_base` may be complete or partial; consumers must use explicit completeness metadata instead of
+  inferring status from nullability alone.
+- live execution-enabled TokenMM nodes must keep `exec_reconciliation = true` and
+  `filter_position_reports = false`; the node now rejects unsafe live startup
+  settings instead of silently permitting stale-cache trading.
+
+Shared inventory metadata:
+
+- `aggregation_mode = "strict"` means all required contributors must be fresh and known.
+- `aggregation_mode = "partial"` means `global_qty_base` is the sum of fresh known contributors and
+  `global_qty_base_complete = false` marks the shared view as incomplete.
+- `stale_after_ms` is the freshness budget for preferring the shared `portfolio_snapshot`.
+- compatibility aliases `global_qty` and `global_qty_complete` mirror the canonical base fields.
+- missing, stale, and unknown contributors remain visible in diagnostics in both modes.
 
 :::info
-The portfolio sidecar currently drives shared inventory semantics for MakerV3 strategy state. The balances
-endpoint still performs API-side aggregation for the TokenMM portfolio view.
+The design target is a single shared portfolio source of truth. Strategy risk, Flux API, and Fluxboard all
+consume the portfolio snapshot owned by `run_portfolio`.
 :::
+
+### Order quantity units and startup guardrails
+
+- Every TokenMM strategy config should set `strategy.qty_unit` explicitly to either `venue` or `base`.
+- Missing `qty_unit` still starts today for compatibility, but the node logs a startup warning and defaults to
+  `venue`. Treat that as configuration debt and fix the TOML before the next deploy.
+- Invalid `qty_unit` values fail node startup immediately.
+- `qty_unit = "base"` means the configured `qty` / `order_qty` is base exposure and must round-trip cleanly
+  into a venue-native order size before Nautilus order creation.
+- If a base-sized order cannot convert to an exact venue quantity, startup/runtime quantity resolution fails
+  loudly instead of silently truncating risk.
+- Derivative strategy startup now logs a `startup_qty_guardrail` line with:
+  - maker instrument id
+  - configured `qty_unit`
+  - configured order quantity
+  - resolved venue order quantity
+  - local maker position venue quantity
+  - local maker position base quantity
+  - quantity conversion status/source
+- If a derivative local position cannot be normalized into base exposure, startup also logs
+  `startup_qty_guardrail_missing_base`. Treat that as a blocking operational issue for risk reconciliation,
+  even if the node is otherwise up.
 
 ## Production control plane
 
 ```bash
+make build
+pnpm --dir fluxboard install --frozen-lockfile
+pnpm --dir fluxboard build
+pnpm --dir pulse-ui install --frozen-lockfile
+pnpm --dir pulse-ui build
+.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py
 sudo ops/scripts/deploy/install_tokenmm_systemd.sh
 sudoedit /etc/flux/common.env
-python3 -m nautilus_trader.persistence.shipper.run --config deploy/tokenmm/tokenmm.live.toml --bootstrap-postgres
 sudo systemctl daemon-reload
 sudo systemctl start flux-tokenmm.target
 ```
@@ -64,17 +164,16 @@ sudo systemctl start flux-tokenmm.target
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
+- `install_tokenmm_systemd.sh` pins each TokenMM env file to the checkout used during install by writing
+  `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
+  `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
+  role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`,
-  `tokenmm-telemetry-shipper`, and the 4 active node services.
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 active
+  node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.
-- RDS credentials live in `/etc/flux/common.env` via `NAUTILUS_TELEMETRY_PG_*`.
-- The shipper requires the sink schema to be bootstrapped explicitly before the first start.
-- A shared one physical Postgres database is used for TokenMM and future equities profiles; segmentation is logical via `source_profile`, `strategy_id`, `trader_id`, and related telemetry fields.
-- Postgres sink deduplication is keyed by `source_profile` plus the local event identity, so different profiles can safely share the same sink database.
-- Portfolio-history shipping includes `telemetry.flux_balance_snapshot`,
-  `telemetry.flux_balance_snapshot_row`, and `telemetry.portfolio_inventory_snapshot`.
 
 Bootstrap or disaster recovery only:
 
@@ -88,7 +187,30 @@ Primary operator surfaces:
 - `http://<host>:5022/pulse`
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/tokenmm/restart`
-- [TELEMETRY_RDS_RUNBOOK.md](TELEMETRY_RDS_RUNBOOK.md)
+- Risk validation and rollout gates live in `docs/runbooks/tokenmm-risk-validation.md`.
+
+## JupyterLab
+
+- Optional localhost-only research service template: `deploy/tokenmm/systemd/tokenmm-jupyter.env.example`.
+- `install_tokenmm_systemd.sh` also writes `/etc/flux/tokenmm-jupyter.env` for `flux@tokenmm-jupyter.service`.
+- Start it separately from the trading target:
+  - `sudo systemctl start flux@tokenmm-jupyter.service`
+  - `sudo journalctl -u flux@tokenmm-jupyter.service -n 20 --no-pager`
+- Direct localhost address: `http://127.0.0.1:8888/lab`
+- The notebook root is `research/tokenmm`, and the example notebook is `research/tokenmm/notebooks/tokenmm_trade_data.ipynb`.
+- The notebook reads local SQLite telemetry from `TOKENMM_TELEMETRY_DIR`, defaulting to `/var/lib/nautilus/telemetry/tokenmm`.
+
+## Telemetry Persistence
+
+- Run the rollout preflight before changing systemd envs:
+  - `.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py`
+- Create the local telemetry directory before restarting live services:
+  - `sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm`
+- Local SQLite verification:
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite 'SELECT COUNT(*) FROM order_action;'`
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite 'SELECT COUNT(*) FROM execution_fill;'`
+  - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite 'SELECT COUNT(*) FROM quote_cycle;'`
+- For shipped Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
 
 ## Local smoke only
 
@@ -103,6 +225,10 @@ TOKENMM_REDIS_PASSWORD=... \
 TOKENMM_ALLOW_MISSING_KEYS=1 \
 ops/scripts/deploy/tokenmm_stack.sh start
 ```
+
+Local smoke logs live under `.run/tokenmm-stack/logs`. The script now rotates a log before append when it exceeds the
+configured size budget and keeps only a bounded number of rotated files. Use `TOKENMM_LOCAL_LOG_MAX_MB` and
+`TOKENMM_LOCAL_LOG_KEEP` to override the defaults.
 
 Smoke-check the portfolio surfaces directly:
 
@@ -122,9 +248,10 @@ ops/scripts/deploy/tokenmm_stack.sh stop
 
 Expected smoke result:
 
-- `params` returns the 4 allowlisted strategy IDs in registry order.
-- `signal` returns four per-strategy rows. Each row keeps its own `local_qty` and shares the same
-  portfolio-scoped `global_qty`.
-- `balances` returns the shared `tokenmm` portfolio view plus component readiness metadata.
+- `params` returns the 7 allowlisted strategy IDs in registry order.
+- `signal` returns seven per-strategy rows. Each row keeps its own `local_qty` and shares the same
+  portfolio-scoped `global_qty` alias from the shared portfolio snapshot, alongside canonical
+  `local_qty_base` / `global_qty_base` fields.
+- `balances` returns the shared `tokenmm` portfolio view from the same shared portfolio snapshot.
 - `trades` may be empty in paper smoke; if rows are present they must retain allowlisted per-row `strategy_id` values.
 - `api/pulse/jobs` returns the enrolled local jobs and statuses when Pulse assets are served.

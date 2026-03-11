@@ -88,15 +88,16 @@ class RuntimeParamSpec:
 
     name: str
     schema_type: str
-    default: bool | int | float
+    default: bool | int | float | str
     description: str
     minimum: int | float | None = None
     maximum: int | float | None = None
+    options: tuple[tuple[str, str], ...] | None = None
 
     def __post_init__(self) -> None:  # noqa: C901
         if not isinstance(self.name, str) or not self.name:
             raise ValueError("`name` must be a non-empty string")
-        if self.schema_type not in {"boolean", "integer", "number"}:
+        if self.schema_type not in {"boolean", "integer", "number", "select"}:
             raise ValueError(
                 f"`schema_type` was invalid for {self.name!r}: {self.schema_type!r}",
             )
@@ -106,16 +107,47 @@ class RuntimeParamSpec:
         minimum = self.minimum
         maximum = self.maximum
         default = self.default
+        options = self.options
 
         if self.schema_type == "boolean":
             if not isinstance(default, bool):
                 raise TypeError(f"`default` must be bool for {self.name!r}")
+            if minimum is not None or maximum is not None or options is not None:
+                raise ValueError(
+                    f"Boolean parameter {self.name!r} cannot define numeric bounds/options",
+                )
+            return
+
+        if self.schema_type == "select":
             if minimum is not None or maximum is not None:
-                raise ValueError(f"Boolean parameter {self.name!r} cannot define numeric bounds")
+                raise ValueError(f"Select parameter {self.name!r} cannot define numeric bounds")
+            if not isinstance(default, str) or not default:
+                raise TypeError(f"`default` must be non-empty str for {self.name!r}")
+            if not options:
+                raise ValueError(f"Select parameter {self.name!r} must define options")
+            normalized_options: list[tuple[str, str]] = []
+            seen_values: set[str] = set()
+            for option in options:
+                if not isinstance(option, tuple) or len(option) != 2:
+                    raise TypeError(f"`options` must contain 2-tuples for {self.name!r}")
+                value, label = option
+                value_text = str(value).strip()
+                label_text = str(label).strip()
+                if not value_text or not label_text:
+                    raise ValueError(f"Select options must be non-empty for {self.name!r}")
+                if value_text in seen_values:
+                    raise ValueError(f"Duplicate select option {value_text!r} for {self.name!r}")
+                seen_values.add(value_text)
+                normalized_options.append((value_text, label_text))
+            if default not in seen_values:
+                raise ValueError(f"`default` must match one of the options for {self.name!r}")
+            object.__setattr__(self, "options", tuple(normalized_options))
             return
 
         if isinstance(default, bool):
             raise TypeError(f"`default` must be numeric for {self.name!r}")
+        if options is not None:
+            raise ValueError(f"Numeric parameter {self.name!r} cannot define select options")
 
         if self.schema_type == "integer":
             if not isinstance(default, int):
@@ -158,6 +190,8 @@ class RuntimeParamSpec:
             "type": self.schema_type,
             "description": self.description,
         }
+        if self.options is not None:
+            schema["options"] = [[value, label] for value, label in self.options]
         if self.minimum is not None:
             schema["minimum"] = self.minimum
         if self.maximum is not None:
@@ -293,6 +327,12 @@ class RuntimeParamRegistry:
             if parsed_bool is None:
                 raise ValueError(f"Invalid boolean value for {spec.name!r}: {value!r}")
             return parsed_bool
+        if spec.schema_type == "select":
+            parsed_text = _decode_text(value).strip()
+            valid_values = {option_value for option_value, _ in spec.options or ()}
+            if parsed_text not in valid_values:
+                raise ValueError(f"Invalid option value for {spec.name!r}: {value!r}")
+            return parsed_text
 
         parsed_num: int | float
         if spec.schema_type == "integer":
@@ -312,7 +352,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         name="qty",
         schema_type="number",
         default=1_000.0,
-        description="Target base quantity per quote/hedge cycle.",
+        description="Target order quantity in the configured qty_unit.",
         minimum=0.0,
         maximum=1_000_000.0,
     ),
@@ -393,7 +433,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=10.0,
         description="Band 1 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -401,7 +441,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=10.0,
         description="Band 1 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -433,7 +473,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=25.0,
         description="Band 2 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -441,7 +481,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=25.0,
         description="Band 2 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -473,7 +513,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=50.0,
         description="Band 3 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -481,7 +521,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=50.0,
         description="Band 3 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -507,6 +547,38 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         description="Escalation window for repeated order rejections.",
         minimum=0.0,
         maximum=3_600.0,
+    ),
+    RuntimeParamSpec(
+        name="pending_cancel_grace_ms",
+        schema_type="integer",
+        default=250,
+        description="Grace window before a pending cancel is considered aged.",
+        minimum=0,
+        maximum=60_000,
+    ),
+    RuntimeParamSpec(
+        name="pending_cancel_block_after_ms",
+        schema_type="integer",
+        default=1_500,
+        description="Age at which a pending cancel blocks quote placement.",
+        minimum=0,
+        maximum=60_000,
+    ),
+    RuntimeParamSpec(
+        name="quote_liveness_stall_after_ms",
+        schema_type="integer",
+        default=3_000,
+        description="Budget before missing quote progress is treated as stalled.",
+        minimum=0,
+        maximum=300_000,
+    ),
+    RuntimeParamSpec(
+        name="quote_liveness_recover_after_ms",
+        schema_type="integer",
+        default=900,
+        description="Required healthy progress window before clearing liveness stall state.",
+        minimum=0,
+        maximum=60_000,
     ),
     RuntimeParamSpec(
         name="quote_fail_critical_after_count",

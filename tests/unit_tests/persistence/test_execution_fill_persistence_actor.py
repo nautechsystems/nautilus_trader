@@ -270,8 +270,8 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     def _flush():
         try:
             actor.flush()
-        except Exception as exc:  # pragma: no cover - test assertion captures this
-            flush_errors.append(exc)
+        except Exception as e:  # pragma: no cover - test assertion captures this
+            flush_errors.append(e)
         finally:
             flush_done.set()
 

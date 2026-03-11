@@ -17,6 +17,10 @@ python -m flux.runners.tokenmm.run_node \
   --config examples/live/makerv3/config/makerv3.toml \
   --mode paper
 
+python -m flux.runners.tokenmm.run_portfolio \
+  --config examples/live/makerv3/config/makerv3.toml \
+  --mode paper
+
 python -m flux.runners.tokenmm.run_bridge \
   --config examples/live/makerv3/config/makerv3.toml \
   --mode paper
@@ -27,6 +31,10 @@ python -m flux.runners.tokenmm.run_api \
   --host 127.0.0.1 \
   --port 5022
 ```
+
+Run `flux.runners.tokenmm.run_portfolio` whenever you need shared
+`/api/v1/balances?profile=tokenmm` or shared `global_qty_base` semantics. Without
+that sidecar, the example flow remains limited to per-strategy surfaces.
 
 ## Production
 

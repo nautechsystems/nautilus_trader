@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 import uuid
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -15,10 +16,12 @@ import redis
 from flask import Flask
 from flask import Response
 from flask import g
+from flask import has_request_context
 from flask import request
 
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
+from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api.payloads import build_alerts_rows
 from flux.api.payloads import build_balances_rows
 from flux.api.payloads import build_envelope
@@ -28,6 +31,7 @@ from flux.api.payloads import build_params_payload
 from flux.api.payloads import build_signals_payload
 from flux.api.payloads import build_trades_rows
 from flux.api.payloads import coerce_ts_ms
+from flux.api.payloads import collapse_balance_display_rows
 from flux.api.payloads import contract_id_for_leg
 from flux.api.payloads import decode_text
 from flux.api.payloads import enrich_balances_rows
@@ -49,6 +53,13 @@ from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.params.manager import FluxParamsManager
+from flux.runners.shared.strategy_set import StrategySetDescriptor
+from flux.runners.shared.strategy_set import get_strategy_set_descriptors
+
+if __name__ == "flux.api.app":
+    sys.modules.setdefault("nautilus_trader.flux.api.app", sys.modules[__name__])
+elif __name__ == "nautilus_trader.flux.api.app":
+    sys.modules.setdefault("flux.api.app", sys.modules[__name__])
 
 
 DEFAULT_PARAMS_DEFAULTS: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
@@ -128,6 +139,16 @@ class ApiEnvelopeError(ValueError):
         self.code = code
         self.message = message
         self.details = dict(details) if details is not None else None
+
+
+def _timestamp_is_fresh(
+    ts_ms: Any,
+    *,
+    now_ms_value: int,
+    stale_after_ms: int,
+) -> bool:
+    parsed = safe_int(ts_ms)
+    return parsed is not None and (now_ms_value - parsed) <= stale_after_ms
 
 
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -463,14 +484,108 @@ class FluxApiStore:
         merged.update(primary_row)
         return merged
 
+    def load_market_rows(self, strategy_id: str) -> dict[str, dict[str, Any]]:
+        market_pairs = self._market_keys(strategy_id)
+        pipe = self._redis.pipeline(transaction=False)
+        for _, market_key, fallback_key in market_pairs:
+            pipe.get(market_key)
+            if fallback_key:
+                pipe.get(fallback_key)
+        raw = pipe.execute()
+        expected_length = sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        if len(raw) != expected_length:
+            raise RuntimeError(
+                f"Market pipeline returned {len(raw)} rows, expected {expected_length}",
+            )
+
+        market_rows: dict[str, dict[str, Any]] = {}
+        raw_index = 0
+        for contract, _market_key, fallback_key in market_pairs:
+            primary_raw = raw[raw_index]
+            raw_index += 1
+            fallback_raw = None
+            if fallback_key:
+                fallback_raw = raw[raw_index]
+                raw_index += 1
+            parsed = self._decode_market_row(primary_raw, fallback_raw)
+            contract_id = contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            )
+            market_rows[contract_id] = parsed
+        return market_rows
+
+    def load_market_rows_for_strategies(
+        self,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        def _market_row_has_price(row: Mapping[str, Any]) -> bool:
+            mid = row.get("mid")
+            bid = row.get("bid")
+            ask = row.get("ask")
+            return any(value is not None for value in (mid, bid, ask))
+
+        def _merge_market_row(existing: Mapping[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
+            existing_ts_ms = coerce_ts_ms(existing.get("ts_ms") or existing.get("ts")) or -1
+            incoming_ts_ms = coerce_ts_ms(incoming.get("ts_ms") or incoming.get("ts")) or -1
+            existing_has_price = _market_row_has_price(existing)
+            incoming_has_price = _market_row_has_price(incoming)
+
+            if incoming_has_price and (not existing_has_price or incoming_ts_ms >= existing_ts_ms):
+                primary_row = incoming
+                fallback_row = existing
+            elif existing_has_price:
+                primary_row = existing
+                fallback_row = incoming
+            elif incoming_ts_ms >= existing_ts_ms:
+                primary_row = incoming
+                fallback_row = existing
+            else:
+                primary_row = existing
+                fallback_row = incoming
+
+            combined = dict(fallback_row)
+            for key, value in primary_row.items():
+                if value is None and key in combined:
+                    continue
+                combined[key] = value
+            return combined
+
+        merged: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = decode_text(strategy_id).strip()
+            if not strategy_text or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            strategy_rows = self.load_market_rows(strategy_text)
+            for contract_id, row in strategy_rows.items():
+                if not isinstance(row, Mapping):
+                    continue
+                if contract_id not in merged:
+                    merged[contract_id] = dict(row)
+                    continue
+                merged[contract_id] = _merge_market_row(merged[contract_id], row)
+        return merged
+
+    def load_portfolio_snapshot(self, portfolio_id: str) -> dict[str, Any] | None:
+        key = FluxRedisKeys.portfolio_snapshot(
+            portfolio_id=portfolio_id,
+            namespace=self._config.identity.namespace,
+            schema_version=self._config.identity.schema_version,
+        )
+        payload = load_json(self._redis.get(key))
+        return dict(payload) if isinstance(payload, Mapping) else None
+
     def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
-        market_pairs = self._market_keys(strategy_id)
 
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.state())
         pipe.xrevrange(keys.fv_stream(), count=50)
         pipe.get(keys.balances_snapshot())
+        market_pairs = self._market_keys(strategy_id)
         for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
             if fallback_key:
@@ -530,9 +645,9 @@ class FluxApiStore:
 
     def load_balances_rows_with_presence(self, strategy_id: str) -> tuple[list[dict[str, Any]], bool]:
         keys = self._keys_for_strategy(strategy_id)
-        market_pairs = self._market_keys(strategy_id)
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.balances_snapshot())
+        market_pairs = self._market_keys(strategy_id)
         for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
             if fallback_key:
@@ -566,10 +681,12 @@ class FluxApiStore:
             market_rows[contract_id] = parsed
 
         return (
-            enrich_balances_rows(
-                rows,
-                contracts=self._contracts,
-                market_rows=market_rows,
+            collapse_balance_display_rows(
+                enrich_balances_rows(
+                    rows,
+                    contracts=self._contracts,
+                    market_rows=market_rows,
+                ),
             ),
             raw_snapshot is not None,
         )
@@ -888,11 +1005,18 @@ def create_flux_api_app(  # noqa: C901
     profile_required_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
     params_schema: Mapping[str, Mapping[str, Any]] | None = None,
     params_defaults: Mapping[str, Any] | None = None,
+    param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
     required_readiness_keys: Sequence[str] | None = None,
 ) -> Flask:
-    if not isinstance(flux_config, FluxConfig):
+    if not isinstance(flux_config, FluxConfig) and not all(
+        hasattr(flux_config, field)
+        for field in ("mode", "confirm_live", "identity", "redis", "venues")
+    ):
         raise TypeError("`flux_config` must be an instance of `FluxConfig`")
-    if not isinstance(strategy_metadata, StrategyMetadata):
+    if not isinstance(strategy_metadata, StrategyMetadata) and not all(
+        hasattr(strategy_metadata, field)
+        for field in ("strategy_class", "strategy_groups", "base_asset", "quote_asset")
+    ):
         raise TypeError("`strategy_metadata` must be an instance of `StrategyMetadata`")
     if strategy_metadata_resolver is not None and not callable(strategy_metadata_resolver):
         raise TypeError("`strategy_metadata_resolver` must be callable when provided")
@@ -905,15 +1029,35 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog=contract_catalog,
         params_schema=schema,
         params_defaults=defaults,
+        param_set=param_set,
         required_readiness_keys=required_readiness_keys,
     )
     default_strategy_id = flux_config.identity.strategy_id
+    strategy_set_descriptors = {
+        descriptor.profile: descriptor for descriptor in get_strategy_set_descriptors()
+    }
+    default_unscoped_descriptor = next(
+        (
+            descriptor
+            for descriptor in strategy_set_descriptors.values()
+            if descriptor.default_unscoped_api
+        ),
+        None,
+    )
 
-    def _resolve_strategy_id(raw_value: Any, *, field_name: str) -> str:
+    def _descriptor_for_profile(profile: Any) -> StrategySetDescriptor | None:
+        return strategy_set_descriptors.get(normalize_profile(profile))
+
+    def _resolve_strategy_id(
+        raw_value: Any,
+        *,
+        field_name: str,
+        explicit: bool | None = None,
+    ) -> str:
         text = decode_text(raw_value).strip()
         candidate = text or default_strategy_id
         try:
-            return validate_identifier_part(candidate, field_name)
+            strategy_id = validate_identifier_part(candidate, field_name)
         except ValueError as e:
             raise ApiEnvelopeError(
                 status=400,
@@ -924,6 +1068,29 @@ def create_flux_api_app(  # noqa: C901
                     "strategy_id": text or candidate,
                 },
             ) from e
+        is_explicit = explicit if explicit is not None else raw_value is not None
+        requested_profile = (
+            normalize_profile(request.args.get("profile"))
+            if has_request_context()
+            else ""
+        )
+        active_allowlist = strategy_allowlist_by_profile.get(requested_profile, frozenset())
+        if not requested_profile and default_unscoped_descriptor is not None:
+            active_allowlist = strategy_allowlist_by_profile.get(
+                default_unscoped_descriptor.profile,
+                frozenset(),
+            )
+        if active_allowlist and is_explicit and strategy_id not in active_allowlist:
+            raise ApiEnvelopeError(
+                status=404,
+                code="unknown_strategy_id",
+                message="Strategy is not configured for this API.",
+                details={
+                    "field": field_name,
+                    "strategy_id": strategy_id,
+                },
+            )
+        return strategy_id
 
     def _metadata_for_strategy(strategy_id: str) -> StrategyMetadata:
         metadata = strategy_metadata
@@ -980,9 +1147,7 @@ def create_flux_api_app(  # noqa: C901
             out.append(strategy_id)
         return out
 
-    resolved_profile_strategy_map: dict[str, list[str]] = {
-        "tokenmm": [default_strategy_id],
-    }
+    resolved_profile_strategy_map: dict[str, list[str]] = {}
     if profile_strategy_map is not None:
         for profile_name, raw_ids in profile_strategy_map.items():
             normalized = normalize_profile(profile_name)
@@ -1000,7 +1165,10 @@ def create_flux_api_app(  # noqa: C901
                 resolved_profile_required_strategy_map[normalized] = ids
 
     for profile_name, required_ids in resolved_profile_required_strategy_map.items():
+        descriptor = _descriptor_for_profile(profile_name)
         strategy_ids = _coerce_strategy_ids(resolved_profile_strategy_map.get(profile_name))
+        if not strategy_ids and descriptor is not None and descriptor.allow_discovery_without_allowlist:
+            strategy_ids = store.discover_strategy_ids_from_params()
         if not strategy_ids:
             raise ValueError(
                 f"`profile_required_strategy_map[{profile_name!r}]` requires matching strategy IDs in `profile_strategy_map`",
@@ -1010,6 +1178,10 @@ def create_flux_api_app(  # noqa: C901
             raise ValueError(
                 f"`profile_required_strategy_map[{profile_name!r}]` must be a subset of `profile_strategy_map`; missing={missing_ids}",
             )
+    strategy_allowlist_by_profile = {
+        profile_name: frozenset(_coerce_strategy_ids(strategy_ids))
+        for profile_name, strategy_ids in resolved_profile_strategy_map.items()
+    }
 
     def _strategy_ids_for_profile(profile: str) -> list[str]:
         normalized = normalize_profile(profile)
@@ -1027,22 +1199,39 @@ def create_flux_api_app(  # noqa: C901
         return list(fallback)
 
     def _strategy_for_profile(profile: str) -> str | None:
+        descriptor = _descriptor_for_profile(profile)
         strategy_ids = _strategy_ids_for_profile(profile)
-        return strategy_ids[0] if strategy_ids else None
+        if strategy_ids:
+            return strategy_ids[0]
+        if descriptor is not None and descriptor.default_unscoped_api:
+            return default_strategy_id
+        return None
+
+    def _default_strategy_for_unscoped_request() -> str:
+        if default_unscoped_descriptor is None:
+            return default_strategy_id
+        strategy_ids = _strategy_ids_for_profile(default_unscoped_descriptor.profile)
+        if strategy_ids:
+            return strategy_ids[0]
+        return default_strategy_id
 
     def _resolve_strategy_id_for_request(*, field_name: str = "strategy") -> str:
         strategy_raw = request.args.get("strategy")
         strategy_text = decode_text(strategy_raw).strip()
         if strategy_text:
-            return _resolve_strategy_id(strategy_text, field_name=field_name)
+            return _resolve_strategy_id(strategy_text, field_name=field_name, explicit=True)
 
         profile_text = decode_text(request.args.get("profile")).strip()
         if profile_text:
             resolved_strategy = _strategy_for_profile(profile_text)
             if resolved_strategy:
-                return _resolve_strategy_id(resolved_strategy, field_name=field_name)
+                return _resolve_strategy_id(resolved_strategy, field_name=field_name, explicit=False)
 
-        return _resolve_strategy_id(None, field_name=field_name)
+        return _resolve_strategy_id(
+            _default_strategy_for_unscoped_request(),
+            field_name=field_name,
+            explicit=False,
+        )
 
     create_flux_socket_server(
         app,
@@ -1051,6 +1240,7 @@ def create_flux_api_app(  # noqa: C901
         strategy_resolver=_strategy_for_profile,
         strategy_ids_resolver=_strategy_ids_for_profile,
     )
+    app.extensions["flux_strategy_set_descriptors"] = dict(strategy_set_descriptors)
     app.extensions["flux_profile_strategy_map"] = dict(resolved_profile_strategy_map)
     app.extensions["flux_profile_required_strategy_map"] = dict(resolved_profile_required_strategy_map)
 
@@ -1256,15 +1446,19 @@ def create_flux_api_app(  # noqa: C901
                 )
                 continue
             try:
-                sid = validate_identifier_part(sid_text, f"updates[{index}].strategy_id")
-            except ValueError as e:
+                sid = _resolve_strategy_id(
+                    sid_text,
+                    field_name=f"updates[{index}].strategy_id",
+                    explicit=True,
+                )
+            except ApiEnvelopeError as e:
                 _record_failed(failed, sid_text)
                 errors.append(
                     {
                         "index": index,
                         "strategy_id": sid_text,
-                        "code": "invalid_strategy_id",
-                        "message": str(e),
+                        "code": e.code,
+                        "message": e.message,
                     },
                 )
                 continue
@@ -1370,14 +1564,12 @@ def create_flux_api_app(  # noqa: C901
     def api_signals() -> Response:
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
-        profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
 
         if requested_strategy:
             strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
-        elif profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        elif profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
         else:
             strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
 
@@ -1485,19 +1677,124 @@ def create_flux_api_app(  # noqa: C901
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
+        if profile_normalized == "tokenmm" and profile_text and not profile_strategy_ids:
+            profile_strategy_ids = store.discover_strategy_ids_from_params()
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
             rows = store.load_balances_rows(strategy_id)
             response_ts_ms = now_ms()
-        elif profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        elif profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
             required_strategy_ids = set(
                 _required_strategy_ids_for_profile(profile_text, fallback=strategy_ids),
             )
-            response_ts_ms = now_ms()
+            request_now_ms = now_ms()
+            portfolio_snapshot = (
+                store.load_portfolio_snapshot(profile_normalized)
+                if profile_normalized == "tokenmm"
+                else None
+            )
+            if portfolio_snapshot is not None:
+                inventory = portfolio_snapshot.get("inventory")
+                inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
+                snapshot_stale_after_ms = (
+                    safe_int(inventory_payload.get("stale_after_ms"))
+                    or TOKENMM_BALANCES_STALE_AFTER_MS
+                )
+                if (
+                    _timestamp_is_fresh(
+                        portfolio_snapshot.get("server_ts_ms"),
+                        now_ms_value=request_now_ms,
+                        stale_after_ms=snapshot_stale_after_ms,
+                    )
+                    and _timestamp_is_fresh(
+                        inventory_payload.get("ts_ms"),
+                        now_ms_value=request_now_ms,
+                        stale_after_ms=snapshot_stale_after_ms,
+                    )
+                ):
+                    snapshot_balances = portfolio_snapshot.get("balances")
+                    snapshot_rows_raw = (
+                        snapshot_balances.get("rows")
+                        if isinstance(snapshot_balances, Mapping)
+                        else []
+                    )
+                    snapshot_rows = [
+                        dict(row)
+                        for row in snapshot_rows_raw
+                        if isinstance(row, Mapping)
+                    ]
+                    rows = filter_balance_rows_for_contract_scope(
+                        snapshot_rows,
+                        contracts=store._contracts,
+                    )
+                    if not rows and snapshot_rows:
+                        rows = snapshot_rows
+                    if strategy_ids:
+                        market_rows = store.load_market_rows_for_strategies(strategy_ids)
+                        rows = collapse_balance_display_rows(
+                            enrich_balances_rows(
+                                rows,
+                                contracts=store._contracts,
+                                market_rows=market_rows,
+                            ),
+                        )
+                    rows, risk_groups = build_balance_risk_groups(rows)
+                    response_ts_ms = (
+                        safe_int(portfolio_snapshot.get("server_ts_ms"))
+                        or safe_int(inventory_payload.get("ts_ms"))
+                        or request_now_ms
+                    )
+                    components_payload = inventory_payload.get("components")
+                    if not isinstance(components_payload, list):
+                        components_payload = portfolio_snapshot.get("components")
+                    components = [
+                        dict(component)
+                        for component in (components_payload or [])
+                        if isinstance(component, Mapping)
+                    ]
+                    total_rows = len(rows)
+                    return _ok(
+                        data={
+                            "source": "portfolio_snapshot",
+                            "rows": rows[:limit],
+                            "count": total_rows,
+                            "total": total_rows,
+                            "limit": limit,
+                            "totals": _balances_totals(rows),
+                            "risk_groups": risk_groups,
+                            "server_ts_ms": response_ts_ms,
+                            "portfolio_id": decode_text(
+                                portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                            ),
+                            "base_currency": decode_text(
+                                portfolio_snapshot.get("base_currency")
+                                or inventory_payload.get("base_currency"),
+                            ).strip().upper(),
+                            "components": components,
+                            "degraded": bool(inventory_payload.get("degraded", False)),
+                            "global_qty_base": inventory_payload.get("global_qty_base")
+                            or inventory_payload.get("global_qty"),
+                            "global_qty": inventory_payload.get("global_qty"),
+                            "aggregation_mode": decode_text(
+                                inventory_payload.get("aggregation_mode") or "strict",
+                            ),
+                            "global_qty_base_complete": bool(
+                                inventory_payload.get("global_qty_base_complete", True),
+                            ),
+                            "global_qty_complete": bool(
+                                inventory_payload.get("global_qty_complete", True),
+                            ),
+                            "missing_required": list(inventory_payload.get("missing_required") or []),
+                            "stale_required": list(inventory_payload.get("stale_required") or []),
+                            "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
+                            "stale_after_ms": snapshot_stale_after_ms,
+                        },
+                    )
+
+            response_ts_ms = request_now_ms
             rows_by_strategy: dict[str, list[dict[str, Any]]] = {}
             components: list[dict[str, Any]] = []
 
@@ -1506,7 +1803,9 @@ def create_flux_api_app(  # noqa: C901
                 rows_by_strategy[strategy_id] = strategy_rows
                 latest_ts_ms: int | None = None
                 for row in strategy_rows:
-                    parsed = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+                    parsed = safe_int(row.get("ts_ms"))
+                    if parsed is None:
+                        parsed = coerce_ts_ms(row.get("ts") or row.get("timestamp"))
                     if parsed is None:
                         continue
                     if latest_ts_ms is None or parsed > latest_ts_ms:
@@ -1533,12 +1832,16 @@ def create_flux_api_app(  # noqa: C901
 
             rows = merge_portfolio_balances_rows(
                 rows_by_strategy=rows_by_strategy,
-                portfolio_id="tokenmm",
+                portfolio_id=profile_normalized,
+                preserve_product_scope_cash=True,
             )
-            rows = filter_balance_rows_for_contract_scope(
+            filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,
                 contracts=store._contracts,
             )
+            if filtered_rows:
+                rows = filtered_rows
+            rows, risk_groups = build_balance_risk_groups(rows)
             missing_required = sorted(
                 component["strategy_id"]
                 for component in components
@@ -1553,6 +1856,7 @@ def create_flux_api_app(  # noqa: C901
                     "total": total_rows,
                     "limit": limit,
                     "totals": _balances_totals(rows),
+                    "risk_groups": risk_groups,
                     "server_ts_ms": response_ts_ms,
                     "components": components,
                     "degraded": degraded,
@@ -1565,6 +1869,7 @@ def create_flux_api_app(  # noqa: C901
             rows = store.load_balances_rows(strategy_id)
             response_ts_ms = now_ms()
 
+        rows, risk_groups = build_balance_risk_groups(rows)
         total_rows = len(rows)
         return _ok(
             data={
@@ -1573,6 +1878,7 @@ def create_flux_api_app(  # noqa: C901
                 "total": total_rows,
                 "limit": limit,
                 "totals": _balances_totals(rows),
+                "risk_groups": risk_groups,
                 "server_ts_ms": response_ts_ms,
             },
         )
@@ -1581,7 +1887,7 @@ def create_flux_api_app(  # noqa: C901
     def api_trades() -> Response:
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
-        profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
         requested_limit_raw = request.args.get("limit")
         requested_limit = safe_int(requested_limit_raw)
         limit = _clamp_limit(requested_limit_raw, default=50, minimum=1, maximum=200)
@@ -1600,16 +1906,14 @@ def create_flux_api_app(  # noqa: C901
 
         if requested_strategy:
             strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
-        elif profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        elif profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
         else:
             strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
 
-        tokenmm_fanout = (
+        multi_strategy_profile_fanout = (
             not requested_strategy
-            and profile_normalized == "tokenmm"
+            and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
 
@@ -1661,12 +1965,12 @@ def create_flux_api_app(  # noqa: C901
                 continue
             filtered_rows.append(row)
 
-        if tokenmm_fanout:
+        if multi_strategy_profile_fanout:
             filtered_rows.sort(
                 key=_trade_sort_key,
                 reverse=not sort_ascending,
             )
-            # Multi-strategy TokenMM trades do not expose a synthetic global sequence cursor.
+            # Multi-strategy profile views do not expose a synthetic global sequence cursor.
             last_seq = 0
         else:
             filtered_rows.sort(
@@ -1698,19 +2002,17 @@ def create_flux_api_app(  # noqa: C901
     def api_trades_delta() -> Response:
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
-        profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
         if requested_strategy:
             strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
-        elif profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        elif profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
         else:
             strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
 
-        tokenmm_fanout = (
+        multi_strategy_profile_fanout = (
             not requested_strategy
-            and profile_normalized == "tokenmm"
+            and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
@@ -1720,9 +2022,9 @@ def create_flux_api_app(  # noqa: C901
         after_version = safe_int(request.args.get("after_version"))
         fallback_seq = since_seq or 0
 
-        if tokenmm_fanout:
+        if multi_strategy_profile_fanout:
             if since_seq is not None:
-                # Safe Phase 1 behavior: multi-strategy TokenMM delta does not claim
+                # Safe Phase 1 behavior: multi-strategy profile delta does not claim
                 # a synthetic global cursor; clients should resync to snapshot.
                 return _ok(
                     data={
@@ -1838,15 +2140,13 @@ def create_flux_api_app(  # noqa: C901
         offset = _clamp_offset(request.args.get("offset"), default=0)
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
-        profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
             all_rows = store.load_all_alerts_rows(strategy_id)
-        elif profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        elif profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
             all_rows = []
             for strategy_id in strategy_ids:
                 all_rows.extend(store.load_all_alerts_rows(strategy_id))
@@ -1879,6 +2179,7 @@ def create_flux_api_app(  # noqa: C901
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_normalized = normalize_profile(profile_text)
+        profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
@@ -1893,10 +2194,8 @@ def create_flux_api_app(  # noqa: C901
             }
             return _ok(data=payload)
 
-        if profile_normalized == "tokenmm":
-            strategy_ids = _strategy_ids_for_profile(profile_text)
-            if not strategy_ids:
-                strategy_ids = [default_strategy_id]
+        if profile_strategy_ids:
+            strategy_ids = profile_strategy_ids
             deleted_total = 0
             remaining_by_strategy: dict[str, int] = {}
             for strategy_id in strategy_ids:

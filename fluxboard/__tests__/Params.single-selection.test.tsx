@@ -22,7 +22,7 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 
-describe('Params single-strategy auto selection', () => {
+describe('Params single-strategy selection defaults', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useParamsStore.getState().clearSelection();
@@ -49,21 +49,27 @@ describe('Params single-strategy auto selection', () => {
     ] as any);
   });
 
-  it('selects the only strategy so toolbar/actions are populated', async () => {
+  it('does not auto-select the only visible strategy', async () => {
     render(<Params />);
 
     await waitFor(() => {
       expect(screen.getByText('makerv3')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    expect(screen.queryAllByText('1 strategy selected')).toHaveLength(0);
   });
 
-  it('re-selects the only visible strategy after selection is cleared', async () => {
+  it('does not re-select the only visible strategy after clearSelection', async () => {
     render(<Params />);
 
+    await waitFor(() => expect(screen.getByText('makerv3')).toBeInTheDocument());
+
+    act(() => {
+      useParamsStore.getState().setSelectedStrategies(['makerv3']);
+    });
+
     await waitFor(() => {
-      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      expect(screen.getAllByText('1 strategy selected')).toHaveLength(2);
     });
 
     act(() => {
@@ -71,7 +77,7 @@ describe('Params single-strategy auto selection', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      expect(screen.queryAllByText('1 strategy selected')).toHaveLength(0);
     });
   });
 });

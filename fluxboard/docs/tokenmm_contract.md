@@ -2,8 +2,18 @@
 
 # TokenMM HTTP Contract (`tokenmm:v1`)
 
-This document freezes the HTTP contract for the TokenMM surface.
+This document freezes the target HTTP contract for the TokenMM surface.
 It is implementation-facing and explicitly excludes order-view.
+The matching equities surface is documented separately in `fluxboard/docs/equities_contract.md`.
+
+As of March 7, 2026, this is the rollout target contract. It is not a claim that every
+TokenMM API, portfolio, and startup-reconciliation surface already matches the contract
+before Tasks 4-6 in `docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md`
+and their remaining verification failures are resolved.
+
+Operator validation and rollout gates are maintained in
+`docs/runbooks/tokenmm-risk-validation.md`.
+
 
 ## Scope and Route Surface
 
@@ -109,6 +119,59 @@ Required leg fields:
 8. Unknown response fields may appear; clients must ignore unknown fields.
 9. Examples below show the `data` payload; wrap with the envelope above.
 
+## Quantity Semantics
+
+TokenMM HTTP distinguishes execution size from base-exposure size.
+
+1. Nautilus core `quantity` fields remain venue/native size for orders, fills, and positions.
+2. Risk, balances, and portfolio inventory must use explicit base-exposure fields.
+3. Risk-facing HTTP payloads must use the following field names when quantity units matter:
+   - `position_qty_venue`
+   - `position_qty_base`
+   - `local_qty_venue`
+   - `local_qty_base`
+   - `global_qty_base`
+   - `order_qty_venue`
+   - `order_qty_base`
+   - `qty_conversion_status`
+   - `qty_conversion_source`
+4. `*_venue` means exchange-native contracts / lots / shares.
+5. `*_base` means normalized base-asset exposure used for strategy risk and balances.
+6. Compatibility-only bare `qty` fields must document their unit explicitly; new risk-facing fields must not rely on an unlabeled `qty`.
+7. The current `qty_conversion_status` space is:
+   - `identity`
+   - `exact_multiplier`
+   - `price_based`
+   - `unsupported`
+   - `missing_metadata`
+   - `missing_price`
+   - `non_integral_venue_qty`
+8. `qty_conversion_source` names the rule used for the conversion.
+
+## Shared Portfolio Ownership
+
+For `profile=tokenmm`, shared portfolio state must come from one backend owner.
+
+1. `run_portfolio` is the canonical source of truth for shared TokenMM portfolio state.
+2. Shared portfolio state includes inventory aggregate, contributor diagnostics, merged balances rows, and merged balances totals.
+3. `/api/v1/signals?profile=tokenmm` and `/api/v1/balances?profile=tokenmm` must consume that shared portfolio snapshot.
+4. Clients must not assume a separate API-side recomputation of shared global risk or shared balances.
+5. Per-strategy debug endpoints may still read strategy-scoped snapshots directly.
+6. `Balances(profile=tokenmm)` is a rendering of the shared portfolio snapshot, not a second TokenMM risk engine.
+7. `Signals(profile=tokenmm)` may render strategy-local and portfolio-global quantities, but it must not derive them from balances except in explicit compatibility fallback mode.
+
+## Shared Portfolio Completeness Semantics
+
+When shared portfolio fields are present, clients must honor explicit completeness metadata.
+
+1. `aggregation_mode` is either `strict` or `partial`.
+2. `global_qty_base_complete = true` means all required contributors are fresh and known.
+3. `global_qty_base_complete = false` means the shared view is incomplete even if `global_qty_base` is present.
+4. `missing_required`, `stale_required`, and `null_qty_required` name the contributors preventing completeness.
+5. In `partial` mode, `global_qty_base` is the sum of fresh known contributors.
+6. In `strict` mode, `global_qty_base` may be `null` when any required contributor is missing, stale, or unknown.
+7. Compatibility aliases `global_qty` and `global_qty_complete` may remain temporarily, but they must mirror `global_qty_base` and `global_qty_base_complete`.
+
 ## Endpoint Contracts
 
 ### `GET /api/v1/signals?profile=tokenmm`
@@ -188,7 +251,7 @@ Common fields:
 | `strategy_family` | `string` | Strategy family label derived from metadata. |
 | `params` | `object` | Runtime params snapshot (typed values). |
 | `balances_ok` | `boolean` | True when balances snapshot is present. |
-| `risk_delta` | `number \| null` | Inventory/risk proxy (best-effort). |
+| `risk_delta` | `number \| null` | Inventory/risk proxy (best-effort). Not the canonical field for local spot inventory when `local_qty_base` is available. |
 | `risk_delta_ts_ms` | `integer \| null` | Timestamp for the risk delta value. |
 | `decision_edge_bps` | `number \| null` | Current decision edge (basis points). |
 | `required_edge_bps` | `number \| null` | Required edge threshold for the chosen case. |
@@ -202,6 +265,17 @@ Common fields:
 | `quote_stacks` | `object \| null` | Per-leg/per-band quote stack summary when available. |
 | `pricing_adjustments` | `array` | Pricing/skew adjustments (best-effort). |
 | `balance_readiness` | `object \| null` | Backend readiness/health markers for balances inputs. |
+| `position_qty_venue` | `number \| null` | Venue/native position size for the maker leg. |
+| `position_qty_base` | `number \| null` | Base-asset exposure derived from `position_qty_venue`. |
+| `local_qty_venue` | `number \| null` | Local venue/native inventory used for reconciliation/debug. |
+| `local_qty_base` | `number \| null` | Local normalized base exposure used for risk/skew. |
+| `global_qty_base` | `number \| null` | Shared normalized base exposure from the canonical portfolio snapshot. |
+| `global_qty_base_complete` | `boolean \| null` | Completeness bit for `global_qty_base`; false means the shared view is partial or degraded. |
+| `aggregation_mode` | `string \| null` | Shared portfolio aggregation mode, currently `strict` or `partial`. |
+| `order_qty_venue` | `number \| null` | Venue/native order size after any base-to-venue conversion. |
+| `order_qty_base` | `number \| null` | Requested base exposure for order/risk controls. |
+| `qty_conversion_status` | `string \| null` | Current status values: `identity`, `exact_multiplier`, `price_based`, `unsupported`, `missing_metadata`, `missing_price`, `non_integral_venue_qty`. |
+| `qty_conversion_source` | `string \| null` | Short rule identifier for the conversion path. |
 
 `maker_v3.quote_snapshot` fields are best-effort and may include top-of-book, FV inputs, edge configuration/effective edge numbers, and derived placement prices.
 
@@ -231,12 +305,18 @@ Response `data`:
       },
       "qty": {
         "type": "number",
-        "description": "Target base quantity per quote/hedge cycle."
+        "description": "Compatibility field. Unit must be interpreted together with strategy quantity semantics; risk-facing payloads should publish explicit order_qty_base/order_qty_venue fields."
       }
     }
   }
 ]
 ```
+
+Compatibility note:
+
+1. `params.qty` remains a legacy field in this contract.
+2. Clients must not infer whether `params.qty` is base exposure or venue/native size without the paired quantity-unit metadata.
+3. New risk and balances surfaces must prefer `order_qty_base` and `order_qty_venue`.
 
 ### `PATCH /api/v1/params`
 
@@ -290,7 +370,7 @@ Response `data`:
     },
     "qty": {
       "type": "number",
-      "description": "Target base quantity per quote/hedge cycle."
+      "description": "Compatibility field. Quantity unit must be paired with explicit order_qty_base/order_qty_venue semantics."
     },
     "max_age_ms": {
       "type": "integer",
@@ -302,6 +382,46 @@ Response `data`:
 ```
 
 ### `GET /api/v1/balances`
+
+Balances and inventory rows must use explicit unit-bearing fields when they expose position or order size.
+
+For `profile=tokenmm`, the response must also carry the shared portfolio ownership/completeness fields when available:
+
+- `source = "portfolio_snapshot"`
+- `stale_after_ms`
+- `aggregation_mode`
+- `global_qty_base`
+- `global_qty_base_complete`
+- `global_qty`
+- `global_qty_complete`
+- `components`
+- `missing_required`
+- `stale_required`
+- `null_qty_required`
+
+Snapshot freshness gate:
+
+1. `source = "portfolio_snapshot"` is valid only when the shared snapshot is fresh enough: snapshot `server_ts_ms` and inventory `ts_ms` must both be within `stale_after_ms`.
+2. If that freshness gate fails, `/api/v1/balances?profile=tokenmm` falls back to the live per-strategy merge path and must not keep advertising `source = "portfolio_snapshot"`.
+3. Clients must treat `stale_after_ms` as the freshness budget for the shared snapshot.
+
+Fluxboard risk consumption:
+
+1. `risk_groups` is backend-authored. Fluxboard must not rebuild TokenMM risk grouping from holdings coins.
+2. `risk_groups[].rows` is backend-authored drilldown content and order.
+3. Balance rows participating in a risk group must carry row-level `risk_key` and `risk_label` fields so Holdings drilldown can use the same semantics as the Risk tab.
+
+Required quantity field names for risk-facing rows:
+
+- `position_qty_venue`
+- `position_qty_base`
+- `local_qty_venue`
+- `local_qty_base`
+- `global_qty_base`
+- `order_qty_venue`
+- `order_qty_base`
+- `qty_conversion_status`
+- `qty_conversion_source`
 
 Request:
 
@@ -336,6 +456,7 @@ Trade row contract:
 1. Each row MUST include `row_id`, `ts_ms`, and `version`.
 2. `version` is required for deterministic reconnect/dedupe behavior.
 3. `row_id` is an opaque stable identifier; server may synthesize a fallback when producer rows are missing one.
+4. Trade blotter `qty` remains venue/native size unless a convention-consistent explicit `*_venue` / `*_base` pair is added alongside it.
 
 Request:
 

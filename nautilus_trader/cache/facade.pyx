@@ -220,6 +220,9 @@ cdef class CacheDatabaseFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `delete_strategy` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef bint supports_account_event_deletion(self):
+        return False
+
     cpdef void heartbeat(self, datetime timestamp):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `heartbeat` must be implemented in the subclass")  # pragma: no cover

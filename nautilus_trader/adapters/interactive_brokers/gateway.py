@@ -51,6 +51,10 @@ class DockerizedIBGateway:
         self.timeout = config.timeout
         self.container_image = config.container_image
         self.vnc_port = config.vnc_port
+        self.auto_restart_time = config.auto_restart_time
+        self.time_zone = config.time_zone
+        self.relogin_after_twofa_timeout = config.relogin_after_twofa_timeout
+        self.twofa_timeout_action = config.twofa_timeout_action
 
         try:
             import docker
@@ -153,6 +157,27 @@ class DockerizedIBGateway:
         if self.vnc_port is not None:
             ports[str(self.VNC_PORT_INTERNAL)] = (self.host, self.vnc_port)
 
+        environment = {
+            "TWS_USERID": self.username,
+            "TWS_PASSWORD": self.password.get_value(),
+            "TRADING_MODE": self.trading_mode,
+            "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
+        }
+
+        if self.auto_restart_time is not None:
+            environment["AUTO_RESTART_TIME"] = self.auto_restart_time
+        if self.time_zone is not None:
+            environment["TIME_ZONE"] = self.time_zone
+            environment["TZ"] = self.time_zone
+        if self.relogin_after_twofa_timeout:
+            environment["RELOGIN_AFTER_TWOFA_TIMEOUT"] = "yes"
+
+        twofa_timeout_action = self.twofa_timeout_action
+        if twofa_timeout_action is None and self.auto_restart_time is not None:
+            twofa_timeout_action = "restart"
+        if twofa_timeout_action is not None:
+            environment["TWOFA_TIMEOUT_ACTION"] = twofa_timeout_action
+
         self._container = self._docker.containers.run(
             image=self.container_image,
             name=self.container_name,
@@ -160,12 +185,7 @@ class DockerizedIBGateway:
             detach=True,
             ports=ports,
             platform="amd64",
-            environment={
-                "TWS_USERID": self.username,
-                "TWS_PASSWORD": self.password.get_value(),
-                "TRADING_MODE": self.trading_mode,
-                "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
-            },
+            environment=environment,
         )
         self.log.info(f"Container `{self.container_name}` starting, waiting for ready")
 

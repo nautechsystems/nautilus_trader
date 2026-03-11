@@ -42,6 +42,8 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class Cache(CacheFacade):
     cdef Logger _log
     cdef CacheDatabaseFacade _database
+    cdef bint _supports_account_event_deletion
+    cdef bint _warned_account_event_delete_unsupported
 
     cdef dict _general
     cdef dict _currencies

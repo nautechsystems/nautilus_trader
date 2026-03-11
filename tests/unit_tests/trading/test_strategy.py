@@ -1,7 +1,6 @@
 from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
-
 import pandas as pd
 import pytest
 import pytz
@@ -63,7 +62,7 @@ _USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestStrategy:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
@@ -180,6 +179,7 @@ class TestStrategy:
             "use_uuid_client_order_ids": False,
             "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
+            "allowed_submit_instrument_ids": None,
             "external_order_claims": None,
             "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
@@ -198,6 +198,7 @@ class TestStrategy:
         config = StrategyConfig(
             strategy_id="ALPHA-01",
             order_id_tag="001",
+            allowed_submit_instrument_ids=["AUD/USD.SIM"],
             external_order_claims=["ETHUSDT-PERP.DYDX"],
             manage_contingent_orders=True,
             manage_gtd_expiry=True,
@@ -219,6 +220,7 @@ class TestStrategy:
             "use_uuid_client_order_ids": False,
             "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
+            "allowed_submit_instrument_ids": ["AUD/USD.SIM"],
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
@@ -972,6 +974,32 @@ class TestStrategy:
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
 
+    def test_submit_order_when_instrument_not_in_allowed_submit_instrument_ids_then_denies(self) -> None:
+        # Arrange
+        strategy = Strategy(
+            config=StrategyConfig(allowed_submit_instrument_ids=[AUDUSD_SIM.id]),
+        )
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert not strategy.cache.order_exists(order.client_order_id)
+
     def test_submit_order_with_managed_gtd_starts_timer(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
@@ -1147,6 +1175,71 @@ class TestStrategy:
         assert bracket1.orders[0].status == OrderStatus.DENIED
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
+
+    def test_submit_order_list_when_any_instrument_not_allowed_then_denies_all(self) -> None:
+        # Arrange
+        strategy = Strategy(
+            config=StrategyConfig(allowed_submit_instrument_ids=[AUDUSD_SIM.id]),
+        )
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        allowed_order = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        blocked_order = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        order_list = OrderList(
+            order_list_id=strategy.order_factory.generate_order_list_id(),
+            orders=[allowed_order, blocked_order],
+        )
+
+        # Act
+        strategy.submit_order_list(order_list)
+
+        # Assert
+        assert allowed_order.status == OrderStatus.DENIED
+        assert blocked_order.status == OrderStatus.DENIED
+        assert not strategy.cache.order_exists(allowed_order.client_order_id)
+        assert not strategy.cache.order_exists(blocked_order.client_order_id)
+
+    def test_submit_order_when_disallowed_instrument_but_market_exit_cleanup_then_allows(self) -> None:
+        # Arrange
+        strategy = Strategy(
+            config=StrategyConfig(allowed_submit_instrument_ids=[AUDUSD_SIM.id]),
+        )
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+        strategy.market_exit()
+
+        order = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            reduce_only=True,
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert order.status != OrderStatus.DENIED
 
     def test_submit_order_list_with_valid_order_successfully_submits(self) -> None:
         # Arrange
@@ -1620,6 +1713,43 @@ class TestStrategy:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
+
+    def test_cancel_all_orders_skips_orders_already_pending_cancel(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.007"),
+        )
+
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
+
+        assert order.status == OrderStatus.PENDING_CANCEL
+        assert order in self.cache.orders_open()
+
+        initial_event_count = len(order.events)
+        initial_command_count = self.exec_engine.command_count
+
+        # Act
+        strategy.cancel_all_orders(_USDJPY_SIM.id)
+
+        # Assert
+        assert order.status == OrderStatus.PENDING_CANCEL
+        assert len(order.events) == initial_event_count
+        assert self.exec_engine.command_count == initial_command_count
 
     def test_close_position_when_position_already_closed_does_nothing(self) -> None:
         # Arrange
@@ -2372,6 +2502,66 @@ class TestStrategy:
 
         # Assert - strategy should stop after market exit completes
         assert strategy.state == ComponentState.STOPPED
+
+    def test_request_immediate_stop_bypasses_manage_stop(self) -> None:
+        # Arrange
+        class HookTrackingStrategy(Strategy):
+            def __init__(self, config):
+                super().__init__(config)
+                self.on_market_exit_called = False
+
+            def on_market_exit(self):
+                self.on_market_exit_called = True
+
+        strategy = HookTrackingStrategy(
+            config=StrategyConfig(
+                manage_stop=True,
+                market_exit_interval_ms=10,
+            ),
+        )
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Act
+        strategy.request_immediate_stop(True)
+        strategy.stop()
+
+        # Assert
+        assert strategy.state == ComponentState.STOPPED
+        assert not strategy.is_exiting()
+        assert strategy.on_market_exit_called is False
+
+    def test_stop_immediately_cleans_up_market_exit_state(self) -> None:
+        # Arrange
+        strategy = Strategy(
+            config=StrategyConfig(
+                manage_stop=True,
+                market_exit_interval_ms=10,
+            ),
+        )
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+        strategy.market_exit()
+        assert strategy.is_exiting()
+
+        # Act
+        strategy.stop_immediately()
+
+        # Assert
+        assert strategy.state == ComponentState.STOPPED
+        assert not strategy.is_exiting()
 
     def test_market_exit_calls_hooks(self) -> None:
         # Arrange

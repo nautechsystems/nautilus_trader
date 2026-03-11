@@ -97,6 +97,11 @@ The strategy-specific surfaces remain:
 - `quote_cycle` for no-order decisions and pricing audit
 - `order_intent` for per-order reason/correlation metadata
 
+Operational guidance:
+
+- Keep high-volume quote-cycle, state, and pricing diagnostics on these structured topics.
+- Use process logs for lifecycle events, guardrails, failures, and operator actions rather than repeating hot-path telemetry in text logs.
+
 Quote-cycle events use an envelope with:
 
 - `run_id`: stable per-run identifier

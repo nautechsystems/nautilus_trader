@@ -17,6 +17,7 @@ pub mod liquidity;
 pub mod swap;
 pub mod swap_trade_info;
 pub mod transaction;
+pub mod transaction_receipt;
 
 // Re-exports
 pub use block::Block;
@@ -25,6 +26,7 @@ pub use flash::PoolFlash;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
 pub use transaction::Transaction;
+pub use transaction_receipt::{ReceiptLog, TransactionReceipt};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DexPoolData {

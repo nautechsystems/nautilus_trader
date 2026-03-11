@@ -147,6 +147,9 @@ cdef class Strategy(Actor):
         self._log_rejected_due_post_only_as_warning = config.log_rejected_due_post_only_as_warning
         self.config = config
         self.oms_type = <OmsType>oms_type
+        self.allowed_submit_instrument_ids = self._parse_instrument_ids(
+            config.allowed_submit_instrument_ids,
+        )
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
@@ -161,6 +164,7 @@ cdef class Strategy(Actor):
         self._manager = None       # Initialized when registered
         self._is_exiting = False
         self._pending_stop = False
+        self._immediate_stop_requested = False
         self._market_exit_attempts = 0
         self._market_exit_tag = "MARKET_EXIT"
         self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
@@ -173,21 +177,27 @@ cdef class Strategy(Actor):
         self.register_warning_event(OrderCancelRejected)
         self.register_warning_event(OrderModifyRejected)
 
+    def _parse_instrument_ids(
+        self,
+        config_instrument_ids: list[str] | None,
+    ) -> list[InstrumentId]:
+        if config_instrument_ids is None:
+            return []
+
+        instrument_ids: list[InstrumentId] = []
+
+        for instrument_id in config_instrument_ids:
+            if isinstance(instrument_id, str):
+                instrument_id = InstrumentId.from_str(instrument_id)
+            instrument_ids.append(instrument_id)
+
+        return instrument_ids
+
     def _parse_external_order_claims(
         self,
         config_claims: list[str] | None,
     ) -> list[InstrumentId]:
-        if config_claims is None:
-            return []
-
-        order_claims: list[InstrumentId] = []
-
-        for instrument_id in config_claims:
-            if isinstance(instrument_id, str):
-                instrument_id = InstrumentId.from_str(instrument_id)
-            order_claims.append(instrument_id)
-
-        return order_claims
+        return self._parse_instrument_ids(config_claims)
 
     def to_importable_config(self) -> ImportableStrategyConfig:
         """
@@ -386,7 +396,20 @@ cdef class Strategy(Actor):
 
         self.on_start()
 
+    cpdef void request_immediate_stop(self, bint value=True):
+        self._immediate_stop_requested = value
+
+    cpdef void stop_immediately(self):
+        self._immediate_stop_requested = False
+        if self._is_exiting:
+            self._cancel_market_exit()
+        Actor.stop(self)
+
     cpdef void stop(self):
+        if self._immediate_stop_requested:
+            self.stop_immediately()
+            return
+
         if self.config.manage_stop:
             if self.state != ComponentState.RUNNING:
                 Actor.stop(self)
@@ -420,6 +443,7 @@ cdef class Strategy(Actor):
 
         self._is_exiting = False
         self._pending_stop = False
+        self._immediate_stop_requested = False
         self._market_exit_attempts = 0
 
         self.on_reset()
@@ -785,6 +809,21 @@ cdef class Strategy(Actor):
         """
         # Optionally override in subclass
 
+    cdef bint _is_submit_instrument_allowed(self, InstrumentId instrument_id):
+        if not self.allowed_submit_instrument_ids:
+            return True
+
+        return instrument_id in self.allowed_submit_instrument_ids
+
+    cdef bint _is_market_exit_cleanup_order(self, Order order):
+        return (
+            self._is_exiting
+            and (
+                order.is_reduce_only
+                or self._market_exit_tag in (order.tags or [])
+            )
+        )
+
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void submit_order(
@@ -793,6 +832,7 @@ cdef class Strategy(Actor):
         PositionId position_id = None,
         ClientId client_id = None,
         dict[str, object] params = None,
+        bint allow_cash_borrowing = False,
     ):
         """
         Submit the given order with optional position ID, execution algorithm
@@ -816,6 +856,9 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
+        allow_cash_borrowing : bool, default False
+            If the order may borrow from a cash account when the venue/account
+            supports it.
 
         Raises
         ------
@@ -843,6 +886,10 @@ cdef class Strategy(Actor):
             msg=order.init_event_c(),
         )
 
+        if not self._is_market_exit_cleanup_order(order) and not self._is_submit_instrument_allowed(order.instrument_id):
+            self._deny_order_locally(order, "instrument not in allowed_submit_instrument_ids")
+            return
+
         if self._is_exiting and not order.is_reduce_only and self._market_exit_tag not in (order.tags or []):
             self._deny_order(order, "MARKET_EXIT_IN_PROGRESS")
             return
@@ -868,6 +915,7 @@ cdef class Strategy(Actor):
             position_id=position_id,
             client_id=client_id,
             params=used_params,
+            allow_cash_borrowing=allow_cash_borrowing,
         )
 
         if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
@@ -887,6 +935,7 @@ cdef class Strategy(Actor):
         PositionId position_id = None,
         ClientId client_id = None,
         dict[str, object] params = None,
+        bint allow_cash_borrowing = False,
     ):
         """
         Submit the given order list with optional position ID, execution algorithm
@@ -910,6 +959,9 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
+        allow_cash_borrowing : bool, default False
+            If the order list may borrow from a cash account when the
+            venue/account supports it.
 
         Raises
         ------
@@ -934,6 +986,16 @@ cdef class Strategy(Actor):
                 topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
+
+        for order in order_list.orders:
+            if self._is_market_exit_cleanup_order(order):
+                continue
+            if not self._is_submit_instrument_allowed(order.instrument_id):
+                self._deny_order_list_locally(
+                    order_list,
+                    reason="instrument not in allowed_submit_instrument_ids",
+                )
+                return
 
         if self._is_exiting:
             for order in order_list.orders:
@@ -978,6 +1040,7 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
             params=used_params,
+            allow_cash_borrowing=allow_cash_borrowing,
         )
 
         if self.manage_gtd_expiry:
@@ -1232,6 +1295,7 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             side=order_side,
         )
+        open_orders = [order for order in open_orders if not order.is_pending_cancel_c()]
 
         cdef list[Order] emulated_orders = self.cache.orders_emulated(
             venue=None,  # Faster query filtering
@@ -1246,6 +1310,7 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             side=order_side,
         )
+        inflight_orders = [order for order in inflight_orders if not order.is_pending_cancel_c()]
 
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders and not inflight_orders:
@@ -1864,6 +1929,7 @@ cdef class Strategy(Actor):
 
         self._is_exiting = False
         self._pending_stop = False
+        self._immediate_stop_requested = False
         self._market_exit_attempts = 0
         self._market_exit_time_in_force = <TimeInForce>self.config.market_exit_time_in_force
         self._market_exit_reduce_only = self.config.market_exit_reduce_only
@@ -2034,8 +2100,28 @@ cdef class Strategy(Actor):
             msg=event,
         )
 
+    cdef void _deny_order_locally(self, Order order, str reason):
+        cdef OrderDenied event = self._generate_order_denied(order, reason)
+
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as e:
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            return
+
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
+
     cdef void _deny_order_list(self, OrderList order_list, str reason):
         cdef Order order
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
+
+    cdef void _deny_order_list_locally(self, OrderList order_list, str reason):
+        cdef Order order
+        for order in order_list.orders:
+            if not order.is_closed_c():
+                self._deny_order_locally(order=order, reason=reason)

@@ -6,6 +6,7 @@ members = [
   "crates/adapters/betfair",
   "crates/adapters/binance",
   "crates/adapters/bitmex",
+  "crates/adapters/bitget",
   "crates/adapters/blockchain",
   "crates/adapters/bybit",
   "crates/adapters/databento",
@@ -44,6 +45,8 @@ members = [
 version = "0.54.0"
 edition = "2024"
 rust-version = "1.93.1"
+authors = ["Nautech Systems <info@nautechsystems.io>"]
+license = "LGPL-3.0-or-later"
 readme = "README.md"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 categories = ["finance", "simulation", "asynchronous"]
@@ -54,6 +57,9 @@ keywords = [
   "algorithmic-trading",
   "quantitative-finance",
 ]
+documentation = "https://nautilustrader.io/docs"
+repository = "https://github.com/nautechsystems/nautilus_trader"
+homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
 nautilus-analysis = { path = "crates/analysis", version = "0.54.0" }
@@ -85,6 +91,7 @@ nautilus-trading = { path = "crates/trading", version = "0.54.0" }
 # -----------------------------------------------------------------------------
 nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.54.0" }
 nautilus-binance = { path = "crates/adapters/binance", version = "0.54.0", default-features = false }
+nautilus-bitget = { path = "crates/adapters/bitget", version = "0.54.0", default-features = false }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.54.0", default-features = false }
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.54.0" }
 nautilus-bybit = { path = "crates/adapters/bybit", version = "0.54.0", default-features = false }

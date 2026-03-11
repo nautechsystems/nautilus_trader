@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
 RUN_DIR="${RUN_DIR:-${ROOT_DIR}/.run/tokenmm-stack}"
 LOG_DIR="${RUN_DIR}/logs"
 PID_DIR="${RUN_DIR}/pids"
@@ -24,12 +25,15 @@ SKIP_FLUXBOARD_BUILD="${TOKENMM_SKIP_FLUXBOARD_BUILD:-0}"
 SKIP_PULSE_BUILD="${TOKENMM_SKIP_PULSE_BUILD:-0}"
 STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-1}"
 STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-1}"
+LOCAL_LOG_MAX_MB="${TOKENMM_LOCAL_LOG_MAX_MB:-100}"
+LOCAL_LOG_KEEP="${TOKENMM_LOCAL_LOG_KEEP:-5}"
 PYTHON_BIN="${TOKENMM_PYTHON_BIN:-}"
 LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-0}"
 AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
 BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"
 BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"
 OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-/nautilus/tokenmm/okx}"
+BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-/nautilus/tokenmm/bitget}"
 
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6380"
@@ -62,8 +66,9 @@ Environment overrides:
   TOKENMM_SKIP_FLUXBOARD_BUILD, TOKENMM_SKIP_PULSE_BUILD, TOKENMM_START_TIMEOUT_SECS
   TOKENMM_BALANCES_READY_TIMEOUT_SECS
   TOKENMM_STRICT_PROFILE_CHECK, TOKENMM_STRICT_BALANCES_READY_CHECK
+  TOKENMM_LOCAL_LOG_MAX_MB, TOKENMM_LOCAL_LOG_KEEP
   TOKENMM_LOAD_AWS_SECRETS, TOKENMM_AWS_REGION
-  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID
+  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID, TOKENMM_BITGET_SECRET_ID
 
 Production note:
   tokenmm_stack.sh is local smoke only; production service management belongs in Pulse
@@ -82,7 +87,7 @@ require_cmd() {
 is_allowed_env_key() {
   local key="$1"
   case "${key}" in
-    TOKENMM_* | BYBIT_* | BINANCE_* | OKX_*)
+    TOKENMM_* | BYBIT_* | BINANCE_* | OKX_* | BITGET_*)
       return 0
       ;;
     *)
@@ -163,11 +168,14 @@ load_env_file() {
   SKIP_PULSE_BUILD="${TOKENMM_SKIP_PULSE_BUILD:-${SKIP_PULSE_BUILD}}"
   STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-${STRICT_PROFILE_CHECK}}"
   STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-${STRICT_BALANCES_READY_CHECK}}"
+  LOCAL_LOG_MAX_MB="${TOKENMM_LOCAL_LOG_MAX_MB:-${LOCAL_LOG_MAX_MB}}"
+  LOCAL_LOG_KEEP="${TOKENMM_LOCAL_LOG_KEEP:-${LOCAL_LOG_KEEP}}"
   LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-${LOAD_AWS_SECRETS}}"
   AWS_REGION="${TOKENMM_AWS_REGION:-${AWS_REGION}}"
   BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
   BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-${BINANCE_SECRET_ID}}"
   OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-${OKX_SECRET_ID}}"
+  BITGET_SECRET_ID="${TOKENMM_BITGET_SECRET_ID:-${BITGET_SECRET_ID}}"
 }
 
 resolve_redis_target_from_config() {
@@ -267,7 +275,7 @@ load_secret_into_env() {
       continue
     fi
     case "${key}" in
-      BYBIT_*|BINANCE_*|OKX_*)
+      BYBIT_*|BINANCE_*|BITGET_*|OKX_*)
         printf -v "${key}" "%s" "${value}"
         export "${key?}"
         ;;
@@ -287,6 +295,7 @@ load_aws_secrets_if_enabled() {
   load_secret_into_env "${BYBIT_SECRET_ID}"
   load_secret_into_env "${BINANCE_SECRET_ID}"
   load_secret_into_env "${OKX_SECRET_ID}"
+  load_secret_into_env "${BITGET_SECRET_ID}"
 }
 
 validate_mode() {
@@ -343,6 +352,9 @@ validate_config_and_keys() {
   [[ -z "${BYBIT_API_SECRET:-}" ]] && missing+=("BYBIT_API_SECRET")
   [[ -z "${BINANCE_API_KEY:-}" ]] && missing+=("BINANCE_API_KEY")
   [[ -z "${BINANCE_API_SECRET:-}" ]] && missing+=("BINANCE_API_SECRET")
+  [[ -z "${BITGET_API_KEY:-}" ]] && missing+=("BITGET_API_KEY")
+  [[ -z "${BITGET_API_SECRET:-}" ]] && missing+=("BITGET_API_SECRET")
+  [[ -z "${BITGET_API_PASSPHRASE:-}" ]] && missing+=("BITGET_API_PASSPHRASE")
   [[ -z "${OKX_API_KEY:-}" ]] && missing+=("OKX_API_KEY")
   [[ -z "${OKX_API_SECRET:-}" ]] && missing+=("OKX_API_SECRET")
   [[ -z "${OKX_API_PASSPHRASE:-}" ]] && missing+=("OKX_API_PASSPHRASE")
@@ -354,17 +366,12 @@ validate_config_and_keys() {
 }
 
 load_strategy_configs() {
-  mapfile -t STRATEGY_CONFIGS < <(find "${STRATEGIES_DIR}" -maxdepth 1 -type f -name '*.toml' ! -name '*template*' | sort)
-  if ((${#STRATEGY_CONFIGS[@]} == 0)); then
-    echo "[tokenmm-stack] no strategy configs found under ${STRATEGIES_DIR}" >&2
-    exit 1
-  fi
-  if [[ "${EXPECTED_NODES}" =~ ^[0-9]+$ ]] && [[ "${EXPECTED_NODES}" != "0" ]]; then
-    if ((${#STRATEGY_CONFIGS[@]} != EXPECTED_NODES)); then
-      echo "[tokenmm-stack] expected ${EXPECTED_NODES} strategy configs, found ${#STRATEGY_CONFIGS[@]}" >&2
-      exit 1
-    fi
-  fi
+  strategy_stack_load_strategy_configs \
+    STRATEGY_CONFIGS \
+    "${STRATEGIES_DIR}" \
+    "*template*" \
+    "[tokenmm-stack]" \
+    "${EXPECTED_NODES}"
 }
 
 read_tokenmm_registry_ids() {
@@ -656,6 +663,59 @@ ensure_dirs() {
   mkdir -p "${LOG_DIR}" "${PID_DIR}"
 }
 
+validate_local_log_retention() {
+  [[ "${LOCAL_LOG_MAX_MB}" =~ ^[0-9]+$ ]] || {
+    echo "[tokenmm-stack] TOKENMM_LOCAL_LOG_MAX_MB must be a non-negative integer" >&2
+    exit 1
+  }
+  [[ "${LOCAL_LOG_KEEP}" =~ ^[0-9]+$ ]] || {
+    echo "[tokenmm-stack] TOKENMM_LOCAL_LOG_KEEP must be a non-negative integer" >&2
+    exit 1
+  }
+}
+
+prune_rotated_logs() {
+  local log="$1"
+  local keep="$2"
+  local dir base
+  dir="$(dirname "${log}")"
+  base="$(basename "${log}")"
+
+  local -a rotated=()
+  mapfile -t rotated < <(
+    find "${dir}" -maxdepth 1 -type f -name "${base}.*" -print | sort -r
+  )
+
+  if ((${#rotated[@]} <= keep)); then
+    return
+  fi
+
+  local file
+  for file in "${rotated[@]:keep}"; do
+    rm -f "${file}"
+  done
+}
+
+rotate_log_if_needed() {
+  local log="$1"
+  local max_size_bytes=$((LOCAL_LOG_MAX_MB * 1024 * 1024))
+
+  if [[ ! -f "${log}" ]]; then
+    prune_rotated_logs "${log}" "${LOCAL_LOG_KEEP}"
+    return
+  fi
+
+  if ((max_size_bytes > 0)); then
+    local size_bytes
+    size_bytes="$(stat -c%s "${log}" 2>/dev/null || echo 0)"
+    if ((size_bytes >= max_size_bytes)); then
+      mv "${log}" "${log}.$(date -u +%Y%m%dT%H%M%SZ)"
+    fi
+  fi
+
+  prune_rotated_logs "${log}" "${LOCAL_LOG_KEEP}"
+}
+
 is_running() {
   local svc="$1"
   local file
@@ -682,6 +742,7 @@ start_process() {
     return
   fi
 
+  rotate_log_if_needed "${log}"
   echo "[tokenmm-stack] starting ${svc}"
   rm -f "${file}"
   (
@@ -889,6 +950,7 @@ start_stack() {
   load_strategy_configs
   validate_strategy_registry_alignment "${pybin}"
   ensure_dirs
+  validate_local_log_retention
 
   resolve_redis_target_from_config "${pybin}"
   start_redis_if_needed "${pybin}"

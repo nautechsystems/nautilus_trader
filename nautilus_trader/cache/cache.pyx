@@ -92,6 +92,10 @@ cdef class Cache(CacheFacade):
 
         self._database = database
         self._log = Logger(name=type(self).__name__)
+        self._supports_account_event_deletion = (
+            database is not None and database.supports_account_event_deletion()
+        )
+        self._warned_account_event_delete_unsupported = False
 
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
@@ -647,14 +651,6 @@ cdef class Cache(CacheFacade):
                     )
                     error_count += 1
 
-        for instrument_id in self._index_instrument_positions:
-            if instrument_id not in self._index_instrument_orders:
-                self._log.error(
-                    f"{failure} in _index_instrument_positions: "
-                    f"{repr(instrument_id)} not found in self._index_instrument_orders"
-                )
-                error_count += 1
-
         for client_order_ids in self._index_strategy_orders.values():
             for client_order_id in client_order_ids:
                 if client_order_id not in self._orders:
@@ -743,14 +739,6 @@ cdef class Cache(CacheFacade):
                 self._log.error(
                     f"{failure} in _index_positions_closed: "
                     f"{repr(position_id)} not found in self._cached_positions"
-                )
-                error_count += 1
-
-        for strategy_id in self._index_strategies:
-            if strategy_id not in self._index_strategy_orders:
-                self._log.error(
-                    f"{failure} in _index_strategies: "
-                    f"{repr(strategy_id)} not found in self._index_strategy_orders"
                 )
                 error_count += 1
 
@@ -1081,6 +1069,23 @@ cdef class Cache(CacheFacade):
         """
         cdef str lookback_secs_str = f" with {lookback_secs=:_}" if lookback_secs else ""
         self._log.debug(f"Purging account events{lookback_secs_str}", LogColor.MAGENTA)
+        cdef bint purge_account_events_from_database = (
+            purge_from_database
+            and self._database is not None
+            and self._supports_account_event_deletion
+        )
+
+        if (
+            purge_from_database
+            and self._database is not None
+            and not self._supports_account_event_deletion
+            and not self._warned_account_event_delete_unsupported
+        ):
+            self._warned_account_event_delete_unsupported = True
+            self._log.warning(
+                "Skipping account event database purge; backing cache adapter does not "
+                "support delete_account_event()",
+            )
 
         cdef Account account
         for account in self._accounts.values():
@@ -1088,7 +1093,7 @@ cdef class Cache(CacheFacade):
 
             # Track events before purging if database deletion is enabled
             events_before = None
-            if purge_from_database and self._database is not None:
+            if purge_account_events_from_database:
                 events_before = account.events.copy()  # Copy, not alias
 
             account.purge_account_events(ts_now, lookback_secs)
@@ -1097,7 +1102,7 @@ cdef class Cache(CacheFacade):
                 self._log.info(f"Purged {count_diff} event(s) from account {account.id}", LogColor.BLUE)
 
                 # Delete from database if enabled
-                if purge_from_database and self._database is not None and events_before is not None:
+                if purge_account_events_from_database and events_before is not None:
                     events_after = account.events
                     event_ids_before = {event.id for event in events_before}
                     event_ids_after = {event.id for event in events_after}

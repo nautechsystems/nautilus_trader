@@ -29,7 +29,7 @@ impl HyperliquidHttpClient {
     /// If no credentials are provided and no environment variables are set,
     /// creates an unauthenticated client for public endpoints only.
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true))]
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true, dex=None, account_address=None))]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
@@ -37,6 +37,8 @@ impl HyperliquidHttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
         normalize_prices: bool,
+        dex: Option<String>,
+        account_address: Option<String>,
     ) -> PyResult<Self> {
         let mut client = Self::with_credentials(
             private_key,
@@ -46,7 +48,9 @@ impl HyperliquidHttpClient {
             proxy_url,
         )
         .map_err(to_pyvalue_err)?;
+        client.set_account_address(account_address);
         client.set_normalize_prices(normalize_prices);
+        client.set_dex(dex);
         Ok(client)
     }
 
@@ -57,22 +61,27 @@ impl HyperliquidHttpClient {
     }
 
     #[staticmethod]
-    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, dex=None, account_address=None))]
     fn py_from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
+        dex: Option<String>,
+        account_address: Option<String>,
     ) -> PyResult<Self> {
-        Self::from_credentials(
+        let mut client = Self::from_credentials(
             private_key,
             vault_address,
             is_testnet,
             timeout_secs,
             proxy_url,
         )
-        .map_err(to_pyvalue_err)
+        .map_err(to_pyvalue_err)?;
+        client.set_account_address(account_address);
+        client.set_dex(dex);
+        Ok(client)
     }
 
     #[pyo3(name = "cache_instrument")]
@@ -119,17 +128,21 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "load_instrument_definitions", signature = (include_perp=true, include_spot=true))]
+    #[pyo3(name = "load_instrument_definitions", signature = (include_perp=true, include_spot=true, dex=None))]
     fn py_load_instrument_definitions<'py>(
         &self,
         py: Python<'py>,
         include_perp: bool,
         include_spot: bool,
+        dex: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
+            let mut instruments = client
+                .request_instruments_with_dex(dex.as_deref())
+                .await
+                .map_err(to_pyvalue_err)?;
 
             if !include_perp || !include_spot {
                 instruments.retain(|instrument| match instrument {
@@ -356,19 +369,26 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_order_status_reports")]
+    #[pyo3(name = "request_order_status_reports", signature = (instrument_id=None, account_address=None, dex=None))]
     fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
         instrument_id: Option<&str>,
+        account_address: Option<String>,
+        dex: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let account_address = account_address
+                .map_or_else(|| client.get_account_address().map_err(to_pyvalue_err), Ok)?;
             let reports = client
-                .request_order_status_reports(&account_address, instrument_id)
+                .request_order_status_reports_with_dex(
+                    &account_address,
+                    instrument_id,
+                    dex.as_deref(),
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -380,19 +400,22 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_fill_reports")]
+    #[pyo3(name = "request_fill_reports", signature = (instrument_id=None, account_address=None, dex=None))]
     fn py_request_fill_reports<'py>(
         &self,
         py: Python<'py>,
         instrument_id: Option<&str>,
+        account_address: Option<String>,
+        dex: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let account_address = account_address
+                .map_or_else(|| client.get_account_address().map_err(to_pyvalue_err), Ok)?;
             let reports = client
-                .request_fill_reports(&account_address, instrument_id)
+                .request_fill_reports_with_dex(&account_address, instrument_id, dex.as_deref())
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -404,19 +427,26 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_position_status_reports")]
+    #[pyo3(name = "request_position_status_reports", signature = (instrument_id=None, account_address=None, dex=None))]
     fn py_request_position_status_reports<'py>(
         &self,
         py: Python<'py>,
         instrument_id: Option<&str>,
+        account_address: Option<String>,
+        dex: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let account_address = account_address
+                .map_or_else(|| client.get_account_address().map_err(to_pyvalue_err), Ok)?;
             let reports = client
-                .request_position_status_reports(&account_address, instrument_id)
+                .request_position_status_reports_with_dex(
+                    &account_address,
+                    instrument_id,
+                    dex.as_deref(),
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -428,14 +458,20 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_account_state")]
-    fn py_request_account_state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "request_account_state", signature = (account_address=None, dex=None))]
+    fn py_request_account_state<'py>(
+        &self,
+        py: Python<'py>,
+        account_address: Option<String>,
+        dex: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let account_address = account_address
+                .map_or_else(|| client.get_account_address().map_err(to_pyvalue_err), Ok)?;
             let account_state = client
-                .request_account_state(&account_address)
+                .request_account_state_with_dex(&account_address, dex.as_deref())
                 .await
                 .map_err(to_pyvalue_err)?;
 

@@ -54,6 +54,10 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.flux.runners.live.hyperliquid_account import (
+    HyperliquidUserResolutionError,
+)
+from nautilus_trader.flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -133,21 +137,39 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
 
-        # Get user address from HTTP client for WebSocket subscriptions
-        # Use vault address when vault trading, otherwise order/fill
-        # updates for the vault will be missed
-        self._user_address: str | None = None
         try:
-            eoa_address = self._client.get_user_address()
-            self._user_address = config.vault_address or eoa_address
-            self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
-            if config.vault_address:
-                self._log.info(
-                    f"Vault address (WS subscriptions): {config.vault_address}",
-                    LogColor.BLUE,
-                )
-        except Exception as e:
-            self._log.warning(f"Could not get user address: {e}")
+            self._resolved_user = resolve_hyperliquid_user(
+                client=self._client,
+                account_address=config.account_address,
+                vault_address=config.vault_address,
+                testnet=config.testnet,
+                http_timeout_secs=config.http_timeout_secs,
+                http_proxy_url=config.http_proxy_url,
+            )
+        except HyperliquidUserResolutionError as exc:
+            self._log.error(str(exc), LogColor.RED)
+            raise
+
+        set_account_address = getattr(self._client, "set_account_address", None)
+        if callable(set_account_address):
+            try:
+                set_account_address(self._resolved_user.account_query_address)
+            except Exception as e:
+                self._log.warning(f"Could not set effective account address: {e}")
+
+        if self._resolved_user.execution_signer:
+            self._log.info(
+                f"Execution signer address: {self._resolved_user.execution_signer}",
+                LogColor.BLUE,
+            )
+        if self._resolved_user.account_query_address:
+            self._log.info(
+                "Effective account address "
+                f"({self._resolved_user.source}): {self._resolved_user.account_query_address}",
+                LogColor.BLUE,
+            )
+        elif config.account_address or config.vault_address:
+            self._log.warning("Configured Hyperliquid account identity resolved to empty address")
 
     @property
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -165,6 +187,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._ws_client.cache_spot_fill_coins(spot_fill_coins)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    def _user_scoped_request_kwargs(self, *, instrument_id: str | None = None) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        if instrument_id is not None:
+            kwargs["instrument_id"] = instrument_id
+        if self._resolved_user.account_query_address is not None:
+            kwargs["account_address"] = self._resolved_user.account_query_address
+        if self._config.dex is not None:
+            kwargs["dex"] = self._config.dex
+        return kwargs
 
     async def _connect(self) -> None:
         self._log.info("Loading instruments...", LogColor.BLUE)
@@ -187,16 +219,17 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
-        if self._user_address:
-            await self._ws_client.subscribe_order_updates(self._user_address)
+        ws_subscription_address = self._resolved_user.ws_subscription_address
+        if ws_subscription_address:
+            await self._ws_client.subscribe_order_updates(ws_subscription_address)
             self._log.info(
-                f"Subscribed to order updates for {self._user_address}",
+                f"Subscribed to order updates for {ws_subscription_address}",
                 LogColor.BLUE,
             )
 
-            await self._ws_client.subscribe_user_events(self._user_address)
+            await self._ws_client.subscribe_user_events(ws_subscription_address)
             self._log.info(
-                f"Subscribed to user events (includes fills) for {self._user_address}",
+                f"Subscribed to user events (includes fills) for {ws_subscription_address}",
                 LogColor.BLUE,
             )
 
@@ -227,7 +260,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.debug(f"Failed to cleanup cloid mapping for {client_order_id!r}: {e}")
 
     async def _update_account_state(self) -> None:
-        pyo3_account_state = await self._client.request_account_state()
+        pyo3_account_state = await self._client.request_account_state(
+            **self._user_scoped_request_kwargs(),
+        )
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
         self.generate_account_state(
@@ -264,7 +299,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_order_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             for pyo3_report in pyo3_reports:
@@ -308,7 +343,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_order_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             reports = []
@@ -341,7 +376,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ) -> list[FillReport]:
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
-            pyo3_reports = await self._client.request_fill_reports(instrument_id=instrument_id)
+            pyo3_reports = await self._client.request_fill_reports(
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
+            )
 
             reports = []
             for pyo3_report in pyo3_reports:
@@ -369,7 +406,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_position_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             reports = [PositionStatusReport.from_pyo3(r) for r in pyo3_reports]
@@ -392,7 +429,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ) -> None:
         try:
             pyo3_reports = await self._client.request_fill_reports(
-                instrument_id=order.instrument_id.value,
+                **self._user_scoped_request_kwargs(instrument_id=order.instrument_id.value),
             )
 
             instrument = self._cache.instrument(order.instrument_id)

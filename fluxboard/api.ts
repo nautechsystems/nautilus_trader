@@ -105,6 +105,10 @@ function appendProfileQuery(qs: URLSearchParams): void {
   if (profile !== 'default') qs.set('profile', profile);
 }
 
+function routePrefersKeyLabel(profile: PathProfile): boolean {
+  return profile === 'tokenmm' || profile === 'equities';
+}
+
 // Create enhanced API client instance with timeout, retry, and deduplication
 const apiClient = new APIClient(base);
 
@@ -236,6 +240,8 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       last_ts: tsMs > 0 ? tsMs : null,
       chain: String(row.chain ?? '').trim() || null,
       contract: String(row.contract ?? row.instrument_id ?? '').trim() || null,
+      risk_key: String(row.risk_key ?? '').trim() || null,
+      risk_label: String(row.risk_label ?? '').trim() || null,
     };
 
     const existing = byParent.get(parentId);
@@ -306,6 +312,33 @@ function normalizeBalancesRows(rows: unknown): BalanceParentRow[] {
   return normalizeFlatBalancesRows(rows);
 }
 
+function normalizeRiskGroups(groups: unknown): BalancesPayload['risk_groups'] {
+  if (!Array.isArray(groups)) return [];
+  return groups
+    .filter((group): group is Record<string, unknown> => Boolean(group) && typeof group === 'object')
+    .map((group) => ({
+      ...group,
+      risk_key: String(group.risk_key ?? ''),
+      label: String(group.label ?? group.risk_key ?? ''),
+      rows: Array.isArray(group.rows)
+        ? group.rows
+            .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+            .map((row) => ({
+              row_id: typeof row.row_id === 'string' && row.row_id ? row.row_id : null,
+              venue: String(row.venue ?? ''),
+              coin: String(row.coin ?? ''),
+              qty_raw: toFiniteNumber(row.qty_raw, 0),
+              mv_raw: toFiniteNumber(row.mv_raw, 0),
+              mark_raw: row.mark_raw == null ? null : toFiniteNumber(row.mark_raw, 0),
+              time_display: typeof row.time_display === 'string' ? row.time_display : null,
+              label: typeof row.label === 'string' && row.label ? row.label : null,
+              wallet: typeof row.wallet === 'string' && row.wallet ? row.wallet : null,
+              address: typeof row.address === 'string' && row.address ? row.address : null,
+            }))
+        : [],
+    }));
+}
+
 function toFiniteOptionalNumber(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
@@ -345,6 +378,7 @@ function normalizeParamOptions(
   key: string,
   rawType: unknown,
   rawOptions: unknown,
+  opts?: { preferKeyLabel?: boolean },
 ): [string, string][] | null {
   if (Array.isArray(rawOptions) && rawOptions.length > 0) {
     const normalized = rawOptions
@@ -362,13 +396,15 @@ function normalizeParamOptions(
 
   const typeText = String(rawType ?? '').trim().toLowerCase();
   if (key === 'bot_on' || typeText === 'boolean' || typeText === 'bool') {
-    return [['0', 'Paused (0)'], ['1', 'Enabled (1)']];
+    return opts?.preferKeyLabel === true
+      ? [['0', 'Off (0)'], ['1', 'On (1)']]
+      : [['0', 'Paused (0)'], ['1', 'Enabled (1)']];
   }
   return null;
 }
 
-function botOnLabel(): string {
-  return 'Trading';
+function botOnLabel(opts?: { preferKeyLabel?: boolean }): string {
+  return opts?.preferKeyLabel === true ? 'bot_on' : 'Trading';
 }
 
 function botOnDescription(): string {
@@ -390,11 +426,11 @@ function normalizeParamDef(
   const preferKeyLabel = opts?.preferKeyLabel === true;
   const label =
     key === 'bot_on'
-      ? botOnLabel()
+      ? botOnLabel(opts)
       : preferKeyLabel
         ? key
         : (String(source.label ?? source.description ?? key).trim() || key);
-  const options = normalizeParamOptions(key, source.type, source.options);
+  const options = normalizeParamOptions(key, source.type, source.options, opts);
   const step = toFiniteOptionalNumber(source.step);
   const minValue = toFiniteOptionalNumber(source.min_value ?? source.minimum);
   const maxValue = toFiniteOptionalNumber(source.max_value ?? source.maximum);
@@ -902,11 +938,17 @@ function attachAlertsPaginationMetadata(
 function normalizeAlertRow(candidate: unknown): Alert | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const row = candidate as Record<string, unknown>;
-  const id = String(row.id ?? row.row_id ?? '').trim();
+  const id = String(row.id ?? row.row_id ?? row.entry_id ?? '').trim();
   if (!id) return null;
 
   const severityRaw = String(row.severity ?? row.level ?? 'INFO').trim().toUpperCase();
-  const level = severityRaw === 'CRITICAL' || severityRaw === 'WARNING' ? severityRaw : 'INFO';
+  const level = (
+    severityRaw === 'CRITICAL'
+      || severityRaw === 'ERROR'
+      || severityRaw === 'WARNING'
+  )
+    ? severityRaw
+    : 'INFO';
   const tsMsCandidate = toFiniteOptionalNumber(row.ts_ms ?? row.ts_event);
   const timestamp = Math.floor(
     toFiniteNumber(
@@ -1325,6 +1367,91 @@ export const api = {
     return unwrapFluxEnvelope(response);
   },
 
+  setHedgerGeometryOverridesById: async (
+    hedgerId: string,
+    overrides: HedgerGeometryOverrides
+  ): Promise<HedgerGeometryResponse> => {
+    const headers = await signedJsonHeaders(overrides);
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/geometry-overrides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(overrides),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerGeometryOverridesById: async (hedgerId: string): Promise<HedgerGeometryResponse> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/geometry-overrides`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  setHedgerThresholdOverridesById: async (
+    hedgerId: string,
+    overrides: HedgerThresholdOverrides
+  ): Promise<HedgerThresholdResponse> => {
+    const headers = await signedJsonHeaders(overrides);
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/threshold-overrides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(overrides),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerThresholdOverridesById: async (hedgerId: string): Promise<HedgerThresholdResponse> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/threshold-overrides`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  setHedgerEnabledById: async (
+    hedgerId: string,
+    enabled: boolean
+  ): Promise<{ hedger_enabled: boolean }> => {
+    const payload = { enabled };
+    const headers = await signedJsonHeaders(payload);
+    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/enabled`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(payload),
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
+  clearHedgerEventsById: async (hedgerId: string): Promise<{ cleared: number }> => {
+    const headers = await signedJsonHeaders({});
+    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
+      `/api/v1/hedgers/${encodeURIComponent(hedgerId)}/events/clear`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      }
+    );
+    return unwrapFluxEnvelope(response);
+  },
+
   // Hedger – ETH/PLUME LP hedger status (primary band)
   getEthPlumeHedgerStatus: async (): Promise<HedgerStatus> => {
     return api.getHedgerStatusById('eth_plume_lp');
@@ -1346,161 +1473,57 @@ export const api = {
   setHedgerGeometryOverrides: async (
     overrides: HedgerGeometryOverrides
   ): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/geometry-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerGeometryOverridesById('eth_plume_lp', overrides);
   },
 
   clearHedgerGeometryOverrides: async (): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/geometry-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerGeometryOverridesById('eth_plume_lp');
   },
 
   setHedgerThresholdOverrides: async (
     overrides: HedgerThresholdOverrides
   ): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/threshold-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerThresholdOverridesById('eth_plume_lp', overrides);
   },
 
   clearHedgerThresholdOverrides: async (): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp/threshold-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerThresholdOverridesById('eth_plume_lp');
   },
 
   setHedgerEnabled: async (enabled: boolean): Promise<{ hedger_enabled: boolean }> => {
-    const payload = { enabled };
-    const headers = await signedJsonHeaders(payload);
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
-      '/api/v1/hedgers/eth_plume_lp/enabled',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(payload),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerEnabledById('eth_plume_lp', enabled);
   },
 
   setHedgerBand2GeometryOverrides: async (
     overrides: HedgerGeometryOverrides
   ): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/geometry-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerGeometryOverridesById('eth_plume_lp_band2', overrides);
   },
 
   clearHedgerBand2GeometryOverrides: async (): Promise<HedgerGeometryResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerGeometryResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/geometry-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerGeometryOverridesById('eth_plume_lp_band2');
   },
 
   setHedgerBand2ThresholdOverrides: async (
     overrides: HedgerThresholdOverrides
   ): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders(overrides);
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/threshold-overrides',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(overrides),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerThresholdOverridesById('eth_plume_lp_band2', overrides);
   },
 
   clearHedgerBand2ThresholdOverrides: async (): Promise<HedgerThresholdResponse> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<HedgerThresholdResponse>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/threshold-overrides',
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerThresholdOverridesById('eth_plume_lp_band2');
   },
 
   setHedgerBand2Enabled: async (enabled: boolean): Promise<{ hedger_enabled: boolean }> => {
-    const payload = { enabled };
-    const headers = await signedJsonHeaders(payload);
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ hedger_enabled: boolean }>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/enabled',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(payload),
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.setHedgerEnabledById('eth_plume_lp_band2', enabled);
   },
 
   clearHedgerEvents: async (): Promise<{ cleared: number }> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
-      '/api/v1/hedgers/eth_plume_lp/events/clear',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerEventsById('eth_plume_lp');
   },
 
   clearHedgerBand2Events: async (): Promise<{ cleared: number }> => {
-    const headers = await signedJsonHeaders({});
-    const response = await apiClient.fetchJSON<FluxEnvelope<{ cleared: number }>>(
-      '/api/v1/hedgers/eth_plume_lp_band2/events/clear',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-      }
-    );
-    return unwrapFluxEnvelope(response);
+    return api.clearHedgerEventsById('eth_plume_lp_band2');
   },
 
   getScannerPricingSnapshots: async (
@@ -1732,7 +1755,7 @@ export const api = {
       totals: payload.totals ?? { mv_raw: totalMv, mv_display: formatMoneyDisplay(totalMv) },
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
-      risk_groups: Array.isArray(payload.risk_groups) ? payload.risk_groups : [],
+      risk_groups: normalizeRiskGroups(payload.risk_groups),
     };
   },
 
@@ -1845,7 +1868,7 @@ export const api = {
   },
 
   // Get parameter schema with validation rules
-  getParamSchema: async () => {
+  getParamSchema: async (options?: { preferKeyLabel?: boolean }) => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
     const response = await fetchJSON<FluxEnvelope<ParamSchema>>(
@@ -1853,9 +1876,10 @@ export const api = {
     );
     const payload = unwrapFluxEnvelope(response);
     const activeProfile = getActivePathProfile();
+    const preferKeyLabel = options?.preferKeyLabel ?? routePrefersKeyLabel(activeProfile);
     return normalizeParamSchemaPayloadWithOptions(payload, {
       // TokenMM operators need compact param-key headers to keep the grid readable.
-      preferKeyLabel: activeProfile === 'tokenmm',
+      preferKeyLabel,
     });
   },
 
@@ -1873,10 +1897,13 @@ export const api = {
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
+      const runningFlag = normalizeTradingFlag(runningCandidate);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
-          : null;
+          : runningFlag != null
+            ? runningFlag === '1'
+            : null;
       return {
         ...(row as ParamsResponse),
         strategy_id: strategyId,

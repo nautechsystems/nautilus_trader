@@ -129,6 +129,28 @@ def test_update_rejects_unknown_param_keys(
         manager.update({"unknown": 1})
 
 
+def test_update_validates_select_schema_options() -> None:
+    redis_client = _FakeRedis()
+    manager = FluxParamsManager(
+        redis_client=redis_client,
+        strategy_id="maker_v4_01",
+        schema={
+            "hedge_style": {
+                "type": "select",
+                "options": [["ioc_through_mid", "IOC Through Mid"]],
+            },
+        },
+        defaults={"hedge_style": "ioc_through_mid"},
+        param_set="makerv4",
+    )
+
+    applied = manager.update({"hedge_style": "ioc_through_mid"})
+
+    assert applied == {"hedge_style": "ioc_through_mid"}
+    with pytest.raises(ValueError, match="Invalid option value"):
+        manager.update({"hedge_style": "not_a_mode"})
+
+
 def test_publish_update_targets_flux_v1_params_channels(
     schema: dict[str, dict[str, str]],
     defaults: dict[str, object],

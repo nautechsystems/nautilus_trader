@@ -26,6 +26,7 @@ extension-module = [
   "nautilus-architect-ax/extension-module",
   "nautilus-backtest/extension-module",
   "nautilus-binance/extension-module",
+  "nautilus-bitget/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
   "nautilus-bybit/extension-module",
@@ -60,6 +61,7 @@ ffi = [
 ]
 high-precision = [
   "nautilus-model/high-precision",
+  "nautilus-bitget/high-precision",
   "nautilus-serialization/high-precision",
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
@@ -103,6 +105,7 @@ nautilus-trading = { workspace = true, features = ["python"] }
 # Adapters
 nautilus-architect-ax = { workspace = true, features = ["python"] }
 nautilus-binance = { workspace = true, features = ["python"] }
+nautilus-bitget = { workspace = true, features = ["python"] }
 nautilus-bitmex = { workspace = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = [
   "python",

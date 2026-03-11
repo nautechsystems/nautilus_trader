@@ -26,6 +26,9 @@ def connect(path: str) -> sqlite3.Connection:
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(PORTFOLIO_INVENTORY_SNAPSHOT_SCHEMA_SQL)
+    columns = _table_columns(conn)
+    for statement in _alter_statements(columns):
+        conn.execute(statement)
 
 
 class PortfolioInventorySnapshotWriter:
@@ -48,10 +51,19 @@ class PortfolioInventorySnapshotWriter:
         canonical_payload = {
             "portfolio_id": portfolio_id,
             "base_currency": base_currency,
+            "global_qty_base": _text(payload.get("global_qty_base")),
             "global_qty": _text(payload.get("global_qty")),
+            "aggregation_mode": _text(payload.get("aggregation_mode")) or "strict",
+            "global_qty_base_complete": bool(payload.get("global_qty_base_complete", False)),
+            "global_qty_complete": bool(payload.get("global_qty_complete", False)),
             "degraded": bool(payload.get("degraded", False)),
             "missing_required": _as_list(payload.get("missing_required")),
+            "stale_required": _as_list(payload.get("stale_required")),
+            "null_qty_required": _as_list(payload.get("null_qty_required")),
             "components": _as_list(payload.get("components")),
+            "usable_component_count": _int(payload.get("usable_component_count"), default=0),
+            "expected_component_count": _int(payload.get("expected_component_count"), default=0),
+            "stale_after_ms": _int(payload.get("stale_after_ms"), default=0),
         }
         canonical_json = _canonical_json(canonical_payload)
         snapshot_hash = hashlib.sha256(canonical_json.encode("ascii", errors="ignore")).hexdigest()
@@ -79,10 +91,19 @@ class PortfolioInventorySnapshotWriter:
                     base_currency,
                     snapshot_id,
                     snapshot_hash,
+                    _text(payload.get("global_qty_base")),
                     _text(payload.get("global_qty")),
+                    _text(payload.get("aggregation_mode")) or "strict",
+                    int(bool(payload.get("global_qty_base_complete", False))),
+                    int(bool(payload.get("global_qty_complete", False))),
                     int(bool(payload.get("degraded", False))),
                     _canonical_json(_as_list(payload.get("missing_required"))),
+                    _canonical_json(_as_list(payload.get("stale_required"))),
+                    _canonical_json(_as_list(payload.get("null_qty_required"))),
                     _canonical_json(_as_list(payload.get("components"))),
+                    _int(payload.get("usable_component_count"), default=0),
+                    _int(payload.get("expected_component_count"), default=0),
+                    _int(payload.get("stale_after_ms"), default=0),
                     int(ts_ms),
                     ts_ingest_ns,
                     created_at,
@@ -120,3 +141,56 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return list(value)
     return [value]
+
+
+def _int(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _table_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(portfolio_inventory_snapshot)").fetchall()
+    return {row[1] for row in rows}
+
+
+def _alter_statements(columns: set[str]) -> list[str]:
+    additions = {
+        "global_qty_base": "ALTER TABLE portfolio_inventory_snapshot ADD COLUMN global_qty_base TEXT",
+        "aggregation_mode": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN aggregation_mode TEXT NOT NULL DEFAULT 'strict'"
+        ),
+        "global_qty_base_complete": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN global_qty_base_complete INTEGER NOT NULL DEFAULT 0"
+        ),
+        "global_qty_complete": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN global_qty_complete INTEGER NOT NULL DEFAULT 0"
+        ),
+        "stale_required_json": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN stale_required_json TEXT NOT NULL DEFAULT '[]'"
+        ),
+        "null_qty_required_json": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN null_qty_required_json TEXT NOT NULL DEFAULT '[]'"
+        ),
+        "usable_component_count": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN usable_component_count INTEGER NOT NULL DEFAULT 0"
+        ),
+        "expected_component_count": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN expected_component_count INTEGER NOT NULL DEFAULT 0"
+        ),
+        "stale_after_ms": (
+            "ALTER TABLE portfolio_inventory_snapshot "
+            "ADD COLUMN stale_after_ms INTEGER NOT NULL DEFAULT 0"
+        ),
+    }
+    return [sql for column_name, sql in additions.items() if column_name not in columns]

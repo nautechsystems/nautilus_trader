@@ -35,6 +35,7 @@ class CancelManagedQuotesResult:
     cancel_all_instrument: bool
     cancel_all_attempted: bool
     cancel_all_exceptions: int
+    canceled_client_order_ids: tuple[str, ...] = ()
 
 
 def _managed_order_dedupe_key(order: Order) -> tuple[object, ...]:
@@ -51,6 +52,38 @@ def _managed_order_dedupe_key(order: Order) -> tuple[object, ...]:
         str(getattr(order, "quantity", "")),
         int(getattr(order, "ts_init", 0) or 0),
     )
+
+
+def _order_is_reduce_only(order: Order) -> bool:
+    value = getattr(order, "is_reduce_only", False)
+    if callable(value):
+        try:
+            return bool(value())
+        except Exception:
+            return False
+    return bool(value)
+
+
+def _order_has_market_exit_tag(order: Order) -> bool:
+    tags = getattr(order, "tags", None) or ()
+    try:
+        return "MARKET_EXIT" in tags
+    except Exception:
+        return False
+
+
+def _order_is_pending_cancel(order: Order) -> bool:
+    value = getattr(order, "is_pending_cancel", None)
+    if callable(value):
+        try:
+            return bool(value())
+        except Exception:
+            return False
+    if value is not None:
+        return bool(value)
+
+    status = str(getattr(order, "status", "") or "").strip().upper()
+    return status == "PENDING_CANCEL"
 
 
 def collect_managed_orders(  # noqa: C901
@@ -89,6 +122,10 @@ def collect_managed_orders(  # noqa: C901
                 except Exception:
                     is_closed = False
             if bool(is_closed):
+                continue
+            if _order_is_pending_cancel(order):
+                continue
+            if _order_is_reduce_only(order) or _order_has_market_exit_tag(order):
                 continue
             dedupe_key = _managed_order_dedupe_key(order)
             if dedupe_key in seen_order_keys:
@@ -134,12 +171,17 @@ def cancel_managed_quotes(
     cancel_order: Callable[[Order], None],
     cancel_all_orders: Callable[[InstrumentId], None] | None,
     cancel_all_instrument_orders: bool = False,
+    allow_instrument_cancel: bool | None = None,
 ) -> CancelManagedQuotesResult:
     """
     Cancel managed orders and optionally cancel all instrument orders.
     """
     tracked_count = len(tracked_ids)
-    cancel_all_instrument = bool(cancel_all_instrument_orders)
+    cancel_all_instrument = (
+        bool(cancel_all_instrument_orders)
+        if allow_instrument_cancel is None
+        else bool(allow_instrument_cancel)
+    )
     should_cancel = bool(managed_orders or tracked_count > 0 or cancel_all_instrument)
     if not should_cancel:
         return CancelManagedQuotesResult(
@@ -156,9 +198,13 @@ def cancel_managed_quotes(
 
     cancel_attempts = len(managed_orders)
     cancel_exceptions = 0
+    canceled_client_order_ids: list[str] = []
     for order in managed_orders:
         try:
             cancel_order(order)
+            client_order_id = str(getattr(order, "client_order_id", "") or "")
+            if client_order_id:
+                canceled_client_order_ids.append(client_order_id)
         except Exception:
             cancel_exceptions += 1
 
@@ -171,9 +217,6 @@ def cancel_managed_quotes(
         except Exception:
             cancel_all_exceptions += 1
 
-    if force and reason in {"on_stop", "quote_fail_circuit_breaker"}:
-        tracked_ids.clear()
-
     return CancelManagedQuotesResult(
         should_cancel=True,
         tracked_count=tracked_count,
@@ -184,6 +227,7 @@ def cancel_managed_quotes(
         cancel_all_instrument=cancel_all_instrument,
         cancel_all_attempted=cancel_all_attempted,
         cancel_all_exceptions=cancel_all_exceptions,
+        canceled_client_order_ids=tuple(canceled_client_order_ids),
     )
 
 

@@ -9,6 +9,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import option_kind_from_str
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
@@ -555,6 +556,144 @@ class TestInstrument:
 
         # Assert
         assert result == Quantity.from_str("1250")
+
+    def test_calculate_base_exposure_qty_audusd_identity(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+        # Act
+        result = instrument.calculate_base_exposure_qty(
+            quantity=Quantity.from_str("1000"),
+        )
+
+        # Assert
+        assert result == Quantity.from_str("1000.00")
+
+    def test_calculate_base_exposure_qty_linear_multiplier(self):
+        # Arrange
+        instrument = CryptoPerpetual(
+            instrument_id=InstrumentId.from_str("ETHUSDT-PERP.TEST"),
+            raw_symbol=Symbol("ETHUSDT-PERP"),
+            base_currency=ETH,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=6,
+            size_precision=0,
+            price_increment=Price.from_str("0.000001"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=0,
+            ts_init=0,
+            multiplier=Quantity.from_str("10"),
+            lot_size=Quantity.from_str("1"),
+        )
+
+        # Act
+        result = instrument.calculate_base_exposure_qty(
+            quantity=Quantity.from_str("343"),
+        )
+
+        # Assert
+        assert result == Quantity.from_str("3430.00000000")
+
+    def test_calculate_base_exposure_qty_inverse_uses_base_precision(self):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = instrument.calculate_base_exposure_qty(
+            quantity=Quantity.from_int(100_000),
+            last_px=Price.from_str("11493.60"),
+        )
+
+        # Assert
+        assert result == Quantity.from_str("8.70049419")
+
+    def test_calculate_base_exposure_qty_inverse_requires_price(self):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="last_px is required"):
+            instrument.calculate_base_exposure_qty(
+                quantity=Quantity.from_int(100_000),
+            )
+
+    @pytest.mark.parametrize("last_px_str", ["0.0", "-1.0"])
+    def test_calculate_base_exposure_qty_inverse_requires_positive_price(self, last_px_str):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="last_px must be positive"):
+            instrument.calculate_base_exposure_qty(
+                quantity=Quantity.from_int(100_000),
+                last_px=Price.from_str(last_px_str),
+            )
+
+    def test_calculate_base_exposure_qty_inverse_quanto_is_unsupported(self):
+        # Arrange
+        instrument = CryptoPerpetual(
+            instrument_id=InstrumentId.from_str("ETHUSD-INV-QUANTO.TEST"),
+            raw_symbol=Symbol("ETHUSD-INV-QUANTO"),
+            base_currency=ETH,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            is_inverse=True,
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=0,
+            ts_init=0,
+            multiplier=Quantity.from_str("1"),
+            lot_size=Quantity.from_str("1"),
+        )
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="Quanto instruments are not supported"):
+            instrument.calculate_base_exposure_qty(
+                quantity=Quantity.from_int(100),
+                last_px=Price.from_str("2500.00"),
+            )
+
+    def test_calculate_base_exposure_qty_quanto_is_unsupported(self):
+        # Arrange
+        instrument = CryptoPerpetual(
+            instrument_id=InstrumentId.from_str("ETHUSD-QUANTO.TEST"),
+            raw_symbol=Symbol("ETHUSD-QUANTO"),
+            base_currency=ETH,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            is_inverse=False,
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=0,
+            ts_init=0,
+            multiplier=Quantity.from_str("1"),
+            lot_size=Quantity.from_str("1"),
+        )
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="Quanto instruments are not supported"):
+            instrument.calculate_base_exposure_qty(
+                quantity=Quantity.from_int(100),
+                last_px=Price.from_str("2500.00"),
+            )
+
+    def test_calculate_base_exposure_qty_uses_size_precision_when_no_base_currency(self):
+        # Arrange
+        instrument = TestInstrumentProvider.betting_instrument()
+
+        # Act
+        result = instrument.calculate_base_exposure_qty(
+            quantity=Quantity.from_str("12.34"),
+        )
+
+        # Assert
+        assert result == Quantity.from_str("12.34")
 
     def test_next_bid_price_when_no_tick_scheme(self):
         # Arrange, Act

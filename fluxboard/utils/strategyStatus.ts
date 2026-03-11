@@ -5,6 +5,7 @@ export type TradingFlagInput = string | number | boolean | null | undefined;
 export type StrategyStatusInput = {
   running?: boolean | null;
   trading?: TradingFlagInput;
+  blocked?: boolean;
   coolingDown?: boolean;
 };
 
@@ -54,12 +55,14 @@ export function deriveStrategyStatus(input: StrategyStatusInput): StrategyStatus
   return {
     runState,
     tradingEnabled,
+    blocked: input.blocked ? true : undefined,
     coolingDown: input.coolingDown ? true : undefined,
   };
 }
 
 export function statusToFilterValue(status: StrategyStatus): TradingFilterValue {
   if (status.coolingDown) return 'Pending';
+  if (status.blocked && status.tradingEnabled) return 'Pending';
   if (status.tradingEnabled && status.runState !== 'running') return 'Pending';
   if (status.tradingEnabled) return 'Enabled';
   return 'Paused';
@@ -87,6 +90,13 @@ export function describeTradingStatus(status: StrategyStatus): {
       variant: 'pending',
       label: 'Pending',
       subLabel: 'Cooling',
+    };
+  }
+  if (status.blocked && status.tradingEnabled) {
+    return {
+      variant: 'pending',
+      label: 'Pending',
+      subLabel: runnerSubLabel(status.runState),
     };
   }
   if (status.tradingEnabled) {

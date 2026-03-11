@@ -48,14 +48,12 @@ export function buildFluxboardChildRoutes(
   surface: UiSurfaceContract,
   options: RouteBuilderOptions
 ): RouteObject[] {
-  const dashboardElement = (
-    <Title title="Dashboard">
-      <DashboardLayout preset="default" allowedPanels={surface.allowedPanels} />
-    </Title>
-  );
-
   const routeElements: Record<string, RouteObject['element']> = {
-    '/dashboard': dashboardElement,
+    '/dashboard': (
+      <Title title="Dashboard">
+        <DashboardLayout preset="default" allowedPanels={surface.allowedPanels} />
+      </Title>
+    ),
     '/params': (
       <Title title="Params">
         <Suspense fallback={<div />}>
@@ -136,10 +134,14 @@ export function buildFluxboardChildRoutes(
   };
 
   const pathSet = new Set(surface.routePaths);
+  const homeElement = routeElements[surface.homeRoutePath];
+  if (!homeElement) {
+    throw new Error(`Missing home route element for ${surface.profile}: ${surface.homeRoutePath}`);
+  }
   const routes: RouteObject[] = [
     {
       index: true,
-      element: dashboardElement,
+      element: homeElement,
     },
   ];
 
@@ -215,6 +217,7 @@ export function buildFluxboardTopLevelRoutes(): RouteObject[] {
     },
     createProfileRoute('tokenmm', '/tokenmm'),
     createProfileRoute('equities', '/equities'),
+    createProfileRoute('lp', '/lp'),
     {
       path: '*',
       element: <Navigate to="/" replace />,

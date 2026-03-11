@@ -5,12 +5,14 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
@@ -18,6 +20,7 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
@@ -27,6 +30,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -36,6 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -77,11 +82,14 @@ def exec_client_builder(
         # Return empty list to avoid PyO3 type conversion issues in tests
         mock_instrument_provider.instruments_pyo3.return_value = []
 
+        merged_config_kwargs = {
+            "product_types": (nautilus_pyo3.BybitProductType.LINEAR,),
+            **(config_kwargs or {}),
+        }
         config = BybitExecClientConfig(
             api_key="test_api_key",
             api_secret="test_api_secret",
-            product_types=(nautilus_pyo3.BybitProductType.LINEAR,),
-            **(config_kwargs or {}),
+            **merged_config_kwargs,
         )
 
         client = BybitExecutionClient(
@@ -399,6 +407,58 @@ async def test_submit_limit_order(exec_client_builder, monkeypatch, instrument):
 
 
 @pytest.mark.asyncio
+async def test_submit_order_uses_http_when_trade_ws_inactive(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.is_active = MagicMock(return_value=False)
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-INACTIVE-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert
+        http_client.submit_order.assert_awaited_once()
+        ws_trade_client.submit_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_submit_stop_market_order(exec_client_builder, monkeypatch, instrument):
     # Arrange
     client, ws_client, http_client, instrument_provider = exec_client_builder(
@@ -549,6 +609,63 @@ async def test_modify_order_quantity(exec_client_builder, monkeypatch, instrumen
         await client._disconnect()
 
 
+@pytest.mark.asyncio
+async def test_modify_order_uses_http_when_trade_ws_inactive(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.is_active = MagicMock(return_value=False)
+    ws_trade_client.modify_order = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-INACTIVE-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("BYBIT-12345"),
+        quantity=Quantity.from_str("0.200"),
+        price=Price.from_str("51000.00"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert
+        http_client.modify_order.assert_awaited_once()
+        ws_trade_client.modify_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
 # ============================================================================
 # ORDER CANCELLATION TESTS
 # ============================================================================
@@ -649,6 +766,60 @@ async def test_cancel_order_by_venue_id(exec_client_builder, monkeypatch, instru
 
 
 @pytest.mark.asyncio
+async def test_cancel_order_uses_http_when_trade_ws_inactive(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.is_active = MagicMock(return_value=False)
+    ws_trade_client.cancel_order = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-INACTIVE-003"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    command = CancelOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("BYBIT-12345"),
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._cancel_order(command)
+
+        # Assert
+        http_client.cancel_order.assert_awaited_once()
+        ws_trade_client.cancel_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_cancel_all_orders(exec_client_builder, monkeypatch, instrument):
     # Arrange
     client, ws_client, http_client, instrument_provider = exec_client_builder(
@@ -674,6 +845,122 @@ async def test_cancel_all_orders(exec_client_builder, monkeypatch, instrument):
 
         # Assert
         http_client.cancel_all_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_uses_http_when_trade_ws_inactive(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.is_active = MagicMock(return_value=False)
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-INACTIVE-004"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    order_list = OrderList(
+        order_list_id=OrderListId("OL-WS-INACTIVE-001"),
+        orders=[order],
+    )
+    command = SubmitOrderList(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order_list=order_list,
+        position_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order_list(command)
+
+        # Assert
+        http_client.submit_order.assert_awaited_once()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_batch_cancel_orders_uses_http_when_trade_ws_inactive(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.is_active = MagicMock(return_value=False)
+    ws_trade_client.batch_cancel_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-INACTIVE-005"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    cancel = CancelOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("BYBIT-12345"),
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+    command = BatchCancelOrders(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        cancels=[cancel],
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._batch_cancel_orders(command)
+
+        # Assert
+        http_client.cancel_order.assert_awaited_once()
+        ws_trade_client.batch_cancel_orders.assert_not_awaited()
     finally:
         await client._disconnect()
 
@@ -923,6 +1210,10 @@ async def test_submit_order_with_is_leverage(
 
     client, ws_client, http_client, instrument_provider = exec_client_builder(
         monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": True,
+        },
     )
 
     ws_trade_client = client._ws_trade_client
@@ -959,12 +1250,283 @@ async def test_submit_order_with_is_leverage(
         # Act
         await client._submit_order(command)
 
-        # Assert - is_leverage=True should be passed through
+        # Assert - legacy is_leverage still maps through when borrowing is enabled
         ws_trade_client.submit_order.assert_awaited_once()
         call_kwargs = ws_trade_client.submit_order.call_args[1]
         assert call_kwargs["is_leverage"] is True
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_allow_cash_borrowing_sets_is_leverage(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange - Use SPOT instrument
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": True,
+        },
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        allow_cash_borrowing=True,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - allow_cash_borrowing should set is_leverage=True
+        ws_trade_client.submit_order.assert_awaited_once()
+        call_kwargs = ws_trade_client.submit_order.call_args[1]
+        assert call_kwargs["is_leverage"] is True
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_without_allow_cash_borrowing_leaves_is_leverage_false(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange - Use SPOT instrument
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"product_types": (nautilus_pyo3.BybitProductType.SPOT,)},
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - default spot submits should remain cash orders
+        ws_trade_client.submit_order.assert_awaited_once()
+        call_kwargs = ws_trade_client.submit_order.call_args[1]
+        assert call_kwargs["is_leverage"] is False
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_denied_when_cash_borrowing_requested_but_client_disabled(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange - Use SPOT instrument
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"product_types": (nautilus_pyo3.BybitProductType.SPOT,)},
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        allow_cash_borrowing=True,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - client should reject borrowing requests when not enabled
+        ws_trade_client.submit_order.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_cash_borrowing_registration_does_not_leak_between_clients(
+    exec_client_builder,
+    monkeypatch,
+):
+    AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+
+    client_a, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": True,
+        },
+    )
+    await client_a._connect()
+    account_a = client_a._cache.account(client_a.account_id)
+    assert account_a is not None
+    assert account_a.allow_borrowing is True
+    await client_a._disconnect()
+
+    client_b, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": False,
+        },
+    )
+    await client_b._connect()
+    try:
+        account_b = client_b._cache.account(client_b.account_id)
+        assert account_b is not None
+        assert account_b.allow_borrowing is False
+    finally:
+        await client_b._disconnect()
+        AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
 
 
 @pytest.mark.asyncio

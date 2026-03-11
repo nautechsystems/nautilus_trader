@@ -87,5 +87,6 @@ cdef class CacheDatabaseFacade:
     cpdef void delete_account_event(self, AccountId account_id, str event_id)
     cpdef void delete_actor(self, ComponentId component_id)
     cpdef void delete_strategy(self, StrategyId strategy_id)
+    cpdef bint supports_account_event_deletion(self)
 
     cpdef void heartbeat(self, datetime timestamp)

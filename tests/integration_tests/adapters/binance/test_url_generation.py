@@ -13,8 +13,8 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
         # Live URLs
         (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, False, "https://api.binance.com"),
         (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, True, "https://api.binance.us"),
-        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, False, "https://sapi.binance.com"),
-        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "https://sapi.binance.us"),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, False, "https://api.binance.com"),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "https://api.binance.us"),
         (
             BinanceAccountType.USDT_FUTURES,
             BinanceEnvironment.LIVE,

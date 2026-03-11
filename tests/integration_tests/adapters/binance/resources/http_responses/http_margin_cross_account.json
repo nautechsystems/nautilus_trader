@@ -1,0 +1,28 @@
+{
+  "borrowEnabled": true,
+  "marginLevel": "999",
+  "totalAssetOfBtc": "0.00000000",
+  "totalLiabilityOfBtc": "0.00000000",
+  "totalNetAssetOfBtc": "0.00000000",
+  "tradeEnabled": true,
+  "transferInEnabled": true,
+  "transferOutEnabled": true,
+  "userAssets": [
+    {
+      "asset": "USDT",
+      "borrowed": "0.00000000",
+      "free": "1285.28070703",
+      "interest": "0.00000000",
+      "locked": "0.00000000",
+      "netAsset": "1285.28070703"
+    },
+    {
+      "asset": "PLUME",
+      "borrowed": "30139.05291039",
+      "free": "0.00000000",
+      "interest": "0.00000000",
+      "locked": "0.00000000",
+      "netAsset": "-30139.05291039"
+    }
+  ]
+}

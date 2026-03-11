@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
 SYSTEMD_DIR="/etc/systemd/system"
 ENV_DIR="/etc/flux"
-SUDOERS_DIR="/etc/sudoers.d"
-SUDOERS_PATH="${SUDOERS_DIR}/flux-pulse"
 COMMON_ENV_PATH="${ENV_DIR}/common.env"
+TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
+STRATEGIES_DIR="${ROOT_DIR}/deploy/tokenmm/strategies"
+TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
 
-declare -a NODE_STRATEGIES=(
-  "plumeusdt_bybit_perp_makerv3"
-  "plumeusdt_bybit_spot_makerv3"
-  "plumeusdt_okx_perp_makerv3"
-  "plumeusdt_binance_spot_makerv3"
-)
+declare -a NODE_STRATEGIES=()
 
 require_sudo() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -23,60 +20,101 @@ require_sudo() {
   fi
 }
 
-install_units() {
-  install -d "${SYSTEMD_DIR}" "${ENV_DIR}" "${SUDOERS_DIR}"
-  install -m 0644 "${ROOT_DIR}/deploy/systemd/flux@.service" "${SYSTEMD_DIR}/flux@.service"
-  install -m 0644 "${ROOT_DIR}/deploy/tokenmm/systemd/flux-tokenmm.target" "${SYSTEMD_DIR}/flux-tokenmm.target"
-  if [[ ! -f "${COMMON_ENV_PATH}" ]]; then
-    install -m 0640 "${ROOT_DIR}/deploy/tokenmm/systemd/common.env.example" "${COMMON_ENV_PATH}"
+require_project_python() {
+  if [[ ! -x "${TOKENMM_PYTHON_BIN}" ]]; then
+    echo "[tokenmm-systemd] missing project python at ${TOKENMM_PYTHON_BIN}; run \`uv sync --active --all-groups --all-extras\` first" >&2
+    exit 1
   fi
-  install_sudoers
 }
 
-install_sudoers() {
-  local tmp_sudoers
-  tmp_sudoers="$(mktemp)"
-  install -m 0440 "${ROOT_DIR}/deploy/tokenmm/systemd/flux-pulse.sudoers" "${tmp_sudoers}"
-  if command -v visudo >/dev/null 2>&1; then
-    visudo -cf "${tmp_sudoers}"
+run_rollout_preflight() {
+  "${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"
+}
+
+discover_node_strategies() {
+  local discovered=""
+  discovered="$(strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml")"
+  if [[ -n "${discovered}" ]]; then
+    mapfile -t NODE_STRATEGIES <<< "${discovered}"
+  else
+    NODE_STRATEGIES=()
   fi
-  install -m 0440 "${tmp_sudoers}" "${SUDOERS_PATH}"
-  rm -f "${tmp_sudoers}"
+}
+
+build_service_ids() {
+  # shellcheck disable=SC2178
+  local -n out_service_ids="$1"
+  # shellcheck disable=SC2034
+  out_service_ids=(
+    "tokenmm-api"
+    "tokenmm-portfolio"
+    "tokenmm-bridge"
+  )
+  local strategy_id
+  for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    out_service_ids+=("tokenmm-node-${strategy_id}")
+  done
+}
+
+install_units() {
+  strategy_stack_install_base_units \
+    "${ROOT_DIR}" \
+    "${SYSTEMD_DIR}" \
+    "${ENV_DIR}" \
+    "${ROOT_DIR}/deploy/tokenmm/systemd/common.env.example" \
+    "${COMMON_ENV_PATH}"
+}
+
+append_checkout_env_overrides() {
+  local env_path="$1"
+
+  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${ROOT_DIR}" "${ROOT_DIR}" >> "${env_path}"
 }
 
 render_api_env() {
-  cat > "${ENV_DIR}/tokenmm-api.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM API + Fluxboard + Pulse
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-PULSE_SELF_SERVICE_ID=tokenmm-api
-PORT=5022
-CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-api.env" \
+    "TokenMM API + Fluxboard + Pulse" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5022 --serve-fluxboard --serve-pulse" \
+    "5022" \
+    "tokenmm-api"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-api.env"
+}
+
+render_target() {
+  local service_ids=()
+  build_service_ids service_ids
+  strategy_stack_render_target "${TARGET_PATH}" "Flux TokenMM Stack" "${service_ids[@]}"
 }
 
 render_portfolio_env() {
-  cat > "${ENV_DIR}/tokenmm-portfolio.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM portfolio aggregator
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-portfolio.env" \
+    "TokenMM portfolio aggregator" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-portfolio.env"
 }
 
 render_bridge_env() {
-  cat > "${ENV_DIR}/tokenmm-bridge.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM bridge consumer
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live --all-strategies"
-EOF
+  local strategy_args=""
+  local strategy_id
+  for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    strategy_args+=" --strategy-id ${strategy_id}"
+  done
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-bridge.env" \
+    "TokenMM bridge consumer" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-bridge.env"
 }
 
 render_telemetry_shipper_env() {
@@ -91,18 +129,30 @@ EOF
 }
 
 render_node_envs() {
+  local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="tokenmm-node-${strategy_id}"
-    local strategy_config="${ROOT_DIR}/deploy/tokenmm/strategies/${strategy_id}.toml"
-    cat > "${ENV_DIR}/${service_id}.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM node ${strategy_id}
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
-EOF
+    local strategy_config="${STRATEGIES_DIR}/${strategy_id}.toml"
+    strategy_stack_write_env \
+      "${ENV_DIR}/${service_id}.env" \
+      "TokenMM node ${strategy_id}" \
+      "tokenmm" \
+      "TokenMM" \
+      "10" \
+      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+    append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"
   done
+}
+
+rebuild_pulse_sudoers() {
+  "${ROOT_DIR}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
+}
+
+render_jupyter_env() {
+  install -m 0640 \
+    "${ROOT_DIR}/deploy/tokenmm/systemd/tokenmm-jupyter.env.example" \
+    "${ENV_DIR}/tokenmm-jupyter.env"
+  append_checkout_env_overrides "${ENV_DIR}/tokenmm-jupyter.env"
 }
 
 enable_stack() {
@@ -112,12 +162,18 @@ enable_stack() {
 
 main() {
   require_sudo
+  require_project_python
+  run_rollout_preflight
+  discover_node_strategies
   install_units
+  render_target
   render_api_env
   render_portfolio_env
   render_bridge_env
   render_telemetry_shipper_env
   render_node_envs
+  rebuild_pulse_sudoers
+  render_jupyter_env
   enable_stack
   echo "[tokenmm-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
 }

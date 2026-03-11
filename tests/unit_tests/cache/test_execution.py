@@ -3008,6 +3008,58 @@ class TestCache:
         # Assert
         assert position_id in self.cache.position_ids()
 
+    def test_build_index_with_persisted_external_position_and_no_orders_keeps_integrity(self):
+        # Arrange
+        cache = Cache(database=None)
+        external_order = TestExecStubs.market_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-001"),
+        )
+        fill = TestEventStubs.order_filled(
+            external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("RECON-TRADE-1"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        cache.add_position(position, OmsType.NETTING)
+
+        # Simulate persisted-cache startup: positions loaded, orders missing, indexes rebuilt.
+        cache.clear_index()
+        cache.build_index()
+
+        # Act, Assert
+        assert cache.check_integrity()
+
+    def test_check_integrity_with_registered_strategy_and_no_orders_passes(self):
+        # Arrange
+        cache = Cache(database=None)
+        clock = TestClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(
+            trader_id=trader_id,
+            clock=clock,
+        )
+        portfolio = Portfolio(
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+        strategy = Strategy()
+        strategy.register(
+            trader_id=trader_id,
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+        cache.update_strategy(strategy)
+
+        # Act, Assert
+        assert cache.check_integrity()
+
 
 class TestExecutionCacheIntegrityCheck:
     def setup(self):

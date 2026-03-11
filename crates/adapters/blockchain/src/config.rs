@@ -3,7 +3,7 @@ use std::any::Any;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
-    identifiers::{AccountId, TraderId},
+    identifiers::{AccountId, TraderId, Venue},
 };
 use nautilus_system::ClientConfig;
 
@@ -121,27 +121,91 @@ impl BlockchainDataClientConfig {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
 pub struct BlockchainExecutionClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
     /// The account ID for the client.
     pub client_id: AccountId,
+    /// The execution venue used for routing in the execution engine.
+    pub venue: Venue,
     /// The blockchain chain configuration.
     pub chain: Chain,
     /// The wallet address of the execution client.
     pub wallet_address: String,
     /// Token universe: set of ERC-20 token addresses to monitor for balance tracking.
     pub tokens: Option<Vec<String>>,
+    /// Additional ERC-20 token addresses tracked in wallet snapshots.
+    pub wallet_extra_tokens: Vec<String>,
+    /// Wrapped-native token contract address (e.g., WBNB/WETH) tracked in snapshots.
+    pub wallet_wnative_address: Option<String>,
+    /// Spenders for allowance snapshots (e.g. router, Permit2).
+    pub wallet_allowance_spenders: Vec<String>,
+    /// Maximum age for cached wallet snapshots before refresh.
+    pub wallet_snapshot_ttl_secs: u32,
+    /// Max number of tracked tokens allowed per wallet refresh cycle.
+    pub wallet_max_tokens_per_refresh: u32,
+    /// Refresh wallet state during client connect.
+    pub wallet_refresh_on_connect: bool,
+    /// Maximum ERC-20 calls batched per multicall during wallet refresh.
+    pub multicall_max_batch_size: u32,
+    /// Minimum ERC-20 calls per batch when adaptively splitting multicall failures.
+    pub multicall_min_batch_size: u32,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
+    /// Optional remote signer endpoint URL.
+    pub signer_endpoint: Option<String>,
+    /// Remote signer route path.
+    pub signer_route: String,
+    /// Remote signer request timeout in milliseconds.
+    pub signer_timeout_ms: u64,
+    /// Enforce HTTPS endpoint policy for signer requests.
+    pub signer_require_tls: bool,
+    /// Optional signer wallet override (defaults to wallet_address).
+    pub signer_wallet_address: Option<String>,
+    /// Optional router address override used for swap execution.
+    pub execution_router_address: Option<String>,
+    /// Slippage bound in basis points for exact-in swaps.
+    pub execution_default_slippage_bps: u32,
+    /// Deadline TTL in seconds for swap transaction intents.
+    pub execution_default_deadline_secs: u64,
+    /// Required block confirmations before terminalizing execution.
+    pub execution_confirmations_required: u64,
+    /// Maximum receipt polling attempts per transaction.
+    pub execution_receipt_max_polls: u32,
+    /// Receipt polling interval in milliseconds.
+    pub execution_receipt_poll_interval_ms: u64,
+    /// Per-wallet in-flight transaction budget (MVP currently enforces 1).
+    pub execution_max_inflight_txs_per_wallet: u32,
+    /// If true, skip automatic approve flow and require pre-approved allowance.
+    pub execution_require_preapproved_allowance: bool,
+    /// EIP-1559 max fee per gas used for swap transactions.
+    pub execution_max_fee_per_gas: u64,
+    /// EIP-1559 max priority fee per gas used for swap transactions.
+    pub execution_max_priority_fee_per_gas: u64,
+    /// Optional JSONL journal path for idempotency and replay state.
+    pub execution_journal_path: Option<String>,
+    /// Tokens that are explicitly blocked from fill decoding in MVP.
+    pub execution_unsupported_token_addresses: Vec<String>,
 }
 
 impl BlockchainExecutionClientConfig {
     pub fn new(
         trader_id: TraderId,
         client_id: AccountId,
+        venue: Venue,
         chain: Chain,
         wallet_address: String,
         tokens: Option<Vec<String>>,
@@ -151,11 +215,37 @@ impl BlockchainExecutionClientConfig {
         Self {
             trader_id,
             client_id,
+            venue,
             chain,
             wallet_address,
             tokens,
+            wallet_extra_tokens: Vec::new(),
+            wallet_wnative_address: None,
+            wallet_allowance_spenders: Vec::new(),
+            wallet_snapshot_ttl_secs: 30,
+            wallet_max_tokens_per_refresh: 256,
+            wallet_refresh_on_connect: true,
+            multicall_max_batch_size: 64,
+            multicall_min_batch_size: 4,
             http_rpc_url,
             rpc_requests_per_second,
+            signer_endpoint: None,
+            signer_route: "/sign/eth".to_string(),
+            signer_timeout_ms: 5_000,
+            signer_require_tls: true,
+            signer_wallet_address: None,
+            execution_router_address: None,
+            execution_default_slippage_bps: 100,
+            execution_default_deadline_secs: 120,
+            execution_confirmations_required: 1,
+            execution_receipt_max_polls: 60,
+            execution_receipt_poll_interval_ms: 1_000,
+            execution_max_inflight_txs_per_wallet: 1,
+            execution_require_preapproved_allowance: true,
+            execution_max_fee_per_gas: 1_000_000_000,
+            execution_max_priority_fee_per_gas: 1_000_000_000,
+            execution_journal_path: None,
+            execution_unsupported_token_addresses: Vec::new(),
         }
     }
 }

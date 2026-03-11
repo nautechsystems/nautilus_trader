@@ -8,7 +8,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
+from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -155,6 +157,211 @@ class TestBinanceSpotExecutionClient:
 
         # Assert
         assert mock_send_request.call_args is None
+
+    def test_margin_account_http_api_uses_margin_rest_paths(self):
+        # Arrange
+        http_account = BinanceSpotAccountHttpAPI(
+            client=self.http_client,
+            clock=self.clock,
+            account_type=BinanceAccountType.MARGIN,
+        )
+
+        # Assert
+        assert http_account.base_endpoint == "/sapi/v1/margin/"
+        assert http_account._endpoint_order.url_path == "/sapi/v1/margin/order"
+        assert http_account._endpoint_open_orders.url_path == "/sapi/v1/margin/openOrders"
+        assert http_account._endpoint_user_trades.url_path == "/sapi/v1/margin/myTrades"
+        assert http_account._endpoint_spot_account.url_path == "/sapi/v1/margin/account"
+
+    def test_margin_execution_client_uses_margin_listen_token_mode(self):
+        # Arrange
+        http_client = BinanceHttpClient(
+            clock=self.clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",
+        )
+        provider = BinanceSpotInstrumentProvider(
+            client=http_client,
+            clock=self.clock,
+            config=InstrumentProviderConfig(load_all=True),
+        )
+
+        # Base64-encoded 32 zero bytes for Ed25519 private key (test only)
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+        exec_client = BinanceSpotExecutionClient(
+            loop=self.loop,
+            client=http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(),
+            account_type=BinanceAccountType.MARGIN,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
+        )
+
+        # Assert
+        assert exec_client._ws_client._use_margin_listen_token is True
+
+    def test_margin_outbound_account_position_refreshes_full_account_state(self, mocker):
+        # Arrange
+        http_client = BinanceHttpClient(
+            clock=self.clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",
+        )
+        provider = BinanceSpotInstrumentProvider(
+            client=http_client,
+            clock=self.clock,
+            config=InstrumentProviderConfig(load_all=True),
+        )
+
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+        exec_client = BinanceSpotExecutionClient(
+            loop=self.loop,
+            client=http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(),
+            account_type=BinanceAccountType.MARGIN,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
+        )
+        create_task = mocker.patch.object(exec_client, "create_task")
+        generate_account_state = mocker.patch.object(exec_client, "generate_account_state")
+        raw = (
+            b'{"e":"outboundAccountPosition","E":1564034571105,"u":1564034571073,'
+            b'"B":[{"a":"PLUME","f":"0.00000000","l":"0.00000000"}]}'
+        )
+
+        # Act
+        exec_client._handle_user_ws_message(raw)
+
+        # Assert
+        create_task.assert_called_once()
+        scheduled_coro = create_task.call_args.args[0]
+        assert scheduled_coro.cr_code.co_name == exec_client._update_account_state.__name__
+        scheduled_coro.close()
+        generate_account_state.assert_not_called()
+
+    def test_isolated_margin_account_http_api_is_rejected_explicitly(self):
+        with pytest.raises(RuntimeError, match="ISOLATED_MARGIN"):
+            BinanceSpotAccountHttpAPI(
+                client=self.http_client,
+                clock=self.clock,
+                account_type=BinanceAccountType.ISOLATED_MARGIN,
+            )
+
+    def test_isolated_margin_execution_client_is_rejected_explicitly(self):
+        # Base64-encoded 32 zero bytes for Ed25519 private key (test only)
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+        with pytest.raises(ValueError, match="SPOT or cross MARGIN"):
+            BinanceSpotExecutionClient(
+                loop=self.loop,
+                client=self.http_client,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                instrument_provider=self.provider,
+                base_url_ws="",
+                config=BinanceExecClientConfig(),
+                account_type=BinanceAccountType.ISOLATED_MARGIN,
+                environment=BinanceEnvironment.LIVE,
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret=dummy_api_secret,
+            )
+
+    @pytest.mark.asyncio
+    async def test_margin_portfolio_margin_reject_disables_further_submit_attempts(self, mocker):
+        http_client = BinanceHttpClient(
+            clock=self.clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",
+        )
+        provider = BinanceSpotInstrumentProvider(
+            client=http_client,
+            clock=self.clock,
+            config=InstrumentProviderConfig(load_all=True),
+        )
+
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+        exec_client = BinanceSpotExecutionClient(
+            loop=self.loop,
+            client=http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(),
+            account_type=BinanceAccountType.MARGIN,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
+        )
+
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+            side_effect=BinanceClientError(
+                status=400,
+                message={"code": -3055, "msg": "Invalid requests for Portfolio Margin user."},
+                headers={},
+            ),
+        )
+
+        first_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+        self.cache.add_order(first_order, None)
+        first_submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=first_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(first_submit)
+        await eventually(lambda: mock_send_request.call_count == 1)
+
+        second_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(11),
+            price=Price.from_str("10050.90"),
+        )
+        self.cache.add_order(second_order, None)
+        second_submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=second_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(second_submit)
+        await asyncio.sleep(0.1)
+
+        assert mock_send_request.call_count == 1
 
     @pytest.mark.asyncio
     async def test_submit_market_order(self, mocker):
