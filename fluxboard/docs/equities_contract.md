@@ -26,12 +26,13 @@ The canonical IBKR reference instrument ID for the enrolled AAPL contract is `AA
 
 ## Frozen Deploy Identity
 
-1. The active equities deploy contract is MakerV4 via `aapl_tradexyz_makerv4`.
-2. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback-only material and must stay disabled during normal MakerV4 operations.
-3. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
-4. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
-5. Task 2 of the March 11 live review locked that build/static-serving contract to the shared `/static/fluxboard/` base.
-6. If public `/equities` emits `/tokenmm/assets/*`, treat that as live host drift from a stale/shared bundle, not as a supported contract.
+1. The intended equities deploy target after the March 11, 2026 correction is MakerV3, not MakerV4.
+2. Current host/runtime drift still serves `aapl_tradexyz_makerv4`; treat that as temporary drift or rollback material until the contract switch is completed.
+3. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is the existing checked-in MakerV3 file to promote back into active discovery.
+4. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
+5. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
+6. Task 2 of the March 11 live review locked that build/static-serving contract to the shared `/static/fluxboard/` base.
+7. If public `/equities` emits `/tokenmm/assets/*`, treat that as live host drift from a stale/shared bundle, not as a supported contract.
 
 ## Profile Contract
 

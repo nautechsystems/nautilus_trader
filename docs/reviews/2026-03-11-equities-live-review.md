@@ -4,9 +4,28 @@
 
 - Decision: `HOLD`
 - Date: `2026-03-11`
-- Active deploy contract: `MakerV4`
-- Active strategy file: `deploy/equities/strategies/aapl_tradexyz_makerv4.toml`
-- Rollback file: `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`
+- Intended deploy contract: `MakerV3`
+- Current live drifted contract: `MakerV4`
+- Intended strategy file: `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`
+- Current live strategy file: `deploy/equities/strategies/aapl_tradexyz_makerv4.toml`
+
+## March 11 Target Correction
+
+The original baseline and recovery work above was performed under the then-checked-in MakerV4 canary assumption. The user clarified on `2026-03-11` that the intended equities deploy target is still MakerV3 and that no MakerV4 rollout should be treated as canonical yet.
+
+As of `2026-03-11 08:44 UTC`, the live host is still drifted onto MakerV4:
+
+- `/etc/flux/equities-node-aapl_tradexyz_makerv4.env` is the generated node env on host.
+- `flux@equities-node-aapl_tradexyz_makerv4.service` is the active equities node unit.
+- `GET /api/v1/signals?profile=equities` returns `id = "aapl_tradexyz_makerv4"` with `strategy_family = "maker_v4"`.
+
+The shared-host fixes from Tasks 2-4 remain valid regardless of strategy family:
+
+- `/equities` now resolves shared assets from `/static/fluxboard/assets/*`.
+- installer/env provenance now points the equities stack at the isolated worktree and checkout-local `.venv`
+- IBKR gateway auth, `chainsaw@md-ibkr-publisher.service`, and the equities service graph were recovered successfully
+
+The remaining execution objective is therefore not “finish MakerV4.” It is “switch the active equities contract back to MakerV3 without regressing those shared-host fixes.”
 
 ## Fresh Live Probe Results
 
@@ -103,9 +122,23 @@ These provenance checks close the remaining gap: public `tokenmm-api` is running
 
 ## Frozen Contract Record
 
-- Current active contract: MakerV4 is the checked-in and intended live equities contract. `deploy/equities/equities.live.toml` sets `strategy_class = "maker_v4"`, `param_set = "makerv4"`, and allowlists only `aapl_tradexyz_makerv4`.
-- Current rollback path: emergency rollback is the disabled MakerV3 file `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`. Re-enabling it requires an explicit strategy-file swap plus allowlist/metadata rollback.
-- Shared-host GUI contract: on the public `tokenmm-api` proxy, `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`. The standalone equities runner code only proves `/equities/assets/*` route capability today, while the checked-in default production Fluxboard build base remains `/static/fluxboard/`; Task 2 is where that build/static-serving contract gets reconciled. `/tokenmm/assets/*` on public `/equities` is deployment drift, and `/equities/assets/*` on the shared public host is also a failure for the current shared-host contract.
+- Intended active contract after the March 11 target correction: MakerV3. The existing checked-in file is still `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`, so a deliberate strategy-file swap is still required.
+- Current live drifted contract: MakerV4 remains the host/runtime truth right now. `deploy/equities/equities.live.toml`, `/etc/flux/equities-node-aapl_tradexyz_makerv4.env`, and the public equities API still publish `aapl_tradexyz_makerv4`.
+- Shared-host GUI contract: on the public `tokenmm-api` proxy, `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`. `/tokenmm/assets/*` on public `/equities` is deployment drift, and `/equities/assets/*` on the shared public host is also a failure for the current shared-host contract.
+
+## MakerV4-Biased Repo Surfaces Pending Task 6
+
+- `deploy/equities/equities.live.toml`: still sets `api.strategy_class = "maker_v4"`, `param_set = "makerv4"`, and allowlists only `aapl_tradexyz_makerv4`.
+- `deploy/equities/strategies/aapl_tradexyz_makerv4.toml`: current active node file.
+- `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`: intended target file still disabled.
+- `deploy/equities/strategies/equities.strategy.template.toml`: still seeds MakerV4 identity/params.
+- `deploy/equities/systemd/flux-equities.target` and `deploy/equities/systemd/flux-pulse.sudoers`: still enumerate the MakerV4 node service.
+- `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`: hard-codes MakerV4 as the active deploy contract and installer discovery target.
+- `tests/unit_tests/flux/api/test_equities_profile_contract.py`: includes equities-specific MakerV4 quote-snapshot and inventory projection coverage.
+- `fluxboard/components/domain/signal/MakerV4SignalTable.tsx` and `fluxboard/tests/signal/MakerV4SignalTable.test.tsx`: current equities-oriented signal-table assumptions are MakerV4-specific.
+- `fluxboard/__tests__/Params.short-headers.test.tsx` and `fluxboard/__tests__/config/paramsProfiles.test.ts`: use MakerV4 equities examples and labels in the current UI contract.
+- `systems/flux/flux/runners/equities/run_api.py` already supports both MakerV3 and MakerV4 strategy classes, so it is not the blocking switch point.
+- `systems/flux/flux/api/_payloads_signals.py` already branches for both `maker_v3` and `maker_v4`; the earlier top-level freshness mismatch should only be revisited after the MakerV3 cutover if it still reproduces there.
 
 ## Remaining Runtime Blockers After IBKR Auth
 
@@ -153,4 +186,5 @@ Post-recovery public checks:
   - Result: `state.state = "bot_off"`, `params.bot_on = false`, `blocked = true`, `tradeable = false`.
   - Result: `maker_v4.quote_snapshot.hedge_ready = true`, `maker_v4.quote_snapshot.ibkr_quote_age_ms = 949`, and the quote snapshot contains current Hyperliquid and IBKR prices.
   - Result: top-level `quote_age_ms` / `hedge_quote_age_ms` remain `null`, while `legs.ibkr:AAPL.NASDAQ` still shows null top-level quote fields even though the MakerV4 quote snapshot is current.
-  - Conclusion: the runtime graph is healthy enough to produce fresh quote snapshots, but the canary remains intentionally bot-off and the top-level signal payload still has a freshness/leg-reporting mismatch worth treating as a Task 5 contract issue.
+  - Result: `id = "aapl_tradexyz_makerv4"` and `strategy_family = "maker_v4"` remain visible on the public surface.
+  - Conclusion: the runtime graph is healthy enough to produce fresh quote snapshots, but the host is still running the drifted MakerV4 canary rather than the intended MakerV3 target. The top-level signal payload mismatch should only be revisited after the MakerV3 cutover if it still reproduces there.

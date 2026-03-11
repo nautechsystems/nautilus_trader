@@ -6,12 +6,13 @@ This directory holds one TOML file per equities node process enrolled into the P
 ## File naming
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
-- Recommended naming pattern: `<stock>_tradexyz_makerv4.toml`.
+- Recommended naming pattern: `<stock>_tradexyz_<strategy_family>.toml`.
 - One stock uses one strategy file and one node process.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
-- The checked-in rollback file is `aapl_tradexyz_makerv3.toml.disabled`; leave it disabled so the installer discovers only the MakerV4 canary.
-- The active checked-in strategy file is `aapl_tradexyz_makerv4.toml`. MakerV3 is not the current contract; it is rollback-only unless an operator explicitly restores the disabled file.
+- The intended active target after the March 11, 2026 correction is MakerV3, but the checked-in host drift is still `aapl_tradexyz_makerv4.toml`.
+- The existing MakerV3 file is `aapl_tradexyz_makerv3.toml.disabled`. Re-enabling it is part of the intended contract switch, not an emergency-only path.
+- Until that switch lands, treat `aapl_tradexyz_makerv4.toml` as current drift or explicit rollback material rather than the desired steady-state contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 
@@ -20,22 +21,22 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[identity].strategy_id` and `[identity].strategy_instance_id` stay aligned to the file name.
 - `[strategy].strategy_id` stays descriptive and unique across node processes.
 - `[strategy].strategy_groups` stays `equities`.
-- `[strategy].param_set = "makerv4"` stays explicit for the active equities rollout.
+- `[strategy].param_set` must match the intended active strategy family. The current host drift uses `"makerv4"`, but the planned target is MakerV3.
 - `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
 - `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` for the checked-in AAPL canary.
-- `[node.venues.IBKR].use_regular_trading_hours = false` keeps after-hours reference data available for MakerV4.
+- `[node.venues.IBKR].use_regular_trading_hours = false` is part of the current drifted MakerV4 after-hours config; carry it forward to MakerV3 only if the operator still wants after-hours reference data on the restored contract.
 - `[node.venues.IBKR.dockerized_gateway]` carries the read-only live gateway runtime, including the nightly `11:45 PM America/New_York` restart window.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
 - `[strategy].outside_rth_hedge_enabled = true` makes the hedge leg explicit for the after-hours rollout.
 - `[strategy].ibkr_primary_exchange` sets the listing venue used to derive the reference instrument. Keep it on a qualifiable stock venue such as `NASDAQ`; there is no separate `ibkr_route_exchange` field in the current runner contract.
-- For MakerV4, the runner derives the effective IBKR reference instrument from `[node.venues.HYPERLIQUID].instrument_id` plus `[strategy].ibkr_primary_exchange`, so the checked-in canary keeps `AAPL.NASDAQ` aligned with `ibkr_primary_exchange = "NASDAQ"`.
-- Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
+- The current drifted MakerV4 canary derives the effective IBKR reference instrument from `[node.venues.HYPERLIQUID].instrument_id` plus `[strategy].ibkr_primary_exchange`, so `AAPL.NASDAQ` stays aligned with `ibkr_primary_exchange = "NASDAQ"`.
+- Keep the shared `[[contracts]]` IBKR entry aligned with whichever strategy file is actually active, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
 - Hyperliquid effective account identity resolves in this order: `vault_address_env`, then funded `account_address_env`, then the agent wallet's `userRole`-resolved master account.
 - Do not duplicate `[redis]` in per-node deploy files; nodes inherit it from `deploy/equities/equities.live.toml`.
 - Do not duplicate `[portfolio]` in per-node deploy files; nodes inherit the shared portfolio inventory feed from `deploy/equities/equities.live.toml`.
-- `assumed_hedge_fee_bps` is a MakerV4 runtime param, not a TOML key here. IBKR hedge fees are not live-discovered in this contract; the default is a configured assumption from the runtime param registry.
+- `assumed_hedge_fee_bps` is a MakerV4 runtime param, not a TOML key here. If the active target is switched back to MakerV3, do not leave MakerV4-only runtime-param assumptions described as if they are still canonical.
 
 ## Inventory semantics
 
