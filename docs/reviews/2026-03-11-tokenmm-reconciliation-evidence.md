@@ -50,6 +50,8 @@ Observed supporting facts:
 - the cache warned that order `4c4fe5a4-543c-4a23-8c85-c9b8fd81831f` was missing
   for position `PLUMEUSDT-LINEAR.BYBIT-EXTERNAL`
 - there were no fresh fill reports during this restart window
+- from the captured evidence alone, whether the failing set includes an owned
+  non-`EXTERNAL` strategy position is undetermined
 
 ### Raw failure lines
 
