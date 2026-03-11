@@ -88,6 +88,16 @@ def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> Non
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
 
 
+def test_tokenmm_binance_spot_strategy_pins_supported_cross_margin_contract() -> None:
+    config = _read(_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml")
+
+    assert 'account_type = "MARGIN"' in config
+    assert "allow_cash_borrowing = true" in config
+    assert 'spot_cash_borrowing_policy = "both_sides"' in config
+    assert "force_bot_off_on_start = true" in config
+    assert "bot_on = false" in config
+
+
 def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
 
