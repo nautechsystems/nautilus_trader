@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "aapl_tradexyz_makerv3"
-strategy_instance_id = "aapl_tradexyz_makerv3"
+strategy_id = "aapl_tradexyz_makerv4"
+strategy_instance_id = "aapl_tradexyz_makerv4"
 trader_id = "EQUITIES-LIVE-AAPL-TRADEXYZ"
-external_strategy_id = "aapl_tradexyz_makerv3"
+external_strategy_id = "aapl_tradexyz_makerv4"
 
 [venues]
 execution_venue = "HYPERLIQUID"
@@ -65,14 +65,20 @@ relogin_after_twofa_timeout = true
 twofa_timeout_action = "restart"
 
 [strategy]
-strategy_id = "aapl_tradexyz_makerv3"
+strategy_id = "aapl_tradexyz_makerv4"
 strategy_groups = "equities"
-param_set = "makerv3"
+param_set = "makerv4"
 force_bot_off_on_start = true
 order_qty = "1"
 qty = "1"
 qty_unit = "base"
 bot_on = false
+outside_rth_hedge_enabled = true
+# Use the listed IBKR stock instrument for reference data. Do not use BLUEOCEAN as
+# the instrument_id; it is not a qualifiable stock venue in the provider contract.
+ibkr_primary_exchange = "NASDAQ"
+# IBKR hedge fees are not live-discovered; MakerV4 quotes use runtime param
+# assumed_hedge_fee_bps (default 1.0 bps) as an explicit configured assumption.
 max_age_ms = 10000
 des_qty_global = 0.0
 max_qty_global = 100.0

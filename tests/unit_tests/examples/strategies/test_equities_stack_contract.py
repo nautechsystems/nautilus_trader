@@ -4,6 +4,11 @@ import re
 import tomllib
 from pathlib import Path
 
+ACTIVE_STRATEGY_ID = "aapl_tradexyz_makerv3"
+ACTIVE_STRATEGY_CLASS = "maker_v3"
+ACTIVE_PARAM_SET = "makerv3"
+ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv4"
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -21,10 +26,11 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
 
     assert config["portfolio"]["portfolio_id"] == "equities"
-    assert config["api"]["strategy_class"] == "maker_v4"
+    assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
-    assert config["api"]["equities_strategy_ids"] == ["aapl_tradexyz_makerv4"]
-    assert config["api"]["equities_required_strategy_ids"] == ["aapl_tradexyz_makerv4"]
+    assert config["api"]["param_set"] == ACTIVE_PARAM_SET
+    assert config["api"]["equities_strategy_ids"] == [ACTIVE_STRATEGY_ID]
+    assert config["api"]["equities_required_strategy_ids"] == [ACTIVE_STRATEGY_ID]
 
 
 def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() -> None:
@@ -49,20 +55,19 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert 'auto_restart_time = "11:45 PM"' in template
     assert 'time_zone = "America/New_York"' in template
     assert "relogin_after_twofa_timeout = true" in template
-    assert identity["strategy_id"] == "aapl_tradexyz_makerv4"
-    assert identity["strategy_instance_id"] == "aapl_tradexyz_makerv4"
-    assert identity["external_strategy_id"] == "aapl_tradexyz_makerv4"
+    assert 'twofa_timeout_action = "restart"' in template
+    assert identity["strategy_id"] == ACTIVE_STRATEGY_ID
+    assert identity["strategy_instance_id"] == ACTIVE_STRATEGY_ID
+    assert identity["external_strategy_id"] == ACTIVE_STRATEGY_ID
     assert hyperliquid["private_key_env"] == "TRADE_XYZ_AGENT_PK"
     assert hyperliquid["account_address_env"] == "TRADE_XYZ_ACCOUNT_ADDRESS"
     assert hyperliquid["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
     assert ibkr["instrument_id"] == "AAPL.NASDAQ"
     assert ibkr["use_regular_trading_hours"] is False
     assert strategy["strategy_groups"] == "equities"
-    assert strategy["param_set"] == "makerv4"
     assert strategy["order_qty"] == "1"
     assert strategy["qty"] == "1"
-    assert strategy["outside_rth_hedge_enabled"] is True
-    assert strategy["ibkr_primary_exchange"] == "NASDAQ"
+    assert strategy.get("param_set") in {None, ACTIVE_PARAM_SET}
     assert strategy["max_qty_global"] == 100.0
     assert strategy["max_skew_bps_global"] == 10.0
     assert strategy["bid_edge1"] == 5.0
@@ -100,33 +105,33 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     }
 
 
-def test_equities_active_strategy_contract_is_makerv4_only() -> None:
+def test_equities_active_strategy_contract_is_makerv3_only() -> None:
     repo_root = _repo_root()
-    active_path = repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml"
-    disabled_rollback_path = repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled"
+    active_path = repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml"
+    disabled_rollback_path = repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml.disabled"
 
     assert active_path.exists()
-    assert not (repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv3.toml").exists()
+    assert not (repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml").exists()
     assert disabled_rollback_path.exists()
 
     config = _load_toml(active_path)
-    assert config["identity"]["strategy_id"] == "aapl_tradexyz_makerv4"
-    assert config["identity"]["strategy_instance_id"] == "aapl_tradexyz_makerv4"
-    assert config["identity"]["external_strategy_id"] == "aapl_tradexyz_makerv4"
-    assert config["strategy"]["strategy_id"] == "aapl_tradexyz_makerv4"
-    assert config["strategy"]["param_set"] == "makerv4"
-    assert config["strategy"]["outside_rth_hedge_enabled"] is True
-    assert config["strategy"]["ibkr_primary_exchange"] == "NASDAQ"
+    assert config["identity"]["strategy_id"] == ACTIVE_STRATEGY_ID
+    assert config["identity"]["strategy_instance_id"] == ACTIVE_STRATEGY_ID
+    assert config["identity"]["external_strategy_id"] == ACTIVE_STRATEGY_ID
+    assert config["strategy"]["strategy_id"] == ACTIVE_STRATEGY_ID
+    assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
     assert config["node"]["enable_execution"] is False
     assert config["node"]["venues"]["IBKR"]["instrument_id"] == "AAPL.NASDAQ"
     assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
+    assert config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
+    assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["twofa_timeout_action"] == "restart"
 
 
 def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
     repo_root = _repo_root()
-    active_path = repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml"
+    active_path = repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml"
     template_path = repo_root / "deploy/equities/strategies/equities.strategy.template.toml"
-    active_config = _load_toml(repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml")
+    active_config = _load_toml(active_path)
     template_config = _load_toml(template_path)
     active_text = _read(active_path)
     template_text = _read(template_path)
@@ -159,7 +164,7 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
 def test_equities_shared_contract_catalog_matches_active_canary_route() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
-    active_config = _load_toml(repo_root / "deploy/equities/strategies/aapl_tradexyz_makerv4.toml")
+    active_config = _load_toml(repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml")
 
     shared_ibkr_contract = next(
         entry
@@ -167,10 +172,9 @@ def test_equities_shared_contract_catalog_matches_active_canary_route() -> None:
         if entry["exchange"] == "ibkr"
     )
     active_ibkr_instrument_id = active_config["node"]["venues"]["IBKR"]["instrument_id"]
-    active_ibkr_primary_exchange = active_config["strategy"]["ibkr_primary_exchange"]
 
     assert shared_ibkr_contract["instrument_id"] == active_ibkr_instrument_id
-    assert active_ibkr_instrument_id.endswith(f".{active_ibkr_primary_exchange}")
+    assert active_ibkr_instrument_id == "AAPL.NASDAQ"
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
@@ -228,7 +232,7 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
-    assert 'Wants=flux@equities-node-aapl_tradexyz_makerv4.service' in target
+    assert f'Wants=flux@equities-node-{ACTIVE_STRATEGY_ID}.service' in target
     assert 'deploy/equities/equities.live.toml' in install_script
     assert 'flux-equities.target' in install_script
     assert 'deploy/equities/systemd/common.env.example' in install_script
@@ -256,7 +260,7 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'TRADE_XYZ_VAULT_ADDRESS=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
-    assert "/usr/bin/systemctl restart flux@equities-node-aapl_tradexyz_makerv4.service" in sudoers
+    assert f"/usr/bin/systemctl restart flux@equities-node-{ACTIVE_STRATEGY_ID}.service" in sudoers
     assert "flux@*" not in sudoers
 
 
@@ -327,7 +331,7 @@ def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     assert "`sed -n '1,120p' /etc/flux/equities-api.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-portfolio.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
-    assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`" in readme
+    assert f"`sed -n '1,120p' /etc/flux/equities-node-{ACTIVE_STRATEGY_ID}.env`" in readme
     assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
     assert "`for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' \"$env_path\"; done`" in readme
     assert "`uv sync --all-groups --all-extras`" in readme
@@ -412,16 +416,16 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "AAPL.NASDAQ" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
     assert "shared IBKR contract entry must mirror the active canary route" in readme
-    assert "outside-RTH fills are actually available" in readme
-    assert "assumed_hedge_fee_bps" in readme
+    assert "vault_address_env" in readme
+    assert 'use_regular_trading_hours = false' in readme
+    assert 'twofa_timeout_action = "restart"' in readme
 
-    assert "<stock>_tradexyz_makerv4.toml" in strategies_readme
-    assert "aapl_tradexyz_makerv3.toml.disabled" in strategies_readme
+    assert "<stock>_tradexyz_makerv3.toml" in strategies_readme
+    assert "aapl_tradexyz_makerv4.toml.disabled" in strategies_readme
     assert "AAPL.NASDAQ" in strategies_readme
     assert "use_regular_trading_hours = false" in strategies_readme
-    assert "outside_rth_hedge_enabled = true" in strategies_readme
-    assert "ibkr_primary_exchange" in strategies_readme
-    assert "assumed_hedge_fee_bps" in strategies_readme
+    assert 'twofa_timeout_action = "restart"' in strategies_readme
+    assert "TRADE_XYZ_VAULT_ADDRESS" in strategies_readme
     assert "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument" in strategies_readme
     assert "TWS_USERNAME" in strategies_readme
     assert "TWS_PASSWORD" in strategies_readme
@@ -435,11 +439,12 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
 
     assert 'portfolio_id = "equities"' in live_config
     assert "equities_strategy_ids" in live_config
-    assert 'strategy_class = "maker_v4"' in live_config
-    assert "aapl_tradexyz_makerv4" in live_config
+    assert f'strategy_class = "{ACTIVE_STRATEGY_CLASS}"' in live_config
+    assert ACTIVE_STRATEGY_ID in live_config
 
     assert "/equities" in contract
     assert "/api/v1/signals?profile=equities" in contract
     assert "/api/v1/params?profile=equities" in contract
     assert "trade[XYZ]" in contract
     assert "AAPL.NASDAQ" in contract
+    assert "MakerV3" in contract

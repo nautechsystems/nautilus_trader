@@ -37,16 +37,16 @@ start_id = "$"
 # Stable equities API surface: keep `/equities` and `profile=equities`.
 host = "0.0.0.0"
 port = 5022
-strategy_class = "maker_v4"
-param_set = "makerv4"
+strategy_class = "maker_v3"
+param_set = "makerv3"
 strategy_groups = "equities"
 base_asset = "AAPL"
 quote_asset = "USD"
 equities_strategy_ids = [
-  "aapl_tradexyz_makerv4",
+  "aapl_tradexyz_makerv3",
 ]
 equities_required_strategy_ids = [
-  "aapl_tradexyz_makerv4",
+  "aapl_tradexyz_makerv3",
 ]
 
 [portfolio]

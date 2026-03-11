@@ -26,9 +26,9 @@ The canonical IBKR reference instrument ID for the enrolled AAPL contract is `AA
 
 ## Frozen Deploy Identity
 
-1. The intended equities deploy target after the March 11, 2026 correction is MakerV3, not MakerV4.
-2. Current host/runtime drift still serves `aapl_tradexyz_makerv4`; treat that as temporary drift or rollback material until the contract switch is completed.
-3. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is the existing checked-in MakerV3 file to promote back into active discovery.
+1. The intended active equities deploy contract is MakerV3 via `aapl_tradexyz_makerv3`.
+2. Current host/runtime drift may still serve `aapl_tradexyz_makerv4`; treat that as temporary drift or rollback material until the contract switch is completed.
+3. `deploy/equities/strategies/aapl_tradexyz_makerv4.toml.disabled` is the rollback file.
 4. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
 5. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
 6. Task 2 of the March 11 live review locked that build/static-serving contract to the shared `/static/fluxboard/` base.

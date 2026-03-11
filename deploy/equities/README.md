@@ -21,32 +21,30 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - One stock uses one strategy file and one node process.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The current checked-in/live drift is `aapl_tradexyz_makerv4`, but the March 11, 2026 target correction re-freezes MakerV3 as the intended equities deploy target. Treat the MakerV4 file as temporary drift or rollback material until the contract switch is completed.
+- The active checked-in equities target is `aapl_tradexyz_makerv3`; `aapl_tradexyz_makerv4.toml.disabled` is rollback/canary material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
 - The shared host also runs an internal-only `equities-api` backend on loopback so `/equities` can read the dedicated equities Redis store without exposing a second public API port.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 
-## March 11, 2026 target correction and current drift
+## March 11, 2026 MakerV3 contract
 
-- Intended target: MakerV3 is the user-confirmed equities deploy contract. The existing checked-in MakerV3 file is `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`, so a deliberate strategy-file swap is still required.
-- Current drift: `deploy/equities/equities.live.toml` still keeps `api.strategy_class = "maker_v4"` / `param_set = "makerv4"` and allowlists only `aapl_tradexyz_makerv4`. The live host also still runs `flux@equities-node-aapl_tradexyz_makerv4.service`.
-- Treat MakerV4 as drift or explicit rollback material, not as the desired end-state contract.
+- MakerV3 is the user-confirmed equities deploy contract. The checked-in repo keeps `deploy/equities/equities.live.toml` on `api.strategy_class = "maker_v3"` / `param_set = "makerv3"` and allowlists only `aapl_tradexyz_makerv3`.
+- `deploy/equities/strategies/aapl_tradexyz_makerv4.toml.disabled` remains available as rollback/canary material, but it is not part of normal installer discovery.
+- The live host may still be temporarily drifted toward MakerV4 until the next reinstall/restart sequence. Treat any active `flux@equities-node-aapl_tradexyz_makerv4.service` state as live drift, not as the intended repo contract.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 - The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
 
-## Current drifted MakerV4 host state
+## MakerV3 deploy contract
 
-- `deploy/equities/equities.live.toml` currently keeps `/equities` stable while `api.strategy_class = "maker_v4"`, the equities allowlist points only to `aapl_tradexyz_makerv4`, and the shared contract metadata publishes `AAPL.NASDAQ` for the live IBKR leg.
+- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v3"`, the equities allowlist points only to `aapl_tradexyz_makerv3`, and the shared contract metadata publishes `AAPL.NASDAQ` for the active IBKR leg.
 - The shared config merge only imports `redis` and `portfolio`, so active node settings live in `deploy/equities/strategies/*.toml`, not in `deploy/equities/equities.live.toml`.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so that shared IBKR contract entry must mirror the active canary route from `deploy/equities/strategies/*.toml`.
-- The current drifted node config uses `[strategy].param_set = "makerv4"` and keeps `strategy_groups = "equities"`.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
-- MakerV4 after-hours rollout is explicit in the active node files: `node.venues.IBKR.instrument_id = "AAPL.NASDAQ"`, `node.venues.IBKR.use_regular_trading_hours = false`, `strategy.outside_rth_hedge_enabled = true`, and `strategy.ibkr_primary_exchange = "NASDAQ"`.
-- The AAPL canary default is `ibkr_primary_exchange = "NASDAQ"`. The current runner contract does not expose a separate IBKR route-exchange field, so keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
-- IBKR hedge fees are not live-discovered. MakerV4 quotes use runtime param `assumed_hedge_fee_bps` as an operator-managed assumption, with the current default seeded from runtime params at `1.0` bps.
+- The checked-in MakerV3 node keeps `node.venues.IBKR.instrument_id = "AAPL.NASDAQ"`, `node.venues.IBKR.use_regular_trading_hours = false`, and `[node.venues.IBKR.dockerized_gateway].twofa_timeout_action = "restart"` so the read-only IBKR reference path remains explicit and hardened.
+- Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
 
 ## Inventory and balances model
 
@@ -99,7 +97,7 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-api.env`
 - `sed -n '1,120p' /etc/flux/equities-portfolio.env`
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
-- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv3.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
 - `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
 - `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
@@ -182,11 +180,10 @@ Expected smoke result:
 ## After-hours production validation
 
 - Confirm the active strategy file keeps `use_regular_trading_hours = false` so IBKR reference data remains available outside RTH.
-- Confirm `outside_rth_hedge_enabled = true` on the active MakerV4 strategy before enabling execution.
-- Confirm outside-RTH fills are actually available on the configured route before enabling execution.
+- Confirm the active `node.venues.IBKR.dockerized_gateway` block keeps `twofa_timeout_action = "restart"` so an expired 2FA window forces the containerized gateway back through the login flow instead of idling indefinitely.
 - Confirm the active strategy keeps a qualifiable IBKR reference instrument. The checked-in AAPL canary uses `AAPL.NASDAQ`; do not switch the instrument ID to `BLUEOCEAN`.
 - Confirm the IBKR account has the required after-hours permissions for the configured exchange and instrument.
-- Confirm operators understand that `assumed_hedge_fee_bps` is not live-discovered and should be reviewed explicitly before live rollout.
+- Confirm the active Hyperliquid config still carries `vault_address_env` when vault routing is required.
 
 Fluxboard contract reference:
 
@@ -194,6 +191,6 @@ Fluxboard contract reference:
 
 ## Rollback
 
-- Retire the current drifted MakerV4 host state by removing `aapl_tradexyz_makerv4` from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping `flux@equities-node-aapl_tradexyz_makerv4.service`.
-- Promote MakerV3 by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the MakerV4 file from discovery, switching the shared allowlist/strategy metadata back to MakerV3, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
-- `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry revert with the file swap.
+- Disable MakerV3 cleanly by removing `aapl_tradexyz_makerv3` from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping `flux@equities-node-aapl_tradexyz_makerv3.service`.
+- Re-enable the MakerV4 canary only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv4.toml.disabled` to `.toml`, retiring the MakerV3 file from active discovery, switching the shared allowlist/strategy metadata back to MakerV4, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
+- `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry move with the file swap.
