@@ -1733,6 +1733,18 @@ class LiveExecutionEngine(ExecutionEngine):
         client: ExecutionClient,
         instrument_id: InstrumentId,
     ) -> bool:
+        if self._startup_cache_has_restored_positions_without_open_orders(
+            instrument_id=instrument_id,
+            account_id=client.account_id,
+        ):
+            self._log.info(
+                f"Startup reconciliation cache has restored positions but no open cached orders for "
+                f"{instrument_id}; requesting only open venue orders to avoid replaying "
+                "closed startup lifecycle history",
+                LogColor.BLUE,
+            )
+            return True
+
         cached_orders = self._cache.orders(
             venue=None,
             instrument_id=instrument_id,
@@ -1764,6 +1776,36 @@ class LiveExecutionEngine(ExecutionEngine):
             )
 
         return use_open_only
+
+    def _startup_cache_has_restored_positions_without_open_orders(
+        self,
+        instrument_id: InstrumentId,
+        account_id: AccountId | None,
+    ) -> bool:
+        cached_orders = self._cache.orders(
+            venue=None,
+            instrument_id=instrument_id,
+            account_id=account_id,
+        )
+        if not cached_orders:
+            cached_orders = self._cache.orders(
+                venue=None,
+                instrument_id=instrument_id,
+            )
+        cached_open_orders = [order for order in cached_orders if order.is_open]
+
+        cached_open_positions = self._cache.positions_open(
+            venue=None,
+            instrument_id=instrument_id,
+            account_id=account_id,
+        )
+        if not cached_open_positions:
+            cached_open_positions = self._cache.positions_open(
+                venue=None,
+                instrument_id=instrument_id,
+            )
+
+        return bool(cached_open_positions) and not cached_open_orders
 
     def _collapse_startup_netting_position_reports(
         self,
@@ -2052,7 +2094,10 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         # Adjust fills for instruments with incomplete first lifecycles
-        self._adjust_mass_status_fills(mass_status)
+        self._adjust_mass_status_fills(
+            mass_status,
+            allow_startup_external_cleanup=allow_startup_external_cleanup,
+        )
 
         # Deduplicate orders in mass status
         self._deduplicate_mass_status_orders(mass_status)
@@ -2136,7 +2181,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    def _adjust_mass_status_fills(self, mass_status: ExecutionMassStatus) -> None:
+    def _adjust_mass_status_fills(
+        self,
+        mass_status: ExecutionMassStatus,
+        allow_startup_external_cleanup: bool = False,
+    ) -> None:
         # Adjust fills for instruments with incomplete first lifecycles
         # Start with original orders and fills
         final_orders = dict(mass_status._order_reports)
@@ -2166,6 +2215,18 @@ class LiveExecutionEngine(ExecutionEngine):
             if not instrument:
                 self._log.debug(
                     f"Skipping fill adjustment for {instrument_id}: instrument not found in cache",
+                )
+                continue
+
+            if allow_startup_external_cleanup and self._startup_cache_has_restored_positions_without_open_orders(
+                instrument_id=instrument_id,
+                account_id=position_reports[0].account_id if position_reports else None,
+            ):
+                self._log.info(
+                    f"Skipping fill adjustment for {instrument_id}: startup cache already "
+                    "has restored open positions but no open cached orders, so replaying "
+                    "partial-window lifecycle history would double-apply fills",
+                    LogColor.BLUE,
                 )
                 continue
 
