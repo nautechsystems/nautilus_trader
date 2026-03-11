@@ -3388,6 +3388,46 @@ async def test_query_position_status_reports_multiple_instruments(
     assert GBPUSD_SIM.id in venue_positions
 
 
+@pytest.mark.asyncio
+async def test_query_position_status_reports_keeps_nonzero_report_when_flat_duplicate_exists(
+    live_exec_engine,
+    exec_client,
+    account_id,
+):
+    """
+    Test _query_position_status_reports prefers a non-zero netting report over a
+    duplicate flat report for the same instrument.
+    """
+    live_exec_engine.register_client(exec_client)
+
+    long_report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),
+        report_id=UUID4(),
+        ts_last=10,
+        ts_init=10,
+    )
+    flat_report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.FLAT,
+        quantity=Quantity.zero(),
+        report_id=UUID4(),
+        ts_last=20,
+        ts_init=20,
+    )
+    exec_client.add_position_status_report(long_report)
+    exec_client.add_position_status_report(flat_report)
+
+    venue_positions = await live_exec_engine._query_position_status_reports()
+
+    assert len(venue_positions) == 1
+    assert AUDUSD_SIM.id in venue_positions
+    assert venue_positions[AUDUSD_SIM.id].signed_decimal_qty == Decimal("1000")
+
+
 # =============================================================================
 # TESTS FOR _query_and_find_missing_fills
 # =============================================================================
