@@ -33,6 +33,10 @@ class _DummyStrategy:
         self.portfolio_inventory_feed = kwargs
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
 def _install_strategy_spec(
     monkeypatch,
     strategy_cls: type[object],
@@ -1658,6 +1662,53 @@ def test_prepare_telemetry_paths_creates_parent_dirs_when_enabled(tmp_path: Path
     run_node._prepare_telemetry_paths(config)
 
     assert fills_path.parent.is_dir()
+
+
+def test_build_telemetry_actor_configs_includes_markouts_actor() -> None:
+    actors = run_node._build_telemetry_actor_configs(
+        {
+            "telemetry_shipper": {
+                "enable_local_persistence": True,
+                "fills_db_path": "/tmp/fills.sqlite",
+                "orders_db_path": "/tmp/orders.sqlite",
+                "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
+                "markouts_db_path": "/tmp/markouts.sqlite",
+                "markout_horizons_s": [30, 60, 120],
+            },
+        },
+    )
+
+    markout_actor = next(
+        actor
+        for actor in actors
+        if actor.actor_path.endswith("markouts.actor:ExecutionMarkoutPersistenceActor")
+    )
+
+    assert markout_actor.config["db_path"] == "/tmp/markouts.sqlite"
+    assert markout_actor.config["horizons_s"] == [30, 60, 120]
+
+
+def test_prepare_telemetry_paths_creates_markouts_parent_dir_when_enabled(tmp_path: Path) -> None:
+    markouts_path = tmp_path / "telemetry" / "markouts.sqlite"
+    config = {
+        "telemetry_shipper": {
+            "enable_local_persistence": True,
+            "markouts_db_path": str(markouts_path),
+        },
+    }
+
+    run_node._prepare_telemetry_paths(config)
+
+    assert markouts_path.parent.is_dir()
+
+
+def test_tokenmm_live_config_pins_markout_telemetry_defaults() -> None:
+    shared_config = (_repo_root() / "deploy/tokenmm/tokenmm.live.toml").read_text(
+        encoding="utf-8",
+    )
+
+    assert 'markouts_db_path = "/var/lib/nautilus/telemetry/tokenmm/markouts.sqlite"' in shared_config
+    assert "markout_horizons_s = [30, 60, 120]" in shared_config
 
 
 def test_strategy_startup_lock_prevents_duplicate_flux_strategy_ids(tmp_path: Path) -> None:
