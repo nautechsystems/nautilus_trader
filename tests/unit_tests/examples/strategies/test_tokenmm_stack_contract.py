@@ -879,3 +879,14 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     assert "supported production lifecycle is Pulse-first" in runbook
     assert "bootstrap or disaster recovery only" in runbook
     assert "flux.runners.makerv3" not in runbook
+
+
+def test_fluxboard_prod_docs_use_shared_static_build_base() -> None:
+    repo_root = _repo_root()
+    env_example = _read(repo_root / "fluxboard/.env.example")
+    runbook = _read(repo_root / "fluxboard/docs/tokenmm_runbook.md")
+
+    assert "FLUXBOARD_BASE_PATH=/static/fluxboard/" in env_example
+    assert "FLUXBOARD_BASE_PATH=/tokenmm/" not in env_example
+    assert "FLUXBOARD_BASE_PATH=/static/fluxboard/" in runbook
+    assert "FLUXBOARD_BASE_PATH=/tokenmm/" not in runbook

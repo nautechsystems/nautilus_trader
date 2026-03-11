@@ -269,6 +269,14 @@ def test_equities_shared_fluxboard_contract_uses_neutral_static_prefix() -> None
     assert "`/equities`, `/lp`, and `/tokenmm` stay SPA entry routes, not asset owners." in lp_contract
 
 
+def test_equities_contract_doc_keeps_equities_routes_spa_only() -> None:
+    contract = _read(_repo_root() / "fluxboard/docs/equities_contract.md")
+
+    assert "/equities/assets/*" not in contract
+    assert "/static/fluxboard/assets/*" in contract
+    assert "`/equities` stays a SPA route, not the asset prefix." in contract
+
+
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
     repo_root = _repo_root()
     shared = _read(repo_root / "ops/scripts/deploy/shared_strategy_stack.sh")
