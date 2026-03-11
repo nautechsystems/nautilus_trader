@@ -13,7 +13,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - The checked-in rollback file is `aapl_tradexyz_makerv3.toml.disabled`; leave it disabled so the installer discovers only the MakerV4 canary.
 - The active checked-in strategy file is `aapl_tradexyz_makerv4.toml`. MakerV3 is not the current contract; it is rollback-only unless an operator explicitly restores the disabled file.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
-- The standalone equities runner contract in repo still serves `/equities/assets/*` when accessed directly, so only the shared-host proxy path is expected to use the neutral static prefix today.
+- The standalone equities runner code currently exposes `/equities/assets/*` route capability, but the checked-in default production Fluxboard build base remains `/static/fluxboard/`. Task 2 is where that build/static-serving mismatch gets reconciled.
 
 ## Required TOML keys per file
 

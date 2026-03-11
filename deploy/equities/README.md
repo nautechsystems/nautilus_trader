@@ -33,7 +33,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - Treat MakerV4 as the current equities contract. `deploy/equities/equities.live.toml` keeps `api.strategy_class = "maker_v4"` / `param_set = "makerv4"` and allowlists only `aapl_tradexyz_makerv4`.
 - Treat `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` as rollback-only material. Do not re-enable it unless you are intentionally rolling the host back off MakerV4.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
-- The standalone `flux.runners.equities.run_api` route still serves its own built assets from `/equities/assets/*` when hit directly. Do not treat `/static/fluxboard/assets/*` as a universal standalone-runner contract yet.
+- The standalone `flux.runners.equities.run_api` code currently exposes `/equities/assets/*` route capability, but the checked-in default production Fluxboard build base remains `/static/fluxboard/`. Task 2 is where that build/static-serving contract gets reconciled.
 - The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
 
 ## MakerV4 contract
@@ -100,7 +100,9 @@ Expected results:
 
 - the generated envs point at the intended live checkout, not `/.worktrees/makerv3-mono-pr`
 - equities API and node commands use `--mode live --confirm-live` for the production path
-- on the shared `tokenmm-api` host, public `/equities` emits `/static/fluxboard/assets/*`, never `/tokenmm/assets/*`
+- on the shared `tokenmm-api` host, public `/equities` should emit `/static/fluxboard/assets/*`
+- `/tokenmm/assets/*` on the shared public `/equities` route is a failure
+- `/equities/assets/*` on the shared public `/equities` route is also a failure for the current shared-host contract
 
 Primary operator surfaces:
 

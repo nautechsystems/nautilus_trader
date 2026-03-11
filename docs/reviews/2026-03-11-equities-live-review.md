@@ -99,13 +99,13 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
   - Result: main checkout currently uses `/static/fluxboard/assets/index-Dh7RM63S.js` and `/static/fluxboard/assets/index-BCpW5E6y.css`
   - Result: those main-checkout asset hashes do not match the public `/equities` shell
 
-These provenance checks close the remaining gap: public `tokenmm-api` is running from the main checkout in live mode and is explicitly configured with `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`, while the loopback equities backend running from `/.worktrees/makerv3-mono-pr` in paper mode is the source whose stale `/tokenmm/assets/*` HTML matches the public `/equities` shell.
+These provenance checks close the remaining gap: public `tokenmm-api` is running from the main checkout in live mode and is explicitly configured with `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`, while the loopback equities backend running from `/.worktrees/makerv3-mono-pr` in paper mode is the source whose stale `/tokenmm/assets/*` HTML matches the public `/equities` shell. The standalone equities runner code does expose `/equities/assets/*` route capability, but the checked-in default production Fluxboard build base still resolves from `/static/fluxboard/`; Task 2 is where that build/static-serving contract gets reconciled.
 
 ## Frozen Contract Record
 
 - Current active contract: MakerV4 is the checked-in and intended live equities contract. `deploy/equities/equities.live.toml` sets `strategy_class = "maker_v4"`, `param_set = "makerv4"`, and allowlists only `aapl_tradexyz_makerv4`.
 - Current rollback path: emergency rollback is the disabled MakerV3 file `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`. Re-enabling it requires an explicit strategy-file swap plus allowlist/metadata rollback.
-- Shared-host GUI contract: on the public `tokenmm-api` proxy, `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`; the standalone equities runner in repo still serves `/equities/assets/*` when reached directly. `/tokenmm/assets/*` on public `/equities` is deployment drift, not a supported variation.
+- Shared-host GUI contract: on the public `tokenmm-api` proxy, `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`. The standalone equities runner code only proves `/equities/assets/*` route capability today, while the checked-in default production Fluxboard build base remains `/static/fluxboard/`; Task 2 is where that build/static-serving contract gets reconciled. `/tokenmm/assets/*` on public `/equities` is deployment drift, and `/equities/assets/*` on the shared public host is also a failure for the current shared-host contract.
 
 ## Remaining Runtime Blockers After IBKR Auth
 
