@@ -83,7 +83,9 @@ def test_parse_args_requires_explicit_config(monkeypatch) -> None:
         _parse_args()
 
 
-def test_attach_fluxboard_equities_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:
+def test_attach_fluxboard_equities_routes_serves_shared_static_assets_and_spa_fallback(
+    tmp_path: Path,
+) -> None:
     dist_dir = tmp_path / "dist"
     assets_dir = dist_dir / "assets"
     assets_dir.mkdir(parents=True)
@@ -98,9 +100,12 @@ def test_attach_fluxboard_equities_routes_serves_index_assets_and_spa_fallback(t
     assert response.status_code == 200
     assert "equities" in response.get_data(as_text=True)
 
-    response = client.get("/equities/assets/app.js")
+    response = client.get("/static/fluxboard/assets/app.js")
     assert response.status_code == 200
     assert "console.log(equities)" in response.get_data(as_text=True)
+
+    response = client.get("/equities/assets/app.js")
+    assert response.status_code == 404
 
     response = client.get("/equities/signals/aapl")
     assert response.status_code == 200

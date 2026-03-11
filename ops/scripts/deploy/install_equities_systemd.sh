@@ -78,6 +78,7 @@ render_target() {
 }
 
 render_api_env() {
+  # Shared-host equities keeps /equities as the SPA entry route; Fluxboard assets load from /static/fluxboard/*.
   strategy_stack_write_env \
     "${ENV_DIR}/equities-api.env" \
     "Equities API backend" \

@@ -46,6 +46,7 @@ EQUITIES_ALIAS_BASE_PATH = (
     EQUITIES_DESCRIPTOR.route_aliases[0] if EQUITIES_DESCRIPTOR.route_aliases else None
 )
 DEFAULT_PULSE_BASE_PATH = "/pulse"
+DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
 
 
 def _repo_root() -> Path:
@@ -336,14 +337,57 @@ def _is_within(parent: Path, candidate: Path) -> bool:
     return True
 
 
+def _register_fluxboard_spa_base_path(
+    app: Any,
+    *,
+    dist_root: Path,
+    base_path: str,
+    endpoint_prefix: str,
+) -> None:
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    def _serve_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        if normalized.startswith("assets/"):
+            abort(404)
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        return _serve_index()
+
+    app.add_url_rule(
+        base_path,
+        endpoint=f"{endpoint_prefix}_index",
+        view_func=_serve_index,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        f"{base_path}/",
+        endpoint=f"{endpoint_prefix}_index_slash",
+        view_func=_serve_index,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        f"{base_path}/<path:subpath>",
+        endpoint=f"{endpoint_prefix}_asset_or_spa",
+        view_func=_serve_asset_or_spa,
+        methods=["GET"],
+    )
+
+
 def _attach_fluxboard_equities_routes(app: Any, *, dist_dir: Path) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
 
-    def _serve_index() -> Any:
-        return send_from_directory(str(dist_root), "index.html")
+    def _serve_shared_static(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root), normalized)
 
     if EQUITIES_ALIAS_BASE_PATH:
         @app.get(EQUITIES_ALIAS_BASE_PATH)
@@ -356,28 +400,16 @@ def _attach_fluxboard_equities_routes(app: Any, *, dist_dir: Path) -> None:
             _ = subpath
             abort(404)
 
-    @app.get(DEFAULT_EQUITIES_BASE_PATH)
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/")
-    def _equities_index() -> Any:
-        return _serve_index()
+    @app.get(f"{DEFAULT_FLUXBOARD_STATIC_BASE_PATH}/<path:subpath>")
+    def _fluxboard_shared_static(subpath: str) -> Any:
+        return _serve_shared_static(subpath)
 
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/assets/<path:asset_path>")
-    def _equities_assets(asset_path: str) -> Any:
-        normalized = asset_path.strip().lstrip("/")
-        candidate = (dist_root / "assets" / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root / "assets"), normalized)
-
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/<path:subpath>")
-    def _equities_asset_or_spa(subpath: str) -> Any:
-        normalized = subpath.strip().lstrip("/")
-        candidate = (dist_root / normalized).resolve()
-        if candidate.is_file() and _is_within(dist_root, candidate):
-            return send_from_directory(str(dist_root), normalized)
-        if normalized.startswith("assets/"):
-            abort(404)
-        return _serve_index()
+    _register_fluxboard_spa_base_path(
+        app,
+        dist_root=dist_root,
+        base_path=DEFAULT_EQUITIES_BASE_PATH,
+        endpoint_prefix="fluxboard_equities",
+    )
 
 
 def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -133,5 +134,13 @@ describe('main route builder', () => {
   it('preserves query and hash in tokenm alias redirect', () => {
     expect(buildTokenmmAliasTarget('signal', '?foo=1', '#section')).toBe('/tokenmm/signal?foo=1#section');
     expect(buildTokenmmAliasTarget(undefined, '?foo=1', '#section')).toBe('/tokenmm?foo=1#section');
+  });
+
+  it('pins production builds to the shared static fluxboard base path', () => {
+    const viteConfigSource = readFileSync(`${process.cwd()}/vite.config.ts`, 'utf-8');
+
+    expect(viteConfigSource).toContain("const DEFAULT_FLUXBOARD_BASE_PATH = '/static/fluxboard/';");
+    expect(viteConfigSource).toMatch(/base:\s*isDevServer\s*\?\s*'\/'\s*:\s*DEFAULT_FLUXBOARD_BASE_PATH/);
+    expect(viteConfigSource).not.toContain('normalizeBasePath(process.env.FLUXBOARD_BASE_PATH');
   });
 });

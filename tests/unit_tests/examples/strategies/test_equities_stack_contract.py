@@ -259,6 +259,16 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert "flux@*" not in sudoers
 
 
+def test_equities_shared_fluxboard_contract_uses_neutral_static_prefix() -> None:
+    repo_root = _repo_root()
+    install_script = _read(repo_root / "ops/scripts/deploy/install_equities_systemd.sh")
+    lp_contract = _read(repo_root / "fluxboard/docs/lp_contract.md")
+
+    assert "FLUXBOARD_BASE_PATH=/tokenmm/" not in install_script
+    assert "/static/fluxboard/*" in lp_contract
+    assert "`/equities`, `/lp`, and `/tokenmm` stay SPA entry routes, not asset owners." in lp_contract
+
+
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
     repo_root = _repo_root()
     shared = _read(repo_root / "ops/scripts/deploy/shared_strategy_stack.sh")
