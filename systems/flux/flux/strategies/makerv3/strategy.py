@@ -17,7 +17,6 @@ from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AF
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import decode_portfolio_inventory
 from flux.common.portfolio_inventory import encode_component
-from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.makerv3 import failures as failures_mod
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import managed_orders as managed_orders_mod
@@ -168,6 +167,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         maker_instrument_id: InstrumentId
         reference_instrument_id: InstrumentId
         order_qty: Decimal
+        portfolio_asset_id: str | None = None
         qty_unit: OrderQtyUnit = "venue"
         external_strategy_id: str = "makerv3"
         bot_on: bool | None = None
@@ -1514,7 +1514,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 qty_conversion_status = "missing_metadata"
                 qty_conversion_source = "maker instrument unavailable"
             else:
-                exposure = exposure_from_venue_qty(
+                exposure = inventory_mod.base_exposure_from_venue_qty(
                     instrument,
                     signed_qty,
                     last_px=self._inventory_base_exposure_last_px(),
@@ -1715,6 +1715,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 instrument_id=self.config.maker_instrument_id,
             )
 
+        def _portfolio_asset_id(self) -> str | None:
+            instrument = self._maker_instrument
+            if instrument is None:
+                instrument = self._instruments.get(self.config.maker_instrument_id)
+            return inventory_mod.portfolio_asset_id(
+                configured_asset_id=getattr(self.config, "portfolio_asset_id", None),
+                instrument=instrument,
+                instrument_id=self.config.maker_instrument_id,
+            )
+
         def configure_portfolio_inventory_feed(
             self,
             *,
@@ -1794,7 +1804,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                             qty_conversion_status="missing_metadata",
                             qty_conversion_source="maker instrument unavailable",
                         )
-                    exposure = exposure_from_venue_qty(
+                    exposure = inventory_mod.base_exposure_from_venue_qty(
                         instrument,
                         signed_qty,
                         last_px=self._inventory_base_exposure_last_px(),
@@ -1881,16 +1891,22 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> None:
             portfolio_id = self._portfolio_inventory_portfolio_id
             client = self._portfolio_inventory_client
-            base_currency = self._maker_base_currency_code()
-            if not portfolio_id or client is None or not base_currency:
+            portfolio_asset_id = self._portfolio_asset_id()
+            maker_base_currency = self._maker_base_currency_code()
+            if (
+                not portfolio_id
+                or client is None
+                or not portfolio_asset_id
+                or not maker_base_currency
+            ):
                 return
             ts_ms = (
                 int(self.clock.timestamp_ns() // 1_000_000)
                 if now_ms_value is None
                 else int(now_ms_value)
             )
-            local_position_summary = self._maker_local_position_summary(base_currency)
-            local_spot_qty = self._maker_local_spot_qty(base_currency)
+            local_position_summary = self._maker_local_position_summary(maker_base_currency)
+            local_spot_qty = self._maker_local_spot_qty(maker_base_currency)
             local_qty_base = inventory_mod.local_inventory_total(
                 local_position_qty=local_position_summary.base_qty,
                 local_spot_qty=local_spot_qty,
@@ -1898,7 +1914,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             component = StrategyInventoryComponent(
                 strategy_id=self._external_strategy_id,
                 portfolio_id=portfolio_id,
-                base_currency=base_currency,
+                base_currency=portfolio_asset_id,
                 local_qty_base=local_qty_base,
                 ts_ms=ts_ms,
                 local_position_qty_venue=local_position_summary.venue_qty,
@@ -1913,7 +1929,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             key = FluxRedisKeys.portfolio_inventory_component(
                 strategy_id=self._external_strategy_id,
                 portfolio_id=portfolio_id,
-                base_currency=base_currency,
+                base_currency=portfolio_asset_id,
                 namespace=self._portfolio_inventory_namespace,
                 schema_version=self._portfolio_inventory_schema_version,
             )
@@ -1926,8 +1942,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params: Mapping[str, Any] | None = None,
         ) -> dict[str, Any]:
             base_currency = self._maker_base_currency_code()
+            portfolio_asset_id = self._portfolio_asset_id()
             portfolio_global_qty_base, _portfolio_block_reason, portfolio_diagnostics = (
-                self._shared_portfolio_inventory_qty_and_block_reason(base_currency)
+                self._shared_portfolio_inventory_qty_and_block_reason(portfolio_asset_id)
             )
             use_shared_portfolio = bool(self._portfolio_inventory_portfolio_id)
             global_position_summary = inventory_mod.PositionExposureSummary(

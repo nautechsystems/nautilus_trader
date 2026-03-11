@@ -259,6 +259,95 @@ def test_build_node_resolves_strategy_via_registry(monkeypatch) -> None:
     assert isinstance(captured["strategy"].config, _CapturedStrategyConfig)
 
 
+def test_build_node_injects_makerv3_portfolio_asset_id_from_strategy_contracts(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=_CapturedStrategyConfig,
+        strategy_id="makerv3",
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv3",
+                "external_strategy_id": "aapl_tradexyz_makerv3",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {"strategy_id": "aapl_tradexyz_makerv3", "order_qty": "1000"},
+            "strategy_contracts": [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv3",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+            ],
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    assert strategy.config.portfolio_asset_id == "AAPL"
+
+
 def test_resolve_strategy_spec_uses_explicit_strategy_param_set(monkeypatch) -> None:
     registry_calls: list[str] = []
 

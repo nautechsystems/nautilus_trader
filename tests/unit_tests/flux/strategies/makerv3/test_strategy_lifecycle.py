@@ -1897,6 +1897,54 @@ def test_publish_portfolio_inventory_component_uses_maker_leg_only(
     assert component.maker_instrument_id == "PLUMEUSDT-LINEAR.BYBIT"
 
 
+def test_publish_portfolio_inventory_component_uses_portfolio_asset_id_not_xyz_base(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="AAPL",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="XYZ:AAPL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(reference_instrument_id, base_currency="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [
+            SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(25)),
+        ],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    fake_redis = _FakeRedis()
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    key = FluxRedisKeys.portfolio_inventory_component(
+        strategy_id=strategy._external_strategy_id,
+        portfolio_id="equities",
+        base_currency="AAPL",
+    )
+    component = decode_component(fake_redis.get(key))
+
+    assert component is not None
+    assert component.base_currency == "AAPL"
+
+
 def test_publish_portfolio_inventory_component_keeps_conversion_diagnostics_for_unavailable_base_exposure(
     clocked_strategy_factory,
 ) -> None:

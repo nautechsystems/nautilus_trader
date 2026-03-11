@@ -690,6 +690,46 @@ def test_publish_balances_skips_portfolio_lookup_when_no_cached_accounts(
     assert account_calls == []
 
 
+def test_publish_balances_excludes_strategy_owned_supplemental_ibkr_rows(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=lambda: [],
+        positions_open=lambda instrument_id=None: [],
+        instrument=lambda instrument_id: None,
+    )
+    strategy._supplemental_balance_snapshot = lambda: {
+        "accounts": [
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "total": "1000",
+            },
+        ],
+        "positions": [
+            {
+                "exchange": "ibkr",
+                "instrument_id": "AAPL.NASDAQ",
+                "asset": "AAPL",
+                "kind": "position",
+                "signed_qty": "25",
+            },
+        ],
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert balances_payload["accounts"] == []
+    assert balances_payload["positions"] == []
+
+
 def test_publish_balances_uses_fresh_venue_position_report_for_maker_instrument(
     clocked_strategy_factory,
 ) -> None:

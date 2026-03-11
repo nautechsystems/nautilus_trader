@@ -18,6 +18,7 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
 from flux.runners.shared.bootstrap import build_redis_database_config
@@ -376,6 +377,8 @@ def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:
 
 def _optional_strategy_config_kwargs(
     *,
+    config: dict[str, Any],
+    external_strategy_id: str,
     strategy_spec: FluxStrategySpec,
     strategy_cfg: dict[str, Any],
 ) -> dict[str, Any]:
@@ -392,6 +395,11 @@ def _optional_strategy_config_kwargs(
         "max_ibkr_spread_bps": Decimal(str(strategy_cfg.get("max_ibkr_spread_bps", "25"))),
         "ibkr_primary_exchange": str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     }
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id != external_strategy_id:
+            continue
+        candidates["portfolio_asset_id"] = contract.portfolio_asset_id
+        break
     return {
         field_name: value
         for field_name, value in candidates.items()
@@ -599,6 +607,8 @@ def build_node(
                 strategy_cfg.get("cancel_all_instrument_orders", False),
             ),
             **_optional_strategy_config_kwargs(
+                config=config,
+                external_strategy_id=external_strategy_id,
                 strategy_spec=strategy_spec,
                 strategy_cfg=strategy_cfg,
             ),
