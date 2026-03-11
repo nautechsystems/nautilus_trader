@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
@@ -66,6 +67,21 @@ def _portfolio_base_assets(config: dict[str, Any]) -> list[str]:
     return portfolio_base_assets(config, fallback=["PLUME"])
 
 
+def _strategy_ids_by_asset(config: dict[str, Any], *, allowlist: list[str]) -> dict[str, tuple[str, ...]]:
+    allowlist_set = set(allowlist)
+    grouped: dict[str, list[str]] = {}
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id not in allowlist_set:
+            continue
+        strategy_ids = grouped.setdefault(contract.portfolio_asset_id.upper(), [])
+        if contract.strategy_id not in strategy_ids:
+            strategy_ids.append(contract.strategy_id)
+    return {
+        asset_id: tuple(strategy_ids)
+        for asset_id, strategy_ids in grouped.items()
+    }
+
+
 class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
     def __init__(self, *, config: dict[str, Any], mode: str, logger: logging.Logger) -> None:
         super().__init__(
@@ -79,6 +95,7 @@ class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
             binding.account_scope_id
             for binding in self._profile_account_bindings
         ]
+        self._strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=self._strategy_ids)
 
 
 def main() -> None:

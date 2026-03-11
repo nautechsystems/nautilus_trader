@@ -16,6 +16,7 @@ from flux.runners.equities.run_portfolio import EquitiesPortfolioAggregator
 from flux.runners.equities.run_portfolio import _equities_strategy_ids
 from flux.runners.equities.run_portfolio import _portfolio_base_assets
 from flux.runners.equities.run_portfolio import _required_strategy_ids
+from flux.runners.equities.run_portfolio import _strategy_ids_by_asset
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -138,6 +139,31 @@ def test_portfolio_base_assets_dedupes_contract_bases() -> None:
             ],
         },
     ) == ["AAPL", "MSFT"]
+
+
+def test_strategy_ids_by_asset_groups_allowlisted_strategy_contracts() -> None:
+    assert _strategy_ids_by_asset(
+        {
+            "strategy_contracts": [
+                _strategy_contract(
+                    "aapl_tradexyz_makerv3",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+                _strategy_contract(
+                    "aapl_tradexyz_makerv4",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+                _strategy_contract(
+                    "msft_tradexyz_makerv3",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+            ],
+        },
+        allowlist=["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
+    ) == {
+        "AAPL": ("aapl_tradexyz_makerv3",),
+        "MSFT": ("msft_tradexyz_makerv3",),
+    }
 
 
 def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
@@ -303,6 +329,118 @@ def test_equities_portfolio_aggregator_publishes_account_projection_once_per_sco
         ),
         raw_snapshot.decode(),
     ) in fake_redis.published
+
+
+def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_v2() -> None:
+    now_ms_value = int(time.time() * 1000)
+    provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "AAPL",
+                "kind": "position",
+                "signed_qty": "25",
+                "account_scope_id": "ibkr.reference.main",
+                "source_scope": "shared_account",
+            },
+        ],
+    )
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="aapl_tradexyz_makerv3",
+                portfolio_id="equities",
+                base_currency="AAPL",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="aapl_tradexyz_makerv3",
+                    portfolio_id="equities",
+                    base_currency="AAPL",
+                    local_qty_base=10,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="msft_tradexyz_makerv3",
+                portfolio_id="equities",
+                base_currency="MSFT",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="msft_tradexyz_makerv3",
+                    portfolio_id="equities",
+                    base_currency="MSFT",
+                    local_qty_base=5,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys(strategy_id="aapl_tradexyz_makerv3").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "aapl_tradexyz_makerv3",
+                        "exchange": "hyperliquid",
+                        "asset": "USD",
+                        "account": "trading",
+                        "total": "100",
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+            FluxRedisKeys(strategy_id="msft_tradexyz_makerv3").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "msft_tradexyz_makerv3",
+                        "exchange": "hyperliquid",
+                        "asset": "USD",
+                        "account": "trading",
+                        "total": "50",
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+        },
+    )
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["AAPL", "MSFT"]
+    aggregator._strategy_ids_by_asset = {
+        "AAPL": ("aapl_tradexyz_makerv3",),
+        "MSFT": ("msft_tradexyz_makerv3",),
+    }
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["ibkr.reference.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.reference.main",
+            source_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+            provider=provider,
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert raw_snapshot is not None
+    snapshot = json.loads(raw_snapshot)
+
+    assert sorted(snapshot["inventory_by_asset"]) == ["AAPL", "MSFT"]
+    assert snapshot["inventory_by_asset"]["AAPL"]["global_qty_base"] == "10.000000"
+    assert snapshot["inventory_by_asset"]["MSFT"]["global_qty_base"] == "5.000000"
+    assert "base_currency" not in snapshot
+    assert "inventory" not in snapshot
+    assert snapshot["accounts"]["rows"][0]["account_scope_id"] == "ibkr.reference.main"
+    assert snapshot["balances"]["rows"][0]["strategy_id"] == "equities"
 
 
 def test_equities_portfolio_aggregator_run_closes_redis_on_exit_with_legacy_disconnect(

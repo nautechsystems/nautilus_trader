@@ -140,6 +140,7 @@ class StrategySetPortfolioAggregator:
         self._running = True
         self._profile_account_bindings = ()
         self.account_scope_ids: list[str] = []
+        self._strategy_ids_by_asset: dict[str, tuple[str, ...]] = {}
 
     def stop(self, *_args: Any) -> None:
         self._running = False
@@ -266,20 +267,25 @@ class StrategySetPortfolioAggregator:
             balance_rows_by_strategy=balance_rows_by_strategy,
         )
         inventory_by_asset: dict[str, dict[str, Any]] = {}
+        strategy_ids_by_asset = getattr(self, "_strategy_ids_by_asset", {})
         for base_currency in self._base_assets:
+            asset_strategy_ids = list(
+                strategy_ids_by_asset.get(base_currency.upper(), tuple(self._strategy_ids)),
+            )
+            required_strategy_ids = self._required_strategy_ids.intersection(asset_strategy_ids)
             pipeline = self._redis.pipeline(transaction=False)
-            for strategy_id in self._strategy_ids:
+            for strategy_id in asset_strategy_ids:
                 pipeline.get(self._component_key(strategy_id=strategy_id, base_currency=base_currency))
             raw_components = pipeline.execute()
             components = {
                 strategy_id: decode_component(raw)
-                for strategy_id, raw in zip(self._strategy_ids, raw_components, strict=True)
+                for strategy_id, raw in zip(asset_strategy_ids, raw_components, strict=True)
             }
             payload = aggregate_components(
                 portfolio_id=self._portfolio_id,
                 base_currency=base_currency,
                 components=components,
-                required_strategy_ids=self._required_strategy_ids,
+                required_strategy_ids=required_strategy_ids,
                 now_ms_value=now_ms_value,
                 stale_after_ms=self._stale_after_ms,
                 aggregation_mode=getattr(self, "_aggregation_mode", "strict"),
