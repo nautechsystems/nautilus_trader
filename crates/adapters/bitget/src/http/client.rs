@@ -61,6 +61,7 @@ const BITGET_V3_HISTORY_FUNDING_RATE_PATH: &str = "/api/v3/market/history-fund-r
 const BITGET_SPOT_MERGE_DEPTH_PATH: &str = "/api/v2/spot/market/merge-depth";
 const BITGET_MIX_MERGE_DEPTH_PATH: &str = "/api/v2/mix/market/merge-depth";
 const BITGET_SPOT_PLACE_ORDER_PATH: &str = "/api/v2/spot/trade/place-order";
+const BITGET_UTA_PLACE_ORDER_PATH: &str = "/api/v3/trade/place-order";
 const BITGET_SPOT_CANCEL_ORDER_PATH: &str = "/api/v2/spot/trade/cancel-order";
 const BITGET_SPOT_CANCEL_SYMBOL_ORDER_PATH: &str = "/api/v2/spot/trade/cancel-symbol-order";
 const BITGET_SPOT_BATCH_CANCEL_ORDER_PATH: &str = "/api/v2/spot/trade/batch-cancel-order";
@@ -111,6 +112,24 @@ fn parse_bitget_response<T: DeserializeOwned>(body: &[u8]) -> Result<T> {
 
     serde_json::from_value(payload.data)
         .map_err(|e| anyhow!("Failed to deserialize Bitget response data payload: {e}"))
+}
+
+fn format_http_status_error(status: u16, body: &[u8]) -> anyhow::Error {
+    let body_text = String::from_utf8_lossy(body).trim().to_string();
+    if let Ok(payload) = serde_json::from_slice::<BitgetApiResponse<Value>>(body) {
+        return anyhow!(
+            "bitget_http_error: status={} code={} msg={}",
+            status,
+            payload.code,
+            payload.msg
+        );
+    }
+
+    if body_text.is_empty() {
+        anyhow!("bitget_http_error: status={status}")
+    } else {
+        anyhow!("bitget_http_error: status={} body={}", status, body_text)
+    }
 }
 
 /// Minimal async Bitget HTTP client for public endpoints.
@@ -284,10 +303,7 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!(
-                "HTTP request failed with status {}",
-                response.status.as_u16()
-            );
+            return Err(format_http_status_error(response.status.as_u16(), &response.body));
         }
 
         parse_bitget_response::<T>(&response.body)
@@ -381,10 +397,7 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!(
-                "HTTP request failed with status {}",
-                response.status.as_u16()
-            );
+            return Err(format_http_status_error(response.status.as_u16(), &response.body));
         }
 
         parse_bitget_response::<Value>(&response.body)
@@ -408,10 +421,7 @@ impl BitgetHttpClient {
             .map_err(|e| anyhow!("HTTP request failed: {e}"))?;
 
         if !response.status.is_success() {
-            bail!(
-                "HTTP request failed with status {}",
-                response.status.as_u16()
-            );
+            return Err(format_http_status_error(response.status.as_u16(), &response.body));
         }
 
         parse_bitget_response::<Value>(&response.body)
@@ -435,6 +445,126 @@ impl BitgetHttpClient {
             .filter(|value| !value.is_empty())
             .map(ToString::to_string)
             .or_else(|| Self::margin_coin_for_product_type(product_type).map(ToString::to_string))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_submit_order_request(
+        product_type: BitgetProductType,
+        symbol: &str,
+        margin_coin: Option<&str>,
+        client_oid: Option<String>,
+        side: &str,
+        order_type: &str,
+        size: &str,
+        force: Option<String>,
+        price: Option<String>,
+        reduce_only: bool,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
+    ) -> Result<(&'static str, Value)> {
+        let is_uta = matches!(account_mode.as_deref(), Some("UTA"));
+        let normalized_margin_mode = margin_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+        if is_uta && normalized_margin_mode.as_deref().is_some_and(|value| value != "cross") {
+            bail!("unsupported_margin_mode: bitget UTA order flow requires cross/shared margin");
+        }
+
+        let normalized_position_mode = position_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase().replace('-', "_"));
+        if is_uta
+            && !matches!(product_type, BitgetProductType::Spot)
+            && normalized_position_mode
+                .as_deref()
+                .is_some_and(|value| value != "one_way")
+        {
+            bail!("unsupported_position_mode: bitget perp order flow requires one_way mode");
+        }
+
+        let mut body = serde_json::Map::new();
+        body.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        body.insert("side".to_string(), Value::String(side.to_string()));
+        body.insert("orderType".to_string(), Value::String(order_type.to_string()));
+        if let Some(client_oid) = client_oid {
+            body.insert("clientOid".to_string(), Value::String(client_oid));
+        }
+        if let Some(price) = price {
+            body.insert("price".to_string(), Value::String(price));
+        }
+
+        let path = match product_type {
+            BitgetProductType::Spot if is_uta => {
+                body.insert(
+                    "category".to_string(),
+                    Value::String(if allow_cash_borrowing {
+                        "MARGIN".to_string()
+                    } else {
+                        "SPOT".to_string()
+                    }),
+                );
+                body.insert("qty".to_string(), Value::String(size.to_string()));
+                if let Some(force) = force {
+                    body.insert("timeInForce".to_string(), Value::String(force));
+                }
+                body.insert(
+                    "reduceOnly".to_string(),
+                    Value::String(if reduce_only { "yes" } else { "no" }.to_string()),
+                );
+                BITGET_UTA_PLACE_ORDER_PATH
+            }
+            BitgetProductType::Spot => {
+                body.insert("size".to_string(), Value::String(size.to_string()));
+                if let Some(force) = force {
+                    body.insert("force".to_string(), Value::String(force));
+                }
+                BITGET_SPOT_PLACE_ORDER_PATH
+            }
+            _ => {
+                if is_uta {
+                    body.insert(
+                        "category".to_string(),
+                        Value::String(product_type.as_api_str().to_string()),
+                    );
+                    body.insert("qty".to_string(), Value::String(size.to_string()));
+                    if let Some(force) = force {
+                        body.insert("timeInForce".to_string(), Value::String(force));
+                    }
+                    body.insert(
+                        "reduceOnly".to_string(),
+                        Value::String(if reduce_only { "yes" } else { "no" }.to_string()),
+                    );
+                    BITGET_UTA_PLACE_ORDER_PATH
+                } else {
+                    body.insert("size".to_string(), Value::String(size.to_string()));
+                    body.insert(
+                        "productType".to_string(),
+                        Value::String(product_type.as_api_str().to_string()),
+                    );
+                    if let Some(force) = force {
+                        body.insert("force".to_string(), Value::String(force));
+                    }
+                    if let Some(margin_coin) =
+                        Self::effective_margin_coin(product_type, margin_coin)
+                    {
+                        body.insert("marginCoin".to_string(), Value::String(margin_coin));
+                    }
+                    body.insert(
+                        "reduceOnly".to_string(),
+                        Value::String(if reduce_only { "YES" } else { "NO" }.to_string()),
+                    );
+                    BITGET_MIX_PLACE_ORDER_PATH
+                }
+            }
+        };
+
+        Ok((path, Value::Object(body)))
     }
 
     fn product_type_from_contract_symbol(symbol: &BitgetContractSymbol) -> BitgetProductType {
@@ -686,46 +816,29 @@ impl BitgetHttpClient {
         force: Option<String>,
         price: Option<String>,
         reduce_only: bool,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> Result<Value> {
-        let mut body = serde_json::Map::new();
-        body.insert("symbol".to_string(), Value::String(symbol.to_string()));
-        body.insert("side".to_string(), Value::String(side.to_string()));
-        body.insert(
-            "orderType".to_string(),
-            Value::String(order_type.to_string()),
-        );
-        body.insert("size".to_string(), Value::String(size.to_string()));
-        if let Some(client_oid) = client_oid {
-            body.insert("clientOid".to_string(), Value::String(client_oid));
-        }
-        if let Some(force) = force {
-            body.insert("force".to_string(), Value::String(force));
-        }
-        if let Some(price) = price {
-            body.insert("price".to_string(), Value::String(price));
-        }
+        let (path, body) = Self::build_submit_order_request(
+            product_type,
+            symbol,
+            margin_coin.as_deref(),
+            client_oid,
+            side,
+            order_type,
+            size,
+            force,
+            price,
+            reduce_only,
+            account_mode,
+            allow_cash_borrowing,
+            margin_mode,
+            position_mode,
+        )?;
 
-        let path = match product_type {
-            BitgetProductType::Spot => BITGET_SPOT_PLACE_ORDER_PATH,
-            _ => {
-                body.insert(
-                    "productType".to_string(),
-                    Value::String(product_type.as_api_str().to_string()),
-                );
-                if let Some(margin_coin) =
-                    Self::effective_margin_coin(product_type, margin_coin.as_deref())
-                {
-                    body.insert("marginCoin".to_string(), Value::String(margin_coin));
-                }
-                body.insert(
-                    "reduceOnly".to_string(),
-                    Value::String(if reduce_only { "YES" } else { "NO" }.to_string()),
-                );
-                BITGET_MIX_PLACE_ORDER_PATH
-            }
-        };
-
-        self.signed_post_value(path, &Value::Object(body)).await
+        self.signed_post_value(path, &body).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1658,6 +1771,103 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_format_http_status_error_surfaces_code_and_msg() {
+        let err = format_http_status_error(
+            400,
+            br#"{"code":"22001","msg":"insufficient balance","requestTime":1,"data":null}"#,
+        );
+
+        assert_eq!(
+            err.to_string(),
+            "bitget_http_error: status=400 code=22001 msg=insufficient balance"
+        );
+    }
+
+    #[test]
+    fn test_build_submit_order_request_uses_uta_margin_category_and_qty() {
+        let (path, body) = BitgetHttpClient::build_submit_order_request(
+            BitgetProductType::Spot,
+            "BTCUSDT",
+            None,
+            Some("CID-001".to_string()),
+            "sell",
+            "limit",
+            "0.010",
+            Some("gtc".to_string()),
+            Some("100000.0".to_string()),
+            false,
+            Some("UTA".to_string()),
+            true,
+            Some("cross".to_string()),
+            Some("one_way".to_string()),
+        )
+        .expect("UTA spot request should build");
+
+        assert_eq!(path, BITGET_UTA_PLACE_ORDER_PATH);
+        assert_eq!(body["category"], Value::String("MARGIN".to_string()));
+        assert_eq!(body["qty"], Value::String("0.010".to_string()));
+        assert_eq!(body["timeInForce"], Value::String("gtc".to_string()));
+        assert_eq!(body["reduceOnly"], Value::String("no".to_string()));
+        assert!(body.get("size").is_none());
+    }
+
+    #[test]
+    fn test_build_submit_order_request_uses_uta_futures_category_without_pos_side() {
+        let (path, body) = BitgetHttpClient::build_submit_order_request(
+            BitgetProductType::UsdtFutures,
+            "BTCUSDT",
+            Some("USDT"),
+            Some("CID-002".to_string()),
+            "buy",
+            "limit",
+            "0.010",
+            Some("gtc".to_string()),
+            Some("100000.0".to_string()),
+            false,
+            Some("UTA".to_string()),
+            false,
+            Some("cross".to_string()),
+            Some("one_way".to_string()),
+        )
+        .expect("UTA futures request should build");
+
+        assert_eq!(path, BITGET_UTA_PLACE_ORDER_PATH);
+        assert_eq!(
+            body["category"],
+            Value::String(BitgetProductType::UsdtFutures.as_api_str().to_string())
+        );
+        assert_eq!(body["qty"], Value::String("0.010".to_string()));
+        assert_eq!(body["reduceOnly"], Value::String("no".to_string()));
+        assert!(body.get("posSide").is_none());
+        assert!(body.get("marginCoin").is_none());
+    }
+
+    #[test]
+    fn test_build_submit_order_request_rejects_uta_isolated_margin() {
+        let err = BitgetHttpClient::build_submit_order_request(
+            BitgetProductType::Spot,
+            "BTCUSDT",
+            None,
+            None,
+            "buy",
+            "limit",
+            "0.010",
+            Some("gtc".to_string()),
+            Some("100000.0".to_string()),
+            false,
+            Some("UTA".to_string()),
+            true,
+            Some("isolated".to_string()),
+            Some("one_way".to_string()),
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("unsupported_margin_mode: bitget UTA order flow requires cross/shared margin"));
+    }
+
     fn symbols_contain_product_type(instruments: &[InstrumentAny], raw_symbol: &str) -> bool {
         instruments.iter().any(|instrument| match instrument {
             InstrumentAny::CryptoPerpetual(perpetual) => {
@@ -1841,6 +2051,10 @@ impl BitgetHttpClient {
         force: Option<String>,
         price: Option<String>,
         reduce_only: bool,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
+        margin_mode: Option<String>,
+        position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
@@ -1861,6 +2075,10 @@ impl BitgetHttpClient {
                     force,
                     price,
                     reduce_only,
+                    account_mode,
+                    allow_cash_borrowing,
+                    margin_mode,
+                    position_mode,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;

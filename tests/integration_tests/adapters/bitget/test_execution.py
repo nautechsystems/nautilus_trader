@@ -263,6 +263,24 @@ def test_handle_ws_message_login_success_with_numeric_code_schedules_private_sub
     assert calls == [dummy._on_ws_authenticated]
 
 
+def test_format_exchange_error_reason_parses_http_status_payload() -> None:
+    err = RuntimeError(
+        'HTTP request failed with status 429 body={"code":"22004","msg":"too many requests"}',
+    )
+
+    reason = BitgetExecutionClient._format_exchange_error_reason(err)
+
+    assert reason == "bitget_http_error: status=429 code=22004 msg=too many requests"
+
+
+def test_format_exchange_error_reason_preserves_non_http_errors() -> None:
+    err = RuntimeError("boom")
+
+    reason = BitgetExecutionClient._format_exchange_error_reason(err)
+
+    assert reason == "boom"
+
+
 def test_on_ws_authenticated_subscribes_private_channels() -> None:
     infos: list[str] = []
     created: list[tuple[str, object]] = []

@@ -179,6 +179,176 @@ async def test_submit_order_passes_margin_coin_for_usdc_futures() -> None:
 
 
 @pytest.mark.asyncio
+async def test_submit_order_passes_uta_margin_fields_for_spot_borrowing() -> None:
+    calls: list[dict] = []
+    instrument = _make_spot_instrument()
+    order = SimpleNamespace(
+        is_closed=False,
+        strategy_id=StrategyId("S-001"),
+        trader_id=TraderId("T-001"),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("CID-UTA-SPOT"),
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        quantity=Quantity.from_str("0.010"),
+        time_in_force=TimeInForce.GTC,
+        has_price=True,
+        price=Price.from_str("100000.0"),
+        has_trigger_price=False,
+        trigger_price=None,
+        is_post_only=False,
+        is_reduce_only=False,
+    )
+
+    async def submit_order(**kwargs):
+        calls.append(kwargs)
+        return {"orderId": "12345", "clientOid": "CID-UTA-SPOT"}
+
+    dummy = SimpleNamespace(
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
+        _http_client=SimpleNamespace(submit_order=submit_order),
+        _cache=SimpleNamespace(
+            instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
+            add_venue_order_id=lambda *_args, **_kwargs: None,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instrument),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 111),
+        _log=SimpleNamespace(
+            warning=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+        generate_order_submitted=lambda **_kwargs: None,
+        generate_order_denied=lambda **_kwargs: None,
+        generate_order_rejected=lambda **_kwargs: None,
+    )
+
+    await BitgetExecutionClient._submit_order(dummy, SimpleNamespace(order=order, params=None))  # type: ignore[arg-type]
+
+    assert calls[0]["account_mode"] == "UTA"
+    assert calls[0]["allow_cash_borrowing"] is True
+    assert calls[0]["margin_mode"] == "cross"
+    assert calls[0]["position_mode"] == "one_way"
+
+
+@pytest.mark.asyncio
+async def test_submit_order_passes_uta_one_way_fields_for_perp() -> None:
+    calls: list[dict] = []
+    instrument = _make_futures_instrument()
+    order = SimpleNamespace(
+        is_closed=False,
+        strategy_id=StrategyId("S-001"),
+        trader_id=TraderId("T-001"),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("CID-UTA-PERP"),
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Quantity.from_str("0.010"),
+        time_in_force=TimeInForce.GTC,
+        has_price=True,
+        price=Price.from_str("100000.0"),
+        has_trigger_price=False,
+        trigger_price=None,
+        is_post_only=False,
+        is_reduce_only=False,
+    )
+
+    async def submit_order(**kwargs):
+        calls.append(kwargs)
+        return {"orderId": "12345", "clientOid": "CID-UTA-PERP"}
+
+    dummy = SimpleNamespace(
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=False,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
+        _http_client=SimpleNamespace(submit_order=submit_order),
+        _cache=SimpleNamespace(
+            instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
+            add_venue_order_id=lambda *_args, **_kwargs: None,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instrument),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 111),
+        _log=SimpleNamespace(
+            warning=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+        generate_order_submitted=lambda **_kwargs: None,
+        generate_order_denied=lambda **_kwargs: None,
+        generate_order_rejected=lambda **_kwargs: None,
+    )
+
+    await BitgetExecutionClient._submit_order(dummy, SimpleNamespace(order=order, params=None))  # type: ignore[arg-type]
+
+    assert calls[0]["account_mode"] == "UTA"
+    assert calls[0]["allow_cash_borrowing"] is False
+    assert calls[0]["margin_mode"] == "cross"
+    assert calls[0]["position_mode"] == "one_way"
+
+
+@pytest.mark.asyncio
+async def test_submit_order_failure_normalizes_bitget_http_error_reason() -> None:
+    rejected: list[dict] = []
+    instrument = _make_spot_instrument()
+    order = SimpleNamespace(
+        is_closed=False,
+        strategy_id=StrategyId("S-001"),
+        trader_id=TraderId("T-001"),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("CID-ERR"),
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Quantity.from_str("0.010"),
+        time_in_force=TimeInForce.GTC,
+        has_price=True,
+        price=Price.from_str("100000.0"),
+        has_trigger_price=False,
+        trigger_price=None,
+        is_post_only=False,
+        is_reduce_only=False,
+    )
+
+    async def submit_order(**_kwargs):
+        raise RuntimeError(
+            'HTTP request failed with status 400 body={"code":"22001","msg":"insufficient balance"}',
+        )
+
+    dummy = SimpleNamespace(
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=True,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
+        _http_client=SimpleNamespace(submit_order=submit_order),
+        _cache=SimpleNamespace(
+            instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instrument),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 111),
+        _log=SimpleNamespace(
+            warning=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+        generate_order_submitted=lambda **_kwargs: None,
+        generate_order_denied=lambda **_kwargs: None,
+        generate_order_rejected=lambda **kwargs: rejected.append(kwargs),
+    )
+
+    await BitgetExecutionClient._submit_order(dummy, SimpleNamespace(order=order, params=None))  # type: ignore[arg-type]
+
+    assert rejected[0]["reason"] == (
+        "bitget_http_error: status=400 code=22001 msg=insufficient balance"
+    )
+
+
+@pytest.mark.asyncio
 async def test_generate_order_status_report_maps_spot_payload() -> None:
     instrument = _make_spot_instrument()
     command = SimpleNamespace(

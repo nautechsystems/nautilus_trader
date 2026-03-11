@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from datetime import timedelta
 from decimal import Decimal
@@ -349,6 +350,59 @@ class BitgetExecutionClient(LiveExecutionClient):
         if value is None:
             return ""
         return str(value).strip()
+
+    @staticmethod
+    def _account_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "account_mode", None))
+        return value.upper() or None
+
+    @staticmethod
+    def _margin_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "margin_mode", None))
+        return value.lower() or None
+
+    @staticmethod
+    def _position_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "position_mode", None))
+        return value.lower().replace("-", "_").replace(" ", "_") or None
+
+    @staticmethod
+    def _allow_cash_borrowing_from_config(config: Any) -> bool:
+        return bool(getattr(config, "allow_cash_borrowing", False))
+
+    @staticmethod
+    def _format_exchange_error_reason(error: Exception) -> str:
+        reason = str(error).strip()
+        if not reason:
+            return reason
+        if reason.startswith("bitget_http_error:"):
+            return reason
+
+        match = re.match(r"^HTTP request failed with status (\d+)(?: body=(.+))?$", reason)
+        if not match:
+            return reason
+
+        status = match.group(1)
+        body = match.group(2)
+        if not body:
+            return f"bitget_http_error: status={status}"
+
+        try:
+            payload = BitgetExecutionClient._parse_response_payload(body)
+        except Exception:
+            return f"bitget_http_error: status={status}"
+
+        if isinstance(payload, dict):
+            code = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "code"))
+            msg = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "msg"))
+            parts = [f"bitget_http_error: status={status}"]
+            if code:
+                parts.append(f"code={code}")
+            if msg:
+                parts.append(f"msg={msg}")
+            return " ".join(parts)
+
+        return f"bitget_http_error: status={status}"
 
     @staticmethod
     def _is_delivery_symbol(symbol: str) -> bool:
@@ -1446,6 +1500,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                 force=BitgetExecutionClient._time_in_force_to_api_force(order),
                 price=str(order.price) if order.has_price else None,
                 reduce_only=order.is_reduce_only,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
             payload = BitgetExecutionClient._parse_response_payload(payload)
             order_id = BitgetExecutionClient._string_value(
@@ -1459,7 +1525,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=str(e),
+                reason=BitgetExecutionClient._format_exchange_error_reason(e),
                 ts_event=self._clock.timestamp_ns(),
             )
 
