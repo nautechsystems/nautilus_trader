@@ -59,7 +59,7 @@ Frontend variables (set in `fluxboard/.env`, template: `fluxboard/.env.example`)
 
 - `FLUXAPI_SCHEME`, `FLUXAPI_HOST`, `FLUXAPI_PORT`, `FLUXAPI_URL`: Vite proxy target.
 - `VITE_BACKEND_URL=/`: forces same-origin socket URL so Vite proxies `/socket.io` in dev.
-- `FLUXBOARD_BASE_PATH=/static/fluxboard/`: build base path for shared static serving while `/tokenmm/*` remains the SPA route.
+- Production builds pin Fluxboard assets to the shared `/static/fluxboard/*` prefix while `/tokenmm/*` remains the SPA route; there is no operator-set frontend base-path knob for prod.
 
 Backend runner variables (export in shell before running `flux.runners.tokenmm.run_api`; also documented as comments in `fluxboard/.env.example`):
 

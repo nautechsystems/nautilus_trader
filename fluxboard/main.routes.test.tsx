@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -143,4 +146,27 @@ describe('main route builder', () => {
     expect(viteConfigSource).toMatch(/base:\s*isDevServer\s*\?\s*'\/'\s*:\s*DEFAULT_FLUXBOARD_BASE_PATH/);
     expect(viteConfigSource).not.toContain('normalizeBasePath(process.env.FLUXBOARD_BASE_PATH');
   });
+
+  it('emits shared static asset paths in production build output', async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'fluxboard-build-'));
+
+    try {
+      execFileSync(
+        'pnpm',
+        ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'],
+        {
+          cwd: process.cwd(),
+          env: process.env,
+          stdio: 'pipe',
+        },
+      );
+
+      const html = readFileSync(path.join(outDir, 'index.html'), 'utf-8');
+      expect(html).toContain('/static/fluxboard/assets/');
+      expect(html).not.toContain('/tokenmm/assets/');
+      expect(html).not.toContain('/equities/assets/');
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  }, 15000);
 });

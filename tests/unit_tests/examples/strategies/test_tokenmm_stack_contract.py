@@ -886,7 +886,7 @@ def test_fluxboard_prod_docs_use_shared_static_build_base() -> None:
     env_example = _read(repo_root / "fluxboard/.env.example")
     runbook = _read(repo_root / "fluxboard/docs/tokenmm_runbook.md")
 
-    assert "FLUXBOARD_BASE_PATH=/static/fluxboard/" in env_example
-    assert "FLUXBOARD_BASE_PATH=/tokenmm/" not in env_example
-    assert "FLUXBOARD_BASE_PATH=/static/fluxboard/" in runbook
-    assert "FLUXBOARD_BASE_PATH=/tokenmm/" not in runbook
+    assert "FLUXBOARD_BASE_PATH=" not in env_example
+    assert "Production builds pin shared-static assets to `/static/fluxboard/*`" in env_example
+    assert "FLUXBOARD_BASE_PATH=" not in runbook
+    assert "Production builds pin Fluxboard assets to the shared `/static/fluxboard/*` prefix" in runbook
