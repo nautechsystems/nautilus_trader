@@ -60,11 +60,14 @@ This directory is the deploy root for the dedicated `equities` stack.
 Install the systemd units and seeded env files:
 
 ```bash
+uv sync --active --all-groups --all-extras
 sudo ops/scripts/deploy/install_equities_systemd.sh
 sudoedit /etc/flux/common.env
 sudo systemctl daemon-reload
 sudo systemctl start flux-equities.target
 ```
+
+Run `uv sync --active --all-groups --all-extras` in the selected checkout first so the installer can pin the checkout-local `.venv/bin/python` into every generated equities env file.
 
 Installer behavior:
 
