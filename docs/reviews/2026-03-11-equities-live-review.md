@@ -113,3 +113,44 @@ These provenance checks close the remaining gap: public `tokenmm-api` is running
 - Installed equities env files are pinned to `/.worktrees/makerv3-mono-pr` and `--mode paper`, which prevents the live host from running the intended MakerV4 checkout and runtime mode.
 - The shared-host `/equities` HTML is still coupled to a stale shared Fluxboard bundle that resolves `/tokenmm/assets/*`.
 - The equities API surface remains stale/degraded until the publisher, bridge, portfolio, and node services are restored behind the active MakerV4 contract.
+
+## Recovery Update
+
+The host was repointed and restarted from `/home/ubuntu/nautilus_trader/.worktrees/equities-live-review` on `2026-03-11`.
+
+- Repoint:
+  - Command: `sudo ops/scripts/deploy/install_equities_systemd.sh`
+  - Result: `/etc/flux/equities-{api,portfolio,bridge,node-aapl_tradexyz_makerv4}.env` now point at `/home/ubuntu/nautilus_trader/.worktrees/equities-live-review`, use the checkout-local `.venv/bin/python`, and run with `--mode live --confirm-live`.
+- Shared prerequisites:
+  - Command: `uv sync --all-groups --all-extras`
+  - Result: populated the worktree `.venv`, including `nautilus-ibapi`, which the equities node requires for IBKR.
+- Recovery order:
+  - Command: `sudo systemctl restart chainsaw@md-ibkr-publisher.service`
+  - Result: publisher reached `active (running)` at `2026-03-11 08:06 UTC`.
+  - Command: `sudo systemctl restart flux@equities-portfolio.service`
+  - Result: portfolio reached `active (running)` and logged `portfolio_id=equities mode=live`.
+  - Command: `sudo systemctl restart flux@equities-bridge.service`
+  - Result: bridge reached `active (running)` and resumed Redis topic listeners.
+  - Command: `sudo systemctl restart flux@equities-node-aapl_tradexyz_makerv4.service`
+  - First result: failed with `ModuleNotFoundError: No module named 'ibapi'`.
+  - Recovery: reran `uv sync --all-groups --all-extras` in the selected checkout and restarted the node again.
+  - Final result: node reached `active (running)` at `2026-03-11 08:33:50 UTC`, connected to IBKR on `127.0.0.1:4001`, connected to Hyperliquid, subscribed to `AAPL.NASDAQ` and `xyz:AAPL-USD-PERP.HYPERLIQUID` quotes, and logged `TradingNode: RUNNING`.
+  - Command: `sudo systemctl restart flux@equities-api.service`
+  - Result: loopback equities API stayed `active (running)` on `127.0.0.1:5024` from the repointed worktree.
+
+Post-recovery public checks:
+
+- `/equities` shell:
+  - Command: `curl -fsS http://13.213.194.42:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
+  - Result: now returns only `/static/fluxboard/assets/index-DDWq8gth.js` and `/static/fluxboard/assets/index-BCpW5E6y.css`.
+  - Conclusion: the stale `/tokenmm/assets/*` GUI regression is cleared on the public host.
+- Balances API:
+  - Command: `curl -fsS 'http://13.213.194.42:5022/api/v1/balances?profile=equities' | jq '.data | {degraded, components, rows}'`
+  - Result: `degraded = false`, `components[0].stale = false`, and the active strategy component now reports `rows = 3`.
+  - Conclusion: the balances surface is fresh again and no longer degraded.
+- Signals API:
+  - Command: `curl -fsS 'http://13.213.194.42:5022/api/v1/signals?profile=equities' | jq '.data.strategies[0]'`
+  - Result: `state.state = "bot_off"`, `params.bot_on = false`, `blocked = true`, `tradeable = false`.
+  - Result: `maker_v4.quote_snapshot.hedge_ready = true`, `maker_v4.quote_snapshot.ibkr_quote_age_ms = 949`, and the quote snapshot contains current Hyperliquid and IBKR prices.
+  - Result: top-level `quote_age_ms` / `hedge_quote_age_ms` remain `null`, while `legs.ibkr:AAPL.NASDAQ` still shows null top-level quote fields even though the MakerV4 quote snapshot is current.
+  - Conclusion: the runtime graph is healthy enough to produce fresh quote snapshots, but the canary remains intentionally bot-off and the top-level signal payload still has a freshness/leg-reporting mismatch worth treating as a Task 5 contract issue.

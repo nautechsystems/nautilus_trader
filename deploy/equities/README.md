@@ -116,6 +116,14 @@ Expected results:
 - `/equities/assets/*` on the shared public `/equities` route is also a failure for the current shared-host contract
 - Do not restart services until those env files match the intended checkout and live flags.
 
+Shared-host recovery order after a repoint:
+
+1. Run `uv sync --all-groups --all-extras` in the selected checkout.
+2. Run `sudo ops/scripts/deploy/install_equities_systemd.sh`.
+3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
+4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-node-<strategy_id>.service`, and finally `flux@equities-api.service`.
+5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected checkout `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that checkout and restart the node.
+
 Primary operator surfaces:
 
 - `http://<host>:5022/pulse`
