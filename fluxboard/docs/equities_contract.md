@@ -28,8 +28,9 @@ The canonical IBKR reference instrument ID for the enrolled AAPL contract is `AA
 
 1. The active equities deploy contract is MakerV4 via `aapl_tradexyz_makerv4`.
 2. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback-only material and must stay disabled during normal MakerV4 operations.
-3. `/equities` is a shared-host route, not an asset prefix. The HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
-4. If `/equities` emits `/tokenmm/assets/*`, treat that as live host drift from a stale/shared bundle, not as a supported contract.
+3. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
+4. The standalone equities runner in repo still serves `/equities/assets/*` when hit directly.
+5. If public `/equities` emits `/tokenmm/assets/*`, treat that as live host drift from a stale/shared bundle, not as a supported contract.
 
 ## Profile Contract
 

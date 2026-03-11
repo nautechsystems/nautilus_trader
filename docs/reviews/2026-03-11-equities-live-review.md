@@ -17,7 +17,7 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
   - HTML head included `<link rel="icon" type="image/svg+xml" href="/static/fluxboard/favicon.svg" />`
   - HTML head included `<script type="module" crossorigin src="/tokenmm/assets/index-DshLjUYS.js"></script>`
   - HTML head included `<link rel="stylesheet" crossorigin href="/tokenmm/assets/index-6uS6GK5c.css">`
-  - Result: `/equities` is serving the wrong asset-owner path. The shell is loading Fluxboard assets from `/tokenmm/assets/*` instead of `/static/fluxboard/assets/*`.
+  - Result: the public shared-host `/equities` shell is serving the wrong asset-owner path. On the `tokenmm-api` host it should load Fluxboard assets from `/static/fluxboard/assets/*`, but it is loading `/tokenmm/assets/*` instead.
 - Signals API:
   - Command: `curl -fsS 'http://13.213.194.42:5022/api/v1/signals?profile=equities' | jq '.data.strategies[0]'`
   - `id = "aapl_tradexyz_makerv4"`
@@ -63,15 +63,18 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
 
 ## Supporting Host Drift Evidence
 
-- `/etc/flux/equities-api.env` points at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml` and still uses `--mode paper`
-- `/etc/flux/equities-node-aapl_tradexyz_makerv4.env` points at the same `makerv3-mono-pr` worktree and still uses `--mode paper`
-- `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/fluxboard/dist/index.html` still references `/tokenmm/assets/index-*.js` and `/tokenmm/assets/index-*.css`
+- `sed -n '1,120p' /etc/flux/equities-api.env`
+  - Result: points at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml` and still uses `--mode paper`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
+  - Result: points at the same `makerv3-mono-pr` worktree and still uses `--mode paper`
+- `sed -n '1,20p' /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/fluxboard/dist/index.html`
+  - Result: still references `/tokenmm/assets/index-*.js` and `/tokenmm/assets/index-*.css`
 
 ## Frozen Contract Record
 
 - Current active contract: MakerV4 is the checked-in and intended live equities contract. `deploy/equities/equities.live.toml` sets `strategy_class = "maker_v4"`, `param_set = "makerv4"`, and allowlists only `aapl_tradexyz_makerv4`.
 - Current rollback path: emergency rollback is the disabled MakerV3 file `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`. Re-enabling it requires an explicit strategy-file swap plus allowlist/metadata rollback.
-- Shared-host GUI contract: `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`. `/tokenmm/assets/*` on `/equities` is deployment drift, not a supported variation.
+- Shared-host GUI contract: on the public `tokenmm-api` proxy, `/equities` must serve the neutral Fluxboard shell and resolve static assets from `/static/fluxboard/assets/*`; the standalone equities runner in repo still serves `/equities/assets/*` when reached directly. `/tokenmm/assets/*` on public `/equities` is deployment drift, not a supported variation.
 
 ## Remaining Runtime Blockers After IBKR Auth
 
