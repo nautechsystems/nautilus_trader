@@ -53,7 +53,6 @@ pub mod data;
 pub mod execution;
 pub mod filters;
 pub mod http;
-pub mod loader;
 pub mod providers;
 pub mod signing;
 pub mod websocket;

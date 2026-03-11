@@ -13,20 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Demonstrates event-based market discovery with new API surface.
+//! Demonstrates event-based market discovery using the provider and raw HTTP client.
 //!
-//! This example exercises three new features:
+//! This example exercises three features:
 //!
-//! 1. **Tags endpoint** — `GET /tags` to list available event categories and
-//!    display them for the user.
-//! 2. **Event params** — `GET /events` with full query params to discover
-//!    featured, high-liquidity events sorted by volume.
+//! 1. **Tags** — `provider.list_tags()` to list available event categories.
+//! 2. **Raw event query** — `provider.http_client().inner().get_gamma_events()`
+//!    to inspect enriched `GammaEvent` fields (liquidity, volume, category).
 //! 3. **`EventParamsFilter`** — Provider integration that fetches instruments
 //!    from events matching the query params.
-//!
-//! The raw `GammaEvent` objects contain enriched fields (liquidity, volume,
-//! volume_24hr, category, featured, neg_risk) that are displayed alongside
-//! the parsed instruments.
 //!
 //! # Usage
 //!
@@ -39,7 +34,6 @@ use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
     filters::EventParamsFilter,
     http::{gamma::PolymarketGammaHttpClient, query::GetGammaEventsParams},
-    loader::PolymarketDataLoader,
     providers::PolymarketInstrumentProvider,
 };
 
@@ -48,12 +42,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
-    let loader = PolymarketDataLoader::new(http_client.clone());
+    let provider = PolymarketInstrumentProvider::new(http_client.clone());
 
     // ---- Step 1: List available tags ----
     println!("=== Available Tags ===\n");
 
-    let tags = loader.list_tags().await?;
+    let tags = provider.list_tags().await?;
     for (i, tag) in tags.iter().enumerate() {
         println!(
             "  {:>2}. {} (slug: {}, id: {})",
@@ -65,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("\nTotal: {} tags\n", tags.len());
 
-    // ---- Step 2: Query events with full params ----
+    // ---- Step 2: Query events with full params via raw HTTP client ----
     println!("=== Featured High-Volume Events ===\n");
 
     let event_params = GetGammaEventsParams {
@@ -77,7 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let events = loader.query_events(event_params.clone()).await?;
+    let events = provider
+        .http_client()
+        .inner()
+        .get_gamma_events(event_params)
+        .await?;
     println!(
         "Found {} events (active, sorted by volume desc):\n",
         events.len()

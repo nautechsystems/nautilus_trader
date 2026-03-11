@@ -27,7 +27,9 @@ use nautilus_model::{
 use ustr::Ustr;
 
 pub use crate::filters::*;
-use crate::http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams};
+use crate::http::{
+    gamma::PolymarketGammaHttpClient, models::GammaTag, query::GetGammaMarketsParams,
+};
 
 /// Provides Polymarket instruments via the Gamma API.
 ///
@@ -141,6 +143,11 @@ impl PolymarketInstrumentProvider {
     #[must_use]
     pub fn http_client(&self) -> &PolymarketGammaHttpClient {
         &self.http_client
+    }
+
+    /// Fetches available tags from the Gamma API.
+    pub async fn list_tags(&self) -> anyhow::Result<Vec<GammaTag>> {
+        self.http_client.request_tags().await
     }
 
     /// Adds instruments to the store and token index.
