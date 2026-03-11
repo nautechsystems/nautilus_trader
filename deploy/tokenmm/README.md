@@ -28,6 +28,7 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 
 - Supported production lifecycle: install with systemd, then manage jobs from Pulse.
 - `ops/scripts/deploy/tokenmm_stack.sh` is local smoke only and refuses live deploys.
+- Production deploys always resolve to the canonical checkout at `~/nautilus-trader`, never the calling worktree.
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
@@ -149,6 +150,7 @@ consume the portfolio snapshot owned by `run_portfolio`.
 ## Production control plane
 
 ```bash
+cd ~/nautilus-trader
 make build
 pnpm --dir fluxboard install --frozen-lockfile
 pnpm --dir fluxboard build
@@ -164,8 +166,10 @@ sudo systemctl start flux-tokenmm.target
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
-- `install_tokenmm_systemd.sh` pins each TokenMM env file to the checkout used during install by writing
-  `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- `install_tokenmm_systemd.sh` pins each TokenMM env file to `~/nautilus-trader` by writing
+  `WORKDIR`, `PYTHONPATH`, and the canonical `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- Re-running the installer from a worktree does not change the live deploy root; production keeps launching from
+  `~/nautilus-trader`.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.

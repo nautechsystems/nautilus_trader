@@ -151,6 +151,7 @@ Expected behavior:
 1. Install the host artifacts:
 
 ```bash
+cd ~/nautilus-trader
 sudo ops/scripts/deploy/install_tokenmm_systemd.sh
 ```
 
@@ -172,8 +173,9 @@ The installer seeds:
 - `/etc/flux/tokenmm-node-*.env`
 - `/etc/sudoers.d/flux-pulse`
 
-Each TokenMM env file also pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`, so a TokenMM rollout
-does not require repointing the shared `/etc/flux/common.env`.
+Each TokenMM env file also pins `WORKDIR`, `PYTHONPATH`, and the canonical `.venv/bin/python` under
+`~/nautilus-trader`, so a TokenMM rollout does not require repointing the shared `/etc/flux/common.env`.
+Re-running the installer from a worktree does not change the production deploy root.
 
 3. Bootstrap the deployment if this host is coming up cold:
 
