@@ -5453,6 +5453,192 @@ class TestHedgeModeReconciliation:
         ]
         assert cleanup_orders
 
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_closes_stale_external_position_with_cached_venue_order_lineage_bybit_shape(
+        self,
+    ):
+        """
+        Regression for the Bybit startup mismatch captured on 2026-03-11.
+
+        Evidence pinned the live failure to:
+        - report.signed_decimal_qty=71875
+        - position_signed_decimal_qty=84875
+        - EXTERNAL-linked reconciliation state
+        - missing cached order warning
+        - zero FillReports during the restart window
+
+        The captured evidence did not prove whether a non-EXTERNAL owned position was
+        present. This test models the smallest owned-plus-stale split that reproduces
+        the fail-closed branch while keeping the restart window report-free.
+        """
+        # Arrange
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-BYBIT-OWNED"),
+            last_qty=Quantity.from_int(71_875),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        stale_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("BYBIT-EXTERNAL-001"),
+            tags=["VENUE"],
+        )
+        stale_external_fill = TestEventStubs.order_filled(
+            stale_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(13_000),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BYBIT-EXTERNAL-1"),
+        )
+        stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+        self.cache.add_order(stale_external_order, position_id=stale_external_position.id)
+        self.cache.add_position(stale_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(71_875),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.client.add_position_status_report(report)
+
+        # Act
+        result = await self.exec_engine.reconcile_execution_state()
+
+        # Assert
+        assert result is True
+        assert self.cache.is_position_open(stale_external_position.id) is False
+
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(13_000)
+        ]
+        assert cleanup_orders
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_closes_stale_external_position_with_multiple_cached_venue_orders_okx_shape(
+        self,
+    ):
+        """
+        Regression for the OKX startup mismatch captured on 2026-03-11.
+
+        Evidence pinned the live failure to:
+        - report.signed_decimal_qty=2756
+        - position_signed_decimal_qty=5112
+        - EXTERNAL reconciliation state
+        - three missing cached order warnings
+        - fresh fills and order status activity during the same restart window
+
+        This unit case isolates the cache-math shape by modeling a stale EXTERNAL
+        position whose linked venue-order lineage is still present in cache.
+        """
+        # Arrange
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-OKX-OWNED"),
+            last_qty=Quantity.from_int(2_756),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OKX-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        stale_external_order_ids = [
+            ClientOrderId("OKX-EXTERNAL-001"),
+            ClientOrderId("OKX-EXTERNAL-002"),
+            ClientOrderId("OKX-EXTERNAL-003"),
+        ]
+        stale_external_position_id = PositionId("AUDUSD.SIM-EXTERNAL")
+        for client_order_id in stale_external_order_ids:
+            stale_external_order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("EXTERNAL"),
+                client_order_id=client_order_id,
+                tags=["VENUE"],
+            )
+            self.cache.add_order(stale_external_order, position_id=stale_external_position_id)
+
+        stale_external_fill = TestEventStubs.order_filled(
+            TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("EXTERNAL"),
+                client_order_id=ClientOrderId("OKX-EXTERNAL-POS"),
+                tags=["VENUE"],
+            ),
+            instrument=AUDUSD_SIM,
+            position_id=stale_external_position_id,
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OKX-EXTERNAL-1"),
+        )
+        stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+        self.cache.add_position(stale_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_756),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.client.add_position_status_report(report)
+
+        # Act
+        result = await self.exec_engine.reconcile_execution_state()
+
+        # Assert
+        assert result is True
+        assert self.cache.is_position_open(stale_external_position.id) is False
+
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(2_356)
+        ]
+        assert cleanup_orders
+
     def test_check_position_discrepancy_ignores_stale_external_position_without_orders(
         self,
     ):

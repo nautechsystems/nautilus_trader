@@ -35,12 +35,15 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
@@ -48,6 +51,7 @@ from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -2333,6 +2337,114 @@ async def test_reconciliation_indexes_venue_order_id_for_external_orders(
     external_order = cache.order(external_client_id)
     assert external_order is not None
     assert cache.client_order_id(venue_order_id) == external_client_id
+
+
+@pytest.mark.asyncio
+async def test_startup_reconciliation_cleans_stale_external_position_after_claimed_external_fill_okx_shape(
+    exec_engine,
+    exec_client,
+    cache,
+    clock,
+    account_id,
+    strategy,
+):
+    """
+    Regression for the OKX restart race captured on 2026-03-11.
+
+    The live evidence showed fresh FillReports, OrderStatusReports, OrderFilled, and
+    PositionChanged activity during the same startup window as the netting mismatch.
+    This test reduces that to one claimed external order/fill arriving before the
+    final position report while a stale EXTERNAL position still exists in cache.
+    """
+    # Arrange
+    exec_engine.generate_missing_orders = False
+    exec_engine._external_order_claims[AUDUSD_SIM.id] = strategy.id
+
+    stale_external_position_id = PositionId("AUDUSD.SIM-EXTERNAL")
+    stale_external_order = TestExecStubs.limit_order(
+        instrument=AUDUSD_SIM,
+        strategy_id=StrategyId("EXTERNAL"),
+        client_order_id=ClientOrderId("OKX-STALE-EXTERNAL-001"),
+        tags=["VENUE"],
+    )
+    stale_external_fill = TestEventStubs.order_filled(
+        stale_external_order,
+        instrument=AUDUSD_SIM,
+        position_id=stale_external_position_id,
+        strategy_id=StrategyId("EXTERNAL"),
+        last_qty=Quantity.from_int(2_356),
+        last_px=Price.from_str("1.00000"),
+        trade_id=TradeId("OKX-STALE-EXTERNAL-1"),
+    )
+    stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+    cache.add_order(stale_external_order, position_id=stale_external_position_id)
+    cache.add_position(stale_external_position, OmsType.NETTING)
+
+    venue_order_id = VenueOrderId("V-OKX-CLAIMED-001")
+    claimed_client_order_id = ClientOrderId("OKX-CLAIMED-001")
+    exec_client.add_order_status_report(
+        OrderStatusReport(
+            account_id=account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=claimed_client_order_id,
+            venue_order_id=venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.IOC,
+            order_status=OrderStatus.FILLED,
+            price=None,
+            quantity=Quantity.from_int(2_756),
+            filled_qty=Quantity.from_int(2_756),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=clock.timestamp_ns(),
+            ts_last=clock.timestamp_ns(),
+            ts_init=clock.timestamp_ns(),
+        ),
+    )
+    exec_client.add_fill_reports(
+        venue_order_id,
+        [
+            FillReport(
+                account_id=account_id,
+                instrument_id=AUDUSD_SIM.id,
+                client_order_id=claimed_client_order_id,
+                venue_order_id=venue_order_id,
+                trade_id=TradeId("OKX-CLAIMED-TRADE-1"),
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_int(2_756),
+                last_px=Price.from_str("1.00000"),
+                commission=Money(0, USD),
+                liquidity_side=LiquiditySide.TAKER,
+                report_id=UUID4(),
+                ts_event=clock.timestamp_ns(),
+                ts_init=clock.timestamp_ns(),
+            ),
+        ],
+    )
+    exec_client.add_position_status_report(
+        PositionStatusReport(
+            account_id=account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_756),
+            report_id=UUID4(),
+            ts_last=clock.timestamp_ns(),
+            ts_init=clock.timestamp_ns(),
+        ),
+    )
+
+    # Act
+    result = await exec_engine.reconcile_execution_state()
+
+    # Assert
+    assert result is True
+    assert cache.is_position_open(stale_external_position.id) is False
+
+    open_positions = cache.positions_open(instrument_id=AUDUSD_SIM.id)
+    assert len(open_positions) == 1
+    assert open_positions[0].strategy_id == strategy.id
+    assert open_positions[0].quantity == Quantity.from_int(2_756)
 
 
 @pytest.mark.asyncio
