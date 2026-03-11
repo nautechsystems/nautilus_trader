@@ -33,12 +33,12 @@ DEX), traditional markets (FX, equities, futures, options), and betting exchange
 - **Backtesting**: Multiple venues, instruments, and strategies simultaneously using historical quote tick, trade tick, bar, order book, and custom data with nanosecond resolution.
 - **Live**: Identical strategy implementations between research and live deployment.
 - **Multi-venue**: Run market-making and cross-venue strategies across multiple venues simultaneously.
-- **AI Training**: Engine fast enough to train AI trading agents (RL/ES).
+- **AI training**: Engine fast enough to train AI trading agents (RL/ES).
 
 ## Why NautilusTrader?
 
-Trading strategy research is often conducted in Python using vectorized approaches, while
-production trading systems are implemented separately using event-driven architectures in
+Trading strategy research typically happens in Python using vectorized approaches, while
+production trading systems are built separately using event-driven architectures in
 compiled languages.
 
 NautilusTrader removes this separation.
@@ -59,9 +59,9 @@ There are three main use cases for this software package:
 - Simulate trading systems with real-time data and virtual execution (`sandbox`).
 - Deploy trading systems live on real or paper accounts (`live`).
 
-The project's codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
-the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
-be built using the sandbox adapter.
+The codebase provides a framework for building the software layer of systems that achieve the above.
+The default `backtest` and `live` system implementations live in their respectively named subpackages.
+A `sandbox` environment can be built using the sandbox adapter.
 
 :::note
 
@@ -73,8 +73,9 @@ include the application and infrastructure layers.
 
 ## Distributed
 
-The platform is designed to be easily integrated into a larger distributed system.
-To support this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
+The platform integrates into larger distributed systems.
+Nearly all configuration and domain objects serialize using JSON, MessagePack, or Apache Arrow
+(Feather) for communication over the network.
 
 ## Common core
 
@@ -83,14 +84,16 @@ User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed cons
 
 ## Backtesting
 
-Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
-a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the data through the system with nanosecond resolution.
+Feed data to a `BacktestEngine` either directly or through a higher-level `BacktestNode` and
+`ParquetDataCatalog`, then run the data through the system with nanosecond resolution.
 
 ## Live trading
 
-A `TradingNode` can ingest data and events from multiple data and execution clients, supporting both demo/paper trading accounts and real accounts. High performance can be achieved by running
-asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html),
-with the potential to further boost performance by using the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
+A `TradingNode` ingests data and events from multiple data and execution clients, supporting both
+demo/paper trading accounts and real accounts. Running asynchronously on a single
+[event loop](https://docs.python.org/3/library/asyncio-eventloop.html) provides high performance,
+with the option to use the [uvloop](https://github.com/MagicStack/uvloop) implementation
+(available for Linux and macOS) for additional throughput.
 
 ## Domain model
 
@@ -100,7 +103,7 @@ which are used to aggregate multiple events to determine state.
 
 ## Timestamps
 
-All timestamps within the platform are recorded at nanosecond precision in UTC.
+All timestamps use nanosecond precision in UTC.
 
 Timestamp strings follow ISO 8601 (RFC 3339) format with either 9 digits (nanoseconds) or 3 digits (milliseconds) of decimal precision,
 (but mostly nanoseconds) always maintaining all digits including trailing zeros.
@@ -196,7 +199,7 @@ Currently implemented aggregations:
 Aggregations listed above that are not repeated in the implemented list are planned but not yet available.
 
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
-This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
+This allows alternative bars to be aggregated for live trading.
 
 ## Account types
 

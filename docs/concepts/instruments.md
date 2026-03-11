@@ -257,7 +257,7 @@ published limits *can* result in the exchange rejecting orders.
 
 Margin calculations are handled by the `MarginAccount` class. This section explains how margins work and introduces key concepts you need to know.
 
-### When margins apply?
+### When do margins apply?
 
 Each exchange (e.g., CME or Binance) operates with a specific account type that determines whether margin calculations are applicable.
 When setting up an exchange venue, you'll specify one of these account types:
@@ -530,9 +530,8 @@ self.strategy.submit_order(order)
 
 ### Error handling
 
-Considerable effort has been made to validate inputs, including the derivation formula for
-synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
-undefined behavior.
+The platform validates inputs including the derivation formula for synthetic instruments.
+Invalid or erroneous inputs may still lead to undefined behavior.
 
 See the [`SyntheticInstrument` API Reference](/docs/python-api-latest/model/instruments.html#nautilus_trader.model.instruments.synthetic.SyntheticInstrument) for input requirements and potential exceptions.
 

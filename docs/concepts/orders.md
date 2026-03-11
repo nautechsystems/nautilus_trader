@@ -1,12 +1,8 @@
 # Orders
 
-This guide provides further details about the available order types for the platform, along with
-the execution instructions supported for each.
-
-Orders are one of the fundamental building blocks of any algorithmic trading strategy.
-NautilusTrader supports a broad set of order types and execution instructions, from standard to advanced,
-exposing as much of a trading venue's functionality as possible. This enables traders to define instructions
-and contingencies for order execution and management, enabling the creation of virtually any trading strategy.
+NautilusTrader supports a broad set of order types and execution instructions, exposing as much
+of a trading venue's functionality as possible. Traders can define instructions and contingencies
+for order execution and management across any trading strategy.
 
 ## Overview
 
@@ -669,12 +665,10 @@ more order margin.
 
 ### Introduction
 
-Before diving into the technical details, it's important to understand the fundamental purpose of emulated orders
-in NautilusTrader. At its core, emulation allows you to use certain order types even when your trading venue
-doesn't natively support them.
+Emulation lets you use order types even when your trading venue does not natively support them.
 
-This works by having Nautilus locally mimic the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)
-locally, while using only simple `MARKET` and `LIMIT` orders for actual execution on the venue.
+Nautilus locally mimics the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)
+while using only `MARKET` and `LIMIT` orders for actual execution on the venue.
 
 When you create an emulated order, Nautilus continuously tracks a specific type of market price (specified by the
 `emulation_trigger` parameter) and based on the order type and conditions you've set, will automatically submit
@@ -688,7 +682,7 @@ By default, it uses bid and ask prices (quotes), which is why you'll often see `
 in examples (this is equivalent to using `TriggerType.BID_ASK`). However, Nautilus supports various other price types,
 that can guide the emulation process.
 
-### Submitting order for emulation
+### Submitting an order for emulation
 
 The only requirement to emulate an order is to pass a `TriggerType` to the `emulation_trigger`
 parameter of an `Order` constructor, or `OrderFactory` creation method. The following
@@ -720,7 +714,7 @@ Here are all the available values you can set into `emulation_trigger` parameter
 | `MARK_PRICE`      | Uses the mark price (common in derivatives markets) for triggering.                                  | Particularly useful for futures and perpetual contracts.                                                     |
 | `INDEX_PRICE`     | Uses an underlying index price for triggering.                                                       | When trading derivatives that track an index.                                                                |
 
-### Technical implementation
+### Technical details
 
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for
@@ -731,7 +725,7 @@ and use a common `OrderEmulator` component.
 There is no limitation on the number of emulated orders you can have per running instance.
 :::
 
-### Life cycle
+### Lifecycle
 
 An emulated order will progress through the following stages:
 
@@ -814,16 +808,15 @@ If either of these return `False`, then the order has been *released* from the
 `OrderEmulator`, and so is no longer considered an emulated order (or was never an emulated order).
 
 :::warning
-It's not advised to hold a local reference to an emulated order, as the order
-object will be transformed when/if the emulated order is *released*. You should rely
-on the `Cache` which is made for the job.
+Do not hold a local reference to an emulated order. The order object transforms
+when the emulated order is *released*. Use the `Cache` instead.
 :::
 
 ### Persistence and recovery
 
 If a running system either crashes or shuts down with active emulated orders, then
 they will be reloaded inside the `OrderEmulator` from any configured cache database.
-This ensures order state persistence across system restarts and recoveries.
+This preserves order state across system restarts and recoveries.
 
 ### Best practices
 

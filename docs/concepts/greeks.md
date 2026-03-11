@@ -1,6 +1,6 @@
 # Greeks
 
-Nautilus provides two complementary paths for working with option Greeks
+Nautilus provides two paths for working with option Greeks
 (sensitivities of option prices to changes in market variables):
 
 1. **Venue-provided Greeks (Rust/PyO3)** -- real-time Greeks streamed from venues
@@ -10,10 +10,10 @@ Nautilus provides two complementary paths for working with option Greeks
    computes Black-Scholes Greeks from cached market data, with support for portfolio
    aggregation, shock scenarios, and beta weighting.
 
-Both paths can be used independently or together. Venue-provided Greeks arrive
+Either path works independently or together. Venue-provided Greeks arrive
 through the data subscription system and require no local computation. The local
-calculator is useful for venues that do not stream Greeks, for backtesting, or when
-you need custom adjustments (shocks, beta weighting, percent Greeks).
+calculator covers venues that do not stream Greeks, backtesting, and custom
+adjustments (shocks, beta weighting, percent Greeks).
 
 ## Venue-provided Greeks (Rust/PyO3)
 
@@ -295,7 +295,7 @@ rate = curve(0.75)  # quadratic interpolation
 
 ## Greek definitions
 
-For reference, the Greeks computed by Nautilus:
+For reference, the Greeks that Nautilus computes:
 
 | Greek      | Symbol | Definition                                                                    |
 |------------|--------|-------------------------------------------------------------------------------|

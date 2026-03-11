@@ -2,7 +2,6 @@
 
 The Portfolio is the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
-Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
 
 ## Currency conversion
 
@@ -96,7 +95,7 @@ If `use_mark_xrates` is enabled in the portfolio configuration, `MARK` prices re
 ## Portfolio statistics
 
 There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/analysis/src/statistics)
-which are used to analyse a trading portfolios performance for both backtests and live trading.
+which analyse a trading portfolio's performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.
 
@@ -105,7 +104,7 @@ The statistics are generally categorized as follows.
 - Positions based statistics
 - Orders based statistics
 
-It's also possible to call a traders `PortfolioAnalyzer` and calculate statistics at any arbitrary
+You can also call a trader's `PortfolioAnalyzer` and calculate statistics at any arbitrary
 time, including *during* a backtest, or live trading session.
 
 ## Custom statistics
@@ -156,8 +155,8 @@ Return `None` for unknown/incalculable values, or a reasonable default like `0.0
 
 ## Backtest analysis
 
-Following a backtest run, a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
-statistic in turn. Any output is then displayed in the tear sheet under the `Portfolio Performance` heading, grouped as:
+Following a backtest run, the engine passes realized PnLs, returns, positions, and orders data to each registered
+statistic. Any output is then displayed in the tear sheet under the `Portfolio Performance` heading, grouped as:
 
 - Realized PnL statistics (per currency)
 - Returns statistics (for the entire portfolio)

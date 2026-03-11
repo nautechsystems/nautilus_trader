@@ -273,7 +273,7 @@ Module path filtering is only available via the `NAUTILUS_LOG` environment varia
 If `log_components_only=True` (or `log_components_only` is present in the spec string) and `log_component_levels` is empty, no log messages will be emitted to stdout/stderr or files. Add at least one component filter or disable components-only logging.
 :::
 
-### Log Colors
+### Log colors
 
 ANSI color codes improve log readability in terminals.
 In environments that do not support ANSI color rendering (such as some cloud environments or text editors),
@@ -309,7 +309,7 @@ Only one logging subsystem can be initialized per process with an `init_logging`
 The `LogGuard` ensures that the logging subsystem remains active and operational throughout the lifecycle of a process.
 It prevents premature shutdown of the logging subsystem when running multiple engines in the same process.
 
-### Reference Counting Implementation
+### Reference counting implementation
 
 The logging system uses reference counting to track active `LogGuard` instances:
 

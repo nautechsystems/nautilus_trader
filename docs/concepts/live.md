@@ -13,7 +13,7 @@ operational risks make them unsuitable:
 - Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop.
 - Workarounds like `nest_asyncio` are not production-grade.
 - Cells can run out of order, kernels can crash, and state can disappear.
-- Notebooks lack the logging, monitoring, and graceful shutdown that production trading demands.
+- Notebooks lack the logging, monitoring, and graceful shutdown needed for production trading.
 
 Use Jupyter for backtesting, analysis, and experimentation. For live trading, run nodes
 as standalone Python scripts or services.
@@ -162,7 +162,7 @@ venue reconciliation. For full details see the
 
 #### Reconciliation
 
-Keeps system state consistent with the venue by recovering missed order and position events.
+Recovers missed order and position events to keep system state consistent with the venue.
 
 | Setting                         | Default | Description                                                                     |
 |---------------------------------|---------|---------------------------------------------------------------------------------|
@@ -195,7 +195,7 @@ When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders a
 
 #### Continuous reconciliation
 
-A background loop runs *after* startup reconciliation completes. It:
+A background loop starts after startup reconciliation completes. It:
 
 - Monitors in-flight orders for delays exceeding a configured threshold.
 - Reconciles open orders with the venue at configurable intervals.
@@ -250,7 +250,7 @@ When retries are exhausted, the engine resolves the order as follows:
 The inflight loop and open-order loop share a single retry counter
 (`_recon_check_retries`), bounded by `inflight_check_retries` and
 `open_check_missing_retries` respectively. The stricter limit wins,
-and duplicate venue queries for the same order state are avoided.
+and avoids duplicate venue queries for the same order state.
 
 When the open-order loop exhausts retries, the engine issues one targeted
 `GenerateOrderStatusReport` probe before applying a terminal state. If the
@@ -260,8 +260,8 @@ venue returns the order, reconciliation proceeds and the retry counter resets.
 cycle via `max_single_order_queries_per_cycle` (default: 10). Remaining
 orders are deferred to the next cycle. A configurable delay
 (`single_order_query_delay_ms`, default: 100ms) spaces out consecutive
-queries to avoid rate limits. This lets the system handle bulk query failures
-across hundreds of orders without overwhelming the venue API.
+queries to avoid rate limits. This handles bulk query failures across hundreds of orders
+without overwhelming the venue API.
 
 Orders older than `open_check_lookback_mins` rely on this targeted probe.
 Keep the lookback generous for venues with short history windows. Increase
@@ -482,7 +482,7 @@ The system reconciles its state against these reports, which represent external 
   - Deduplicates order reports within the batch and logs warnings.
   - Logs duplicate trade IDs as warnings for investigation.
 - **Order reconciliation**:
-  - Generates and applies events to update orders from cached state to current state.
+  - Generates and applies events to move orders from cached state to current state.
   - Infers `OrderFilled` events for missing trade reports.
   - Generates external order events for unrecognized client order IDs or reports missing a client order ID.
   - Verifies fill report data consistency with tolerance-based price and commission comparisons.

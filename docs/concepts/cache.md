@@ -1,9 +1,9 @@
 # Cache
 
-The `Cache` is a central in-memory database that automatically stores and manages all trading-related data.
-Think of it as your trading system’s memory – storing everything from market data to order history to custom calculations.
+The `Cache` is a central in-memory database that stores and manages all trading-related data,
+from market data to order history to custom calculations.
 
-The Cache serves multiple key purposes:
+The Cache serves multiple purposes:
 
 1. **Stores market data**:
    - Stores recent market history (e.g., order books, quotes, trades, bars).
