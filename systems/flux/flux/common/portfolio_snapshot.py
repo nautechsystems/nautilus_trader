@@ -94,6 +94,22 @@ def build_portfolio_balance_rows(
     )
 
 
+def _apply_single_asset_legacy_aliases(
+    *,
+    payload: dict[str, Any],
+    normalized_inventory: Mapping[str, Mapping[str, Any]],
+) -> None:
+    if len(normalized_inventory) != 1:
+        payload.pop("base_currency", None)
+        payload.pop("inventory", None)
+        payload.pop("components", None)
+        return
+    base_currency, inventory = next(iter(normalized_inventory.items()))
+    payload["base_currency"] = base_currency
+    payload["inventory"] = inventory
+    payload["components"] = list(inventory.get("components") or [])
+
+
 def build_portfolio_snapshot_v2(
     *,
     portfolio_id: str,
@@ -117,11 +133,10 @@ def build_portfolio_snapshot_v2(
         },
         "server_ts_ms": int(now_ms_value),
     }
-    if len(normalized_inventory) == 1:
-        base_currency, inventory = next(iter(normalized_inventory.items()))
-        payload["base_currency"] = base_currency
-        payload["inventory"] = inventory
-        payload["components"] = list(inventory.get("components") or [])
+    _apply_single_asset_legacy_aliases(
+        payload=payload,
+        normalized_inventory=normalized_inventory,
+    )
     return payload
 
 
@@ -175,4 +190,13 @@ def decode_portfolio_snapshot(raw: Any) -> dict[str, Any] | None:
             return None
     if not isinstance(raw, Mapping):
         return None
-    return dict(raw)
+    payload = dict(raw)
+    raw_inventory = payload.get("inventory_by_asset")
+    if isinstance(raw_inventory, Mapping):
+        normalized_inventory = normalize_inventory_by_asset(raw_inventory)
+        payload["inventory_by_asset"] = normalized_inventory
+        _apply_single_asset_legacy_aliases(
+            payload=payload,
+            normalized_inventory=normalized_inventory,
+        )
+    return payload

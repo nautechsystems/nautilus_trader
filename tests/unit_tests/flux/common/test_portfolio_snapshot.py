@@ -18,7 +18,7 @@ def test_build_portfolio_snapshot_partial_mode_includes_inventory_and_merged_bal
                 strategy_id="strategy_a",
                 portfolio_id="tokenmm",
                 base_currency="PLUME",
-                local_qty_base=Decimal("10"),
+                local_qty_base=Decimal(10),
                 ts_ms=1_000,
                 stale_after_ms=2_000,
                 state="running",
@@ -205,7 +205,7 @@ def test_portfolio_snapshot_round_trip_preserves_strict_inventory_metadata() -> 
                     strategy_id="strategy_a",
                     portfolio_id="tokenmm",
                     base_currency="PLUME",
-                    local_qty_base=Decimal("10"),
+                    local_qty_base=Decimal(10),
                     ts_ms=1_000,
                     stale_after_ms=2_000,
                     state="running",
@@ -346,3 +346,94 @@ def test_build_portfolio_snapshot_v2_keeps_inventory_for_multiple_assets() -> No
 
     assert snapshot["inventory_by_asset"]["AAPL"]["global_qty_base"] == "10"
     assert snapshot["inventory_by_asset"]["MSFT"]["global_qty_base"] == "5"
+
+
+def test_build_portfolio_snapshot_v2_keeps_single_asset_legacy_aliases() -> None:
+    snapshot = build_portfolio_snapshot_v2(
+        portfolio_id="tokenmm",
+        inventory_by_asset={
+            " plume ": {
+                "components": [
+                    {
+                        "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    },
+                ],
+                "global_qty_base": "10",
+            },
+        },
+        balance_rows=[],
+        account_rows=[],
+        now_ms_value=1_700_000_000_000,
+    )
+
+    assert snapshot["inventory_by_asset"] == {
+        "PLUME": {
+            "base_currency": "PLUME",
+            "components": [{"strategy_id": "plumeusdt_bybit_perp_makerv3"}],
+            "global_qty_base": "10",
+        },
+    }
+    assert snapshot["base_currency"] == "PLUME"
+    assert snapshot["inventory"] == snapshot["inventory_by_asset"]["PLUME"]
+    assert snapshot["components"] == snapshot["inventory"]["components"]
+
+
+def test_decode_portfolio_snapshot_normalizes_inventory_by_asset_and_restores_single_asset_aliases() -> None:
+    decoded = decode_portfolio_snapshot(
+        {
+            "portfolio_id": "tokenmm",
+            "inventory_by_asset": {
+                " plume ": {
+                    "base_currency": " plume ",
+                    "components": [
+                        {
+                            "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                        },
+                    ],
+                    "global_qty_base": "10",
+                },
+            },
+            "balances": {"rows": [], "totals": {"mv_raw": 0.0, "mv_display": "$0.00"}},
+            "accounts": {"rows": []},
+            "server_ts_ms": 1_700_000_000_000,
+        },
+    )
+
+    assert decoded is not None
+    assert decoded["inventory_by_asset"] == {
+        "PLUME": {
+            "base_currency": "PLUME",
+            "components": [{"strategy_id": "plumeusdt_bybit_perp_makerv3"}],
+            "global_qty_base": "10",
+        },
+    }
+    assert decoded["base_currency"] == "PLUME"
+    assert decoded["inventory"] == decoded["inventory_by_asset"]["PLUME"]
+    assert decoded["components"] == decoded["inventory"]["components"]
+
+
+def test_decode_portfolio_snapshot_drops_legacy_single_asset_aliases_for_multi_asset_payload() -> None:
+    decoded = decode_portfolio_snapshot(
+        {
+            "portfolio_id": "equities",
+            "inventory_by_asset": {
+                "aapl": {"global_qty_base": "10"},
+                "msft": {"global_qty_base": "5"},
+            },
+            "base_currency": "AAPL",
+            "inventory": {"global_qty_base": "10"},
+            "components": [{"strategy_id": "aapl_tradexyz_makerv3"}],
+            "balances": {"rows": [], "totals": {"mv_raw": 0.0, "mv_display": "$0.00"}},
+            "accounts": {"rows": []},
+            "server_ts_ms": 1_700_000_000_000,
+        },
+    )
+
+    assert decoded is not None
+    assert decoded["inventory_by_asset"] == {
+        "AAPL": {"base_currency": "AAPL", "global_qty_base": "10"},
+        "MSFT": {"base_currency": "MSFT", "global_qty_base": "5"},
+    }
+    assert "base_currency" not in decoded
+    assert "inventory" not in decoded
+    assert "components" not in decoded
