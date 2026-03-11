@@ -23,8 +23,8 @@ read_timeout_secs = 5.0
 [venues]
 execution_venue = "HYPERLIQUID"
 reference_venue = "IBKR"
-execution_symbol = "AAPL"
-reference_symbol = "AAPL/USD"
+execution_symbol = "STOCKS"
+reference_symbol = "STOCKS/USD"
 
 [bridge]
 log_level = "INFO"
@@ -40,13 +40,59 @@ port = 5022
 strategy_class = "maker_v3"
 param_set = "makerv3"
 strategy_groups = "equities"
-base_asset = "AAPL"
+base_asset = "STOCKS"
 quote_asset = "USD"
 equities_strategy_ids = [
   "aapl_tradexyz_makerv3",
+  "amd_tradexyz_makerv3",
+  "amzn_tradexyz_makerv3",
+  "baba_tradexyz_makerv3",
+  "coin_tradexyz_makerv3",
+  "crcl_tradexyz_makerv3",
+  "crwv_tradexyz_makerv3",
+  "googl_tradexyz_makerv3",
+  "hood_tradexyz_makerv3",
+  "hyundai_tradexyz_makerv3",
+  "intc_tradexyz_makerv3",
+  "meta_tradexyz_makerv3",
+  "mstr_tradexyz_makerv3",
+  "msft_tradexyz_makerv3",
+  "mu_tradexyz_makerv3",
+  "nflx_tradexyz_makerv3",
+  "nvda_tradexyz_makerv3",
+  "orcl_tradexyz_makerv3",
+  "pltr_tradexyz_makerv3",
+  "rivn_tradexyz_makerv3",
+  "sndk_tradexyz_makerv3",
+  "tsm_tradexyz_makerv3",
+  "tsla_tradexyz_makerv3",
+  "usar_tradexyz_makerv3",
 ]
 equities_required_strategy_ids = [
   "aapl_tradexyz_makerv3",
+  "amd_tradexyz_makerv3",
+  "amzn_tradexyz_makerv3",
+  "baba_tradexyz_makerv3",
+  "coin_tradexyz_makerv3",
+  "crcl_tradexyz_makerv3",
+  "crwv_tradexyz_makerv3",
+  "googl_tradexyz_makerv3",
+  "hood_tradexyz_makerv3",
+  "hyundai_tradexyz_makerv3",
+  "intc_tradexyz_makerv3",
+  "meta_tradexyz_makerv3",
+  "mstr_tradexyz_makerv3",
+  "msft_tradexyz_makerv3",
+  "mu_tradexyz_makerv3",
+  "nflx_tradexyz_makerv3",
+  "nvda_tradexyz_makerv3",
+  "orcl_tradexyz_makerv3",
+  "pltr_tradexyz_makerv3",
+  "rivn_tradexyz_makerv3",
+  "sndk_tradexyz_makerv3",
+  "tsm_tradexyz_makerv3",
+  "tsla_tradexyz_makerv3",
+  "usar_tradexyz_makerv3",
 ]
 
 [portfolio]
@@ -63,3 +109,233 @@ instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
 exchange = "ibkr"
 symbol = "AAPL/USD"
 instrument_id = "AAPL.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "AMD/USD"
+instrument_id = "xyz:AMD-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "AMD/USD"
+instrument_id = "AMD.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "AMZN/USD"
+instrument_id = "xyz:AMZN-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "AMZN/USD"
+instrument_id = "AMZN.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "BABA/USD"
+instrument_id = "xyz:BABA-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "BABA/USD"
+instrument_id = "BABA.NYSE"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "COIN/USD"
+instrument_id = "xyz:COIN-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "COIN/USD"
+instrument_id = "COIN.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "CRCL/USD"
+instrument_id = "xyz:CRCL-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "CRCL/USD"
+instrument_id = "CRCL.NYSE"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "CRWV/USD"
+instrument_id = "xyz:CRWV-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "CRWV/USD"
+instrument_id = "CRWV.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "GOOGL/USD"
+instrument_id = "xyz:GOOGL-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "GOOGL/USD"
+instrument_id = "GOOGL.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "HOOD/USD"
+instrument_id = "xyz:HOOD-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "HOOD/USD"
+instrument_id = "HOOD.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "HYUNDAI/USD"
+instrument_id = "xyz:HYUNDAI-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "HYUNDAI/USD"
+instrument_id = "005380.KRX"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "INTC/USD"
+instrument_id = "xyz:INTC-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "INTC/USD"
+instrument_id = "INTC.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "META/USD"
+instrument_id = "xyz:META-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "META/USD"
+instrument_id = "META.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "MSTR/USD"
+instrument_id = "xyz:MSTR-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "MSTR/USD"
+instrument_id = "MSTR.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "MSFT/USD"
+instrument_id = "xyz:MSFT-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "MSFT/USD"
+instrument_id = "MSFT.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "MU/USD"
+instrument_id = "xyz:MU-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "MU/USD"
+instrument_id = "MU.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "NFLX/USD"
+instrument_id = "xyz:NFLX-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "NFLX/USD"
+instrument_id = "NFLX.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "NVDA/USD"
+instrument_id = "xyz:NVDA-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "NVDA/USD"
+instrument_id = "NVDA.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "ORCL/USD"
+instrument_id = "xyz:ORCL-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "ORCL/USD"
+instrument_id = "ORCL.NYSE"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "PLTR/USD"
+instrument_id = "xyz:PLTR-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "PLTR/USD"
+instrument_id = "PLTR.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "RIVN/USD"
+instrument_id = "xyz:RIVN-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "RIVN/USD"
+instrument_id = "RIVN.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "SNDK/USD"
+instrument_id = "xyz:SNDK-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "SNDK/USD"
+instrument_id = "SNDK.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "TSM/USD"
+instrument_id = "xyz:TSM-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "TSM/USD"
+instrument_id = "TSM.NYSE"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "TSLA/USD"
+instrument_id = "xyz:TSLA-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "TSLA/USD"
+instrument_id = "TSLA.NASDAQ"
+
+[[contracts]]
+exchange = "hyperliquid"
+symbol = "USAR/USD"
+instrument_id = "xyz:USAR-USD-PERP.HYPERLIQUID"
+
+[[contracts]]
+exchange = "ibkr"
+symbol = "USAR/USD"
+instrument_id = "USAR.NASDAQ"

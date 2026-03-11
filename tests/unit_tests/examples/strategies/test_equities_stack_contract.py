@@ -4,10 +4,164 @@ import re
 import tomllib
 from pathlib import Path
 
-ACTIVE_STRATEGY_ID = "aapl_tradexyz_makerv3"
 ACTIVE_STRATEGY_CLASS = "maker_v3"
 ACTIVE_PARAM_SET = "makerv3"
 ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv4"
+ACTIVE_STRATEGIES = (
+    {
+        "symbol": "AAPL",
+        "strategy_id": "aapl_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "AAPL.NASDAQ",
+    },
+    {
+        "symbol": "AMD",
+        "strategy_id": "amd_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "AMD.NASDAQ",
+    },
+    {
+        "symbol": "AMZN",
+        "strategy_id": "amzn_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:AMZN-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "AMZN.NASDAQ",
+    },
+    {
+        "symbol": "BABA",
+        "strategy_id": "baba_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:BABA-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "BABA.NYSE",
+    },
+    {
+        "symbol": "COIN",
+        "strategy_id": "coin_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "COIN.NASDAQ",
+    },
+    {
+        "symbol": "CRCL",
+        "strategy_id": "crcl_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:CRCL-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "CRCL.NYSE",
+    },
+    {
+        "symbol": "CRWV",
+        "strategy_id": "crwv_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:CRWV-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "CRWV.NASDAQ",
+    },
+    {
+        "symbol": "GOOGL",
+        "strategy_id": "googl_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "GOOGL.NASDAQ",
+    },
+    {
+        "symbol": "HOOD",
+        "strategy_id": "hood_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:HOOD-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "HOOD.NASDAQ",
+    },
+    {
+        "symbol": "HYUNDAI",
+        "strategy_id": "hyundai_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:HYUNDAI-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "005380.KRX",
+    },
+    {
+        "symbol": "INTC",
+        "strategy_id": "intc_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:INTC-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "INTC.NASDAQ",
+    },
+    {
+        "symbol": "META",
+        "strategy_id": "meta_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:META-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "META.NASDAQ",
+    },
+    {
+        "symbol": "MSTR",
+        "strategy_id": "mstr_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:MSTR-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "MSTR.NASDAQ",
+    },
+    {
+        "symbol": "MSFT",
+        "strategy_id": "msft_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:MSFT-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "MSFT.NASDAQ",
+    },
+    {
+        "symbol": "MU",
+        "strategy_id": "mu_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:MU-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "MU.NASDAQ",
+    },
+    {
+        "symbol": "NFLX",
+        "strategy_id": "nflx_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:NFLX-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "NFLX.NASDAQ",
+    },
+    {
+        "symbol": "NVDA",
+        "strategy_id": "nvda_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "NVDA.NASDAQ",
+    },
+    {
+        "symbol": "ORCL",
+        "strategy_id": "orcl_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:ORCL-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "ORCL.NYSE",
+    },
+    {
+        "symbol": "PLTR",
+        "strategy_id": "pltr_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "PLTR.NASDAQ",
+    },
+    {
+        "symbol": "RIVN",
+        "strategy_id": "rivn_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:RIVN-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "RIVN.NASDAQ",
+    },
+    {
+        "symbol": "SNDK",
+        "strategy_id": "sndk_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:SNDK-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "SNDK.NASDAQ",
+    },
+    {
+        "symbol": "TSM",
+        "strategy_id": "tsm_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:TSM-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "TSM.NYSE",
+    },
+    {
+        "symbol": "TSLA",
+        "strategy_id": "tsla_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:TSLA-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "TSLA.NASDAQ",
+    },
+    {
+        "symbol": "USAR",
+        "strategy_id": "usar_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:USAR-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "USAR.NASDAQ",
+    },
+)
+ACTIVE_STRATEGY_IDS = [entry["strategy_id"] for entry in ACTIVE_STRATEGIES]
+ACTIVE_HYPERLIQUID_INSTRUMENT_IDS = {
+    entry["hyperliquid_instrument_id"]
+    for entry in ACTIVE_STRATEGIES
+}
+ACTIVE_IBKR_INSTRUMENT_IDS = {
+    entry["ibkr_instrument_id"]
+    for entry in ACTIVE_STRATEGIES
+}
 
 
 def _repo_root() -> Path:
@@ -29,8 +183,8 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == [ACTIVE_STRATEGY_ID]
-    assert config["api"]["equities_required_strategy_ids"] == [ACTIVE_STRATEGY_ID]
+    assert config["api"]["equities_strategy_ids"] == ACTIVE_STRATEGY_IDS
+    assert config["api"]["equities_required_strategy_ids"] == ACTIVE_STRATEGY_IDS
 
 
 def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() -> None:
@@ -56,9 +210,9 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert 'time_zone = "America/New_York"' in template
     assert "relogin_after_twofa_timeout = true" in template
     assert 'twofa_timeout_action = "restart"' in template
-    assert identity["strategy_id"] == ACTIVE_STRATEGY_ID
-    assert identity["strategy_instance_id"] == ACTIVE_STRATEGY_ID
-    assert identity["external_strategy_id"] == ACTIVE_STRATEGY_ID
+    assert identity["strategy_id"] == "symbol_tradexyz_makerv3"
+    assert identity["strategy_instance_id"] == "symbol_tradexyz_makerv3"
+    assert identity["external_strategy_id"] == "symbol_tradexyz_makerv3"
     assert hyperliquid["private_key_env"] == "TRADE_XYZ_AGENT_PK"
     assert hyperliquid["account_address_env"] == "TRADE_XYZ_ACCOUNT_ADDRESS"
     assert hyperliquid["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
@@ -96,41 +250,52 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     assert "[node]" not in live_config
     assert "[strategy]" not in live_config
     assert 'exchange = "hyperliquid"' in live_config
-    assert 'instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"' in live_config
     assert 'exchange = "ibkr"' in live_config
-    assert 'instrument_id = "AAPL.NASDAQ"' in live_config
     assert contracts == {
-        ("hyperliquid", "xyz:AAPL-USD-PERP.HYPERLIQUID"),
-        ("ibkr", "AAPL.NASDAQ"),
+        *{
+            ("hyperliquid", instrument_id)
+            for instrument_id in ACTIVE_HYPERLIQUID_INSTRUMENT_IDS
+        },
+        *{
+            ("ibkr", instrument_id)
+            for instrument_id in ACTIVE_IBKR_INSTRUMENT_IDS
+        },
     }
 
 
-def test_equities_active_strategy_contract_is_makerv3_only() -> None:
+def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
     repo_root = _repo_root()
-    active_path = repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml"
     disabled_rollback_path = repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml.disabled"
 
-    assert active_path.exists()
     assert not (repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml").exists()
     assert disabled_rollback_path.exists()
-
-    config = _load_toml(active_path)
-    assert config["identity"]["strategy_id"] == ACTIVE_STRATEGY_ID
-    assert config["identity"]["strategy_instance_id"] == ACTIVE_STRATEGY_ID
-    assert config["identity"]["external_strategy_id"] == ACTIVE_STRATEGY_ID
-    assert config["strategy"]["strategy_id"] == ACTIVE_STRATEGY_ID
-    assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
-    assert config["strategy"]["reference_use_quote_ticks"] is True
-    assert config["node"]["enable_execution"] is False
-    assert config["node"]["venues"]["IBKR"]["instrument_id"] == "AAPL.NASDAQ"
-    assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
-    assert config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
-    assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["twofa_timeout_action"] == "restart"
+    for entry in ACTIVE_STRATEGIES:
+        active_path = repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml"
+        assert active_path.exists()
+        config = _load_toml(active_path)
+        assert config["identity"]["strategy_id"] == entry["strategy_id"]
+        assert config["identity"]["strategy_instance_id"] == entry["strategy_id"]
+        assert config["identity"]["external_strategy_id"] == entry["strategy_id"]
+        assert config["strategy"]["strategy_id"] == entry["strategy_id"]
+        assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
+        assert config["strategy"]["reference_use_quote_ticks"] is True
+        assert config["node"]["enable_execution"] is False
+        assert (
+            config["node"]["venues"]["HYPERLIQUID"]["instrument_id"]
+            == entry["hyperliquid_instrument_id"]
+        )
+        assert config["node"]["venues"]["IBKR"]["instrument_id"] == entry["ibkr_instrument_id"]
+        assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
+        assert (
+            config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"]
+            == "TRADE_XYZ_VAULT_ADDRESS"
+        )
+        assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["twofa_timeout_action"] == "restart"
 
 
 def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
     repo_root = _repo_root()
-    active_path = repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml"
+    active_path = repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGIES[0]['strategy_id']}.toml"
     template_path = repo_root / "deploy/equities/strategies/equities.strategy.template.toml"
     active_config = _load_toml(active_path)
     template_config = _load_toml(template_path)
@@ -162,20 +327,25 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
     assert "--enable-execution" in install_script
 
 
-def test_equities_shared_contract_catalog_matches_active_canary_route() -> None:
+def test_equities_shared_contract_catalog_matches_active_strategy_routes() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
-    active_config = _load_toml(repo_root / f"deploy/equities/strategies/{ACTIVE_STRATEGY_ID}.toml")
-
-    shared_ibkr_contract = next(
-        entry
+    shared_contracts = {
+        (entry["exchange"], entry["instrument_id"])
         for entry in shared_config["contracts"]
-        if entry["exchange"] == "ibkr"
-    )
-    active_ibkr_instrument_id = active_config["node"]["venues"]["IBKR"]["instrument_id"]
-
-    assert shared_ibkr_contract["instrument_id"] == active_ibkr_instrument_id
-    assert active_ibkr_instrument_id == "AAPL.NASDAQ"
+    }
+    for entry in ACTIVE_STRATEGIES:
+        active_config = _load_toml(
+            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
+        )
+        assert (
+            "hyperliquid",
+            active_config["node"]["venues"]["HYPERLIQUID"]["instrument_id"],
+        ) in shared_contracts
+        assert (
+            "ibkr",
+            active_config["node"]["venues"]["IBKR"]["instrument_id"],
+        ) in shared_contracts
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
@@ -233,7 +403,8 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
-    assert f'Wants=flux@equities-node-{ACTIVE_STRATEGY_ID}.service' in target
+    for strategy_id in ACTIVE_STRATEGY_IDS:
+        assert f'Wants=flux@equities-node-{strategy_id}.service' in target
     assert 'deploy/equities/equities.live.toml' in install_script
     assert 'flux-equities.target' in install_script
     assert 'deploy/equities/systemd/common.env.example' in install_script
@@ -261,7 +432,8 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'TRADE_XYZ_VAULT_ADDRESS=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
-    assert f"/usr/bin/systemctl restart flux@equities-node-{ACTIVE_STRATEGY_ID}.service" in sudoers
+    for strategy_id in ACTIVE_STRATEGY_IDS:
+        assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
     assert "flux@*" not in sudoers
 
 
@@ -332,7 +504,9 @@ def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     assert "`sed -n '1,120p' /etc/flux/equities-api.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-portfolio.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
-    assert f"`sed -n '1,120p' /etc/flux/equities-node-{ACTIVE_STRATEGY_ID}.env`" in readme
+    assert (
+        f"`sed -n '1,120p' /etc/flux/equities-node-{ACTIVE_STRATEGY_IDS[0]}.env`" in readme
+    )
     assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
     assert "`for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' \"$env_path\"; done`" in readme
     assert "`uv sync --all-groups --all-extras`" in readme
@@ -353,7 +527,10 @@ def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions()
     tokenmm_stack = _read(repo_root / "ops/scripts/deploy/tokenmm_stack.sh")
     equities_stack = _read(repo_root / "ops/scripts/deploy/equities_stack.sh")
 
-    assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in tokenmm_install
+    assert (
+        'source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"'
+        in tokenmm_install
+    )
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in equities_install
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in tokenmm_stack
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in equities_stack
@@ -441,7 +618,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert 'portfolio_id = "equities"' in live_config
     assert "equities_strategy_ids" in live_config
     assert f'strategy_class = "{ACTIVE_STRATEGY_CLASS}"' in live_config
-    assert ACTIVE_STRATEGY_ID in live_config
+    for strategy_id in ACTIVE_STRATEGY_IDS:
+        assert strategy_id in live_config
 
     assert "/equities" in contract
     assert "/api/v1/signals?profile=equities" in contract

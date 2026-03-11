@@ -11,7 +11,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - One stock uses one strategy file and one node process.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
-- The intended active target after the March 11, 2026 correction is MakerV3, and the checked-in active file is `aapl_tradexyz_makerv3.toml`.
+- The intended active target after the March 11, 2026 correction is MakerV3, and the checked-in active files are the exact-qualified trade[XYZ] stock universe under `*_tradexyz_makerv3.toml`.
 - The rollback file is `aapl_tradexyz_makerv4.toml.disabled`.
 - Treat MakerV4 as rollback material rather than the desired steady-state contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
@@ -25,18 +25,20 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[strategy].param_set = "makerv3"` stays explicit for the intended active equities rollout.
 - `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
-- `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` for the checked-in AAPL canary.
+- `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ`, `005380.KRX`, or `USAR.NASDAQ`.
 - `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the restored MakerV3 contract.
 - `[node.venues.IBKR.dockerized_gateway]` carries the read-only live gateway runtime, including the nightly `11:45 PM America/New_York` restart window.
 - `[node.venues.IBKR.dockerized_gateway].twofa_timeout_action = "restart"` keeps the containerized gateway from idling after an expired 2FA window.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
-- Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
-- In practice, that means whichever strategy file is actually active must keep the shared IBKR contract entry in sync.
+- Keep the shared `[[contracts]]` IBKR entries aligned with the enrolled reference instruments, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
+- In practice, that means each enrolled strategy file must keep the shared IBKR contract entry set in sync.
+- Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument before promoting that route into the enrolled stock set.
 - Hyperliquid effective account identity resolves in this order: `vault_address_env`, then funded `account_address_env`, then the agent wallet's `userRole`-resolved master account.
 - Do not duplicate `[redis]` in per-node deploy files; nodes inherit it from `deploy/equities/equities.live.toml`.
 - Do not duplicate `[portfolio]` in per-node deploy files; nodes inherit the shared portfolio inventory feed from `deploy/equities/equities.live.toml`.
 - `TRADE_XYZ_VAULT_ADDRESS` should be supplied in `/etc/flux/common.env` when vault routing is required.
+- `SMSN` and `SKHX` remain intentionally unenrolled until exact IBKR qualification is verified.
 
 ## Inventory semantics
 

@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "aapl_tradexyz_makerv3"
-strategy_instance_id = "aapl_tradexyz_makerv3"
-trader_id = "EQUITIES-LIVE-AAPL-TRADEXYZ"
-external_strategy_id = "aapl_tradexyz_makerv3"
+strategy_id = "symbol_tradexyz_makerv3"
+strategy_instance_id = "symbol_tradexyz_makerv3"
+trader_id = "EQUITIES-LIVE-SYMBOL-TRADEXYZ"
+external_strategy_id = "symbol_tradexyz_makerv3"
 
 [venues]
 execution_venue = "HYPERLIQUID"
@@ -65,10 +65,11 @@ relogin_after_twofa_timeout = true
 twofa_timeout_action = "restart"
 
 [strategy]
-strategy_id = "aapl_tradexyz_makerv3"
+strategy_id = "symbol_tradexyz_makerv3"
 strategy_groups = "equities"
 param_set = "makerv3"
 force_bot_off_on_start = true
+reference_use_quote_ticks = true
 order_qty = "1"
 qty = "1"
 qty_unit = "base"
