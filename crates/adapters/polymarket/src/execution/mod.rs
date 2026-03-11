@@ -76,6 +76,7 @@ use crate::{
         models::PolymarketMakerOrder,
     },
     config::PolymarketExecClientConfig,
+    filters::InstrumentFilter,
     http::{
         clob::PolymarketClobHttpClient,
         gamma::PolymarketGammaHttpClient,
@@ -192,6 +193,11 @@ impl PolymarketExecutionClient {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         tasks.retain(|handle| !handle.is_finished());
         tasks.push(handle);
+    }
+
+    /// Sets the instrument filter on the underlying provider.
+    pub fn set_instrument_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+        self.provider.set_filter(filter);
     }
 
     fn abort_pending_tasks(&self) {

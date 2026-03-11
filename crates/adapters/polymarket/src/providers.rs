@@ -15,9 +15,9 @@
 
 //! Instrument provider for the Polymarket adapter.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::providers::{InstrumentProvider, InstrumentStore};
 use nautilus_model::{
@@ -26,28 +26,68 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::http::gamma::PolymarketGammaHttpClient;
+pub use crate::filters::*;
+use crate::http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams};
 
 /// Provides Polymarket instruments via the Gamma API.
 ///
 /// Wraps [`PolymarketGammaHttpClient`] with an [`InstrumentStore`] and a
 /// token_id index for resolving WebSocket asset IDs to instruments.
-#[derive(Debug)]
+///
+/// An optional [`InstrumentFilter`] controls which instruments are loaded
+/// during `load_all()`. Without a filter, all active markets are fetched.
 pub struct PolymarketInstrumentProvider {
     store: InstrumentStore,
     http_client: PolymarketGammaHttpClient,
     token_index: AHashMap<Ustr, InstrumentId>,
+    filter: Option<Box<dyn InstrumentFilter>>,
+}
+
+impl Debug for PolymarketInstrumentProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PolymarketInstrumentProvider))
+            .field("store", &self.store)
+            .field("http_client", &self.http_client)
+            .field("token_index_len", &self.token_index.len())
+            .field("filter", &self.filter)
+            .finish()
+    }
 }
 
 impl PolymarketInstrumentProvider {
-    /// Creates a new [`PolymarketInstrumentProvider`] with an empty store.
+    /// Creates a new [`PolymarketInstrumentProvider`] with an empty store and no filter.
     #[must_use]
     pub fn new(http_client: PolymarketGammaHttpClient) -> Self {
         Self {
             store: InstrumentStore::new(),
             http_client,
             token_index: AHashMap::new(),
+            filter: None,
         }
+    }
+
+    /// Creates a new [`PolymarketInstrumentProvider`] with the given filter.
+    #[must_use]
+    pub fn with_filter(
+        http_client: PolymarketGammaHttpClient,
+        filter: Box<dyn InstrumentFilter>,
+    ) -> Self {
+        Self {
+            store: InstrumentStore::new(),
+            http_client,
+            token_index: AHashMap::new(),
+            filter: Some(filter),
+        }
+    }
+
+    /// Sets the instrument filter for subsequent `load_all()` calls.
+    pub fn set_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+        self.filter = Some(filter);
+    }
+
+    /// Clears the instrument filter, reverting to bulk load behavior.
+    pub fn clear_filter(&mut self) {
+        self.filter = None;
     }
 
     /// Returns the instrument for the given token ID, if found.
@@ -102,6 +142,177 @@ impl PolymarketInstrumentProvider {
     pub fn http_client(&self) -> &PolymarketGammaHttpClient {
         &self.http_client
     }
+
+    /// Adds instruments to the store and token index.
+    fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
+        for inst in &instruments {
+            self.token_index
+                .insert(Ustr::from(inst.raw_symbol().as_str()), inst.id());
+        }
+        self.store.add_bulk(instruments);
+    }
+
+    /// Loads instruments using the given filter, combining results from all
+    /// filter methods that return `Some`.
+    async fn load_filtered(
+        &self,
+        filter: &dyn InstrumentFilter,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let mut instruments = Vec::new();
+
+        if let Some(slugs) = filter.market_slugs()
+            && !slugs.is_empty()
+        {
+            let result = self.http_client.request_instruments_by_slugs(slugs).await?;
+            instruments.extend(result);
+        }
+
+        if let Some(event_slugs) = filter.event_slugs()
+            && !event_slugs.is_empty()
+        {
+            let result = self
+                .http_client
+                .request_instruments_by_event_slugs(event_slugs)
+                .await?;
+            instruments.extend(result);
+        }
+
+        if let Some(params) = filter.query_params() {
+            let result = self
+                .http_client
+                .request_instruments_by_params(params)
+                .await?;
+            instruments.extend(result);
+        }
+
+        if let Some(event_queries) = filter.event_queries() {
+            for (event_slug, params) in event_queries {
+                let result = self
+                    .http_client
+                    .request_instruments_by_event_query(&event_slug, params)
+                    .await?;
+                instruments.extend(result);
+            }
+        }
+
+        if let Some(params) = filter.event_params() {
+            let result = self
+                .http_client
+                .request_instruments_by_event_params(params)
+                .await?;
+            instruments.extend(result);
+        }
+
+        if let Some(params) = filter.search_params() {
+            let result = self
+                .http_client
+                .request_instruments_by_search(params)
+                .await?;
+            instruments.extend(result);
+        }
+
+        // Deduplicate by InstrumentId
+        let mut seen = AHashSet::new();
+        instruments.retain(|inst| seen.insert(inst.id()));
+
+        instruments.retain(|inst| filter.accept(inst));
+
+        Ok(instruments)
+    }
+}
+
+/// Extracts the condition ID from an instrument symbol.
+///
+/// Polymarket instrument symbols follow the pattern `{condition_id}-{token_id}`.
+/// The condition_id is a hex string (e.g. `0xabc123...`) and the token_id is a
+/// large decimal number. This extracts the condition_id by splitting at the last `-`.
+pub fn extract_condition_id(instrument_id: &InstrumentId) -> anyhow::Result<String> {
+    let symbol = instrument_id.symbol.as_str();
+    symbol
+        .rfind('-')
+        .map(|idx| symbol[..idx].to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Cannot extract condition_id from symbol '{symbol}': no '-' separator")
+        })
+}
+
+/// Builds `GetGammaMarketsParams` from a `HashMap<String, String>`.
+pub fn build_gamma_params_from_hashmap(map: &HashMap<String, String>) -> GetGammaMarketsParams {
+    let mut params = GetGammaMarketsParams::default();
+
+    if let Some(v) = map.get("active") {
+        params.active = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("closed") {
+        params.closed = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("archived") {
+        params.archived = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("slug") {
+        params.slug = Some(v.clone());
+    }
+
+    if let Some(v) = map.get("tag_id") {
+        params.tag_id = Some(v.clone());
+    }
+
+    if let Some(v) = map.get("condition_ids") {
+        params.condition_ids = Some(v.clone());
+    }
+
+    if let Some(v) = map.get("clob_token_ids") {
+        params.clob_token_ids = Some(v.clone());
+    }
+
+    if let Some(v) = map.get("liquidity_num_min") {
+        params.liquidity_num_min = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("liquidity_num_max") {
+        params.liquidity_num_max = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("volume_num_min") {
+        params.volume_num_min = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("volume_num_max") {
+        params.volume_num_max = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("order") {
+        params.order = Some(v.clone());
+    }
+
+    if let Some(v) = map.get("ascending") {
+        params.ascending = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("limit") {
+        params.limit = v.parse().ok();
+    }
+
+    if let Some(v) = map.get("max_markets") {
+        params.max_markets = v.parse().ok();
+    }
+
+    params
+}
+
+/// Resolves a tag slug to a tag ID by querying the Gamma tags endpoint.
+pub async fn resolve_tag_slug(
+    client: &PolymarketGammaHttpClient,
+    slug: &str,
+) -> anyhow::Result<String> {
+    let tags = client.request_tags().await?;
+    tags.iter()
+        .find(|t| t.slug.as_deref() == Some(slug))
+        .map(|t| t.id.clone())
+        .ok_or_else(|| anyhow::anyhow!("Tag slug '{slug}' not found"))
 }
 
 #[async_trait(?Send)]
@@ -114,21 +325,71 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         &mut self.store
     }
 
-    async fn load_all(&mut self, _filters: Option<&HashMap<String, String>>) -> anyhow::Result<()> {
-        let instruments = self.http_client.request_instruments().await?;
+    async fn load_all(&mut self, filters: Option<&HashMap<String, String>>) -> anyhow::Result<()> {
+        let instruments = match &self.filter {
+            Some(filter) => self.load_filtered(filter.as_ref()).await?,
+            None => {
+                // If HashMap filters are provided, convert to Gamma params
+                if let Some(map) = filters {
+                    if map.is_empty() {
+                        self.http_client.request_instruments().await?
+                    } else {
+                        let params = build_gamma_params_from_hashmap(map);
+                        self.http_client
+                            .request_instruments_by_params(params)
+                            .await?
+                    }
+                } else {
+                    self.http_client.request_instruments().await?
+                }
+            }
+        };
 
         self.store.clear();
         self.token_index.clear();
+        self.add_instruments(instruments);
+        self.store.set_initialized();
 
-        for instrument in &instruments {
-            self.token_index.insert(
-                Ustr::from(instrument.raw_symbol().as_str()),
-                instrument.id(),
-            );
+        Ok(())
+    }
+
+    async fn load_ids(
+        &mut self,
+        instrument_ids: &[InstrumentId],
+        filters: Option<&HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        let missing: Vec<_> = instrument_ids
+            .iter()
+            .filter(|id| !self.store.contains(id))
+            .collect();
+
+        if missing.is_empty() {
+            return Ok(());
         }
 
-        self.store.add_bulk(instruments);
-        self.store.set_initialized();
+        // Extract unique condition IDs from instrument symbols
+        // Symbol format: "{condition_id}-{token_id}"
+        let mut condition_ids: Vec<String> = missing
+            .iter()
+            .filter_map(|id| extract_condition_id(id).ok())
+            .collect();
+        condition_ids.sort();
+        condition_ids.dedup();
+
+        if !condition_ids.is_empty() && condition_ids.len() <= 100 {
+            let params = GetGammaMarketsParams {
+                condition_ids: Some(condition_ids.join(",")),
+                ..Default::default()
+            };
+            let instruments = self
+                .http_client
+                .request_instruments_by_params(params)
+                .await?;
+            self.add_instruments(instruments);
+        } else {
+            // Too many to batch — fall back to full load
+            self.load_all(filters).await?;
+        }
 
         Ok(())
     }
@@ -142,6 +403,23 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
             return Ok(());
         }
 
+        // Try direct fetch via condition_id extracted from symbol
+        if let Ok(cid) = extract_condition_id(instrument_id) {
+            let params = GetGammaMarketsParams {
+                condition_ids: Some(cid),
+                ..Default::default()
+            };
+
+            if let Ok(instruments) = self.http_client.request_instruments_by_params(params).await {
+                self.add_instruments(instruments);
+
+                if self.store.contains(instrument_id) {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback: full load_all if not initialized
         if !self.store.is_initialized() {
             self.load_all(filters).await?;
         }
