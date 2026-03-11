@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import React from 'react';
@@ -11,6 +12,9 @@ vi.mock('react-dom/client', () => ({
 
 import { buildFluxboardChildRoutes, buildFluxboardTopLevelRoutes, buildTokenmmAliasTarget } from './main';
 import { getUiSurface } from './config/uiProfiles';
+
+const require = createRequire(import.meta.url);
+const viteBinPath = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
 
 describe('main route builder', () => {
   it('registers top-level profile, alias, and catch-all routes', () => {
@@ -153,7 +157,7 @@ describe('main route builder', () => {
     try {
       execFileSync(
         process.execPath,
-        [path.join(process.cwd(), 'node_modules/vite/bin/vite.js'), 'build', '--outDir', outDir, '--emptyOutDir'],
+        [viteBinPath, 'build', '--outDir', outDir, '--emptyOutDir'],
         {
           cwd: process.cwd(),
           env: process.env,
