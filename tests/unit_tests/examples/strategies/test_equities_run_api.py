@@ -83,6 +83,19 @@ def test_parse_args_requires_explicit_config(monkeypatch) -> None:
         _parse_args()
 
 
+def test_parse_args_describes_shared_fluxboard_static_contract(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["run_api.py", "--help"])
+
+    with pytest.raises(SystemExit, match="0"):
+        _parse_args()
+
+    help_text = " ".join(capsys.readouterr().out.split())
+
+    assert "Serve built Fluxboard static assets at /static/fluxboard/*" in help_text
+    assert "/equities with SPA fallback" in help_text
+    assert "/equities/*" not in help_text
+
+
 def test_attach_fluxboard_equities_routes_serves_shared_static_assets_and_spa_fallback(
     tmp_path: Path,
 ) -> None:
@@ -110,6 +123,27 @@ def test_attach_fluxboard_equities_routes_serves_shared_static_assets_and_spa_fa
     response = client.get("/equities/signals/aapl")
     assert response.status_code == 200
     assert "equities" in response.get_data(as_text=True)
+
+
+def test_attach_fluxboard_equities_routes_keeps_dist_root_files_off_spa_path(
+    tmp_path: Path,
+) -> None:
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html>equities</html>", encoding="utf-8")
+    (dist_dir / "favicon.svg").write_text("<svg>shared-icon</svg>", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_fluxboard_equities_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/static/fluxboard/favicon.svg")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<svg>shared-icon</svg>"
+
+    response = client.get("/equities/favicon.svg")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<html>equities</html>"
 
 
 def test_attach_fluxboard_equities_routes_does_not_answer_tokenm_alias(tmp_path: Path) -> None:
