@@ -152,8 +152,8 @@ describe('main route builder', () => {
 
     try {
       execFileSync(
-        'pnpm',
-        ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'],
+        process.execPath,
+        [path.join(process.cwd(), 'node_modules/vite/bin/vite.js'), 'build', '--outDir', outDir, '--emptyOutDir'],
         {
           cwd: process.cwd(),
           env: process.env,
