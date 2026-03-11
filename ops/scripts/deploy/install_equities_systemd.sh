@@ -83,6 +83,7 @@ append_checkout_env_overrides() {
 
 cleanup_obsolete_envs() {
   rm -f "${ENV_DIR}/equities-api.env"
+  find "${ENV_DIR}" -maxdepth 1 -type f -name 'equities-node-*.env' -delete
 }
 
 render_target() {

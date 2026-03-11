@@ -265,6 +265,7 @@ def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
     assert 'EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in install_script
     assert "require_project_python()" in install_script
     assert 'if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then' in install_script
+    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
     assert "append_checkout_env_overrides()" in install_script
     assert "printf 'WORKDIR=%s\\nPYTHONPATH=%s\\n' \"${ROOT_DIR}\" \"${ROOT_DIR}\" >> \"${env_path}\"" in install_script
     assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api' in install_script
@@ -314,14 +315,18 @@ def test_equities_deploy_docs_keep_equities_routes_spa_only() -> None:
 
 def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
+    common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")
 
     assert "`sed -n '1,120p' /etc/flux/equities-api.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-portfolio.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`" in readme
+    assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
     assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout" in readme
     assert "the generated env commands use the checkout-local `.venv/bin/python`" in readme
+    assert "every generated `equities-node-*.env` is rewritten from the intended checkout" in readme
     assert "Do not restart services until those env files match the intended checkout and live flags." in readme
+    assert "verify every matching `/etc/flux/equities-node-*.env`" in common_env
 
 
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
