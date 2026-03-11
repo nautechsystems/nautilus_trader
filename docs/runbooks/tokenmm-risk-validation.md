@@ -111,6 +111,17 @@ journal shows a netting quantity mismatch.
    drift or missing history and keep trading disabled until the account/cache
    state is reconciled manually.
 
+When the failure is clearly due to missing venue order/fill history after prolonged
+downtime, operators may apply a per-strategy `exec_reconciliation_lookback_mins`
+override and retry startup. Do this only on nodes whose startup reconciliation is
+scoped to their configured instrument set, and record the override plus recovery
+evidence in the incident notes.
+
+If the widened lookback now causes startup to fail with `Execution reconciliation timed out`
+while mass status reports are still being gathered, raise that node's
+`timeout_reconciliation` before retrying. Keep the timeout scoped to the affected
+strategy rather than changing the shared default.
+
 Important:
 
 - This cleanup is startup-only.

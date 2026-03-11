@@ -1465,7 +1465,9 @@ class TestLiveExecutionEngine:
             generate_mass_status=generate_mass_status,
             generate_position_status_reports=slow_generate_position_status_reports,
         )
-        self.exec_engine._reconcile_execution_mass_status = lambda _mass_status: True
+        self.exec_engine._reconcile_execution_mass_status = (
+            lambda _mass_status, allow_startup_external_cleanup=False: True
+        )
         self.exec_engine._startup_reconciliation_event.clear()
 
         try:
@@ -1480,6 +1482,218 @@ class TestLiveExecutionEngine:
         assert result is False
         assert position_report_requests == [AUDUSD_SIM.id]
         assert self.exec_engine._startup_reconciliation_event.is_set() is True
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_scopes_single_client_startup_history_to_reconciliation_instruments(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        order_commands = []
+        fill_commands = []
+        position_commands = []
+
+        async def fail_generate_mass_status(_lookback_mins):
+            raise AssertionError("generate_mass_status should not be used for scoped startup reconciliation")
+
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+        original_generate_fill_reports = self.client.generate_fill_reports
+        original_generate_position_status_reports = self.client.generate_position_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        async def capture_generate_fill_reports(command):
+            fill_commands.append(command)
+            return await original_generate_fill_reports(command)
+
+        async def capture_generate_position_status_reports(command):
+            position_commands.append(command)
+            return await original_generate_position_status_reports(command)
+
+        self.client.generate_mass_status = fail_generate_mass_status
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.client.generate_fill_reports = capture_generate_fill_reports
+        self.client.generate_position_status_reports = capture_generate_position_status_reports
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.instrument_id for command in fill_commands] == [AUDUSD_SIM.id]
+        assert [command.instrument_id for command in position_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [True]
+        assert order_commands[0].start is not None
+        assert fill_commands[0].start is not None
+        assert position_commands[0].start is not None
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_uses_full_order_history_when_startup_cache_has_orders(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        cached_order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100_000),
+            price=AUDUSD_SIM.make_price("1.00000"),
+        )
+        self.cache.add_order(cached_order)
+
+        order_commands = []
+
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [False]
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_uses_full_order_history_when_startup_cache_has_open_positions(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100_000),
+        )
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-STARTUP-CACHED"),
+            last_qty=AUDUSD_SIM.make_qty(100_000),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        order_commands = []
+
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [False]
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_preserves_client_generate_mass_status_overrides(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        original_client = self.exec_engine._clients[self.client.id]
+        mass_status_calls = []
+
+        class OverrideMassStatusClient(SimpleNamespace):
+            async def generate_mass_status(self, lookback_mins):
+                mass_status_calls.append(lookback_mins)
+                return ExecutionMassStatus(
+                    client_id=self.id,
+                    account_id=self.account_id,
+                    venue=self.venue,
+                    report_id=UUID4(),
+                    ts_init=0,
+                )
+
+            async def generate_order_status_reports(self, command):
+                raise AssertionError(
+                    f"scoped startup helper should not bypass adapter override: {command}",
+                )
+
+            async def generate_fill_reports(self, command):
+                raise AssertionError(
+                    f"scoped startup helper should not bypass adapter override: {command}",
+                )
+
+            async def generate_position_status_reports(self, command):
+                raise AssertionError(
+                    f"scoped startup helper should not bypass adapter override: {command}",
+                )
+
+        self.exec_engine._clients.clear()
+        self.exec_engine._clients[self.client.id] = OverrideMassStatusClient(
+            id=self.client.id,
+            account_id=self.client.account_id,
+            venue=self.client.venue,
+        )
+        self.exec_engine._reconcile_execution_mass_status = (
+            lambda _mass_status, allow_startup_external_cleanup=False: True
+        )
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await self.exec_engine.reconcile_execution_state()
+        finally:
+            self.exec_engine._clients.clear()
+            self.exec_engine._clients[self.client.id] = original_client
+
+        assert result is True
+        assert mass_status_calls == [60]
+
+    @pytest.mark.asyncio
+    async def test_generate_startup_mass_status_collapses_duplicate_netting_position_reports(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+
+        older_flat = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(),
+            report_id=UUID4(),
+            ts_last=10,
+            ts_init=10,
+        )
+        newer_long = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=20,
+            ts_init=20,
+        )
+
+        self.client.generate_order_status_reports = AsyncMock(return_value=[])
+        self.client.generate_fill_reports = AsyncMock(return_value=[])
+        self.client.generate_position_status_reports = AsyncMock(
+            return_value=[older_flat, newer_long],
+        )
+
+        mass_status = await self.exec_engine._generate_startup_mass_status(self.client, 60)
+
+        assert mass_status is not None
+        position_reports = mass_status.position_reports[AUDUSD_SIM.id]
+        assert len(position_reports) == 1
+        assert position_reports[0].signed_decimal_qty == Decimal("100")
+        assert position_reports[0].ts_last == 20
 
     @pytest.mark.asyncio
     async def test_filled_qty_mismatch_with_zero_report(self):

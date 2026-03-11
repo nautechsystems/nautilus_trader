@@ -496,15 +496,25 @@ def test_tokenmm_stack_script_exports_resolved_redis_runtime_to_all_services() -
 
 def test_tokenmm_live_configs_enable_shared_account_reconciliation_guardrails() -> None:
     root = _repo_root()
-    config_paths = [
+    shared_config_paths = [
         root / "deploy/tokenmm/tokenmm.live.toml",
         root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
     ]
-    config_paths.extend(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS)
+    strategy_lookbacks = {
+        "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_okx_perp_makerv3": 1440,
+    }
 
-    for path in config_paths:
+    for path in shared_config_paths:
         text = _read(path)
         assert "exec_reconciliation_lookback_mins = 15" in text
+        assert "filter_unclaimed_external_orders = true" in text
+        assert "filter_position_reports = false" in text
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        text = _read(_strategy_config_path(strategy_id))
+        expected_lookback = strategy_lookbacks.get(strategy_id, 15)
+        assert f"exec_reconciliation_lookback_mins = {expected_lookback}" in text
         assert "filter_unclaimed_external_orders = true" in text
         assert "filter_position_reports = false" in text
 
@@ -630,15 +640,25 @@ def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_
     None
 ):
     repo_root = _repo_root()
-    config_paths = [
+    shared_config_paths = [
         repo_root / "deploy/tokenmm/tokenmm.live.toml",
         repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
-        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
     ]
+    strategy_lookbacks = {
+        "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_okx_perp_makerv3": 1440,
+    }
 
-    for path in config_paths:
+    for path in shared_config_paths:
         config = _read(path)
         assert "exec_reconciliation_lookback_mins = 15" in config
+        assert "filter_unclaimed_external_orders = true" in config
+        assert "filter_position_reports = false" in config
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        config = _read(_strategy_config_path(strategy_id))
+        expected_lookback = strategy_lookbacks.get(strategy_id, 15)
+        assert f"exec_reconciliation_lookback_mins = {expected_lookback}" in config
         assert "filter_unclaimed_external_orders = true" in config
         assert "filter_position_reports = false" in config
 
@@ -846,6 +866,7 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "Production node lifecycle is managed from Pulse via flux@ units." in strategies_readme
     assert "`exec_reconciliation_lookback_mins`" in strategies_readme
     assert "`15`" in strategies_readme
+    assert "Wider lookbacks are allowed only as explicit per-strategy recovery overrides" in strategies_readme
     assert "filter_unclaimed_external_orders = true" in strategies_readme
     assert "filter_position_reports = false" in strategies_readme
     assert "flux.runners.tokenmm.run_node" in strategies_readme

@@ -129,3 +129,64 @@ Primary commands used to collect this note:
 - `journalctl -u flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service --since '2026-03-11 06:29:35 UTC' --until '2026-03-11 06:29:41 UTC' --no-pager`
 - `systemctl status --no-pager flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service`
 - `systemctl status --no-pager flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service`
+
+## Remediation outcome
+
+### Code and config changes
+
+Follow-up remediation kept the netting fail-closed behavior but narrowed the
+startup history query used for single-client scoped reconciliation:
+
+- in `nautilus_trader/live/execution_engine.py`, startup order-status requests
+  now use `open_only=true` when the local cache has no orders and no open
+  positions for the instrument
+- the stricter `open_only=false` path is still used whenever local execution
+  state exists and must be reconciled against full venue order history
+- `deploy/tokenmm/strategies/plumeusdt_bybit_perp_makerv3.toml` keeps the
+  widened reconciliation lookback and a larger startup timeout budget
+- operator guidance was updated in:
+  - `deploy/tokenmm/strategies/README.md`
+  - `docs/runbooks/tokenmm-risk-validation.md`
+
+### Verification
+
+Local verification completed before the live restart:
+
+- `uv run --no-sync python -m pytest -q tests/unit_tests/live/test_execution_engine.py`
+  - `62 passed`
+- `uv run --no-sync python -m pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py`
+  - `44 passed`
+- `git diff --check`
+  - clean
+
+### Live restart result
+
+After clearing the stale Bybit perp trader cache and deploying the final
+startup fallback, `flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service`
+restarted cleanly at `2026-03-11 11:00:24 UTC` and remained `active/running`.
+
+Key successful startup facts from the journal:
+
+- `Generating scoped startup ExecutionMassStatus for BYBIT on 1 instrument(s)`
+- `Startup reconciliation cache is empty for PLUMEUSDT-LINEAR.BYBIT; requesting only open venue orders and using fills/positions for historical reconstruction`
+- `Received 0 OrderStatusReports`
+- `Received 2 PositionStatusReports`
+- `Received 176 FillReports`
+- `Reconciliation for BYBIT succeeded`
+- `TradingNode: Execution state reconciled`
+- `TradingNode: RUNNING`
+
+### Current operational state
+
+As of `2026-03-11 10:58 UTC`:
+
+- `plumeusdt_bybit_perp_makerv3` node is healthy and `RUNNING`, but the strategy
+  remains intentionally `bot_off`
+- `plumeusdt_bybit_spot_makerv3` node is healthy and remains intentionally
+  `bot_off`
+- `plumeusdt_okx_perp_makerv3` node is healthy and remains intentionally
+  `bot_off`
+
+This remediation closes the startup reconciliation failure for Bybit perp and
+preserves the OKX recovery. Re-enabling trading is a separate operational
+decision.

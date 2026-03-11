@@ -28,7 +28,11 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - `[node.venues.<VENUE>].instrument_id` defines the instrument loaded for each venue client.
 - Use the `BINANCE_SPOT` venue alias for shared reference pricing.
 - Use the `BINANCE_PERP` venue alias when Binance perpetual execution and Binance spot reference data must coexist in one node.
-- `exec_reconciliation_lookback_mins` should stay bounded at `15` for shared-account startup safety.
+- `exec_reconciliation_lookback_mins` defaults to `15` for shared-account startup safety.
+- Wider lookbacks are allowed only as explicit per-strategy recovery overrides when startup reconciliation is
+  scoped to the node's configured instrument(s); document the override in the incident/review notes.
+- If a strategy widens `exec_reconciliation_lookback_mins` materially, increase `timeout_reconciliation`
+  for that node so venue order history can complete inside the startup budget.
 - `[node].filter_unclaimed_external_orders = true` stays enabled for multi-node startup isolation.
 - `[node].filter_position_reports = false` keeps venue positions visible in balances and risk views.
 - `[node.venues.BYBIT].recv_window_ms` is recommended at `20000` for live/demo startup reconciliation.
