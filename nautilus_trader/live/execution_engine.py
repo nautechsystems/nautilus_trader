@@ -1637,6 +1637,177 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"Received {command!r}", LogColor.BLUE)
         self._loop.create_task(self.reconcile_execution_state())
 
+    async def _generate_startup_mass_status(
+        self,
+        client: ExecutionClient,
+        reconciliation_lookback_mins: int | None,
+    ) -> ExecutionMassStatus | None:
+        from nautilus_trader.live.execution_client import LiveExecutionClient
+
+        scoped_instrument_ids = (
+            list(self.reconciliation_instrument_ids)
+            if self.reconciliation_instrument_ids and len(self._clients) == 1
+            else []
+        )
+        client_generate_mass_status = getattr(type(client), "generate_mass_status", None)
+        uses_default_live_mass_status = (
+            client_generate_mass_status is LiveExecutionClient.generate_mass_status
+        )
+        if not scoped_instrument_ids or not uses_default_live_mass_status:
+            if scoped_instrument_ids and not uses_default_live_mass_status:
+                self._log.info(
+                    f"Using adapter-defined startup ExecutionMassStatus for {client.id}; "
+                    "generate_mass_status override preserved",
+                    LogColor.BLUE,
+                )
+            return await client.generate_mass_status(reconciliation_lookback_mins)
+
+        self._log.info(
+            f"Generating scoped startup ExecutionMassStatus for {client.id} on "
+            f"{len(scoped_instrument_ids)} instrument(s)",
+            LogColor.BLUE,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=client.id,
+            account_id=client.account_id,
+            venue=client.venue,
+            report_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        since: pd.Timestamp | None = None
+        if reconciliation_lookback_mins is not None:
+            since = self._clock.utc_now() - pd.Timedelta(minutes=reconciliation_lookback_mins)
+
+        try:
+            for instrument_id in scoped_instrument_ids:
+                use_open_orders_only = self._startup_order_status_should_use_open_only(
+                    client=client,
+                    instrument_id=instrument_id,
+                )
+                order_status_command = GenerateOrderStatusReports(
+                    instrument_id=instrument_id,
+                    start=since,
+                    end=None,
+                    open_only=use_open_orders_only,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                fill_reports_command = GenerateFillReports(
+                    instrument_id=instrument_id,
+                    venue_order_id=None,
+                    start=since,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                position_status_command = GeneratePositionStatusReports(
+                    instrument_id=instrument_id,
+                    start=since,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+
+                reports = await asyncio.gather(
+                    client.generate_order_status_reports(order_status_command),
+                    client.generate_fill_reports(fill_reports_command),
+                    client.generate_position_status_reports(position_status_command),
+                )
+                position_reports = self._collapse_startup_netting_position_reports(
+                    reports=cast("list[PositionStatusReport]", reports[2]),
+                )
+
+                mass_status.add_order_reports(reports=reports[0])
+                mass_status.add_fill_reports(reports=reports[1])
+                mass_status.add_position_reports(reports=position_reports)
+        except Exception as e:
+            self._log.exception("Cannot reconcile scoped startup execution state", e)
+            return None
+
+        return mass_status
+
+    def _startup_order_status_should_use_open_only(
+        self,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+    ) -> bool:
+        cached_orders = self._cache.orders(
+            venue=None,
+            instrument_id=instrument_id,
+            account_id=client.account_id,
+        )
+        if not cached_orders:
+            cached_orders = self._cache.orders(
+                venue=None,
+                instrument_id=instrument_id,
+            )
+        cached_open_positions = self._cache.positions_open(
+            venue=None,
+            instrument_id=instrument_id,
+            account_id=client.account_id,
+        )
+        if not cached_open_positions:
+            cached_open_positions = self._cache.positions_open(
+                venue=None,
+                instrument_id=instrument_id,
+            )
+        use_open_only = not cached_orders and not cached_open_positions
+
+        if use_open_only:
+            self._log.info(
+                f"Startup reconciliation cache is empty for {instrument_id}; "
+                "requesting only open venue orders and using fills/positions for "
+                "historical reconstruction",
+                LogColor.BLUE,
+            )
+
+        return use_open_only
+
+    def _collapse_startup_netting_position_reports(
+        self,
+        reports: list[PositionStatusReport],
+    ) -> list[PositionStatusReport]:
+        if len(reports) <= 1:
+            return reports
+
+        grouped_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
+        ordered_instrument_ids: list[InstrumentId] = []
+        for report in reports:
+            if report.instrument_id not in grouped_reports:
+                grouped_reports[report.instrument_id] = []
+                ordered_instrument_ids.append(report.instrument_id)
+            grouped_reports[report.instrument_id].append(report)
+
+        collapsed_reports: list[PositionStatusReport] = []
+        for instrument_id in ordered_instrument_ids:
+            instrument_reports = grouped_reports[instrument_id]
+            if len(instrument_reports) == 1 or any(
+                report.venue_position_id is not None for report in instrument_reports
+            ):
+                collapsed_reports.extend(instrument_reports)
+                continue
+
+            selected = max(
+                instrument_reports,
+                key=lambda report: (
+                    report.ts_last,
+                    report.ts_init,
+                    int(report.signed_decimal_qty != 0),
+                    abs(report.signed_decimal_qty),
+                ),
+            )
+            self._log.info(
+                f"Collapsing {len(instrument_reports)} startup netting PositionStatusReports for "
+                f"{instrument_id} to ts_last={selected.ts_last}, "
+                f"signed_qty={selected.signed_decimal_qty}",
+                LogColor.BLUE,
+            )
+            collapsed_reports.append(selected)
+
+        return collapsed_reports
+
     async def reconcile_execution_state(
         self,
         timeout_secs: float = 10.0,
@@ -1678,7 +1849,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
             )
             mass_status_coros = [
-                c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
+                self._generate_startup_mass_status(c, reconciliation_lookback_mins)
+                for c in self._clients.values()
             ]
             mass_status_timeout = deadline - self._loop.time()
             if mass_status_timeout <= 0:
@@ -1713,7 +1885,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
                 client_id = mass_status.client_id
                 # venue = mass_status.venue
-                result = self._reconcile_execution_mass_status(mass_status)
+                result = self._reconcile_execution_mass_status(
+                    mass_status,
+                    allow_startup_external_cleanup=True,
+                )
 
                 if not result and self.filter_position_reports:
                     self._log_reconciliation_result(client_id, result)
@@ -1788,7 +1963,10 @@ class LiveExecutionEngine(ExecutionEngine):
 
                         task_result = cast("list[PositionStatusReport]", task_result_or_exception)
                         for report in task_result:
-                            position_result = self._reconcile_position_report(report)
+                            position_result = self._reconcile_position_report(
+                                report,
+                                allow_startup_external_cleanup=True,
+                            )
                             self._log_reconciliation_result(report.instrument_id, position_result)
                             position_results.append(position_result)
 
@@ -1832,7 +2010,10 @@ class LiveExecutionEngine(ExecutionEngine):
         elif isinstance(report, FillReport):
             result = self._reconcile_fill_report_single(report)
         elif isinstance(report, PositionStatusReport):
-            result = self._reconcile_position_report(report)
+            result = self._reconcile_position_report(
+                report,
+                allow_startup_external_cleanup=False,
+            )
         else:
             self._log.error(  # pragma: no cover (design-time error)
                 f"Cannot handle unrecognized report: {report}",  # pragma: no cover (design-time error)
@@ -1852,11 +2033,15 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         Entry point for mass status reconciliation.
         """
-        self._reconcile_execution_mass_status(report)
+        self._reconcile_execution_mass_status(
+            report,
+            allow_startup_external_cleanup=False,
+        )
 
     def _reconcile_execution_mass_status(
         self,
         mass_status: ExecutionMassStatus,
+        allow_startup_external_cleanup: bool = False,
     ) -> bool:
         self._log.debug(f"<--[RPT] {mass_status}")
         self.report_count += 1
@@ -1934,7 +2119,10 @@ class LiveExecutionEngine(ExecutionEngine):
                         self._log_skipping_reconciliation_on_instrument_id(report)
                         continue
 
-                    result = self._reconcile_position_report(report)
+                    result = self._reconcile_position_report(
+                        report,
+                        allow_startup_external_cleanup=allow_startup_external_cleanup,
+                    )
                     results.append(result)
 
         # Publish mass status
@@ -2308,7 +2496,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
     # -- POSITION RECONCILIATION -------------------------------------------------------------------
 
-    def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
+    def _reconcile_position_report(
+        self,
+        report: PositionStatusReport,
+        allow_startup_external_cleanup: bool = False,
+    ) -> bool:
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
@@ -2319,7 +2511,10 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
-            return self._reconcile_position_report_netting(report)
+            return self._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=allow_startup_external_cleanup,
+            )
 
     def _consider_for_reconciliation(self, instrument_id: InstrumentId) -> bool:
         if self.reconciliation_instrument_ids:
@@ -2515,6 +2710,49 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return effective_positions, artifact_positions, effective_qty, raw_qty
 
+    def _startup_effective_netting_positions_for_venue_qty(
+        self,
+        positions_open: list[Position],
+        instrument_id: InstrumentId,
+        venue_qty: Decimal | None,
+    ) -> tuple[list[Position], list[Position], Decimal, Decimal]:
+        effective_positions, artifact_positions, effective_qty, raw_qty = (
+            self._effective_netting_positions_for_venue_qty(
+                positions_open=positions_open,
+                instrument_id=instrument_id,
+                venue_qty=venue_qty,
+            )
+        )
+
+        if (
+            venue_qty is None
+            or raw_qty == venue_qty
+            or not positions_open
+            or artifact_positions
+        ):
+            return effective_positions, artifact_positions, effective_qty, raw_qty
+
+        external_positions = [
+            position for position in positions_open if position.strategy_id.value == "EXTERNAL"
+        ]
+        if not external_positions:
+            return positions_open, [], raw_qty, raw_qty
+
+        effective_positions = [
+            position for position in positions_open if position.strategy_id.value != "EXTERNAL"
+        ]
+        effective_qty = self._sum_position_signed_decimal_qty(effective_positions)
+        if effective_qty != venue_qty:
+            return positions_open, [], raw_qty, raw_qty
+
+        self._log.info(
+            f"Treating EXTERNAL netting positions as stale startup reconciliation artifacts for "
+            f"{instrument_id}: raw_qty={raw_qty}, effective_qty={effective_qty}, "
+            f"external_qty={self._sum_position_signed_decimal_qty(external_positions)}",
+            LogColor.BLUE,
+        )
+        return effective_positions, external_positions, effective_qty, raw_qty
+
     def _cleanup_stale_external_reconciliation_positions(
         self,
         report: PositionStatusReport,
@@ -2567,6 +2805,7 @@ class LiveExecutionEngine(ExecutionEngine):
     def _reconcile_position_report_netting(
         self,
         report: PositionStatusReport,
+        allow_startup_external_cleanup: bool = False,
     ) -> bool:
         self._log.info(f"Reconciling NET position for {report.instrument_id}", LogColor.BLUE)
 
@@ -2582,13 +2821,22 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
         )
 
-        effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
-            self._effective_netting_positions_for_venue_qty(
-                positions_open=positions_open,
-                instrument_id=report.instrument_id,
-                venue_qty=report.signed_decimal_qty,
+        if allow_startup_external_cleanup:
+            effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+                self._startup_effective_netting_positions_for_venue_qty(
+                    positions_open=positions_open,
+                    instrument_id=report.instrument_id,
+                    venue_qty=report.signed_decimal_qty,
+                )
             )
-        )
+        else:
+            effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
+                self._effective_netting_positions_for_venue_qty(
+                    positions_open=positions_open,
+                    instrument_id=report.instrument_id,
+                    venue_qty=report.signed_decimal_qty,
+                )
+            )
 
         self._log.info(f"{report.signed_decimal_qty=}", LogColor.BLUE)
         if raw_position_signed_decimal_qty != position_signed_decimal_qty:
