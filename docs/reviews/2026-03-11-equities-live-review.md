@@ -8,34 +8,64 @@
 - Active strategy file: `deploy/equities/strategies/aapl_tradexyz_makerv4.toml`
 - Rollback file: `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled`
 
-## Direct Evidence Captured In This Session
+## Fresh Live Probe Results
 
-- Public host probe:
-  - `curl -fsS http://13.213.194.42:5022/equities`
-  - Result from this sandbox: `curl: (7) Failed to connect to 13.213.194.42 port 5022`
-- Host-local HTTP probe from this sandbox namespace:
-  - `curl -fsS http://127.0.0.1:5022/equities`
-  - `curl -fsS http://127.0.0.1:5024/api/v1/signals?profile=equities`
-  - Result from this sandbox: `curl: (7) Failed to connect ...`
-- Local socket/process evidence still shows the host services and drifted commands:
-  - `ss -ltnp | rg ':5022|:5024'` showed listeners on `0.0.0.0:5022` and `127.0.0.1:5024`
-  - `ps -ef | rg 'run_api|run_node|md-ibkr-publisher|IBC'` showed the public `tokenmm` API on `:5022` and an equities API backend on `127.0.0.1:5024`
-  - `/etc/flux/equities-api.env` points at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml` and still uses `--mode paper`
-  - `/etc/flux/equities-node-aapl_tradexyz_makerv4.env` points at the same `makerv3-mono-pr` worktree and still uses `--mode paper`
-  - `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/fluxboard/dist/index.html` still references `/tokenmm/assets/index-*.js` and `/tokenmm/assets/index-*.css`
-- Service/docker introspection limits in this sandbox:
-  - `systemctl --no-pager --type=service --all | rg 'flux@equities|chainsaw@md-ibkr-publisher'` returned `Failed to connect to bus: Operation not permitted`
-  - `docker logs --tail 120 nautilus-ib-gateway-live` is blocked here because the session cannot access the Docker API or escalate with `sudo`
+Required Step 1 probes on `2026-03-11` captured the current live failure state directly:
 
-## Controller-Provided March 11 Live Findings
+- `/equities` shell:
+  - Command: `curl -fsS http://13.213.194.42:5022/equities | sed -n '1,20p'`
+  - HTML head included `<link rel="icon" type="image/svg+xml" href="/static/fluxboard/favicon.svg" />`
+  - HTML head included `<script type="module" crossorigin src="/tokenmm/assets/index-DshLjUYS.js"></script>`
+  - HTML head included `<link rel="stylesheet" crossorigin href="/tokenmm/assets/index-6uS6GK5c.css">`
+  - Result: `/equities` is serving the wrong asset-owner path. The shell is loading Fluxboard assets from `/tokenmm/assets/*` instead of `/static/fluxboard/assets/*`.
+- Signals API:
+  - Command: `curl -fsS 'http://13.213.194.42:5022/api/v1/signals?profile=equities' | jq '.data.strategies[0]'`
+  - `id = "aapl_tradexyz_makerv4"`
+  - `meta.class = "maker_v4"`
+  - `tradeable = false`
+  - `blocked = true`
+  - `params.bot_on = false`
+  - `maker_v4.quote_snapshot.hedge_ready = false`
+  - `maker_v4.quote_snapshot.ibkr_quote_age_ms = 94930856`
+  - `state.state = "bot_off"`
+  - `balances_count = 1`
+  - `debug.md_health.state_stale = true`
+  - `debug.md_health.stale_legs = ["hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID", "ibkr:AAPL.NASDAQ"]`
+  - Result: the active MakerV4 row is present, but the live signal surface is blocked, stale, and not tradeable.
+- Balances API:
+  - Command: `curl -fsS 'http://13.213.194.42:5022/api/v1/balances?profile=equities' | jq '.data'`
+  - one row only
+  - row is Hyperliquid `USDC`
+  - `count = 1`
+  - `components[0].strategy_id = "aapl_tradexyz_makerv4"`
+  - `components[0].stale = true`
+  - `components[0].age_ms = 166713929`
+  - `degraded = true`
+  - `stale_after_ms = 30000`
+  - Result: balances are stale/degraded and the shared equities portfolio view has collapsed to one stale Hyperliquid cash row.
+- Service graph:
+  - Command: `systemctl --no-pager --type=service --all | rg 'flux@equities|chainsaw@md-ibkr-publisher'`
+  - `chainsaw@md-ibkr-publisher.service` = failed
+  - `flux@equities-api.service` = active/running
+  - `flux@equities-bridge.service` = inactive/dead
+  - `flux@equities-node-aapl_tradexyz_makerv4.service` = inactive/dead
+  - `flux@equities-portfolio.service` = inactive/dead
+  - Result: only the equities API is up; the publisher and the rest of the equities runtime graph are not running.
+- IBKR gateway container:
+  - Command: `docker logs --tail 120 nautilus-ib-gateway-live`
+  - multiple failed or expired 2FA attempts appeared first
+  - retry path logged `socat ... connect(5, AF=2 127.0.0.1:4001, 16): Connection refused`
+  - final successful login path logged:
+    - `2026-03-11 01:04:14:908 IBC: Second Factor Authentication initiated`
+    - `2026-03-11 01:04:28:965 IBC: Login has completed`
+    - `2026-03-11 01:04:29:556 IBC: Configuration tasks completed`
+  - Result: IBKR auth eventually succeeded, but downstream runtime recovery did not follow.
 
-These were already established on the live host before this docs-only task and remain consistent with the drift captured above:
+## Supporting Host Drift Evidence
 
-- `/equities` served the wrong GUI bundle path and pointed at `/tokenmm/assets/...` instead of `/static/fluxboard/assets/...`
-- `GET /api/v1/signals?profile=equities` was stale and showed a blocked, non-running `aapl_tradexyz_makerv4` row
-- `GET /api/v1/balances?profile=equities` was stale/degraded and returned only one stale Hyperliquid `USDC` cash row
-- only `flux@equities-api` was active; the equities bridge, portfolio, and node stack were not up
-- the IBKR gateway had already authenticated, but `chainsaw@md-ibkr-publisher.service` was still failed
+- `/etc/flux/equities-api.env` points at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml` and still uses `--mode paper`
+- `/etc/flux/equities-node-aapl_tradexyz_makerv4.env` points at the same `makerv3-mono-pr` worktree and still uses `--mode paper`
+- `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/fluxboard/dist/index.html` still references `/tokenmm/assets/index-*.js` and `/tokenmm/assets/index-*.css`
 
 ## Frozen Contract Record
 
