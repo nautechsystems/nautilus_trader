@@ -70,6 +70,52 @@ Operating contract:
   `UNSUPPORTED_ACCOUNT_MODE` before enabling quoting
 - do not use Portfolio Margin / PAPI as a live fallback; that support is a
   separate project
+## Bitget Spot + Perp Market-Making Contract
+
+Dedicated runbook:
+`docs/runbooks/tokenmm-bitget-spot-perp-market-making.md`
+
+`plumeusdt_bitget_spot_makerv3` and `plumeusdt_bitget_perp_makerv3` target
+Bitget UTA/shared-margin parity as the preferred production contract.
+
+Operating contract:
+
+- preferred account model: Bitget unified/shared-margin account for both
+  strategies
+- preferred spot behavior: shared-collateral quoting with borrowing only where
+  needed, constrained to sell-side borrowing on the first rollout
+- preferred perp behavior: USDT-margined perp in one-way/netting mode
+- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
+  restart and canary
+- verify balances through `GET /api/v1/balances?profile=tokenmm` before enabling
+  quoting; do not treat invisible Bitget collateral or inventory as production
+  ready
+- if the UTA/shared-margin path is still blocked, the only accepted temporary
+  fallback is funded spot inventory plus funded perp collateral, with that
+  downgrade called out explicitly in the runbook
+- do not silently promote the funded-inventory fallback as the final Bitget
+  production contract
+- before enabling quoting, clear the operator-side account checklist in
+  `docs/runbooks/tokenmm-bitget-spot-perp-market-making.md`:
+  - confirm UTA/shared-margin is actually enabled if parity is the chosen path
+  - record the UTA mode and the Bitget equity threshold cleared for that mode
+  - confirm `PLUME` loan/margin support if borrow-backed spot quoting is
+    expected
+  - confirm futures is enabled in one-way mode
+  - confirm the live key has the required permissions
+- before restart, clear the local readiness checks from the same runbook:
+  - `/etc/flux/common.env` Bitget credentials must match the intended live
+    account
+  - `GET /api/v1/balances?profile=tokenmm` must show the chosen live contract
+    through our stack, not just in the Bitget UI
+  - `GET /api/v1/signals?profile=tokenmm` must show both Bitget strategies
+    still bot-off
+- restart both Bitget services in bot-off mode first and inspect the journal:
+  - no fresh `UNSUPPORTED_ACCOUNT_MODE`
+  - no fresh `400` / `429` burst while bot-off
+  - no startup failure that leaves balances/signals stale
+- capture the account-mode, permissions, balances/signals payloads, and journal
+  evidence in the runbook before the first canary
 
 ## Inventory and balances model
 
