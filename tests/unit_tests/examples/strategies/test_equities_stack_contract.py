@@ -149,7 +149,7 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
     )
     assert 'exec_flag+=(--enable-execution)' in stack_script
     assert (
-        "python3 -m nautilus_trader.flux.runners.equities.run_node --config"
+        '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config'
         in install_script
     )
     assert "--enable-execution" in install_script
@@ -259,6 +259,24 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert "flux@*" not in sudoers
 
 
+def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
+
+    assert 'EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in install_script
+    assert "require_project_python()" in install_script
+    assert 'if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then' in install_script
+    assert "append_checkout_env_overrides()" in install_script
+    assert "printf 'WORKDIR=%s\\nPYTHONPATH=%s\\n' \"${ROOT_DIR}\" \"${ROOT_DIR}\" >> \"${env_path}\"" in install_script
+    assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api' in install_script
+    assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_portfolio' in install_script
+    assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_bridge' in install_script
+    assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node' in install_script
+    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-api.env"' in install_script
+    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-portfolio.env"' in install_script
+    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-bridge.env"' in install_script
+    assert 'append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"' in install_script
+
+
 def test_equities_shared_fluxboard_contract_uses_neutral_static_prefix() -> None:
     repo_root = _repo_root()
     install_script = _read(repo_root / "ops/scripts/deploy/install_equities_systemd.sh")
@@ -292,6 +310,18 @@ def test_equities_deploy_docs_keep_equities_routes_spa_only() -> None:
         "The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`."
         in strategies_readme
     )
+
+
+def test_equities_deploy_docs_require_post_install_env_verification() -> None:
+    readme = _read(_repo_root() / "deploy/equities/README.md")
+
+    assert "`sed -n '1,120p' /etc/flux/equities-api.env`" in readme
+    assert "`sed -n '1,120p' /etc/flux/equities-portfolio.env`" in readme
+    assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
+    assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`" in readme
+    assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout" in readme
+    assert "the generated env commands use the checkout-local `.venv/bin/python`" in readme
+    assert "Do not restart services until those env files match the intended checkout and live flags." in readme
 
 
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
