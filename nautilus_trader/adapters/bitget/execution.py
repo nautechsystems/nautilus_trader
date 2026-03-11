@@ -1448,6 +1448,9 @@ class BitgetExecutionClient(LiveExecutionClient):
                     account_mode=BitgetExecutionClient._account_mode_from_config(
                         getattr(self, "_config", None),
                     ),
+                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
                     margin_mode=BitgetExecutionClient._margin_mode_from_config(
                         getattr(self, "_config", None),
                     ),

@@ -1321,6 +1321,7 @@ impl BitgetHttpClient {
         symbol: Option<String>,
         margin_coin: Option<String>,
         account_mode: Option<String>,
+        _allow_cash_borrowing: bool,
         _margin_mode: Option<String>,
         _position_mode: Option<String>,
     ) -> Result<Vec<BitgetPositionInfo>> {
@@ -2558,6 +2559,7 @@ impl BitgetHttpClient {
         symbol: Option<String>,
         margin_coin: Option<String>,
         account_mode: Option<String>,
+        allow_cash_borrowing: bool,
         margin_mode: Option<String>,
         position_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
@@ -2570,6 +2572,7 @@ impl BitgetHttpClient {
                     symbol,
                     margin_coin,
                     account_mode,
+                    allow_cash_borrowing,
                     margin_mode,
                     position_mode,
                 )

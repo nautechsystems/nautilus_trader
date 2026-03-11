@@ -730,6 +730,7 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
     async def request_position_status_reports(**kwargs):
         assert kwargs["symbol"] is None
         assert kwargs["account_mode"] == "UTA"
+        assert kwargs["allow_cash_borrowing"] is False
         assert kwargs["margin_mode"] == "cross"
         assert kwargs["position_mode"] == "one_way"
         return [
