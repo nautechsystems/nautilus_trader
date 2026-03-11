@@ -101,7 +101,6 @@ Expected results:
 - the generated envs point at the intended live checkout, not `/.worktrees/makerv3-mono-pr`
 - equities API and node commands use `--mode live --confirm-live` for the production path
 - on the shared `tokenmm-api` host, public `/equities` emits `/static/fluxboard/assets/*`, never `/tokenmm/assets/*`
-- when the dedicated equities runner is hit directly instead of through the shared proxy, the repo contract still serves `/equities/assets/*`
 
 Primary operator surfaces:
 

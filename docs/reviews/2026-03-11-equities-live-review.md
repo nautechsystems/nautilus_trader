@@ -61,14 +61,37 @@ Required Step 1 probes on `2026-03-11` captured the current live failure state d
     - `2026-03-11 01:04:29:556 IBC: Configuration tasks completed`
   - Result: IBKR auth eventually succeeded, but downstream runtime recovery did not follow.
 
-## Supporting Host Drift Evidence
+## Supporting Host Drift And Provenance Evidence
 
+- `sed -n '1,120p' /etc/flux/tokenmm-api.env`
+  - Result: `WORKDIR=/home/ubuntu/nautilus_trader`
+  - Result: `CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 /home/ubuntu/nautilus_trader/.venv/bin/python -m nautilus_trader.flux.runners.tokenmm.run_api --config /home/ubuntu/nautilus_trader/deploy/tokenmm/tokenmm.live.toml --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse"`
+- `ps -ef | rg 'flux\.runners\.tokenmm\.run_api'`
+  - Result: the running public `tokenmm-api` process comes from `/home/ubuntu/nautilus_trader/.venv/bin/python` with `--config /home/ubuntu/nautilus_trader/deploy/tokenmm/tokenmm.live.toml --mode live`
 - `sed -n '1,120p' /etc/flux/equities-api.env`
-  - Result: points at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml` and still uses `--mode paper`
+  - Result: `CMD="env FLUXBOARD_SERVE_DIST=1 ${EQUITIES_PYTHON_BIN:-python3} -m nautilus_trader.flux.runners.equities.run_api --config /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml --mode paper --host 127.0.0.1 --port 5024 --serve-fluxboard"`
+- `ps -ef | rg 'flux\.runners\.equities\.run_api'`
+  - Result: the running loopback equities backend comes from `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/.venvs/equities/bin/python` with `--config /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/deploy/equities/equities.live.toml --mode paper --host 127.0.0.1 --port 5024 --serve-fluxboard`
+- `readlink -f /proc/2518130/cwd`
+  - Result: `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
+- `tr '\0' '\n' < /proc/2518130/environ | rg '^(WORKDIR|PYTHONPATH|FLUXBOARD_SERVE_DIST|EQUITIES_API_BACKEND_URL)='`
+  - Result: includes `WORKDIR=/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
+  - Result: includes `PYTHONPATH=/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`
+  - Result: includes `FLUXBOARD_SERVE_DIST=1`
+  - Result: includes `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024`
+  - Note: only non-secret provenance envs are recorded here
 - `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
   - Result: points at the same `makerv3-mono-pr` worktree and still uses `--mode paper`
+- `curl -fsS http://127.0.0.1:5024/equities | rg '/tokenmm/assets|/static/fluxboard/assets|/equities/assets' -n`
+  - Result: returned only line 8 `/tokenmm/assets/index-DshLjUYS.js`
+  - Result: returned only line 9 `/tokenmm/assets/index-6uS6GK5c.css`
 - `sed -n '1,20p' /home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/fluxboard/dist/index.html`
-  - Result: still references `/tokenmm/assets/index-*.js` and `/tokenmm/assets/index-*.css`
+  - Result: shows the same `/tokenmm/assets/index-DshLjUYS.js` and `/tokenmm/assets/index-6uS6GK5c.css` references
+- `sed -n '1,20p' /home/ubuntu/nautilus_trader/fluxboard/dist/index.html`
+  - Result: main checkout currently uses `/static/fluxboard/assets/index-Dh7RM63S.js` and `/static/fluxboard/assets/index-BCpW5E6y.css`
+  - Result: those main-checkout asset hashes do not match the public `/equities` shell
+
+These provenance checks close the remaining gap: public `tokenmm-api` is running from the main checkout in live mode, but the loopback equities backend running from `/.worktrees/makerv3-mono-pr` in paper mode is the source whose stale `/tokenmm/assets/*` HTML matches the public `/equities` shell.
 
 ## Frozen Contract Record
 
