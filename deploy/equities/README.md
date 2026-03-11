@@ -97,6 +97,7 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
 - `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
+- `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
 - `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
 
 Expected results:
@@ -106,6 +107,7 @@ Expected results:
 - the generated env commands use the checkout-local `.venv/bin/python` instead of a floating system `python3`
 - equities API and node commands use `--mode live --confirm-live` for the production path
 - every generated `equities-node-*.env` is rewritten from the intended checkout and live-mode flags, not just the active canary example
+- print and review every rendered `equities-node-*.env` contents before restart so stale checkout paths or paper-mode commands cannot hide behind a filename-only listing
 - on the shared `tokenmm-api` host, public `/equities` should emit `/static/fluxboard/assets/*`
 - `/tokenmm/assets/*` on the shared public `/equities` route is a failure
 - `/equities/assets/*` on the shared public `/equities` route is also a failure for the current shared-host contract

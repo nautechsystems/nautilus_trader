@@ -322,9 +322,11 @@ def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`" in readme
     assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
+    assert "`for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' \"$env_path\"; done`" in readme
     assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout" in readme
     assert "the generated env commands use the checkout-local `.venv/bin/python`" in readme
     assert "every generated `equities-node-*.env` is rewritten from the intended checkout" in readme
+    assert "print and review every rendered `equities-node-*.env` contents" in readme
     assert "Do not restart services until those env files match the intended checkout and live flags." in readme
     assert "verify every matching `/etc/flux/equities-node-*.env`" in common_env
 
