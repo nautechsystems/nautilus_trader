@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 import nautilus_trader.flux.api.app as app_module
 from nautilus_trader.flux.api import create_flux_api_app
@@ -12,6 +15,7 @@ from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
+from nautilus_trader.flux.common.strategy_contracts import decode_strategy_contracts
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4Strategy
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4StrategyConfig
 from nautilus_trader.model.identifiers import InstrumentId
@@ -25,6 +29,10 @@ def _compat_flux_config(flux_config):
         redis=flux_config.redis,
         venues=flux_config.venues,
     )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
@@ -68,6 +76,85 @@ def _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_
     )
     redis_client.set_json(keys.balances_snapshot(), [])
     redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": strategy_id, "fv": 100.0}])
+
+
+def test_equities_contract_docs_define_shared_account_row_provenance() -> None:
+    contract = (_repo_root() / "fluxboard/docs/equities_contract.md").read_text(encoding="utf-8")
+
+    assert "source_scope" in contract
+    assert "account_scope_id" in contract
+    assert "source_strategy_ids" in contract
+    assert "Later balance-model tasks" in contract
+    assert 'scope = "shared_account"' in contract
+
+
+def test_strategy_contract_module_defines_canonical_account_scope_identity() -> None:
+    path = _repo_root() / "systems/flux/flux/common/strategy_contracts.py"
+
+    assert path.exists()
+    contract_module = path.read_text(encoding="utf-8")
+    assert "@dataclass(frozen=True, slots=True)" in contract_module
+    assert "class StrategyContractEntry" in contract_module
+    assert "portfolio_asset_id: str" in contract_module
+    assert "execution_account_scope_id: str" in contract_module
+    assert "reference_account_scope_id: str" in contract_module
+    assert "hedge_account_scope_id: str | None = None" in contract_module
+
+
+def test_decode_strategy_contracts_rejects_blank_required_fields() -> None:
+    with pytest.raises(ValueError, match="portfolio_asset_id"):
+        decode_strategy_contracts(
+            [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv3",
+                    "portfolio_asset_id": "   ",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        )
+
+
+def test_decode_strategy_contracts_normalizes_optional_hedge_scope() -> None:
+    decoded = decode_strategy_contracts(
+        [
+            {
+                "strategy_id": "aapl_tradexyz_makerv3",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": " ",
+            },
+        ],
+    )
+
+    assert len(decoded) == 1
+    assert decoded[0].hedge_account_scope_id is None
+
+
+def test_decode_strategy_contracts_rejects_non_string_required_fields() -> None:
+    with pytest.raises(TypeError, match="strategy_id"):
+        decode_strategy_contracts(
+            [
+                {
+                    "strategy_id": 123,
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        )
+
+
+def test_decode_strategy_contracts_rejects_non_mapping_rows() -> None:
+    with pytest.raises(TypeError, match="manifest row"):
+        decode_strategy_contracts([123])
 
 
 def test_signals_profile_equities_returns_only_allowlisted_strategies(

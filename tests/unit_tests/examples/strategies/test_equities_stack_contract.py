@@ -245,10 +245,12 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
         "bridge",
         "api",
         "portfolio",
+        "strategy_contracts",
         "contracts",
     }
     assert "[node]" not in live_config
     assert "[strategy]" not in live_config
+    assert "[[strategy_contracts]]" in live_config
     assert 'exchange = "hyperliquid"' in live_config
     assert 'exchange = "ibkr"' in live_config
     assert contracts == {
@@ -346,6 +348,47 @@ def test_equities_shared_contract_catalog_matches_active_strategy_routes() -> No
             "ibkr",
             active_config["node"]["venues"]["IBKR"]["instrument_id"],
         ) in shared_contracts
+
+
+def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_ids() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    contracts = config["strategy_contracts"]
+    aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_makerv3")
+
+    assert aapl["portfolio_asset_id"] == "AAPL"
+    assert aapl["maker_instrument_id"] == "xyz:AAPL-USD-PERP.HYPERLIQUID"
+    assert aapl["reference_instrument_id"] == "AAPL.NASDAQ"
+    assert aapl["execution_account_scope_id"] == "hyperliquid.xyz.main"
+    assert aapl["reference_account_scope_id"] == "ibkr.reference.main"
+    assert aapl["hedge_account_scope_id"] == "ibkr.hedge.main"
+
+
+def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    rows = config["strategy_contracts"]
+    strategy_ids = [entry["strategy_id"] for entry in rows]
+    portfolio_asset_ids = [entry["portfolio_asset_id"] for entry in rows]
+
+    assert len(rows) == len(ACTIVE_STRATEGIES)
+    assert len(strategy_ids) == len(set(strategy_ids))
+    assert len(portfolio_asset_ids) == len(set(portfolio_asset_ids))
+
+    contracts = {
+        entry["strategy_id"]: (
+            entry["portfolio_asset_id"],
+            entry["maker_instrument_id"],
+            entry["reference_instrument_id"],
+        )
+        for entry in rows
+    }
+
+    assert set(contracts) == set(ACTIVE_STRATEGY_IDS)
+    for entry in ACTIVE_STRATEGIES:
+        assert contracts[entry["strategy_id"]] == (
+            entry["symbol"],
+            entry["hyperliquid_instrument_id"],
+            entry["ibkr_instrument_id"],
+        )
 
 
 def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:

@@ -24,6 +24,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - The active checked-in equities target is the MakerV3 trade[XYZ] stock universe: `aapl`, `amd`, `amzn`, `baba`, `coin`, `crcl`, `crwv`, `googl`, `hood`, `hyundai`, `intc`, `meta`, `mstr`, `msft`, `mu`, `nflx`, `nvda`, `orcl`, `pltr`, `rivn`, `sndk`, `tsm`, `tsla`, and `usar`.
 - `aapl_tradexyz_makerv4.toml.disabled` is rollback/canary material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
+- `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
 - On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
 - The shared host also runs an internal-only `equities-api` backend on loopback so `/equities` can read the dedicated equities Redis store without exposing a second public API port.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
@@ -41,6 +42,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 ## MakerV3 deploy contract
 
 - `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v3"`, the equities allowlist points to the enrolled stock strategy set, and the shared contract metadata publishes one Hyperliquid and one IBKR contract row per enrolled stock.
+- Each `[[strategy_contracts]]` row binds one strategy-local id to one canonical `portfolio_asset_id`, one Hyperliquid maker leg, one IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
 - The shared config merge only imports `redis` and `portfolio`, so active node settings live in `deploy/equities/strategies/*.toml`, not in `deploy/equities/equities.live.toml`.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
 - The old single-canary wording still applies as a safety invariant: shared IBKR contract entry must mirror the active canary route before that route is added to the enrolled stock set.
@@ -56,6 +58,9 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `global_qty` is the shared `equities` portfolio aggregate owned by `flux.runners.equities.run_portfolio`.
 - `GET /api/v1/balances?profile=equities` is the portfolio projection across the allowlisted stock strategies.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
+- The current live balances payload may still use the legacy shared-row marker `scope = "shared_account"`.
+- Later balance-model tasks will add `source_scope`, `account_scope_id`, and `source_strategy_ids` so shared IBKR or Hyperliquid account rows can carry explicit provenance without pretending to belong to one `strategy_id`.
+- `strategy_id` stays strategy-local metadata. Once those later tasks land, shared rows should anchor identity on `portfolio_asset_id` plus the account scope fields above.
 
 ## Production control plane
 

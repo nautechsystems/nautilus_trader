@@ -55,15 +55,24 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 1. One stock uses one strategy file and one node process.
 2. The live allowlist is `api.equities_strategy_ids`.
 3. Required portfolio readiness is `api.equities_required_strategy_ids`.
-4. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
-5. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
+4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per enrolled stock as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, venue instrument ids, and shared account scopes.
+5. `portfolio_asset_id` is the canonical equities inventory identity. Do not infer portfolio identity from venue-specific base strings such as `XYZ:AAPL`.
+6. Shared account scopes are explicit: `execution_account_scope_id`, `reference_account_scope_id`, and optional `hedge_account_scope_id`.
+7. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
+8. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
+9. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
 
 ## Response Expectations
 
 1. `signals.strategies[].meta.strategy_groups` is `equities`.
 2. `balances` represents the shared `equities` portfolio view.
-3. Per-row `strategy_id` values remain the enrolled equities strategy IDs.
-4. `balances` may include both Hyperliquid execution rows and IBKR reference-account rows when the IBKR reference monitor is connected.
-5. Shared IBKR cash rows may carry `scope = "shared_account"` when multiple equities strategies project the same IBKR account.
-6. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
-7. Clients should ignore unknown fields and tolerate additional metadata fields.
+3. The current live balances contract may still use the legacy shared-row marker `scope = "shared_account"` until the later balance-model tasks land.
+4. Later balance-model tasks will add explicit shared-account provenance fields:
+   - `source_scope`: `strategy`, `shared_account`, or `portfolio`
+   - `account_scope_id`: stable account identity such as `ibkr.reference.main`
+   - `source_strategy_ids`: enrolled strategies that consume or publish against that shared row
+5. Strategy-local rows may still expose `strategy_id`, but future shared-account and portfolio rows must not rely on `strategy_id` as their ownership identity.
+6. `balances` may include both Hyperliquid execution rows and IBKR reference-account rows when the IBKR reference monitor is connected.
+7. Future shared IBKR cash rows may carry `source_scope = "shared_account"` and a shared `account_scope_id` when multiple equities strategies project the same IBKR account.
+8. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
+9. Clients should ignore unknown fields and tolerate additional metadata fields.
