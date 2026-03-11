@@ -3243,7 +3243,7 @@ def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     assert all(component["stale"] is False for component in body["data"]["components"])
 
 
-def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product_scopes(
+def test_balances_profile_tokenmm_keeps_bitget_shared_account_cash_scoped_by_product_type(
     flux_config,
     redis_client,
     contract_catalog,
@@ -3309,15 +3309,126 @@ def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product
         body = response.get_json()
 
     assert response.status_code == 200
-    bitget_rows = [
-        row
-        for row in body["data"]["rows"]
-        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    bitget_rows = sorted(
+        [
+            row
+            for row in body["data"]["rows"]
+            if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
+    assert [row["row_id"] for row in bitget_rows] == [
+        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
+        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
     ]
-    assert len(bitget_rows) == 1
-    row = bitget_rows[0]
-    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
-    assert row["total"] == "500"
+    assert [row["total"] for row in bitget_rows] == ["0", "500"]
+    assert [row["product_type"] for row in bitget_rows] == ["perp", "spot"]
+    assert [row["display_name_short"] for row in bitget_rows] == ["USDT Perp", "USDT Spot"]
+    assert all(row.get("scope") == "shared_account" for row in bitget_rows)
+
+
+def test_balances_profile_tokenmm_preserves_bitget_shared_account_scope_rows_for_readiness(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "500",
+                "locked": "0",
+                "total": "500",
+                "product_type": "spot",
+                "ts_ms": 1_700_000_000_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "PLUME",
+                "free": "25000",
+                "locked": "0",
+                "total": "25000",
+                "product_type": "spot",
+                "ts_ms": 1_700_000_000_010,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "0",
+                "locked": "0",
+                "total": "0",
+                "product_type": "perp",
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+    )
+
+    bitget_contract_catalog = (
+        ContractCatalogEntry(
+            exchange="bitget",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT.BITGET",
+        ),
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=bitget_contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "plumeusdt_bitget_perp_makerv3"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    bitget_rows = sorted(
+        [
+            row
+            for row in body["data"]["rows"]
+            if row.get("exchange") == "bitget" and row.get("account") == "BITGET-001"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
+
+    assert [row["row_id"] for row in bitget_rows] == [
+        "tokenmm:cash:bitget:BITGET-001:PLUME",
+        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
+        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+    ]
+    assert [row.get("product_type") for row in bitget_rows] == ["spot", "perp", "spot"]
+    assert [row["total"] for row in bitget_rows] == ["25000", "0", "500"]
+    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account", "shared_account"]
 
 
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(

@@ -494,7 +494,10 @@ def _cash_row_key(
     if (
         preserve_product_scope_cash
         and product_type in {"spot", "perp"}
-        and asset not in _STABLE_BALANCE_ASSETS
+        and (
+            asset not in _STABLE_BALANCE_ASSETS
+            or exchange in _PRODUCT_SCOPED_STABLE_CASH_EXCHANGES
+        )
     ):
         merge_scope = product_type
     elif product_type == "perp" and asset not in _STABLE_BALANCE_ASSETS:
@@ -603,6 +606,32 @@ def _collapse_duplicate_cash_scope_rows(
                 continue
             cash_latest.pop(key, None)
             cash_source_strategy_ids.pop(key, None)
+
+
+def _annotate_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    exchange = decode_text(out.get("exchange") or out.get("venue_root") or out.get("venue")).strip().lower()
+    if exchange not in _PRODUCT_SCOPED_STABLE_CASH_EXCHANGES:
+        return out
+    asset = decode_text(out.get("asset") or out.get("coin") or out.get("base")).strip().upper()
+    if asset not in _STABLE_BALANCE_ASSETS:
+        return out
+    if out.get("scope") != "shared_account":
+        return out
+
+    product_type = decode_text(out.get("product_type") or out.get("market_type")).strip().lower()
+    if product_type not in {"spot", "perp"}:
+        return out
+
+    suffix = "Perp" if product_type == "perp" else "Spot"
+    display_name_short = f"{asset} {suffix}"
+    venue_root = decode_text(out.get("venue_root") or out.get("exchange")).strip().lower()
+    out["display_name_short"] = display_name_short
+    if venue_root:
+        out["display_name_long"] = f"{venue_root.title()} {display_name_short}"
+    else:
+        out["display_name_long"] = display_name_short
+    return out
 
 
 def _row_exchange_hint(row: Mapping[str, Any]) -> str:
@@ -892,7 +921,10 @@ def merge_portfolio_balances_rows(
             carried = dict(latest_row)
         else:
             carried = _carry_forward_cash_mark(dict(latest_row), marked_previous)
-        if cash_key[1] and len(cash_source_strategy_ids.get(cash_key, set())) > 1:
+        if cash_key[1] and (
+            len(cash_source_strategy_ids.get(cash_key, set())) > 1
+            or cash_key[:3] in scoped_cash_conflicts
+        ):
             carried["scope"] = "shared_account"
         cash_latest[cash_key] = (latest_ts_ms, carried)
 
@@ -908,11 +940,15 @@ def merge_portfolio_balances_rows(
     merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
     merged_rows.sort(key=_portfolio_balance_sort_key)
     return collapse_balance_display_rows(
-        [enrich_row_with_canonical_naming(row) for row in merged_rows],
+        [
+            _annotate_shared_scope_stable_cash_row(enrich_row_with_canonical_naming(row))
+            for row in merged_rows
+        ],
     )
 
 
 _STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
+_PRODUCT_SCOPED_STABLE_CASH_EXCHANGES = frozenset({"bitget"})
 _PREFERRED_SPOT_QUOTES = ("USDT", "USDC", "USD", "FDUSD", "DAI", "USDE")
 
 

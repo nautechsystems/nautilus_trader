@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.adapters.bitget.execution import BitgetExecutionClient
 from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderCancelRejected
@@ -217,6 +218,59 @@ def test_order_rejected_rate_limit_triggers_venue_protection_circuit(strategy_fa
     assert alerts[-1]["source_event"] == "order_rejected"
     assert alerts[-1]["raw_reason"] == raw_reason
     assert events[-1][0] == "venue_protection_circuit_breaker"
+    assert events[-1][1]["raw_reason"] == raw_reason
+
+
+def test_bitget_http_error_reason_preserves_exchange_code_and_message() -> None:
+    reason = BitgetExecutionClient._format_exchange_error_reason(
+        Exception(
+            'HTTP request failed with status 400 body={"code":"22034","msg":"insufficient position"}',
+        ),
+    )
+
+    assert reason == "bitget_http_error: status=400 code=22034 msg=insufficient position"
+
+
+def test_structured_bitget_http_429_reason_still_triggers_venue_protection() -> None:
+    assert failures_mod.is_venue_protection_reason(
+        "bitget_http_error: status=429 code=429 msg=Too many requests",
+    )
+
+
+def test_order_rejected_structured_bitget_http_429_triggers_venue_protection_circuit(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(cancel_all_instrument_orders=True)
+
+    canceled: list[tuple[str, bool, bool | None]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    stopped: list[bool] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    strategy._cancel_managed_quotes = lambda reason, force=False, **kwargs: canceled.append(
+        (reason, force, kwargs.get("allow_instrument_cancel")),
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy.stop_immediately = lambda: stopped.append(True)
+
+    raw_reason = "bitget_http_error: status=429 code=42912 msg=Too many requests"
+    strategy.on_order_rejected(
+        SimpleNamespace(
+            client_order_id="RESTING-1",
+            instrument_id=strategy.config.maker_instrument_id,
+            reason=raw_reason,
+            due_post_only=False,
+            ts_event=1,
+        ),
+    )
+
+    assert stopped == [True]
+    assert canceled == [("venue_protection_circuit_breaker", True, False)]
+    assert states[-1] == "blocked_venue_protection"
+    assert alerts[-1]["raw_reason"] == raw_reason
     assert events[-1][1]["raw_reason"] == raw_reason
 
 
