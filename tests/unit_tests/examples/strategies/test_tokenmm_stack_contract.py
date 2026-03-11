@@ -28,6 +28,7 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
+DEPLOY_ROOT_PLACEHOLDER = "/absolute/path/to/deploy-root"
 
 
 def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
@@ -122,24 +123,54 @@ def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
 
 def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+    runbook = _read(_repo_root() / "docs/fluxboard/tokenmm_runbook.md")
 
     assert "rebuild_flux_pulse_sudoers.sh" in script
     assert "strategy_stack_write_env" in script
-    assert 'TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in script
-    assert "append_checkout_env_overrides" in script
-    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in script
+    assert 'ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"' in script
+    assert 'DEPLOY_ROOT_OVERRIDE="${TOKENMM_DEPLOY_ROOT:-}"' in script
+    assert "resolve_deploy_root() {" in script
+    assert "path_is_git_worktree() {" in script
+    assert 'DEPLOY_ROOT="$(resolve_deploy_root)"' in script
+    assert (
+        'echo "[tokenmm-systemd] deploy root missing or not a directory: ${DEPLOY_ROOT}" >&2'
+        in script
+    )
+    assert (
+        'echo "[tokenmm-systemd] deploy root must not be a git worktree: ${DEPLOY_ROOT}" >&2'
+        in script
+    )
+    assert script.index('DEPLOY_ROOT="$(resolve_deploy_root)"') < script.index(
+        'source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"',
+    )
+    assert 'source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"' in script
+    assert 'TOKENMM_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"' in script
+    assert 'SHARED_CONFIG="${DEPLOY_ROOT}/deploy/tokenmm/tokenmm.live.toml"' in script
+    assert 'STRATEGIES_DIR="${DEPLOY_ROOT}/deploy/tokenmm/strategies"' in script
+    assert "CANONICAL_DEPLOY_ROOT" not in script
+    assert "append_checkout_env_overrides" not in script
+    assert ('printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}"') in script
     assert '"tokenmm"' in script
     assert '"TokenMM"' in script
     assert '"10"' in script
     assert '"tokenmm-api"' in script
     assert "--serve-pulse" in script
     assert "--serve-fluxboard" in script
-    assert '${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api' in script
+    assert "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api" in script
     assert "--port 5022 --serve-fluxboard --serve-pulse" in script
     assert "http://127.0.0.1:5022/pulse" in _read(
         _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
     )
-    assert "http://<host>:5022/pulse" in _read(_repo_root() / "deploy/tokenmm/README.md")
+    assert "`TOKENMM_DEPLOY_ROOT`" in readme
+    assert "`/etc/flux/common.env`" in readme
+    assert "non-worktree deploy root" in readme
+    assert "pins each TokenMM env file to the checkout used during install" not in readme
+    assert "pins each TokenMM env file to the resolved deploy root" in readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in runbook
+    assert "`/etc/flux/common.env`" in runbook
+    assert "non-worktree deploy root" in runbook
+    assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
 
 
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
@@ -172,8 +203,12 @@ def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> N
     assert "tokenmm-jupyter.env" in install_script
     assert "tokenmm-jupyter.env.example" in install_script
     assert "tokenmm_rollout_preflight.py" in install_script
-    assert '"${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"' in install_script
-    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in install_script
+    assert (
+        '"${TOKENMM_PYTHON_BIN}" "${DEPLOY_ROOT}/ops/scripts/deploy/tokenmm_rollout_preflight.py"'
+    ) in install_script
+    assert (
+        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}"'
+    ) in install_script
     assert "python3 -m nautilus_trader.flux.runners.tokenmm" not in install_script
 
     assert "rollout_preflight" in preflight_wrapper
@@ -239,6 +274,11 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "pnpm --dir pulse-ui install --frozen-lockfile" in deploy_readme
     assert "pnpm --dir pulse-ui build" in deploy_readme
     assert "make build" in deploy_readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in deploy_readme
+    assert "`TOKENMM_DEPLOY_ROOT`" in runbook
+    assert DEPLOY_ROOT_PLACEHOLDER in _read(
+        _repo_root() / "deploy/tokenmm/systemd/common.env.example",
+    )
 
     assert "orders.sqlite" in telemetry_runbook
     assert "fills.sqlite" in telemetry_runbook
@@ -536,19 +576,17 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "strategy_stack_discover_strategy_ids" in install_script
     assert "plumeusdt_bybit_perp_makerv3" not in install_script
     assert (
-        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
-        'nautilus_trader.flux.runners.tokenmm.run_api'
-        in install_script
+        "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m "
+        "nautilus_trader.flux.runners.tokenmm.run_api" in install_script
     )
     assert "--serve-fluxboard" in install_script
     assert "--serve-pulse" in install_script
     assert "--host 127.0.0.1" in install_script
     assert (
-        'env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m '
-        'nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} '
-        '--mode live --confirm-live --host 127.0.0.1 --port 5022 '
-        '--serve-fluxboard --serve-pulse'
-        in install_script
+        "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m "
+        "nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} "
+        "--mode live --confirm-live --host 127.0.0.1 --port 5022 "
+        "--serve-fluxboard --serve-pulse" in install_script
     )
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
@@ -567,10 +605,22 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
     assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
     assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
-    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in sudoers
-    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service" in sudoers
-    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service" in sudoers
-    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service" in sudoers
+    assert (
+        "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service"
+        in sudoers
+    )
+    assert (
+        "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_binance_perp_makerv3.service"
+        in sudoers
+    )
+    assert (
+        "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_perp_makerv3.service"
+        in sudoers
+    )
+    assert (
+        "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bitget_spot_makerv3.service"
+        in sudoers
+    )
     assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
     assert "tokenmm-pulse.service" not in sudoers
     assert "flux@*" not in sudoers

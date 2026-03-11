@@ -28,10 +28,19 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 
 - Supported production lifecycle: install with systemd, then manage jobs from Pulse.
 - `ops/scripts/deploy/tokenmm_stack.sh` is local smoke only and refuses live deploys.
+- Production deploys resolve to a stable non-worktree deploy root, never the calling worktree.
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
 - All seven active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+
+Deploy-root resolution for `install_tokenmm_systemd.sh`:
+
+1. `TOKENMM_DEPLOY_ROOT`, when explicitly set for first bootstrap or deliberate cutover.
+2. Existing `/etc/flux/common.env` `WORKDIR` or `PYTHONPATH`, so reruns preserve the current host root.
+3. The current checkout, only when it is not a git worktree.
+
+If the resolved root is a worktree, the installer exits with an error instead of repointing production.
 
 ## Binance Spot Market-Making Contract
 
@@ -134,23 +143,29 @@ consume the portfolio snapshot owned by `run_portfolio`.
 ## Production control plane
 
 ```bash
+export TOKENMM_DEPLOY_ROOT=/path/to/deploy-root
+cd "${TOKENMM_DEPLOY_ROOT}"
 make build
 pnpm --dir fluxboard install --frozen-lockfile
 pnpm --dir fluxboard build
 pnpm --dir pulse-ui install --frozen-lockfile
 pnpm --dir pulse-ui build
 .venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py
-sudo ops/scripts/deploy/install_tokenmm_systemd.sh
+sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/install_tokenmm_systemd.sh
 sudoedit /etc/flux/common.env
 sudo systemctl daemon-reload
 sudo systemctl start flux-tokenmm.target
 ```
 
+On an already-managed host, leave `TOKENMM_DEPLOY_ROOT` unset if `/etc/flux/common.env` already points at the intended root.
+
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
-- `install_tokenmm_systemd.sh` pins each TokenMM env file to the checkout used during install by writing
-  `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- `install_tokenmm_systemd.sh` pins each TokenMM env file to the resolved deploy root by writing
+  `WORKDIR`, `PYTHONPATH`, and the root `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- Re-running the installer from a worktree does not change the live deploy root when `/etc/flux/common.env`
+  already points at a stable checkout, and the installer refuses worktree roots for fresh bootstrap/cutover.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
