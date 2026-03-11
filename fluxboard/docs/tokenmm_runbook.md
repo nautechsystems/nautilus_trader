@@ -151,8 +151,9 @@ Expected behavior:
 1. Install the host artifacts:
 
 ```bash
-cd ~/nautilus-trader
-sudo ops/scripts/deploy/install_tokenmm_systemd.sh
+export TOKENMM_DEPLOY_ROOT=/path/to/deploy-root
+cd "${TOKENMM_DEPLOY_ROOT}"
+sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/install_tokenmm_systemd.sh
 ```
 
 2. Fill host secrets and any per-service overrides:
@@ -173,9 +174,13 @@ The installer seeds:
 - `/etc/flux/tokenmm-node-*.env`
 - `/etc/sudoers.d/flux-pulse`
 
-Each TokenMM env file also pins `WORKDIR`, `PYTHONPATH`, and the canonical `.venv/bin/python` under
-`~/nautilus-trader`, so a TokenMM rollout does not require repointing the shared `/etc/flux/common.env`.
-Re-running the installer from a worktree does not change the production deploy root.
+Each TokenMM env file also pins `WORKDIR`, `PYTHONPATH`, and the deploy-root `.venv/bin/python` under
+the resolved non-worktree deploy root, so a TokenMM rollout does not require repointing the shared
+`/etc/flux/common.env` when the host root is already correct.
+If `TOKENMM_DEPLOY_ROOT` is unset, the installer preserves the existing `/etc/flux/common.env` `WORKDIR` /
+`PYTHONPATH` root and otherwise falls back to the current checkout only when it is not a git worktree.
+Re-running the installer from a worktree does not change the production deploy root, and fresh worktree cutovers
+are rejected.
 
 3. Bootstrap the deployment if this host is coming up cold:
 
