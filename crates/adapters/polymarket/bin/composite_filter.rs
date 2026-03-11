@@ -13,69 +13,60 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Demonstrates dynamic instrument loading with [`MarketSlugFilter`].
+//! Demonstrates combined instrument loading with [`CompositeFilter`].
 //!
-//! Polymarket "Up/Down" markets follow a predictable slug pattern:
-//! `{asset}-updown-15m-{unix_timestamp}`, where the timestamp is aligned to
-//! 15-minute boundaries. This binary loads instruments for the current period
-//! and the next two upcoming periods across BTC, ETH, SOL, and XRP.
+//! This example combines:
 //!
-//! Because [`MarketSlugFilter`] accepts a closure, the slug list is
-//! re-evaluated on each `load_all()` call — so a long-running process can
-//! call `load_all()` periodically and always get the latest time window
-//! without rebuilding the filter.
+//! - [`EventQueryFilter`] — two-phase fetch: resolves an event slug to
+//!   condition IDs, then queries `/markets` with sorting and limiting.
+//!   Here we fetch the top 20 markets by liquidity from the 2028
+//!   presidential election event.
+//! - [`PredicateFilter`] — post-fetch refinement (keeps only outcome "Yes")
 //!
 //! # Usage
 //!
 //! ```sh
-//! cargo run -p nautilus-polymarket --bin updown_markets
+//! cargo run -p nautilus-polymarket --bin polymarket-composite-filter
 //! ```
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
-    filters::MarketSlugFilter, http::gamma::PolymarketGammaHttpClient,
+    filters::{CompositeFilter, EventQueryFilter, PredicateFilter},
+    http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
     providers::PolymarketInstrumentProvider,
 };
-
-const PERIOD_SECS: u64 = 15 * 60; // 15 minutes
-const ASSETS: &[&str] = &["btc", "eth", "sol", "xrp"];
-const NUM_PERIODS: u64 = 3; // current + next 2
-
-/// Generates market slugs for the current and next [`NUM_PERIODS`] 15-minute
-/// Up/Down windows across all configured [`ASSETS`].
-fn build_updown_slugs() -> Vec<String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before epoch")
-        .as_secs();
-
-    // Align to current 15-minute period start
-    let period_start = (now / PERIOD_SECS) * PERIOD_SECS;
-
-    let mut slugs = Vec::new();
-    for i in 0..NUM_PERIODS {
-        let timestamp = period_start + i * PERIOD_SECS;
-        for asset in ASSETS {
-            slugs.push(format!("{asset}-updown-15m-{timestamp}"));
-        }
-    }
-    slugs
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
+    let event_query = EventQueryFilter::new(
+        "presidential-election-winner-2028",
+        GetGammaMarketsParams {
+            order: Some("liquidity".into()),
+            ascending: Some(false),
+            max_markets: Some(20),
+            ..Default::default()
+        },
+    );
+    let predicate = PredicateFilter::outcome("Yes");
+
+    let composite = CompositeFilter::new(vec![Box::new(event_query), Box::new(predicate)]);
+
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
-    let filter = MarketSlugFilter::new(build_updown_slugs);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(composite));
+
+    log::info!("Loading top-20 presidential election markets by liquidity (outcome='Yes')...");
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();
-    println!("Loaded {} instruments:\n", instruments.len());
+    println!(
+        "Loaded {} instruments (top 20 markets by liquidity, outcome='Yes'):\n",
+        instruments.len()
+    );
 
-    for instrument in instruments {
+    for (i, instrument) in instruments.into_iter().enumerate() {
         let id = Instrument::id(instrument);
         let expiration = Instrument::expiration_ns(instrument).map_or("N/A".to_string(), |ns| {
             let secs = (ns.as_u64() / 1_000_000_000) as i64;
@@ -86,12 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let InstrumentAny::BinaryOption(opt) = instrument {
             println!(
-                "  {id}\n    outcome:     {}\n    description: {}\n    expiration:  {expiration}\n",
+                "  {:>2}. {id}\n      outcome:     {}\n      description: {}\n      expiration:  {expiration}\n",
+                i + 1,
                 opt.outcome.unwrap_or_default(),
                 opt.description.unwrap_or_default(),
             );
         } else {
-            println!("  {id}\n    expiration: {expiration}\n");
+            println!("  {:>2}. {id}\n      expiration: {expiration}\n", i + 1);
         }
     }
 
