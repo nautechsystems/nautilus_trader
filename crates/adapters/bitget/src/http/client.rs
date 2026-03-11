@@ -48,7 +48,7 @@ use crate::{
         BitgetApiResponse, BitgetContractSymbol, BitgetCurrentFundingRate, BitgetFillInfo,
         BitgetFundingHistoryPage, BitgetHistoricalFundingRate, BitgetMixFillsPage,
         BitgetMixOrdersPage, BitgetOrderBookSnapshot, BitgetOrderInfo, BitgetPositionInfo,
-        BitgetSpotSymbol,
+        BitgetSpotSymbol, BitgetUtaFillsPage, BitgetUtaOrdersPage, BitgetUtaPositionsPage,
     },
 };
 
@@ -62,6 +62,13 @@ const BITGET_SPOT_MERGE_DEPTH_PATH: &str = "/api/v2/spot/market/merge-depth";
 const BITGET_MIX_MERGE_DEPTH_PATH: &str = "/api/v2/mix/market/merge-depth";
 const BITGET_SPOT_PLACE_ORDER_PATH: &str = "/api/v2/spot/trade/place-order";
 const BITGET_UTA_PLACE_ORDER_PATH: &str = "/api/v3/trade/place-order";
+const BITGET_UTA_CANCEL_ORDER_PATH: &str = "/api/v3/trade/cancel-order";
+const BITGET_UTA_CANCEL_SYMBOL_ORDER_PATH: &str = "/api/v3/trade/cancel-symbol-order";
+const BITGET_UTA_ORDER_INFO_PATH: &str = "/api/v3/trade/order-info";
+const BITGET_UTA_UNFILLED_ORDERS_PATH: &str = "/api/v3/trade/unfilled-orders";
+const BITGET_UTA_HISTORY_ORDERS_PATH: &str = "/api/v3/trade/history-orders";
+const BITGET_UTA_FILLS_PATH: &str = "/api/v3/trade/fills";
+const BITGET_UTA_CURRENT_POSITION_PATH: &str = "/api/v3/position/current-position";
 const BITGET_SPOT_CANCEL_ORDER_PATH: &str = "/api/v2/spot/trade/cancel-order";
 const BITGET_SPOT_CANCEL_SYMBOL_ORDER_PATH: &str = "/api/v2/spot/trade/cancel-symbol-order";
 const BITGET_SPOT_BATCH_CANCEL_ORDER_PATH: &str = "/api/v2/spot/trade/batch-cancel-order";
@@ -445,6 +452,21 @@ impl BitgetHttpClient {
             .filter(|value| !value.is_empty())
             .map(ToString::to_string)
             .or_else(|| Self::margin_coin_for_product_type(product_type).map(ToString::to_string))
+    }
+
+    fn is_uta_account_mode(account_mode: Option<&str>) -> bool {
+        account_mode
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some_and(|value| value.eq_ignore_ascii_case("UTA"))
+    }
+
+    fn uta_category(product_type: BitgetProductType, allow_cash_borrowing: bool) -> String {
+        match product_type {
+            BitgetProductType::Spot if allow_cash_borrowing => "MARGIN".to_string(),
+            BitgetProductType::Spot => "SPOT".to_string(),
+            _ => product_type.as_api_str().to_string(),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -897,9 +919,10 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         client_oid: Option<String>,
         order_id: Option<String>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> Result<Value> {
         let mut body = serde_json::Map::new();
-        body.insert("symbol".to_string(), Value::String(symbol.to_string()));
         if let Some(client_oid) = client_oid {
             body.insert("clientOid".to_string(), Value::String(client_oid));
         }
@@ -907,9 +930,20 @@ impl BitgetHttpClient {
             body.insert("orderId".to_string(), Value::String(order_id));
         }
 
-        let path = match product_type {
-            BitgetProductType::Spot => BITGET_SPOT_CANCEL_ORDER_PATH,
+        let path = match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
+            (product_type, true) => {
+                body.insert(
+                    "category".to_string(),
+                    Value::String(Self::uta_category(product_type, allow_cash_borrowing)),
+                );
+                BITGET_UTA_CANCEL_ORDER_PATH
+            }
+            (BitgetProductType::Spot, false) => {
+                body.insert("symbol".to_string(), Value::String(symbol.to_string()));
+                BITGET_SPOT_CANCEL_ORDER_PATH
+            }
             _ => {
+                body.insert("symbol".to_string(), Value::String(symbol.to_string()));
                 body.insert(
                     "productType".to_string(),
                     Value::String(product_type.as_api_str().to_string()),
@@ -931,10 +965,22 @@ impl BitgetHttpClient {
         product_type: BitgetProductType,
         symbol: Option<String>,
         margin_coin: Option<String>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> Result<Value> {
         let mut body = serde_json::Map::new();
-        let path = match product_type {
-            BitgetProductType::Spot => {
+        let path = match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
+            (product_type, true) => {
+                body.insert(
+                    "category".to_string(),
+                    Value::String(Self::uta_category(product_type, allow_cash_borrowing)),
+                );
+                if let Some(symbol) = symbol {
+                    body.insert("symbol".to_string(), Value::String(symbol));
+                }
+                BITGET_UTA_CANCEL_SYMBOL_ORDER_PATH
+            }
+            (BitgetProductType::Spot, false) => {
                 if let Some(symbol) = symbol {
                     body.insert("symbol".to_string(), Value::String(symbol));
                 }
@@ -1023,9 +1069,10 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         client_oid: Option<String>,
         order_id: Option<String>,
+        account_mode: Option<String>,
+        _allow_cash_borrowing: bool,
     ) -> Result<Option<BitgetOrderInfo>> {
         let mut query = BTreeMap::new();
-        query.insert("symbol".to_string(), vec![symbol.to_string()]);
         if let Some(client_oid) = client_oid {
             query.insert("clientOid".to_string(), vec![client_oid]);
         }
@@ -1033,8 +1080,15 @@ impl BitgetHttpClient {
             query.insert("orderId".to_string(), vec![order_id]);
         }
 
-        match product_type {
-            BitgetProductType::Spot => {
+        match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
+            (_, true) => {
+                let data = self
+                    .signed_get_value(BITGET_UTA_ORDER_INFO_PATH, &query)
+                    .await?;
+                Ok(Some(serde_json::from_value::<BitgetOrderInfo>(data)?))
+            }
+            (BitgetProductType::Spot, false) => {
+                query.insert("symbol".to_string(), vec![symbol.to_string()]);
                 let data = self
                     .signed_get_value(BITGET_SPOT_ORDER_INFO_PATH, &query)
                     .await?;
@@ -1042,6 +1096,7 @@ impl BitgetHttpClient {
                 Ok(reports.into_iter().next())
             }
             _ => {
+                query.insert("symbol".to_string(), vec![symbol.to_string()]);
                 query.insert(
                     "productType".to_string(),
                     vec![product_type.as_api_str().to_string()],
@@ -1068,11 +1123,10 @@ impl BitgetHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> Result<Vec<BitgetOrderInfo>> {
         let mut query = BTreeMap::new();
-        if let Some(symbol) = symbol {
-            query.insert("symbol".to_string(), vec![symbol]);
-        }
         if let Some(start) = start {
             query.insert("startTime".to_string(), vec![start.to_string()]);
         }
@@ -1083,8 +1137,42 @@ impl BitgetHttpClient {
             query.insert("limit".to_string(), vec![limit.to_string()]);
         }
 
-        match product_type {
-            BitgetProductType::Spot => {
+        match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
+            (product_type, true) => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
+                query.insert(
+                    "category".to_string(),
+                    vec![Self::uta_category(product_type, allow_cash_borrowing)],
+                );
+                let mut reports = serde_json::from_value::<BitgetUtaOrdersPage>(
+                    self.signed_get_value(BITGET_UTA_UNFILLED_ORDERS_PATH, &query)
+                        .await?,
+                )?
+                .list;
+                if !open_only {
+                    let history = serde_json::from_value::<BitgetUtaOrdersPage>(
+                        self.signed_get_value(BITGET_UTA_HISTORY_ORDERS_PATH, &query)
+                            .await?,
+                    )?
+                    .list;
+                    let existing: HashSet<String> = reports
+                        .iter()
+                        .map(|report| report.order_id.clone())
+                        .collect();
+                    for report in history {
+                        if !existing.contains(&report.order_id) {
+                            reports.push(report);
+                        }
+                    }
+                }
+                Ok(reports)
+            }
+            (BitgetProductType::Spot, false) => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
                 let mut reports = serde_json::from_value::<Vec<BitgetOrderInfo>>(
                     self.signed_get_value(BITGET_SPOT_UNFILLED_ORDERS_PATH, &query)
                         .await?,
@@ -1107,6 +1195,9 @@ impl BitgetHttpClient {
                 Ok(reports)
             }
             _ => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
                 query.insert(
                     "productType".to_string(),
                     vec![product_type.as_api_str().to_string()],
@@ -1151,11 +1242,10 @@ impl BitgetHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> Result<Vec<BitgetFillInfo>> {
         let mut query = BTreeMap::new();
-        if let Some(symbol) = symbol {
-            query.insert("symbol".to_string(), vec![symbol]);
-        }
         if let Some(order_id) = order_id {
             query.insert("orderId".to_string(), vec![order_id]);
         }
@@ -1169,12 +1259,34 @@ impl BitgetHttpClient {
             query.insert("limit".to_string(), vec![limit.to_string()]);
         }
 
-        match product_type {
-            BitgetProductType::Spot => Ok(serde_json::from_value::<Vec<BitgetFillInfo>>(
-                self.signed_get_value(BITGET_SPOT_FILLS_PATH, &query)
-                    .await?,
-            )?),
+        match (product_type, Self::is_uta_account_mode(account_mode.as_deref())) {
+            (product_type, true) => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
+                query.insert(
+                    "category".to_string(),
+                    vec![Self::uta_category(product_type, allow_cash_borrowing)],
+                );
+                Ok(serde_json::from_value::<BitgetUtaFillsPage>(
+                    self.signed_get_value(BITGET_UTA_FILLS_PATH, &query)
+                        .await?,
+                )?
+                .list)
+            }
+            (BitgetProductType::Spot, false) => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
+                Ok(serde_json::from_value::<Vec<BitgetFillInfo>>(
+                    self.signed_get_value(BITGET_SPOT_FILLS_PATH, &query)
+                        .await?,
+                )?)
+            }
             _ => {
+                if let Some(symbol) = symbol {
+                    query.insert("symbol".to_string(), vec![symbol]);
+                }
                 query.insert(
                     "productType".to_string(),
                     vec![product_type.as_api_str().to_string()],
@@ -1198,12 +1310,28 @@ impl BitgetHttpClient {
         product_type: BitgetProductType,
         symbol: Option<String>,
         margin_coin: Option<String>,
+        account_mode: Option<String>,
     ) -> Result<Vec<BitgetPositionInfo>> {
         if matches!(product_type, BitgetProductType::Spot) {
             return Ok(Vec::new());
         }
 
         let mut query = BTreeMap::new();
+        if Self::is_uta_account_mode(account_mode.as_deref()) {
+            query.insert(
+                "category".to_string(),
+                vec![Self::uta_category(product_type, false)],
+            );
+            if let Some(symbol) = symbol {
+                query.insert("symbol".to_string(), vec![symbol]);
+            }
+            return Ok(serde_json::from_value::<BitgetUtaPositionsPage>(
+                self.signed_get_value(BITGET_UTA_CURRENT_POSITION_PATH, &query)
+                    .await?,
+            )?
+            .list);
+        }
+
         query.insert(
             "productType".to_string(),
             vec![product_type.as_api_str().to_string()],
@@ -1868,6 +1996,81 @@ mod tests {
             .contains("unsupported_margin_mode: bitget UTA order flow requires cross/shared margin"));
     }
 
+    #[test]
+    fn test_uta_category_uses_margin_for_spot_borrowing() {
+        assert_eq!(
+            BitgetHttpClient::uta_category(BitgetProductType::Spot, true),
+            "MARGIN".to_string()
+        );
+        assert_eq!(
+            BitgetHttpClient::uta_category(BitgetProductType::Spot, false),
+            "SPOT".to_string()
+        );
+    }
+
+    #[test]
+    fn test_uta_order_info_deserializes_into_canonical_fields() {
+        let order = serde_json::from_value::<BitgetOrderInfo>(serde_json::json!({
+            "orderId": "12345",
+            "clientOid": "CID-001",
+            "orderStatus": "partially_filled",
+            "timeInForce": "gtc",
+            "qty": "0.010",
+            "cumExecQty": "0.005",
+            "cumExecValue": "500.0",
+            "avgPrice": "99950.0",
+            "createdTime": "1700000000000",
+            "updatedTime": "1700000001000"
+        }))
+        .expect("UTA order payload should deserialize");
+
+        assert_eq!(order.status, "partially_filled");
+        assert_eq!(order.force, "gtc");
+        assert_eq!(order.size, "0.010");
+        assert_eq!(order.base_volume, "0.005");
+        assert_eq!(order.quote_volume, "500.0");
+        assert_eq!(order.price_avg, "99950.0");
+        assert_eq!(order.c_time, "1700000000000");
+        assert_eq!(order.u_time, "1700000001000");
+    }
+
+    #[test]
+    fn test_uta_fill_info_deserializes_exec_fields_and_normalizes_fee_detail() {
+        let fill = serde_json::from_value::<BitgetFillInfo>(serde_json::json!({
+            "orderId": "12345",
+            "execId": "54321",
+            "execPrice": "100001.0",
+            "execQty": "0.010",
+            "createdTime": "1700000002000",
+            "updatedTime": "1700000003000",
+            "feeDetail": [{"feeCoin": "USDT", "fee": "0.10"}]
+        }))
+        .expect("UTA fill payload should deserialize");
+
+        assert_eq!(fill.trade_id, "54321");
+        assert_eq!(fill.price_avg, "100001.0");
+        assert_eq!(fill.size, "0.010");
+        assert_eq!(fill.c_time, "1700000002000");
+        assert_eq!(fill.u_time, "1700000003000");
+        assert_eq!(fill.fee_detail[0]["totalFee"], Value::String("0.10".to_string()));
+    }
+
+    #[test]
+    fn test_uta_position_info_deserializes_into_canonical_fields() {
+        let position = serde_json::from_value::<BitgetPositionInfo>(serde_json::json!({
+            "symbol": "BTCUSDT",
+            "total": "0.500",
+            "posSide": "long",
+            "avgPrice": "100000.0",
+            "updatedTime": "1700000004000"
+        }))
+        .expect("UTA position payload should deserialize");
+
+        assert_eq!(position.hold_side, "long");
+        assert_eq!(position.open_price_avg, "100000.0");
+        assert_eq!(position.u_time, "1700000004000");
+    }
+
     fn symbols_contain_product_type(instruments: &[InstrumentAny], raw_symbol: &str) -> bool {
         instruments.iter().any(|instrument| match instrument {
             InstrumentAny::CryptoPerpetual(perpetual) => {
@@ -2132,13 +2335,23 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         client_oid: Option<String>,
         order_id: Option<String>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .cancel_order(product_type, &symbol, margin_coin, client_oid, order_id)
+                .cancel_order(
+                    product_type,
+                    &symbol,
+                    margin_coin,
+                    client_oid,
+                    order_id,
+                    account_mode,
+                    allow_cash_borrowing,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 
@@ -2153,12 +2366,20 @@ impl BitgetHttpClient {
         product_type: BitgetProductType,
         symbol: Option<String>,
         margin_coin: Option<String>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .cancel_all_orders(product_type, symbol, margin_coin)
+                .cancel_all_orders(
+                    product_type,
+                    symbol,
+                    margin_coin,
+                    account_mode,
+                    allow_cash_borrowing,
+                )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 
@@ -2198,6 +2419,8 @@ impl BitgetHttpClient {
         margin_coin: Option<String>,
         client_oid: Option<String>,
         order_id: Option<String>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
         let symbol = symbol.to_string();
@@ -2210,6 +2433,8 @@ impl BitgetHttpClient {
                     margin_coin,
                     client_oid,
                     order_id,
+                    account_mode,
+                    allow_cash_borrowing,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2232,6 +2457,8 @@ impl BitgetHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
@@ -2245,6 +2472,8 @@ impl BitgetHttpClient {
                     start,
                     end,
                     limit,
+                    account_mode,
+                    allow_cash_borrowing,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2264,6 +2493,8 @@ impl BitgetHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        account_mode: Option<String>,
+        allow_cash_borrowing: bool,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
@@ -2277,6 +2508,8 @@ impl BitgetHttpClient {
                     start,
                     end,
                     limit,
+                    account_mode,
+                    allow_cash_borrowing,
                 )
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
@@ -2292,12 +2525,13 @@ impl BitgetHttpClient {
         product_type: BitgetProductType,
         symbol: Option<String>,
         margin_coin: Option<String>,
+        account_mode: Option<String>,
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let response = client
-                .request_position_status_reports(product_type, symbol, margin_coin)
+                .request_position_status_reports(product_type, symbol, margin_coin, account_mode)
                 .await
                 .map_err(nautilus_core::python::to_pyvalue_err)?;
 

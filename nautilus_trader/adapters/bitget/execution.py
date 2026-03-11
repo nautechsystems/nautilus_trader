@@ -581,11 +581,13 @@ class BitgetExecutionClient(LiveExecutionClient):
     @staticmethod
     def _parse_order_status(payload: Any) -> OrderStatus:
         status = BitgetExecutionClient._normalize_private_order_status(
-            BitgetExecutionClient._field(payload, "status"),
+            BitgetExecutionClient._field(payload, "status")
+            or BitgetExecutionClient._field(payload, "orderStatus"),
         )
         filled_qty = Decimal(
             BitgetExecutionClient._string_value(
                 BitgetExecutionClient._field(payload, "baseVolume")
+                or BitgetExecutionClient._field(payload, "cumExecQty")
                 or BitgetExecutionClient._field(payload, "filledQty")
                 or "0",
             ),
@@ -665,28 +667,36 @@ class BitgetExecutionClient(LiveExecutionClient):
 
         status = BitgetExecutionClient._parse_order_status(payload)
         quantity_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "size"),
+            BitgetExecutionClient._field(payload, "size")
+            or BitgetExecutionClient._field(payload, "qty"),
         ) or "0"
         filled_qty_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "baseVolume")
+            or BitgetExecutionClient._field(payload, "cumExecQty")
             or BitgetExecutionClient._field(payload, "filledQty")
             or "0",
         )
         if status == OrderStatus.FILLED and filled_qty_raw in {"", "0"}:
             filled_qty_raw = quantity_raw
 
-        force = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "force")).lower()
+        force = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "force")
+            or BitgetExecutionClient._field(payload, "timeInForce"),
+        ).lower()
         post_only = force == "post_only"
         price_raw = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "price"))
         avg_px_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "priceAvg"),
+            BitgetExecutionClient._field(payload, "priceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice"),
         )
         accepted_ts = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "cTime")
+            or BitgetExecutionClient._field(payload, "createdTime")
             or BitgetExecutionClient._field(payload, "ctime"),
         )
         last_ts = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "uTime")
+            or BitgetExecutionClient._field(payload, "updatedTime")
             or BitgetExecutionClient._field(payload, "utime")
             or BitgetExecutionClient._field(payload, "cTime"),
             fallback=accepted_ts,
@@ -743,7 +753,10 @@ class BitgetExecutionClient(LiveExecutionClient):
             return None
 
         order_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "orderId"))
-        trade_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "tradeId"))
+        trade_id = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "tradeId")
+            or BitgetExecutionClient._field(payload, "execId"),
+        )
         if not order_id or not trade_id:
             return None
 
@@ -760,16 +773,21 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
         total_fee = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(fee_detail, "totalFee")
+            or BitgetExecutionClient._field(fee_detail, "fee")
             or BitgetExecutionClient._field(payload, "fillFee")
             or "0",
         )
         last_px_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "priceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice")
+            or BitgetExecutionClient._field(payload, "execPrice")
             or BitgetExecutionClient._field(payload, "price")
             or "0",
         )
         last_qty_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "size")
+            or BitgetExecutionClient._field(payload, "qty")
+            or BitgetExecutionClient._field(payload, "execQty")
             or BitgetExecutionClient._field(payload, "fillQty")
             or "0",
         )
@@ -791,6 +809,8 @@ class BitgetExecutionClient(LiveExecutionClient):
             ),
             ts_event=BitgetExecutionClient._timestamp_ns_from_value(
                 BitgetExecutionClient._field(payload, "uTime")
+                or BitgetExecutionClient._field(payload, "updatedTime")
+                or BitgetExecutionClient._field(payload, "createdTime")
                 or BitgetExecutionClient._field(payload, "cTime"),
             )
             or (ts_init or self._clock.timestamp_ns()),
@@ -825,15 +845,20 @@ class BitgetExecutionClient(LiveExecutionClient):
             BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "total") or "0"),
         )
         ts_event = BitgetExecutionClient._timestamp_ns_from_value(
-            BitgetExecutionClient._field(payload, "uTime"),
+            BitgetExecutionClient._field(payload, "uTime")
+            or BitgetExecutionClient._field(payload, "updatedTime"),
         ) or (ts_init or self._clock.timestamp_ns())
         venue_position_id = None
-        pos_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "posId"))
+        pos_id = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "posId")
+            or BitgetExecutionClient._field(payload, "positionId"),
+        )
         if pos_id:
             venue_position_id = PositionId(pos_id)
 
         avg_px_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "openPriceAvg"),
+            BitgetExecutionClient._field(payload, "openPriceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice"),
         )
         avg_px_open = Decimal(avg_px_raw) if avg_px_raw and avg_px_raw != "0" else None
 
@@ -851,7 +876,8 @@ class BitgetExecutionClient(LiveExecutionClient):
             )
 
         hold_side = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "holdSide"),
+            BitgetExecutionClient._field(payload, "holdSide")
+            or BitgetExecutionClient._field(payload, "posSide"),
         ).lower()
         position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
         try:
@@ -1225,6 +1251,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 ),
                 client_oid=command.client_order_id.value if command.client_order_id else None,
                 order_id=venue_order_id.value if venue_order_id else None,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
             return BitgetExecutionClient._build_order_status_report(
                 self,
@@ -1273,6 +1305,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                     start=start_ms,
                     end=end_ms,
                     limit=None,
+                    account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
                 )
                 for item in BitgetExecutionClient._payload_items(payload):
                     report = BitgetExecutionClient._build_order_status_report(
@@ -1324,6 +1362,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                     start=start_ms,
                     end=end_ms,
                     limit=None,
+                    account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
                 )
                 for item in BitgetExecutionClient._payload_items(payload):
                     if (
@@ -1382,6 +1426,9 @@ class BitgetExecutionClient(LiveExecutionClient):
                         BitgetExecutionClient._margin_coin_for_instrument_id(self, command.instrument_id)
                         if command.instrument_id is not None
                         else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
+                    ),
+                    account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
                     ),
                 )
                 for item in BitgetExecutionClient._payload_items(payload):
@@ -1638,6 +1685,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 ),
                 client_oid=command.client_order_id.value,
                 order_id=venue_order_id.value if venue_order_id else None,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
@@ -1646,7 +1699,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                reason=str(e),
+                reason=BitgetExecutionClient._format_exchange_error_reason(e),
                 ts_event=self._clock.timestamp_ns(),
             )
 
@@ -1667,6 +1720,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 margin_coin=BitgetExecutionClient._margin_coin_for_instrument_id(
                     self,
                     command.instrument_id,
+                ),
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
                 ),
             )
         except Exception as e:
