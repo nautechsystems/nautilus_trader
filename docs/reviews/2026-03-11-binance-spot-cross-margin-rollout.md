@@ -2,6 +2,18 @@
 
 Date: `2026-03-11`
 
+## Evidence Header
+
+- Snapshot time (UTC): `2026-03-11T05:41:55Z`
+- Host/base URL used for live checks: `http://127.0.0.1:5022`
+- Supporting readiness commits:
+  - `69eb2f9ae` - `test(tokenmm): assert binance spot contract semantically`
+  - `65174edaf` - `docs(tokenmm): use real terminal denial runtime terms`
+- Supporting verification results:
+  - `uv run --no-sync python -m pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py` -> `44 passed`
+  - `uv run --no-sync python -m pytest -q tests/unit_tests/examples/strategies/test_tokenmm_risk_validation_contract.py` -> `4 passed`
+  - `uv run --no-sync python -m pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py tests/unit_tests/examples/strategies/test_tokenmm_risk_validation_contract.py` -> `48 passed`
+
 ## Scope
 
 Blocked rollout review for the Binance spot cross-margin rollout attempt of
@@ -9,8 +21,9 @@ Blocked rollout review for the Binance spot cross-margin rollout attempt of
 
 ## Final Config And Code State
 
-- Repo code and docs are ready for the supported Binance spot cross-margin
-  market-making path.
+- The code/doc readiness evidence for the supported Binance spot cross-margin
+  market-making path is captured in the supporting commits and verification
+  results above.
 - `deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml` is pinned to:
   - `account_type = "MARGIN"`
   - `allow_cash_borrowing = true`
@@ -30,8 +43,10 @@ Blocked rollout review for the Binance spot cross-margin rollout attempt of
 - Balances: `/api/v1/balances?profile=tokenmm`
   - `BINANCE_SPOT-MARGIN-master`: `PLUME -30314.96734613`, `USDT 1285.28070703`
   - `BINANCE_SPOT-SPOT-master`: `PLUME 0`, `USDT 0`
-  - Effective inventory and liability remain on the unsupported PM-side
-    balance surface; the supported account is not funded for rollout.
+  - Observed fact: the effective inventory and liability are still presented on
+    the unsupported PM-style balance surface.
+  - Observed fact: the supported spot/cross-margin side is not yet funded for
+    rollout.
 - Signal: `/api/v1/signals?profile=tokenmm`
   - `plumeusdt_binance_spot_makerv3`
   - `tradeable=false`
@@ -57,9 +72,17 @@ Blocked rollout review for the Binance spot cross-margin rollout attempt of
 - Rollout blocked before canary enable.
 - No quote enable was performed.
 - No promotion was performed.
-- Explicit blocker: the current configured Binance account is still the
-  unsupported Portfolio Margin account, and no alternate supported regular
-  cross-margin credential is configured.
+- Observed blockers:
+  - the current live balance layout is still the unsupported PM presentation,
+    with effective inventory/liability on `BINANCE_SPOT-MARGIN-master` and
+    `BINANCE_SPOT-SPOT-master` still zeroed
+  - historical alerts include `UNSUPPORTED_ACCOUNT_MODE` and
+    `terminal_order_denied`
+  - the supported account side is not yet funded for rollout
+  - there is no evidence in the env surface of an alternate supported non-PM
+    Binance credential
+- Operational inference: the current credentialed rollout path has not yet been
+  rotated to a supported, funded regular cross-margin account.
 
 ## Actions Taken
 
