@@ -904,8 +904,68 @@ impl BacktestEngine {
     }
 
     fn build_analyzer(&self, cache: &Cache, positions: &[&Position]) -> PortfolioAnalyzer {
+        // Position snapshots are stored as concatenated JSON objects in cache bytes.
+        // Decode them into Position entries and merge into analyzer inputs.
+        fn decode_position_snapshots(snapshot_bytes: &[u8]) -> Vec<Position> {
+            let mut snapshots = Vec::new();
+            let mut start = 0usize;
+            let mut depth = 0usize;
+            let mut in_string = false;
+            let mut escape_next = false;
+
+            for (i, &byte) in snapshot_bytes.iter().enumerate() {
+                if escape_next {
+                    escape_next = false;
+                    continue;
+                }
+
+                if in_string && byte == b'\\' {
+                    escape_next = true;
+                    continue;
+                }
+
+                if byte == b'"' {
+                    in_string = !in_string;
+                    continue;
+                }
+
+                if in_string {
+                    continue;
+                }
+
+                if byte == b'{' {
+                    if depth == 0 {
+                        start = i;
+                    }
+                    depth += 1;
+                } else if byte == b'}' {
+                    if depth == 0 {
+                        continue;
+                    }
+                    depth -= 1;
+                    if depth == 0
+                        && let Ok(snapshot) =
+                            serde_json::from_slice::<Position>(&snapshot_bytes[start..=i])
+                    {
+                        snapshots.push(snapshot);
+                    }
+                }
+            }
+
+            snapshots
+        }
+
         let mut analyzer = PortfolioAnalyzer::default();
         let positions_owned: Vec<_> = positions.iter().map(|p| (*p).clone()).collect();
+        let mut snapshot_positions = Vec::new();
+
+        for instrument_id in cache.instrument_ids(None) {
+            for position_id in cache.position_snapshot_ids(instrument_id) {
+                if let Some(snapshot_bytes) = cache.position_snapshot_bytes(&position_id) {
+                    snapshot_positions.extend(decode_position_snapshots(&snapshot_bytes));
+                }
+            }
+        }
 
         // Aggregate starting and current balances across all venue accounts
         for venue in self.venues.keys() {
@@ -932,6 +992,7 @@ impl BacktestEngine {
         }
 
         analyzer.add_positions(&positions_owned);
+        analyzer.add_positions(&snapshot_positions);
         analyzer
     }
 
