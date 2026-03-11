@@ -135,6 +135,77 @@ def test_on_order_book_deltas_reference_leg_refreshes_quotes_when_not_throttled(
     assert refresh_calls[0][1]
 
 
+def test_on_quote_tick_reference_leg_refreshes_quotes_when_enabled(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1_000_000_000, 1_000_000_000],
+        reference_use_quote_ticks=True,
+    )
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._recompute_and_publish_fv = lambda: None
+    strategy._effective_bot_on = lambda: True
+    strategy._last_bbo = {strategy.config.reference_instrument_id: None}
+    strategy._last_market_bbo_publish_ns = {strategy.config.reference_instrument_id: 0}
+    strategy._last_bbo_ts_ns = {strategy.config.reference_instrument_id: 0}
+
+    refresh_calls: list[tuple[int, str | None]] = []
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refresh_calls.append(
+        (now_ns, quote_cycle_id),
+    )
+
+    class _Price:
+        def __init__(self, value: str) -> None:
+            self._value = Decimal(value)
+
+        def as_decimal(self) -> Decimal:
+            return self._value
+
+    strategy.on_quote_tick(
+        SimpleNamespace(
+            instrument_id=strategy.config.reference_instrument_id,
+            bid_price=_Price("100"),
+            ask_price=_Price("101"),
+            ts_event=1_000_000_000,
+        ),
+    )
+
+    assert strategy._last_bbo[strategy.config.reference_instrument_id] == (
+        Decimal(100),
+        Decimal(101),
+    )
+    assert strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] == 1_000_000_000
+    assert len(refresh_calls) == 1
+    assert refresh_calls[0][0] == 1_000_000_000
+    assert refresh_calls[0][1]
+
+
+def test_best_bid_ask_uses_cached_bbo_only_for_quote_tick_reference_leg(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(reference_use_quote_ticks=True)
+    maker_id = strategy.config.maker_instrument_id
+    reference_id = strategy.config.reference_instrument_id
+
+    class _MakerBook:
+        def best_bid_price(self) -> None:
+            return None
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    strategy._books = {maker_id: _MakerBook()}
+    strategy._last_bbo = {
+        maker_id: (Decimal(100), Decimal(101)),
+        reference_id: (Decimal(200), Decimal(201)),
+    }
+
+    assert strategy._best_bid_ask(maker_id) is None
+    assert strategy._best_bid_ask(reference_id) == (Decimal(200), Decimal(201))
+
+
 def test_on_order_book_deltas_does_not_cancel_bot_off_quotes_during_market_exit(
     clocked_strategy_factory,
 ) -> None:

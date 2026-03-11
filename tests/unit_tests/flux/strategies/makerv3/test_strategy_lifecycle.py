@@ -397,6 +397,62 @@ def test_on_start_preserves_runtime_bot_on_when_force_off_disabled(
     assert strategy._effective_bot_on() is True
 
 
+def test_on_start_uses_quote_ticks_for_reference_leg_when_enabled(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory(reference_use_quote_ticks=True)
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._runtime_bool = lambda _name: False
+    strategy._refresh_runtime_params = lambda *args, **kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+
+    subscribed_books: list[str] = []
+    subscribed_quotes: list[str] = []
+    unsubscribed_books: list[str] = []
+    unsubscribed_quotes: list[str] = []
+    strategy.subscribe_order_book_deltas = lambda instrument_id, **_kwargs: subscribed_books.append(
+        str(instrument_id),
+    )
+    strategy.subscribe_quote_ticks = lambda instrument_id, **_kwargs: subscribed_quotes.append(
+        str(instrument_id),
+    )
+    strategy.unsubscribe_order_book_deltas = lambda instrument_id, **_kwargs: unsubscribed_books.append(
+        str(instrument_id),
+    )
+    strategy.unsubscribe_quote_ticks = lambda instrument_id, **_kwargs: unsubscribed_quotes.append(
+        str(instrument_id),
+    )
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy.on_start()
+    strategy.on_stop()
+
+    assert subscribed_books == [str(strategy.config.maker_instrument_id)]
+    assert subscribed_quotes == [str(strategy.config.reference_instrument_id)]
+    assert unsubscribed_books == [str(strategy.config.maker_instrument_id)]
+    assert unsubscribed_quotes == [str(strategy.config.reference_instrument_id)]
+    assert strategy.config.reference_instrument_id not in strategy._books
+
+
 def test_on_start_logs_derivative_qty_guardrail_summary(strategy_factory, monkeypatch) -> None:
     maker_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
     reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT")

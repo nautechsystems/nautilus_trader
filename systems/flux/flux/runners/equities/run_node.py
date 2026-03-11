@@ -370,6 +370,9 @@ def _optional_strategy_config_kwargs(
     strategy_cfg: dict[str, Any],
 ) -> dict[str, Any]:
     candidates: dict[str, Any] = {
+        "reference_use_quote_ticks": bool(
+            strategy_cfg.get("reference_use_quote_ticks", False),
+        ),
         "outside_rth_hedge_enabled": bool(strategy_cfg.get("outside_rth_hedge_enabled", False)),
         "hedge_price_tick_size": Decimal(str(strategy_cfg.get("hedge_price_tick_size", "0.01"))),
         "hedge_min_share_increment": Decimal(

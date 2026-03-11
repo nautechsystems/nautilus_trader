@@ -120,6 +120,7 @@ def test_equities_active_strategy_contract_is_makerv3_only() -> None:
     assert config["identity"]["external_strategy_id"] == ACTIVE_STRATEGY_ID
     assert config["strategy"]["strategy_id"] == ACTIVE_STRATEGY_ID
     assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
+    assert config["strategy"]["reference_use_quote_ticks"] is True
     assert config["node"]["enable_execution"] is False
     assert config["node"]["venues"]["IBKR"]["instrument_id"] == "AAPL.NASDAQ"
     assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False

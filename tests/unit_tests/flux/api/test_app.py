@@ -637,10 +637,47 @@ def test_market_keys_skip_legacy_fallback_when_exchange_pair_is_ambiguous(
 
     market_keys = store._market_keys(flux_config.identity.strategy_id)
 
-    assert [fallback for _contract, _primary, fallback in market_keys] == [None, None]
-    assert [primary for _contract, primary, _fallback in market_keys] == [
-        "flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-LINEAR.BYBIT",
-        "flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-SPOT.BYBIT",
+    assert [key_candidates for _contract, key_candidates in market_keys] == [
+        ["flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-LINEAR.BYBIT"],
+        ["flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-SPOT.BYBIT"],
+    ]
+
+
+def test_market_keys_add_listing_venue_alias_for_dotted_share_class_ibkr_contract(
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="BRK.B/USD",
+                instrument_id="BRK.B.NYSE",
+            ),
+        ),
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    market_keys = store._market_keys(flux_config.identity.strategy_id)
+
+    assert market_keys == [
+        (
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="BRK.B/USD",
+                instrument_id="BRK.B.NYSE",
+            ),
+            [
+                "flux:v1:market:last:strategy_01:ibkr:BRK.B.NYSE",
+                "flux:v1:market:last:strategy_01:nyse:BRK.B.NYSE",
+                "flux:v1:market:last:strategy_01:ibkr:BRK.B_USD",
+            ],
+        ),
     ]
 
 

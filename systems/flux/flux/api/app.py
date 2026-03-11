@@ -440,59 +440,119 @@ class FluxApiStore:
         params = self.load_params(strategy_id)
         return {"updated": sorted(applied_updates), "params": params}
 
-    def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, str, str | None]]:
+    @staticmethod
+    def _instrument_exchange_alias(contract: ContractCatalogEntry) -> str | None:
+        contract_exchange = decode_text(contract.exchange).strip().lower()
+        instrument_text = decode_text(contract.instrument_id).strip().upper()
+        if "." not in instrument_text:
+            return None
+        venue_text = instrument_text.rsplit(".", maxsplit=1)[1].strip().upper()
+        if not venue_text:
+            return None
+        venue_root = venue_text.split("_", maxsplit=1)[0].lower()
+        if not venue_root or venue_root == contract_exchange:
+            return None
+        return venue_root
+
+    def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, list[str]]]:
         keys = self._keys_for_strategy(strategy_id)
-        out: list[tuple[ContractCatalogEntry, str, str | None]] = []
+        out: list[tuple[ContractCatalogEntry, list[str]]] = []
         legacy_counts: dict[tuple[str, str, str], int] = {}
         for contract, base, quote in self._contract_specs:
             legacy_key = (contract.exchange, base, quote)
             legacy_counts[legacy_key] = legacy_counts.get(legacy_key, 0) + 1
         for contract, base, quote in self._contract_specs:
-            primary_key = keys.market_last(
-                exchange=contract.exchange,
-                base=base,
-                quote=quote,
-                instrument_id=contract.instrument_id or None,
-            )
-            fallback_key = None
-            if contract.instrument_id and legacy_counts[(contract.exchange, base, quote)] == 1:
-                fallback_key = keys.market_last(
+            key_candidates = [
+                keys.market_last(
                     exchange=contract.exchange,
                     base=base,
                     quote=quote,
-                )
-            out.append(
-                (
-                    contract,
-                    primary_key,
-                    fallback_key,
+                    instrument_id=contract.instrument_id or None,
                 ),
-            )
+            ]
+            alias_exchange = self._instrument_exchange_alias(contract)
+            if alias_exchange and contract.instrument_id:
+                key_candidates.append(
+                    keys.market_last(
+                        exchange=alias_exchange,
+                        base=base,
+                        quote=quote,
+                        instrument_id=contract.instrument_id,
+                    ),
+                )
+            if contract.instrument_id and legacy_counts[(contract.exchange, base, quote)] == 1:
+                key_candidates.append(
+                    keys.market_last(
+                        exchange=contract.exchange,
+                        base=base,
+                        quote=quote,
+                    ),
+                )
+            out.append((contract, key_candidates))
         return out
 
     @staticmethod
-    def _decode_market_row(primary_raw: Any, fallback_raw: Any = None) -> dict[str, Any]:
-        primary = load_json(primary_raw)
-        primary_row = dict(primary) if isinstance(primary, dict) else {}
-        fallback = load_json(fallback_raw)
-        fallback_row = dict(fallback) if isinstance(fallback, dict) else {}
-        if not primary_row:
-            return fallback_row
-        if not fallback_row:
-            return primary_row
-        merged = dict(fallback_row)
-        merged.update(primary_row)
+    def _decode_market_rows(raw_values: Sequence[Any]) -> dict[str, Any]:
+        decoded_rows = [FluxApiStore._parse_market_row(raw_value) for raw_value in raw_values]
+        return FluxApiStore._merge_market_row_values(decoded_rows)
+
+    @staticmethod
+    def _parse_market_row(raw_value: Any) -> dict[str, Any]:
+        parsed = load_json(raw_value)
+        return dict(parsed) if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _merge_market_row_values(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for row in reversed(list(rows)):
+            if not row:
+                continue
+            for key, value in row.items():
+                if value is None and key in merged:
+                    continue
+                merged[key] = value
         return merged
+
+    @staticmethod
+    def _decode_market_row(primary_raw: Any, fallback_raw: Any = None) -> dict[str, Any]:
+        return FluxApiStore._decode_market_rows(
+            [raw for raw in (primary_raw, fallback_raw) if raw is not None],
+        )
+
+    def _decode_market_row_candidates(
+        self,
+        contract: ContractCatalogEntry,
+        raw_values: Sequence[Any],
+    ) -> dict[str, Any]:
+        decoded_rows = [self._parse_market_row(raw_value) for raw_value in raw_values]
+        if not decoded_rows:
+            return {}
+
+        canonical_row = decoded_rows[0]
+        next_index = 1
+        alias_row: dict[str, Any] = {}
+        if contract.instrument_id and self._instrument_exchange_alias(contract) and next_index < len(
+            decoded_rows
+        ):
+            alias_row = decoded_rows[next_index]
+            next_index += 1
+        legacy_row: dict[str, Any] = {}
+        if contract.instrument_id and next_index < len(decoded_rows):
+            legacy_row = decoded_rows[next_index]
+
+        selected_row = canonical_row or alias_row
+        if selected_row:
+            return self._merge_market_row_values([selected_row, legacy_row])
+        return dict(legacy_row)
 
     def load_market_rows(self, strategy_id: str) -> dict[str, dict[str, Any]]:
         market_pairs = self._market_keys(strategy_id)
         pipe = self._redis.pipeline(transaction=False)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Market pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -500,14 +560,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 0
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,
@@ -586,12 +644,11 @@ class FluxApiStore:
         pipe.xrevrange(keys.fv_stream(), count=50)
         pipe.get(keys.balances_snapshot())
         market_pairs = self._market_keys(strategy_id)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = 3 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = 3 + sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Signals pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -608,14 +665,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 3
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,
@@ -648,12 +703,11 @@ class FluxApiStore:
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.balances_snapshot())
         market_pairs = self._market_keys(strategy_id)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = 1 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = 1 + sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Balances pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -665,14 +719,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 1
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,

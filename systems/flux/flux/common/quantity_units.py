@@ -209,31 +209,35 @@ def exposure_from_venue_qty(
 
     sign = _sign_multiplier(venue_qty_dec)
     qty = _to_quantity(instrument, abs(venue_qty_dec))
-    price = _to_price(instrument, last_px) if last_px is not None else None
+    normalized_venue_qty = _decimal_from_value(qty) or abs(venue_qty_dec)
 
-    try:
-        base_qty = instrument.calculate_base_exposure_qty(qty, price)
-    except ValueError as exc:
-        message = str(exc)
-        if "last_px" in message:
+    if status == "identity":
+        base_qty_dec = normalized_venue_qty
+    else:
+        multiplier = _decimal_from_value(getattr(instrument, "multiplier", None))
+        if multiplier is None or multiplier == 0:
             return _degraded_result(
                 venue_qty=venue_qty_dec,
                 base_qty=None,
-                status="missing_price",
-                source=f"{source} requires last_px",
+                status="missing_metadata",
+                source="generic:instrument multiplier unavailable",
             )
-        if "Quanto" in message or "not supported" in message:
-            return _degraded_result(
-                venue_qty=venue_qty_dec,
-                base_qty=None,
-                status="unsupported",
-                source=source,
-            )
-        raise
+        if status == "exact_multiplier":
+            base_qty_dec = normalized_venue_qty * multiplier
+        else:
+            last_px_dec = _decimal_from_value(last_px)
+            if last_px_dec is None:
+                return _degraded_result(
+                    venue_qty=venue_qty_dec,
+                    base_qty=None,
+                    status="missing_price",
+                    source=f"{source} requires last_px",
+                )
+            base_qty_dec = (normalized_venue_qty * multiplier) / last_px_dec
 
     return QuantityExposure(
         venue_qty=venue_qty_dec,
-        base_qty=(_decimal_from_value(base_qty) or Decimal(0)) * sign,
+        base_qty=base_qty_dec * sign,
         qty_conversion_status=status,
         qty_conversion_source=source,
     )

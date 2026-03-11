@@ -1,5 +1,5 @@
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
         CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
@@ -12,6 +12,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
 use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotMeta};
@@ -34,6 +35,9 @@ pub enum HyperliquidMarketType {
     /// Spot trading pair.
     Spot,
 }
+
+const BASE_EXPOSURE_MODE_KEY: &str = "base_exposure_mode";
+const BASE_EXPOSURE_MODE_IDENTITY: &str = "identity";
 
 /// Normalized instrument definition produced by this parser.
 ///
@@ -264,6 +268,11 @@ pub fn create_instrument_from_def(
         ))),
         HyperliquidMarketType::Perp => {
             let settlement_currency = get_currency("USDC");
+            let mut info = Params::new();
+            info.insert(
+                BASE_EXPOSURE_MODE_KEY.to_string(),
+                Value::String(BASE_EXPOSURE_MODE_IDENTITY.to_string()),
+            );
 
             Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
                 instrument_id,
@@ -288,7 +297,7 @@ pub fn create_instrument_from_def(
                 None,
                 None,
                 None,
-                None,
+                Some(info),
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
@@ -819,5 +828,38 @@ mod tests {
         let defs = parse_perp_instruments(&meta).unwrap();
         assert_eq!(defs[0].price_decimals, 0);
         assert_eq!(defs[0].tick_size, dec!(1));
+    }
+
+    #[rstest]
+    fn test_create_perp_instrument_surfaces_identity_base_exposure_mode() {
+        let def = HyperliquidInstrumentDef {
+            symbol: "xyz:AAPL-USD-PERP".into(),
+            raw_symbol: "xyz:AAPL".into(),
+            base: "xyz:AAPL".into(),
+            quote: "USD".into(),
+            market_type: HyperliquidMarketType::Perp,
+            asset_index: 0,
+            price_decimals: 3,
+            size_decimals: 3,
+            tick_size: dec!(0.001),
+            lot_size: dec!(0.001),
+            max_leverage: Some(3),
+            only_isolated: false,
+            active: true,
+            raw_data: "{}".to_string(),
+        };
+
+        let instrument = create_instrument_from_def(&def, UnixNanos::default())
+            .expect("perp instrument should be created");
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(
+                    perp.info.as_ref().and_then(|info| info.get_str("base_exposure_mode")),
+                    Some("identity"),
+                );
+            }
+            _ => panic!("expected CryptoPerpetual"),
+        }
     }
 }

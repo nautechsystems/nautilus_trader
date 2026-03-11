@@ -48,6 +48,29 @@ def _okx_linear_perpetual() -> CryptoPerpetual:
     )
 
 
+def _hyperliquid_identity_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("xyz:AAPL-USD-PERP"),
+            venue=Venue("HYPERLIQUID"),
+        ),
+        raw_symbol=Symbol("xyz:AAPL"),
+        base_currency=Currency.from_str("xyz:AAPL"),
+        quote_currency=Currency.from_str("USD"),
+        settlement_currency=Currency.from_str("USDC"),
+        is_inverse=False,
+        price_precision=3,
+        size_precision=3,
+        price_increment=Price.from_str("0.001"),
+        size_increment=Quantity.from_str("0.001"),
+        multiplier=Quantity.from_str("1"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={"base_exposure_mode": "identity"},
+    )
+
+
 def test_refresh_runtime_params_is_idempotent_and_noop_when_unchanged(strategy_factory) -> None:
     strategy = strategy_factory()
 
@@ -234,6 +257,18 @@ def test_apply_runtime_param_updates_qty_unit_base_converts_before_make_qty(
 
     assert strategy._runtime_params["qty"] == Decimal(3430)
     assert strategy._order_qty.as_decimal() == Decimal(343)
+
+
+def test_apply_runtime_param_updates_qty_unit_base_supports_hyperliquid_identity_perps(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(qty_unit="base")
+    strategy._maker_instrument = _hyperliquid_identity_perpetual()
+
+    strategy._apply_runtime_param_updates({"qty": Decimal(1)})
+
+    assert strategy._runtime_params["qty"] == Decimal(1)
+    assert strategy._order_qty.as_decimal() == Decimal(1)
 
 
 def test_apply_runtime_param_updates_qty_unit_base_rejects_non_integral_venue_qty(
