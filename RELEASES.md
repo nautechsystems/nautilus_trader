@@ -49,6 +49,18 @@ Released on TBD (UTC).
 - Upgraded `redis` crate to v1.0.5
 - Upgraded `tokio` crate to v1.50.0
 
+### Documentation
+- Added Options concept guide with chain architecture, subscription API, strike filtering, and snapshot modes
+- Added Greeks concept guide covering venue-provided and local calculator paths
+- Added adapter developer guide sections for WS unit tests, close/stream patterns, and split-client architecture
+- Added Interactive brokers docs `request_ticks` API fix and contract example (#3699), thanks @faysou
+- Rewrote Live Trading concept guide for accuracy (reconciliation, periodic timers, lookback windows)
+- Rewrote Custom Data architecture docs for two-mode (Rust/Python) registration
+- Improved Value Types concept guide with full arithmetic operator and unary operation docs
+- Improved accuracy of Greeks and Options concept guides, thanks @faysou
+- Migrated Python API reference from sphinx-markdown-builder to Sphinx HTML with Furo theme
+- Updated all API reference links to Sphinx HTML paths
+
 ---
 
 # NautilusTrader 1.224.0 Beta

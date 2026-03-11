@@ -20,8 +20,12 @@ Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption` -- full Greeks inputs: `strike_price`,
   `option_kind` (CALL/PUT), `expiration_utc`, `underlying`, `multiplier`.
-- `OptionSpread` -- has `underlying` and `expiration_utc`, but no per-leg
-  `strike_price` or `option_kind`.
+- `OptionSpread` -- a combination of up to 4 option legs, each weighted by a
+  ratio. Has `underlying`, `expiration_utc`, and `strategy_type` (vertical,
+  calendar, straddle, etc.). Per-leg `strike_price` and `option_kind` live on
+  each leg's `OptionContract`, not on the spread itself. Greeks are computed
+  per leg and aggregated. Spreads are commonly used for orders (the exchange
+  executes as a single order), while the individual legs appear as positions.
 - `BinaryOption` -- has `expiration_utc` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
