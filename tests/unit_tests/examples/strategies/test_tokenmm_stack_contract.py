@@ -28,6 +28,7 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
+CANONICAL_DEPLOY_ROOT = "/home/ubuntu/nautilus-trader"
 
 
 def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
@@ -122,12 +123,25 @@ def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
 
 def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+    runbook = _read(_repo_root() / "docs/fluxboard/tokenmm_runbook.md")
 
     assert "rebuild_flux_pulse_sudoers.sh" in script
     assert "strategy_stack_write_env" in script
-    assert 'TOKENMM_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in script
-    assert "append_checkout_env_overrides" in script
-    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in script
+    assert f'CANONICAL_DEPLOY_ROOT="{CANONICAL_DEPLOY_ROOT}"' in script
+    assert 'echo "[tokenmm-systemd] canonical deploy root missing: ${CANONICAL_DEPLOY_ROOT}" >&2' in script
+    assert script.index('if [[ ! -d "${CANONICAL_DEPLOY_ROOT}" ]]; then') < script.index(
+        'source "${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"',
+    )
+    assert 'source "${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"' in script
+    assert 'TOKENMM_PYTHON_BIN="${CANONICAL_DEPLOY_ROOT}/.venv/bin/python"' in script
+    assert 'SHARED_CONFIG="${CANONICAL_DEPLOY_ROOT}/deploy/tokenmm/tokenmm.live.toml"' in script
+    assert 'STRATEGIES_DIR="${CANONICAL_DEPLOY_ROOT}/deploy/tokenmm/strategies"' in script
+    assert "append_checkout_env_overrides" not in script
+    assert (
+        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${CANONICAL_DEPLOY_ROOT}" '
+        '"${CANONICAL_DEPLOY_ROOT}"'
+    ) in script
     assert '"tokenmm"' in script
     assert '"TokenMM"' in script
     assert '"10"' in script
@@ -139,7 +153,11 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
     assert "http://127.0.0.1:5022/pulse" in _read(
         _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
     )
-    assert "http://<host>:5022/pulse" in _read(_repo_root() / "deploy/tokenmm/README.md")
+    assert "`~/nautilus-trader`" in readme
+    assert "pins each TokenMM env file to the checkout used during install" not in readme
+    assert "pins each TokenMM env file to `~/nautilus-trader`" in readme
+    assert "`~/nautilus-trader`" in runbook
+    assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
 
 
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
@@ -172,8 +190,14 @@ def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> N
     assert "tokenmm-jupyter.env" in install_script
     assert "tokenmm-jupyter.env.example" in install_script
     assert "tokenmm_rollout_preflight.py" in install_script
-    assert '"${TOKENMM_PYTHON_BIN}" "${ROOT_DIR}/ops/scripts/deploy/tokenmm_rollout_preflight.py"' in install_script
-    assert 'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\'' in install_script
+    assert (
+        '"${TOKENMM_PYTHON_BIN}" '
+        '"${CANONICAL_DEPLOY_ROOT}/ops/scripts/deploy/tokenmm_rollout_preflight.py"'
+    ) in install_script
+    assert (
+        'printf \'WORKDIR=%s\\nPYTHONPATH=%s\\n\' "${CANONICAL_DEPLOY_ROOT}" '
+        '"${CANONICAL_DEPLOY_ROOT}"'
+    ) in install_script
     assert "python3 -m nautilus_trader.flux.runners.tokenmm" not in install_script
 
     assert "rollout_preflight" in preflight_wrapper
@@ -239,6 +263,8 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "pnpm --dir pulse-ui install --frozen-lockfile" in deploy_readme
     assert "pnpm --dir pulse-ui build" in deploy_readme
     assert "make build" in deploy_readme
+    assert "`~/nautilus-trader`" in deploy_readme
+    assert "`~/nautilus-trader`" in runbook
 
     assert "orders.sqlite" in telemetry_runbook
     assert "fills.sqlite" in telemetry_runbook
