@@ -89,13 +89,17 @@ Use it together with `deploy/tokenmm/README.md` and
    - signals show accepted/open orders on at least one side
    - alerts do not show a fresh order-denied/rejected burst tied to account
      mode or an unsupported borrowing path
+   - alerts do not show `terminal_order_denied`
    - the journal shows no `UNSUPPORTED_ACCOUNT_MODE`
-   - the journal shows no terminal auto-shutdown
+   - the journal shows no `Terminal order denial triggered bot_off`
 10. Fail the canary immediately if any of the following appear:
    - `UNSUPPORTED_ACCOUNT_MODE`
-   - terminal auto-shutdown
+   - `terminal_order_denied`
+   - `Terminal order denial triggered bot_off`
    - fresh order-denied/rejected burst tied to account mode or unsupported
      borrowing path
+   - this terminal account-mode failure can bypass the burst-alert path and
+     flip the strategy to `bot_off` through the terminal-denial circuit
 
 ## Acceptance criteria
 
@@ -117,7 +121,8 @@ Use it together with `deploy/tokenmm/README.md` and
 Rollback to a no-trade state immediately if any of the following occur:
 
 - the journal shows `UNSUPPORTED_ACCOUNT_MODE`
-- the journal shows terminal auto-shutdown
+- the alerts feed shows `terminal_order_denied`
+- the journal shows `Terminal order denial triggered bot_off`
 - the supported account is not the one actually receiving the Binance spot
   session
 - the PM liability is not flattened

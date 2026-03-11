@@ -52,7 +52,9 @@ def test_tokenmm_binance_spot_market_making_runbook_documents_supported_cross_ma
     assert "flatten the existing PM liability" in runbook
     assert "bot-off restart and canary" in runbook
     assert "accepted/open orders on at least one side" in runbook
-    assert "terminal auto-shutdown" in runbook
+    assert "terminal_order_denied" in runbook
+    assert "Terminal order denial triggered bot_off" in runbook
+    assert "bypass the burst-alert path" in runbook
     assert "fresh order-denied/rejected burst" in runbook
     assert "/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3" in runbook
     assert "/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50" in runbook
