@@ -42,9 +42,9 @@ path_is_git_worktree() {
   local git_dir=""
   local common_dir=""
 
-  git_dir="$(git -C "${path}" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+  git_dir="$(git -C "${path}" rev-parse --path-format=absolute --git-dir 2> /dev/null || true)"
   common_dir="$(
-    git -C "${path}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true
+    git -C "${path}" rev-parse --path-format=absolute --git-common-dir 2> /dev/null || true
   )"
 
   [[ -n "${git_dir}" ]] || return 1
@@ -85,6 +85,7 @@ if [[ ! -f "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh" ]]; then
   exit 1
 fi
 
+# shellcheck source=/dev/null
 source "${DEPLOY_ROOT}/ops/scripts/deploy/shared_strategy_stack.sh"
 SHARED_CONFIG="${DEPLOY_ROOT}/deploy/tokenmm/tokenmm.live.toml"
 STRATEGIES_DIR="${DEPLOY_ROOT}/deploy/tokenmm/strategies"
@@ -197,7 +198,7 @@ render_bridge_env() {
 }
 
 render_telemetry_shipper_env() {
-  cat > "${ENV_DIR}/tokenmm-telemetry-shipper.env" <<EOF
+  cat > "${ENV_DIR}/tokenmm-telemetry-shipper.env" << EOF
 PULSE_ENABLED=1
 PULSE_DESCRIPTION=TokenMM telemetry shipper
 PULSE_GROUP_KEY=tokenmm
