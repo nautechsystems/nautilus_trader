@@ -200,9 +200,36 @@ def test_markout_actor_persists_resolved_rows_for_each_horizon_and_enriches_from
         )
         for row in rows
     ] == [
-        (30, "101", "1", "resolved", "run-telemetry-001", "run-telemetry-001:27", "place_missing_level", 3),
-        (60, "102", "2", "resolved", "run-telemetry-001", "run-telemetry-001:27", "place_missing_level", 3),
-        (120, "103", "3", "resolved", "run-telemetry-001", "run-telemetry-001:27", "place_missing_level", 3),
+        (
+            30,
+            "101",
+            "1",
+            "resolved",
+            "run-telemetry-001",
+            "run-telemetry-001:27",
+            "place_missing_level",
+            3,
+        ),
+        (
+            60,
+            "102",
+            "2",
+            "resolved",
+            "run-telemetry-001",
+            "run-telemetry-001:27",
+            "place_missing_level",
+            3,
+        ),
+        (
+            120,
+            "103",
+            "3",
+            "resolved",
+            "run-telemetry-001",
+            "run-telemetry-001:27",
+            "place_missing_level",
+            3,
+        ),
     ]
 
 
@@ -286,3 +313,53 @@ def test_markout_actor_expires_rows_when_future_fv_never_arrives(tmp_path) -> No
     ] == [
         (30, None, None, "expired"),
     ]
+
+
+def test_markout_actor_uses_periodic_expiry_timer_for_pending_rows(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(30,), max_pending_ms=500)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(
+        instrument,
+        side="BUY",
+        last_px="100",
+        ts_event=1_000_000_000,
+        client_order_id="O-004",
+        trade_id="E-004",
+    )
+
+    actor.start()
+    assert actor.clock is not None
+    timer_name = "execution-markout-expiry:MARKOUT-DB"
+    assert timer_name in actor.clock.timer_names
+
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    event_handlers = actor.clock.advance_time(40_000_000_000)
+    expiry_handlers = [handler for handler in event_handlers if handler.event.name == timer_name]
+    assert expiry_handlers
+
+    for handler in expiry_handlers:
+        handler.handle()
+
+    actor.flush()
+    rows = _fetch_rows(
+        db_path,
+        """
+        SELECT horizon_s, benchmark_px, markout_abs, resolution_status
+        FROM execution_markout
+        ORDER BY horizon_s
+        """,
+    )
+    actor.stop()
+
+    assert [
+        (
+            row["horizon_s"],
+            row["benchmark_px"],
+            row["markout_abs"],
+            row["resolution_status"],
+        )
+        for row in rows
+    ] == [
+        (30, None, None, "expired"),
+    ]
+    assert timer_name not in actor.clock.timer_names

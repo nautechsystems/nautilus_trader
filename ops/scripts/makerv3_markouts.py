@@ -11,9 +11,14 @@ from collections import defaultdict
 from collections.abc import Iterable
 from collections.abc import Mapping
 from decimal import Decimal
-from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any
+
+from flux.persistence.markouts.common import decimal_text as _decimal_text
+from flux.persistence.markouts.common import markout_bps as _markout_bps
+from flux.persistence.markouts.common import signed_markout
+from flux.persistence.markouts.common import to_decimal as _to_decimal
+from flux.persistence.markouts.common import to_optional_int as _to_int
 
 
 def _repo_root() -> Path:
@@ -37,49 +42,6 @@ def _decode_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
-
-
-def _to_decimal(value: Any) -> Decimal | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        text = _decode_text(value).strip()
-        if not text:
-            return None
-        try:
-            return Decimal(text)
-        except (InvalidOperation, ValueError):
-            return None
-
-
-def _to_int(value: Any) -> int | None:
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        text = _decode_text(value).strip()
-        if not text:
-            return None
-        try:
-            return int(text)
-        except ValueError:
-            return None
-
-
-def _decimal_text(value: Decimal | None) -> str | None:
-    if value is None:
-        return None
-    text = format(value, "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    if text == "-0":
-        return "0"
-    return text or "0"
 
 
 def _parse_horizons(raw: str) -> tuple[int, ...]:
@@ -122,21 +84,6 @@ def _read_profile_strategy_ids(*, profile: str, config_path: Path) -> list[str]:
     field_name = f"{_normalize_profile_name(profile)}_strategy_ids"
     raw_ids = payload.get("api", {}).get(field_name) or []
     return _parse_strategy_args(str(item) for item in raw_ids)
-
-
-def signed_markout(side: str, fill_px: Decimal, benchmark_px: Decimal) -> Decimal:
-    side_upper = side.upper()
-    if side_upper == "BUY":
-        return benchmark_px - fill_px
-    if side_upper == "SELL":
-        return fill_px - benchmark_px
-    raise ValueError(f"Unsupported side {side!r}")
-
-
-def _markout_bps(markout_abs: Decimal, fill_px: Decimal) -> Decimal | None:
-    if fill_px == 0:
-        return None
-    return (markout_abs / fill_px) * Decimal("10000")
 
 
 def _first_text(mapping: Mapping[str, Any], *keys: str) -> str:
@@ -248,7 +195,9 @@ def compute_markout_rows(
         fill_id = _fill_identity(trade_row)
         fill_side = _first_text(trade_row, "side", "order_side").upper()
         fill_px = _to_decimal(trade_row.get("price") or trade_row.get("fill_px"))
-        fill_qty = _to_decimal(trade_row.get("qty") or trade_row.get("size") or trade_row.get("fill_qty"))
+        fill_qty = _to_decimal(
+            trade_row.get("qty") or trade_row.get("size") or trade_row.get("fill_qty")
+        )
         fill_ts_ms = _to_int(trade_row.get("ts_ms"))
         if (
             not strategy_id
@@ -267,9 +216,7 @@ def compute_markout_rows(
             target_ts_ms = fill_ts_ms + (int(horizon_s) * 1_000)
             position = bisect_left(fv_timestamps, target_ts_ms)
             if position >= len(strategy_fv_rows) or (
-                position == 0
-                and earliest_fv_ts_ms is not None
-                and earliest_fv_ts_ms > target_ts_ms
+                position == 0 and earliest_fv_ts_ms is not None and earliest_fv_ts_ms > target_ts_ms
             ):
                 output_rows.append(
                     _missing_future_fv_row(
@@ -338,8 +285,8 @@ def summarize_markout_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, 
             continue
 
         count = len(ok_rows)
-        total_markout_abs = sum((row["markout_abs"] for row in ok_rows), Decimal("0"))
-        total_markout_bps = sum((row["markout_bps"] for row in ok_rows), Decimal("0"))
+        total_markout_abs = sum((row["markout_abs"] for row in ok_rows), Decimal(0))
+        total_markout_bps = sum((row["markout_bps"] for row in ok_rows), Decimal(0))
         summary_rows.append(
             {
                 "horizon_s": horizon_s,
@@ -381,11 +328,7 @@ def load_stream_rows(
         fv_entries.extend(page)
         fv_rows = extract_stream_rows(page)
         oldest_page_ts_ms = min(
-            (
-                ts_ms
-                for row in fv_rows
-                if (ts_ms := _to_int(row.get("ts_ms"))) is not None
-            ),
+            (ts_ms for row in fv_rows if (ts_ms := _to_int(row.get("ts_ms"))) is not None),
             default=None,
         )
         if oldest_target_ts_ms is None:
