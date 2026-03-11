@@ -348,6 +348,19 @@ def test_equities_shared_contract_catalog_matches_active_strategy_routes() -> No
         ) in shared_contracts
 
 
+def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
+    repo_root = _repo_root()
+    client_ids: list[int] = []
+
+    for entry in ACTIVE_STRATEGIES:
+        active_config = _load_toml(
+            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
+        )
+        client_ids.append(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
+
+    assert len(client_ids) == len(set(client_ids))
+
+
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
     env_example = _read(_repo_root() / "deploy/equities/equities_stack.env.example")
 

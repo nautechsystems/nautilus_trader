@@ -52,7 +52,7 @@ testnet = false
 [node.venues.IBKR]
 adapter = "interactive_brokers"
 instrument_id = "USAR.NASDAQ"
-ibg_client_id = 7
+ibg_client_id = 30
 execution = false
 use_regular_trading_hours = false
 

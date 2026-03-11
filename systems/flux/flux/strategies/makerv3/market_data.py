@@ -69,6 +69,9 @@ def _maybe_refresh_quotes(
     instrument_id: InstrumentId,
     now_ns: int,
     context: str,
+    trigger_source: str,
+    trigger_md_ts_event_ns: int | None = None,
+    trigger_md_ts_init_ns: int | None = None,
 ) -> None:
     bot_on_now = strategy._effective_bot_on()
     if strategy._quote_management_suspended():
@@ -88,18 +91,28 @@ def _maybe_refresh_quotes(
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_BOT_OFF,
             quote_cycle_id=quote_cycle_id,
+            trigger_source=trigger_source,
+            trigger_instrument_id=str(instrument_id),
+            trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+            trigger_md_ts_init_ns=trigger_md_ts_init_ns,
         )
         return
     if not bot_on_now:
         return
 
-    quote_cycle_id = strategy._next_quote_cycle_id(now_ns=now_ns)
+    quote_cycle = strategy._begin_quote_cycle(
+        now_ns=now_ns,
+        trigger_source=trigger_source,
+        trigger_instrument_id=instrument_id,
+        trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+        trigger_md_ts_init_ns=trigger_md_ts_init_ns,
+    )
     if now_ns - strategy._last_requote_ns < strategy.INTERNAL_REQUOTE_THROTTLE_MS * 1_000_000:
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_REQUOTE_THROTTLED,
-            quote_cycle_id=quote_cycle_id,
+            quote_cycle=quote_cycle,
             payload={
                 "throttle_ms": strategy.INTERNAL_REQUOTE_THROTTLE_MS,
             },
@@ -110,11 +123,15 @@ def _maybe_refresh_quotes(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
             reason_code=REASON_SKIPPED_QUOTE_FAIL_CIRCUIT_OPEN,
-            quote_cycle_id=quote_cycle_id,
+            quote_cycle=quote_cycle,
         )
         return
     try:
-        strategy._refresh_quotes(now_ns=now_ns, quote_cycle_id=quote_cycle_id)
+        strategy._refresh_quotes(
+            now_ns=now_ns,
+            quote_cycle_id=quote_cycle.quote_cycle_id,
+            quote_cycle=quote_cycle,
+        )
         strategy._quote_failures_ns.clear()
     except Exception as e:
         strategy._handle_quote_failure(now_ns=now_ns, exc=e, context=context)
@@ -162,6 +179,8 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
         ask_dec=ask_dec,
         now_ns=now_ns,
     )
+    strategy._last_bbo_event_ts_ns[deltas.instrument_id] = int(getattr(deltas, "ts_event", 0) or 0)
+    strategy._last_bbo_init_ts_ns[deltas.instrument_id] = int(getattr(deltas, "ts_init", 0) or 0)
 
     strategy._publish_balances_if_due()
     _maybe_refresh_quotes(
@@ -169,6 +188,13 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
         instrument_id=deltas.instrument_id,
         now_ns=int(strategy.clock.timestamp_ns()),
         context="on_order_book_deltas",
+        trigger_source=(
+            "maker_bbo_update"
+            if deltas.instrument_id == strategy.config.maker_instrument_id
+            else "reference_bbo_update"
+        ),
+        trigger_md_ts_event_ns=getattr(deltas, "ts_event", None),
+        trigger_md_ts_init_ns=getattr(deltas, "ts_init", None),
     )
 
 
@@ -198,12 +224,17 @@ def on_quote_tick(strategy: MakerV3Strategy, tick: object) -> None:
         ask_dec=ask_dec,
         now_ns=now_ns,
     )
+    strategy._last_bbo_event_ts_ns[instrument_id] = int(getattr(tick, "ts_event", 0) or 0)
+    strategy._last_bbo_init_ts_ns[instrument_id] = int(getattr(tick, "ts_init", 0) or 0)
     strategy._publish_balances_if_due()
     _maybe_refresh_quotes(
         strategy,
         instrument_id=instrument_id,
         now_ns=now_ns,
         context="on_quote_tick",
+        trigger_source="reference_quote_tick",
+        trigger_md_ts_event_ns=getattr(tick, "ts_event", None),
+        trigger_md_ts_init_ns=getattr(tick, "ts_init", None),
     )
 
 

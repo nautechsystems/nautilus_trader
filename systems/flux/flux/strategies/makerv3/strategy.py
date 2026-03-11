@@ -51,6 +51,7 @@ from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
+from flux.strategies.makerv3.wire import QuoteCycleContext
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
 
@@ -107,6 +108,16 @@ def _order_side_text(side: Any) -> str | None:
     if text == "2":
         return "SELL"
     return text or None
+
+
+def _quote_cycle_seq_from_id(value: str | None) -> int:
+    text = str(value or "")
+    if ":" not in text:
+        return 0
+    try:
+        return int(text.rsplit(":", 1)[1])
+    except ValueError:
+        return 0
 
 
 def _json_safe_value(value: Any) -> Any:
@@ -229,6 +240,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._books: dict[InstrumentId, OrderBook] = {}
             self._last_bbo: dict[InstrumentId, tuple[Decimal, Decimal] | None] = {}
             self._last_bbo_ts_ns: dict[InstrumentId, int] = {}
+            self._last_bbo_event_ts_ns: dict[InstrumentId, int] = {}
+            self._last_bbo_init_ts_ns: dict[InstrumentId, int] = {}
             self._last_market_bbo_publish_ns: dict[InstrumentId, int] = {}
             self._last_requote_ns = 0
             self._last_fv: Decimal | None = None
@@ -379,6 +392,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             }
             self._last_bbo = dict.fromkeys(subscribed_instrument_ids)
             self._last_bbo_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
+            self._last_bbo_event_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
+            self._last_bbo_init_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
             self._last_market_bbo_publish_ns = dict.fromkeys(subscribed_instrument_ids, 0)
 
             for instrument_id in subscribed_instrument_ids:
@@ -1999,23 +2014,86 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 quote_cycle_seq=self._quote_cycle_seq,
             )
 
+        def _begin_quote_cycle(
+            self,
+            *,
+            now_ns: int,
+            trigger_source: str | None,
+            trigger_instrument_id: InstrumentId | str | None = None,
+            trigger_md_ts_event_ns: int | None = None,
+            trigger_md_ts_init_ns: int | None = None,
+        ) -> QuoteCycleContext:
+            quote_cycle_id = self._next_quote_cycle_id(now_ns=now_ns)
+            return QuoteCycleContext(
+                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
+                quote_cycle_id=quote_cycle_id,
+                quote_cycle_seq=int(getattr(self, "_quote_cycle_seq", 0)),
+                instrument_id=str(self.config.maker_instrument_id),
+                trigger_source=trigger_source,
+                trigger_instrument_id=(
+                    None if trigger_instrument_id is None else str(trigger_instrument_id)
+                ),
+                trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+                trigger_md_ts_init_ns=trigger_md_ts_init_ns,
+                ts_cycle_start_ns=int(now_ns),
+            )
+
+        def _quote_cycle_context_from_id(
+            self,
+            *,
+            now_ns: int,
+            quote_cycle_id: str,
+            trigger_source: str | None = None,
+            trigger_instrument_id: InstrumentId | str | None = None,
+            trigger_md_ts_event_ns: int | None = None,
+            trigger_md_ts_init_ns: int | None = None,
+        ) -> QuoteCycleContext:
+            quote_cycle_seq = int(getattr(self, "_quote_cycle_seq", 0))
+            suffix = quote_cycle_id.rsplit(":", 1)[-1]
+            with suppress(ValueError):
+                quote_cycle_seq = int(suffix)
+            return QuoteCycleContext(
+                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
+                quote_cycle_id=quote_cycle_id,
+                quote_cycle_seq=quote_cycle_seq,
+                instrument_id=str(self.config.maker_instrument_id),
+                trigger_source=trigger_source,
+                trigger_instrument_id=(
+                    None if trigger_instrument_id is None else str(trigger_instrument_id)
+                ),
+                trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+                trigger_md_ts_init_ns=trigger_md_ts_init_ns,
+                ts_cycle_start_ns=int(now_ns),
+            )
+
         def _publish_quote_cycle_event(
             self,
             *,
             now_ns: int,
             quote_cycle_event: str,
             reason_code: str,
-            quote_cycle_id: str,
+            quote_cycle: QuoteCycleContext | None = None,
+            quote_cycle_id: str | None = None,
             payload: dict[str, Any] | None = None,
             **payload_fields: Any,
         ) -> None:
             event_payload = dict(payload or {})
             event_payload.update(payload_fields)
+            if quote_cycle is None:
+                quote_cycle_id_value = quote_cycle_id or self._next_quote_cycle_id(now_ns=now_ns)
+                quote_cycle = self._quote_cycle_context_from_id(
+                    now_ns=now_ns,
+                    quote_cycle_id=quote_cycle_id_value,
+                    trigger_source=event_payload.pop("trigger_source", None),
+                    trigger_instrument_id=event_payload.pop("trigger_instrument_id", None),
+                    trigger_md_ts_event_ns=event_payload.pop("trigger_md_ts_event_ns", None),
+                    trigger_md_ts_init_ns=event_payload.pop("trigger_md_ts_init_ns", None),
+                )
             envelope = build_quote_cycle_envelope(
-                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
-                quote_cycle_id=quote_cycle_id,
+                context=quote_cycle,
                 quote_cycle_event=quote_cycle_event,
                 reason_code=reason_code,
+                ts_cycle_end_ns=now_ns,
                 payload=event_payload,
             )
             self._publish_event(
@@ -2114,15 +2192,19 @@ if _NAUTILUS_IMPORT_ERROR is None:
             state: str,
             cancel_reason: str,
             reason_code: str,
-            quote_cycle_id: str,
+            quote_cycle: QuoteCycleContext | None = None,
+            quote_cycle_id: str | None = None,
             warning_message: str,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             quote_engine_mod.handle_stale_quote_block(
                 self,
                 now_ns=now_ns,
                 state=state,
                 cancel_reason=cancel_reason,
                 reason_code=reason_code,
+                quote_cycle=quote_cycle,
                 quote_cycle_id=quote_cycle_id,
                 warning_message=warning_message,
             )
@@ -2139,11 +2221,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 managed_orders=managed_orders,
             )
 
-        def _refresh_quotes(self, now_ns: int, *, quote_cycle_id: str | None = None) -> None:
+        def _refresh_quotes(
+            self,
+            now_ns: int,
+            *,
+            quote_cycle_id: str | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
+        ) -> None:
             quote_engine_mod.refresh_quotes(
                 self,
                 now_ns=now_ns,
                 quote_cycle_id=quote_cycle_id,
+                quote_cycle=quote_cycle,
             )
 
         def _publish_state_if_due(self) -> None:
@@ -2172,9 +2261,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             desired_levels: list[tuple[Price, Decimal, Decimal]],
             now_ns: int,
             max_age_ms: int,
+            quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> int:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             side_name = "buy" if side == OrderSide.BUY else "sell"
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
             active_stale = [
@@ -2237,10 +2329,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
             best_bid_px: Decimal,
             best_ask_px: Decimal,
             now_ns: int | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
             per_level_outcomes: list[dict[str, Any]] | None = None,
         ) -> int:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             if self._has_pending_managed_cancels():
                 return 0
             if now_ns is None:
@@ -2360,11 +2455,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             managed_orders: list[Order] | None = None,
             allow_instrument_cancel: bool | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None = None,
             now_ns: int | None = None,
             reason_code: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             if managed_orders is None:
                 managed_orders = self._managed_orders()
             requested_cancel_ids: set[str] = set()

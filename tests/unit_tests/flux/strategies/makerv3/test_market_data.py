@@ -124,7 +124,7 @@ def test_on_order_book_deltas_reference_leg_refreshes_quotes_when_not_throttled(
     strategy._last_market_bbo_publish_ns = {reference_id: 0}
 
     refresh_calls: list[tuple[int, str | None]] = []
-    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refresh_calls.append(
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None, quote_cycle=None: refresh_calls.append(
         (now_ns, quote_cycle_id),
     )
 
@@ -152,7 +152,7 @@ def test_on_quote_tick_reference_leg_refreshes_quotes_when_enabled(
     strategy._last_bbo_ts_ns = {strategy.config.reference_instrument_id: 0}
 
     refresh_calls: list[tuple[int, str | None]] = []
-    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refresh_calls.append(
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None, quote_cycle=None: refresh_calls.append(
         (now_ns, quote_cycle_id),
     )
 
