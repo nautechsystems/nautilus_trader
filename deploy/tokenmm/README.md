@@ -33,49 +33,40 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
 - All seven active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
 
-## Binance Spot Margin Recovery Canary
+## Binance Spot Market-Making Contract
 
-Use this checklist when restoring `plumeusdt_binance_spot_makerv3` after a borrowing or alerting regression.
+Dedicated runbook:
+`docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-Preconditions:
+`plumeusdt_binance_spot_makerv3` is supported only on a regular Binance
+cross-margin account. Portfolio Margin / PAPI is unsupported for Binance spot
+market making, and current adapter behavior rejects PM mode with
+`UNSUPPORTED_ACCOUNT_MODE`.
 
-- Deploy the branch that contains:
-  - `allow_cash_borrowing = true` under `[node.venues.BINANCE_SPOT]`
-  - `spot_cash_borrowing_policy = "both_sides"` under `[strategy]`
-  - the Binance adapter borrow-on-submit fix
-  - the MakerV3/API/Fluxboard alert surfacing fix
-- Keep `force_bot_off_on_start = true` and `bot_on = false` in the strategy TOML for the first restart.
+Current live balances still show the effective inventory on
+`BINANCE_SPOT-MARGIN-master` instead of a supported cross-margin account:
 
-Canary order:
+- `USDT +1285.28070703`
+- `PLUME -30314.96734613`
 
-1. Restart only the Binance spot node while it is still bot-off:
-   - `sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service`
-2. Check service health and fresh API state:
-   - `journalctl -u flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service --since "10 min ago" --no-pager`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3"`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=20"`
-3. Verify before enabling quoting:
-   - startup completes without borrow-mode or submit-shape errors
-   - the signals payload is fresh
-   - the alerts payload is readable and rows expose stable `id` / `row_id`
-4. Enable quoting through the approved runtime control path only after the bot-off checks pass.
-5. Watch the canary continuously for at least one quote-replacement window and one denial/rejection window:
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3" | jq '.data.rows[0]'`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50" | jq '.data.rows'`
+Current plain spot rows are zeroed. Treat that as unsupported pre-cutover
+state, not a production-ready balance layout.
 
-Acceptance criteria:
+Operating contract:
 
-- `maker_quote_status` shows working/open orders on at least one side instead of only blocked counts.
-- Binance spot orders are accepted or working; they are no longer denied for zero free quote/base when borrowing is requested.
-- Fresh denials or rejections appear in Fluxboard Alerts with visible `ERROR`/`CRITICAL` severity.
-- Journals stay clear of venue-protection and borrow-mode configuration errors.
-
-Rollback immediately if any release gate fails:
-
-1. Put the strategy back to bot-off using the approved runtime control path.
-2. Restart the strategy service if in-flight state needs clearing.
-3. Revert the offending deploy or config change before another canary.
-4. Preserve `journalctl`, `/api/v1/signals`, and `/api/v1/alerts` evidence in the incident notes before retrying.
+- keep `allow_cash_borrowing = true` under `[node.venues.BINANCE_SPOT]`
+- keep `spot_cash_borrowing_policy = "both_sides"` under `[strategy]` for the
+  first rollout so the strategy uses free balances first and borrows only when
+  needed
+- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
+  restart
+- flatten the existing PM `PLUME` liability and move the intended funded
+  inventory into the supported cross-margin account before enabling quoting
+- rotate credentials to the supported cross-margin account, restart only the
+  Binance spot node in bot-off mode, and verify the journal stays clear of
+  `UNSUPPORTED_ACCOUNT_MODE` before enabling quoting
+- do not use Portfolio Margin / PAPI as a live fallback; that support is a
+  separate project
 
 ## Inventory and balances model
 

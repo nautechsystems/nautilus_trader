@@ -41,6 +41,19 @@ def test_tokenmm_risk_validation_runbook_documents_authoritative_checks_and_roll
     assert "docs/runbooks/tokenmm-risk-validation.md" in contract_doc
 
 
+def test_tokenmm_binance_spot_market_making_runbook_documents_supported_cross_margin_contract() -> (
+    None
+):
+    runbook = _read(_repo_root() / "docs/runbooks/tokenmm-binance-spot-market-making.md")
+    deploy_readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+
+    assert "regular Binance cross-margin account" in runbook
+    assert "Portfolio Margin / PAPI is unsupported" in runbook
+    assert "flatten the existing PM liability" in runbook
+    assert "bot-off restart and canary" in runbook
+    assert "docs/runbooks/tokenmm-binance-spot-market-making.md" in deploy_readme
+
+
 def test_tokenmm_risk_audit_script_checks_canonical_endpoints_and_reconciliation_failures() -> (
     None
 ):
