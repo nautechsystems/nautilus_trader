@@ -15,13 +15,6 @@
 
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
-use nautilus_model::{
-    data::{
-        FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
-    },
-    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderUpdated},
-    reports::{FillReport, OrderStatusReport},
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString};
@@ -31,20 +24,19 @@ use crate::common::enums::KrakenOrderSide;
 
 /// Output message types from the Futures WebSocket handler.
 #[derive(Clone, Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Messages are ephemeral and immediately consumed"
+)]
 pub enum KrakenFuturesWsMessage {
-    BookDeltas(OrderBookDeltas),
-    Quote(QuoteTick),
-    Trade(TradeTick),
-    MarkPrice(MarkPriceUpdate),
-    IndexPrice(IndexPriceUpdate),
-    FundingRate(FundingRateUpdate),
-    OrderAccepted(OrderAccepted),
-    OrderRejected(OrderRejected),
-    OrderCanceled(OrderCanceled),
-    OrderExpired(OrderExpired),
-    OrderUpdated(OrderUpdated),
-    OrderStatusReport(Box<OrderStatusReport>),
-    FillReport(Box<FillReport>),
+    Ticker(KrakenFuturesTickerData),
+    Trade(KrakenFuturesTradeData),
+    BookSnapshot(KrakenFuturesBookSnapshot),
+    BookDelta(KrakenFuturesBookDelta),
+    OpenOrdersCancel(KrakenFuturesOpenOrdersCancel),
+    OpenOrdersDelta(KrakenFuturesOpenOrdersDelta),
+    FillsDelta(KrakenFuturesFillsDelta),
+    Challenge(String),
     Reconnected,
 }
 
@@ -70,6 +62,7 @@ pub enum KrakenFuturesFeed {
 #[strum(serialize_all = "snake_case")]
 pub enum KrakenFuturesChannel {
     Book,
+    Deltas,
     Trades,
     Quotes,
     Mark,
@@ -294,7 +287,7 @@ pub struct KrakenFuturesBookSnapshot {
     pub product_id: Ustr,
     pub timestamp: i64,
     pub seq: i64,
-    #[serde(default)]
+    #[serde(default, rename = "tickSize")]
     pub tick_size: Option<f64>,
     pub bids: Vec<KrakenFuturesBookLevel>,
     pub asks: Vec<KrakenFuturesBookLevel>,
@@ -344,7 +337,7 @@ pub struct KrakenFuturesPrivateSubscribeRequest {
 }
 
 /// Open order from Kraken Futures WebSocket.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesOpenOrder {
     pub instrument: Ustr,
     pub time: i64,
@@ -370,7 +363,7 @@ pub struct KrakenFuturesOpenOrder {
 }
 
 /// Open orders snapshot from Kraken Futures WebSocket.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesOpenOrdersSnapshot {
     pub feed: KrakenFuturesFeed,
     #[serde(default)]
@@ -380,7 +373,7 @@ pub struct KrakenFuturesOpenOrdersSnapshot {
 
 /// Open orders delta/update from Kraken Futures WebSocket.
 /// Used when full order details are provided (new orders, updates).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesOpenOrdersDelta {
     pub feed: KrakenFuturesFeed,
     pub order: KrakenFuturesOpenOrder,
@@ -391,7 +384,7 @@ pub struct KrakenFuturesOpenOrdersDelta {
 
 /// Open orders cancel notification from Kraken Futures WebSocket.
 /// Used when an order is canceled - contains only order identifiers.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesOpenOrdersCancel {
     pub feed: KrakenFuturesFeed,
     pub order_id: String,
@@ -402,7 +395,7 @@ pub struct KrakenFuturesOpenOrdersCancel {
 }
 
 /// Fill from Kraken Futures WebSocket.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesFill {
     #[serde(alias = "product_id")]
     pub instrument: Option<Ustr>,
@@ -423,7 +416,7 @@ pub struct KrakenFuturesFill {
 }
 
 /// Fills snapshot from Kraken Futures WebSocket.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesFillsSnapshot {
     pub feed: KrakenFuturesFeed,
     #[serde(default)]
@@ -433,7 +426,7 @@ pub struct KrakenFuturesFillsSnapshot {
 
 /// Fills delta/update from Kraken Futures WebSocket.
 /// Note: Kraken sends fills updates in array format (same as snapshot).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenFuturesFillsDelta {
     pub feed: KrakenFuturesFeed,
     #[serde(default)]

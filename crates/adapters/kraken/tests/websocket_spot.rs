@@ -33,10 +33,9 @@ use axum::{
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use nautilus_common::testing::wait_until_async;
 use nautilus_kraken::{
-    common::parse::parse_spot_instrument, config::KrakenDataClientConfig,
-    http::models::AssetPairInfo, websocket::spot_v2::client::KrakenSpotWebSocketClient,
+    config::KrakenDataClientConfig, websocket::spot_v2::client::KrakenSpotWebSocketClient,
 };
-use nautilus_model::{data::BarType, identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_model::{data::BarType, identifiers::InstrumentId};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -59,22 +58,6 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("Failed to read {filename}"));
     serde_json::from_str(&content).expect("Invalid JSON")
-}
-
-fn load_instruments() -> Vec<InstrumentAny> {
-    let payload = load_json("http_asset_pairs.json");
-    let ts_init = nautilus_core::UnixNanos::default();
-    let result = payload.get("result").expect("Missing result");
-
-    result
-        .as_object()
-        .expect("Result should be object")
-        .iter()
-        .filter_map(|(pair_name, definition)| {
-            let pair_info: AssetPairInfo = serde_json::from_value(definition.clone()).ok()?;
-            parse_spot_instrument(pair_name, &pair_info, ts_init, ts_init).ok()
-        })
-        .collect()
 }
 
 impl TestServerState {
@@ -242,12 +225,9 @@ async fn test_websocket_connection() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     let result = client.connect().await;
     assert!(result.is_ok(), "Failed to connect: {result:?}");
-
-    client.cache_instruments(instruments);
 
     assert!(*state.connection_count.lock().await > 0);
 
@@ -302,10 +282,8 @@ async fn test_websocket_subscribe_quotes() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
 
     client.wait_until_active(5.0).await.unwrap();
 
@@ -341,10 +319,9 @@ async fn test_websocket_subscribe_trades() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -379,10 +356,9 @@ async fn test_websocket_subscribe_book() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -417,10 +393,9 @@ async fn test_websocket_subscribe_bars() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let bar_type = BarType::from("XBT/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
@@ -455,10 +430,9 @@ async fn test_websocket_unsubscribe_quotes() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -504,10 +478,9 @@ async fn test_websocket_unsubscribe_trades() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -553,10 +526,9 @@ async fn test_websocket_unsubscribe_book() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -605,10 +577,9 @@ async fn test_websocket_unsubscribe_bars() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let bar_type = BarType::from("XBT/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
@@ -688,10 +659,9 @@ async fn test_websocket_multiple_subscriptions() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -735,10 +705,9 @@ async fn test_websocket_get_subscriptions() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let initial_subs = client.get_subscriptions();
@@ -859,29 +828,6 @@ async fn test_websocket_url_getter() {
 
 #[rstest]
 #[tokio::test]
-async fn test_websocket_cache_instrument() {
-    let state = Arc::new(TestServerState::default());
-    let url = start_test_server(state).await;
-
-    let config = KrakenDataClientConfig {
-        ws_public_url: Some(url),
-        ..Default::default()
-    };
-
-    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
-
-    // Cache individual instrument
-    if let Some(instrument) = instruments.first() {
-        client.cache_instrument(instrument.clone());
-    }
-
-    // Cache multiple instruments
-    client.cache_instruments(instruments);
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_websocket_reconnection_after_disconnect() {
     let state = Arc::new(TestServerState::default());
     let url = start_test_server(state.clone()).await;
@@ -892,11 +838,10 @@ async fn test_websocket_reconnection_after_disconnect() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     // First connection
     client.connect().await.unwrap();
-    client.cache_instruments(instruments.clone());
+
     client.wait_until_active(5.0).await.unwrap();
 
     assert!(client.is_active());
@@ -909,7 +854,7 @@ async fn test_websocket_reconnection_after_disconnect() {
 
     // Reconnect
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     assert!(client.is_active());
@@ -931,11 +876,10 @@ async fn test_websocket_subscription_after_reconnect() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     // Connect and subscribe
     client.connect().await.unwrap();
-    client.cache_instruments(instruments.clone());
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -958,7 +902,7 @@ async fn test_websocket_subscription_after_reconnect() {
 
     // Reconnect
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     // Subscribe again after reconnect
@@ -1038,12 +982,11 @@ async fn test_websocket_multiple_rapid_connections() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     // Rapidly connect and disconnect multiple times
     for _ in 0..3 {
         client.connect().await.unwrap();
-        client.cache_instruments(instruments.clone());
+
         client.wait_until_active(5.0).await.unwrap();
         assert!(client.is_active());
         client.disconnect().await.unwrap();
@@ -1066,11 +1009,9 @@ async fn test_websocket_subscribe_before_active() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     // Connect but don't wait for active
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
 
@@ -1097,10 +1038,9 @@ async fn test_websocket_disconnect_while_subscribing() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1134,10 +1074,9 @@ async fn test_websocket_concurrent_subscriptions() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1186,10 +1125,9 @@ async fn test_websocket_unsubscribe_not_subscribed() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1217,10 +1155,9 @@ async fn test_websocket_double_subscribe() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1315,10 +1252,9 @@ async fn test_websocket_subscribe_quotes_sends_bbo_event_trigger() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1364,10 +1300,9 @@ async fn test_websocket_unsubscribe_quotes_sends_bbo_event_trigger() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
@@ -1424,10 +1359,9 @@ async fn test_websocket_quotes_subscription_uses_quotes_key() {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
-    let instruments = load_instruments();
 
     client.connect().await.unwrap();
-    client.cache_instruments(instruments);
+
     client.wait_until_active(5.0).await.unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");

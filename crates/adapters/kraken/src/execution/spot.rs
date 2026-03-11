@@ -17,10 +17,11 @@
 
 use std::{
     future::Future,
-    sync::Mutex,
+    sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -42,8 +43,8 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide},
-    events::OrderEventAny,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Symbol, Venue},
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
@@ -58,7 +59,11 @@ use crate::{
     },
     config::KrakenExecClientConfig,
     http::KrakenSpotHttpClient,
-    websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
+    websocket::spot_v2::{
+        client::KrakenSpotWebSocketClient,
+        messages::KrakenSpotWsMessage,
+        parse::{parse_ws_fill_report, parse_ws_order_status_report},
+    },
 };
 
 const MUTEX_POISONED: &str = "mutex poisoned";
@@ -78,6 +83,9 @@ pub struct KrakenSpotExecutionClient {
     cancellation_token: CancellationToken,
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    order_qty_cache: Arc<RwLock<AHashMap<String, f64>>>,
+    truncated_id_map: Arc<RwLock<AHashMap<String, ClientOrderId>>>,
 }
 
 impl KrakenSpotExecutionClient {
@@ -133,6 +141,9 @@ impl KrakenSpotExecutionClient {
             cancellation_token,
             ws_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            order_qty_cache: Arc::new(RwLock::new(AHashMap::new())),
+            truncated_id_map: Arc::new(RwLock::new(AHashMap::new())),
         })
     }
 
@@ -175,7 +186,6 @@ impl KrakenSpotExecutionClient {
 
         let account_id = self.core.account_id;
         let client_order_id = order.client_order_id();
-        let trader_id = order.trader_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
         let order_side = order.order_side();
@@ -191,13 +201,16 @@ impl KrakenSpotExecutionClient {
         log::debug!("OrderSubmitted: client_order_id={client_order_id}");
         self.emitter.emit_order_submitted(order);
 
-        self.ws
-            .cache_client_order(client_order_id, instrument_id, trader_id, strategy_id);
-
         let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
-        if kraken_cl_ord_id != client_order_id.as_str() {
-            self.ws
-                .cache_truncated_id(kraken_cl_ord_id, client_order_id);
+
+        if let Ok(mut cache) = self.order_qty_cache.write() {
+            cache.insert(kraken_cl_ord_id.clone(), quantity.as_f64());
+        }
+
+        if kraken_cl_ord_id != client_order_id.as_str()
+            && let Ok(mut map) = self.truncated_id_map.write()
+        {
+            map.insert(kraken_cl_ord_id, client_order_id);
         }
 
         let http = self.http.clone();
@@ -286,6 +299,11 @@ impl KrakenSpotExecutionClient {
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
         let stream = self.ws.stream().map_err(|e| anyhow::anyhow!("{e}"))?;
         let emitter = self.emitter.clone();
+        let instruments = self.instruments.clone();
+        let order_qty_cache = self.order_qty_cache.clone();
+        let truncated_id_map = self.truncated_id_map.clone();
+        let account_id = self.core.account_id;
+        let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
         let handle = get_runtime().spawn(async move {
@@ -300,7 +318,15 @@ impl KrakenSpotExecutionClient {
                     msg = stream.next() => {
                         match msg {
                             Some(ws_msg) => {
-                                Self::handle_ws_message(ws_msg, &emitter);
+                                Self::handle_ws_message(
+                                    ws_msg,
+                                    &emitter,
+                                    &instruments,
+                                    &order_qty_cache,
+                                    &truncated_id_map,
+                                    account_id,
+                                    clock,
+                                );
                             }
                             None => {
                                 log::debug!("Spot execution WebSocket stream ended");
@@ -389,34 +415,112 @@ impl KrakenSpotExecutionClient {
         }
     }
 
-    fn handle_ws_message(msg: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
+    fn lookup_instrument(
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        symbol: &str,
+    ) -> Option<InstrumentAny> {
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), *KRAKEN_VENUE);
+        instruments
+            .read()
+            .ok()
+            .and_then(|guard| guard.get(&instrument_id).cloned())
+    }
+
+    fn resolve_client_order_id(
+        truncated: &str,
+        truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
+    ) -> ClientOrderId {
+        truncated_id_map
+            .read()
+            .ok()
+            .and_then(|map| map.get(truncated).copied())
+            .unwrap_or_else(|| ClientOrderId::new(truncated))
+    }
+
+    fn handle_ws_message(
+        msg: KrakenSpotWsMessage,
+        emitter: &ExecutionEventEmitter,
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        order_qty_cache: &Arc<RwLock<AHashMap<String, f64>>>,
+        truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
+        account_id: AccountId,
+        clock: &'static AtomicTime,
+    ) {
         match msg {
-            NautilusWsMessage::OrderRejected(event) => {
-                emitter.send_order_event(OrderEventAny::Rejected(event));
+            KrakenSpotWsMessage::Execution(executions) => {
+                let ts_init = clock.get_time_ns();
+                for exec in &executions {
+                    let symbol = match &exec.symbol {
+                        Some(s) => s.as_str(),
+                        None => {
+                            log::debug!(
+                                "Execution message without symbol: exec_type={:?}, order_id={}",
+                                exec.exec_type,
+                                exec.order_id
+                            );
+                            continue;
+                        }
+                    };
+
+                    let Some(instrument) = Self::lookup_instrument(instruments, symbol) else {
+                        log::warn!("No instrument for symbol: {symbol}");
+                        continue;
+                    };
+
+                    let cached_qty = exec.cl_ord_id.as_ref().and_then(|id| {
+                        order_qty_cache.read().ok().and_then(|c| c.get(id).copied())
+                    });
+
+                    if let (Some(qty), Some(cl_ord_id)) = (exec.order_qty, &exec.cl_ord_id)
+                        && let Ok(mut cache) = order_qty_cache.write()
+                    {
+                        cache.insert(cl_ord_id.clone(), qty);
+                    }
+
+                    match parse_ws_order_status_report(
+                        exec,
+                        &instrument,
+                        account_id,
+                        cached_qty,
+                        ts_init,
+                    ) {
+                        Ok(mut report) => {
+                            if let Some(ref cl_ord_id) = exec.cl_ord_id {
+                                let full_id =
+                                    Self::resolve_client_order_id(cl_ord_id, truncated_id_map);
+                                report = report.with_client_order_id(full_id);
+                            }
+                            emitter.send_order_status_report(report);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to parse order status report: {e}");
+                        }
+                    }
+
+                    if exec.exec_id.is_some() {
+                        match parse_ws_fill_report(exec, &instrument, account_id, ts_init) {
+                            Ok(mut report) => {
+                                if let Some(ref cl_ord_id) = exec.cl_ord_id {
+                                    let full_id =
+                                        Self::resolve_client_order_id(cl_ord_id, truncated_id_map);
+                                    report.client_order_id = Some(full_id);
+                                }
+                                emitter.send_fill_report(report);
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse fill report: {e}");
+                            }
+                        }
+                    }
+                }
             }
-            NautilusWsMessage::OrderAccepted(event) => {
-                emitter.send_order_event(OrderEventAny::Accepted(event));
-            }
-            NautilusWsMessage::OrderCanceled(event) => {
-                emitter.send_order_event(OrderEventAny::Canceled(event));
-            }
-            NautilusWsMessage::OrderExpired(event) => {
-                emitter.send_order_event(OrderEventAny::Expired(event));
-            }
-            NautilusWsMessage::OrderUpdated(event) => {
-                emitter.send_order_event(OrderEventAny::Updated(event));
-            }
-            NautilusWsMessage::OrderStatusReport(report) => {
-                emitter.send_order_status_report(*report);
-            }
-            NautilusWsMessage::FillReport(report) => {
-                emitter.send_fill_report(*report);
-            }
-            NautilusWsMessage::Reconnected => {
+            KrakenSpotWsMessage::Reconnected => {
                 log::info!("Spot execution WebSocket reconnected");
             }
-            // Data messages are handled by the data client
-            NautilusWsMessage::Data(_) | NautilusWsMessage::Deltas(_) => {}
+            KrakenSpotWsMessage::Ticker(_)
+            | KrakenSpotWsMessage::Trade(_)
+            | KrakenSpotWsMessage::Book { .. }
+            | KrakenSpotWsMessage::Ohlc(_) => {}
         }
     }
 }
@@ -518,8 +622,6 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .await
             .context("Failed to authenticate spot WebSocket")?;
 
-        self.ws.set_account_id(self.core.account_id);
-
         // Request initial account state and await registration before spawning
         // the message handler. Report events from execution snapshots conflict
         // with ExecEngine borrows during startup, so account registration must
@@ -542,14 +644,12 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         self.spawn_message_handler()?;
 
-        // Always cache to WS handler (reconnect spawns a fresh handler)
-        let instruments: Vec<_> = self
-            .http
-            .instruments_cache
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
-        self.ws.cache_instruments(instruments);
+        if let Ok(mut guard) = self.instruments.write() {
+            for entry in self.http.instruments_cache.iter() {
+                let instrument = entry.value().clone();
+                guard.insert(instrument.id(), instrument);
+            }
+        }
 
         self.ws
             .subscribe_executions(false, false)
