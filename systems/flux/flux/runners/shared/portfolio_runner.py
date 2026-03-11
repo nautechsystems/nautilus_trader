@@ -5,6 +5,7 @@ import logging
 import signal
 import sys
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from flux.common.account_projection import build_profile_account_snapshot
@@ -15,7 +16,8 @@ from flux.common.portfolio_inventory import aggregate_components
 from flux.common.portfolio_inventory import decode_component
 from flux.common.portfolio_inventory import encode_portfolio_inventory
 from flux.common.portfolio_snapshot import build_balance_rows_by_strategy
-from flux.common.portfolio_snapshot import build_portfolio_snapshot
+from flux.common.portfolio_snapshot import build_portfolio_balance_rows
+from flux.common.portfolio_snapshot import build_portfolio_snapshot_v2
 from flux.common.portfolio_snapshot import encode_portfolio_snapshot
 from flux.runners.shared.bootstrap import build_redis_client
 from flux.runners.shared.bootstrap import table
@@ -204,7 +206,8 @@ class StrategySetPortfolioAggregator:
             schema_version=self._schema_version,
         )
 
-    def _publish_profile_account_projections(self, *, now_ms_value: int) -> None:
+    def _publish_profile_account_projections(self, *, now_ms_value: int) -> list[dict[str, Any]]:
+        published_rows: list[dict[str, Any]] = []
         for binding in getattr(self, "_profile_account_bindings", ()):
             provider = binding.provider
             if provider is None:
@@ -226,6 +229,11 @@ class StrategySetPortfolioAggregator:
             )
             if not snapshot["rows"]:
                 continue
+            published_rows.extend(
+                dict(row)
+                for row in snapshot["rows"]
+                if isinstance(row, Mapping)
+            )
             encoded = encode_profile_account_snapshot(snapshot)
             key = self._profile_account_projection_key(account_scope_id=binding.account_scope_id)
             previous = self._redis.get(key)
@@ -235,10 +243,11 @@ class StrategySetPortfolioAggregator:
                     self._profile_account_projection_channel(account_scope_id=binding.account_scope_id),
                     encoded,
                 )
+        return published_rows
 
     def recompute_once(self) -> None:
         now_ms_value = int(time.time() * 1000)
-        self._publish_profile_account_projections(now_ms_value=now_ms_value)
+        account_rows = self._publish_profile_account_projections(now_ms_value=now_ms_value)
         balances_pipeline = self._redis.pipeline(transaction=False)
         for strategy_id in self._strategy_ids:
             balances_pipeline.get(self._balances_snapshot_key(strategy_id=strategy_id))
@@ -252,6 +261,11 @@ class StrategySetPortfolioAggregator:
                 ),
             ),
         )
+        merged_balance_rows = build_portfolio_balance_rows(
+            portfolio_id=self._portfolio_id,
+            balance_rows_by_strategy=balance_rows_by_strategy,
+        )
+        inventory_by_asset: dict[str, dict[str, Any]] = {}
         for base_currency in self._base_assets:
             pipeline = self._redis.pipeline(transaction=False)
             for strategy_id in self._strategy_ids:
@@ -279,24 +293,21 @@ class StrategySetPortfolioAggregator:
             snapshot_writer = getattr(self, "_snapshot_writer", None)
             if snapshot_writer is not None:
                 snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
+            inventory_by_asset[base_currency.upper()] = payload
 
-            snapshot = build_portfolio_snapshot(
-                portfolio_id=self._portfolio_id,
-                base_currency=base_currency,
-                inventory_components=components,
-                balance_rows_by_strategy=balance_rows_by_strategy,
-                required_strategy_ids=self._required_strategy_ids,
-                now_ms_value=now_ms_value,
-                stale_after_ms=self._stale_after_ms,
-                aggregation_mode=getattr(self, "_aggregation_mode", "strict"),
-                inventory_payload=payload,
-            )
-            encoded_snapshot = encode_portfolio_snapshot(snapshot)
-            snapshot_key = self._snapshot_key()
-            previous_snapshot = self._redis.get(snapshot_key)
-            self._redis.set(snapshot_key, encoded_snapshot)
-            if previous_snapshot != encoded_snapshot.encode():
-                self._redis.publish(self._snapshot_channel(), encoded_snapshot)
+        snapshot = build_portfolio_snapshot_v2(
+            portfolio_id=self._portfolio_id,
+            inventory_by_asset=inventory_by_asset,
+            balance_rows=merged_balance_rows,
+            account_rows=account_rows,
+            now_ms_value=now_ms_value,
+        )
+        encoded_snapshot = encode_portfolio_snapshot(snapshot)
+        snapshot_key = self._snapshot_key()
+        previous_snapshot = self._redis.get(snapshot_key)
+        self._redis.set(snapshot_key, encoded_snapshot)
+        if previous_snapshot != encoded_snapshot.encode():
+            self._redis.publish(self._snapshot_channel(), encoded_snapshot)
 
     def _stop_profile_account_providers(self) -> None:
         for binding in getattr(self, "_profile_account_bindings", ()):

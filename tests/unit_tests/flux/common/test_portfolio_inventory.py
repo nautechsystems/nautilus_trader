@@ -8,6 +8,7 @@ from nautilus_trader.flux.common.portfolio_inventory import decode_component
 from nautilus_trader.flux.common.portfolio_inventory import decode_portfolio_inventory
 from nautilus_trader.flux.common.portfolio_inventory import encode_component
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
+from nautilus_trader.flux.common.portfolio_inventory import normalize_inventory_by_asset
 
 
 def test_component_round_trip_preserves_local_qty_and_metadata() -> None:
@@ -312,3 +313,16 @@ def test_aggregate_components_partial_mode_sums_usable_qty_and_reports_required_
     assert payload["stale_required"] == ["strategy_b"]
     assert payload["null_qty_required"] == ["strategy_c"]
     assert payload["degraded"] is True
+
+
+def test_normalize_inventory_by_asset_canonicalizes_asset_keys() -> None:
+    normalized = normalize_inventory_by_asset(
+        {
+            " aapl ": {"global_qty_base": "10"},
+            "msft": {"base_currency": "MSFT", "global_qty_base": "5"},
+        },
+    )
+
+    assert list(normalized) == ["AAPL", "MSFT"]
+    assert normalized["AAPL"]["base_currency"] == "AAPL"
+    assert normalized["MSFT"]["base_currency"] == "MSFT"

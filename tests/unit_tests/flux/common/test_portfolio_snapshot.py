@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from nautilus_trader.flux.common.portfolio_inventory import StrategyInventoryComponent
 from nautilus_trader.flux.common.portfolio_snapshot import build_portfolio_snapshot
+from nautilus_trader.flux.common.portfolio_snapshot import build_portfolio_snapshot_v2
 from nautilus_trader.flux.common.portfolio_snapshot import decode_portfolio_snapshot
 from nautilus_trader.flux.common.portfolio_snapshot import encode_portfolio_snapshot
 
@@ -329,3 +330,19 @@ def test_build_portfolio_snapshot_deduplicates_identical_non_stable_cash_across_
     assert row["row_id"] == "tokenmm:cash:bybit:BYBIT-UNIFIED:spot:PLUME"
     assert row["product_type"] == "spot"
     assert row["total"] == "-62391.95495260"
+
+
+def test_build_portfolio_snapshot_v2_keeps_inventory_for_multiple_assets() -> None:
+    snapshot = build_portfolio_snapshot_v2(
+        portfolio_id="equities",
+        inventory_by_asset={
+            "AAPL": {"global_qty_base": "10"},
+            "MSFT": {"global_qty_base": "5"},
+        },
+        balance_rows=[],
+        account_rows=[],
+        now_ms_value=1_700_000_000_000,
+    )
+
+    assert snapshot["inventory_by_asset"]["AAPL"]["global_qty_base"] == "10"
+    assert snapshot["inventory_by_asset"]["MSFT"]["global_qty_base"] == "5"

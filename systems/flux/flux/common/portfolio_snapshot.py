@@ -13,6 +13,7 @@ from flux.api._payloads_common import safe_float
 from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import aggregate_components
+from flux.common.portfolio_inventory import normalize_inventory_by_asset
 
 
 def _coerce_finite_float(value: Any) -> float | None:
@@ -79,6 +80,51 @@ def build_balance_rows_by_strategy(
     return rows_by_strategy
 
 
+def build_portfolio_balance_rows(
+    *,
+    portfolio_id: str,
+    balance_rows_by_strategy: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> list[dict[str, Any]]:
+    return _coherent_balance_rows(
+        merge_portfolio_balances_rows(
+            rows_by_strategy=balance_rows_by_strategy,
+            portfolio_id=portfolio_id,
+            preserve_product_scope_cash=True,
+        ),
+    )
+
+
+def build_portfolio_snapshot_v2(
+    *,
+    portfolio_id: str,
+    inventory_by_asset: Mapping[str, Mapping[str, Any]],
+    balance_rows: Sequence[Mapping[str, Any]],
+    account_rows: Sequence[Mapping[str, Any]],
+    now_ms_value: int,
+) -> dict[str, Any]:
+    normalized_inventory = normalize_inventory_by_asset(inventory_by_asset)
+    coherent_balance_rows = _coherent_balance_rows(balance_rows)
+    coherent_account_rows = _coherent_balance_rows(account_rows)
+    payload: dict[str, Any] = {
+        "portfolio_id": portfolio_id,
+        "inventory_by_asset": normalized_inventory,
+        "balances": {
+            "rows": coherent_balance_rows,
+            "totals": _balances_totals(coherent_balance_rows),
+        },
+        "accounts": {
+            "rows": coherent_account_rows,
+        },
+        "server_ts_ms": int(now_ms_value),
+    }
+    if len(normalized_inventory) == 1:
+        base_currency, inventory = next(iter(normalized_inventory.items()))
+        payload["base_currency"] = base_currency
+        payload["inventory"] = inventory
+        payload["components"] = list(inventory.get("components") or [])
+    return payload
+
+
 def build_portfolio_snapshot(
     *,
     portfolio_id: str,
@@ -100,23 +146,17 @@ def build_portfolio_snapshot(
         stale_after_ms=stale_after_ms,
         aggregation_mode=aggregation_mode,
     )
-    balance_rows = merge_portfolio_balances_rows(
-        rows_by_strategy=balance_rows_by_strategy,
+    balance_rows = build_portfolio_balance_rows(
         portfolio_id=portfolio_id,
-        preserve_product_scope_cash=True,
+        balance_rows_by_strategy=balance_rows_by_strategy,
     )
-    coherent_balance_rows = _coherent_balance_rows(balance_rows)
-    return {
-        "portfolio_id": portfolio_id,
-        "base_currency": base_currency.upper(),
-        "inventory": inventory,
-        "components": inventory["components"],
-        "balances": {
-            "rows": coherent_balance_rows,
-            "totals": _balances_totals(coherent_balance_rows),
-        },
-        "server_ts_ms": int(now_ms_value),
-    }
+    return build_portfolio_snapshot_v2(
+        portfolio_id=portfolio_id,
+        inventory_by_asset={base_currency.upper(): inventory},
+        balance_rows=balance_rows,
+        account_rows=[],
+        now_ms_value=now_ms_value,
+    )
 
 
 def encode_portfolio_snapshot(payload: Mapping[str, Any]) -> str:
