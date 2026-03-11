@@ -8,6 +8,8 @@ from typing import Any
 
 
 __all__ = (
+    "ExecutionMarkoutPersistenceActor",
+    "ExecutionMarkoutPersistenceActorConfig",
     "FluxBalanceSnapshotPersistenceActor",
     "FluxBalanceSnapshotPersistenceActorConfig",
     "PortfolioInventorySnapshotWriter",
@@ -17,6 +19,19 @@ __all__ = (
 
 
 def __getattr__(name: str) -> Any:
+    if name in {
+        "ExecutionMarkoutPersistenceActor",
+        "ExecutionMarkoutPersistenceActorConfig",
+    }:
+        from flux.persistence.markouts import (
+            ExecutionMarkoutPersistenceActor,
+            ExecutionMarkoutPersistenceActorConfig,
+        )
+
+        return {
+            "ExecutionMarkoutPersistenceActor": ExecutionMarkoutPersistenceActor,
+            "ExecutionMarkoutPersistenceActorConfig": ExecutionMarkoutPersistenceActorConfig,
+        }[name]
     if name in {
         "FluxBalanceSnapshotPersistenceActor",
         "FluxBalanceSnapshotPersistenceActorConfig",
