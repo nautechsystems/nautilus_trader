@@ -51,7 +51,21 @@ def test_tokenmm_binance_spot_market_making_runbook_documents_supported_cross_ma
     assert "Portfolio Margin / PAPI is unsupported" in runbook
     assert "flatten the existing PM liability" in runbook
     assert "bot-off restart and canary" in runbook
+    assert "accepted/open orders on at least one side" in runbook
+    assert "terminal auto-shutdown" in runbook
+    assert "fresh order-denied/rejected burst" in runbook
+    assert "/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3" in runbook
+    assert "/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50" in runbook
+    assert "USDT +1285.28070703" not in runbook
+    assert "PLUME -30314.96734613" not in runbook
+
     assert "docs/runbooks/tokenmm-binance-spot-market-making.md" in deploy_readme
+    assert "regular Binance cross-margin account" in deploy_readme
+    assert "Portfolio Margin / PAPI is unsupported" in deploy_readme
+    assert 'spot_cash_borrowing_policy = "both_sides"' in deploy_readme
+    assert "UNSUPPORTED_ACCOUNT_MODE" in deploy_readme
+    assert "USDT +1285.28070703" not in deploy_readme
+    assert "PLUME -30314.96734613" not in deploy_readme
 
 
 def test_tokenmm_risk_audit_script_checks_canonical_endpoints_and_reconciliation_failures() -> (

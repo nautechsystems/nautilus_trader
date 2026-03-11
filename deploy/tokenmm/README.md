@@ -38,19 +38,12 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 Dedicated runbook:
 `docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-`plumeusdt_binance_spot_makerv3` is supported only on a regular Binance
-cross-margin account. Portfolio Margin / PAPI is unsupported for Binance spot
-market making, and current adapter behavior rejects PM mode with
-`UNSUPPORTED_ACCOUNT_MODE`.
+`plumeusdt_binance_spot_makerv3` is supported only on a regular Binance cross-margin account. Portfolio Margin / PAPI is unsupported for Binance spot market making, and current adapter behavior rejects PM mode with `UNSUPPORTED_ACCOUNT_MODE`.
 
-Current live balances still show the effective inventory on
-`BINANCE_SPOT-MARGIN-master` instead of a supported cross-margin account:
-
-- `USDT +1285.28070703`
-- `PLUME -30314.96734613`
-
-Current plain spot rows are zeroed. Treat that as unsupported pre-cutover
-state, not a production-ready balance layout.
+Inspect `GET /api/v1/balances?profile=tokenmm` before cutover. If the effective
+inventory still lives in margin / Portfolio Margin while the plain spot rows
+are zeroed, treat that as unsupported pre-cutover state, not a
+production-ready balance layout.
 
 Operating contract:
 
@@ -60,8 +53,9 @@ Operating contract:
   needed
 - keep `force_bot_off_on_start = true` and `bot_on = false` for the first
   restart
-- flatten the existing PM `PLUME` liability and move the intended funded
-  inventory into the supported cross-margin account before enabling quoting
+- inspect `GET /api/v1/balances?profile=tokenmm`, flatten the existing PM
+  liability, and move the intended funded inventory into the supported
+  cross-margin account before enabling quoting
 - rotate credentials to the supported cross-margin account, restart only the
   Binance spot node in bot-off mode, and verify the journal stays clear of
   `UNSUPPORTED_ACCOUNT_MODE` before enabling quoting

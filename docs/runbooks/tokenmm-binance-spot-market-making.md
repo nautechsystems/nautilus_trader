@@ -11,10 +11,9 @@ Use it together with `deploy/tokenmm/README.md` and
 - Current adapter behavior rejects Portfolio Margin / PAPI mode for Binance spot
   market making with `UNSUPPORTED_ACCOUNT_MODE`.
 - Portfolio Margin / PAPI is unsupported for the current production rollout.
-- Current live balances still carry the effective inventory on
-  `BINANCE_SPOT-MARGIN-master`, not in plain spot:
-  - `USDT +1285.28070703`
-  - `PLUME -30314.96734613`
+- Inspect `GET /api/v1/balances?profile=tokenmm` to confirm whether the current
+  live balances still carry the effective inventory in margin / Portfolio
+  Margin rather than in the supported cross-margin account.
 - Current plain spot account rows are zeroed, so do not treat the existing spot
   wallet as funded inventory for quoting.
 
@@ -40,11 +39,11 @@ Use it together with `deploy/tokenmm/README.md` and
    ```
 
 2. Confirm the live unsupported state is understood before cutover:
-   - the current PM inventory is where the effective balance lives
+   - `GET /api/v1/balances?profile=tokenmm` shows whether the current PM
+     inventory is where the effective balance lives
    - the plain spot rows are zeroed
-3. Flatten the existing PM liability before cutover. The current unsupported PM
-   `PLUME` liability is `-30314.96734613`; flatten the existing PM liability
-   before the strategy is allowed to quote from the supported account.
+3. Before cutover, flatten the existing PM liability. Keep that exact gate
+   closed until the strategy is allowed to quote from the supported account.
 4. Move the intended funded inventory into the supported regular Binance
    cross-margin account so the rollout starts from funded inventory rather than
    relying on an empty spot wallet.
@@ -79,6 +78,24 @@ Use it together with `deploy/tokenmm/README.md` and
    account is confirmed funded.
 7. Enable quoting only after a clean bot-off start, then watch the canary for
    at least one normal quote replacement window and one borrow-needed edge case.
+8. Collect concrete pass/fail evidence immediately after quoting is enabled:
+
+   ```bash
+   curl -fsS 'http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3'
+   curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50'
+   journalctl -u flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service --since "10 min ago" --no-pager
+   ```
+9. Pass the canary only if all of the following are true:
+   - signals show accepted/open orders on at least one side
+   - alerts do not show a fresh order-denied/rejected burst tied to account
+     mode or an unsupported borrowing path
+   - the journal shows no `UNSUPPORTED_ACCOUNT_MODE`
+   - the journal shows no terminal auto-shutdown
+10. Fail the canary immediately if any of the following appear:
+   - `UNSUPPORTED_ACCOUNT_MODE`
+   - terminal auto-shutdown
+   - fresh order-denied/rejected burst tied to account mode or unsupported
+     borrowing path
 
 ## Acceptance criteria
 
@@ -90,6 +107,8 @@ Use it together with `deploy/tokenmm/README.md` and
   rollout.
 - The existing PM `PLUME` liability is flattened before quoting is enabled.
 - The intended market-making inventory is funded in the supported account.
+- After quoting is enabled, signals show accepted/open orders on at least one
+  side and the alerts/journal checks remain clean.
 - Quoting is enabled only after the clean bot-off restart and canary checks
   complete.
 
@@ -98,10 +117,13 @@ Use it together with `deploy/tokenmm/README.md` and
 Rollback to a no-trade state immediately if any of the following occur:
 
 - the journal shows `UNSUPPORTED_ACCOUNT_MODE`
+- the journal shows terminal auto-shutdown
 - the supported account is not the one actually receiving the Binance spot
   session
 - the PM liability is not flattened
 - the funded inventory is missing or materially wrong
+- the alerts feed shows a fresh order-denied/rejected burst tied to account
+  mode or unsupported borrowing path
 - the bot-off restart is not clean
 
 Rollback actions:
