@@ -269,7 +269,7 @@ def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
     assert "uv sync --all-groups --all-extras" in install_script
     assert "--active --all-groups --all-extras" not in install_script
     assert re.search(
-        r"main\(\)\s*\{[\s\S]*?require_sudo[\s\S]*?require_project_python",
+        r"main\(\)\s*\{\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_sudo\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_project_python\n",
         install_script,
     )
     assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
