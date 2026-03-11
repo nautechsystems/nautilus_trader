@@ -22,7 +22,7 @@ require_sudo() {
 
 require_project_python() {
   if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then
-    echo "[equities-systemd] missing project python at ${EQUITIES_PYTHON_BIN}; run \`uv sync --active --all-groups --all-extras\` first" >&2
+    echo "[equities-systemd] missing project python at ${EQUITIES_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` first" >&2
     exit 1
   fi
 }

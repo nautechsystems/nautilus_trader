@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -265,7 +266,12 @@ def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
     assert 'EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in install_script
     assert "require_project_python()" in install_script
     assert 'if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then' in install_script
-    assert "main() {\n  require_sudo\n  require_project_python\n" in install_script
+    assert "uv sync --all-groups --all-extras" in install_script
+    assert "--active --all-groups --all-extras" not in install_script
+    assert re.search(
+        r"main\(\)\s*\{[\s\S]*?require_sudo[\s\S]*?require_project_python",
+        install_script,
+    )
     assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
     assert "append_checkout_env_overrides()" in install_script
     assert "printf 'WORKDIR=%s\\nPYTHONPATH=%s\\n' \"${ROOT_DIR}\" \"${ROOT_DIR}\" >> \"${env_path}\"" in install_script
@@ -324,14 +330,14 @@ def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`" in readme
     assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
     assert "`for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' \"$env_path\"; done`" in readme
-    assert "`uv sync --active --all-groups --all-extras`" in readme
+    assert "`uv sync --all-groups --all-extras`" in readme
     assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout" in readme
     assert "the generated env commands use the checkout-local `.venv/bin/python`" in readme
     assert "every generated `equities-node-*.env` is rewritten from the intended checkout" in readme
     assert "print and review every rendered `equities-node-*.env` contents" in readme
     assert "Do not restart services until those env files match the intended checkout and live flags." in readme
     assert "verify every matching `/etc/flux/equities-node-*.env`" in common_env
-    assert "`uv sync --active --all-groups --all-extras` in the selected checkout" in common_env
+    assert "`uv sync --all-groups --all-extras` in the selected checkout" in common_env
 
 
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
