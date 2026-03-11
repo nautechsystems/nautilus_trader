@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from flux.runners.equities import run_node
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
-from flux.runners.equities import run_node
 from flux.runners.tokenmm.run_node import _strategy_startup_lock as _tokenmm_strategy_startup_lock
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.identifiers import InstrumentId
@@ -950,7 +950,7 @@ def test_build_node_passes_makerv4_hedge_config_fields(monkeypatch) -> None:
     assert strategy.config.outside_rth_hedge_enabled is True
     assert strategy.config.hedge_price_tick_size == Decimal("0.05")
     assert strategy.config.max_ibkr_quote_age_ms == 2500
-    assert strategy.config.max_ibkr_spread_bps == Decimal("45")
+    assert strategy.config.max_ibkr_spread_bps == Decimal(45)
     assert strategy.config.ibkr_primary_exchange == "NASDAQ"
 
 
@@ -1206,7 +1206,7 @@ def test_build_node_force_enable_execution_overrides_explicit_false_for_makerv4(
     assert captured["enable_execution"] is True
 
 
-def test_build_node_attaches_ibkr_reference_balance_snapshot_provider_for_makerv4(
+def test_build_node_keeps_ibkr_reference_balance_snapshot_provider_profile_owned_for_makerv4(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -1300,7 +1300,7 @@ def test_build_node_attaches_ibkr_reference_balance_snapshot_provider_for_makerv
     )
 
     strategy = captured["strategy"]
-    assert strategy.reference_balance_snapshot_provider is not None
+    assert strategy.reference_balance_snapshot_provider is None
 
 
 def test_build_node_real_makerv4_strategy_satisfies_trader_registration_contract(

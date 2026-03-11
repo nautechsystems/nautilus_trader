@@ -162,6 +162,43 @@ class FluxRedisKeys:
             + ":changed"
         )
 
+    @classmethod
+    def profile_account_projection(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_profile_id = validate_identifier_part(profile_id, "profile_id")
+        safe_account_scope_id = validate_identifier_part(account_scope_id, "account_scope_id")
+        return (
+            f"{safe_namespace}:{safe_schema_version}:profile:account_projection:"
+            f"{safe_profile_id}:{safe_account_scope_id}"
+        )
+
+    @classmethod
+    def profile_account_projection_channel(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.profile_account_projection(
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
     def market_last(
         self,
         exchange: str,

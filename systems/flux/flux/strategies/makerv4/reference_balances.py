@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from flux.api._payloads_balances import build_balances_rows
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.model.identifiers import TraderId
 
 
 _ACCOUNT_SUMMARY_TAGS = frozenset(
@@ -34,6 +41,14 @@ class IbkrReferenceBalanceSnapshotProviderConfig:
     refresh_interval_secs: float = 15.0
 
 
+@dataclass(frozen=True)
+class _StandaloneIbkrRuntime:
+    msgbus: MessageBus
+    cache: Cache
+    clock: LiveClock
+    log: logging.Logger
+
+
 class IbkrReferenceBalanceSnapshotProvider:
     def __init__(self, config: IbkrReferenceBalanceSnapshotProviderConfig) -> None:
         self._config = config
@@ -41,6 +56,8 @@ class IbkrReferenceBalanceSnapshotProvider:
         self._latest_snapshot: dict[str, Any] | None = None
         self._account_id = config.account_id
         self._attachments = 0
+        self._standalone_runtime: _StandaloneIbkrRuntime | None = None
+        self._last_refresh_monotonic = 0.0
 
     def start(self, *, strategy: Any) -> None:
         self._attachments += 1
@@ -61,6 +78,38 @@ class IbkrReferenceBalanceSnapshotProvider:
         if self._latest_snapshot is None:
             return None
         return copy.deepcopy(self._latest_snapshot)
+
+    def refresh(self) -> dict[str, Any] | None:
+        if self._task is not None and not self._task.done():
+            return self.snapshot()
+
+        now = time.monotonic()
+        if (
+            self._latest_snapshot is not None
+            and (now - self._last_refresh_monotonic) < self._config.refresh_interval_secs
+        ):
+            return self.snapshot()
+
+        runtime = self._standalone_runtime
+        if runtime is None:
+            clock = LiveClock()
+            runtime = _StandaloneIbkrRuntime(
+                msgbus=MessageBus(
+                    trader_id=TraderId("EQUITIES-ACCOUNT-PROJECTION"),
+                    clock=clock,
+                ),
+                cache=Cache(database=None),
+                clock=clock,
+                log=logging.getLogger("nautilus-equities-account-projection"),
+            )
+            self._standalone_runtime = runtime
+        try:
+            self._latest_snapshot = asyncio.run(self._fetch_snapshot(runtime))
+            self._last_refresh_monotonic = time.monotonic()
+        except Exception as exc:
+            with suppress(Exception):
+                runtime.log.warning(f"IBKR reference balance refresh failed: {exc}")
+        return self.snapshot()
 
     async def _run(self, strategy: Any) -> None:
         try:
@@ -100,10 +149,15 @@ class IbkrReferenceBalanceSnapshotProvider:
             account_id=account_id,
             ts_ms=ts_ms,
         )
-        return {
+        payload = {
             "accounts": [account_payload],
             "positions": positions_payload,
         }
+        payload["rows"] = build_balances_rows(
+            raw_snapshot=payload,
+            strategy_id="shared_account",
+        )
+        return payload
 
     def _resolve_account_id(self, client: Any) -> str:
         if self._account_id:

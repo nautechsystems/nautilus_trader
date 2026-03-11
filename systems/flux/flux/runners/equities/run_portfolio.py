@@ -10,10 +10,11 @@ from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.logging import configure_python_logging
+from flux.runners.shared.portfolio_runner import StrategySetPortfolioAggregator
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.portfolio_runner import portfolio_base_assets
-from flux.runners.shared.portfolio_runner import StrategySetPortfolioAggregator
+from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 
 
@@ -73,6 +74,11 @@ class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
             logger=logger,
             descriptor=EQUITIES_DESCRIPTOR,
         )
+        self._profile_account_bindings = build_profile_account_provider_bindings(config=config)
+        self.account_scope_ids = [
+            binding.account_scope_id
+            for binding in self._profile_account_bindings
+        ]
 
 
 def main() -> None:

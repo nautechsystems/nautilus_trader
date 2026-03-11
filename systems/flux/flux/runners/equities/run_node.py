@@ -6,48 +6,46 @@ Run a live Equities trading node using the canonical equities strategy spec.
 from __future__ import annotations
 
 import argparse
+import inspect
+import logging
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
-import inspect
-import logging
 from pathlib import Path
 from typing import Any
 
 import redis
 
+from flux.common.config import FLUX_DEFAULT_NAMESPACE
+from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.runners.live import resolve_strategy_venues
+from flux.runners.shared.bootstrap import build_redis_client_kwargs
+from flux.runners.shared.bootstrap import build_redis_database_config
+from flux.runners.shared.bootstrap import load_config as load_shared_config
+from flux.runners.shared.bootstrap import load_runtime_config as load_shared_runtime_config
+from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
+from flux.runners.shared.bootstrap import (
+    resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap,
+)
+from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
+from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.bootstrap import table as shared_table
+from flux.runners.shared.logging import build_node_logging_config
+from flux.runners.shared.qty_units import resolve_runner_qty_unit
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.strategies import FluxStrategySpec
+from flux.strategies import get_strategy_spec
+from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
+from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
+from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
+from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
+from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
-from flux.common.config import FLUX_DEFAULT_NAMESPACE
-from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.runners.live import resolve_strategy_venues
-from flux.runners.shared.bootstrap import build_redis_client_kwargs
-from flux.runners.shared.bootstrap import build_redis_database_config
-from flux.runners.shared.bootstrap import load_runtime_config as load_shared_runtime_config
-from flux.runners.shared.bootstrap import load_config as load_shared_config
-from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
-from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
-from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
-from flux.runners.shared.bootstrap import strategy_startup_lock
-from flux.runners.shared.logging import build_node_logging_config
-from flux.runners.shared.qty_units import resolve_runner_qty_unit
-from flux.runners.shared.bootstrap import table as shared_table
-from flux.runners.shared.strategy_set import get_strategy_set_descriptor
-from flux.strategies import FluxStrategySpec
-from flux.strategies import get_strategy_spec
-from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
-from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
-from flux.strategies.makerv4.reference_balances import (
-    IbkrReferenceBalanceSnapshotProviderConfig,
-)
-from flux.strategies.makerv4.reference_balances import (
-    get_cached_ibkr_reference_balance_provider,
-)
-from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
@@ -79,6 +77,24 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _profile_owned_account_projections_enabled(config: dict[str, Any]) -> bool:
+    portfolio_cfg = config.get("portfolio")
+    if not isinstance(portfolio_cfg, dict):
+        return True
+    return bool(portfolio_cfg.get("profile_owned_account_projections", True))
+
+
+def _dockerized_ib_gateway_config(ibkr_cfg: dict[str, Any]) -> DockerizedIBGatewayConfig | None:
+    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
+    if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
+        return dockerized_gateway_cfg
+    if isinstance(dockerized_gateway_cfg, dict):
+        return DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
+    if dockerized_gateway_cfg is not None:
+        raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
+    return None
 
 
 def _client_order_id_config(instrument_id: InstrumentId) -> dict[str, Any]:
@@ -188,6 +204,9 @@ def _attach_reference_balance_snapshot_provider(
     strategy: Any,
     config: dict[str, Any],
 ) -> None:
+    if _profile_owned_account_projections_enabled(config):
+        return
+
     configure_provider = getattr(strategy, "configure_reference_balance_snapshot_provider", None)
     if not callable(configure_provider):
         return
@@ -208,15 +227,6 @@ def _attach_reference_balance_snapshot_provider(
     if adapter_id not in {"ibkr", "interactive_brokers"}:
         return
 
-    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
-    dockerized_gateway = None
-    if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
-        dockerized_gateway = dockerized_gateway_cfg
-    elif isinstance(dockerized_gateway_cfg, dict):
-        dockerized_gateway = DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
-    elif dockerized_gateway_cfg is not None:
-        raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
-
     provider = get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
@@ -224,7 +234,7 @@ def _attach_reference_balance_snapshot_provider(
                 None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
             ),
             ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
-            dockerized_gateway=dockerized_gateway,
+            dockerized_gateway=_dockerized_ib_gateway_config(ibkr_cfg),
             connection_timeout=int(ibkr_cfg.get("connection_timeout", 300)),
             request_timeout_secs=int(ibkr_cfg.get("request_timeout_secs", 60)),
             account_id=_optional_text(ibkr_cfg.get("account_id")),

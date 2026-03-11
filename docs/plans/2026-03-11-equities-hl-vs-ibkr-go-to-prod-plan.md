@@ -76,7 +76,7 @@ This is the cleanest design because it fixes the actual architectural bug: share
 | --- | --- | --- | --- |
 | Overall | in_progress | main | Executing in subagent-driven mode from the isolated equities worktree. |
 | Task 1: Define Canonical Equities Contract And Identity Model | completed | main | Completed after spec review and final quality review with no findings; verified by `46 passed`, targeted `ruff` checks, and clean `git diff --check`. |
-| Task 2: Build Profile-Scoped Account Projection Infrastructure | not_started | unassigned | Plan created |
+| Task 2: Build Profile-Scoped Account Projection Infrastructure | completed | main | Completed after resolving spec findings: binding-owned provenance, deduped execution/reference/hedge scope IDs, default-off legacy node attach, `10 passed` for account-projection/portfolio tests, `1 passed` focused node regression, clean `ruff`, and clean `git diff --check`. Reviewer agents timed out after the fixes. |
 | Task 3: Replace Single-Base Portfolio Snapshot With Multi-Asset Snapshot V2 | not_started | unassigned | Plan created |
 | Task 4: Move Equities Balances API To Portfolio Snapshot V2 | not_started | unassigned | Plan created |
 | Task 5: Migrate MakerV3 Inventory And Balance Publishing To The Canonical Model | not_started | unassigned | Plan created |
