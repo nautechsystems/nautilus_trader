@@ -95,7 +95,10 @@ Runtime registration is explicit:
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
 - The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
-- Production hosts should inject the dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
+- Production equities Redis is the dedicated ElastiCache replication group `equities` in `ap-southeast-1`.
+- The write endpoint is `master.equities.wapqos.apse1.cache.amazonaws.com:6379` and the read endpoint is `replica.equities.wapqos.apse1.cache.amazonaws.com:6379`.
+- The production group is `cache.r7g.large`, `cluster mode disabled`, `Multi-AZ enabled`, `transit encryption required`, and `auth token enabled`.
+- Production hosts should inject that dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
