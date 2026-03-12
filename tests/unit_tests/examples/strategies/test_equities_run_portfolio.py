@@ -19,6 +19,7 @@ from flux.runners.equities.run_portfolio import _required_strategy_ids
 from flux.runners.equities.run_portfolio import _strategy_ids_by_asset
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
+from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 
 
@@ -102,6 +103,32 @@ def _strategy_contract(strategy_id: str, *, reference_account_scope_id: str) -> 
         "reference_account_scope_id": reference_account_scope_id,
         "hedge_account_scope_id": "ibkr.hedge.main",
     }
+
+
+def _account_scopes() -> list[dict[str, object]]:
+    return [
+        {
+            "scope_id": "hyperliquid.xyz.main",
+            "provider": "hyperliquid",
+            "venue": "HYPERLIQUID",
+        },
+        {
+            "scope_id": "ibkr.reference.main",
+            "provider": "ibkr",
+            "venue": "IBKR",
+            "ibg_host": "127.0.0.1",
+            "ibg_port": 4002,
+            "ibg_client_id": 7,
+        },
+        {
+            "scope_id": "ibkr.hedge.main",
+            "provider": "ibkr",
+            "venue": "IBKR",
+            "ibg_host": "127.0.0.1",
+            "ibg_port": 4002,
+            "ibg_client_id": 8,
+        },
+    ]
 
 
 def test_equities_strategy_ids_requires_non_empty_allowlist() -> None:
@@ -226,6 +253,57 @@ def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
     assert fake_redis.published
 
 
+def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_provider_configs: list[object] = []
+
+    def _fake_cached_ibkr_provider(provider_config):
+        captured_provider_configs.append(provider_config)
+        return _CountingAccountProjectionProvider(rows=[])
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        _fake_cached_ibkr_provider,
+    )
+
+    bindings = build_profile_account_provider_bindings(
+        config={
+            "account_scopes": _account_scopes(),
+            "strategy_contracts": [
+                _strategy_contract(
+                    "aapl_tradexyz_makerv3",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+                _strategy_contract(
+                    "msft_tradexyz_makerv3",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+            ],
+        },
+    )
+
+    assert [binding.account_scope_id for binding in bindings] == [
+        "hyperliquid.xyz.main",
+        "ibkr.reference.main",
+        "ibkr.hedge.main",
+    ]
+    reference_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "ibkr.reference.main"
+    )
+    hedge_binding = next(binding for binding in bindings if binding.account_scope_id == "ibkr.hedge.main")
+
+    assert reference_binding.provider is not None
+    assert hedge_binding.provider is not None
+    assert reference_binding.source_strategy_ids == (
+        "aapl_tradexyz_makerv3",
+        "msft_tradexyz_makerv3",
+    )
+    assert len(captured_provider_configs) == 2
+    assert captured_provider_configs[0].ibg_client_id == 7
+    assert captured_provider_configs[1].ibg_client_id == 8
+
+
 def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -233,18 +311,21 @@ def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_sc
         "flux.runners.shared.portfolio_runner.build_redis_client",
         lambda _cfg: _FakeRedis(),
     )
+    captured_provider_configs: list[object] = []
+
+    def _fake_cached_ibkr_provider(provider_config):
+        captured_provider_configs.append(provider_config)
+        return _CountingAccountProjectionProvider(rows=[])
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        _fake_cached_ibkr_provider,
+    )
     config: dict[str, Any] = {
         "flux": {"namespace": "flux", "schema_version": "v1"},
         "redis": {},
         "venues": {"reference_venue": "IBKR"},
-        "node": {
-            "venues": {
-                "IBKR": {
-                    "adapter": "interactive_brokers",
-                    "ibg_client_id": 7,
-                },
-            },
-        },
+        "account_scopes": _account_scopes(),
         "api": {
             "equities_strategy_ids": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
         },
@@ -273,6 +354,10 @@ def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_sc
         "ibkr.reference.main",
         "ibkr.hedge.main",
     ]
+    assert len(captured_provider_configs) == 2
+    assert aggregator._profile_account_bindings[1].provider is not None
+    assert aggregator._profile_account_bindings[2].provider is not None
+
 
 
 def test_equities_portfolio_aggregator_publishes_account_projection_once_per_scope() -> None:

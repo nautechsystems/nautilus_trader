@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from flux.common.account_projection import ProfileAccountProviderBinding
+from flux.common.account_scopes import AccountScopeConfig
+from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
 from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
@@ -17,28 +19,14 @@ def _optional_text(value: Any) -> str | None:
     return text or None
 
 
-def _mapping(value: Any) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        return value
-    return {}
-
-
 def _build_ibkr_account_provider(
     *,
-    config: Mapping[str, Any],
+    scope_config: AccountScopeConfig,
     account_scope_id: str,
     source_strategy_ids: tuple[str, ...],
 ) -> Any | None:
-    node_cfg = _mapping(config.get("node"))
-    venue_entries = _mapping(node_cfg.get("venues"))
-    ibkr_cfg = _mapping(venue_entries.get("IBKR"))
-    if not ibkr_cfg:
-        return None
-    adapter_id = (_optional_text(ibkr_cfg.get("adapter")) or "ibkr").lower()
-    if adapter_id not in {"ibkr", "interactive_brokers"}:
-        return None
-
-    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
+    _ = (account_scope_id, source_strategy_ids)
+    dockerized_gateway_cfg = scope_config.dockerized_gateway
     dockerized_gateway = None
     if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
         dockerized_gateway = dockerized_gateway_cfg
@@ -49,27 +37,27 @@ def _build_ibkr_account_provider(
 
     return get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
-            ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
-            ibg_port=None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port")),
-            ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
+            ibg_host=scope_config.ibg_host or "127.0.0.1",
+            ibg_port=scope_config.ibg_port,
+            ibg_client_id=scope_config.ibg_client_id or 1,
             dockerized_gateway=dockerized_gateway,
-            connection_timeout=int(ibkr_cfg.get("connection_timeout", 300)),
-            request_timeout_secs=int(ibkr_cfg.get("request_timeout_secs", 60)),
-            account_id=_optional_text(ibkr_cfg.get("account_id")),
+            connection_timeout=300,
+            request_timeout_secs=60,
+            account_id=scope_config.account_id,
         ),
     )
 
 
 def build_account_projection_provider(
     *,
-    config: Mapping[str, Any],
+    scope_config: AccountScopeConfig,
     account_scope_id: str,
     source_strategy_ids: tuple[str, ...],
 ) -> Any | None:
-    scope_prefix = str(account_scope_id).split(".", maxsplit=1)[0].strip().lower()
-    if scope_prefix == "ibkr":
+    provider_id = scope_config.provider.strip().lower()
+    if provider_id == "ibkr":
         return _build_ibkr_account_provider(
-            config=config,
+            scope_config=scope_config,
             account_scope_id=account_scope_id,
             source_strategy_ids=source_strategy_ids,
         )
@@ -85,11 +73,24 @@ def _scope_candidates(contract: Any) -> tuple[str, ...]:
     return tuple(scope_id for scope_id in candidates if scope_id is not None)
 
 
+def _decode_account_scope_map(
+    config: Mapping[str, Any],
+) -> tuple[tuple[AccountScopeConfig, ...], dict[str, AccountScopeConfig]]:
+    decoded = decode_account_scopes(config.get("account_scopes") or [])
+    by_id: dict[str, AccountScopeConfig] = {}
+    for scope_config in decoded:
+        if scope_config.scope_id in by_id:
+            raise ValueError(f"duplicate account scope_id {scope_config.scope_id!r}")
+        by_id[scope_config.scope_id] = scope_config
+    return decoded, by_id
+
+
 def build_profile_account_provider_bindings(
     *,
     config: Mapping[str, Any],
 ) -> tuple[ProfileAccountProviderBinding, ...]:
     contracts = decode_strategy_contracts(config.get("strategy_contracts") or [])
+    scope_configs, scope_config_by_id = _decode_account_scope_map(config)
     grouped_strategy_ids: dict[str, list[str]] = {}
     for contract in contracts:
         for account_scope_id in _scope_candidates(contract):
@@ -97,16 +98,30 @@ def build_profile_account_provider_bindings(
             if contract.strategy_id not in strategy_ids:
                 strategy_ids.append(contract.strategy_id)
 
+    missing_scope_ids = [
+        account_scope_id
+        for account_scope_id in grouped_strategy_ids
+        if account_scope_id not in scope_config_by_id
+    ]
+    if missing_scope_ids:
+        raise ValueError(
+            "missing shared account scope config for "
+            + ", ".join(sorted(missing_scope_ids)),
+        )
+
     bindings: list[ProfileAccountProviderBinding] = []
-    for account_scope_id, strategy_ids in grouped_strategy_ids.items():
+    for scope_config in scope_configs:
+        strategy_ids = grouped_strategy_ids.get(scope_config.scope_id)
+        if not strategy_ids:
+            continue
         provider = build_account_projection_provider(
-            config=config,
-            account_scope_id=account_scope_id,
+            scope_config=scope_config,
+            account_scope_id=scope_config.scope_id,
             source_strategy_ids=tuple(strategy_ids),
         )
         bindings.append(
             ProfileAccountProviderBinding(
-                account_scope_id=account_scope_id,
+                account_scope_id=scope_config.scope_id,
                 source_strategy_ids=tuple(strategy_ids),
                 provider=provider,
             ),
