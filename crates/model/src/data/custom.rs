@@ -21,7 +21,7 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use nautilus_core::UnixNanos;
 #[cfg(feature = "python")]
-use pyo3::{prelude::*, types::PyAny};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyAny};
 use serde::{Serialize, Serializer};
 
 use crate::data::{
@@ -264,6 +264,23 @@ pub fn reconstruct_python_custom_data(
         .map(|obj| obj.unbind())
 }
 
+/// Converts a cloneable PyO3-backed custom data value into a Python object.
+///
+/// This is intended for `#[pyclass]` custom data types, where PyO3 already
+/// provides `IntoPyObject` for owned values.
+///
+/// # Errors
+///
+/// Returns any conversion error reported by PyO3.
+#[cfg(feature = "python")]
+pub fn clone_pyclass_to_pyobject<T>(value: &T, py: Python<'_>) -> PyResult<Py<PyAny>>
+where
+    T: Clone,
+    for<'py> T: pyo3::IntoPyObject<'py, Error = pyo3::PyErr>,
+{
+    value.clone().into_py_any(py)
+}
+
 /// Trait for typed custom data that can be used within the Nautilus domain model.
 pub trait CustomDataTrait: HasTsInit + Send + Sync + Debug {
     /// Returns the type name for the custom data.
@@ -301,7 +318,12 @@ pub trait CustomDataTrait: HasTsInit + Send + Sync + Debug {
     /// # Errors
     /// Returns an error if PyO3 conversion fails.
     #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: Python<'_>) -> PyResult<Py<PyAny>>;
+    fn to_pyobject(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Err(nautilus_core::python::to_pytype_err(format!(
+            "to_pyobject not implemented for {}",
+            self.type_name()
+        )))
+    }
 
     /// Returns the type name used in serialized form (e.g. in the `"type"` field).
     fn type_name_static() -> &'static str
@@ -540,10 +562,6 @@ mod tests {
             } else {
                 false
             }
-        }
-        #[cfg(feature = "python")]
-        fn to_pyobject(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
-            unimplemented!()
         }
 
         fn type_name_static() -> &'static str {

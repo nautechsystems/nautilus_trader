@@ -445,10 +445,6 @@ mod tests {
             let t: Self = serde_json::from_value(value)?;
             Ok(Arc::new(t))
         }
-        #[cfg(feature = "python")]
-        fn to_pyobject(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-            unimplemented!()
-        }
     }
 
     impl crate::data::HasTsInit for StrictRegCustomData {
@@ -484,10 +480,6 @@ mod tests {
         ) -> anyhow::Result<Arc<dyn crate::data::CustomDataTrait>> {
             let t: Self = serde_json::from_value(value)?;
             Ok(Arc::new(t))
-        }
-        #[cfg(feature = "python")]
-        fn to_pyobject(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-            unimplemented!()
         }
     }
 

@@ -555,7 +555,7 @@ fn gen_custom_data_trait_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
                 }
                 #[cfg(feature = "python")]
                 fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-                    Ok(pyo3::Py::new(py, std::clone::Clone::clone(self))?.into_any())
+                    nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
                 }
         }
     }

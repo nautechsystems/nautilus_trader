@@ -26,7 +26,7 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::{UnixNanos, python::to_pytype_err};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
@@ -124,12 +124,6 @@ impl CustomDataTrait for TestActorCustomData {
         } else {
             false
         }
-    }
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        Err(to_pytype_err(
-            "to_pyobject not implemented for TestActorCustomData",
-        ))
     }
 }
 

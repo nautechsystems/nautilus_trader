@@ -186,8 +186,7 @@ impl CustomDataTrait for DatabentoImbalance {
 
     #[cfg(feature = "python")]
     fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        use pyo3::conversion::IntoPyObjectExt;
-        self.clone().into_py_any(py)
+        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
     }
 
     fn type_name_static() -> &'static str {
@@ -329,8 +328,7 @@ impl CustomDataTrait for DatabentoStatistics {
 
     #[cfg(feature = "python")]
     fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        use pyo3::conversion::IntoPyObjectExt;
-        self.clone().into_py_any(py)
+        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
     }
 
     fn type_name_static() -> &'static str {

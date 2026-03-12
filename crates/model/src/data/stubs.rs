@@ -494,11 +494,6 @@ impl CustomDataTrait for StubCustomData {
         }
     }
 
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        unimplemented!()
-    }
-
     fn type_name_static() -> &'static str {
         "StubCustomData"
     }
