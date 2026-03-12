@@ -1825,6 +1825,7 @@ impl Cache {
         log::debug!("Adding {order:?}");
 
         self.index.orders.insert(client_order_id);
+
         if order.status() == OrderStatus::Initialized {
             self.index.orders_initialized.insert(client_order_id);
         }
