@@ -171,7 +171,7 @@ def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_rep
     assert aggressive_reprice_cancels == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
     assert stale_cleanup_cancels == [(4, REASON_CANCEL_STALE_ORDER)]
     assert len(cancel_actions) == 2
-    assert list(_result_field(result, "place_level_indices")) == [4]
+    assert list(_result_field(result, "place_level_indices")) == [3]
 
 
 def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics() -> None:
@@ -307,6 +307,25 @@ def test_bounded_side_planner_reports_zero_remaining_missing_after_planned_one_s
     diagnostics = _result_field(result, "diagnostics")
     assert _result_field(diagnostics, "frontier_missing_level_count") == 1
     assert _result_field(diagnostics, "total_missing_level_count") == 0
+
+
+def test_bounded_side_planner_places_more_aggressive_stale_replacement_before_frontier_gap() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("105")],
+        active_stale=[True],
+        desired_levels=_desired_levels("105", "104"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=0,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (0, REASON_CANCEL_STALE_ORDER),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [0]
 
 
 def test_bounded_side_planner_does_not_peel_keep_bucket_for_ordinary_widening_room() -> None:
