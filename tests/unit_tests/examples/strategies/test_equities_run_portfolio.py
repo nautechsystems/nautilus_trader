@@ -470,6 +470,8 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     monkeypatch.setenv("TRADE_XYZ_VAULT_ADDRESS", vault_account)
 
     captured_client_kwargs: list[dict[str, Any]] = []
+    captured_account_ids: list[str] = []
+    captured_account_addresses: list[str] = []
 
     class _FakeHyperliquidAccountState:
         def to_dict(self) -> dict[str, Any]:
@@ -488,6 +490,12 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     class _FakeHyperliquidClient:
         def get_user_address(self) -> str:
             return "0x3333333333333333333333333333333333333333"
+
+        def set_account_id(self, account_id: str) -> None:
+            captured_account_ids.append(account_id)
+
+        def set_account_address(self, account_address: str) -> None:
+            captured_account_addresses.append(account_address)
 
         async def request_account_state(self, **kwargs: Any) -> _FakeHyperliquidAccountState:
             assert kwargs == {
@@ -574,6 +582,8 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
             "dex": "xyz",
         },
     ]
+    assert captured_account_ids == ["HYPERLIQUID-master"]
+    assert captured_account_addresses == [vault_account]
     assert {
         (row["exchange"], row["asset"], row.get("kind"))
         for row in snapshot["rows"]

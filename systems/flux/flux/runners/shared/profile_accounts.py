@@ -68,6 +68,7 @@ class HyperliquidAccountProjectionProvider:
         self._resolved_user: Any | None = None
         self._latest_snapshot: dict[str, Any] | None = None
         self._last_refresh_monotonic = 0.0
+        self._client_identity_initialized = False
 
     def stop(self) -> None:
         return None
@@ -105,6 +106,15 @@ class HyperliquidAccountProjectionProvider:
                 http_timeout_secs=self._config.http_timeout_secs,
                 http_proxy_url=self._config.http_proxy_url,
             )
+        if not self._client_identity_initialized:
+            set_account_id = getattr(self._client, "set_account_id", None)
+            if callable(set_account_id):
+                set_account_id("HYPERLIQUID-master")
+            set_account_address = getattr(self._client, "set_account_address", None)
+            account_query_address = getattr(self._resolved_user, "account_query_address", None)
+            if callable(set_account_address) and account_query_address is not None:
+                set_account_address(account_query_address)
+            self._client_identity_initialized = True
         kwargs: dict[str, Any] = {}
         account_query_address = getattr(self._resolved_user, "account_query_address", None)
         if account_query_address is not None:
