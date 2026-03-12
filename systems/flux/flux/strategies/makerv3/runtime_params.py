@@ -70,6 +70,10 @@ _QUOTE_RUNTIME_INT_NAMES: tuple[str, ...] = (
     "n_orders3",
     "pending_cancel_grace_ms",
     "pending_cancel_block_after_ms",
+    "max_cancels_per_side_per_cycle",
+    "max_places_per_side_per_cycle",
+    "max_total_actions_per_cycle",
+    "max_pending_cancels_per_side",
     "quote_liveness_stall_after_ms",
     "quote_liveness_recover_after_ms",
 )

@@ -250,6 +250,63 @@ def test_refresh_quotes_records_last_completed_quote_progress(
     assert strategy._last_completed_quote_ns == 1_000_000_000
 
 
+def test_refresh_quotes_passes_bounded_convergence_budgets_and_planned_levels_per_side(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: []
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    strategy._runtime_params["max_cancels_per_side_per_cycle"] = 2
+    strategy._runtime_params["max_places_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_total_actions_per_cycle"] = 2
+    strategy._runtime_params["max_pending_cancels_per_side"] = 1
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    rebalance_calls: list[tuple[OrderSide, str, int, int, int]] = []
+    place_calls: list[tuple[OrderSide, tuple[int, ...]]] = []
+
+    def _rebalance_side(**kwargs) -> int:
+        rebalance_calls.append(
+            (
+                kwargs["side"],
+                kwargs["backlog_mode"],
+                kwargs["max_reprice_cancel_actions"],
+                kwargs["max_place_actions"],
+                kwargs["max_total_actions"],
+            ),
+        )
+        return 0
+
+    def _place_missing_levels(**kwargs) -> int:
+        place_calls.append((kwargs["side"], tuple(kwargs["level_indices"])))
+        return 0
+
+    strategy._rebalance_side = _rebalance_side
+    strategy._place_missing_levels = _place_missing_levels
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert rebalance_calls == [
+        (OrderSide.BUY, "normal", 2, 1, 2),
+        (OrderSide.SELL, "normal", 2, 1, 2),
+    ]
+    assert place_calls == [
+        (OrderSide.BUY, (0,)),
+        (OrderSide.SELL, (0,)),
+    ]
+
+
 def test_refresh_quotes_skips_when_cancel_reject_cooldown_is_active(strategy_factory) -> None:
     strategy = strategy_factory()
     strategy._maker_instrument = SimpleNamespace(
@@ -297,19 +354,27 @@ def test_refresh_quotes_blocks_when_pending_cancel_is_old_and_no_quote_progress(
     strategy._order_qty = object()
     strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._managed_orders = lambda: []
-    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
     strategy._last_state_name = "running"
+    strategy._runtime_params["max_pending_cancels_per_side"] = 1
+    strategy._runtime_params["pending_cancel_block_after_ms"] = 100
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 150
     strategy._cache = SimpleNamespace(
-        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+        order=lambda client_order_id: SimpleNamespace(
+            client_order_id=client_order_id,
+            side=OrderSide.BUY,
+        ),
     )
 
     now_ns = 1_000_000_000
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+    strategy._track_pending_cancel("RESTING-1", now_ns=800_000_000)
 
     states: list[str] = []
     events: list[dict[str, object]] = []
     alerts: list[dict[str, object]] = []
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
     strategy._publish_state = lambda state, **_kwargs: states.append(state)
     strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
     strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
@@ -338,9 +403,13 @@ def test_refresh_quotes_skips_when_pending_cancel_is_recent(
     strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._managed_orders = lambda: []
     strategy._runtime_params["pending_cancel_block_after_ms"] = 500
+    strategy._runtime_params["max_pending_cancels_per_side"] = 2
     strategy._last_state_name = "running"
     strategy._cache = SimpleNamespace(
-        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+        order=lambda client_order_id: SimpleNamespace(
+            client_order_id=client_order_id,
+            side=OrderSide.BUY,
+        ),
     )
 
     now_ns = 1_000_000_000
@@ -348,9 +417,17 @@ def test_refresh_quotes_skips_when_pending_cancel_is_recent(
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
     strategy._track_pending_cancel("RESTING-1", now_ns=now_ns - 100_000_000)
 
+    rebalance_calls: list[tuple[OrderSide, str]] = []
+    place_calls: list[tuple[OrderSide, tuple[int, ...]]] = []
     states: list[str] = []
     events: list[dict[str, object]] = []
     alerts: list[dict[str, object]] = []
+    strategy._rebalance_side = (
+        lambda **kwargs: rebalance_calls.append((kwargs["side"], kwargs["backlog_mode"])) or 0
+    )
+    strategy._place_missing_levels = (
+        lambda **kwargs: place_calls.append((kwargs["side"], tuple(kwargs["level_indices"]))) or 0
+    )
     strategy._publish_state = lambda state, **_kwargs: states.append(state)
     strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
     strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
@@ -359,11 +436,20 @@ def test_refresh_quotes_skips_when_pending_cancel_is_recent(
 
     strategy._refresh_quotes(now_ns=now_ns)
 
+    assert rebalance_calls == [
+        (OrderSide.BUY, "normal"),
+        (OrderSide.SELL, "normal"),
+    ]
+    assert place_calls == [
+        (OrderSide.BUY, (0,)),
+        (OrderSide.SELL, (0,)),
+    ]
     assert states == ["running"]
     assert events[-1]["quote_cycle_event"] == "skipped"
     assert events[-1]["reason_code"] == "skip_pending_cancels"
     assert events[-1]["oldest_pending_cancel_age_ms"] == 100
     assert events[-1]["payload"]["oldest_pending_cancel_age_ms"] == 100
+    assert events[-1]["payload"]["backlog_mode"] == "normal"
     assert alerts == []
 
 
@@ -379,9 +465,16 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
     strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._managed_orders = lambda: []
     strategy._last_state_name = "running"
+    strategy._runtime_params["max_pending_cancels_per_side"] = 1
+    strategy._runtime_params["max_cancels_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_places_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_total_actions_per_cycle"] = 2
     strategy._runtime_params["pending_cancel_block_after_ms"] = 500
     strategy._cache = SimpleNamespace(
-        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+        order=lambda client_order_id: SimpleNamespace(
+            client_order_id=client_order_id,
+            side=OrderSide.BUY,
+        ),
     )
     strategy._track_pending_cancel("RESTING-1", now_ns=900_000_000)
 
@@ -389,11 +482,21 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
 
-    rebalance_calls: list[OrderSide] = []
+    rebalance_calls: list[tuple[OrderSide, str]] = []
+    place_calls: list[tuple[OrderSide, tuple[int, ...]]] = []
+
+    def _rebalance_side(**kwargs) -> int:
+        rebalance_calls.append((kwargs["side"], kwargs["backlog_mode"]))
+        return 0
+
+    def _place_missing_levels(**kwargs) -> int:
+        place_calls.append((kwargs["side"], tuple(kwargs["level_indices"])))
+        return 0
+
     states: list[str] = []
     events: list[dict[str, object]] = []
-    strategy._rebalance_side = lambda **kwargs: rebalance_calls.append(kwargs["side"]) or 0
-    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._rebalance_side = _rebalance_side
+    strategy._place_missing_levels = _place_missing_levels
     strategy._publish_state = lambda state, **_kwargs: states.append(state)
     strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
     strategy._publish_actionable_alert = lambda **_kwargs: True
@@ -402,14 +505,17 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
 
     strategy._refresh_quotes(now_ns=now_ns)
 
-    assert rebalance_calls == []
-    assert states == ["running"]
-    assert events[-1]["quote_cycle_event"] == "skipped"
-    assert events[-1]["reason_code"] == "skip_pending_cancels"
+    assert rebalance_calls == [
+        (OrderSide.BUY, "soft_throttle"),
+        (OrderSide.SELL, "normal"),
+    ]
+    assert (OrderSide.BUY, (0,)) not in place_calls
+    assert (OrderSide.SELL, (0,)) in place_calls
+    assert "blocked_pending_cancel" not in states
     assert events[-1]["payload"].get("backlog_mode") == "soft_throttle"
 
 
-def test_refresh_quotes_pending_cancel_hard_freeze_stops_after_first_side_exhausts_budget(
+def test_refresh_quotes_pending_cancel_hard_freeze_stays_unblocked_until_stall_threshold(
     strategy_factory,
 ) -> None:
     strategy = strategy_factory()
@@ -421,42 +527,48 @@ def test_refresh_quotes_pending_cancel_hard_freeze_stops_after_first_side_exhaus
     strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._managed_orders = lambda: []
     strategy._last_state_name = "running"
-    strategy._runtime_params["pending_cancel_block_after_ms"] = 1_000
+    strategy._runtime_params["max_pending_cancels_per_side"] = 1
+    strategy._runtime_params["pending_cancel_block_after_ms"] = 100
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 500
     strategy._cache = SimpleNamespace(
-        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+        order=lambda client_order_id: SimpleNamespace(
+            client_order_id=client_order_id,
+            side=OrderSide.BUY,
+        ),
     )
+    strategy._track_pending_cancel("RESTING-1", now_ns=800_000_000)
 
     now_ns = 1_000_000_000
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
 
-    rebalance_calls: list[OrderSide] = []
+    rebalance_calls: list[tuple[OrderSide, str]] = []
+    states: list[str] = []
     events: list[dict[str, object]] = []
-
-    did_exhaust_budget = False
+    alerts: list[dict[str, object]] = []
 
     def _rebalance_side(**kwargs) -> int:
-        nonlocal did_exhaust_budget
-        rebalance_calls.append(kwargs["side"])
-        if not did_exhaust_budget:
-            did_exhaust_budget = True
-            strategy._track_pending_cancel("RESTING-1", now_ns=now_ns)
-            return 1
+        rebalance_calls.append((kwargs["side"], kwargs["backlog_mode"]))
         return 0
 
     strategy._rebalance_side = _rebalance_side
     strategy._place_missing_levels = lambda **_kwargs: 0
-    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
     strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
-    strategy._publish_actionable_alert = lambda **_kwargs: True
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
     strategy._publish_json = lambda *_args, **_kwargs: None
     strategy._publish_event = lambda *_args, **_kwargs: None
 
     strategy._refresh_quotes(now_ns=now_ns)
 
-    assert len(rebalance_calls) == 1
-    assert events[-1]["quote_cycle_event"] == "skipped"
+    assert rebalance_calls == [
+        (OrderSide.BUY, "hard_freeze"),
+        (OrderSide.SELL, "normal"),
+    ]
+    assert "blocked_pending_cancel" not in states
+    assert events[-1]["quote_cycle_event"] != "blocked"
     assert events[-1]["payload"].get("backlog_mode") == "hard_freeze"
+    assert alerts == []
 
 
 def test_refresh_quotes_pending_cancel_blocked_path_never_reprices_pathological_backlog(
@@ -471,9 +583,14 @@ def test_refresh_quotes_pending_cancel_blocked_path_never_reprices_pathological_
     strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._managed_orders = lambda: []
     strategy._last_state_name = "running"
+    strategy._runtime_params["max_pending_cancels_per_side"] = 1
     strategy._runtime_params["pending_cancel_block_after_ms"] = 100
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 150
     strategy._cache = SimpleNamespace(
-        order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
+        order=lambda client_order_id: SimpleNamespace(
+            client_order_id=client_order_id,
+            side=OrderSide.BUY,
+        ),
     )
     strategy._track_pending_cancel("RESTING-1", now_ns=800_000_000)
 
@@ -520,6 +637,8 @@ def test_refresh_quotes_clears_orphaned_pending_cancel_when_cache_has_no_live_or
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
 
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
     strategy._publish_state = lambda *_args, **_kwargs: None
     strategy._publish_quote_cycle_event = lambda **_kwargs: None
     strategy._publish_json = lambda *_args, **_kwargs: None

@@ -189,6 +189,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
         order_reject_alert_after_s: NonNegativeFloat | None = None
         pending_cancel_grace_ms: NonNegativeInt | None = None
         pending_cancel_block_after_ms: NonNegativeInt | None = None
+        max_cancels_per_side_per_cycle: NonNegativeInt | None = None
+        max_places_per_side_per_cycle: NonNegativeInt | None = None
+        max_total_actions_per_cycle: NonNegativeInt | None = None
+        max_pending_cancels_per_side: NonNegativeInt | None = None
         quote_liveness_stall_after_ms: NonNegativeInt | None = None
         quote_liveness_recover_after_ms: NonNegativeInt | None = None
         quote_fail_critical_after_count: NonNegativeInt | None = None
@@ -2291,28 +2295,65 @@ if _NAUTILUS_IMPORT_ERROR is None:
             desired_levels: list[tuple[Price, Decimal, Decimal]],
             now_ns: int,
             max_age_ms: int,
+            max_reprice_cancel_actions: int | None = None,
+            max_place_actions: int | None = None,
+            max_total_actions: int | None = None,
+            backlog_mode: str = "normal",
+            planned_level_indices_out: list[int] | None = None,
+            cancel_actions: tuple[Any, ...] | list[Any] | None = None,
             quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> int:
-            side_name = "buy" if side == OrderSide.BUY else "sell"
-            active_prices = [_price_to_decimal(order.price) for order in active_orders]
-            active_stale = [
-                self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-                for order in active_orders
-            ]
+            if max_reprice_cancel_actions is None:
+                max_reprice_cancel_actions = self._runtime_int("max_cancels_per_side_per_cycle")
+            if max_place_actions is None:
+                max_place_actions = self._runtime_int("max_places_per_side_per_cycle")
+            if max_total_actions is None:
+                max_total_actions = self._runtime_int("max_total_actions_per_cycle")
+
             desired_dec = [
                 (_price_to_decimal(target_price), cancel_px, match_tol)
                 for target_price, cancel_px, match_tol in desired_levels
             ]
-
-            cancel_actions, _ = plan_side_rebalance_details(
-                side=side_name,
-                active_prices=active_prices,
-                active_stale=active_stale,
-                desired_levels=desired_dec,
-                stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
-            )
+            if cancel_actions is None:
+                side_name = "buy" if side == OrderSide.BUY else "sell"
+                active_prices = [_price_to_decimal(order.price) for order in active_orders]
+                active_stale = [
+                    self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
+                    for order in active_orders
+                ]
+                plan = rebalancing_mod.plan_side_bounded_convergence(
+                    side=side_name,
+                    active_prices=active_prices,
+                    active_stale=active_stale,
+                    desired_levels=desired_dec,
+                    stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+                    max_reprice_cancel_actions=max(
+                        0,
+                        int(max_reprice_cancel_actions or 0),
+                    ),
+                    max_place_actions=max(
+                        0,
+                        int(max_place_actions or 0),
+                    ),
+                    max_total_actions=max(
+                        0,
+                        int(max_total_actions or 0),
+                    ),
+                    backlog_mode=backlog_mode,
+                )
+                cancel_actions = plan.cancel_actions
+                if planned_level_indices_out is not None:
+                    planned_level_indices_out[:] = [
+                        int(level_index)
+                        for level_index in plan.place_level_indices
+                    ]
+            elif planned_level_indices_out is not None:
+                planned_level_indices_out[:] = [
+                    int(level_index)
+                    for level_index in planned_level_indices_out
+                ]
 
             cancel_count = 0
             for cancel_action in cancel_actions:
@@ -2362,8 +2403,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
             per_level_outcomes: list[dict[str, Any]] | None = None,
+            level_indices: tuple[int, ...] | list[int] | None = None,
+            pending_backlog_mode: str | None = None,
         ) -> int:
-            if self._has_pending_managed_cancels():
+            if pending_backlog_mode is None:
+                if self._has_pending_managed_cancels():
+                    return 0
+            elif str(pending_backlog_mode).lower() != "normal":
                 return 0
             if now_ns is None:
                 now_ns = int(self.clock.timestamp_ns())
@@ -2374,7 +2420,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return 0
             places = 0
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
-            for level_index, (target_price, cancel_px, match_tol) in enumerate(desired_levels):
+            selected_level_indices = (
+                range(len(desired_levels))
+                if level_indices is None
+                else [
+                    int(level_index)
+                    for level_index in level_indices
+                    if 0 <= int(level_index) < len(desired_levels)
+                ]
+            )
+            for level_index in selected_level_indices:
+                target_price, cancel_px, match_tol = desired_levels[level_index]
                 if self._terminal_order_denial_circuit_open or not self._effective_bot_on():
                     break
                 target_px = _price_to_decimal(target_price)

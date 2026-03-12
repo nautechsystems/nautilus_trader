@@ -10,6 +10,7 @@ from typing import Any
 
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
+from flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from flux.strategies.makerv3.constants import ALERT_COOLDOWN_BLOCKED_MS
 from flux.strategies.makerv3.constants import ALERT_KEY_MARKET_DATA_BLOCKED
 from flux.strategies.makerv3.constants import ALERT_KEY_PORTFOLIO_INVENTORY_BLOCKED
@@ -50,6 +51,133 @@ _apply_inventory_skew_to_edges = pricing_mod.apply_inventory_skew_to_edges
 build_ladder_place_cancel_levels_from_bps = pricing_mod.build_ladder_place_cancel_levels_from_bps
 
 _decimal_to_json_str = publisher_mod.decimal_to_json_str
+
+_BACKLOG_MODE_RANK = {
+    "normal": 0,
+    "soft_throttle": 1,
+    "hard_freeze": 2,
+    "blocked": 3,
+}
+
+
+def _pending_cancel_backlog_snapshot(
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int,
+) -> dict[str, Any]:
+    pending_cancel_first_seen_ns = getattr(
+        strategy,
+        "_pending_cancel_first_seen_ns_by_client_order_id",
+        {},
+    )
+    counts_by_side = {
+        OrderSide.BUY: 0,
+        OrderSide.SELL: 0,
+    }
+    oldest_age_ms_by_side = {
+        OrderSide.BUY: None,
+        OrderSide.SELL: None,
+    }
+    total_oldest_age_ms: int | None = None
+    unknown_side_count = 0
+
+    pending_ids = tuple(getattr(strategy, "_pending_cancel_client_order_ids", ()))
+    pending_order = getattr(strategy, "_pending_cancel_order", None)
+    for client_order_id in pending_ids:
+        first_seen_ns = int(pending_cancel_first_seen_ns.get(client_order_id, 0) or 0)
+        age_ms = (
+            max(0, (now_ns - first_seen_ns) // 1_000_000)
+            if first_seen_ns > 0 and now_ns >= first_seen_ns
+            else None
+        )
+        if age_ms is not None and (
+            total_oldest_age_ms is None or age_ms > total_oldest_age_ms
+        ):
+            total_oldest_age_ms = age_ms
+
+        order = pending_order(client_order_id) if callable(pending_order) else None
+        side = getattr(order, "side", None)
+        target_sides = (
+            (side,)
+            if side in counts_by_side
+            else (OrderSide.BUY, OrderSide.SELL)
+        )
+        if side not in counts_by_side:
+            unknown_side_count += 1
+        for target_side in target_sides:
+            counts_by_side[target_side] += 1
+            side_oldest_age_ms = oldest_age_ms_by_side[target_side]
+            if age_ms is not None and (side_oldest_age_ms is None or age_ms > side_oldest_age_ms):
+                oldest_age_ms_by_side[target_side] = age_ms
+
+    return {
+        "counts_by_side": counts_by_side,
+        "oldest_age_ms_by_side": oldest_age_ms_by_side,
+        "total_count": len(pending_ids),
+        "total_oldest_age_ms": total_oldest_age_ms,
+        "unknown_side_count": unknown_side_count,
+    }
+
+
+def _classify_pending_cancel_backlog_mode(
+    *,
+    runtime_params: dict[str, Any],
+    pending_count: int,
+    oldest_age_ms: int | None,
+) -> str:
+    if pending_count <= 0:
+        return "normal"
+
+    soft_count_threshold = max(
+        0,
+        int(runtime_params.get("max_pending_cancels_per_side", 0) or 0),
+    )
+    hard_count_threshold = max(2, soft_count_threshold + 1)
+    blocked_count_threshold = max(3, soft_count_threshold + 2)
+
+    pending_cancel_grace_ms = max(
+        0,
+        int(runtime_params.get("pending_cancel_grace_ms", 0) or 0),
+    )
+    pending_cancel_block_after_ms = max(
+        0,
+        int(runtime_params.get("pending_cancel_block_after_ms", 0) or 0),
+    )
+    quote_liveness_stall_after_ms = max(
+        pending_cancel_block_after_ms,
+        int(runtime_params.get("quote_liveness_stall_after_ms", 0) or 0),
+    )
+
+    if pending_count >= blocked_count_threshold or (
+        oldest_age_ms is not None
+        and quote_liveness_stall_after_ms > 0
+        and oldest_age_ms >= quote_liveness_stall_after_ms
+    ):
+        return "blocked"
+    if pending_count >= hard_count_threshold or (
+        oldest_age_ms is not None
+        and pending_cancel_block_after_ms > 0
+        and oldest_age_ms >= pending_cancel_block_after_ms
+    ):
+        return "hard_freeze"
+    if (soft_count_threshold <= 0 or pending_count >= soft_count_threshold) or (
+        oldest_age_ms is not None
+        and pending_cancel_grace_ms > 0
+        and oldest_age_ms >= pending_cancel_grace_ms
+    ):
+        return "soft_throttle"
+    return "normal"
+
+
+def _worst_backlog_mode(modes: list[str]) -> str:
+    worst_mode = "normal"
+    worst_rank = _BACKLOG_MODE_RANK[worst_mode]
+    for mode in modes:
+        mode_rank = _BACKLOG_MODE_RANK.get(str(mode), 0)
+        if mode_rank > worst_rank:
+            worst_mode = str(mode)
+            worst_rank = mode_rank
+    return worst_mode
 
 
 def handle_stale_quote_block(
@@ -641,105 +769,58 @@ def refresh_quotes(  # noqa: C901
         key=lambda order: _price_to_decimal(order.price),
     )
 
-    cancels = 0
-    places = 0
-    cancels += strategy._rebalance_side(
-        side=OrderSide.BUY,
-        active_orders=active_buys,
-        desired_levels=desired_buys,
-        now_ns=now_ns,
-        max_age_ms=max_age_ms,
-        quote_cycle=quote_cycle,
-        quote_cycle_id=quote_cycle_id,
-        decision_context_json=decision_context_json,
-    )
-    cancels += strategy._rebalance_side(
-        side=OrderSide.SELL,
-        active_orders=active_sells,
-        desired_levels=desired_sells,
-        now_ns=now_ns,
-        max_age_ms=max_age_ms,
-        quote_cycle=quote_cycle,
-        quote_cycle_id=quote_cycle_id,
-        decision_context_json=decision_context_json,
-    )
-    if strategy._has_pending_managed_cancels():
-        from_state = getattr(strategy, "_last_state_name", None)
-        pending_cancel_first_seen_ns = getattr(
-            strategy,
-            "_pending_cancel_first_seen_ns_by_client_order_id",
-            {},
+    clear_orphans = getattr(strategy, "_clear_orphaned_pending_cancels", None)
+    cleared_orphans: tuple[str, ...] = ()
+    if callable(clear_orphans):
+        cleared_orphans = tuple(clear_orphans())
+
+    pending_backlog = _pending_cancel_backlog_snapshot(strategy, now_ns=now_ns)
+    if cleared_orphans and int(pending_backlog["total_count"]) <= 0:
+        strategy._last_requote_ns = now_ns
+        strategy._last_completed_quote_ns = now_ns
+        strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
+        strategy._publish_quote_cycle_event(
+            now_ns=now_ns,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
+            reason_code=REASON_COMPLETED_NO_ACTIONS,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            payload={
+                "cancel_count": 0,
+                "place_count": 0,
+                "cleared_orphaned_pending_cancels": list(cleared_orphans),
+                "decision_context_json": strategy._quote_cycle_decision_context(
+                    runtime_params=runtime_params,
+                    managed_orders=[*active_buys, *active_sells],
+                    per_level_outcomes=per_level_outcomes,
+                ),
+            },
         )
-        oldest_pending_cancel_ns = min(
-            (
-                int(pending_cancel_first_seen_ns.get(client_order_id, 0) or 0)
-                for client_order_id in getattr(strategy, "_pending_cancel_client_order_ids", ())
+        return
+
+    if int(pending_backlog.get("unknown_side_count", 0)) > 0:
+        total_oldest_age_ms = pending_backlog["total_oldest_age_ms"]
+        side_backlog_modes = {
+            OrderSide.BUY: "blocked" if total_oldest_age_ms is None else "soft_throttle",
+            OrderSide.SELL: "blocked" if total_oldest_age_ms is None else "soft_throttle",
+        }
+    else:
+        side_backlog_modes = {
+            OrderSide.BUY: _classify_pending_cancel_backlog_mode(
+                runtime_params=runtime_params,
+                pending_count=int(pending_backlog["counts_by_side"][OrderSide.BUY]),
+                oldest_age_ms=pending_backlog["oldest_age_ms_by_side"][OrderSide.BUY],
             ),
-            default=0,
-        )
-        oldest_pending_cancel_age_ms = (
-            max(0, (now_ns - oldest_pending_cancel_ns) // 1_000_000)
-            if oldest_pending_cancel_ns > 0 and now_ns >= oldest_pending_cancel_ns
-            else None
-        )
-        clear_orphans = getattr(strategy, "_clear_orphaned_pending_cancels", None)
-        cleared_orphans: tuple[str, ...] = ()
-        if callable(clear_orphans):
-            cleared_orphans = tuple(clear_orphans())
-        if cleared_orphans and not strategy._has_pending_managed_cancels():
-            strategy._last_requote_ns = now_ns
-            strategy._last_completed_quote_ns = now_ns
-            strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
-            strategy._publish_quote_cycle_event(
-                now_ns=now_ns,
-                quote_cycle_event=QUOTE_CYCLE_EVENT_COMPLETED,
-                reason_code=REASON_COMPLETED_NO_ACTIONS,
-                quote_cycle=quote_cycle,
-                quote_cycle_id=quote_cycle_id,
-                payload={
-                    "cancel_count": cancels,
-                    "place_count": 0,
-                    "cleared_orphaned_pending_cancels": list(cleared_orphans),
-                    "decision_context_json": strategy._quote_cycle_decision_context(
-                        runtime_params=runtime_params,
-                        managed_orders=[*active_buys, *active_sells],
-                        per_level_outcomes=per_level_outcomes,
-                    ),
-                },
-            )
-            return
-        pending_cancel_block_after_ms = max(
-            0,
-            int(runtime_params.get("pending_cancel_block_after_ms", 0) or 0),
-        )
-        if (
-            oldest_pending_cancel_age_ms is not None
-            and pending_cancel_block_after_ms > 0
-            and oldest_pending_cancel_age_ms < pending_cancel_block_after_ms
-        ):
-            strategy._last_requote_ns = now_ns
-            strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
-            strategy._publish_quote_cycle_event(
-                now_ns=now_ns,
-                quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
-                reason_code=REASON_SKIPPED_PENDING_CANCELS,
-                quote_cycle=quote_cycle,
-                quote_cycle_id=quote_cycle_id,
-                payload={
-                    "cancel_count": cancels,
-                    "pending_cancels": len(
-                        getattr(strategy, "_pending_cancel_client_order_ids", ()),
-                    ),
-                    "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
-                    "decision_context_json": strategy._quote_cycle_decision_context(
-                        runtime_params=runtime_params,
-                        managed_orders=[*active_buys, *active_sells],
-                        per_level_outcomes=per_level_outcomes,
-                    ),
-                },
-                oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
-            )
-            return
+            OrderSide.SELL: _classify_pending_cancel_backlog_mode(
+                runtime_params=runtime_params,
+                pending_count=int(pending_backlog["counts_by_side"][OrderSide.SELL]),
+                oldest_age_ms=pending_backlog["oldest_age_ms_by_side"][OrderSide.SELL],
+            ),
+        }
+    initial_backlog_mode = _worst_backlog_mode(list(side_backlog_modes.values()))
+    if initial_backlog_mode == "blocked":
+        from_state = getattr(strategy, "_last_state_name", None)
+        oldest_pending_cancel_age_ms = pending_backlog["total_oldest_age_ms"]
         strategy._last_requote_ns = now_ns
         strategy._publish_state("blocked_pending_cancel")
         strategy._publish_quote_cycle_event(
@@ -749,11 +830,14 @@ def refresh_quotes(  # noqa: C901
             quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             payload={
-                "cancel_count": cancels,
-                "pending_cancels": len(getattr(strategy, "_pending_cancel_client_order_ids", ())),
+                "cancel_count": 0,
+                "pending_cancels": int(pending_backlog["total_count"]),
                 "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
                 "bid_levels": len(desired_buys),
                 "ask_levels": len(desired_sells),
+                "backlog_mode": initial_backlog_mode,
+                "buy_backlog_mode": side_backlog_modes[OrderSide.BUY],
+                "sell_backlog_mode": side_backlog_modes[OrderSide.SELL],
                 "decision_context_json": strategy._quote_cycle_decision_context(
                     runtime_params=runtime_params,
                     managed_orders=[*active_buys, *active_sells],
@@ -774,35 +858,186 @@ def refresh_quotes(  # noqa: C901
                 cooldown_ms=ALERT_COOLDOWN_BLOCKED_MS,
                 transition=f"{from_state}->blocked_pending_cancel",
                 now_ns=now_ns,
-                pending_cancel_count=len(
-                    getattr(strategy, "_pending_cancel_client_order_ids", ()),
-                ),
+                pending_cancel_count=int(pending_backlog["total_count"]),
             )
         return
-    places += strategy._place_missing_levels(
-        side=OrderSide.BUY,
-        active_orders=active_buys,
-        desired_levels=desired_buys,
-        best_bid_px=best_bid_px,
-        best_ask_px=best_ask_px,
-        now_ns=now_ns,
-        quote_cycle=quote_cycle,
-        quote_cycle_id=quote_cycle_id,
-        decision_context_json=decision_context_json,
-        per_level_outcomes=per_level_outcomes,
+
+    cancels = 0
+    places = 0
+    remaining_total_actions = max(
+        0,
+        int(runtime_params.get("max_total_actions_per_cycle", 0) or 0),
     )
-    places += strategy._place_missing_levels(
-        side=OrderSide.SELL,
-        active_orders=active_sells,
-        desired_levels=desired_sells,
-        best_bid_px=best_bid_px,
-        best_ask_px=best_ask_px,
-        now_ns=now_ns,
-        quote_cycle=quote_cycle,
-        quote_cycle_id=quote_cycle_id,
-        decision_context_json=decision_context_json,
-        per_level_outcomes=per_level_outcomes,
+    max_reprice_cancel_actions = max(
+        0,
+        int(runtime_params.get("max_cancels_per_side_per_cycle", 0) or 0),
     )
+    max_place_actions = max(
+        0,
+        int(runtime_params.get("max_places_per_side_per_cycle", 0) or 0),
+    )
+    side_orders = (
+        (OrderSide.BUY, active_buys, desired_buys),
+        (OrderSide.SELL, active_sells, desired_sells),
+    )
+    blocked_after_actions = False
+    for side, side_active_orders, desired_levels in side_orders:
+        backlog_mode = side_backlog_modes[side]
+        side_total_actions = remaining_total_actions
+        desired_dec = [
+            (_price_to_decimal(target_price), cancel_px, match_tol)
+            for target_price, cancel_px, match_tol in desired_levels
+        ]
+        active_prices = [_price_to_decimal(order.price) for order in side_active_orders]
+        active_stale = [
+            strategy._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
+            for order in side_active_orders
+        ]
+        side_plan = rebalancing_mod.plan_side_bounded_convergence(
+            side="buy" if side == OrderSide.BUY else "sell",
+            active_prices=active_prices,
+            active_stale=active_stale,
+            desired_levels=desired_dec,
+            stale_cancel_budget=strategy.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+            max_reprice_cancel_actions=max_reprice_cancel_actions,
+            max_place_actions=max_place_actions,
+            max_total_actions=side_total_actions,
+            backlog_mode=backlog_mode,
+        )
+
+        side_cancel_count = strategy._rebalance_side(
+            side=side,
+            active_orders=side_active_orders,
+            desired_levels=desired_levels,
+            now_ns=now_ns,
+            max_age_ms=max_age_ms,
+            max_reprice_cancel_actions=max_reprice_cancel_actions,
+            max_place_actions=max_place_actions,
+            max_total_actions=side_total_actions,
+            backlog_mode=backlog_mode,
+            cancel_actions=side_plan.cancel_actions,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            decision_context_json=decision_context_json,
+        )
+        cancels += side_cancel_count
+        remaining_total_actions = max(0, remaining_total_actions - side_cancel_count)
+
+        if side_cancel_count > 0:
+            pending_backlog["counts_by_side"][side] += side_cancel_count
+            pending_backlog["total_count"] += side_cancel_count
+            if pending_backlog["oldest_age_ms_by_side"][side] is None:
+                pending_backlog["oldest_age_ms_by_side"][side] = 0
+            if pending_backlog["total_oldest_age_ms"] is None:
+                pending_backlog["total_oldest_age_ms"] = 0
+            side_backlog_modes[side] = _classify_pending_cancel_backlog_mode(
+                runtime_params=runtime_params,
+                pending_count=int(pending_backlog["counts_by_side"][side]),
+                oldest_age_ms=pending_backlog["oldest_age_ms_by_side"][side],
+            )
+            if side_backlog_modes[side] == "blocked":
+                blocked_after_actions = True
+                break
+
+        if (
+            side_cancel_count > 0
+            or side_backlog_modes[side] != "normal"
+            or remaining_total_actions <= 0
+        ):
+            continue
+
+        allowed_level_indices = tuple(
+            int(level_index)
+            for level_index in side_plan.place_level_indices[:remaining_total_actions]
+        )
+        if not allowed_level_indices:
+            continue
+        side_place_count = strategy._place_missing_levels(
+            side=side,
+            active_orders=side_active_orders,
+            desired_levels=desired_levels,
+            best_bid_px=best_bid_px,
+            best_ask_px=best_ask_px,
+            now_ns=now_ns,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            decision_context_json=decision_context_json,
+            per_level_outcomes=per_level_outcomes,
+            level_indices=allowed_level_indices,
+            pending_backlog_mode=side_backlog_modes[side],
+        )
+        places += side_place_count
+        remaining_total_actions = max(0, remaining_total_actions - side_place_count)
+
+    current_backlog_mode = _worst_backlog_mode(list(side_backlog_modes.values()))
+    oldest_pending_cancel_age_ms = pending_backlog["total_oldest_age_ms"]
+    if blocked_after_actions or current_backlog_mode == "blocked":
+        from_state = getattr(strategy, "_last_state_name", None)
+        strategy._last_requote_ns = now_ns
+        strategy._publish_state("blocked_pending_cancel")
+        strategy._publish_quote_cycle_event(
+            now_ns=now_ns,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
+            reason_code=REASON_BLOCKED_PENDING_CANCEL,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            payload={
+                "cancel_count": cancels,
+                "pending_cancels": int(pending_backlog["total_count"]),
+                "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
+                "bid_levels": len(desired_buys),
+                "ask_levels": len(desired_sells),
+                "backlog_mode": "blocked",
+                "buy_backlog_mode": side_backlog_modes[OrderSide.BUY],
+                "sell_backlog_mode": side_backlog_modes[OrderSide.SELL],
+                "decision_context_json": strategy._quote_cycle_decision_context(
+                    runtime_params=runtime_params,
+                    managed_orders=[*active_buys, *active_sells],
+                    per_level_outcomes=per_level_outcomes,
+                ),
+            },
+            oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
+        )
+        if from_state != "blocked_pending_cancel":
+            strategy._publish_actionable_alert(
+                alert_key=ALERT_KEY_QUOTE_LIVENESS_BLOCKED,
+                message=(
+                    "Quoting blocked (pending cancel stuck) "
+                    f"strategy_id={strategy._external_strategy_id}"
+                ),
+                level="warning",
+                reason_code=REASON_BLOCKED_PENDING_CANCEL,
+                cooldown_ms=ALERT_COOLDOWN_BLOCKED_MS,
+                transition=f"{from_state}->blocked_pending_cancel",
+                now_ns=now_ns,
+                pending_cancel_count=int(pending_backlog["total_count"]),
+            )
+        return
+    if int(pending_backlog["total_count"]) > 0 and not cancels and not places:
+        strategy._last_requote_ns = now_ns
+        strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
+        strategy._publish_quote_cycle_event(
+            now_ns=now_ns,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
+            reason_code=REASON_SKIPPED_PENDING_CANCELS,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            payload={
+                "cancel_count": cancels,
+                "pending_cancels": int(pending_backlog["total_count"]),
+                "oldest_pending_cancel_age_ms": oldest_pending_cancel_age_ms,
+                "backlog_mode": current_backlog_mode,
+                "buy_backlog_mode": side_backlog_modes[OrderSide.BUY],
+                "sell_backlog_mode": side_backlog_modes[OrderSide.SELL],
+                "decision_context_json": strategy._quote_cycle_decision_context(
+                    runtime_params=runtime_params,
+                    managed_orders=[*active_buys, *active_sells],
+                    per_level_outcomes=per_level_outcomes,
+                ),
+            },
+            oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
+        )
+        return
 
     strategy._last_requote_ns = now_ns
     strategy._last_completed_quote_ns = now_ns
@@ -818,6 +1053,10 @@ def refresh_quotes(  # noqa: C901
             "place_count": places,
             "bid_levels": len(desired_buys),
             "ask_levels": len(desired_sells),
+            "backlog_mode": current_backlog_mode,
+            "buy_backlog_mode": side_backlog_modes[OrderSide.BUY],
+            "sell_backlog_mode": side_backlog_modes[OrderSide.SELL],
+            "cleared_orphaned_pending_cancels": list(cleared_orphans),
             "decision_context_json": strategy._quote_cycle_decision_context(
                 runtime_params=runtime_params,
                 managed_orders=[*active_buys, *active_sells],
@@ -835,7 +1074,7 @@ def refresh_quotes(  # noqa: C901
         )
         strategy._publish_state(
             "quotes_replaced",
-            managed_orders=active_orders,
+            managed_orders=[*active_buys, *active_sells],
         )
 
 

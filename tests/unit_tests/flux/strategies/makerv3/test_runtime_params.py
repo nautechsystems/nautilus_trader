@@ -129,6 +129,25 @@ def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> Non
     assert runtime_params["quote_liveness_recover_after_ms"] == 900
 
 
+def test_initial_runtime_params_seed_bounded_convergence_budgets_from_config() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        max_cancels_per_side_per_cycle=2,
+        max_places_per_side_per_cycle=3,
+        max_total_actions_per_cycle=4,
+        max_pending_cancels_per_side=1,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["max_cancels_per_side_per_cycle"] == 2
+    assert runtime_params["max_places_per_side_per_cycle"] == 3
+    assert runtime_params["max_total_actions_per_cycle"] == 4
+    assert runtime_params["max_pending_cancels_per_side"] == 1
+
+
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
     strategy = strategy_factory()
 
@@ -278,6 +297,7 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
         max_age_ms=321,
         n_orders2=4,
         bid_edge1=0.77,
+        max_cancels_per_side_per_cycle=2,
     )
 
     factory = MakerV3Strategy.params_manager_factory(redis_client=object())
@@ -286,6 +306,10 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
     assert manager.defaults["max_age_ms"] == strategy.config.max_age_ms
     assert manager.defaults["n_orders2"] == strategy.config.n_orders2
     assert manager.defaults["bid_edge1"] == pytest.approx(strategy.config.bid_edge1)
+    assert (
+        manager.defaults["max_cancels_per_side_per_cycle"]
+        == strategy.config.max_cancels_per_side_per_cycle
+    )
 
 
 def test_prepare_runtime_params_for_startup_keeps_persisted_bot_on_unchanged(
