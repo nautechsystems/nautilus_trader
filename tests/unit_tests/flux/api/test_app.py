@@ -267,6 +267,58 @@ def test_signals_uses_batched_pipeline_for_key_lookup(
     assert any(command[0] == "xrevrange" for command in batch)
 
 
+def test_signals_include_explicit_running_state_from_runner_truth(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.state(),
+        {
+            "state": "on_stop",
+            "bot_on": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bot_on": "1",
+            "max_age_ms": "10000",
+        },
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    strategy = body["data"]["strategies"][0]
+    assert strategy["id"] == flux_config.identity.strategy_id
+    assert strategy["state"]["state"] == "on_stop"
+    assert strategy["running"] is False
+
+
 def test_healthz_readiness_exception_returns_not_ok_with_error(
     flux_config,
     redis_client,

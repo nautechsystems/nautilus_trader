@@ -349,11 +349,7 @@ class FluxApiStore:
         except ValueError as e:
             raise ParamsStoreValidationError(str(e)) from e
 
-    def load_running_state(self, strategy_id: str) -> bool | None:
-        keys = self._keys_for_strategy(strategy_id)
-        state_raw = self._redis.get(keys.state())
-        state_value = load_json(state_raw)
-        state = dict(state_value) if isinstance(state_value, dict) else {}
+    def _running_state_from_strategy_state(self, state: Mapping[str, Any]) -> bool | None:
         if not state:
             return None
 
@@ -368,6 +364,13 @@ class FluxApiStore:
             return False
 
         return True
+
+    def load_running_state(self, strategy_id: str) -> bool | None:
+        keys = self._keys_for_strategy(strategy_id)
+        state_raw = self._redis.get(keys.state())
+        state_value = load_json(state_raw)
+        state = dict(state_value) if isinstance(state_value, dict) else {}
+        return self._running_state_from_strategy_state(state)
 
     def _strategy_id_from_params_key(self, raw_key: Any, *, key_prefix: str) -> str | None:
         key = decode_text(raw_key).strip()
@@ -629,7 +632,7 @@ class FluxApiStore:
         )
 
         params = self.load_params(strategy_id)
-        return build_signals_payload(
+        payload = build_signals_payload(
             strategy_id=strategy_id,
             metadata=metadata,
             state=state,
@@ -638,6 +641,8 @@ class FluxApiStore:
             balances=balances,
             legs=legs,
         )
+        payload["running"] = self._running_state_from_strategy_state(state)
+        return payload
 
     def load_balances_rows(self, strategy_id: str) -> list[dict[str, Any]]:
         rows, _snapshot_present = self.load_balances_rows_with_presence(strategy_id)
