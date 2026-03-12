@@ -338,13 +338,14 @@ def plan_side_bounded_convergence(
     room_cancel_candidates = tuple(
         idx
         for idx in range(len(active_prices) - 1, -1, -1)
-        if idx not in selected_cancel_indices and idx not in alignment.passive_tail_candidates
+        if idx not in selected_cancel_indices and alignment.matched_level_for_active[idx] is not None
     )
 
+    room_created = 0
     if backlog_mode_norm == "normal":
         survivors_after_initial_cancels = len(active_prices) - len(selected_cancel_indices)
         free_slots = max(0, len(desired_levels) - survivors_after_initial_cancels)
-        frontier_place_count, room_needed = _max_frontier_places(
+        _frontier_place_target, room_needed = _max_frontier_places(
             frontier_missing_count=len(alignment.frontier_missing_levels),
             free_slots=free_slots,
             place_budget=place_budget,
@@ -352,7 +353,6 @@ def plan_side_bounded_convergence(
             total_budget=total_budget,
         )
 
-        room_created = 0
         for index in room_cancel_candidates:
             if room_created >= room_needed:
                 break
@@ -360,8 +360,6 @@ def plan_side_bounded_convergence(
                 room_created += 1
             else:
                 break
-    else:
-        frontier_place_count = 0
 
     planned_stale_replacements = tuple(
         level_index
@@ -380,6 +378,9 @@ def plan_side_bounded_convergence(
 
     place_level_indices: list[int] = []
     if backlog_mode_norm == "normal":
+        survivors_after_all_cancels = len(active_prices) - len(selected_cancel_indices)
+        available_slots = max(0, len(desired_levels) - survivors_after_all_cancels)
+        frontier_place_count = min(len(alignment.frontier_missing_levels), available_slots)
         frontier_place_levels = list(alignment.frontier_missing_levels[:frontier_place_count])
         replacement_place_levels = list(planned_room_replacements) + list(planned_stale_replacements)
         place_candidates = frontier_place_levels + replacement_place_levels
@@ -415,17 +416,25 @@ def plan_side_bounded_convergence(
         for action in cancel_actions
         if action.reason_code == REASON_CANCEL_STALE_ORDER
     )
+    total_missing_before_places = (
+        len(alignment.frontier_missing_levels)
+        + len(planned_room_replacements)
+        + len(planned_stale_replacements)
+    )
     budget_limited = (
         len(passive_tail_cancel_candidates) > selected_excess_cancel_count
-        or len(aggressive_cancel_candidates) > selected_aggressive_cancel_count
         or len(stale_cancel_candidates) > selected_stale_cancel_count
-        or len(alignment.frontier_missing_levels) + len(planned_room_replacements) + len(planned_stale_replacements)
-        > len(place_level_indices)
     )
+    if backlog_mode_norm == "normal":
+        budget_limited = budget_limited or (
+            len(aggressive_cancel_candidates) > selected_aggressive_cancel_count
+            or total_missing_before_places > len(place_level_indices)
+        )
     backlog_limited = backlog_mode_norm != "normal" and (
         bool(aggressive_cancel_candidates)
         or bool(alignment.frontier_missing_levels)
         or bool(planned_stale_replacements)
+        or bool(planned_room_replacements)
     )
 
     diagnostics = ConvergenceDiagnostics(
@@ -434,11 +443,7 @@ def plan_side_bounded_convergence(
         keep_level_count=keep_level_count,
         frontier_missing_level_count=len(alignment.frontier_missing_levels),
         planned_stale_replacement_count=len(planned_stale_replacements),
-        total_missing_level_count=(
-            len(alignment.frontier_missing_levels)
-            + len(planned_room_replacements)
-            + len(planned_stale_replacements)
-        ),
+        total_missing_level_count=max(0, total_missing_before_places - len(place_level_indices)),
         excess_cancel_candidate_count=len(passive_tail_cancel_candidates),
         aggressive_cancel_candidate_count=len(aggressive_cancel_candidates),
         stale_cancel_candidate_count=len(stale_cancel_candidates),
