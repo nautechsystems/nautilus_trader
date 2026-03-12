@@ -12,6 +12,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -291,6 +292,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         if command.instrument_id is not None:
             reports = [r for r in reports if r.instrument_id == command.instrument_id]
+
+        if command.open_only:
+            closed_statuses = {
+                OrderStatus.FILLED,
+                OrderStatus.CANCELED,
+                OrderStatus.EXPIRED,
+                OrderStatus.REJECTED,
+            }
+            reports = [r for r in reports if r.order_status not in closed_statuses]
 
         if command.start is not None:
             start_ns = dt_to_unix_nanos(command.start)

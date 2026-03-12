@@ -1563,7 +1563,7 @@ class TestLiveExecutionEngine:
         assert [command.open_only for command in order_commands] == [False]
 
     @pytest.mark.asyncio
-    async def test_reconcile_execution_state_uses_full_order_history_when_startup_cache_has_open_positions(
+    async def test_reconcile_execution_state_uses_open_only_order_history_when_startup_cache_has_restored_open_positions_but_no_open_orders(
         self,
     ):
         self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
@@ -1598,7 +1598,7 @@ class TestLiveExecutionEngine:
 
         assert result is True
         assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
-        assert [command.open_only for command in order_commands] == [False]
+        assert [command.open_only for command in order_commands] == [True]
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_preserves_client_generate_mass_status_overrides(
