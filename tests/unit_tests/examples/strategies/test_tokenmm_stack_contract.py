@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import tomllib
 from pathlib import Path
 
@@ -18,6 +19,12 @@ def _tokenmm_strategy_ids() -> list[str]:
     return [str(item).strip() for item in raw_ids if str(item).strip()]
 
 
+def _tokenmm_required_strategy_ids() -> list[str]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_ids = config.get("api", {}).get("tokenmm_required_strategy_ids") or []
+    return [str(item).strip() for item in raw_ids if str(item).strip()]
+
+
 def _strategy_config_path(strategy_id: str) -> Path:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
     active_path = strategies_dir / f"{strategy_id}.toml"
@@ -28,7 +35,24 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
+TOKENMM_REQUIRED_STRATEGY_IDS = _tokenmm_required_strategy_ids()
+TOKENMM_SUPPORTED_CORE_STRATEGY_IDS = [
+    "plumeusdt_bybit_perp_makerv3",
+    "plumeusdt_bybit_spot_makerv3",
+    "plumeusdt_okx_perp_makerv3",
+    "plumeusdt_bitget_perp_makerv3",
+    "plumeusdt_bitget_spot_makerv3",
+]
 DEPLOY_ROOT_PLACEHOLDER = "/absolute/path/to/deploy-root"
+
+
+def _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config: dict) -> None:
+    assert strategy_config["identity"]["strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["identity"]["strategy_instance_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["identity"]["external_strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["strategy"]["strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["api_key_env"] == "BINANCE_API_KEY"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["api_secret_env"] == "BINANCE_API_SECRET"
 
 
 def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
@@ -66,7 +90,7 @@ def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     assert 'service_status_line "portfolio"' in script
 
 
-def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
+def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type() -> None:
     shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
@@ -75,7 +99,24 @@ def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
     )
 
     assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
+        "MARGIN",
+        "PORTFOLIO_MARGIN",
+    }
+    _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
+
+
+def test_tokenmm_binance_spot_portfolio_margin_variant_preserves_identity_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+    pm_variant = deepcopy(strategy_config)
+    pm_variant["node"]["venues"]["BINANCE_SPOT"]["account_type"] = "PORTFOLIO_MARGIN"
+
+    assert pm_variant["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
+    _assert_tokenmm_binance_spot_strategy_identity_contract(pm_variant)
 
 
 def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> None:
@@ -89,14 +130,17 @@ def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> Non
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
 
 
-def test_tokenmm_binance_spot_strategy_pins_supported_cross_margin_contract() -> None:
+def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
             "rb",
         ),
     )
 
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
+        "MARGIN",
+        "PORTFOLIO_MARGIN",
+    }
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
     assert strategy_config["strategy"]["force_bot_off_on_start"] is True
@@ -139,6 +183,24 @@ def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
     for strategy_id in TOKENMM_STRATEGY_IDS:
         assert (strategies_dir / f"{strategy_id}.toml").is_file()
         assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
+
+
+def test_tokenmm_registry_keeps_seven_node_allowlist_but_requires_only_supported_live_core() -> None:
+    assert TOKENMM_STRATEGY_IDS == [
+        "plumeusdt_bybit_perp_makerv3",
+        "plumeusdt_bybit_spot_makerv3",
+        "plumeusdt_okx_perp_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_bitget_perp_makerv3",
+        "plumeusdt_bitget_spot_makerv3",
+    ]
+    assert len(TOKENMM_STRATEGY_IDS) == 7
+    assert TOKENMM_REQUIRED_STRATEGY_IDS == TOKENMM_SUPPORTED_CORE_STRATEGY_IDS
+    assert len(TOKENMM_REQUIRED_STRATEGY_IDS) == 5
+    assert set(TOKENMM_REQUIRED_STRATEGY_IDS).issubset(TOKENMM_STRATEGY_IDS)
+    assert "plumeusdt_binance_perp_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
+    assert "plumeusdt_binance_spot_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
 
 
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
@@ -764,10 +826,14 @@ def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     assert "- `plumeusdt_binance_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_spot_makerv3`" in readme
-    assert "All seven active strategies price off Binance spot" in readme
-    assert "and the 7 active" in readme
+    assert "All seven allowlisted strategies price off Binance spot" in readme
+    assert "and the 7 allowlisted" in readme
+    assert "allowlist" in readme
     assert "`params` returns the 7 allowlisted strategy IDs" in readme
     assert "`signal` returns seven per-strategy rows." in readme
+    assert "Supported live core for this pass" in readme
+    assert "Binance perp and Binance spot stay allowlisted but parked" in readme
+    assert "Shared portfolio completeness requires only the supported live core" in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:

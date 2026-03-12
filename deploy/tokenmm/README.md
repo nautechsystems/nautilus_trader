@@ -14,7 +14,7 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
   - `flux.runners.tokenmm.run_portfolio`
   - `flux.runners.tokenmm.run_bridge`
   - `flux.runners.tokenmm.run_api`
-- Active production strategy topology:
+- Allowlisted production strategy topology:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
   - `plumeusdt_okx_perp_makerv3`
@@ -32,7 +32,15 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
-- All seven active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- All seven allowlisted strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- Supported live core for this pass:
+  - `plumeusdt_bybit_perp_makerv3`
+  - `plumeusdt_bybit_spot_makerv3`
+  - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_bitget_perp_makerv3`
+  - `plumeusdt_bitget_spot_makerv3`
+- Binance perp and Binance spot stay allowlisted but parked.
+- Shared portfolio completeness requires only the supported live core.
 
 Deploy-root resolution for `install_tokenmm_systemd.sh`:
 
@@ -47,29 +55,23 @@ If the resolved root is a worktree, the installer exits with an error instead of
 Dedicated runbook:
 `docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-`plumeusdt_binance_spot_makerv3` is supported only on a regular Binance cross-margin account. Portfolio Margin / PAPI is unsupported for Binance spot market making, and current adapter behavior rejects PM mode with `UNSUPPORTED_ACCOUNT_MODE`.
-
-Inspect `GET /api/v1/balances?profile=tokenmm` before cutover. If the effective
-inventory still lives in margin / Portfolio Margin while the plain spot rows
-are zeroed, treat that as unsupported pre-cutover state, not a
-production-ready balance layout.
+`plumeusdt_binance_spot_makerv3` is parked for this pass. Binance spot and
+Binance perp are not part of the supported live core or required completeness
+set. They remain allowlisted in the standard 7-node target and must stay
+`bot_on = false` on this pass. The dedicated Binance runbook is for future
+reintroduction work, not the current supported live core.
 
 Operating contract:
 
-- keep `allow_cash_borrowing = true` under `[node.venues.BINANCE_SPOT]`
-- keep `spot_cash_borrowing_policy = "both_sides"` under `[strategy]` for the
-  first rollout so the strategy uses free balances first and borrows only when
-  needed
-- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
-  restart
-- inspect `GET /api/v1/balances?profile=tokenmm`, flatten the existing PM
-  liability, and move the intended funded inventory into the supported
-  cross-margin account before enabling quoting
-- rotate credentials to the supported cross-margin account, restart only the
-  Binance spot node in bot-off mode, and verify the journal stays clear of
-  `UNSUPPORTED_ACCOUNT_MODE` before enabling quoting
-- do not use Portfolio Margin / PAPI as a live fallback; that support is a
-  separate project
+- keep Binance strategies parked with `force_bot_off_on_start = true` and
+  `bot_on = false`
+- keep Binance nodes enrolled in the standard 7-node target only as parked
+  services; do not use them as the rollout/canary surface for this pass
+- do not treat parked Binance nodes as required contributors to shared tokenmm
+  portfolio completeness
+- if Binance is reintroduced later, do it through a separate rollout branch and
+  dedicated operator review
+
 ## Bitget Spot + Perp Market-Making Contract
 
 Dedicated runbook:
@@ -222,7 +224,7 @@ Runtime registration is explicit:
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 active
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 allowlisted
   node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.
