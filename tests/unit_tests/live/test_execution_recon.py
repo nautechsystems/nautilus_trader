@@ -6209,6 +6209,56 @@ class TestHedgeModeReconciliation:
         assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
         assert self.cache.order(redundant_order_report.client_order_id) is None
 
+    def test_startup_snapshot_for_instrument_merges_exact_and_unscoped_entries(
+        self,
+    ):
+        exact_account_id = self.account_id
+        self.exec_engine._startup_reconciliation_snapshot = {
+            (
+                exact_account_id,
+                AUDUSD_SIM.id,
+                StrategyId("S-EXACT"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=exact_account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("S-EXACT"),
+                open_position_ids=(PositionId("P-EXACT-001"),),
+                open_position_qty=Decimal("2"),
+                open_order_refs=(),
+                cached_order_count=1,
+            ),
+            (
+                None,
+                AUDUSD_SIM.id,
+                StrategyId("S-UNSCOPED"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=None,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("S-UNSCOPED"),
+                open_position_ids=(),
+                open_position_qty=Decimal("0"),
+                open_order_refs=(
+                    StartupOrderReference(
+                        client_order_id=ClientOrderId("UNSCOPED-OPEN-ORDER-001"),
+                        venue_order_id=VenueOrderId("UNSCOPED-VENUE-ORDER-001"),
+                    ),
+                ),
+                cached_order_count=1,
+            ),
+        }
+
+        snapshot = self.exec_engine._startup_snapshot_for_instrument(exact_account_id, AUDUSD_SIM.id)
+
+        assert snapshot.has_open_positions is True
+        assert snapshot.total_open_order_count == 1
+        assert snapshot.total_cached_order_count == 2
+        assert snapshot.open_order_refs == (
+            StartupOrderReference(
+                client_order_id=ClientOrderId("UNSCOPED-OPEN-ORDER-001"),
+                venue_order_id=VenueOrderId("UNSCOPED-VENUE-ORDER-001"),
+            ),
+        )
+
     def test_startup_snapshot_for_instrument_does_not_fall_back_to_ambiguous_other_account_entries(
         self,
     ):
