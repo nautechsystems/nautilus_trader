@@ -256,6 +256,7 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
             "strategies": [
                 {
                     "id": "aapl_tradexyz_makerv3",
+                    "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
                         "ibkr:AAPL.NASDAQ": {"age_ms": 50},
@@ -265,13 +266,15 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
                 },
                 {
                     "id": "msft_tradexyz_makerv3",
+                    "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
                         "ibkr:MSFT.NASDAQ": {"age_ms": 60},
+                        "hyperliquid:XYZ:MSFT-USD-PERP.HYPERLIQUID": {"age_ms": 30},
                     },
                     "debug": {
                         "md_health": {
-                            "stale_legs": ["hyperliquid:xyz:MSFT-USD-PERP.HYPERLIQUID"],
+                            "stale_legs": ["hyperliquid:XYZ:MSFT-USD-PERP.HYPERLIQUID"],
                             "state_stale": False,
                         },
                     },
@@ -360,6 +363,66 @@ def test_evaluate_equities_readiness_fails_for_over_age_reference_legs() -> None
     assert result.checks["ibkr_auth"].details["unhealthy_strategy_ids"] == [
         "aapl_tradexyz_makerv3",
     ]
+
+
+def test_evaluate_equities_readiness_fails_closed_at_age_equals_max_age_ms_boundary() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["legs"]["ibkr:AAPL.NASDAQ"]["age_ms"] = 10_000
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["over_age_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv3",
+    ]
+
+
+def test_evaluate_equities_readiness_accepts_live_shaped_maker_leg_key() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    maker_leg = first_strategy["legs"].pop("hyperliquid:xyz:AAPL-USD-PERP.HYPERLIQUID")
+    first_strategy["legs"]["hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID"] = maker_leg
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is True
+    assert result.checks["signals"].details["over_age_signal_legs"] == []
 
 
 def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -> None:

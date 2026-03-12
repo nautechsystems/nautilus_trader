@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from flux.api.payloads import contract_id_for_leg
 from flux.common.account_projection import decode_profile_account_snapshot
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
@@ -208,6 +209,39 @@ def _signal_max_age_ms(payload: Mapping[str, Any]) -> int:
     return _safe_int(params.get("max_age_ms")) or DEFAULT_SIGNAL_MAX_AGE_MS
 
 
+def _candidate_leg_ids(*, exchange: str, instrument_id: str) -> tuple[str, ...]:
+    exchange_text = _optional_text(exchange) or ""
+    instrument_text = _optional_text(instrument_id) or ""
+    if not exchange_text or not instrument_text:
+        return ()
+    candidates: list[str] = []
+    for candidate in (
+        contract_id_for_leg(
+            exchange=exchange_text,
+            symbol=instrument_text,
+            instrument_id=instrument_text,
+        ),
+        f"{exchange_text.lower()}:{instrument_text}",
+        f"{exchange_text.lower()}:{instrument_text.upper()}",
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return tuple(candidates)
+
+
+def _resolve_leg(
+    *,
+    legs: Mapping[str, Any],
+    exchange: str,
+    instrument_id: str,
+) -> tuple[str | None, Mapping[str, Any]]:
+    candidate_leg_ids = _candidate_leg_ids(exchange=exchange, instrument_id=instrument_id)
+    for leg_id in candidate_leg_ids:
+        if leg_id in legs:
+            return leg_id, _mapping(legs.get(leg_id))
+    return (candidate_leg_ids[0] if candidate_leg_ids else None), {}
+
+
 def _build_projection_health_snapshot(
     *,
     expected_projection_scope_ids: list[str],
@@ -308,13 +342,25 @@ def _build_signal_health_snapshot(
         legs = _mapping(signal_row.get("legs"))
         over_age_legs_for_strategy: list[str] = []
         if contract is not None:
-            for leg_id in (
-                f"hyperliquid:{contract.maker_instrument_id}",
-                f"ibkr:{contract.reference_instrument_id}",
+            for exchange, instrument_id in (
+                ("hyperliquid", contract.maker_instrument_id),
+                ("ibkr", contract.reference_instrument_id),
             ):
-                age_ms = _safe_int(_mapping(legs.get(leg_id)).get("age_ms"))
-                if age_ms is None or age_ms > max_age_ms:
-                    over_age_legs_for_strategy.append(leg_id)
+                resolved_leg_id, resolved_leg = _resolve_leg(
+                    legs=legs,
+                    exchange=exchange,
+                    instrument_id=instrument_id,
+                )
+                age_ms = _safe_int(resolved_leg.get("age_ms"))
+                if age_ms is None or age_ms >= max_age_ms:
+                    over_age_legs_for_strategy.append(
+                        resolved_leg_id
+                        or contract_id_for_leg(
+                            exchange=exchange,
+                            symbol=instrument_id,
+                            instrument_id=instrument_id,
+                        ),
+                    )
         over_age_signal_legs.update(over_age_legs_for_strategy)
         unhealthy = (
             state_stale
@@ -325,8 +371,14 @@ def _build_signal_health_snapshot(
         if unhealthy:
             unhealthy_strategy_ids.append(strategy_id)
 
-        reference_leg_id = f"ibkr:{contract.reference_instrument_id}" if contract is not None else None
-        reference_leg = _mapping(legs.get(reference_leg_id))
+        reference_leg_id: str | None = None
+        reference_leg: Mapping[str, Any] = {}
+        if contract is not None:
+            reference_leg_id, reference_leg = _resolve_leg(
+                legs=legs,
+                exchange="ibkr",
+                instrument_id=contract.reference_instrument_id,
+            )
         reference_unhealthy = (
             reference_leg_id is None
             or reference_leg_id in stale_legs
