@@ -174,6 +174,32 @@ def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_rep
     assert list(_result_field(result, "place_level_indices")) == [4]
 
 
+def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, False, True],
+        desired_levels=_desired_levels("104", "103", "102", "101", "100"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=3,
+        backlog_mode="normal",
+    )
+
+    diagnostics = _result_field(result, "diagnostics")
+
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 1
+    assert _result_field(diagnostics, "planned_stale_replacement_count") == 1
+    assert _result_field(diagnostics, "backlog_mode") == "normal"
+
+
 def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:
     result = _bounded_side_plan(
         side="buy",
