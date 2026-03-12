@@ -63,9 +63,27 @@ from nautilus_trader.model.objects import Quantity
 class BitgetExecutionClient(LiveExecutionClient):
     """Minimal Bitget execution client scaffold."""
 
+    UTA_PRIVATE_WS_URL = "wss://ws.bitget.com/v3/ws/private"
+
     @staticmethod
     def _default_account_id(client_name: str) -> AccountId:
         return AccountId(f"{client_name}-001")
+
+    @classmethod
+    def _derive_account_type(cls, config: BitgetExecClientConfig) -> AccountType:
+        product_types = {
+            cls._product_type_key(product_type)
+            for product_type in (config.product_types or ())
+            if cls._string_value(product_type)
+        }
+        if product_types:
+            return AccountType.CASH if product_types == {"SPOT"} else AccountType.MARGIN
+
+        return (
+            AccountType.MARGIN
+            if cls._account_mode_from_config(config) == "UTA"
+            else AccountType.CASH
+        )
 
     def __init__(
         self,
@@ -78,12 +96,13 @@ class BitgetExecutionClient(LiveExecutionClient):
         config: BitgetExecClientConfig,
         name: str | None = None,
     ) -> None:
+        account_type = BitgetExecutionClient._derive_account_type(config)
         super().__init__(
             loop=loop,
             client_id=ClientId(name or "BITGET"),
             venue=BITGET_VENUE,
             oms_type=OmsType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=account_type,
             base_currency=None,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
@@ -116,8 +135,13 @@ class BitgetExecutionClient(LiveExecutionClient):
             )
             return
 
-        ws_url = self._config.base_url_ws_private or nautilus_pyo3.get_bitget_ws_private_url(
-            self._environment,
+        ws_url = (
+            self._config.base_url_ws_private
+            or (
+                BitgetExecutionClient.UTA_PRIVATE_WS_URL
+                if BitgetExecutionClient._account_mode_from_config(self._config) == "UTA"
+                else nautilus_pyo3.get_bitget_ws_private_url(self._environment)
+            )
         )
         ws_config = nautilus_pyo3.WebSocketConfig(
             url=ws_url,
@@ -164,7 +188,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 return
 
             if event == "subscribe":
-                channel = str(arg.get("channel") or "")
+                channel = str(arg.get("channel") or arg.get("topic") or "")
                 inst_type = str(arg.get("instType") or "")
                 self._log.info(
                     f"Bitget private WebSocket subscribed: channel={channel} instType={inst_type}",
@@ -182,17 +206,17 @@ class BitgetExecutionClient(LiveExecutionClient):
                     )
                 return
 
-            channel = str(arg.get("channel") or "")
+            channel = str(arg.get("channel") or arg.get("topic") or "")
             if channel == "account":
                 self._handle_account_channel(payload)
                 return
-            if channel == "orders":
+            if channel in {"orders", "order"}:
                 self._handle_orders_channel(payload)
                 return
             if channel == "fill":
                 self._handle_fill_channel(payload)
                 return
-            if channel == "positions":
+            if channel in {"positions", "position"}:
                 self._handle_positions_channel(payload)
                 return
 
@@ -227,6 +251,23 @@ class BitgetExecutionClient(LiveExecutionClient):
             self._log.debug("Bitget private account payload received: 0 entries")
             return
 
+        arg = payload.get("arg") or {}
+        if str(arg.get("topic") or "").strip().lower() == "account":
+            flattened: list[dict[str, Any]] = []
+            payload_ts = payload.get("ts")
+            for account in data:
+                for entry in account.get("coin") or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    normalized = dict(entry)
+                    if normalized.get("uTime") in (None, "") and payload_ts is not None:
+                        normalized["uTime"] = payload_ts
+                    flattened.append(normalized)
+            data = flattened
+            if not data:
+                self._log.debug("Bitget UTA private account payload produced no balances")
+                return
+
         balances: list[AccountBalance] = []
         latest_update_ms = 0
 
@@ -252,7 +293,10 @@ class BitgetExecutionClient(LiveExecutionClient):
                     free=free,
                 ),
             )
-            latest_update_ms = max(latest_update_ms, int(entry.get("uTime") or 0))
+            latest_update_ms = max(
+                latest_update_ms,
+                int(entry.get("uTime") or payload.get("ts") or 0),
+            )
 
         if not balances:
             self._log.debug("Bitget private account payload produced no balances")
@@ -297,6 +341,13 @@ class BitgetExecutionClient(LiveExecutionClient):
         if normalized.endswith("USDC-FUTURES"):
             return "USDC-FUTURES"
         return normalized
+
+    def _log_unclaimed_private_update_at_debug(self) -> bool:
+        config = getattr(self, "_config", None)
+        if bool(getattr(config, "filter_unclaimed_external_orders", False)):
+            return True
+
+        return BitgetExecutionClient._account_mode_from_config(config) == "UTA"
 
     def _product_type_for_instrument(self, instrument: Any) -> Any:
         settlement_code = BitgetExecutionClient._currency_code(
@@ -928,9 +979,11 @@ class BitgetExecutionClient(LiveExecutionClient):
             order = self._cache.order(client_order_id) if client_order_id is not None else None
             if order is None:
                 lookup = client_oid or order_id or "<missing>"
-                self._log.warning(
-                    f"Bitget private order update ignored: order not found for {lookup}",
-                )
+                message = f"Bitget private order update ignored: order not found for {lookup}"
+                if BitgetExecutionClient._log_unclaimed_private_update_at_debug(self):
+                    self._log.debug(message)
+                else:
+                    self._log.warning(message)
                 continue
 
             client_order_id = order.client_order_id
@@ -1034,9 +1087,11 @@ class BitgetExecutionClient(LiveExecutionClient):
             client_order_id = self._cache.client_order_id(venue_order_id)
             order = self._cache.order(client_order_id) if client_order_id is not None else None
             if order is None:
-                self._log.warning(
-                    f"Bitget private fill update ignored: order not found for {order_id}",
-                )
+                message = f"Bitget private fill update ignored: order not found for {order_id}"
+                if BitgetExecutionClient._log_unclaimed_private_update_at_debug(self):
+                    self._log.debug(message)
+                else:
+                    self._log.warning(message)
                 continue
 
             instrument = self._cache.instrument(order.instrument_id)
@@ -1170,6 +1225,21 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
 
     async def _subscribe_private_ws(self) -> None:
+        if BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA":
+            subscriptions = [
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "account"}]},
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "order"}]},
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "fill"}]},
+            ]
+            if any(not self._is_spot_product_type(product_type) for product_type in self._product_types):
+                subscriptions.append(
+                    {"op": "subscribe", "args": [{"instType": "UTA", "topic": "position"}]},
+                )
+
+            for subscription in subscriptions:
+                await self._send_ws_text(json.dumps(subscription, separators=(",", ":")))
+            return
+
         for product_type in self._product_types:
             await self._send_ws_text(
                 nautilus_pyo3.BitgetWebSocketClient.subscribe_account_message(

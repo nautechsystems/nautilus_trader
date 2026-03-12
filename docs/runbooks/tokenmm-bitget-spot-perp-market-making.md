@@ -25,16 +25,22 @@ Temporary fallback contract, only if the preferred path is blocked:
 - the fallback must be called out explicitly as temporary and must not be
   treated as final Bitget production parity
 
-## Current blocked state to resolve
+## Historical blockers resolved on 2026-03-11
 
-- Bitget spot currently shows only `USDT` in the shared balances view and no
+- Bitget spot initially showed only `USDT` in the shared balances view and no
   visible Bitget `PLUME`
 - Bitget perp previously stopped after `NOTIONAL_EXCEEDS_FREE_BALANCE`, then
   `400`, then `429`, then venue protection
-- Bitget reject surfaces are now detailed enough to preserve exchange
-  `status/code/msg`, but the live account still needs operator-side proof that
-  the intended funded contract is visible through the local balances and
-  signals APIs before either strategy is enabled
+- the pre-prod stack also emitted repeated cross-node UTA private-order
+  warnings for the opposite Bitget node on every quote cycle
+
+Those blockers were cleared on `2026-03-11` by:
+
+- upgrading the live Bitget account from Classic to UTA/shared-margin via API
+- confirming one-way hold mode via UTA account settings
+- fixing cached account-type replay so the perp node restarts cleanly
+- fixing Bitget private-order handling so shared-account foreign updates do not
+  page `WARN`
 
 ## Task 6 scope split
 
@@ -173,6 +179,55 @@ the gate:
 Do not treat Task 6 as complete until that evidence exists. This repo update
 only defines the contract; it does not prove the live Bitget account satisfies
 it.
+
+## 2026-03-11 live execution evidence
+
+Recorded after the UTA rollout and the live canary restart:
+
+1. Account contract evidence:
+   - UTA account settings were confirmed by API on `2026-03-11` with
+     `accountMode=unified`, `assetMode=multi_assets`, and
+     `holdMode=one_way_mode`
+   - the live account is now using the preferred UTA/shared-margin path, not
+     the funded-inventory fallback
+2. Bot-off restart evidence:
+   - both Bitget services restarted cleanly in bot-off mode at
+     `2026-03-11 20:09:32 UTC`
+   - no fresh `unsupported_account_mode`, `400`, or `429` burst appeared on
+     restart
+3. Spot canary evidence:
+   - live canary params: `qty=250`, `n_orders1=1`, `bot_on=true`
+   - fresh accepts after the post-fix restart:
+     `O-20260311-200940-SPOT-000-319` and `...320` accepted at
+     `2026-03-11 20:09:48 UTC`
+   - signal state after re-enable: `running`, `tradeable=true`,
+     `blocked=false`, `managed_orders=2`
+4. Perp canary evidence:
+   - live canary params: `qty=500`, `n_orders1=1`, `bot_on=true`
+   - fresh accepts after the post-fix restart:
+     `O-20260311-200940-PERP-000-312` and `...313` accepted at
+     `2026-03-11 20:09:48 UTC`
+   - signal state after re-enable: `running`, `tradeable=true`,
+     `blocked=false`, `managed_orders=2`
+5. Balance snapshot from `GET /api/v1/balances?profile=tokenmm` at
+   approximately `2026-03-11 20:10 UTC`:
+   - `BITGET-001 spot PLUME total=499.24669092 free=249.24669092 locked=250`
+   - `BITGET-001 spot USDT total=493.98512606 free=490.91762606 locked=3.0675`
+   - `BITGET-001 perp USDT total=493.98512606 free=490.91762606 locked=3.0675`
+6. Shared-account warning evidence:
+   - before the final fix, both nodes logged repeated
+     `Bitget private order update ignored` warnings for the opposite node
+   - after the UTA-aware logging fix and the `20:09:32 UTC` restart, those
+     messages no longer appeared at `WARN` in fresh journal windows
+
+Current live status:
+
+- `plumeusdt_bitget_spot_makerv3` is live at canary size on the preferred UTA
+  path
+- `plumeusdt_bitget_perp_makerv3` is live at canary size on the preferred UTA
+  path
+- promotion to larger size/depth is still gated on a longer clean observation
+  window; do not jump directly to full depth
 
 ## Spot canary
 
