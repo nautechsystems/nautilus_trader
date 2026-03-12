@@ -67,6 +67,7 @@ class TestFluxRedisKeys:
             == "flux:v1:portfolio:snapshot:tokenmm:changed"
         )
         assert keys.params_hash_key() == "flux:v1:params:maker_v3_01"
+        assert keys.params_metadata_key() == "flux:v1:params-meta:maker_v3_01"
 
     def test_builds_namespace_scoped_keys_from_identity(self) -> None:
         identity = FluxIdentityConfig(
@@ -103,6 +104,7 @@ class TestFluxRedisKeys:
         # Act, Assert
         assert keys.params_hash_key() == "flux:v1:params:maker_v3_01"
         assert keys.params_pubsub_channel() == "flux:v1:params:maker_v3_01"
+        assert keys.params_metadata_key() == "flux:v1:params-meta:maker_v3_01"
         # Explicitly assert current protocol semantics: key and channel share the same address.
         assert keys.params_hash_key() == keys.params_pubsub_channel()
 

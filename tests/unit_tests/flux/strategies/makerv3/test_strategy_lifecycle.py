@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import decode_component
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
+from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -273,7 +274,7 @@ def test_on_start_allows_duplicate_instrument_ids_without_duplicate_subscription
     assert unsubscribed == [str(maker_id)]
 
 
-def test_on_start_persists_bot_off_before_loading_runtime_params_when_enabled(
+def test_on_start_applies_ephemeral_bot_off_without_persisting_params_when_enabled(
     strategy_factory,
     monkeypatch,
 ) -> None:
@@ -330,9 +331,11 @@ def test_on_start_persists_bot_off_before_loading_runtime_params_when_enabled(
     strategy.on_start()
 
     manager = strategy._params_manager
-    assert manager.update_calls == [{"bot_on": False}]
-    assert manager.publish_calls == [({"bot_on": False}, 1_700_000_000_000)]
+    assert manager.update_calls == []
+    assert manager.publish_calls == []
+    assert strategy._runtime_params["bot_on"] is True
     assert strategy._effective_bot_on() is False
+    assert strategy._startup_bot_off_active is True
 
 
 def test_on_start_preserves_runtime_bot_on_when_force_off_disabled(
@@ -646,6 +649,37 @@ def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(
     strategy._publish_state("running")
 
     assert strategy._last_stale_cancel_ns == 0
+
+
+def test_publish_state_includes_explicit_startup_bot_off_reason(
+    clocked_strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = clocked_strategy_factory([1])
+    strategy._managed_orders = list
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._runtime_params["bot_on"] = True
+    strategy._startup_bot_off_active = True
+    strategy._terminal_order_denial_circuit_open = False
+
+    published: list[tuple[str, dict[str, object] | list[object]]] = []
+    monkeypatch.setattr(
+        publisher_mod,
+        "publish_json",
+        lambda _strategy, topic, payload: published.append((topic, payload)),
+    )
+
+    strategy._publish_state("on_start")
+
+    state_payload = published[-1][1]
+    assert isinstance(state_payload, dict)
+    assert state_payload["state"] == "startup_bot_off"
+    assert state_payload["bot_on"] is False
+    assert state_payload["effective_bot_on"] is False
+    assert state_payload["persisted_bot_on"] is True
+    assert state_payload["config_bot_on"] is True
+    assert state_payload["bot_on_reason"] == "startup_bot_off"
+    assert state_payload["startup_bot_off_active"] is True
 
 
 def test_compute_inventory_skew_scopes_global_and_local_inventory_by_base_and_maker_venue(

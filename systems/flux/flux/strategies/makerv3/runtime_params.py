@@ -184,7 +184,46 @@ def effective_bot_on(strategy: MakerV3Strategy) -> bool:
     """
     Return the authoritative bot-on state after runtime overrides.
     """
+    if bool(getattr(strategy, "_startup_bot_off_active", False)):
+        return False
+    return persisted_bot_on(strategy)
+
+
+def persisted_bot_on(strategy: MakerV3Strategy) -> bool:
+    """
+    Return the persisted bot-on value without startup-only runtime gates.
+    """
     return bool(strategy._runtime_params.get("bot_on", strategy.config.bot_on))
+
+
+def config_bot_on(strategy: MakerV3Strategy) -> bool:
+    """
+    Return the configured default bot-on value from static config.
+    """
+    return bool(strategy.config.bot_on)
+
+
+def bot_on_reason(strategy: MakerV3Strategy) -> str:
+    """
+    Return the operator-facing reason for the current effective bot-on state.
+    """
+    if bool(getattr(strategy, "_startup_bot_off_active", False)):
+        return "startup_bot_off"
+    if bool(getattr(strategy, "_terminal_order_denial_circuit_open", False)):
+        return "terminal_order_denied"
+    if not effective_bot_on(strategy):
+        return "bot_off"
+    return "running"
+
+
+def effective_state_name(strategy: MakerV3Strategy, requested_state: str) -> str:
+    """
+    Rewrite generic lifecycle states into explicit startup-policy state names.
+    """
+    state = str(requested_state or "")
+    if bool(getattr(strategy, "_startup_bot_off_active", False)) and state in {"on_start", "bot_off"}:
+        return "startup_bot_off"
+    return state
 
 
 def runtime_decimal(strategy: MakerV3Strategy, name: str) -> Decimal:
@@ -322,6 +361,39 @@ def ensure_params_manager(strategy: MakerV3Strategy) -> Any | None:
     return strategy._params_manager
 
 
+def load_bot_on_control_revision(
+    strategy: MakerV3Strategy,
+    *,
+    manager: Any | None = None,
+) -> str:
+    """
+    Return the latest persisted bot-on control revision, if supported by the manager.
+    """
+    if manager is None:
+        manager = ensure_params_manager(strategy)
+    if manager is None:
+        return ""
+    load_fn = getattr(manager, "load_bot_on_control_revision", None)
+    if not callable(load_fn):
+        return ""
+    return str(load_fn() or "").strip()
+
+
+def note_explicit_bot_on_update(
+    strategy: MakerV3Strategy,
+    *,
+    manager: Any | None = None,
+) -> None:
+    """
+    Clear the startup-only bot-off latch after an explicit persisted bot-on update.
+    """
+    strategy._startup_bot_off_active = False
+    strategy._startup_bot_off_control_revision = load_bot_on_control_revision(
+        strategy,
+        manager=manager,
+    )
+
+
 def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, Any]) -> None:
     """
     Apply a validated runtime param update payload atomically.
@@ -357,25 +429,11 @@ def prepare_runtime_params_for_startup(strategy: MakerV3Strategy) -> None:
     """
     Apply startup runtime-param overrides before the initial refresh.
     """
-    if not bool(getattr(strategy.config, "force_bot_off_on_start", False)):
+    strategy._startup_bot_off_active = bool(getattr(strategy.config, "force_bot_off_on_start", False))
+    strategy._startup_bot_off_control_revision = ""
+    if not strategy._startup_bot_off_active:
         return
-
-    bot_off_update = {"bot_on": False}
-    manager = ensure_params_manager(strategy)
-    if manager is None:
-        apply_runtime_param_updates(strategy, bot_off_update)
-        return
-
-    update_fn = getattr(manager, "update", None)
-    if not callable(update_fn):
-        raise RuntimeError("Configured params manager does not provide update()")
-    publish_fn = getattr(manager, "publish_update", None)
-    if not callable(publish_fn):
-        raise RuntimeError("Configured params manager does not provide publish_update()")
-
-    applied_updates = update_fn(bot_off_update)
-    publish_fn(applied_updates, ts_ms=int(strategy.clock.timestamp_ns() // 1_000_000))
-    apply_runtime_param_updates(strategy, applied_updates)
+    strategy._startup_bot_off_control_revision = load_bot_on_control_revision(strategy)
 
 
 def refresh_runtime_params(
@@ -403,7 +461,15 @@ def refresh_runtime_params(
     updates_fn = getattr(manager, "load", None)
     if not callable(updates_fn):
         raise RuntimeError("Configured params manager does not provide load()")
+    control_revision = load_bot_on_control_revision(strategy, manager=manager)
     apply_runtime_param_updates(strategy, updates_fn())
+    startup_control_revision = str(getattr(strategy, "_startup_bot_off_control_revision", "") or "")
+    if (
+        bool(getattr(strategy, "_startup_bot_off_active", False))
+        and control_revision
+        and control_revision != startup_control_revision
+    ):
+        note_explicit_bot_on_update(strategy, manager=manager)
 
 
 def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Exception) -> None:

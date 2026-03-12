@@ -4,6 +4,7 @@ import json
 import string
 from decimal import Decimal
 from typing import cast
+from unittest.mock import ANY
 
 import pytest
 
@@ -115,6 +116,7 @@ def test_update_writes_coerced_hset_mapping(
     assert applied == {"qty": 3.25, "max_age_ms": 250, "bot_on": True}
     assert redis_client.hset_calls == [
         ("flux:v1:params:maker_v3_01", {"qty": "3.25", "max_age_ms": "250", "bot_on": "1"}),
+        ("flux:v1:params-meta:maker_v3_01", {"bot_on_control_revision": ANY}),
     ]
 
 
@@ -127,6 +129,34 @@ def test_update_rejects_unknown_param_keys(
 
     with pytest.raises(ValueError, match="Unknown parameter"):
         manager.update({"unknown": 1})
+
+
+def test_update_without_bot_on_does_not_write_control_revision(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
+    redis_client = _FakeRedis()
+    manager = _manager(redis_client, schema, defaults)
+
+    applied = manager.update({"qty": "3.25", "max_age_ms": "250"})
+
+    assert applied == {"qty": 3.25, "max_age_ms": 250}
+    assert redis_client.hset_calls == [
+        ("flux:v1:params:maker_v3_01", {"qty": "3.25", "max_age_ms": "250"}),
+    ]
+
+
+def test_load_bot_on_control_revision_reads_metadata_hash(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
+    redis_client = _FakeRedis()
+    redis_client.hashes["flux:v1:params-meta:maker_v3_01"] = {
+        "bot_on_control_revision": b"rev-123",
+    }
+    manager = _manager(redis_client, schema, defaults)
+
+    assert manager.load_bot_on_control_revision() == "rev-123"
 
 
 def test_update_validates_select_schema_options() -> None:

@@ -41,6 +41,7 @@ from flux.api.payloads import load_json
 from flux.api.payloads import merge_portfolio_balances_rows
 from flux.api.payloads import normalize_symbol_parts
 from flux.api.payloads import now_ms
+from flux.api.payloads import safe_bool
 from flux.api.payloads import safe_int
 from flux.api.payloads import select_latest_strategy_row
 from flux.api.payloads import strategy_id_from_row
@@ -364,6 +365,43 @@ class FluxApiStore:
             return False
 
         return True
+
+    def load_state_summary(self, strategy_id: str) -> dict[str, Any]:
+        keys = self._keys_for_strategy(strategy_id)
+        state_raw = self._redis.get(keys.state())
+        state_value = load_json(state_raw)
+        state = dict(state_value) if isinstance(state_value, dict) else {}
+        if not state:
+            return {}
+
+        summary: dict[str, Any] = {}
+        state_name = decode_text(state.get("state")).strip()
+        ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
+        if (
+            state_name.lower() != "on_stop"
+            and ts_ms is not None
+            and now_ms() - ts_ms > PARAMS_RUNNING_STALE_AFTER_MS
+        ):
+            return {}
+        if state_name:
+            summary["state"] = state_name
+        if ts_ms is not None:
+            summary["state_ts_ms"] = ts_ms
+        for field in (
+            "bot_on",
+            "effective_bot_on",
+            "persisted_bot_on",
+            "config_bot_on",
+            "startup_bot_off_active",
+            "terminal_order_denial_active",
+        ):
+            parsed = safe_bool(state.get(field))
+            if parsed is not None:
+                summary[field] = parsed
+        reason = decode_text(state.get("bot_on_reason")).strip()
+        if reason:
+            summary["bot_on_reason"] = reason
+        return summary
 
     def load_running_state(self, strategy_id: str) -> bool | None:
         keys = self._keys_for_strategy(strategy_id)
@@ -1406,14 +1444,41 @@ def create_flux_api_app(  # noqa: C901
                     message=str(e),
                     details={"strategy_id": strategy_id},
                 )
-            payloads.append(
-                build_params_payload(
-                    strategy_id=strategy_id,
-                    params=params,
-                    schema=_ordered_params_schema(schema),
-                    running=store.load_running_state(strategy_id),
-                ),
+            state_summary = store.load_state_summary(strategy_id)
+            payload = build_params_payload(
+                strategy_id=strategy_id,
+                params=params,
+                schema=_ordered_params_schema(schema),
+                running=store.load_running_state(strategy_id),
             )
+            payload["persisted_bot_on"] = (
+                state_summary.get("persisted_bot_on")
+                if "persisted_bot_on" in state_summary
+                else safe_bool(params.get("bot_on"))
+            )
+            payload["config_bot_on"] = (
+                state_summary.get("config_bot_on")
+                if "config_bot_on" in state_summary
+                else payload["persisted_bot_on"]
+            )
+            payload["effective_bot_on"] = (
+                state_summary.get("effective_bot_on")
+                if "effective_bot_on" in state_summary
+                else payload["persisted_bot_on"]
+            )
+            payload["bot_on_reason"] = decode_text(
+                state_summary.get("bot_on_reason")
+                or ("running" if payload["effective_bot_on"] else "bot_off"),
+            ).strip()
+            payload["startup_bot_off_active"] = bool(
+                state_summary.get("startup_bot_off_active", False),
+            )
+            payload["terminal_order_denial_active"] = bool(
+                state_summary.get("terminal_order_denial_active", False),
+            )
+            if "state" in state_summary:
+                payload["state"] = state_summary["state"]
+            payloads.append(payload)
         return _ok(data=payloads)
 
     def _record_failed(failed: list[str], strategy_id: str) -> None:

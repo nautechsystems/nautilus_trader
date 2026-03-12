@@ -266,6 +266,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_order_event_ns = 0
             self._last_state_name: str | None = None
             self._state_is_blocked = False
+            self._startup_bot_off_active = False
+            self._startup_bot_off_control_revision = ""
             self._startup_cleanup_pending = False
             self._stop_allow_instrument_cancel_override: bool | None = None
             self._inventory_skew_cache = inventory_mod.InventorySkewCache(
@@ -304,6 +306,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_order_event_ns = 0
             self._last_state_name = None
             self._state_is_blocked = False
+            self._startup_bot_off_active = False
+            self._startup_bot_off_control_revision = ""
             self._startup_cleanup_pending = False
             self._set_managed_only_stop_safety(False)
             self._last_actionable_alert_ns.clear()
@@ -796,17 +800,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
             manager = self._ensure_params_manager()
             if manager is None:
                 self._apply_runtime_param_updates(updates)
+                if "bot_on" in updates:
+                    runtime_params_mod.note_explicit_bot_on_update(self)
                 return
 
             update_fn = getattr(manager, "update", None)
             publish_fn = getattr(manager, "publish_update", None)
             if not callable(update_fn) or not callable(publish_fn):
                 self._apply_runtime_param_updates(updates)
+                if "bot_on" in updates:
+                    runtime_params_mod.note_explicit_bot_on_update(self)
                 return
 
             applied_updates = update_fn(updates)
             publish_fn(applied_updates, ts_ms=int(now_ns // 1_000_000))
             self._apply_runtime_param_updates(applied_updates)
+            if "bot_on" in applied_updates:
+                runtime_params_mod.note_explicit_bot_on_update(self, manager=manager)
 
         def _refresh_runtime_params(
             self,

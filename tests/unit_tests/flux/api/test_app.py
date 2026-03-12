@@ -822,6 +822,140 @@ def test_params_includes_running_from_fresh_state_heartbeat(
     assert by_id["strategy_02"]["running"] is False
 
 
+def test_params_include_persisted_and_effective_bot_on_fields(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "state": "startup_bot_off",
+            "bot_on": False,
+            "effective_bot_on": False,
+            "persisted_bot_on": True,
+            "config_bot_on": True,
+            "bot_on_reason": "startup_bot_off",
+            "startup_bot_off_active": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_009_500,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"][0]
+    assert row["params"]["bot_on"] is True
+    assert row["persisted_bot_on"] is True
+    assert row["config_bot_on"] is True
+    assert row["effective_bot_on"] is False
+    assert row["bot_on_reason"] == "startup_bot_off"
+    assert row["startup_bot_off_active"] is True
+    assert row["state"] == "startup_bot_off"
+    assert row["running"] is True
+
+
+def test_params_ignore_stale_state_summary_when_augmenting_bot_on_fields(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "state": "startup_bot_off",
+            "bot_on": False,
+            "effective_bot_on": False,
+            "persisted_bot_on": True,
+            "config_bot_on": True,
+            "bot_on_reason": "startup_bot_off",
+            "startup_bot_off_active": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"][0]
+    assert row["params"]["bot_on"] is True
+    assert row["persisted_bot_on"] is True
+    assert row["config_bot_on"] is True
+    assert row["effective_bot_on"] is True
+    assert row["bot_on_reason"] == "running"
+    assert row["startup_bot_off_active"] is False
+    assert row["running"] is False
+    assert "state" not in row
+
+
+def test_store_update_params_records_bot_on_control_revision(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    result = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    metadata = redis_client.hashes[keys.params_metadata_key()]
+
+    assert result["updated"] == ["bot_on"]
+    assert result["params"]["bot_on"] is True
+    assert metadata["bot_on_control_revision"].decode("utf-8")
+
+
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
     monkeypatch,
     flux_config,

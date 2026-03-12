@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import time
+import uuid
 from collections.abc import Mapping
 from typing import Any
 from typing import Protocol
@@ -109,7 +110,21 @@ class FluxParamsManager:
 
         mapping = {name: self._to_redis_text(value) for name, value in coerced_updates.items()}
         self._redis.hset(self.hash_key, mapping=mapping)
+        if "bot_on" in coerced_updates:
+            self._redis.hset(
+                self._keys.params_metadata_key(),
+                mapping={"bot_on_control_revision": self._new_control_revision()},
+            )
         return coerced_updates
+
+    def load_bot_on_control_revision(self) -> str:
+        raw_values = self._redis.hmget(
+            self._keys.params_metadata_key(),
+            ["bot_on_control_revision"],
+        )
+        if not raw_values:
+            return ""
+        return self._decode(raw_values[0]).strip()
 
     def publish_update(
         self,
@@ -306,3 +321,7 @@ class FluxParamsManager:
     @staticmethod
     def _now_ms() -> int:
         return int(time.time() * 1_000)
+
+    @staticmethod
+    def _new_control_revision() -> str:
+        return f"{time.time_ns()}-{uuid.uuid4().hex}"

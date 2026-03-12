@@ -286,3 +286,79 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
     assert manager.defaults["max_age_ms"] == strategy.config.max_age_ms
     assert manager.defaults["n_orders2"] == strategy.config.n_orders2
     assert manager.defaults["bid_edge1"] == pytest.approx(strategy.config.bid_edge1)
+
+
+def test_prepare_runtime_params_for_startup_keeps_persisted_bot_on_unchanged(
+    strategy_factory,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.control_revision = "rev-start"
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            self.stored.update(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+        def load_bot_on_control_revision(self) -> str:
+            return self.control_revision
+
+    strategy = strategy_factory(force_bot_off_on_start=True)
+    manager = _ParamsManager()
+    strategy.set_params_manager(manager)
+
+    runtime_params_mod.prepare_runtime_params_for_startup(strategy)
+
+    assert manager.update_calls == []
+    assert manager.publish_calls == []
+    assert strategy._runtime_params["bot_on"] is True
+    assert strategy._effective_bot_on() is False
+
+
+def test_refresh_runtime_params_clears_startup_bot_off_latch_after_explicit_bot_on_control_update(
+    strategy_factory,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.control_revision = "rev-start"
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def load_bot_on_control_revision(self) -> str:
+            return self.control_revision
+
+    strategy = strategy_factory(force_bot_off_on_start=True)
+    manager = _ParamsManager()
+    strategy.set_params_manager(manager)
+
+    runtime_params_mod.prepare_runtime_params_for_startup(strategy)
+    runtime_params_mod.refresh_runtime_params(strategy, now_ns=1_000_000_000, force=True)
+
+    assert strategy._runtime_params["bot_on"] is True
+    assert strategy._effective_bot_on() is False
+    assert strategy._startup_bot_off_active is True
+
+    manager.control_revision = "rev-operator-1"
+    runtime_params_mod.refresh_runtime_params(strategy, now_ns=2_000_000_000, force=True)
+
+    assert strategy._startup_bot_off_active is False
+    assert strategy._effective_bot_on() is True
