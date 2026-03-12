@@ -90,7 +90,8 @@ class ExecutionMarkoutPersistenceActor(
         connect_fn: Callable[[str], sqlite3.Connection] = connect,
         ensure_schema_fn: Callable[[sqlite3.Connection], None] = ensure_schema,
         insert_many_fn: Callable[
-            [sqlite3.Connection, list[ExecutionMarkoutRow]], tuple[int, int]
+            [sqlite3.Connection, list[ExecutionMarkoutRow]],
+            tuple[int, int],
         ] = insert_many,
         run_writer_thread: bool = True,
     ) -> None:
@@ -318,19 +319,22 @@ class ExecutionMarkoutPersistenceActor(
                 self._pending_by_strategy.pop(pending_strategy_id, None)
 
     def _matching_pending_strategy_ids(self, strategy_id: str) -> tuple[str, ...]:
-        variants = self._strategy_id_variants(strategy_id)
-        matches: list[str] = []
-        for pending_strategy_id in self._pending_by_strategy:
-            if pending_strategy_id in variants or self._normalize_strategy_id(pending_strategy_id) in variants:
-                matches.append(pending_strategy_id)
-        return tuple(matches)
+        return tuple(
+            pending_strategy_id
+            for pending_strategy_id in self._pending_by_strategy
+            if self._strategy_ids_match(pending_strategy_id, strategy_id)
+        )
 
     @staticmethod
-    def _strategy_id_variants(strategy_id: str) -> tuple[str, ...]:
-        normalized = ExecutionMarkoutPersistenceActor._normalize_strategy_id(strategy_id)
-        if normalized == strategy_id:
-            return (strategy_id,)
-        return (strategy_id, normalized)
+    def _strategy_ids_match(left: str, right: str) -> bool:
+        right_normalized = ExecutionMarkoutPersistenceActor._normalize_strategy_id(right)
+        return left in (
+            right,
+            right_normalized,
+        ) or ExecutionMarkoutPersistenceActor._normalize_strategy_id(left) in {
+            right,
+            right_normalized,
+        }
 
     @staticmethod
     def _normalize_strategy_id(strategy_id: str) -> str:
