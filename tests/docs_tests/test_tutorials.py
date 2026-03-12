@@ -27,13 +27,13 @@ TUTORIALS = REPO_ROOT / "docs" / "tutorials"
 
 # Tutorials that use bundled test data and can execute without external dependencies
 EXECUTABLE_TUTORIALS = [
+    GETTING_STARTED / "quickstart.py",
     GETTING_STARTED / "backtest_low_level.py",
     TUTORIALS / "backtest_fx_bars.py",
 ]
 
 # Tutorials that need external data, API keys, or network access
 NON_EXECUTABLE_TUTORIALS = [
-    GETTING_STARTED / "quickstart.py",
     GETTING_STARTED / "backtest_high_level.py",
     TUTORIALS / "backtest_binance_orderbook.py",
     TUTORIALS / "backtest_bybit_orderbook.py",

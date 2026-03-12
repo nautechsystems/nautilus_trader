@@ -11,7 +11,7 @@ How to install NautilusTrader on your machine.
 
 ## Quickstart
 
-The **Quickstart** provides a step-by-step walk through for setting up your first backtest.
+Run your first backtest in five minutes. No data downloads, no catalog setup.
 
 ## Examples in repository
 
