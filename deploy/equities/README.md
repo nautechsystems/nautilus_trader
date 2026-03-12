@@ -146,6 +146,13 @@ Primary operator surfaces:
 - `GET /api/v1/balances?profile=equities`
 - `GET /api/v1/trades?profile=equities`
 
+Read-only live readiness gate:
+
+- Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected checkout before any live canary enablement.
+- The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
+- Safe defaults are fail-closed: `missing_required` must stay empty, balances must not be degraded, every configured strategy contract must have its canonical component key, the required IBKR shared projections must be present and fresh, and stale/unhealthy signal counts must stay at zero.
+- Override knobs are env-first for host use: `EQUITIES_READINESS_API_BASE_URL`, `EQUITIES_READY_MAX_STALE_SIGNAL_LEGS`, `EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES`, `EQUITIES_READY_PROJECTION_MAX_AGE_MS`, and `EQUITIES_READY_REQUIRED_BALANCE_SOURCE`.
+
 ## Local smoke only
 
 For a local paper/testnet bring-up outside systemd:
