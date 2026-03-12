@@ -100,6 +100,43 @@ equities_required_strategy_ids = [
 portfolio_id = "equities"
 inventory_stale_after_ms = 3000
 
+[[account_scopes]]
+scope_id = "hyperliquid.xyz.main"
+provider = "hyperliquid"
+venue = "HYPERLIQUID"
+
+[[account_scopes]]
+scope_id = "ibkr.reference.main"
+provider = "ibkr"
+venue = "IBKR"
+ibg_host = "127.0.0.1"
+ibg_port = 4002
+ibg_client_id = 7
+
+[account_scopes.dockerized_gateway]
+trading_mode = "live"
+read_only_api = true
+auto_restart_time = "11:45 PM"
+time_zone = "America/New_York"
+relogin_after_twofa_timeout = true
+twofa_timeout_action = "restart"
+
+[[account_scopes]]
+scope_id = "ibkr.hedge.main"
+provider = "ibkr"
+venue = "IBKR"
+ibg_host = "127.0.0.1"
+ibg_port = 4002
+ibg_client_id = 8
+
+[account_scopes.dockerized_gateway]
+trading_mode = "live"
+read_only_api = true
+auto_restart_time = "11:45 PM"
+time_zone = "America/New_York"
+relogin_after_twofa_timeout = true
+twofa_timeout_action = "restart"
+
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_makerv3"
 portfolio_asset_id = "AAPL"

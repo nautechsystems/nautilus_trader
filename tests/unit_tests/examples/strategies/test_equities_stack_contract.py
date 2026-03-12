@@ -245,6 +245,7 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
         "bridge",
         "api",
         "portfolio",
+        "account_scopes",
         "strategy_contracts",
         "contracts",
     }
@@ -361,6 +362,19 @@ def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_i
     assert aapl["execution_account_scope_id"] == "hyperliquid.xyz.main"
     assert aapl["reference_account_scope_id"] == "ibkr.reference.main"
     assert aapl["hedge_account_scope_id"] == "ibkr.hedge.main"
+
+
+def test_equities_live_config_declares_shared_account_scopes() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    scopes = {row["scope_id"]: row for row in config["account_scopes"]}
+
+    assert scopes["hyperliquid.xyz.main"]["provider"] == "hyperliquid"
+    assert scopes["hyperliquid.xyz.main"]["venue"] == "HYPERLIQUID"
+    assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
+    assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
+    assert scopes["ibkr.reference.main"]["ibg_client_id"] == 7
+    assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
+    assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
 
 
 def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() -> None:
@@ -656,6 +670,9 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "TWS_PASSWORD" in readme
     assert "shared config merge only imports `redis` and `portfolio`" in readme
     assert "active node settings live in `deploy/equities/strategies/*.toml`" in readme
+    assert "`[[account_scopes]]`" in readme
+    assert "ibkr.reference.main" in readme
+    assert "hyperliquid.xyz.main" in readme
     assert "AAPL.NASDAQ" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
     assert "shared IBKR contract entry must mirror the active canary route" in readme
@@ -676,11 +693,16 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "EQUITIES_REDIS_HOST=" in common_env
     assert "EQUITIES_REDIS_PASSWORD=" in common_env
     assert "EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024" in common_env
+    assert "Shared `account_scopes` in `deploy/equities/equities.live.toml` own the profile-level providers." in common_env
+    assert "ibkr.reference.main" in common_env
     assert "TRADE_XYZ_AGENT_PK=" in common_env
     assert "TRADE_XYZ_ACCOUNT_ADDRESS=" in common_env
     assert "TRADE_XYZ_VAULT_ADDRESS=" in common_env
 
     assert 'portfolio_id = "equities"' in live_config
+    assert "[[account_scopes]]" in live_config
+    assert 'scope_id = "ibkr.reference.main"' in live_config
+    assert 'scope_id = "hyperliquid.xyz.main"' in live_config
     assert "equities_strategy_ids" in live_config
     assert f'strategy_class = "{ACTIVE_STRATEGY_CLASS}"' in live_config
     for strategy_id in ACTIVE_STRATEGY_IDS:

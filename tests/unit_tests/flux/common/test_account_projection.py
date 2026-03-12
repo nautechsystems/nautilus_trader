@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import pytest
 
 from nautilus_trader.flux.common.account_projection import ProfileAccountProviderBinding
 from nautilus_trader.flux.common.keys import FluxRedisKeys
@@ -91,3 +92,28 @@ def test_profile_account_projection_round_trip_preserves_rows_and_scope_keys() -
         )
         == "flux:v1:profile:account_projection:equities:ibkr.reference.main"
     )
+
+
+def test_account_scope_decoder_requires_provider_and_scope_id() -> None:
+    from nautilus_trader.flux.common.account_scopes import decode_account_scopes
+
+    with pytest.raises(ValueError, match="provider"):
+        decode_account_scopes(
+            [
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "venue": "IBKR",
+                },
+            ],
+        )
+
+    with pytest.raises(ValueError, match="scope_id"):
+        decode_account_scopes(
+            [
+                {
+                    "scope_id": " ",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                },
+            ],
+        )

@@ -91,8 +91,8 @@ Introduce a **shared equities account-scope contract** and complete the profile-
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | not_started | unassigned | Plan created |
-| Task 1: Add Shared Account Scope Contract | not_started | unassigned | Plan created |
+| Overall | in_progress | main | Task 1 started in subagent-driven mode from the isolated equities worktree. |
+| Task 1: Add Shared Account Scope Contract | in_review_spec | spec-reviewer | Failing tests added, focused Task 1 slice now green (`27 passed`), and diff/contract grep are clean. |
 | Task 2: Fix Node Runtime Shared-Config Merge | not_started | unassigned | Plan created |
 | Task 3: Fix Profile Account Provider Wiring | not_started | unassigned | Plan created |
 | Task 4: Reconcile Live Balances And Portfolio Snapshot Inputs | not_started | unassigned | Plan created |
