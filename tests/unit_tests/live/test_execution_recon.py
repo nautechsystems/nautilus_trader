@@ -31,6 +31,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -6046,6 +6047,176 @@ class TestHedgeModeReconciliation:
         assert len(remaining_positions) == 1
         assert remaining_positions[0].id == owned_position.id
         assert remaining_positions[0].signed_decimal_qty() == Decimal("3256")
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_uses_open_only_with_targeted_open_order_queries_when_startup_positions_exist(
+        self,
+    ):
+        """
+        Startup reconciliation must not request closed order history once the cache
+        already restored positions, even if cached open orders still need reconciliation.
+        """
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine._external_order_claims[AUDUSD_SIM.id] = StrategyId("S-001")
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-OKX-OWNED"),
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OKX-CACHED-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        owned_order.apply(TestEventStubs.order_submitted(owned_order))
+        owned_order.apply(TestEventStubs.order_accepted(owned_order))
+        owned_order.apply(owned_fill)
+        self.cache.add_order(owned_order, owned_position.id)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        open_cached_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("OKX-OPEN-CACHED-001"),
+        )
+        open_cached_order.apply(TestEventStubs.order_submitted(open_cached_order))
+        open_cached_order.apply(
+            TestEventStubs.order_accepted(
+                open_cached_order,
+                venue_order_id=VenueOrderId("OKX-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(open_cached_order)
+
+        bulk_order_commands = []
+        targeted_order_commands = []
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+        original_generate_order_status_report = self.client.generate_order_status_report
+
+        async def capture_generate_order_status_reports(command):
+            bulk_order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        async def capture_generate_order_status_report(command):
+            targeted_order_commands.append(command)
+            return await original_generate_order_status_report(command)
+
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.client.generate_order_status_report = capture_generate_order_status_report
+
+        redundant_order_report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("OKX-STARTUP-ORDER-REDUNDANT-001"),
+            venue_order_id=VenueOrderId("OKX-VENUE-ORDER-REDUNDANT-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(2_356),
+            filled_qty=Quantity.from_int(2_356),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        open_order_report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=open_cached_order.client_order_id,
+            venue_order_id=open_cached_order.venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=open_cached_order.quantity,
+            filled_qty=Quantity.zero(),
+            avg_px=None,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        redundant_fill_report = FillReport(
+            client_order_id=redundant_order_report.client_order_id,
+            venue_order_id=redundant_order_report.venue_order_id,
+            trade_id=TradeId("OKX-STARTUP-FILL-REDUNDANT-001"),
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+        position_report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_356),
+            report_id=UUID4(),
+            ts_last=2,
+            ts_init=2,
+        )
+
+        self.client.add_order_status_report(redundant_order_report)
+        self.client.add_order_status_report(open_order_report)
+        self.client.add_fill_reports(redundant_order_report.venue_order_id, [redundant_fill_report])
+        self.client.add_position_status_report(position_report)
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.open_only for command in bulk_order_commands] == [True]
+        assert [command.client_order_id for command in targeted_order_commands] == [
+            open_cached_order.client_order_id,
+        ]
+
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+        assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
+        assert self.cache.order(redundant_order_report.client_order_id) is None
+
+    def test_startup_snapshot_for_instrument_does_not_fall_back_to_other_account_entries(self):
+        other_account_id = AccountId("SIM-999")
+        other_order_ref = execution_engine.StartupOrderReference(
+            client_order_id=ClientOrderId("OTHER-OPEN-ORDER-001"),
+            venue_order_id=VenueOrderId("OTHER-VENUE-ORDER-001"),
+        )
+        self.exec_engine._startup_reconciliation_snapshot = {
+            (
+                other_account_id,
+                AUDUSD_SIM.id,
+                StrategyId("S-OTHER"),
+            ): execution_engine.StartupStrategyCacheSnapshot(
+                account_id=other_account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("S-OTHER"),
+                open_position_ids=(PositionId("P-OTHER-001"),),
+                open_position_qty=Decimal("1"),
+                open_order_refs=(other_order_ref,),
+                cached_order_count=1,
+            ),
+        }
+
+        snapshot = self.exec_engine._startup_snapshot_for_instrument(self.account_id, AUDUSD_SIM.id)
+
+        assert snapshot.has_open_positions is False
+        assert snapshot.total_open_order_count == 0
+        assert snapshot.total_cached_order_count == 0
+        assert snapshot.open_order_refs == ()
 
     def test_check_position_discrepancy_ignores_stale_external_position_without_orders(
         self,

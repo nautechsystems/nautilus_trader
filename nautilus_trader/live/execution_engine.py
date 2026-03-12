@@ -5,6 +5,7 @@ import os
 from asyncio import Queue
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 from typing import Final
@@ -91,6 +92,76 @@ from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
 
 
+@dataclass(frozen=True)
+class StartupOrderReference:
+    client_order_id: ClientOrderId
+    venue_order_id: VenueOrderId | None
+
+
+@dataclass(frozen=True)
+class StartupStrategyCacheSnapshot:
+    account_id: AccountId | None
+    instrument_id: InstrumentId
+    strategy_id: StrategyId
+    open_position_ids: tuple[PositionId, ...]
+    open_position_qty: Decimal
+    open_order_refs: tuple[StartupOrderReference, ...]
+    cached_order_count: int
+
+    @property
+    def has_open_positions(self) -> bool:
+        return bool(self.open_position_ids)
+
+    @property
+    def open_order_count(self) -> int:
+        return len(self.open_order_refs)
+
+
+@dataclass(frozen=True)
+class StartupInstrumentCacheSnapshot:
+    account_id: AccountId | None
+    instrument_id: InstrumentId
+    strategy_snapshots: tuple[StartupStrategyCacheSnapshot, ...]
+
+    @property
+    def has_open_positions(self) -> bool:
+        return any(snapshot.has_open_positions for snapshot in self.strategy_snapshots)
+
+    @property
+    def total_open_order_count(self) -> int:
+        return sum(snapshot.open_order_count for snapshot in self.strategy_snapshots)
+
+    @property
+    def total_cached_order_count(self) -> int:
+        return sum(snapshot.cached_order_count for snapshot in self.strategy_snapshots)
+
+    @property
+    def open_order_refs(self) -> tuple[StartupOrderReference, ...]:
+        refs: list[StartupOrderReference] = []
+        for snapshot in self.strategy_snapshots:
+            refs.extend(snapshot.open_order_refs)
+        return tuple(refs)
+
+    @property
+    def startup_external_position_ids(self) -> tuple[PositionId, ...]:
+        position_ids: list[PositionId] = []
+        for snapshot in self.strategy_snapshots:
+            if snapshot.strategy_id.value == "EXTERNAL":
+                position_ids.extend(snapshot.open_position_ids)
+        return tuple(position_ids)
+
+    @property
+    def startup_non_external_position_qty(self) -> Decimal:
+        return sum(
+            (
+                snapshot.open_position_qty
+                for snapshot in self.strategy_snapshots
+                if snapshot.strategy_id.value != "EXTERNAL"
+            ),
+            start=Decimal("0"),
+        )
+
+
 class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
@@ -151,6 +222,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._recent_fills_cache: dict[TradeId, int] = {}  # TradeId -> timestamp_ns (TTL cache)
         self._inferred_fill_ts: dict[ClientOrderId, int] = {}
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
+        self._startup_reconciliation_snapshot: dict[
+            tuple[AccountId | None, InstrumentId, StrategyId],
+            StartupStrategyCacheSnapshot,
+        ] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
         self._execution_alert_windows: dict[tuple[str, str, str], list[int]] = {}
@@ -1640,6 +1715,159 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"Received {command!r}", LogColor.BLUE)
         self._loop.create_task(self.reconcile_execution_state())
 
+    def _clear_startup_reconciliation_snapshot(self) -> None:
+        self._startup_reconciliation_snapshot.clear()
+
+    def _capture_startup_reconciliation_snapshot(self) -> None:
+        snapshot_data: dict[tuple[AccountId | None, InstrumentId, StrategyId], dict[str, Any]] = {}
+
+        for order in self._cache.orders():
+            key = (
+                getattr(order, "account_id", None),
+                order.instrument_id,
+                order.strategy_id,
+            )
+            entry = snapshot_data.setdefault(
+                key,
+                {
+                    "open_position_ids": [],
+                    "open_position_qty": Decimal("0"),
+                    "open_order_refs": [],
+                    "cached_order_count": 0,
+                },
+            )
+            entry["cached_order_count"] += 1
+            if order.is_open:
+                entry["open_order_refs"].append(
+                    StartupOrderReference(
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                    ),
+                )
+
+        for position in self._cache.positions_open():
+            key = (
+                getattr(position, "account_id", None),
+                position.instrument_id,
+                position.strategy_id,
+            )
+            entry = snapshot_data.setdefault(
+                key,
+                {
+                    "open_position_ids": [],
+                    "open_position_qty": Decimal("0"),
+                    "open_order_refs": [],
+                    "cached_order_count": 0,
+                },
+            )
+            entry["open_position_ids"].append(position.id)
+            entry["open_position_qty"] += position.signed_decimal_qty()
+
+        self._startup_reconciliation_snapshot = {
+            key: StartupStrategyCacheSnapshot(
+                account_id=key[0],
+                instrument_id=key[1],
+                strategy_id=key[2],
+                open_position_ids=tuple(entry["open_position_ids"]),
+                open_position_qty=entry["open_position_qty"],
+                open_order_refs=tuple(entry["open_order_refs"]),
+                cached_order_count=entry["cached_order_count"],
+            )
+            for key, entry in snapshot_data.items()
+        }
+
+    def _startup_snapshot_strategy_entries(
+        self,
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+    ) -> tuple[StartupStrategyCacheSnapshot, ...]:
+        exact_entries = tuple(
+            snapshot
+            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
+            self._startup_reconciliation_snapshot.items()
+            if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
+        )
+        if exact_entries or account_id is None:
+            return exact_entries
+
+        return tuple(
+            snapshot
+            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
+            self._startup_reconciliation_snapshot.items()
+            if snapshot_instrument_id == instrument_id and snapshot_account_id is None
+        )
+
+    def _startup_snapshot_for_instrument(
+        self,
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+    ) -> StartupInstrumentCacheSnapshot:
+        return StartupInstrumentCacheSnapshot(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            strategy_snapshots=self._startup_snapshot_strategy_entries(account_id, instrument_id),
+        )
+
+    async def _generate_startup_targeted_order_status_reports(
+        self,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+    ) -> list[OrderStatusReport]:
+        snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
+        if not snapshot.open_order_refs:
+            return []
+
+        seen_refs: set[tuple[ClientOrderId, VenueOrderId | None]] = set()
+        commands: list[GenerateOrderStatusReport] = []
+        for ref in snapshot.open_order_refs:
+            ref_key = (ref.client_order_id, ref.venue_order_id)
+            if ref_key in seen_refs:
+                continue
+            seen_refs.add(ref_key)
+            commands.append(
+                GenerateOrderStatusReport(
+                    instrument_id=instrument_id,
+                    client_order_id=ref.client_order_id,
+                    venue_order_id=ref.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+
+        results = await asyncio.gather(
+            *(client.generate_order_status_report(command) for command in commands),
+            return_exceptions=True,
+        )
+
+        reports: list[OrderStatusReport] = []
+        for command, result in zip(commands, results, strict=True):
+            if isinstance(result, BaseException):
+                self._log.warning(
+                    f"Startup targeted order-status query failed for {command.client_order_id!r}: "
+                    f"{result}",
+                )
+                continue
+            if result is not None:
+                reports.append(result)
+
+        return reports
+
+    @staticmethod
+    def _merge_startup_order_status_reports(
+        bulk_reports: list[OrderStatusReport],
+        targeted_reports: list[OrderStatusReport],
+    ) -> list[OrderStatusReport]:
+        merged: list[OrderStatusReport] = []
+        seen_keys: set[VenueOrderId | ClientOrderId] = set()
+        for report in [*bulk_reports, *targeted_reports]:
+            dedupe_key = report.venue_order_id or report.client_order_id
+            if dedupe_key is not None and dedupe_key in seen_keys:
+                continue
+            if dedupe_key is not None:
+                seen_keys.add(dedupe_key)
+            merged.append(report)
+        return merged
+
     async def _generate_startup_mass_status(
         self,
         client: ExecutionClient,
@@ -1718,12 +1946,25 @@ class LiveExecutionEngine(ExecutionEngine):
                     client.generate_fill_reports(fill_reports_command),
                     client.generate_position_status_reports(position_status_command),
                 )
+                targeted_order_reports = (
+                    await self._generate_startup_targeted_order_status_reports(
+                        client=client,
+                        instrument_id=instrument_id,
+                    )
+                    if use_open_orders_only
+                    else []
+                )
                 position_reports = self._normalize_netting_position_reports(
                     reports=cast("list[PositionStatusReport]", reports[2]),
                     log_prefix="Startup position report normalization",
                 )
 
-                mass_status.add_order_reports(reports=reports[0])
+                mass_status.add_order_reports(
+                    reports=self._merge_startup_order_status_reports(
+                        bulk_reports=cast("list[OrderStatusReport]", reports[0]),
+                        targeted_reports=targeted_order_reports,
+                    ),
+                )
                 mass_status.add_fill_reports(reports=reports[1])
                 mass_status.add_position_reports(reports=position_reports)
         except Exception as e:
@@ -1737,79 +1978,27 @@ class LiveExecutionEngine(ExecutionEngine):
         client: ExecutionClient,
         instrument_id: InstrumentId,
     ) -> bool:
-        if self._startup_cache_has_restored_positions_without_open_orders(
-            instrument_id=instrument_id,
-            account_id=client.account_id,
-        ):
+        snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
+        if snapshot.has_open_positions:
             self._log.info(
-                f"Startup reconciliation cache has restored positions but no open cached orders for "
-                f"{instrument_id}; requesting only open venue orders to avoid replaying "
-                "closed startup lifecycle history",
+                f"Startup reconciliation snapshot has restored positions for {instrument_id}; "
+                f"requesting only open venue orders and reconciling "
+                f"{snapshot.total_open_order_count} cached open order(s) via targeted queries",
                 LogColor.BLUE,
             )
             return True
 
-        cached_orders = self._cache.orders(
-            venue=None,
-            instrument_id=instrument_id,
-            account_id=client.account_id,
-        )
-        if not cached_orders:
-            cached_orders = self._cache.orders(
-                venue=None,
-                instrument_id=instrument_id,
-            )
-        cached_open_positions = self._cache.positions_open(
-            venue=None,
-            instrument_id=instrument_id,
-            account_id=client.account_id,
-        )
-        if not cached_open_positions:
-            cached_open_positions = self._cache.positions_open(
-                venue=None,
-                instrument_id=instrument_id,
-            )
-        use_open_only = not cached_orders and not cached_open_positions
+        use_open_only = snapshot.total_cached_order_count == 0
 
         if use_open_only:
             self._log.info(
-                f"Startup reconciliation cache is empty for {instrument_id}; "
+                f"Startup reconciliation snapshot is empty for {instrument_id}; "
                 "requesting only open venue orders and using fills/positions for "
                 "historical reconstruction",
                 LogColor.BLUE,
             )
 
         return use_open_only
-
-    def _startup_cache_has_restored_positions_without_open_orders(
-        self,
-        instrument_id: InstrumentId,
-        account_id: AccountId | None,
-    ) -> bool:
-        cached_orders = self._cache.orders(
-            venue=None,
-            instrument_id=instrument_id,
-            account_id=account_id,
-        )
-        if not cached_orders:
-            cached_orders = self._cache.orders(
-                venue=None,
-                instrument_id=instrument_id,
-            )
-        cached_open_orders = [order for order in cached_orders if order.is_open]
-
-        cached_open_positions = self._cache.positions_open(
-            venue=None,
-            instrument_id=instrument_id,
-            account_id=account_id,
-        )
-        if not cached_open_positions:
-            cached_open_positions = self._cache.positions_open(
-                venue=None,
-                instrument_id=instrument_id,
-            )
-
-        return bool(cached_open_positions) and not cached_open_orders
 
     def _normalize_netting_position_reports(
         self,
@@ -1873,6 +2062,8 @@ class LiveExecutionEngine(ExecutionEngine):
         deadline = self._loop.time() + timeout_secs
 
         try:
+            self._capture_startup_reconciliation_snapshot()
+
             for client_id in self._external_clients:
                 command = GenerateExecutionMassStatus(
                     trader_id=self.trader_id,
@@ -2035,6 +2226,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             return all(results)
         finally:
+            self._clear_startup_reconciliation_snapshot()
             # Always signal completion to prevent continuous loop signal await hang
             self._startup_reconciliation_event.set()
 
@@ -2229,14 +2421,15 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 continue
 
-            if allow_startup_external_cleanup and self._startup_cache_has_restored_positions_without_open_orders(
-                instrument_id=instrument_id,
-                account_id=position_reports[0].account_id if position_reports else None,
-            ):
+            startup_snapshot = self._startup_snapshot_for_instrument(
+                position_reports[0].account_id if position_reports else None,
+                instrument_id,
+            )
+            if allow_startup_external_cleanup and startup_snapshot.has_open_positions:
                 self._log.info(
-                    f"Skipping fill adjustment for {instrument_id}: startup cache already "
-                    "has restored open positions but no open cached orders, so replaying "
-                    "partial-window lifecycle history would double-apply fills",
+                    f"Skipping fill adjustment for {instrument_id}: startup snapshot already "
+                    "contains restored open positions, so replaying partial-window lifecycle "
+                    "history would double-apply fills",
                     LogColor.BLUE,
                 )
                 continue
@@ -2785,6 +2978,7 @@ class LiveExecutionEngine(ExecutionEngine):
     def _startup_effective_netting_positions_for_venue_qty(
         self,
         positions_open: list[Position],
+        account_id: AccountId | None,
         instrument_id: InstrumentId,
         venue_qty: Decimal | None,
     ) -> tuple[list[Position], list[Position], Decimal, Decimal]:
@@ -2804,23 +2998,29 @@ class LiveExecutionEngine(ExecutionEngine):
         ):
             return effective_positions, artifact_positions, effective_qty, raw_qty
 
+        snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
+        startup_external_position_ids = set(snapshot.startup_external_position_ids)
+        if not startup_external_position_ids:
+            return positions_open, [], raw_qty, raw_qty
+
         external_positions = [
-            position for position in positions_open if position.strategy_id.value == "EXTERNAL"
+            position for position in positions_open if position.id in startup_external_position_ids
         ]
         if not external_positions:
             return positions_open, [], raw_qty, raw_qty
 
         effective_positions = [
-            position for position in positions_open if position.strategy_id.value != "EXTERNAL"
+            position for position in positions_open if position.id not in startup_external_position_ids
         ]
         effective_qty = self._sum_position_signed_decimal_qty(effective_positions)
-        if effective_qty != venue_qty:
+        if snapshot.startup_non_external_position_qty != venue_qty or effective_qty != venue_qty:
             return positions_open, [], raw_qty, raw_qty
 
         self._log.info(
             f"Treating EXTERNAL netting positions as stale startup reconciliation artifacts for "
             f"{instrument_id}: raw_qty={raw_qty}, effective_qty={effective_qty}, "
-            f"external_qty={self._sum_position_signed_decimal_qty(external_positions)}",
+            f"external_qty={self._sum_position_signed_decimal_qty(external_positions)}, "
+            f"snapshot_position_ids={[position.id.value for position in external_positions]}",
             LogColor.BLUE,
         )
         return effective_positions, external_positions, effective_qty, raw_qty
@@ -2897,6 +3097,7 @@ class LiveExecutionEngine(ExecutionEngine):
             effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (
                 self._startup_effective_netting_positions_for_venue_qty(
                     positions_open=positions_open,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     venue_qty=report.signed_decimal_qty,
                 )
