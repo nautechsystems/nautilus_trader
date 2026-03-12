@@ -23,11 +23,11 @@
 //! | Resource                             | Reference                                              |
 //! |--------------------------------------|--------------------------------------------------------|
 //! | Main documentation                   | <https://docs.dydx.xyz>                                |
-//! | Indexer HTTP API                     | <https://docs.dydx.exchange/api_integration-indexer/indexer_api> |
-//! | Indexer WebSocket API                | <https://docs.dydx.trade/developers/indexer/websockets> |
+//! | Indexer HTTP API                     | <https://docs.dydx.xyz/api_integration-indexer/indexer_api> |
+//! | Indexer WebSocket API                | <https://docs.dydx.xyz/api_integration-indexer/indexer_websocket> |
 //! | Order types                          | <https://docs.dydx.xyz/concepts/trading/orders>        |
 //! | Permissioned keys                    | <https://docs.dydx.xyz/concepts/trading/authenticators> |
-//! | Validator client (gRPC)              | <https://docs.dydx.exchange/api_integration-clients/validator_client> |
+//! | Validator client (gRPC)              | <https://docs.dydx.xyz/api_integration-clients/validator_client> |
 //!
 //! # Platform
 //!

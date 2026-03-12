@@ -101,17 +101,16 @@ pub enum DydxError {
 ///
 /// Returned when the exact same transaction bytes (same hash) are submitted to a node
 /// that already has the transaction in its mempool cache. For short-term dYdX orders,
-/// this is benign — the original transaction is already queued for processing.
+/// this is benign -- the original transaction is already queued for processing.
 pub const COSMOS_ERROR_CODE_TX_IN_MEMPOOL_CACHE: u32 = 19;
 
-/// Cosmos SDK error code for account sequence mismatch.
 const COSMOS_ERROR_CODE_SEQUENCE_MISMATCH: u32 = 32;
 
 /// dYdX CLOB error code for duplicate cancel in memclob.
 ///
 /// Returned when a cancel message is submitted for an order that already has a pending
 /// cancel with a greater-than-or-equal `GoodTilBlock`. This is benign for short-term
-/// cancel operations — the previous cancel is already queued and will be processed.
+/// cancel operations -- the previous cancel is already queued and will be processed.
 ///
 /// Common scenario: overlapping `cancel_all_orders` waves from a grid MM strategy.
 pub const DYDX_ERROR_CODE_CANCEL_ALREADY_IN_MEMCLOB: u32 = 9;
@@ -119,13 +118,9 @@ pub const DYDX_ERROR_CODE_CANCEL_ALREADY_IN_MEMCLOB: u32 = 9;
 /// dYdX CLOB error code for cancelling a non-existent order.
 ///
 /// Returned when attempting to cancel an order that has already been filled, expired,
-/// or previously cancelled. This is benign — the order is already gone.
+/// or previously cancelled. This is benign -- the order is already gone.
 pub const DYDX_ERROR_CODE_ORDER_DOES_NOT_EXIST: u32 = 3006;
 
-/// dYdX AllOf authenticator error code (ErrAllOfVerification).
-/// On dYdX v4, sequence mismatches surface as code=104 when using permissioned keys:
-/// the AllOf composite authenticator wraps the inner SignatureVerification failure
-/// (code=100) which includes "please verify sequence" in its diagnostic message.
 const DYDX_ERROR_CODE_ALL_OF_FAILED: u32 = 104;
 
 impl DydxError {
@@ -157,12 +152,6 @@ impl DydxError {
         }
     }
 
-    /// Checks if an error message indicates a sequence mismatch.
-    ///
-    /// Matches:
-    /// - code=32 (standard Cosmos SDK sequence mismatch)
-    /// - code=104 with "sequence" (dYdX authenticator failure due to wrong sequence)
-    /// - "account sequence mismatch" text
     fn message_indicates_sequence_mismatch(msg: &str) -> bool {
         // Standard Cosmos SDK error code 32
         if msg.contains(&format!("code={COSMOS_ERROR_CODE_SEQUENCE_MISMATCH}"))
@@ -176,7 +165,7 @@ impl DydxError {
 
     /// Returns true if this error indicates the transaction is already in the mempool (code=19).
     ///
-    /// This is benign for short-term orders — the transaction was already accepted by the
+    /// This is benign for short-term orders -- the transaction was already accepted by the
     /// mempool on a previous submission and will be processed. Callers can safely treat
     /// this as success.
     #[must_use]
@@ -358,5 +347,44 @@ mod tests {
     fn test_is_not_transient_config_error() {
         let err = DydxError::Config("invalid".to_string());
         assert!(!err.is_transient());
+    }
+
+    #[rstest]
+    fn test_benign_cancel_tx_in_mempool() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=19, tx already in mempool cache"
+        ));
+        assert!(err.is_tx_in_mempool());
+        assert!(err.is_benign_cancel_error());
+    }
+
+    #[rstest]
+    fn test_benign_cancel_already_in_memclob() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=9, cancel already exists in memclob with >= GoodTilBlock"
+        ));
+        assert!(err.is_cancel_already_in_memclob());
+        assert!(err.is_benign_cancel_error());
+    }
+
+    #[rstest]
+    fn test_benign_cancel_order_does_not_exist() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=3006, Order Id to cancel does not exist"
+        ));
+        assert!(err.is_order_does_not_exist());
+        assert!(err.is_benign_cancel_error());
+    }
+
+    #[rstest]
+    fn test_non_benign_error_not_treated_as_benign() {
+        let err = DydxError::Nautilus(anyhow::anyhow!("insufficient funds"));
+        assert!(!err.is_benign_cancel_error());
+    }
+
+    #[rstest]
+    fn test_benign_cancel_non_nautilus_variant() {
+        let err = DydxError::Order("order rejected".to_string());
+        assert!(!err.is_benign_cancel_error());
     }
 }

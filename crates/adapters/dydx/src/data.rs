@@ -15,9 +15,12 @@
 
 //! Live market data client implementation for the dYdX adapter.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::Context;
@@ -46,29 +49,33 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, InstrumentStatus,
-        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
+        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, FundingRateUpdate,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, QuoteTick,
     },
-    enums::{BookAction, BookType, OrderSide, RecordFlag},
-    identifiers::{ClientId, InstrumentId, Venue},
+    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     types::Quantity,
 };
+use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::DYDX_VENUE, enums::DydxCandleResolution, instrument_cache::InstrumentCache,
-        parse::extract_raw_symbol,
+        consts::DYDX_VENUE,
+        enums::DydxCandleResolution,
+        instrument_cache::InstrumentCache,
+        parse::{extract_raw_symbol, parse_price},
     },
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
-    websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand},
+    websocket::{client::DydxWebSocketClient, enums::DydxWsOutputMessage, parse as ws_parse},
 };
 
-/// Groups WebSocket message handling dependencies.
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -82,11 +89,15 @@ struct WsMessageContext {
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
     active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
+    bar_type_mappings: Arc<DashMap<String, BarType>>,
     active_mark_price_subs: Arc<DashSet<InstrumentId>>,
     active_index_price_subs: Arc<DashSet<InstrumentId>>,
     active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
     active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
     last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
+    bars_timestamp_on_close: bool,
+    pending_bars: Arc<DashMap<String, Bar>>,
+    seen_tickers: Arc<DashSet<Ustr>>,
 }
 
 /// dYdX data client for live market data streaming and historical data requests.
@@ -98,55 +109,28 @@ struct WsMessageContext {
 /// - Connection lifecycle management
 #[derive(Debug)]
 pub struct DydxDataClient {
-    /// High-resolution clock for timestamps.
     clock: &'static AtomicTime,
-    /// The client ID for this data client.
     client_id: ClientId,
-    /// Configuration for the data client.
     config: DydxDataClientConfig,
-    /// HTTP client for REST API requests.
     http_client: DydxHttpClient,
-    /// WebSocket client for real-time data streaming.
     ws_client: DydxWebSocketClient,
-    /// Whether the client is currently connected.
     is_connected: AtomicBool,
-    /// Cancellation token for async operations.
     cancellation_token: CancellationToken,
-    /// Background task handles.
     tasks: Vec<JoinHandle<()>>,
-    /// Channel sender for emitting data events to the DataEngine.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    /// Shared instrument cache (with HTTP client and execution client).
     instrument_cache: Arc<InstrumentCache>,
-    /// Local order books maintained for generating quotes and resolving crosses.
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
-    /// Last quote tick per instrument (used for quote generation from book deltas).
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
-    /// Incomplete bars cache for bar aggregation.
-    /// Tracks bars not yet closed (ts_event > current_time), keyed by BarType.
-    /// Bars are emitted only when they close (ts_event <= current_time).
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
-    /// WebSocket topic to BarType mappings.
-    /// Maps dYdX candle topics (e.g., "BTC-USD/1MIN") to Nautilus BarType.
-    /// Used for subscription validation and reconnection recovery.
     bar_type_mappings: Arc<DashMap<String, BarType>>,
-    /// Active quote subscriptions (instruments expecting `QuoteTick` events).
     active_quote_subs: Arc<DashSet<InstrumentId>>,
-    /// Active orderbook delta subscriptions (instruments expecting `OrderBookDeltas` events).
     active_delta_subs: Arc<DashSet<InstrumentId>>,
-    /// Active trade subscriptions for reconnection recovery.
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
-    /// Active bar/candle subscriptions for reconnection recovery (maps instrument+resolution to BarType).
     active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
-    /// Active mark price subscriptions (instruments expecting `MarkPriceUpdate` events).
     active_mark_price_subs: Arc<DashSet<InstrumentId>>,
-    /// Active index price subscriptions (instruments expecting `IndexPriceUpdate` events).
     active_index_price_subs: Arc<DashSet<InstrumentId>>,
-    /// Active funding rate subscriptions (instruments expecting `FundingRateUpdate` events).
     active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
-    /// Active instrument status subscriptions (instruments expecting `InstrumentStatus` events).
     active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
-    /// Last known instrument status per instrument (for replay on late subscription).
     last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
 }
 
@@ -230,7 +214,7 @@ impl DydxDataClient {
 
     fn spawn_ws_stream_handler(
         &mut self,
-        stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
+        stream: impl Stream<Item = DydxWsOutputMessage> + Send + 'static,
         ctx: WsMessageContext,
     ) {
         let cancellation = self.cancellation_token.clone();
@@ -360,6 +344,13 @@ impl DataClient for DydxDataClient {
             .await
             .context("failed to subscribe to markets channel")?;
 
+        let seen_tickers: Arc<DashSet<Ustr>> = Arc::new(DashSet::new());
+        for instrument in self.instrument_cache.all_instruments() {
+            let id = instrument.id();
+            let ticker = extract_raw_symbol(id.symbol.as_str());
+            seen_tickers.insert(Ustr::from(ticker));
+        }
+
         let ctx = WsMessageContext {
             clock: self.clock,
             data_sender: self.data_sender.clone(),
@@ -373,11 +364,15 @@ impl DataClient for DydxDataClient {
             active_trade_subs: self.active_trade_subs.clone(),
             active_bar_subs: self.active_bar_subs.clone(),
             incomplete_bars: self.incomplete_bars.clone(),
+            bar_type_mappings: self.bar_type_mappings.clone(),
             active_mark_price_subs: self.active_mark_price_subs.clone(),
             active_index_price_subs: self.active_index_price_subs.clone(),
             active_funding_rate_subs: self.active_funding_rate_subs.clone(),
             active_instrument_status_subs: self.active_instrument_status_subs.clone(),
             last_instrument_statuses: self.last_instrument_statuses.clone(),
+            bars_timestamp_on_close: self.ws_client.bars_timestamp_on_close(),
+            pending_bars: Arc::new(DashMap::new()),
+            seen_tickers,
         };
 
         let stream = self.ws_client.stream();
@@ -534,19 +529,10 @@ impl DataClient for DydxDataClient {
 
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!("{ticker}/{resolution}");
-        self.bar_type_mappings.insert(topic.clone(), bar_type);
+        self.bar_type_mappings.insert(topic, bar_type);
 
         self.spawn_ws(
             async move {
-                // Register bar type in handler BEFORE subscribing to avoid race condition
-                if let Err(e) = ws.send_command(HandlerCommand::RegisterBarType { topic, bar_type })
-                {
-                    anyhow::bail!("Failed to register bar type: {e}");
-                }
-
-                // Delay to ensure handler processes registration before candle messages arrive
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
                 ws.subscribe_candles(instrument_id, resolution)
                     .await
                     .context("candles subscription")
@@ -676,10 +662,6 @@ impl DataClient for DydxDataClient {
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!("{ticker}/{resolution}");
         self.bar_type_mappings.remove(&topic);
-
-        if let Err(e) = ws.send_command(HandlerCommand::UnregisterBarType { topic }) {
-            log::warn!("Failed to unregister bar type: {e}");
-        }
 
         self.spawn_ws(
             async move {
@@ -933,24 +915,24 @@ impl DataClient for DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Get a cached instrument by InstrumentId.
+    /// Returns a cached instrument by InstrumentId.
     #[must_use]
     pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
         self.instrument_cache.get(instrument_id)
     }
 
-    /// Get all cached instruments.
+    /// Returns all cached instruments.
     #[must_use]
     pub fn get_instruments(&self) -> Vec<InstrumentAny> {
         self.instrument_cache.all_instruments()
     }
 
-    /// Cache a single instrument.
+    /// Caches a single instrument.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         self.instrument_cache.insert_instrument_only(instrument);
     }
 
-    /// Cache multiple instruments.
+    /// Caches multiple instruments.
     ///
     /// Clears the existing cache first, then adds all provided instruments.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
@@ -964,7 +946,7 @@ impl DydxDataClient {
             .or_insert_with(|| OrderBook::new(instrument_id, book_type));
     }
 
-    /// Get BarType for a given WebSocket candle topic.
+    /// Returns the BarType for a given WebSocket candle topic.
     #[must_use]
     pub fn get_bar_type_for_topic(&self, topic: &str) -> Option<BarType> {
         self.bar_type_mappings
@@ -972,7 +954,7 @@ impl DydxDataClient {
             .map(|entry| *entry.value())
     }
 
-    /// Get all registered bar topics.
+    /// Returns all registered bar topics.
     #[must_use]
     pub fn get_bar_topics(&self) -> Vec<String> {
         self.bar_type_mappings
@@ -981,19 +963,134 @@ impl DydxDataClient {
             .collect()
     }
 
-    fn handle_ws_message(message: NautilusWsMessage, ctx: &WsMessageContext) {
+    fn handle_ws_message(message: DydxWsOutputMessage, ctx: &WsMessageContext) {
+        let ts_init = ctx.clock.get_time_ns();
+
         match message {
-            NautilusWsMessage::Data(payloads) => {
-                Self::handle_data_message(
-                    payloads,
-                    &ctx.data_sender,
-                    &ctx.incomplete_bars,
-                    ctx.clock,
-                );
+            DydxWsOutputMessage::Trades { id, contents } => {
+                let Some(instrument) = ctx.instrument_cache.get_by_market(&id) else {
+                    log::warn!("No instrument cached for market {id}");
+                    return;
+                };
+                let instrument_id = instrument.id();
+
+                match ws_parse::parse_trade_ticks(instrument_id, &instrument, &contents, ts_init) {
+                    Ok(data) => {
+                        Self::handle_data_message(
+                            data,
+                            &ctx.data_sender,
+                            &ctx.incomplete_bars,
+                            ctx.clock,
+                        );
+                    }
+                    Err(e) => log::error!("Failed to parse trade ticks for {id}: {e}"),
+                }
             }
-            NautilusWsMessage::Deltas(deltas) => {
+            DydxWsOutputMessage::OrderbookSnapshot { id, contents } => {
+                let Some(instrument) = ctx.instrument_cache.get_by_market(&id) else {
+                    log::warn!("No instrument cached for market {id}");
+                    return;
+                };
+                let instrument_id = instrument.id();
+
+                match ws_parse::parse_orderbook_snapshot(
+                    &instrument_id,
+                    &contents,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                ) {
+                    Ok(deltas) => {
+                        Self::handle_deltas_message(
+                            deltas,
+                            &ctx.data_sender,
+                            &ctx.order_books,
+                            &ctx.last_quotes,
+                            &ctx.instrument_cache,
+                            &ctx.active_quote_subs,
+                            &ctx.active_delta_subs,
+                        );
+                    }
+                    Err(e) => log::error!("Failed to parse orderbook snapshot for {id}: {e}"),
+                }
+            }
+            DydxWsOutputMessage::OrderbookUpdate { id, contents } => {
+                let Some(instrument) = ctx.instrument_cache.get_by_market(&id) else {
+                    log::warn!("No instrument cached for market {id}");
+                    return;
+                };
+                let instrument_id = instrument.id();
+
+                match ws_parse::parse_orderbook_deltas(
+                    &instrument_id,
+                    &contents,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                ) {
+                    Ok(deltas) => {
+                        Self::handle_deltas_message(
+                            deltas,
+                            &ctx.data_sender,
+                            &ctx.order_books,
+                            &ctx.last_quotes,
+                            &ctx.instrument_cache,
+                            &ctx.active_quote_subs,
+                            &ctx.active_delta_subs,
+                        );
+                    }
+                    Err(e) => log::error!("Failed to parse orderbook deltas for {id}: {e}"),
+                }
+            }
+            DydxWsOutputMessage::OrderbookBatch { id, updates } => {
+                let Some(instrument) = ctx.instrument_cache.get_by_market(&id) else {
+                    log::warn!("No instrument cached for market {id}");
+                    return;
+                };
+                let instrument_id = instrument.id();
+                let price_precision = instrument.price_precision();
+                let size_precision = instrument.size_precision();
+
+                let mut all_deltas = Vec::new();
+                let last_idx = updates.len().saturating_sub(1);
+
+                for (i, update) in updates.iter().enumerate() {
+                    let is_last = i == last_idx;
+                    let result = if is_last {
+                        ws_parse::parse_orderbook_deltas(
+                            &instrument_id,
+                            update,
+                            price_precision,
+                            size_precision,
+                            ts_init,
+                        )
+                        .map(|d| d.deltas)
+                    } else {
+                        ws_parse::parse_orderbook_deltas_with_flag(
+                            &instrument_id,
+                            update,
+                            price_precision,
+                            size_precision,
+                            ts_init,
+                            false,
+                        )
+                    };
+
+                    match result {
+                        Ok(deltas) => all_deltas.extend(deltas),
+                        Err(e) => {
+                            log::error!("Failed to parse orderbook batch delta {i} for {id}: {e}");
+                            return;
+                        }
+                    }
+                }
+
+                if all_deltas.is_empty() {
+                    return;
+                }
+                let deltas = OrderBookDeltas::new(instrument_id, all_deltas);
                 Self::handle_deltas_message(
-                    *deltas,
+                    deltas,
                     &ctx.data_sender,
                     &ctx.order_books,
                     &ctx.last_quotes,
@@ -1002,54 +1099,61 @@ impl DydxDataClient {
                     &ctx.active_delta_subs,
                 );
             }
-            NautilusWsMessage::MarkPrice(mark_price) => {
-                if ctx
-                    .active_mark_price_subs
-                    .contains(&mark_price.instrument_id)
-                {
-                    let data = NautilusData::MarkPriceUpdate(mark_price);
-                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                        log::error!("Failed to emit mark price: {e}");
-                    }
+            DydxWsOutputMessage::Candles { id, contents } => {
+                let parts: Vec<&str> = id.splitn(2, '/').collect();
+                if parts.len() != 2 {
+                    log::warn!("Unexpected candle topic format: {id}");
+                    return;
                 }
-            }
-            NautilusWsMessage::IndexPrice(index_price) => {
-                if ctx
-                    .active_index_price_subs
-                    .contains(&index_price.instrument_id)
-                {
-                    let data = NautilusData::IndexPriceUpdate(index_price);
-                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                        log::error!("Failed to emit index price: {e}");
-                    }
-                }
-            }
-            NautilusWsMessage::FundingRate(funding_rate) => {
-                if ctx
-                    .active_funding_rate_subs
-                    .contains(&funding_rate.instrument_id)
-                    && let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(funding_rate))
-                {
-                    log::error!("Failed to emit funding rate: {e}");
-                }
-            }
-            NautilusWsMessage::InstrumentStatus(status) => {
-                ctx.last_instrument_statuses
-                    .insert(status.instrument_id, status);
+                let ticker = parts[0];
 
-                if ctx
-                    .active_instrument_status_subs
-                    .contains(&status.instrument_id)
-                    && let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status))
-                {
-                    log::error!("Failed to emit instrument status: {e}");
+                let Some(bar_type) = ctx.bar_type_mappings.get(&id).map(|e| *e) else {
+                    log::debug!("No bar type mapping for candle topic {id}");
+                    return;
+                };
+
+                let Some(instrument) = ctx.instrument_cache.get_by_market(ticker) else {
+                    log::warn!("No instrument cached for market {ticker}");
+                    return;
+                };
+
+                match ws_parse::parse_candle_bar(
+                    bar_type,
+                    &instrument,
+                    &contents,
+                    ctx.bars_timestamp_on_close,
+                    ts_init,
+                ) {
+                    Ok(bar) => {
+                        let prev = ctx.pending_bars.get(&id).map(|r| *r);
+                        if let Some(prev_bar) = prev
+                            && bar.ts_event != prev_bar.ts_event
+                        {
+                            Self::emit_bar_guarded(prev_bar, ctx);
+                        }
+                        ctx.pending_bars.insert(id, bar);
+                    }
+                    Err(e) => log::error!("Failed to parse candle bar for {id}: {e}"),
                 }
             }
-            NautilusWsMessage::Error(err) => {
+            DydxWsOutputMessage::Markets(contents) => {
+                Self::handle_markets_message(&contents, ctx, ts_init);
+            }
+            DydxWsOutputMessage::SubaccountSubscribed(_) => {
+                log::debug!("Ignoring subaccount subscribed on data client");
+            }
+            DydxWsOutputMessage::SubaccountsChannelData(_) => {
+                log::debug!("Ignoring subaccounts channel data on data client");
+            }
+            DydxWsOutputMessage::BlockHeight { .. } => {
+                log::debug!("Ignoring block height on data client");
+            }
+            DydxWsOutputMessage::Error(err) => {
                 log::error!("dYdX WS error: {err}");
             }
-            NautilusWsMessage::Reconnected => {
-                log::info!("dYdX WS reconnected - re-subscribing to active subscriptions");
+            DydxWsOutputMessage::Reconnected => {
+                log::info!("dYdX WS reconnected, re-subscribing to active subscriptions");
+                ctx.pending_bars.clear();
 
                 let total_subs = ctx.active_quote_subs.len()
                     + ctx.active_delta_subs.len()
@@ -1070,7 +1174,6 @@ impl DydxDataClient {
                     ctx.active_bar_subs.len()
                 );
 
-                // Re-subscribe for quote subscriptions (bumps WS refcount)
                 for instrument_id in ctx.active_quote_subs.iter() {
                     let instrument_id = *instrument_id;
                     let ws_clone = ctx.ws_client.clone();
@@ -1085,7 +1188,6 @@ impl DydxDataClient {
                     });
                 }
 
-                // Re-subscribe for delta subscriptions (bumps WS refcount)
                 for instrument_id in ctx.active_delta_subs.iter() {
                     let instrument_id = *instrument_id;
                     let ws_clone = ctx.ws_client.clone();
@@ -1100,7 +1202,6 @@ impl DydxDataClient {
                     });
                 }
 
-                // Re-subscribe to trade channels
                 for entry in ctx.active_trade_subs.iter() {
                     let instrument_id = *entry.key();
                     let ws_clone = ctx.ws_client.clone();
@@ -1115,25 +1216,11 @@ impl DydxDataClient {
                     });
                 }
 
-                // Re-subscribe to candle/bar channels
                 for entry in ctx.active_bar_subs.iter() {
                     let (instrument_id, resolution) = entry.key();
                     let instrument_id = *instrument_id;
                     let resolution = resolution.clone();
-                    let bar_type = *entry.value();
                     let ws_clone = ctx.ws_client.clone();
-
-                    let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
-                    let topic = format!("{ticker}/{resolution}");
-
-                    if let Err(e) = ctx
-                        .ws_client
-                        .send_command(HandlerCommand::RegisterBarType { topic, bar_type })
-                    {
-                        log::warn!(
-                            "Failed to re-register bar type for {instrument_id} ({resolution}): {e}"
-                        );
-                    }
 
                     get_runtime().spawn(async move {
                         if let Err(e) =
@@ -1152,48 +1239,192 @@ impl DydxDataClient {
 
                 log::info!("Completed re-subscription requests after reconnection");
             }
-            NautilusWsMessage::BlockHeight { .. } => {
-                log::debug!(
-                    "Ignoring block height message on dYdX data client (handled by execution adapter)"
-                );
-            }
-            NautilusWsMessage::Order(_)
-            | NautilusWsMessage::Fill(_)
-            | NautilusWsMessage::Position(_)
-            | NautilusWsMessage::AccountState(_)
-            | NautilusWsMessage::SubaccountSubscribed(_)
-            | NautilusWsMessage::SubaccountsChannelData(_) => {
-                log::debug!(
-                    "Ignoring execution/subaccount message on dYdX data client (handled by execution adapter)"
-                );
-            }
-            NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
-                log::info!("New instrument discovered via WebSocket: {ticker}");
+        }
+    }
 
-                let http_client = ctx.http_client.clone();
-                let ws_client = ctx.ws_client.clone();
-                let data_sender = ctx.data_sender.clone();
+    fn instrument_id_from_ticker(ticker: &str) -> InstrumentId {
+        let symbol = format!("{ticker}-PERP");
+        InstrumentId::new(Symbol::new(&symbol), *DYDX_VENUE)
+    }
 
-                get_runtime().spawn(async move {
-                    match http_client.fetch_and_cache_single_instrument(&ticker).await {
-                        Ok(Some(instrument)) => {
-                            ws_client.cache_instrument(instrument.clone());
-                            // The InstrumentCache is already updated by fetch_and_cache_single_instrument
-                            if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
-                                log::error!("Failed to emit new instrument: {e}");
-                            }
-                            log::info!("Fetched and cached new instrument: {ticker}");
-                        }
-                        Ok(None) => {
-                            log::warn!("New instrument {ticker} not found or inactive");
-                        }
-                        Err(e) => {
-                            log::error!("Failed to fetch new instrument {ticker}: {e}");
-                        }
+    fn handle_markets_message(
+        contents: &crate::websocket::messages::DydxMarketsContents,
+        ctx: &WsMessageContext,
+        ts_init: nautilus_core::UnixNanos,
+    ) {
+        if let Some(ref oracle_prices) = contents.oracle_prices {
+            for (ticker, oracle_data) in oracle_prices {
+                let instrument_id = Self::instrument_id_from_ticker(ticker);
+
+                let Ok(price) = parse_price(&oracle_data.oracle_price, "oracle_price") else {
+                    log::warn!("Failed to parse oracle price for {ticker}");
+                    continue;
+                };
+
+                if ctx.active_mark_price_subs.contains(&instrument_id) {
+                    let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
+                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit mark price for {instrument_id}: {e}");
                     }
-                });
+                }
+
+                if ctx.active_index_price_subs.contains(&instrument_id) {
+                    let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
+                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit index price for {instrument_id}: {e}");
+                    }
+                }
             }
         }
+
+        Self::handle_markets_trading_data(contents.trading.as_ref(), ctx, ts_init, false);
+        Self::handle_markets_trading_data(contents.markets.as_ref(), ctx, ts_init, true);
+    }
+
+    fn handle_markets_trading_data(
+        trading: Option<
+            &std::collections::HashMap<String, crate::websocket::messages::DydxMarketTradingUpdate>,
+        >,
+        ctx: &WsMessageContext,
+        ts_init: nautilus_core::UnixNanos,
+        is_snapshot: bool,
+    ) {
+        let Some(trading_map) = trading else {
+            return;
+        };
+
+        for (ticker, update) in trading_map {
+            let instrument_id = Self::instrument_id_from_ticker(ticker);
+
+            if let Some(status) = &update.status {
+                let action = MarketStatusAction::from(*status);
+                let is_trading = matches!(status, crate::common::enums::DydxMarketStatus::Active);
+
+                let instrument_status = InstrumentStatus::new(
+                    instrument_id,
+                    action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(is_trading),
+                    None,
+                    None,
+                );
+
+                ctx.last_instrument_statuses
+                    .insert(instrument_id, instrument_status);
+
+                if ctx.active_instrument_status_subs.contains(&instrument_id)
+                    && let Err(e) = ctx
+                        .data_sender
+                        .send(DataEvent::InstrumentStatus(instrument_status))
+                {
+                    log::error!("Failed to emit instrument status for {instrument_id}: {e}");
+                }
+            }
+
+            let ticker_ustr = Ustr::from(ticker.as_str());
+            if !ctx.seen_tickers.contains(&ticker_ustr) {
+                let is_active = update
+                    .status
+                    .as_ref()
+                    .is_none_or(|s| matches!(s, crate::common::enums::DydxMarketStatus::Active));
+                if ctx.instrument_cache.get_by_market(ticker).is_some() {
+                    ctx.seen_tickers.insert(ticker_ustr);
+                } else if is_active {
+                    ctx.seen_tickers.insert(ticker_ustr);
+                    Self::handle_new_instrument_discovered(ticker, ctx);
+                }
+            }
+
+            if let Some(ref rate_str) = update.next_funding_rate {
+                if let Ok(rate) = Decimal::from_str(rate_str) {
+                    if ctx.active_funding_rate_subs.contains(&instrument_id) {
+                        let funding_rate = FundingRateUpdate {
+                            instrument_id,
+                            rate,
+                            next_funding_ns: None,
+                            ts_event: ts_init,
+                            ts_init,
+                        };
+
+                        if let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(funding_rate)) {
+                            log::error!("Failed to emit funding rate for {instrument_id}: {e}");
+                        }
+                    }
+                } else {
+                    log::warn!("Failed to parse next_funding_rate for {ticker}: {rate_str}");
+                }
+            }
+
+            if is_snapshot
+                && let Some(ref oracle_price_str) = update.oracle_price
+                && let Ok(price) = parse_price(oracle_price_str, "oracle_price")
+            {
+                if ctx.active_mark_price_subs.contains(&instrument_id) {
+                    let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
+                    let data = NautilusData::MarkPriceUpdate(mark_price);
+
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit mark price for {instrument_id}: {e}");
+                    }
+                }
+
+                if ctx.active_index_price_subs.contains(&instrument_id) {
+                    let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
+                    let data = NautilusData::IndexPriceUpdate(index_price);
+
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit index price for {instrument_id}: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_bar_guarded(bar: Bar, ctx: &WsMessageContext) {
+        let current_time_ns = ctx.clock.get_time_ns();
+        if bar.ts_event <= current_time_ns {
+            ctx.incomplete_bars.remove(&bar.bar_type);
+            if let Err(e) = ctx
+                .data_sender
+                .send(DataEvent::Data(NautilusData::Bar(bar)))
+            {
+                log::error!("Failed to emit completed bar: {e}");
+            }
+        } else {
+            ctx.incomplete_bars.insert(bar.bar_type, bar);
+        }
+    }
+
+    fn handle_new_instrument_discovered(ticker: &str, ctx: &WsMessageContext) {
+        log::info!("New instrument discovered via WebSocket: {ticker}");
+
+        let http_client = ctx.http_client.clone();
+        let ws_client = ctx.ws_client.clone();
+        let data_sender = ctx.data_sender.clone();
+        let ticker = ticker.to_string();
+
+        get_runtime().spawn(async move {
+            match http_client.fetch_and_cache_single_instrument(&ticker).await {
+                Ok(Some(instrument)) => {
+                    ws_client.cache_instrument(instrument.clone());
+                    if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+                        log::error!("Failed to emit new instrument: {e}");
+                    }
+                    log::info!("Fetched and cached new instrument: {ticker}");
+                }
+                Ok(None) => {
+                    log::warn!("New instrument {ticker} not found or inactive");
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch new instrument {ticker}: {e}");
+                }
+            }
+        });
     }
 
     fn handle_data_message(
@@ -1430,7 +1661,7 @@ impl DydxDataClient {
             }
         };
 
-        // Always maintain local orderbook — both subscription types need book state
+        // Always maintain local orderbook -- both subscription types need book state
         let mut book = order_books
             .entry(instrument_id)
             .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));

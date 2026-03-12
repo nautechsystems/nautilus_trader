@@ -31,12 +31,11 @@ submission, without requiring external client libraries.
 | Product Type      | Data Feed | Trading | Notes                                  |
 |-------------------|-----------|---------|----------------------------------------|
 | Perpetual Futures | ✓         | ✓       | All perpetuals are USDC-settled.       |
-| Spot              | -         | -       | *Not available on dYdX*.               |
+| Spot              | -         | -       | dYdX offers spot on Solana; not supported by this adapter. |
 | Options           | -         | -       | *Not available on dYdX*.               |
 
 :::note
-dYdX exclusively supports perpetual futures contracts. All markets are quoted in USD and settled
-in USDC.
+This adapter supports perpetual futures only. All markets are quoted in USD and settled in USDC.
 :::
 
 ## Chain architecture
@@ -169,7 +168,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 |------------------------|------------|----------------------------------------------------|
 | `MARKET`               | ✓          | Immediate execution at best available price.       |
 | `LIMIT`                | ✓          |                                                    |
-| `STOP_MARKET`          | ✓          | Conditional order, always long-term.               |
+| `STOP_MARKET`          | ✓          | Stop-loss conditional order, always long-term.     |
 | `STOP_LIMIT`           | ✓          | Conditional order, always long-term.               |
 | `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch. |
 | `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.  |
@@ -180,7 +179,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 | Instruction   | Perpetuals | Notes                                                        |
 |---------------|------------|--------------------------------------------------------------|
 | `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. |
-| `reduce_only` | ✓          | Supported on all order types except MARKET.                  |
+| `reduce_only` | ✓          | Passed for all order types. Venue support may vary by order type. |
 
 ### Time in force options
 
@@ -195,7 +194,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 | Feature            | Perpetuals | Notes            |
 |--------------------|------------|------------------|
-| Order modification | -          | *Not supported*. |
+| Order modification | -          | Not supported. dYdX supports short-term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
 | Bracket/OCO orders | -          | *Not supported*. |
 | Iceberg orders     | -          | *Not supported*. |
 
@@ -247,8 +246,8 @@ configuration is required.
 
 | Category        | Placement   | Expiry            | Typical use                                   |
 |-----------------|-------------|-------------------|-----------------------------------------------|
-| Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 20 blocks. |
-| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short-term window (~10s at ~0.5s/block). |
+| Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 40 blocks. |
+| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short-term window (~20s at ~0.5s/block). |
 | Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
@@ -257,20 +256,20 @@ priced well through the book. This means market orders follow the same
 `Submitted > Accepted > Filled` lifecycle as limit orders (an `OrderAccepted` event is
 expected before the fill).
 
-See the [dYdX order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
+See the [dYdX order documentation](https://docs.dydx.xyz/concepts/trading/orders)
 for full protocol-level details on short-term vs stateful order mechanics.
 
 #### Short-term orders
 
-Short-term orders live **in validator memory only** and expire by block height (max 20 blocks,
-roughly ~10 seconds at ~0.5s/block). They are the fastest order type on dYdX because they skip
+Short-term orders live **in validator memory only** and expire by block height (max 40 blocks,
+roughly ~20 seconds at ~0.5s/block). They are the fastest order type on dYdX because they skip
 on-chain storage.
 
 Key properties:
 
 - **IOC and FOK are always short-term**, regardless of other parameters
 - **GTD orders** are automatically classified as short-term when the expiry falls within the
-  dynamic short-term window (`20 blocks × seconds_per_block`)
+  dynamic short-term window (`40 blocks × seconds_per_block`)
 - Use Good-Til-Block (GTB) for replay protection instead of Cosmos SDK sequences
 - Can be broadcast **concurrently** (no semaphore, cached sequence)
 - Expire silently without generating cancel events
@@ -283,7 +282,7 @@ explicit cancel events when they expire or are cancelled.
 
 Key properties:
 
-- **GTC** orders default to 90-day expiration
+- **GTC** orders default to 90-day expiration (protocol limit is 95 days)
 - **GTD** orders use the user-provided expiry timestamp
 - Require proper Cosmos SDK sequence management (serialized via semaphore)
 - Must be broadcast **serially** with incrementing sequence numbers
@@ -296,7 +295,7 @@ price conditions on the validator.
 
 Key properties:
 
-- Always use timestamp-based expiry (default 90 days for GTC)
+- Always use timestamp-based expiry (default 90 days for GTC, protocol limit 95 days)
 - Always use the long-term broadcast path (serialized with semaphore)
 - Include `StopMarket`, `StopLimit`, `TakeProfitMarket`, and `TakeProfitLimit`
 
@@ -305,7 +304,7 @@ Key properties:
 The adapter determines order lifetime automatically using the `BlockTimeMonitor`:
 
 ```
-max_short_term_secs = SHORT_TERM_ORDER_MAXIMUM_LIFETIME (20) × seconds_per_block
+max_short_term_secs = SHORT_TERM_ORDER_MAXIMUM_LIFETIME (40) × seconds_per_block
 ```
 
 If the order's time until expiry is within `max_short_term_secs`, it is routed as short-term.
@@ -316,11 +315,12 @@ Otherwise, it is routed as long-term. No manual configuration is needed.
 dYdX has no native market order type. The adapter implements `MARKET` orders as aggressive
 **IOC limit orders** priced at:
 
-- **Buy**: `oracle_price × (1 + 0.01)` (1% above oracle)
-- **Sell**: `oracle_price × (1 - 0.01)` (1% below oracle)
+- **Buy**: `oracle_price × (1 + 0.05)` (5% above oracle)
+- **Sell**: `oracle_price × (1 - 0.05)` (5% below oracle)
 
-This 1% slippage buffer (`DEFAULT_MARKET_ORDER_SLIPPAGE = 0.01`) ensures the order crosses the
-spread and fills immediately, while providing price protection against extreme slippage.
+This 5% slippage buffer (`DEFAULT_MARKET_ORDER_SLIPPAGE = 0.05`) sets the worst-case price
+(the "pay-through price"). Because the order is IOC, unfilled slippage is not consumed. The
+buffer is intentionally wide to maximize fill probability across volatile conditions.
 
 ### Client order ID encoding
 
@@ -457,10 +457,10 @@ automatically via `OrderMessageBuilder`, but understanding the parameters helps 
 
 ### Market order pricing
 
-Market orders use the oracle price with a 1% slippage buffer:
+Market orders use the oracle price with a 5% slippage buffer (the "pay-through price"):
 
-- **Buy**: `oracle_price × 1.01`
-- **Sell**: `oracle_price × 0.99`
+- **Buy**: `oracle_price × 1.05`
+- **Sell**: `oracle_price × 0.95`
 
 The oracle price is cached from the Indexer and refreshed periodically.
 
@@ -618,6 +618,17 @@ Default testnet endpoints are used automatically. Override with `base_url_*` con
 | Faucet    | `https://faucet.v4testnet.dydx.exchange`             |
 | Web app   | `https://v4.testnet.dydx.exchange`                   |
 
+### Mainnet endpoints
+
+Default mainnet endpoints are used automatically. Override with `base_url_*`
+config options if needed.
+
+| Service   | Default URL                                         |
+|-----------|-----------------------------------------------------|
+| HTTP      | `https://indexer.dydx.trade`                        |
+| WebSocket | `wss://indexer.dydx.trade/v4/ws`                    |
+| gRPC      | `https://dydx-ops-grpc.kingnodes.com:443` (primary) |
+
 ## Configuration
 
 Configure the dYdX adapter through the trading node configuration. Both data and execution
@@ -736,7 +747,7 @@ cross-margin account, but cannot withdraw funds or transfer assets.
 4. Click **Authorize API Key** (this registers the key on-chain as an authenticator)
 5. The key is now active and can be used for trading
 
-See the [dYdX API Trading Keys guide](https://help.dydx.trade/en/articles/267486-api-trading-keys-creating-a-new-key-on-the-front-end) for full details on creating and managing API keys.
+See the [dYdX API Trading Keys guide](https://docs.dydx.xyz/concepts/trading/api-trading-keys) for full details on creating and managing API keys.
 
 #### Adapter configuration
 

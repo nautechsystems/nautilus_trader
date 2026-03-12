@@ -604,8 +604,8 @@ async fn test_good_til_block_calculation() {
     let good_til_block = current_block + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
     assert_eq!(
-        good_til_block, 1020,
-        "good_til_block should be current block + 20"
+        good_til_block, 1040,
+        "good_til_block should be current block + 40"
     );
     assert!(
         good_til_block > current_block,

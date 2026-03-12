@@ -42,7 +42,7 @@ use nautilus_dydx::{
     },
     execution::wallet::Wallet,
     http::client::DydxHttpClient,
-    websocket::{NautilusWsMessage, client::DydxWebSocketClient},
+    websocket::{DydxWsOutputMessage, client::DydxWebSocketClient},
 };
 
 const DEFAULT_SUBACCOUNT: u32 = 0;
@@ -130,14 +130,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         log::debug!("[Event #{event_count}] {event:?}");
 
                         match event {
-                            NautilusWsMessage::Order(_) => {
-                                log::info!("[Event #{event_count}] Order status update received");
+                            DydxWsOutputMessage::SubaccountSubscribed(_) => {
+                                log::info!("[Event #{event_count}] Subaccount subscribed");
                             }
-                            NautilusWsMessage::Fill(_) => {
-                                log::info!("[Event #{event_count}] Fill update received");
-                            }
-                            NautilusWsMessage::Position(_) => {
-                                log::info!("[Event #{event_count}] Position update received");
+                            DydxWsOutputMessage::SubaccountsChannelData(ref data) => {
+                                let orders = data.contents.orders.as_ref().map_or(0, |o| o.len());
+                                let fills = data.contents.fills.as_ref().map_or(0, |f| f.len());
+                                log::info!("[Event #{event_count}] Channel data: {orders} order(s), {fills} fill(s)");
                             }
                             _ => {}
                         }

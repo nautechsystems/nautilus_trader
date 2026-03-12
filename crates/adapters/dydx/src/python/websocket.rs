@@ -16,10 +16,12 @@
 //! Python bindings for the dYdX WebSocket client.
 
 use std::{
+    str::FromStr,
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
@@ -28,25 +30,39 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
-    enums::AccountType,
-    events::AccountState,
-    identifiers::{AccountId, InstrumentId},
+    data::{
+        Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDeltas, OrderBookDeltas_API,
+    },
+    enums::{AccountType, MarketStatusAction, OrderSide, OrderStatus, OrderType},
+    events::{AccountState, OrderAccepted, OrderCanceled},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{AccountBalance, Currency, Money},
 };
 use nautilus_network::mode::ConnectionMode;
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
-    common::{credential::DydxCredential, enums::DydxCandleResolution, parse::extract_raw_symbol},
+    common::{
+        consts::DYDX_VENUE,
+        credential::DydxCredential,
+        enums::{DydxCandleResolution, DydxMarketStatus},
+        parse::{extract_raw_symbol, parse_price},
+    },
     execution::types::OrderContext,
     http::{client::DydxHttpClient, parse::parse_account_state},
     python::encoder::PyDydxClientOrderIdEncoder,
     websocket::{
+        DydxWsDispatchState, OrderIdentity,
         client::DydxWebSocketClient,
-        enums::NautilusWsMessage,
-        handler::HandlerCommand,
+        enums::DydxWsOutputMessage,
+        fill_report_to_order_filled, parse as ws_parse,
         parse::{parse_ws_fill_report, parse_ws_order_report, parse_ws_position_report},
     },
 };
@@ -78,17 +94,17 @@ impl DydxWebSocketClient {
         self.is_connected()
     }
 
-    #[pyo3(name = "set_bars_timestamp_on_close")]
-    fn py_set_bars_timestamp_on_close(&mut self, value: bool) {
-        self.set_bars_timestamp_on_close(value);
-    }
-
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
-    /// Share the HTTP client's instrument cache with this WebSocket client.
+    #[pyo3(name = "set_bars_timestamp_on_close")]
+    fn py_set_bars_timestamp_on_close(&self, value: bool) {
+        self.set_bars_timestamp_on_close(value);
+    }
+
+    /// Shares the HTTP client's instrument cache with this WebSocket client.
     ///
     /// The HTTP client's cache includes CLOB pair ID and market ticker indices
     /// needed for parsing SubaccountsChannelData into typed execution events.
@@ -96,6 +112,33 @@ impl DydxWebSocketClient {
     #[pyo3(name = "share_instrument_cache")]
     fn py_share_instrument_cache(&mut self, http_client: &DydxHttpClient) {
         self.set_instrument_cache(http_client.instrument_cache().clone());
+    }
+
+    #[pyo3(name = "register_order_identity")]
+    fn py_register_order_identity(
+        &self,
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        order_side: OrderSide,
+        order_type: OrderType,
+    ) {
+        self.ws_dispatch_state().order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
+    }
+
+    #[pyo3(name = "remove_order_identity")]
+    fn py_remove_order_identity(&self, client_order_id: ClientOrderId) {
+        self.ws_dispatch_state()
+            .order_identities
+            .remove(&client_order_id);
     }
 
     #[pyo3(name = "account_id")]
@@ -115,6 +158,7 @@ impl DydxWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
     #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
@@ -122,6 +166,7 @@ impl DydxWebSocketClient {
         loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
+        trader_id: Option<TraderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let call_soon = loop_.getattr(py, "call_soon_threadsafe")?;
 
@@ -134,6 +179,9 @@ impl DydxWebSocketClient {
         self.cache_instruments(instruments_any);
 
         let mut client = self.clone();
+        let bar_types = self.bar_types().clone();
+        let dispatch_state = self.ws_dispatch_state().clone();
+        let trader_id = trader_id.unwrap_or(TraderId::from("TRADER-000"));
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.connect().await.map_err(to_pyvalue_err)?;
@@ -144,43 +192,296 @@ impl DydxWebSocketClient {
                     let clock = get_atomic_clock_realtime();
                     let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
                     let order_id_map: DashMap<String, (u32, u32)> = DashMap::new();
+                    let bars_timestamp_on_close = _client.bars_timestamp_on_close();
+                    let mut pending_bars: AHashMap<String, Bar> = AHashMap::new();
+                    let mut seen_tickers: ahash::AHashSet<Ustr> = ahash::AHashSet::new();
 
                     while let Some(msg) = rx.recv().await {
+                        let ts_init = clock.get_time_ns();
+
                         match msg {
-                            NautilusWsMessage::Data(items) => {
-                                Python::attach(|py| {
-                                    for data in items {
+                            DydxWsOutputMessage::Trades { id, contents } => {
+                                let Some(instrument) = _client.instrument_cache().get_by_market(&id) else {
+                                    log::warn!("No instrument cached for market {id}");
+                                    continue;
+                                };
+                                let instrument_id = instrument.id();
+
+                                match ws_parse::parse_trade_ticks(instrument_id, &instrument, &contents, ts_init) {
+                                    Ok(items) => {
+                                        Python::attach(|py| {
+                                            for data in items {
+                                                let py_obj = data_to_pycapsule(py, data);
+                                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                            }
+                                        });
+                                    }
+                                    Err(e) => log::error!("Failed to parse trade ticks for {id}: {e}"),
+                                }
+                            }
+                            DydxWsOutputMessage::OrderbookSnapshot { id, contents } => {
+                                let Some(instrument) = _client.instrument_cache().get_by_market(&id) else {
+                                    log::warn!("No instrument cached for market {id}");
+                                    continue;
+                                };
+                                let instrument_id = instrument.id();
+                                let price_precision = instrument.price_precision();
+                                let size_precision = instrument.size_precision();
+
+                                match ws_parse::parse_orderbook_snapshot(
+                                    &instrument_id,
+                                    &contents,
+                                    price_precision,
+                                    size_precision,
+                                    ts_init,
+                                ) {
+                                    Ok(deltas) => {
+                                        Python::attach(|py| {
+                                            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                            let py_obj = data_to_pycapsule(py, data);
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => log::error!("Failed to parse orderbook snapshot for {id}: {e}"),
+                                }
+                            }
+                            DydxWsOutputMessage::OrderbookUpdate { id, contents } => {
+                                let Some(instrument) = _client.instrument_cache().get_by_market(&id) else {
+                                    log::warn!("No instrument cached for market {id}");
+                                    continue;
+                                };
+                                let instrument_id = instrument.id();
+                                let price_precision = instrument.price_precision();
+                                let size_precision = instrument.size_precision();
+
+                                match ws_parse::parse_orderbook_deltas(
+                                    &instrument_id,
+                                    &contents,
+                                    price_precision,
+                                    size_precision,
+                                    ts_init,
+                                ) {
+                                    Ok(deltas) => {
+                                        Python::attach(|py| {
+                                            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                            let py_obj = data_to_pycapsule(py, data);
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        });
+                                    }
+                                    Err(e) => log::error!("Failed to parse orderbook deltas for {id}: {e}"),
+                                }
+                            }
+                            DydxWsOutputMessage::OrderbookBatch { id, updates } => {
+                                let Some(instrument) = _client.instrument_cache().get_by_market(&id) else {
+                                    log::warn!("No instrument cached for market {id}");
+                                    continue;
+                                };
+                                let instrument_id = instrument.id();
+                                let price_precision = instrument.price_precision();
+                                let size_precision = instrument.size_precision();
+
+                                let mut all_deltas = Vec::new();
+                                let last_idx = updates.len().saturating_sub(1);
+                                let mut parse_ok = true;
+
+                                for (idx, update) in updates.iter().enumerate() {
+                                    if idx < last_idx {
+                                        match ws_parse::parse_orderbook_deltas_with_flag(
+                                            &instrument_id,
+                                            update,
+                                            price_precision,
+                                            size_precision,
+                                            ts_init,
+                                            false,
+                                        ) {
+                                            Ok(deltas) => all_deltas.extend(deltas),
+                                            Err(e) => {
+                                                log::error!("Failed to parse batch orderbook deltas for {id}: {e}");
+                                                parse_ok = false;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        match ws_parse::parse_orderbook_deltas(
+                                            &instrument_id,
+                                            update,
+                                            price_precision,
+                                            size_precision,
+                                            ts_init,
+                                        ) {
+                                            Ok(last_deltas) => all_deltas.extend(last_deltas.deltas),
+                                            Err(e) => {
+                                                log::error!("Failed to parse batch orderbook deltas for {id}: {e}");
+                                                parse_ok = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if parse_ok && !all_deltas.is_empty() {
+                                    let combined = OrderBookDeltas::new(instrument_id, all_deltas);
+                                    Python::attach(|py| {
+                                        let data = Data::Deltas(OrderBookDeltas_API::new(combined));
                                         let py_obj = data_to_pycapsule(py, data);
                                         call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                    });
+                                }
+                            }
+                            DydxWsOutputMessage::Candles { id, contents } => {
+                                let ticker = id.split('/').next().unwrap_or(&id);
+
+                                let Some(bar_type) = bar_types.get(&id).map(|r| *r) else {
+                                    log::debug!("No bar type registered for candle topic {id}");
+                                    continue;
+                                };
+
+                                let Some(instrument) = _client.instrument_cache().get_by_market(ticker) else {
+                                    log::warn!("No instrument cached for market {ticker}");
+                                    continue;
+                                };
+
+                                match ws_parse::parse_candle_bar(
+                                    bar_type,
+                                    &instrument,
+                                    &contents,
+                                    bars_timestamp_on_close,
+                                    ts_init,
+                                ) {
+                                    Ok(bar) => {
+                                        if let Some(prev_bar) = pending_bars.get(&id) {
+                                            if bar.ts_event == prev_bar.ts_event {
+                                                pending_bars.insert(id, bar);
+                                            } else {
+                                                let emit_bar = *prev_bar;
+                                                pending_bars.insert(id.clone(), bar);
+                                                Python::attach(|py| {
+                                                    let py_obj = data_to_pycapsule(py, Data::Bar(emit_bar));
+                                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                                });
+                                            }
+                                        } else {
+                                            pending_bars.insert(id, bar);
+                                        }
                                     }
-                                });
+                                    Err(e) => log::error!("Failed to parse candle bar for {id}: {e}"),
+                                }
                             }
-                            NautilusWsMessage::Deltas(deltas) => {
-                                Python::attach(|py| {
-                                    let data = Data::Deltas(OrderBookDeltas_API::new(*deltas));
-                                    let py_obj = data_to_pycapsule(py, data);
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                });
-                            }
-                            NautilusWsMessage::BlockHeight { height, time } => {
-                                Python::attach(|py| {
-                                    let dict = PyDict::new(py);
-                                    let _ = dict.set_item("type", "block_height");
-                                    let _ = dict.set_item("height", height);
-                                    let _ = dict.set_item("time", time.to_rfc3339());
-                                    if let Ok(py_obj) = dict.into_py_any(py) {
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                            DydxWsOutputMessage::Markets(contents) => {
+                                if let Some(ref oracle_prices) = contents.oracle_prices {
+                                    for (ticker, oracle_data) in oracle_prices {
+                                        let Some(instrument) = _client.instrument_cache().get_by_market(ticker) else {
+                                            continue;
+                                        };
+                                        let instrument_id = instrument.id();
+
+                                        let Ok(price) = parse_price(&oracle_data.oracle_price, "oracle_price") else {
+                                            log::warn!("Failed to parse oracle price for {ticker}");
+                                            continue;
+                                        };
+
+                                        let mark_price = MarkPriceUpdate::new(
+                                            instrument_id,
+                                            price,
+                                            ts_init,
+                                            ts_init,
+                                        );
+                                        Python::attach(|py| {
+                                            match mark_price.into_py_any(py) {
+                                                Ok(py_obj) => {
+                                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                                }
+                                                Err(e) => log::error!("Failed to convert MarkPriceUpdate to Python: {e}"),
+                                            }
+                                        });
+
+                                        let index_price = IndexPriceUpdate::new(
+                                            instrument_id,
+                                            price,
+                                            ts_init,
+                                            ts_init,
+                                        );
+                                        Python::attach(|py| {
+                                            match index_price.into_py_any(py) {
+                                                Ok(py_obj) => {
+                                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                                }
+                                                Err(e) => log::error!("Failed to convert IndexPriceUpdate to Python: {e}"),
+                                            }
+                                        });
                                     }
-                                });
+                                }
+
+                                handle_markets_trading_data(
+                                    contents.trading.as_ref(),
+                                    _client.instrument_cache(),
+                                    &mut seen_tickers,
+                                    &call_soon,
+                                    &callback,
+                                    ts_init,
+                                );
+                                handle_markets_trading_data(
+                                    contents.markets.as_ref(),
+                                    _client.instrument_cache(),
+                                    &mut seen_tickers,
+                                    &call_soon,
+                                    &callback,
+                                    ts_init,
+                                );
+
+                                // Parse oracle prices from initial snapshot markets entries
+                                if let Some(ref markets_map) = contents.markets {
+                                    for (ticker, update) in markets_map {
+                                        if let Some(ref oracle_price_str) = update.oracle_price {
+                                            let Some(instrument) = _client.instrument_cache().get_by_market(ticker) else {
+                                                continue;
+                                            };
+                                            let instrument_id = instrument.id();
+                                            let Ok(price) = parse_price(oracle_price_str, "oracle_price") else {
+                                                log::warn!("Failed to parse oracle price for {ticker}");
+                                                continue;
+                                            };
+
+                                            let mark_price = MarkPriceUpdate::new(
+                                                instrument_id,
+                                                price,
+                                                ts_init,
+                                                ts_init,
+                                            );
+                                            Python::attach(|py| {
+                                                match mark_price.into_py_any(py) {
+                                                    Ok(py_obj) => {
+                                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                                    }
+                                                    Err(e) => log::error!("Failed to convert MarkPriceUpdate to Python: {e}"),
+                                                }
+                                            });
+
+                                            let index_price = IndexPriceUpdate::new(
+                                                instrument_id,
+                                                price,
+                                                ts_init,
+                                                ts_init,
+                                            );
+                                            Python::attach(|py| {
+                                                match index_price.into_py_any(py) {
+                                                    Ok(py_obj) => {
+                                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                                    }
+                                                    Err(e) => log::error!("Failed to convert IndexPriceUpdate to Python: {e}"),
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
                             }
-                            NautilusWsMessage::SubaccountSubscribed(data) => {
+                            DydxWsOutputMessage::SubaccountSubscribed(data) => {
                                 let Some(account_id) = _client.account_id() else {
                                     log::warn!("Cannot parse subaccount subscription: account_id not set");
                                     continue;
                                 };
 
                                 let instrument_cache = _client.instrument_cache();
-                                let ts_init = clock.get_time_ns();
 
                                 let inst_map = instrument_cache.to_instrument_id_map();
                                 let oracle_map = instrument_cache.to_oracle_prices_map();
@@ -258,7 +559,7 @@ impl DydxWebSocketClient {
                                     });
                                 }
                             }
-                            NautilusWsMessage::SubaccountsChannelData(data) => {
+                            DydxWsOutputMessage::SubaccountsChannelData(data) => {
                                 let Some(account_id) = _client.account_id() else {
                                     log::warn!("Cannot parse SubaccountsChannelData: account_id not set");
                                     continue;
@@ -266,18 +567,15 @@ impl DydxWebSocketClient {
 
                                 let instrument_cache = _client.instrument_cache();
                                 let encoder = _client.encoder();
-                                let ts_init = clock.get_time_ns();
 
                                 let mut terminal_orders: Vec<(u32, u32, String)> = Vec::new();
+                                let mut cum_fill_totals: AHashMap<VenueOrderId, (Decimal, Decimal)> = AHashMap::new();
 
                                 // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
-                                // but DON'T send order reports yet — fills must be sent first
-                                // to prevent reconciliation from inferring fills at the limit price.
                                 let mut pending_order_reports = Vec::new();
 
                                 if let Some(ref orders) = data.contents.orders {
                                     for ws_order in orders {
-                                        // Build order_id → (client_id, client_metadata) for fill correlation
                                         if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
                                             let client_meta = ws_order.client_metadata
                                                 .as_ref()
@@ -311,8 +609,7 @@ impl DydxWebSocketClient {
                                     }
                                 }
 
-                                // Phase 2: Send fills FIRST so reconciliation sees them before
-                                // the terminal order status (prevents inferred fills at limit price)
+                                // Phase 2: Process fills (tracked get OrderFilled, untracked get FillReport)
                                 if let Some(ref fills) = data.contents.fills {
                                     for ws_fill in fills {
                                         match parse_ws_fill_report(
@@ -325,30 +622,121 @@ impl DydxWebSocketClient {
                                             ts_init,
                                         ) {
                                             Ok(report) => {
-                                                Python::attach(|py| {
-                                                    match pyo3::Py::new(py, report) {
-                                                        Ok(py_obj) => {
-                                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
-                                                        }
-                                                        Err(e) => log::error!("Failed to convert FillReport: {e}"),
-                                                    }
+                                                let identity = report.client_order_id.and_then(|cid| {
+                                                    dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
                                                 });
+
+                                                if let Some((cid, ident)) = identity {
+                                                    ensure_accepted_to_python(
+                                                        cid,
+                                                        account_id,
+                                                        report.venue_order_id,
+                                                        &ident,
+                                                        &dispatch_state,
+                                                        trader_id,
+                                                        ts_init,
+                                                        &call_soon,
+                                                        &callback,
+                                                    );
+                                                    dispatch_state.insert_filled(cid);
+                                                    let quote_currency = instrument_cache
+                                                        .get(&report.instrument_id)
+                                                        .map_or_else(Currency::USD, |i: InstrumentAny| i.quote_currency());
+                                                    let filled = fill_report_to_order_filled(
+                                                        &report, trader_id, &ident, quote_currency,
+                                                    );
+                                                    send_to_python(filled, &call_soon, &callback);
+                                                } else {
+                                                    let entry = cum_fill_totals
+                                                        .entry(report.venue_order_id)
+                                                        .or_default();
+                                                    let qty = report.last_qty.as_decimal();
+                                                    entry.0 += report.last_px.as_decimal() * qty;
+                                                    entry.1 += qty;
+                                                    send_to_python(report, &call_soon, &callback);
+                                                }
                                             }
                                             Err(e) => log::error!("Failed to parse WS fill: {e}"),
                                         }
                                     }
                                 }
 
-                                // Phase 3: Now send order status reports
+                                // Phase 3: Process order status updates
+                                for report in &mut pending_order_reports {
+                                    if let Some((notional, total_qty)) =
+                                        cum_fill_totals.get(&report.venue_order_id)
+                                        && !total_qty.is_zero()
+                                    {
+                                        report.avg_px = Some(notional / total_qty);
+                                    }
+                                }
+
                                 for report in pending_order_reports {
-                                    Python::attach(|py| {
-                                        match pyo3::Py::new(py, report) {
-                                            Ok(py_obj) => {
-                                                call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
-                                            }
-                                            Err(e) => log::error!("Failed to convert OrderStatusReport: {e}"),
-                                        }
+                                    let identity = report.client_order_id.and_then(|cid| {
+                                        dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
                                     });
+
+                                    if let Some((cid, ident)) = identity {
+                                        match report.order_status {
+                                            OrderStatus::Accepted => {
+                                                if dispatch_state.emitted_accepted.contains(&cid)
+                                                    || dispatch_state.filled_orders.contains(&cid)
+                                                {
+                                                    log::debug!("Skipping duplicate Accepted for {cid}");
+                                                    continue;
+                                                }
+                                                dispatch_state.insert_accepted(cid);
+                                                let accepted = OrderAccepted::new(
+                                                    trader_id,
+                                                    ident.strategy_id,
+                                                    ident.instrument_id,
+                                                    cid,
+                                                    report.venue_order_id,
+                                                    account_id,
+                                                    UUID4::new(),
+                                                    report.ts_last,
+                                                    ts_init,
+                                                    false,
+                                                );
+                                                send_to_python(accepted, &call_soon, &callback);
+                                            }
+                                            OrderStatus::Canceled => {
+                                                ensure_accepted_to_python(
+                                                    cid,
+                                                    account_id,
+                                                    report.venue_order_id,
+                                                    &ident,
+                                                    &dispatch_state,
+                                                    trader_id,
+                                                    ts_init,
+                                                    &call_soon,
+                                                    &callback,
+                                                );
+                                                let canceled = OrderCanceled::new(
+                                                    trader_id,
+                                                    ident.strategy_id,
+                                                    ident.instrument_id,
+                                                    cid,
+                                                    UUID4::new(),
+                                                    report.ts_last,
+                                                    ts_init,
+                                                    false,
+                                                    Some(report.venue_order_id),
+                                                    Some(account_id),
+                                                );
+                                                send_to_python(canceled, &call_soon, &callback);
+                                                dispatch_state.cleanup_terminal(&cid);
+                                            }
+                                            OrderStatus::Filled => {
+                                                dispatch_state.cleanup_terminal(&cid);
+                                            }
+                                            _ => {
+                                                send_to_python(report, &call_soon, &callback);
+                                            }
+                                        }
+                                    } else {
+                                        send_to_python(report, &call_soon, &callback);
+                                    }
                                 }
 
                                 // Deferred cleanup after fills are correlated
@@ -358,102 +746,23 @@ impl DydxWebSocketClient {
                                     order_id_map.remove(&order_id);
                                 }
                             }
-                            NautilusWsMessage::MarkPrice(mark_price) => {
-                                Python::attach(|py| {
-                                    match mark_price.into_py_any(py) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => log::error!("Failed to convert MarkPriceUpdate to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::IndexPrice(index_price) => {
-                                Python::attach(|py| {
-                                    match index_price.into_py_any(py) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => log::error!("Failed to convert IndexPriceUpdate to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::FundingRate(funding_rate) => {
-                                Python::attach(|py| {
-                                    match funding_rate.into_py_any(py) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => log::error!("Failed to convert FundingRateUpdate to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::InstrumentStatus(status) => {
-                                Python::attach(|py| {
-                                    match status.into_py_any(py) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => log::error!("Failed to convert InstrumentStatus to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::Error(err) => {
-                                log::error!("dYdX WebSocket error: {err}");
-                            }
-                            NautilusWsMessage::Reconnected => {
-                                log::info!("dYdX WebSocket reconnected");
-                            }
-                            NautilusWsMessage::AccountState(state) => {
-                                Python::attach(|py| {
-                                    match state.into_py_any(py) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                        }
-                                        Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::Position(report) => {
-                                Python::attach(|py| {
-                                    match pyo3::Py::new(py, *report) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
-                                        }
-                                        Err(e) => log::error!("Failed to convert PositionStatusReport to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::Order(report) => {
-                                Python::attach(|py| {
-                                    match pyo3::Py::new(py, *report) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
-                                        }
-                                        Err(e) => log::error!("Failed to convert OrderStatusReport to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::Fill(report) => {
-                                Python::attach(|py| {
-                                    match pyo3::Py::new(py, *report) {
-                                        Ok(py_obj) => {
-                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
-                                        }
-                                        Err(e) => log::error!("Failed to convert FillReport to Python: {e}"),
-                                    }
-                                });
-                            }
-                            NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
-                                log::info!("New instrument discovered via WebSocket: {ticker}");
+                            DydxWsOutputMessage::BlockHeight { height, time } => {
                                 Python::attach(|py| {
                                     let dict = PyDict::new(py);
-                                    let _ = dict.set_item("type", "new_instrument_discovered");
-                                    let _ = dict.set_item("ticker", &ticker);
+                                    let _ = dict.set_item("type", "block_height");
+                                    let _ = dict.set_item("height", height);
+                                    let _ = dict.set_item("time", time.to_rfc3339());
                                     if let Ok(py_obj) = dict.into_py_any(py) {
                                         call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     }
                                 });
+                            }
+                            DydxWsOutputMessage::Error(err) => {
+                                log::error!("dYdX WebSocket error: {err}");
+                            }
+                            DydxWsOutputMessage::Reconnected => {
+                                log::info!("dYdX WebSocket reconnected");
+                                pending_bars.clear();
                             }
                         }
                     }
@@ -609,19 +918,14 @@ impl DydxWebSocketClient {
 
         let client = self.clone();
         let instrument_id = bar_type.instrument_id();
+        let bar_types = self.bar_types().clone();
 
         // Build topic for bar type registration (e.g., "ETH-USD/1MIN")
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!("{ticker}/{resolution}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Register bar type in handler before subscribing
-            client
-                .send_command(HandlerCommand::RegisterBarType { topic, bar_type })
-                .map_err(to_pyvalue_err)?;
-
-            // Brief delay to ensure handler processes registration
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            bar_types.insert(topic, bar_type);
 
             client
                 .subscribe_candles(instrument_id, &resolution)
@@ -643,6 +947,7 @@ impl DydxWebSocketClient {
 
         let client = self.clone();
         let instrument_id = bar_type.instrument_id();
+        let bar_types = self.bar_types().clone();
 
         // Build topic for unregistration
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
@@ -654,10 +959,7 @@ impl DydxWebSocketClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            // Unregister bar type after unsubscribing
-            client
-                .send_command(HandlerCommand::UnregisterBarType { topic })
-                .map_err(to_pyvalue_err)?;
+            bar_types.remove(&topic);
 
             Ok(())
         })
@@ -738,4 +1040,140 @@ impl DydxWebSocketClient {
             Ok(())
         })
     }
+}
+
+fn instrument_id_from_ticker(ticker: &str) -> InstrumentId {
+    let symbol = format!("{ticker}-PERP");
+    InstrumentId::new(Symbol::new(&symbol), *DYDX_VENUE)
+}
+
+fn handle_markets_trading_data(
+    trading: Option<
+        &std::collections::HashMap<String, crate::websocket::messages::DydxMarketTradingUpdate>,
+    >,
+    instrument_cache: &std::sync::Arc<crate::common::instrument_cache::InstrumentCache>,
+    seen_tickers: &mut ahash::AHashSet<Ustr>,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+    ts_init: nautilus_core::UnixNanos,
+) {
+    let Some(trading_map) = trading else {
+        return;
+    };
+
+    for (ticker, update) in trading_map {
+        let instrument_id = instrument_id_from_ticker(ticker);
+
+        if let Some(status) = &update.status {
+            let action = MarketStatusAction::from(*status);
+            let is_trading = matches!(status, DydxMarketStatus::Active);
+
+            let instrument_status = InstrumentStatus::new(
+                instrument_id,
+                action,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                Some(is_trading),
+                None,
+                None,
+            );
+
+            if instrument_cache.get_by_market(ticker).is_some() {
+                Python::attach(|py| match instrument_status.into_py_any(py) {
+                    Ok(py_obj) => {
+                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                    }
+                    Err(e) => log::error!("Failed to convert InstrumentStatus to Python: {e}"),
+                });
+            }
+        }
+
+        let ticker_ustr = Ustr::from(ticker.as_str());
+        if !seen_tickers.contains(&ticker_ustr) {
+            let is_active = update
+                .status
+                .as_ref()
+                .is_none_or(|s| matches!(s, crate::common::enums::DydxMarketStatus::Active));
+            if instrument_cache.get_by_market(ticker).is_some() {
+                seen_tickers.insert(ticker_ustr);
+            } else if is_active {
+                seen_tickers.insert(ticker_ustr);
+                log::info!("New instrument discovered via WebSocket: {ticker}");
+                Python::attach(|py| {
+                    let dict = PyDict::new(py);
+                    let _ = dict.set_item("type", "new_instrument_discovered");
+                    let _ = dict.set_item("ticker", ticker);
+                    if let Ok(py_obj) = dict.into_py_any(py) {
+                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                    }
+                });
+            }
+        }
+
+        if let Some(ref rate_str) = update.next_funding_rate {
+            if let Ok(rate) = Decimal::from_str(rate_str) {
+                let funding_rate = FundingRateUpdate {
+                    instrument_id,
+                    rate,
+                    next_funding_ns: None,
+                    ts_event: ts_init,
+                    ts_init,
+                };
+                Python::attach(|py| match funding_rate.into_py_any(py) {
+                    Ok(py_obj) => {
+                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                    }
+                    Err(e) => log::error!("Failed to convert FundingRateUpdate to Python: {e}"),
+                });
+            } else {
+                log::warn!("Failed to parse next_funding_rate for {ticker}: {rate_str}");
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ensure_accepted_to_python(
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: VenueOrderId,
+    identity: &OrderIdentity,
+    state: &DydxWsDispatchState,
+    trader_id: TraderId,
+    ts_init: nautilus_core::UnixNanos,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    if state.emitted_accepted.contains(&client_order_id) {
+        return;
+    }
+    state.insert_accepted(client_order_id);
+    let accepted = OrderAccepted::new(
+        trader_id,
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        UUID4::new(),
+        ts_init,
+        ts_init,
+        false,
+    );
+    send_to_python(accepted, call_soon, callback);
+}
+
+fn send_to_python<T: for<'py> IntoPyObjectExt<'py>>(
+    value: T,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    Python::attach(|py| match value.into_py_any(py) {
+        Ok(py_obj) => {
+            call_python_threadsafe(py, call_soon, callback, py_obj);
+        }
+        Err(e) => log::error!("Failed to convert to Python: {e}"),
+    });
 }

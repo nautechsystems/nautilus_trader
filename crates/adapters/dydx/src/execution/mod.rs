@@ -39,12 +39,11 @@
 //! See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details.
 
 use std::{
-    collections::VecDeque,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -66,9 +65,9 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::AccountState,
+    events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -103,8 +102,10 @@ use crate::{
         },
     },
     websocket::{
+        DydxWsDispatchState, OrderIdentity,
         client::DydxWebSocketClient,
-        enums::NautilusWsMessage,
+        enums::DydxWsOutputMessage,
+        fill_report_to_order_filled,
         parse::{parse_ws_fill_report, parse_ws_order_report, parse_ws_position_report},
     },
 };
@@ -120,15 +121,11 @@ pub mod wallet;
 
 use block_time::BlockTimeMonitor;
 
-/// Maximum client order ID value for dYdX (informational - not enforced by adapter).
-///
 /// Maximum client order ID value for dYdX (informational).
 ///
 /// dYdX protocol accepts u32 client IDs. The `ClientOrderIdEncoder` uses sequential
 /// allocation starting from 1, with overflow protection near `u32::MAX - 1000`.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
-
-const MAX_TERMINAL_IDS: usize = 10_000;
 
 fn apply_avg_px_from_fills(order_reports: &mut [OrderStatusReport], fill_reports: &[FillReport]) {
     let mut totals: AHashMap<VenueOrderId, (Decimal, Decimal)> = AHashMap::new();
@@ -171,24 +168,16 @@ pub struct DydxExecutionClient {
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<Option<DydxGrpcClient>>>,
     instrument_cache: Arc<InstrumentCache>,
-    /// Block time monitor for tracking rolling average block times and expiration estimation.
     block_time_monitor: Arc<BlockTimeMonitor>,
     oracle_prices: Arc<DashMap<InstrumentId, Decimal>>,
-    /// Bidirectional encoder for ClientOrderId ↔ u32 mapping.
-    /// Wrapped in Arc for sharing with async WebSocket handler.
     encoder: Arc<ClientOrderIdEncoder>,
+    dispatch_state: Arc<DydxWsDispatchState>,
     order_contexts: Arc<DashMap<u32, OrderContext>>,
-    /// Reverse mapping: dYdX order ID → (client_id, client_metadata) for fill correlation.
-    /// Fills don't carry client_id, so we map via order_id from order updates.
     order_id_map: Arc<DashMap<String, (u32, u32)>>,
     wallet_address: String,
     subaccount_number: u32,
     tx_manager: Option<Arc<TransactionManager>>,
-    /// Transaction broadcaster with retry logic.
-    /// Wrapped in Arc for sharing with async order tasks.
     broadcaster: Option<Arc<TxBroadcaster>>,
-    /// Order message builder for creating dYdX proto messages.
-    /// Wrapped in Arc for sharing with async order tasks.
     order_builder: Option<Arc<OrderMessageBuilder>>,
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -260,6 +249,7 @@ impl DydxExecutionClient {
             block_time_monitor: Arc::new(BlockTimeMonitor::new()),
             oracle_prices: Arc::new(DashMap::new()),
             encoder: Arc::new(ClientOrderIdEncoder::new()),
+            dispatch_state: Arc::new(DydxWsDispatchState::default()),
             order_contexts: Arc::new(DashMap::new()),
             order_id_map: Arc::new(DashMap::new()),
             wallet_address,
@@ -309,7 +299,7 @@ impl DydxExecutionClient {
 
     fn spawn_ws_stream_handler(
         &mut self,
-        stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
+        stream: impl Stream<Item = DydxWsOutputMessage> + Send + 'static,
     ) {
         if self.ws_stream_handle.is_some() {
             return;
@@ -318,12 +308,14 @@ impl DydxExecutionClient {
         log::debug!("Starting execution WebSocket message processing task");
 
         // Clone data needed for account state parsing in spawned task
+        let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
         let instrument_cache = self.instrument_cache.clone();
         let oracle_prices = self.oracle_prices.clone();
         let encoder = self.encoder.clone();
         let order_contexts = self.order_contexts.clone();
         let order_id_map = self.order_id_map.clone();
+        let dispatch_state = self.dispatch_state.clone();
         let block_time_monitor = self.block_time_monitor.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -331,42 +323,18 @@ impl DydxExecutionClient {
         let handle = get_runtime().spawn(async move {
             log::debug!("Execution WebSocket message loop started");
 
-            // Cumulative fill totals per order for avg_px computation
-            // (dYdX doesn't provide avg_px on orders)
+            // Cumulative fill totals per untracked order for avg_px computation
             let mut cum_fill_totals: AHashMap<VenueOrderId, (Decimal, Decimal)> =
                 AHashMap::new();
-
-            // Track orders that have reached terminal state to skip stale updates
-            let mut terminal_venue_order_ids: AHashSet<VenueOrderId> = AHashSet::new();
-            let mut terminal_id_queue: VecDeque<VenueOrderId> = VecDeque::new();
 
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
                 match msg {
-                    NautilusWsMessage::Order(report) => {
-                        log::debug!("Received order update: {:?}", report.order_status);
-                        emitter.send_order_status_report(*report);
-                    }
-                    NautilusWsMessage::Fill(report) => {
-                        log::debug!("Received fill update");
-                        emitter.send_fill_report(*report);
-                    }
-                    NautilusWsMessage::Position(report) => {
-                        log::debug!("Received position update");
-                        emitter.send_position_report(*report);
-                    }
-                    NautilusWsMessage::AccountState(state) => {
-                        log::debug!("Received account state update");
-                        emitter.send_account_state(*state);
-                    }
-                    NautilusWsMessage::SubaccountSubscribed(msg) => {
-
+                    DydxWsOutputMessage::SubaccountSubscribed(msg) => {
                         log::debug!("Parsing subaccount subscription with full context");
 
-                        // Build instruments map for parsing from shared cache
                         let inst_map = instrument_cache.to_instrument_id_map();
 
-                        // Build oracle prices map (copy Decimals)
                         let oracle_map: std::collections::HashMap<_, _> = oracle_prices
                             .iter()
                             .map(|entry| (*entry.key(), *entry.value()))
@@ -397,7 +365,6 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Parse positions from the subscription
                         if let Some(ref positions) =
                             subaccount.open_perpetual_positions
                         {
@@ -434,7 +401,6 @@ impl DydxExecutionClient {
                         } else {
                             log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
 
-                            // Emit zero-balance account state so account gets registered
                             let currency = Currency::get_or_create_crypto_with_context("USDC", None);
                             let zero = Money::zero(currency);
                             let balance = AccountBalance::new_checked(zero, zero, zero)
@@ -453,7 +419,7 @@ impl DydxExecutionClient {
                             emitter.send_account_state(account_state);
                         }
                     }
-                    NautilusWsMessage::SubaccountsChannelData(data) => {
+                    DydxWsOutputMessage::SubaccountsChannelData(data) => {
                         log::debug!(
                             "Processing subaccounts channel data (orders={:?}, fills={:?})",
                             data.contents.orders.as_ref().map(|o| o.len()),
@@ -461,19 +427,11 @@ impl DydxExecutionClient {
                         );
                         let ts_init = clock.get_time_ns();
 
-                        // Track terminal orders for deferred cleanup (after fills)
                         let mut terminal_orders: Vec<(u32, u32, String)> = Vec::new();
-
-                        // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
-                        // but DON'T send order reports yet — fills must be sent first
-                        // to prevent reconciliation from inferring fills at the limit price.
                         let mut pending_order_reports = Vec::new();
 
+                        // Phase 1: Parse orders and build order_id_map
                         if let Some(ref orders) = data.contents.orders {
-                            log::debug!(
-                                "Processing {} orders from SubaccountsChannelData",
-                                orders.len()
-                            );
                             for ws_order in orders {
                                 log::debug!(
                                     "Parsing WS order: clob_pair_id={}, status={:?}, client_id={}",
@@ -482,8 +440,6 @@ impl DydxExecutionClient {
                                     ws_order.client_id
                                 );
 
-                                // Build order_id → (client_id, client_metadata) mapping for fill correlation
-                                // (fills don't carry client_id, only order_id)
                                 if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
                                     let client_meta = ws_order.client_metadata
                                         .as_ref()
@@ -501,7 +457,6 @@ impl DydxExecutionClient {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
-                                        // Collect terminal orders for deferred cleanup
                                         if !report.order_status.is_open()
                                             && let Ok(cid) = ws_order.client_id.parse::<u32>()
                                         {
@@ -528,10 +483,7 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Phase 2: Send fills FIRST so reconciliation sees them before
-                        // the terminal order status (prevents inferred fills at limit price)
-                        let mut filled_in_msg: AHashSet<VenueOrderId> = AHashSet::new();
-
+                        // Phase 2: Process fills (sent before order status for correct reconciliation)
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
@@ -553,16 +505,47 @@ impl DydxExecutionClient {
                                             report.client_order_id
                                         );
 
-                                        // Accumulate for cumulative avg_px
-                                        let entry = cum_fill_totals
-                                            .entry(report.venue_order_id)
-                                            .or_default();
-                                        let qty = report.last_qty.as_decimal();
-                                        entry.0 += report.last_px.as_decimal() * qty;
-                                        entry.1 += qty;
-                                        filled_in_msg.insert(report.venue_order_id);
+                                        let identity = report.client_order_id.and_then(|cid| {
+                                            dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
+                                        });
 
-                                        emitter.send_fill_report(report);
+                                        if let Some((cid, ident)) = identity {
+                                            // Tracked: synthesize OrderAccepted if not yet emitted
+                                            if !dispatch_state.emitted_accepted.contains(&cid) {
+                                                dispatch_state.insert_accepted(cid);
+                                                let accepted = OrderAccepted::new(
+                                                    trader_id,
+                                                    ident.strategy_id,
+                                                    ident.instrument_id,
+                                                    cid,
+                                                    report.venue_order_id,
+                                                    account_id,
+                                                    UUID4::new(),
+                                                    ts_init,
+                                                    ts_init,
+                                                    false,
+                                                );
+                                                emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                            }
+
+                                            dispatch_state.insert_filled(cid);
+                                            let instrument = instrument_cache.get(&report.instrument_id);
+                                            let quote_currency = instrument
+                                                .map_or_else(Currency::USD, |i: InstrumentAny| i.quote_currency());
+                                            let filled = fill_report_to_order_filled(
+                                                &report, trader_id, &ident, quote_currency,
+                                            );
+                                            emitter.send_order_event(OrderEventAny::Filled(filled));
+                                        } else {
+                                            // Untracked: track avg_px and emit report
+                                            let entry = cum_fill_totals
+                                                .entry(report.venue_order_id)
+                                                .or_default();
+                                            let qty = report.last_qty.as_decimal();
+                                            entry.0 += report.last_px.as_decimal() * qty;
+                                            entry.1 += qty;
+                                            emitter.send_fill_report(report);
+                                        }
                                     }
                                     Err(e) => {
                                         log::error!("Failed to parse WebSocket fill: {e}");
@@ -571,7 +554,8 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Set avg_px from cumulative fill totals
+                        // Phase 3: Process order status updates
+                        // Enrich untracked reports with avg_px from cumulative fills
                         for report in &mut pending_order_reports {
                             if let Some((notional, total_qty)) =
                                 cum_fill_totals.get(&report.venue_order_id)
@@ -581,40 +565,85 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Phase 3: Now send order status reports
-                        // Skip Accepted when fills already sent for same order in
-                        // this message, or order already reached terminal state
                         for report in pending_order_reports {
-                            if report.order_status == OrderStatus::Accepted
-                                && (filled_in_msg.contains(&report.venue_order_id)
-                                    || terminal_venue_order_ids
-                                        .contains(&report.venue_order_id))
-                            {
-                                log::debug!(
-                                    "Skipping Accepted report for {:?} {:?}",
-                                    report.client_order_id,
-                                    report.venue_order_id,
-                                );
-                                continue;
-                            }
+                            let identity = report.client_order_id.and_then(|cid| {
+                                dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
+                            });
 
-                            // Track terminal state with bounded FIFO eviction
-                            if !report.order_status.is_open()
-                                && terminal_venue_order_ids.insert(report.venue_order_id)
-                            {
-                                terminal_id_queue.push_back(report.venue_order_id);
-                                while terminal_id_queue.len() > MAX_TERMINAL_IDS {
-                                    if let Some(old) = terminal_id_queue.pop_front() {
-                                        terminal_venue_order_ids.remove(&old);
+                            if let Some((cid, ident)) = identity {
+                                // Tracked order: emit proper lifecycle events
+                                match report.order_status {
+                                    OrderStatus::Accepted => {
+                                        if dispatch_state.emitted_accepted.contains(&cid)
+                                            || dispatch_state.filled_orders.contains(&cid)
+                                        {
+                                            log::debug!("Skipping duplicate Accepted for {cid}");
+                                            continue;
+                                        }
+                                        dispatch_state.insert_accepted(cid);
+                                        let accepted = OrderAccepted::new(
+                                            trader_id,
+                                            ident.strategy_id,
+                                            ident.instrument_id,
+                                            cid,
+                                            report.venue_order_id,
+                                            account_id,
+                                            UUID4::new(),
+                                            report.ts_last,
+                                            ts_init,
+                                            false,
+                                        );
+                                        emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                    }
+                                    OrderStatus::Canceled => {
+                                        // Synthesize Accepted if not yet emitted
+                                        if !dispatch_state.emitted_accepted.contains(&cid) {
+                                            dispatch_state.insert_accepted(cid);
+                                            let accepted = OrderAccepted::new(
+                                                trader_id,
+                                                ident.strategy_id,
+                                                ident.instrument_id,
+                                                cid,
+                                                report.venue_order_id,
+                                                account_id,
+                                                UUID4::new(),
+                                                ts_init,
+                                                ts_init,
+                                                false,
+                                            );
+                                            emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                        }
+                                        let canceled = OrderCanceled::new(
+                                            trader_id,
+                                            ident.strategy_id,
+                                            ident.instrument_id,
+                                            cid,
+                                            UUID4::new(),
+                                            report.ts_last,
+                                            ts_init,
+                                            false,
+                                            Some(report.venue_order_id),
+                                            Some(account_id),
+                                        );
+                                        emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                                        dispatch_state.cleanup_terminal(&cid);
+                                    }
+                                    OrderStatus::Filled => {
+                                        // Fills already emitted as OrderFilled in Phase 2
+                                        dispatch_state.cleanup_terminal(&cid);
+                                    }
+                                    _ => {
+                                        // PendingUpdate, PartiallyFilled, etc.
+                                        emitter.send_order_status_report(report);
                                     }
                                 }
+                            } else {
+                                // Untracked order: emit report for reconciliation
+                                emitter.send_order_status_report(report);
                             }
-
-                            emitter.send_order_status_report(report);
                         }
 
-                        // Deferred cleanup: remove mappings for terminal orders
-                        // after fills have been correlated
+                        // Phase 4: Cleanup terminal order tracking state
                         for (client_id, client_metadata, order_id) in terminal_orders {
                             order_contexts.remove(&client_id);
                             encoder.remove(client_id, client_metadata);
@@ -622,33 +651,57 @@ impl DydxExecutionClient {
                             cum_fill_totals.remove(&VenueOrderId::new(&order_id));
                         }
                     }
-                    NautilusWsMessage::MarkPrice(mark_price) => {
-                        let price_dec = Decimal::from(mark_price.value);
-                        oracle_prices.insert(mark_price.instrument_id, price_dec);
-                        log::trace!(
-                            "Updated oracle price for {}: {price_dec}",
-                            mark_price.instrument_id
-                        );
+                    DydxWsOutputMessage::Markets(contents) => {
+                        if let Some(ref oracle_map) = contents.oracle_prices {
+                            for (symbol_str, oracle_market) in oracle_map {
+                                let instrument_id = {
+                                    let symbol = format!("{symbol_str}-PERP");
+                                    InstrumentId::new(
+                                        Symbol::new(&symbol),
+                                        *crate::common::consts::DYDX_VENUE,
+                                    )
+                                };
+
+                                if instrument_cache.get(&instrument_id).is_some()
+                                    && let Ok(price_dec) = oracle_market.oracle_price.parse::<Decimal>()
+                                {
+                                    oracle_prices.insert(instrument_id, price_dec);
+                                    log::trace!("Updated oracle price for {instrument_id}: {price_dec}");
+                                }
+                            }
+                        }
+
+                        if let Some(ref markets) = contents.markets {
+                            for (symbol_str, market_data) in markets {
+                                if let Some(oracle_price_str) = &market_data.oracle_price {
+                                    let instrument_id = {
+                                        let symbol = format!("{symbol_str}-PERP");
+                                        InstrumentId::new(
+                                            Symbol::new(&symbol),
+                                            *crate::common::consts::DYDX_VENUE,
+                                        )
+                                    };
+
+                                    if instrument_cache.get(&instrument_id).is_some()
+                                        && let Ok(price_dec) = oracle_price_str.parse::<Decimal>()
+                                    {
+                                        oracle_prices.insert(instrument_id, price_dec);
+                                    }
+                                }
+                            }
+                        }
                     }
-                    NautilusWsMessage::IndexPrice(_) => {
-                        // Index prices not needed by execution client
-                    }
-                    NautilusWsMessage::BlockHeight { height, time } => {
+                    DydxWsOutputMessage::BlockHeight { height, time } => {
                         log::debug!("Block height update: {height} at {time}");
                         block_time_monitor.record_block(height, time);
                     }
-                    NautilusWsMessage::Error(err) => {
+                    DydxWsOutputMessage::Error(err) => {
                         log::error!("WebSocket error: {err:?}");
                     }
-                    NautilusWsMessage::Reconnected => {
+                    DydxWsOutputMessage::Reconnected => {
                         log::info!("WebSocket reconnected");
                     }
-                    NautilusWsMessage::FundingRate(_) => {
-                        // Funding rates are handled by the data client
-                    }
-                    _ => {
-                        // Data, Deltas are for market data, not execution
-                    }
+                    _ => {}
                 }
             }
             log::debug!("WebSocket message processing task ended");
@@ -668,12 +721,10 @@ impl DydxExecutionClient {
         log::debug!("Instruments initialized: {count} instruments in shared cache");
     }
 
-    /// Get an instrument by market ticker (e.g., "BTC-USD").
     fn get_instrument_by_market(&self, market: &str) -> Option<InstrumentAny> {
         self.instrument_cache.get_by_market(market)
     }
 
-    /// Get an instrument by clob_pair_id.
     fn get_instrument_by_clob_pair_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
         let instrument = self.instrument_cache.get_by_clob_id(clob_pair_id);
 
@@ -1187,6 +1238,18 @@ impl ExecutionClient for DydxExecutionClient {
             },
         );
 
+        // Register dispatch identity so the WS handler emits proper order
+        // events (OrderAccepted, OrderFilled, OrderCanceled) instead of reports
+        self.dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+            },
+        );
+
         self.spawn_order_task(
             "submit_order",
             strategy_id,
@@ -1483,6 +1546,17 @@ impl ExecutionClient for DydxExecutionClient {
                 },
             );
 
+            // Register dispatch identity for tracked order event emission
+            self.dispatch_state.order_identities.insert(
+                order.client_order_id(),
+                OrderIdentity {
+                    instrument_id: order.instrument_id(),
+                    strategy_id: order.strategy_id(),
+                    order_side: order.order_side(),
+                    order_type: order.order_type(),
+                },
+            );
+
             // Collect order parameters (builder will apply default_short_term_expiry if needed)
             order_params.push(LimitOrderParams {
                 instrument_id: order.instrument_id(),
@@ -1528,7 +1602,7 @@ impl ExecutionClient for DydxExecutionClient {
 
             let order_count = order_params.len();
             let handle = get_runtime().spawn(async move {
-                // Build and broadcast all orders concurrently — no sequence coordination needed.
+                // Build and broadcast all orders concurrently -- no sequence coordination needed.
                 // Short-term orders use cached sequence (not incremented) via broadcast_short_term.
                 let mut handles = Vec::with_capacity(order_count);
 

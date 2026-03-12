@@ -111,17 +111,20 @@ impl InstrumentCache {
         self.initialized.store(false, Ordering::Release);
     }
 
-    /// Inserts an instrument without market data (InstrumentId lookup only).
+    /// Inserts an instrument without market data.
     ///
-    /// Use this for caching instruments when market params are not available.
-    /// Note: `get_by_clob_id()` and `get_by_market()` won't work for instruments
-    /// inserted this way - only `get()` by InstrumentId will work.
+    /// Derives the market ticker from the instrument symbol by stripping the
+    /// "-PERP" suffix, so `get_by_market()` works. `get_by_clob_id()` requires
+    /// full market params and won't work for instruments inserted this way.
     pub fn insert_instrument_only(&self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
+        let symbol = instrument_id.symbol.as_str();
+        let ticker = symbol.strip_suffix("-PERP").unwrap_or(symbol);
+        self.market_index.insert(Ustr::from(ticker), instrument_id);
         self.instruments.insert(instrument_id, instrument);
     }
 
-    /// Bulk inserts instruments without market data.
+    /// Bulk inserts instruments without market data (derives market tickers).
     ///
     /// Marks the cache as initialized after insertion.
     pub fn insert_instruments_only(&self, instruments: Vec<InstrumentAny>) {

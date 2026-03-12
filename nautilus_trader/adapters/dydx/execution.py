@@ -61,6 +61,11 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.functions import order_side_to_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.orders import LimitIfTouchedOrder
@@ -259,6 +264,7 @@ class DydxExecutionClient(LiveExecutionClient):
             loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
+            trader_id=nautilus_pyo3.TraderId(str(self.trader_id)),
         )
 
         # Wait for connection
@@ -300,6 +306,15 @@ class DydxExecutionClient(LiveExecutionClient):
                 self._handle_dict_message(raw)
             elif isinstance(raw, nautilus_pyo3.AccountState):
                 self._handle_account_state(raw)
+            elif isinstance(raw, nautilus_pyo3.OrderAccepted):
+                event = OrderAccepted.from_dict(raw.to_dict())
+                self._send_order_event(event)
+            elif isinstance(raw, nautilus_pyo3.OrderFilled):
+                event = OrderFilled.from_dict(raw.to_dict())
+                self._send_order_event(event)
+            elif isinstance(raw, nautilus_pyo3.OrderCanceled):
+                event = OrderCanceled.from_dict(raw.to_dict())
+                self._send_order_event(event)
             elif isinstance(raw, nautilus_pyo3.OrderStatusReport):
                 report = OrderStatusReport.from_pyo3(raw)
                 self._cleanup_order_context(report)
@@ -434,7 +449,15 @@ class DydxExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"Submit {order}")
 
-        # Generate OrderSubmitted event before dispatch
+        assert self._ws_client is not None
+        self._ws_client.register_order_identity(
+            client_order_id=nautilus_pyo3.ClientOrderId(str(order.client_order_id)),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(str(order.instrument_id)),
+            strategy_id=nautilus_pyo3.StrategyId(str(order.strategy_id)),
+            order_side=order_side_to_pyo3(order.side),
+            order_type=order_type_to_pyo3(order.order_type),
+        )
+
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,

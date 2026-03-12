@@ -25,7 +25,7 @@ optimal market making, adapted to a discrete grid.
 
 dYdX v4 is well-suited for market making strategies because:
 
-- **Short-term orders** (~10s expiry) provide low-latency placement without on-chain storage.
+- **Short-term orders** (~20s expiry) provide low-latency placement without on-chain storage.
 - **~0.5s block times** give fast confirmation cycles.
 - **No gas fees for cancellations**: short-term order cancels are free (GTB replay protection).
 - **On-chain order book**: deterministic matching within each block.
@@ -138,7 +138,7 @@ each unit of position shifts the grid by 0.5 price units. Too aggressive a skew 
 the grid to move entirely above or below the mid-price.
 
 **`expire_time_secs`**: For dYdX short-term orders, set to `8` seconds. This fits within
-the 20-block (~10s) short-term window, giving the orders time to rest while keeping them
+the 40-block (~20s) short-term window, giving the orders time to rest while keeping them
 in the fast short-term path. When `None`, orders use GTC (long-term path).
 
 **`on_cancel_resubmit`**: Resubmits the grid on the next quote tick after any unexpected
@@ -152,7 +152,7 @@ requoting, not through this flag.
 
 When `expire_time_secs=8`, orders are classified as short-term by the adapter:
 
-1. The adapter checks: `8 seconds < max_short_term_secs (20 blocks × ~0.5s = ~10s)`.
+1. The adapter checks: `8 seconds < max_short_term_secs (40 blocks × ~0.5s = ~20s)`.
 2. Since it fits, the order is submitted as short-term with `GoodTilBlock = current_height + N`.
 3. The order expires silently after ~8 seconds if not filled.
 
@@ -593,6 +593,5 @@ based on this flag.
 ## Further reading
 
 - [dYdX v4 Integration Guide](../integrations/dydx.md): full adapter reference.
-- [dYdX Protocol Documentation](https://docs.dydx.exchange/): official protocol docs.
-- [Short-term vs Stateful Orders](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful):
-  protocol-level order mechanics.
+- [dYdX Protocol Documentation](https://docs.dydx.xyz/): official protocol docs.
+- [Order types](https://docs.dydx.xyz/concepts/trading/orders): protocol-level order mechanics.

@@ -142,7 +142,7 @@ impl TryFrom<OrderSide> for DydxOrderSide {
 }
 
 impl DydxOrderSide {
-    /// Try to convert from Nautilus `OrderSide`.
+    /// Tries to convert from Nautilus `OrderSide`.
     ///
     /// # Errors
     ///
@@ -200,7 +200,7 @@ pub enum DydxOrderType {
     TakeProfitLimit,
     /// Take-profit order (market).
     TakeProfitMarket,
-    /// Trailing stop order.
+    /// Trailing stop order (parsing only, not supported for submission).
     TrailingStop,
 }
 
@@ -222,7 +222,7 @@ impl TryFrom<OrderType> for DydxOrderType {
 }
 
 impl DydxOrderType {
-    /// Try to convert from Nautilus `OrderType`.
+    /// Tries to convert from Nautilus `OrderType`.
     ///
     /// # Errors
     ///
@@ -579,7 +579,7 @@ pub enum DydxTradeType {
     TwapSuborder,
     /// Stop limit order.
     StopLimit,
-    /// Take profit limit order.
+    /// Take-profit order (limit).
     TakeProfitLimit,
 }
 
@@ -914,15 +914,15 @@ mod tests {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 pub enum DydxNetwork {
-    /// dYdX mainnet (dydx-mainnet-1)
+    /// dYdX mainnet (dydx-mainnet-1).
     #[default]
     Mainnet,
-    /// dYdX testnet (dydx-testnet-4)
+    /// dYdX testnet (dydx-testnet-4).
     Testnet,
 }
 
 impl DydxNetwork {
-    /// Map the logical network to the underlying gRPC chain identifier.
+    /// Maps the logical network to the underlying gRPC chain identifier.
     #[must_use]
     pub const fn chain_id(self) -> ChainId {
         match self {
@@ -931,7 +931,7 @@ impl DydxNetwork {
         }
     }
 
-    /// Return the canonical lowercase string used in config/env.
+    /// Returns the canonical lowercase string used in config/env.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
