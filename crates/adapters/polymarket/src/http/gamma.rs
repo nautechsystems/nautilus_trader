@@ -18,6 +18,7 @@
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
 use nautilus_core::{
+    UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -162,6 +163,28 @@ impl PolymarketGammaRawHttpClient {
     }
 }
 
+/// Parses a slice of [`GammaMarket`]s into Nautilus instruments.
+///
+/// Failures are logged and skipped so that one bad market does not
+/// prevent the remaining markets from being returned.
+fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
+    let mut instruments = Vec::new();
+    for market in markets {
+        match parse_gamma_market(market) {
+            Ok(defs) => {
+                for def in defs {
+                    match create_instrument_from_def(&def, ts_init) {
+                        Ok(instrument) => instruments.push(instrument),
+                        Err(e) => log::warn!("Failed to create instrument: {e}"),
+                    }
+                }
+            }
+            Err(e) => log::warn!("Failed to parse gamma market: {e}"),
+        }
+    }
+    instruments
+}
+
 /// Provides a domain HTTP client for Polymarket instrument fetching.
 ///
 /// Wraps [`PolymarketGammaRawHttpClient`] with instrument parsing: fetch from
@@ -249,22 +272,7 @@ impl PolymarketGammaHttpClient {
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let markets = self.fetch_all_gamma_markets().await?;
         let ts_init = self.clock.get_time_ns();
-
-        let mut instruments = Vec::new();
-        for market in &markets {
-            match parse_gamma_market(market) {
-                Ok(defs) => {
-                    for def in defs {
-                        match create_instrument_from_def(&def, ts_init) {
-                            Ok(instrument) => instruments.push(instrument),
-                            Err(e) => log::warn!("Failed to create instrument: {e}"),
-                        }
-                    }
-                }
-                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-            }
-        }
-
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::info!("Parsed {} instruments from Gamma API", instruments.len());
         Ok(instruments)
     }
@@ -313,23 +321,7 @@ impl PolymarketGammaHttpClient {
                 log::warn!("No markets found for slug '{slug}'");
                 continue;
             }
-            for market in &markets {
-                match parse_gamma_market(market) {
-                    Ok(defs) => {
-                        for def in defs {
-                            match create_instrument_from_def(&def, ts_init) {
-                                Ok(instrument) => instruments.push(instrument),
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to create instrument for slug '{slug}': {e}"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => log::warn!("Failed to parse market for slug '{slug}': {e}"),
-                }
-            }
+            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
         }
 
         if succeeded == 0 && total_slugs > 0 {
@@ -371,30 +363,12 @@ impl PolymarketGammaHttpClient {
 
         for result in results.into_iter().flatten() {
             let (slug, events) = result;
-            let markets: Vec<&GammaMarket> = events.iter().flat_map(|e| &e.markets).collect();
+            let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
             if markets.is_empty() {
                 log::warn!("No markets found in event slug '{slug}'");
                 continue;
             }
-            for market in markets {
-                match parse_gamma_market(market) {
-                    Ok(defs) => {
-                        for def in defs {
-                            match create_instrument_from_def(&def, ts_init) {
-                                Ok(instrument) => instruments.push(instrument),
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to create instrument for event slug '{slug}': {e}"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse market for event slug '{slug}': {e}");
-                    }
-                }
-            }
+            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
         }
 
         if succeeded == 0 && total > 0 {
@@ -415,22 +389,7 @@ impl PolymarketGammaHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let markets = self.fetch_gamma_markets_paginated(base_params).await?;
         let ts_init = self.clock.get_time_ns();
-
-        let mut instruments = Vec::new();
-        for market in &markets {
-            match parse_gamma_market(market) {
-                Ok(defs) => {
-                    for def in defs {
-                        match create_instrument_from_def(&def, ts_init) {
-                            Ok(instrument) => instruments.push(instrument),
-                            Err(e) => log::warn!("Failed to create instrument: {e}"),
-                        }
-                    }
-                }
-                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-            }
-        }
-
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::debug!("Parsed {} instruments from params query", instruments.len());
         Ok(instruments)
     }
@@ -508,21 +467,7 @@ impl PolymarketGammaHttpClient {
         }
 
         let ts_init = self.clock.get_time_ns();
-        let mut instruments = Vec::new();
-        for market in &markets {
-            match parse_gamma_market(market) {
-                Ok(defs) => {
-                    for def in defs {
-                        match create_instrument_from_def(&def, ts_init) {
-                            Ok(instrument) => instruments.push(instrument),
-                            Err(e) => log::warn!("Failed to create instrument: {e}"),
-                        }
-                    }
-                }
-                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-            }
-        }
-
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::debug!(
             "Parsed {} instruments from event query '{event_slug}'",
             instruments.len()
@@ -576,24 +521,8 @@ impl PolymarketGammaHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let events = self.fetch_gamma_events_paginated(params).await?;
         let ts_init = self.clock.get_time_ns();
-
-        let mut instruments = Vec::new();
-        for event in &events {
-            for market in &event.markets {
-                match parse_gamma_market(market) {
-                    Ok(defs) => {
-                        for def in defs {
-                            match create_instrument_from_def(&def, ts_init) {
-                                Ok(instrument) => instruments.push(instrument),
-                                Err(e) => log::warn!("Failed to create instrument: {e}"),
-                            }
-                        }
-                    }
-                    Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-                }
-            }
-        }
-
+        let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::debug!(
             "Parsed {} instruments from event params query",
             instruments.len()
@@ -611,40 +540,14 @@ impl PolymarketGammaHttpClient {
 
         let mut instruments = Vec::new();
 
-        // Parse markets from search results
         if let Some(markets) = &response.markets {
-            for market in markets {
-                match parse_gamma_market(market) {
-                    Ok(defs) => {
-                        for def in defs {
-                            match create_instrument_from_def(&def, ts_init) {
-                                Ok(instrument) => instruments.push(instrument),
-                                Err(e) => log::warn!("Failed to create instrument: {e}"),
-                            }
-                        }
-                    }
-                    Err(e) => log::warn!("Failed to parse search market: {e}"),
-                }
-            }
+            instruments.extend(parse_markets_to_instruments(markets, ts_init));
         }
 
-        // Parse markets from events in search results
         if let Some(events) = &response.events {
-            for event in events {
-                for market in &event.markets {
-                    match parse_gamma_market(market) {
-                        Ok(defs) => {
-                            for def in defs {
-                                match create_instrument_from_def(&def, ts_init) {
-                                    Ok(instrument) => instruments.push(instrument),
-                                    Err(e) => log::warn!("Failed to create instrument: {e}"),
-                                }
-                            }
-                        }
-                        Err(e) => log::warn!("Failed to parse search event market: {e}"),
-                    }
-                }
-            }
+            let event_markets: Vec<GammaMarket> =
+                events.iter().flat_map(|e| e.markets.clone()).collect();
+            instruments.extend(parse_markets_to_instruments(&event_markets, ts_init));
         }
 
         log::debug!("Parsed {} instruments from search query", instruments.len());
