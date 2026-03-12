@@ -9,7 +9,6 @@ import asyncio
 import json
 import re
 import time
-from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -34,7 +33,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
-from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -64,6 +62,7 @@ class BitgetExecutionClient(LiveExecutionClient):
     """Minimal Bitget execution client scaffold."""
 
     UTA_PRIVATE_WS_URL = "wss://ws.bitget.com/v3/ws/private"
+    HISTORY_PAGE_LIMIT = 100
 
     @staticmethod
     def _default_account_id(client_name: str) -> AccountId:
@@ -522,6 +521,31 @@ class BitgetExecutionClient(LiveExecutionClient):
             return str(code.as_str()).strip().upper()
         return str(code).strip().upper()
 
+    @staticmethod
+    def _position_payload_debug_summary(payload: Any) -> str:
+        keys = (
+            "symbol",
+            "instId",
+            "posId",
+            "positionId",
+            "holdSide",
+            "posSide",
+            "total",
+            "available",
+            "locked",
+            "holdVolume",
+            "openPriceAvg",
+            "avgPrice",
+            "marginMode",
+            "assetMode",
+        )
+        parts: list[str] = []
+        for key in keys:
+            value = BitgetExecutionClient._field(payload, key)
+            if value not in (None, ""):
+                parts.append(f"{key}={value}")
+        return " ".join(parts)
+
     def _margin_coin_for_instrument_id(self, instrument_id: Any) -> str | None:
         product_type = BitgetExecutionClient._product_type_for_instrument_id(self, instrument_id)
         if BitgetExecutionClient._product_type_key(product_type) == "SPOT":
@@ -673,6 +697,70 @@ class BitgetExecutionClient(LiveExecutionClient):
         if value is None:
             return None
         return int(value.timestamp() * 1000)
+
+    @staticmethod
+    def _history_item_millis(payload: Any) -> int | None:
+        for field_name in ("updatedTime", "uTime", "createdTime", "cTime"):
+            text = BitgetExecutionClient._string_value(
+                BitgetExecutionClient._field(payload, field_name),
+            )
+            if not text:
+                continue
+            try:
+                return int(text)
+            except ValueError:
+                continue
+        return None
+
+    async def _collect_history_payload_items(
+        self,
+        request_page: Any,
+        *,
+        dedupe_key: Any,
+        start_ms: int | None,
+        end_ms: int | None,
+    ) -> list[Any]:
+        current_end_ms = end_ms
+        last_oldest_ms: int | None = None
+        seen_keys: set[str] = set()
+        collected: list[Any] = []
+
+        while True:
+            payload = await request_page(current_end_ms, BitgetExecutionClient.HISTORY_PAGE_LIMIT)
+            items = BitgetExecutionClient._payload_items(payload)
+            if not items:
+                break
+
+            oldest_ms: int | None = None
+            for item in items:
+                item_ms = BitgetExecutionClient._history_item_millis(item)
+                if item_ms is not None:
+                    oldest_ms = item_ms if oldest_ms is None else min(oldest_ms, item_ms)
+                    if end_ms is not None and item_ms > end_ms:
+                        continue
+                    if start_ms is not None and item_ms < start_ms:
+                        continue
+
+                key = dedupe_key(item)
+                if key and key in seen_keys:
+                    continue
+                if key:
+                    seen_keys.add(key)
+                collected.append(item)
+
+            if len(items) < BitgetExecutionClient.HISTORY_PAGE_LIMIT:
+                break
+            if oldest_ms is None:
+                break
+            if start_ms is not None and oldest_ms <= start_ms:
+                break
+            if last_oldest_ms is not None and oldest_ms >= last_oldest_ms:
+                break
+
+            last_oldest_ms = oldest_ms
+            current_end_ms = oldest_ms - 1
+
+        return collected
 
     @staticmethod
     def _is_truthy_flag(value: Any) -> bool:
@@ -891,6 +979,16 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
         if instrument is None:
             return None
+
+        if (
+            BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA"
+            and BitgetExecutionClient._product_type_key(product_type) != "SPOT"
+        ):
+            self._log.info(
+                "Bitget UTA startup position payload "
+                f"instrument={instrument.id} "
+                f"{BitgetExecutionClient._position_payload_debug_summary(payload)}",
+            )
 
         total = Decimal(
             BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "total") or "0"),
@@ -1158,7 +1256,8 @@ class BitgetExecutionClient(LiveExecutionClient):
             if instrument is None:
                 self._log.warning(
                     "Bitget private position update ignored: "
-                    f"instrument not found for instType={inst_type} instId={inst_id}",
+                    f"instrument not found for instType={inst_type} instId={inst_id} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
                 )
                 continue
 
@@ -1432,32 +1531,56 @@ class BitgetExecutionClient(LiveExecutionClient):
                 symbol = None
 
             for product_type in product_types:
-                payload = await self._http_client.request_fill_reports(
-                    product_type=product_type,
-                    symbol=symbol,
-                    margin_coin=(
-                        BitgetExecutionClient._margin_coin_for_instrument_id(self, command.instrument_id)
-                        if command.instrument_id is not None
-                        else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
-                    ),
-                    order_id=command.venue_order_id.value if command.venue_order_id else None,
-                    start=start_ms,
-                    end=end_ms,
-                    limit=None,
-                    account_mode=BitgetExecutionClient._account_mode_from_config(
-                        getattr(self, "_config", None),
-                    ),
-                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
-                        getattr(self, "_config", None),
-                    ),
-                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
-                        getattr(self, "_config", None),
-                    ),
-                    position_mode=BitgetExecutionClient._position_mode_from_config(
-                        getattr(self, "_config", None),
-                    ),
+                margin_coin = (
+                    BitgetExecutionClient._margin_coin_for_instrument_id(self, command.instrument_id)
+                    if command.instrument_id is not None
+                    else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
                 )
-                for item in BitgetExecutionClient._payload_items(payload):
+                account_mode = BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+                allow_cash_borrowing = BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                )
+                margin_mode = BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+                position_mode = BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+
+                async def request_page(page_end_ms: int | None, limit: int) -> Any:
+                    return await self._http_client.request_fill_reports(
+                        product_type=product_type,
+                        symbol=symbol,
+                        margin_coin=margin_coin,
+                        order_id=command.venue_order_id.value if command.venue_order_id else None,
+                        start=start_ms,
+                        end=page_end_ms,
+                        limit=limit,
+                        account_mode=account_mode,
+                        allow_cash_borrowing=allow_cash_borrowing,
+                        margin_mode=margin_mode,
+                        position_mode=position_mode,
+                    )
+
+                payload_items = await BitgetExecutionClient._collect_history_payload_items(
+                    self,
+                    request_page=request_page,
+                    dedupe_key=lambda item: (
+                        BitgetExecutionClient._string_value(
+                            BitgetExecutionClient._field(item, "tradeId")
+                            or BitgetExecutionClient._field(item, "execId"),
+                        )
+                        or BitgetExecutionClient._string_value(
+                            BitgetExecutionClient._field(item, "orderId"),
+                        )
+                    ),
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                )
+
+                for item in payload_items:
                     if (
                         command.venue_order_id is not None
                         and BitgetExecutionClient._string_value(
@@ -1542,65 +1665,6 @@ class BitgetExecutionClient(LiveExecutionClient):
             self._log.exception("Failed to generate PositionStatusReports", e)
 
         return reports
-
-    async def generate_mass_status(
-        self, lookback_mins: int | None = None
-    ) -> ExecutionMassStatus | None:
-        self.reconciliation_active = True
-        since = None
-        if lookback_mins is not None:
-            since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
-
-        try:
-            order_reports, fill_reports, position_reports = await asyncio.gather(
-                self.generate_order_status_reports(
-                    GenerateOrderStatusReports(
-                        instrument_id=None,
-                        start=since,
-                        end=None,
-                        open_only=True,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-                self.generate_fill_reports(
-                    GenerateFillReports(
-                        instrument_id=None,
-                        venue_order_id=None,
-                        start=since,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-                self.generate_position_status_reports(
-                    GeneratePositionStatusReports(
-                        instrument_id=None,
-                        start=since,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-            )
-
-            mass_status = ExecutionMassStatus(
-                client_id=self.id,
-                account_id=self.account_id
-                or BitgetExecutionClient._default_account_id(self.id.value),
-                venue=BITGET_VENUE,
-                report_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            mass_status.add_order_reports(order_reports)
-            mass_status.add_fill_reports(fill_reports)
-            mass_status.add_position_reports(position_reports)
-            return mass_status
-        except Exception as e:
-            self._log.exception("Cannot reconcile execution state", e)
-            return None
-        finally:
-            self.reconciliation_active = False
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order

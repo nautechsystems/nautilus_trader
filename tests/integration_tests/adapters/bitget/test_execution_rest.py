@@ -3,8 +3,9 @@
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
+from datetime import timezone
 import pytest
-
 from types import SimpleNamespace
 
 from nautilus_trader.adapters.bitget.execution import BitgetExecutionClient
@@ -584,6 +585,7 @@ async def test_generate_fill_reports_maps_payload_and_filters_order_id() -> None
         _clock=SimpleNamespace(timestamp_ns=lambda: 999),
         _log=SimpleNamespace(
             debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
             exception=lambda *_args, **_kwargs: None,
         ),
     )
@@ -658,6 +660,7 @@ async def test_generate_fill_reports_maps_uta_payload_and_filters_order_id() -> 
         _clock=SimpleNamespace(timestamp_ns=lambda: 999),
         _log=SimpleNamespace(
             debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
             exception=lambda *_args, **_kwargs: None,
         ),
     )
@@ -674,6 +677,130 @@ async def test_generate_fill_reports_maps_uta_payload_and_filters_order_id() -> 
     assert report.trade_id == TradeId("54321")
     assert report.liquidity_side == LiquiditySide.TAKER
     assert report.commission == Money("0.10", Currency.from_str("USDT"))
+
+
+@pytest.mark.asyncio
+async def test_generate_fill_reports_pages_uta_history_until_start_boundary_and_dedupes_overlap() -> None:
+    instrument = _make_futures_instrument()
+    calls: list[dict] = []
+    start = datetime.fromtimestamp(1700000002, tz=timezone.utc)
+    page_one_fillers = [
+        {
+            "symbol": "ETHUSDT",
+            "orderId": "",
+            "execId": "",
+            "side": "buy",
+            "execPrice": "2000.0",
+            "execQty": "0.010",
+            "feeDetail": [{"feeCoin": "USDT", "fee": "0.10"}],
+            "tradeScope": "T",
+            "createdTime": str(1700000004098 - i),
+        }
+        for i in range(98)
+    ]
+
+    async def request_fill_reports(**kwargs):
+        calls.append(kwargs)
+        if kwargs["end"] is None:
+            return [
+                *page_one_fillers,
+                {
+                    "orderId": "12345",
+                    "execId": "t-1",
+                    "side": "buy",
+                    "execPrice": "100001.0",
+                    "execQty": "0.010",
+                    "feeDetail": [{"feeCoin": "USDT", "fee": "0.10"}],
+                    "tradeScope": "T",
+                    "createdTime": "1700000004000",
+                },
+                {
+                    "orderId": "12346",
+                    "execId": "t-2",
+                    "side": "buy",
+                    "execPrice": "100002.0",
+                    "execQty": "0.020",
+                    "feeDetail": [{"feeCoin": "USDT", "fee": "0.20"}],
+                    "tradeScope": "M",
+                    "createdTime": "1700000003000",
+                },
+            ]
+        assert kwargs["end"] == 1700000002999
+        return [
+            {
+                "orderId": "12346",
+                "execId": "t-2",
+                "side": "buy",
+                "execPrice": "100002.0",
+                "execQty": "0.020",
+                "feeDetail": [{"feeCoin": "USDT", "fee": "0.20"}],
+                "tradeScope": "M",
+                "createdTime": "1700000003000",
+            },
+            {
+                "orderId": "12347",
+                "execId": "t-3",
+                "side": "sell",
+                "execPrice": "100003.0",
+                "execQty": "0.030",
+                "feeDetail": [{"feeCoin": "USDT", "fee": "0.30"}],
+                "tradeScope": "T",
+                "createdTime": "1700000002000",
+            },
+            {
+                "orderId": "12348",
+                "execId": "t-4",
+                "side": "buy",
+                "execPrice": "100004.0",
+                "execQty": "0.040",
+                "feeDetail": [{"feeCoin": "USDT", "fee": "0.40"}],
+                "tradeScope": "M",
+                "createdTime": "1700000001000",
+            },
+        ]
+
+    command = SimpleNamespace(
+        instrument_id=instrument.id,
+        venue_order_id=None,
+        start=start,
+        end=None,
+    )
+
+    dummy = SimpleNamespace(
+        account_id=AccountId("BITGET-001"),
+        _config=SimpleNamespace(
+            account_mode="UTA",
+            allow_cash_borrowing=False,
+            margin_mode="cross",
+            position_mode="one_way",
+        ),
+        _http_client=SimpleNamespace(request_fill_reports=request_fill_reports),
+        _cache=SimpleNamespace(
+            instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
+            instrument_ids=lambda venue=None: [instrument.id],
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instrument),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 999),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    reports = await BitgetExecutionClient.generate_fill_reports(
+        dummy,  # type: ignore[arg-type]
+        command,
+    )
+
+    assert len(calls) == 2
+    assert [call["limit"] for call in calls] == [100, 100]
+    assert [report.trade_id for report in reports] == [
+        TradeId("t-1"),
+        TradeId("t-2"),
+        TradeId("t-3"),
+    ]
+    assert all(report.ts_event >= 1700000002000 * 1_000_000 for report in reports)
 
 
 @pytest.mark.asyncio
@@ -707,6 +834,7 @@ async def test_generate_position_status_reports_maps_futures_payload() -> None:
         _clock=SimpleNamespace(timestamp_ns=lambda: 999),
         _log=SimpleNamespace(
             debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
             exception=lambda *_args, **_kwargs: None,
         ),
     )
@@ -763,6 +891,7 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
         _clock=SimpleNamespace(timestamp_ns=lambda: 999),
         _log=SimpleNamespace(
             debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
             exception=lambda *_args, **_kwargs: None,
         ),
     )

@@ -594,6 +594,7 @@ def test_tokenmm_live_configs_enable_shared_account_reconciliation_guardrails() 
     ]
     strategy_lookbacks = {
         "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_bitget_perp_makerv3": 1440,
         "plumeusdt_okx_perp_makerv3": 1440,
     }
 
@@ -738,6 +739,7 @@ def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_
     ]
     strategy_lookbacks = {
         "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_bitget_perp_makerv3": 1440,
         "plumeusdt_okx_perp_makerv3": 1440,
     }
 

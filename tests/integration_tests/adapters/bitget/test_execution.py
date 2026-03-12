@@ -13,11 +13,11 @@ from unittest.mock import patch
 from nautilus_trader.adapters.bitget.execution import BitgetExecutionClient
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
@@ -226,30 +226,8 @@ async def test_connect_uses_uta_private_websocket_url_when_account_mode_is_uta()
     assert captured_configs[0].url == "wss://ws.bitget.com/v3/ws/private"
 
 
-@pytest.mark.asyncio
-async def test_generate_mass_status_defaults_account_id_when_unset() -> None:
-    async def no_reports(_command):
-        return []
-
-    dummy = SimpleNamespace(
-        reconciliation_active=False,
-        account_id=None,
-        id=SimpleNamespace(value="BITGET"),
-        _clock=SimpleNamespace(
-            utc_now=lambda: None,
-            timestamp_ns=lambda: 999,
-        ),
-        _log=SimpleNamespace(exception=lambda *_args, **_kwargs: None),
-        generate_order_status_reports=no_reports,
-        generate_fill_reports=no_reports,
-        generate_position_status_reports=no_reports,
-    )
-
-    mass_status = await BitgetExecutionClient.generate_mass_status(dummy)  # type: ignore[arg-type]
-
-    assert mass_status is not None
-    assert mass_status.account_id == AccountId("BITGET-001")
-    assert dummy.reconciliation_active is False
+def test_generate_mass_status_uses_live_execution_client_default() -> None:
+    assert BitgetExecutionClient.generate_mass_status is LiveExecutionClient.generate_mass_status
 
 
 def test_handle_ws_reconnect_schedules_reauth_on_event_loop_thread() -> None:
