@@ -304,6 +304,10 @@ Consistent attribute usage and ordering:
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.model")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct Symbol(Ustr);
 ```
 
@@ -339,6 +343,10 @@ For enums with extensive derive attributes:
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
     Cash = 1,
@@ -346,6 +354,73 @@ pub enum AccountType {
     Margin = 2,
 }
 ```
+
+### Type stub annotations
+
+Python type stubs (`.pyi` files) are generated from Rust source using
+[pyo3-stub-gen](https://github.com/Jij-Inc/pyo3-stub-gen). Every type and function
+exposed to Python needs a matching stub annotation so the generated stubs stay in sync
+with the bindings.
+
+**Annotation types:**
+
+| PyO3 construct    | Stub annotation                                  |
+| ----------------- | ------------------------------------------------ |
+| `#[pyclass]`      | `pyo3_stub_gen::derive::gen_stub_pyclass`        |
+| enum `#[pyclass]` | `pyo3_stub_gen::derive::gen_stub_pyclass_enum`   |
+| `#[pymethods]`    | `pyo3_stub_gen::derive::gen_stub_pymethods`      |
+| `#[pyfunction]`   | `pyo3_stub_gen::derive::gen_stub_pyfunction`     |
+
+**Placement rules:**
+
+- On structs and enums, use `#[cfg_attr(feature = "python", ...)]` and place the stub
+  annotation directly below the `pyo3::pyclass` attribute.
+- On `#[pymethods]` impl blocks, place `#[pyo3_stub_gen::derive::gen_stub_pymethods]`
+  directly below `#[pymethods]`.
+- On functions, place the stub annotation directly above `#[pyfunction]`, after any doc
+  comments. Fully qualify the path rather than importing it.
+
+```rust
+/// Converts a list of `Bar` into Arrow IPC bytes.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
+#[pyfunction(name = "bars_to_arrow")]
+pub fn py_bars_to_arrow(data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
+    // ...
+}
+```
+
+```rust
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl AccountState {
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        // ...
+    }
+}
+```
+
+**Module parameter:** set `module = "nautilus_trader.<package>"` to match the Python
+package where the type is imported. For example, model types use
+`nautilus_trader.model` and serialization functions use
+`nautilus_trader.serialization`.
+
+**Cargo.toml:** add `pyo3-stub-gen` as an optional dependency and include it in the
+`python` feature list:
+
+```toml
+[features]
+python = ["pyo3", "pyo3-stub-gen"]
+
+[dependencies]
+pyo3-stub-gen = { workspace = true, optional = true }
+```
+
+**Regenerating stubs:** run `make py-stubs-v2` (or `python python/generate_stubs.py`)
+after changing annotations. The post-processor handles `py_` prefix stripping,
+`@property`/`@staticmethod`/`@classmethod` decoration, keyword escaping, deduplication,
+and ruff formatting.
 
 ### Constructor patterns
 

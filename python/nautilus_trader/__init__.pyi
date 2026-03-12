@@ -6,10 +6,12 @@ from . import adapters
 from . import core
 from . import infrastructure
 from . import model
+from . import serialization
 
 __all__ = [
     "adapters",
     "core",
     "infrastructure",
     "model",
+    "serialization",
 ]

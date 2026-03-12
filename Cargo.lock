@@ -5926,6 +5926,7 @@ dependencies = [
  "nautilus-model",
  "pretty_assertions",
  "pyo3",
+ "pyo3-stub-gen",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

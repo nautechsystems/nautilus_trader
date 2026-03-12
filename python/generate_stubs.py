@@ -241,6 +241,9 @@ def post_process_stubs(root: Path) -> None:
         # Escape keywords introduced by fixup renames (e.g. py_from -> from)
         content = _escape_keyword_methods(content)
 
+        # Strip docstrings (runtime __doc__ from PyO3 is the single source)
+        content = strip_docstrings(content)
+
         # Remove imports extracted from doc comment examples
         content = remove_docstring_imports(content)
 
@@ -1062,6 +1065,61 @@ def _escape_keyword_variants(content: str) -> str:
 
     # Match indented enum variants: leading whitespace + identifier + " = ..."
     return re.sub(r"^(\s+)(\w+)(?= = \.\.\.)", _escape_match, content, flags=re.MULTILINE)
+
+
+_TRIPLE_QUOTE_RE = re.compile(r'^(\s*)r?"""')
+
+
+def strip_docstrings(content: str) -> str:
+    """
+    Strip all docstring blocks from stub content.
+
+    Runtime ``__doc__`` set by PyO3 from Rust ``///`` comments is the single
+    source. Stubs provide type information only.
+
+    Handles three cases:
+    - Class-level docstrings (removed entirely).
+    - Method/function body docstrings (replaced with ``...``).
+    - Standalone ``def`` lines already ending with ``...`` (left alone).
+
+    """
+    lines = content.split("\n")
+    result: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        m = _TRIPLE_QUOTE_RE.match(lines[i])
+        if m is None:
+            result.append(lines[i])
+            i += 1
+            continue
+
+        # Find closing triple-quote
+        j = i
+        if '"""' in lines[i][lines[i].index('"""') + 3 :]:
+            j = i  # Single-line docstring
+        else:
+            j = i + 1
+            while j < len(lines) and '"""' not in lines[j]:
+                j += 1
+
+        # Check context: is the previous non-blank line a def/class?
+        prev_idx = len(result) - 1
+        while prev_idx >= 0 and not result[prev_idx].strip():
+            prev_idx -= 1
+
+        if prev_idx >= 0 and result[prev_idx].strip().endswith(":"):
+            prev_stripped = result[prev_idx].strip()
+            if prev_stripped.startswith(("def ", "async def ")):
+                # Method/function body docstring: replace with ...
+                indent = m.group(1)
+                result.append(f"{indent}...")
+            # Class-level docstring: drop entirely
+        # Else: standalone docstring, drop
+
+        i = j + 1
+
+    return "\n".join(result)
 
 
 # Imports that pyo3-stub-gen extracts from doc comment code examples.

@@ -49,6 +49,7 @@ module-name = "nautilus_trader._libnautilus"
 python-source = "."
 features = [
   "extension-module",
+  "arrow",
   "high-precision",
   "redis",
   "postgres",
