@@ -274,6 +274,47 @@ def test_markout_actor_persists_positive_sell_markout_when_fv_falls(tmp_path) ->
     ]
 
 
+def test_markout_actor_resolves_fv_for_runtime_strategy_instance_id(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(30,))
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(
+        instrument,
+        side="BUY",
+        last_px="100",
+        ts_event=1_000_000_000,
+        strategy_id="MAKERV3-001-000",
+        client_order_id="O-005",
+        trade_id="E-005",
+    )
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    msgbus.publish(topic=FV_TOPIC, msg='{"strategy_id":"MAKERV3-001","fv":"101","ts_ms":31000}')
+    actor.flush()
+    actor.stop()
+
+    rows = _fetch_rows(
+        db_path,
+        """
+        SELECT horizon_s, benchmark_px, markout_abs, resolution_status
+        FROM execution_markout
+        ORDER BY horizon_s
+        """,
+    )
+
+    assert [
+        (
+            row["horizon_s"],
+            row["benchmark_px"],
+            row["markout_abs"],
+            row["resolution_status"],
+        )
+        for row in rows
+    ] == [
+        (30, "101", "1", "resolved"),
+    ]
+
+
 def test_markout_actor_expires_rows_when_future_fv_never_arrives(tmp_path) -> None:
     actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(30,), max_pending_ms=500)
     instrument = TestInstrumentProvider.btcusdt_binance()

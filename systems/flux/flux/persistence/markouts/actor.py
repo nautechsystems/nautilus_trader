@@ -269,48 +269,75 @@ class ExecutionMarkoutPersistenceActor(
         ]
 
     def _resolve_pending_for_strategy(self, *, strategy_id: str, fv: Decimal, ts_ms: int) -> None:
-        strategy_pending_rows = self._pending_by_strategy.get(strategy_id)
-        if not strategy_pending_rows:
+        pending_strategy_ids = self._matching_pending_strategy_ids(strategy_id)
+        if not pending_strategy_ids:
             return
 
-        remaining_by_client_order_id: dict[str, list[_PendingMarkout]] = {}
-        for client_order_id, pending_rows in strategy_pending_rows.items():
-            remaining_rows: list[_PendingMarkout] = []
-            for row in pending_rows:
-                if row.target_ts_ms > ts_ms:
-                    remaining_rows.append(row)
-                    continue
-                markout_abs = signed_markout(row.order_side, row.fill_px, fv)
-                self._enqueue_payload(
-                    _ResolvedMarkout(
-                        event_id=row.event_id,
-                        trade_id=row.trade_id,
-                        strategy_id=row.strategy_id,
-                        instrument_id=row.instrument_id,
-                        client_order_id=row.client_order_id,
-                        order_side=row.order_side,
-                        fill_px=row.fill_px,
-                        fill_qty=row.fill_qty,
-                        benchmark_name=row.benchmark_name,
-                        horizon_s=row.horizon_s,
-                        target_ts_ms=row.target_ts_ms,
-                        benchmark_ts_ms=ts_ms,
-                        benchmark_px=fv,
-                        markout_abs=markout_abs,
-                        markout_bps=markout_bps(markout_abs, row.fill_px),
-                        resolution_status="resolved",
-                        run_id=row.run_id,
-                        quote_cycle_id=row.quote_cycle_id,
-                        reason_code=row.reason_code,
-                        level_index=row.level_index,
-                    ),
-                )
-            if remaining_rows:
-                remaining_by_client_order_id[client_order_id] = remaining_rows
-        if remaining_by_client_order_id:
-            self._pending_by_strategy[strategy_id] = remaining_by_client_order_id
-        else:
-            self._pending_by_strategy.pop(strategy_id, None)
+        for pending_strategy_id in pending_strategy_ids:
+            strategy_pending_rows = self._pending_by_strategy.get(pending_strategy_id)
+            if not strategy_pending_rows:
+                continue
+
+            remaining_by_client_order_id: dict[str, list[_PendingMarkout]] = {}
+            for client_order_id, pending_rows in strategy_pending_rows.items():
+                remaining_rows: list[_PendingMarkout] = []
+                for row in pending_rows:
+                    if row.target_ts_ms > ts_ms:
+                        remaining_rows.append(row)
+                        continue
+                    markout_abs = signed_markout(row.order_side, row.fill_px, fv)
+                    self._enqueue_payload(
+                        _ResolvedMarkout(
+                            event_id=row.event_id,
+                            trade_id=row.trade_id,
+                            strategy_id=row.strategy_id,
+                            instrument_id=row.instrument_id,
+                            client_order_id=row.client_order_id,
+                            order_side=row.order_side,
+                            fill_px=row.fill_px,
+                            fill_qty=row.fill_qty,
+                            benchmark_name=row.benchmark_name,
+                            horizon_s=row.horizon_s,
+                            target_ts_ms=row.target_ts_ms,
+                            benchmark_ts_ms=ts_ms,
+                            benchmark_px=fv,
+                            markout_abs=markout_abs,
+                            markout_bps=markout_bps(markout_abs, row.fill_px),
+                            resolution_status="resolved",
+                            run_id=row.run_id,
+                            quote_cycle_id=row.quote_cycle_id,
+                            reason_code=row.reason_code,
+                            level_index=row.level_index,
+                        ),
+                    )
+                if remaining_rows:
+                    remaining_by_client_order_id[client_order_id] = remaining_rows
+            if remaining_by_client_order_id:
+                self._pending_by_strategy[pending_strategy_id] = remaining_by_client_order_id
+            else:
+                self._pending_by_strategy.pop(pending_strategy_id, None)
+
+    def _matching_pending_strategy_ids(self, strategy_id: str) -> tuple[str, ...]:
+        variants = self._strategy_id_variants(strategy_id)
+        matches: list[str] = []
+        for pending_strategy_id in self._pending_by_strategy:
+            if pending_strategy_id in variants or self._normalize_strategy_id(pending_strategy_id) in variants:
+                matches.append(pending_strategy_id)
+        return tuple(matches)
+
+    @staticmethod
+    def _strategy_id_variants(strategy_id: str) -> tuple[str, ...]:
+        normalized = ExecutionMarkoutPersistenceActor._normalize_strategy_id(strategy_id)
+        if normalized == strategy_id:
+            return (strategy_id,)
+        return (strategy_id, normalized)
+
+    @staticmethod
+    def _normalize_strategy_id(strategy_id: str) -> str:
+        base, sep, suffix = strategy_id.rpartition("-")
+        if sep and len(suffix) == 3 and suffix.isdigit():
+            return base
+        return strategy_id
 
     def _expire_pending(self, *, now_ms: int) -> None:
         if not self._pending_by_strategy:
