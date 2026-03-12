@@ -55,6 +55,7 @@ fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
     crate::common::enums::product_type_from_symbol(symbol)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_kraken_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -67,6 +68,7 @@ fn extract_kraken_data_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_kraken_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -79,6 +81,7 @@ fn extract_kraken_exec_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_kraken_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -91,6 +94,7 @@ fn extract_kraken_data_config(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_kraken_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,

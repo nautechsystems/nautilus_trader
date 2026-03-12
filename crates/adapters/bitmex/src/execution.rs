@@ -17,7 +17,6 @@
 
 use std::{
     future::Future,
-    str::FromStr,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -25,6 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
@@ -41,15 +41,16 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide},
-    events::OrderEventAny,
-    identifiers::{AccountId, ClientId, ClientOrderId, Venue, VenueOrderId},
+    enums::{AccountType, OmsType, OrderSide, OrderType},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -57,16 +58,23 @@ use nautilus_model::{
 };
 use rust_decimal::prelude::ToPrimitive;
 use tokio::task::JoinHandle;
+use ustr::Ustr;
 
 use crate::{
     broadcast::{
         canceller::{CancelBroadcaster, CancelBroadcasterConfig},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
-    common::enums::BitmexPegPriceType,
+    common::{
+        enums::BitmexPegPriceType,
+        parse::{parse_peg_offset_value, parse_peg_price_type},
+    },
     config::BitmexExecClientConfig,
     http::client::BitmexHttpClient,
-    websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage},
+    websocket::{
+        client::BitmexWebSocketClient,
+        dispatch::{self, OrderIdentity, WsDispatchState},
+    },
 };
 
 #[derive(Debug)]
@@ -77,6 +85,7 @@ pub struct BitmexExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: BitmexHttpClient,
     ws_client: BitmexWebSocketClient,
+    ws_dispatch_state: Arc<WsDispatchState>,
     _submitter: SubmitBroadcaster,
     _canceller: CancelBroadcaster,
     ws_stream_handle: Option<JoinHandle<()>>,
@@ -199,6 +208,7 @@ impl BitmexExecutionClient {
             emitter,
             http_client,
             ws_client,
+            ws_dispatch_state: Arc::new(WsDispatchState::default()),
             _submitter,
             _canceller,
             ws_stream_handle: None,
@@ -236,6 +246,44 @@ impl BitmexExecutionClient {
         for handle in guard.drain(..) {
             handle.abort();
         }
+    }
+
+    /// Populates `order_identities` for an order if not already present.
+    ///
+    /// Needed for cancel/modify commands on orders loaded via reconciliation
+    /// (which bypass `submit_order` and therefore have no identity entry).
+    fn ensure_order_identity(
+        &self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) {
+        if self
+            .ws_dispatch_state
+            .order_identities
+            .contains_key(&client_order_id)
+        {
+            return;
+        }
+
+        let cache = self.core.cache();
+        let (order_side, order_type) = cache
+            .order(&client_order_id)
+            .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
+                (o.order_side(), o.order_type())
+            });
+        drop(cache);
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
+        self.ws_dispatch_state.insert_accepted(client_order_id);
     }
 
     fn start_deadmans_switch(&mut self) {
@@ -286,7 +334,7 @@ impl BitmexExecutionClient {
         }
     }
 
-    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
+    async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
         if self.core.instruments_initialized() {
             return Ok(());
         }
@@ -317,11 +365,9 @@ impl BitmexExecutionClient {
 
         for instrument in &instruments {
             self.http_client.cache_instrument(instrument.clone());
-            self._submitter.cache_instrument(instrument.clone());
-            self._canceller.cache_instrument(instrument.clone());
+            self._submitter.cache_instrument(instrument);
+            self._canceller.cache_instrument(instrument);
         }
-
-        self.ws_client.cache_instruments(instruments);
 
         self.core.set_instruments_initialized();
         Ok(())
@@ -366,50 +412,92 @@ impl BitmexExecutionClient {
         }
     }
 
-    fn start_ws_stream(&mut self) -> anyhow::Result<()> {
+    fn start_ws_stream(&mut self) {
         if self.ws_stream_handle.is_some() {
-            return Ok(());
+            return;
         }
 
         let stream = self.ws_client.stream();
         let emitter = self.emitter.clone();
+        let state = Arc::clone(&self.ws_dispatch_state);
+        let account_id = self.core.account_id;
+        let clock = self.clock;
+
+        // Build symbol-keyed instrument map, preferring core cache then HTTP client cache
+        let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = self
+            .core
+            .cache()
+            .instruments(&self.core.venue, None)
+            .into_iter()
+            .map(|inst| (inst.symbol().inner(), inst.clone()))
+            .collect();
+
+        if instruments_by_symbol.is_empty() {
+            for entry in self.http_client.instruments_cache.iter() {
+                instruments_by_symbol.insert(*entry.key(), entry.value().clone());
+            }
+        }
 
         let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
+            let mut order_type_cache: AHashMap<ClientOrderId, OrderType> = AHashMap::new();
+            let mut order_symbol_cache: AHashMap<ClientOrderId, Ustr> = AHashMap::new();
+            let mut insts_by_symbol = instruments_by_symbol;
+
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(message, &emitter);
+                dispatch::dispatch_ws_message(
+                    clock.get_time_ns(),
+                    message,
+                    &emitter,
+                    &state,
+                    &mut insts_by_symbol,
+                    &mut order_type_cache,
+                    &mut order_symbol_cache,
+                    account_id,
+                );
             }
         });
 
         self.ws_stream_handle = Some(handle);
-        Ok(())
     }
 
     fn submit_cached_order(
         &self,
-        order: OrderAny,
+        order: &OrderAny,
         submit_tries: Option<usize>,
         peg_price_type: Option<BitmexPegPriceType>,
         peg_offset_value: Option<f64>,
         task_label: &'static str,
-    ) -> anyhow::Result<()> {
+    ) {
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
-            return Ok(());
+            return;
         }
 
-        self.emitter.emit_order_submitted(&order);
+        self.emitter.emit_order_submitted(order);
 
-        let use_broadcaster = submit_tries.is_some_and(|n| n > 1);
-        let http_client = self.http_client.clone();
-        let submitter = self._submitter.clone_for_async();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
         let client_order_id = order.client_order_id();
         let order_side = order.order_side();
         let order_type = order.order_type();
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
+
+        let use_broadcaster = submit_tries.is_some_and(|n| n > 1);
+        let http_client = self.http_client.clone();
+        let submitter = self._submitter.clone_for_async();
+        let ws_dispatch_state = self.ws_dispatch_state.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         let quantity = order.quantity();
         let time_in_force = order.time_in_force();
         let price = order.price();
@@ -474,7 +562,12 @@ impl BitmexExecutionClient {
             };
 
             match result {
-                Ok(report) => emitter.send_order_status_report(report),
+                Ok(_report) => {
+                    // The WS dispatch handles all lifecycle events for tracked orders.
+                    // Forwarding the HTTP response as a report would cause the ExecEngine
+                    // to generate inferred fills that conflict with real fills from the
+                    // Execution table WS stream.
+                }
                 Err(e) => {
                     let error_msg = e.to_string();
 
@@ -488,6 +581,7 @@ impl BitmexExecutionClient {
                         return Ok(());
                     }
 
+                    ws_dispatch_state.order_identities.remove(&client_order_id);
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -501,8 +595,6 @@ impl BitmexExecutionClient {
             }
             Ok(())
         });
-
-        Ok(())
     }
 }
 
@@ -612,7 +704,7 @@ impl ExecutionClient for BitmexExecutionClient {
             log::debug!("Margin subscription unavailable: {e:?}");
         }
 
-        self.start_ws_stream()?;
+        self.start_ws_stream();
         self.refresh_account_state().await?;
         self.await_account_registered(30.0).await?;
 
@@ -857,12 +949,13 @@ impl ExecutionClient for BitmexExecutionClient {
             })?;
 
         self.submit_cached_order(
-            order,
+            &order,
             submit_tries,
             peg_price_type,
             peg_offset_value,
             "submit_order",
-        )
+        );
+        Ok(())
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -890,18 +983,19 @@ impl ExecutionClient for BitmexExecutionClient {
 
         for order in orders {
             self.submit_cached_order(
-                order,
+                &order,
                 submit_tries,
                 peg_price_type,
                 peg_offset_value,
                 "submit_order_list_item",
-            )?;
+            );
         }
 
         Ok(())
     }
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let instrument_id = cmd.instrument_id;
@@ -933,6 +1027,7 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
         let instrument_id = cmd.instrument_id;
@@ -1033,72 +1128,5 @@ impl ExecutionClient for BitmexExecutionClient {
         });
 
         Ok(())
-    }
-}
-
-/// Dispatches a WebSocket message using the event emitter.
-fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
-    match message {
-        NautilusWsMessage::OrderStatusReports(reports) => {
-            for report in reports {
-                emitter.send_order_status_report(report);
-            }
-        }
-        NautilusWsMessage::FillReports(reports) => {
-            for report in reports {
-                emitter.send_fill_report(report);
-            }
-        }
-        NautilusWsMessage::PositionStatusReports(reports) => {
-            for report in reports {
-                emitter.send_position_report(report);
-            }
-        }
-        NautilusWsMessage::AccountStates(states) => {
-            for state in states {
-                emitter.send_account_state(state);
-            }
-        }
-        NautilusWsMessage::OrderUpdated(event) => {
-            emitter.send_order_event(OrderEventAny::Updated(*event));
-        }
-        NautilusWsMessage::OrderUpdates(events) => {
-            for event in events {
-                emitter.send_order_event(OrderEventAny::Updated(event));
-            }
-        }
-        NautilusWsMessage::Data(_)
-        | NautilusWsMessage::Instruments(_)
-        | NautilusWsMessage::InstrumentStatus(_)
-        | NautilusWsMessage::FundingRateUpdates(_) => {
-            log::debug!("Ignoring BitMEX data message on execution stream");
-        }
-        NautilusWsMessage::Reconnected => {
-            log::info!("BitMEX execution websocket reconnected");
-        }
-        NautilusWsMessage::Authenticated => {
-            log::debug!("BitMEX execution websocket authenticated");
-        }
-    }
-}
-
-fn parse_peg_price_type(params: Option<&Params>) -> anyhow::Result<Option<BitmexPegPriceType>> {
-    let value = params.and_then(|p| p.get_str("peg_price_type"));
-    match value {
-        Some(s) => BitmexPegPriceType::from_str(s)
-            .map(Some)
-            .map_err(|_| anyhow::anyhow!("Invalid peg_price_type: {s}")),
-        None => Ok(None),
-    }
-}
-
-fn parse_peg_offset_value(params: Option<&Params>) -> anyhow::Result<Option<f64>> {
-    let value = params.and_then(|p| p.get_str("peg_offset_value"));
-    match value {
-        Some(s) => s
-            .parse::<f64>()
-            .map(Some)
-            .map_err(|_| anyhow::anyhow!("Invalid peg_offset_value: {s}")),
-        None => Ok(None),
     }
 }

@@ -293,8 +293,6 @@ impl DatabentoDataClientConfigBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use nautilus_core::time::get_atomic_clock_realtime;
     use rstest::rstest;
 
@@ -329,27 +327,23 @@ mod tests {
 
     #[rstest]
     fn test_historical_client_factory() {
-        let api_key = env::var("DATABENTO_API_KEY").unwrap_or_else(|_| "test_key".to_string());
+        let api_key = "db-test0000000000000000000000000".to_string();
         let publishers_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
         let clock = get_atomic_clock_realtime();
 
-        // This will fail without a real publishers.json file, but tests the factory creation
         let result =
             DatabentoHistoricalClientFactory::create(api_key, publishers_path, false, clock);
 
-        // We expect this to fail in tests due to missing publishers.json
-        // but the factory function should be callable
-        assert!(result.is_err() || result.is_ok());
+        assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_live_data_client_factory() {
+    fn test_live_data_client_factory_missing_publishers() {
         let client_id = ClientId::from("DATABENTO-001");
         let api_key = "test_key".to_string();
-        let publishers_path = PathBuf::from("test_publishers.json");
+        let publishers_path = PathBuf::from("nonexistent_publishers.json");
         let clock = get_atomic_clock_realtime();
 
-        // This will fail without a real publishers.json file, but tests the factory creation
         let result = DatabentoDataClientFactory::create_live_data_client(
             client_id,
             api_key,
@@ -359,8 +353,6 @@ mod tests {
             clock,
         );
 
-        // We expect this to fail in tests due to missing publishers.json
-        // but the factory function should be callable
-        assert!(result.is_err() || result.is_ok());
+        assert!(result.is_err());
     }
 }

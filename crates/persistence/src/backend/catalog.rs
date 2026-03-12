@@ -15,7 +15,7 @@
 
 //! Parquet data catalog for efficient storage and retrieval of financial market data.
 //!
-//! This module provides a comprehensive data catalog implementation that uses Apache Parquet
+//! This module provides a data catalog implementation that uses Apache Parquet
 //! format for storing financial market data with object store backends. The catalog supports
 //! various data types including quotes, trades, bars, order book data, and other market events.
 //!
@@ -67,7 +67,7 @@ use std::{
     collections::HashSet,
     fmt::Debug,
     io::Cursor,
-    ops::Bound,
+    ops::Bound as RangeBound,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -84,23 +84,32 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-        QuoteTick, TradeTick, close::InstrumentClose, is_monotonically_increasing_by_init,
-        to_variant,
+        Bar, CustomData, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        is_monotonically_increasing_by_init, to_variant,
     },
     instruments::InstrumentAny,
 };
-use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
+use nautilus_serialization::arrow::{
+    DecodeDataFromRecordBatch, EncodeToRecordBatch, custom::CustomDataDecoder,
+};
 use object_store::{ObjectStore, path::Path as ObjectPath};
 use serde::Serialize;
 use unbounded_interval_tree::interval_tree::IntervalTree;
 
-use super::session::{self, DataBackendSession, QueryResult, build_query};
+use super::{
+    custom::{
+        custom_data_path_components, decode_batch_to_data as orchestration_decode_batch_to_data,
+        decode_custom_batches_to_data as orchestration_decode_custom_batches_to_data,
+        prepare_custom_data_batch,
+    },
+    session::{self, DataBackendSession, QueryResult, build_query},
+};
 use crate::parquet::{read_parquet_from_object_store, write_batches_to_object_store};
 
 /// A high-performance data catalog for storing and retrieving financial market data using Apache Parquet format.
 ///
-/// The `ParquetDataCatalog` provides a comprehensive solution for managing large volumes of financial
+/// The `ParquetDataCatalog` provides a solution for managing large volumes of financial
 /// market data with efficient storage, querying, and consolidation capabilities. It supports various
 /// object store backends including local filesystems, AWS S3, and other cloud storage providers.
 ///
@@ -186,7 +195,7 @@ impl ParquetDataCatalog {
     /// ```
     #[must_use]
     pub fn new(
-        base_path: PathBuf,
+        base_path: &Path,
         storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
@@ -347,7 +356,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn write_data_enum(
         &self,
-        data: Vec<Data>,
+        data: &[Data],
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         skip_disjoint_check: Option<bool>,
@@ -360,6 +369,17 @@ impl ParquetDataCatalog {
         let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
         let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
         let mut closes: Vec<InstrumentClose> = Vec::new();
+        // Group custom data by full DataType identity (type_name + identifier + metadata)
+        // so each batch is written to the correct path with consistent schema/metadata.
+        let custom_data_key = |c: &CustomData| {
+            (
+                c.data_type.type_name().to_string(),
+                c.data_type.identifier().map(String::from),
+                c.data_type.metadata_str(),
+            )
+        };
+        let mut custom_data: AHashMap<(String, Option<String>, String), Vec<CustomData>> =
+            AHashMap::new();
 
         for d in data.iter().cloned() {
             match d {
@@ -388,6 +408,9 @@ impl ParquetDataCatalog {
                 Data::InstrumentClose(c) => {
                     closes.push(c);
                 }
+                Data::Custom(c) => {
+                    custom_data.entry(custom_data_key(&c)).or_default().push(c);
+                }
             }
         }
 
@@ -401,6 +424,10 @@ impl ParquetDataCatalog {
         self.write_to_parquet(mark_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(index_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(closes, start, end, skip_disjoint_check)?;
+
+        for (_, items) in custom_data {
+            self.write_custom_data_batch(items, start, end, skip_disjoint_check)?;
+        }
 
         Ok(())
     }
@@ -483,7 +510,7 @@ impl ParquetDataCatalog {
             schema.metadata.get("instrument_id").cloned()
         };
 
-        let directory = self.make_path(T::path_prefix(), identifier)?;
+        let directory = self.make_path(T::path_prefix(), identifier.as_deref())?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
         let object_path = self.to_object_path(&path.to_string_lossy());
@@ -492,7 +519,7 @@ impl ParquetDataCatalog {
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
 
         if file_exists {
-            log::info!("File {path:?} already exists, skipping write");
+            log::info!("File {} already exists, skipping write", path.display());
             return Ok(path);
         }
 
@@ -511,9 +538,91 @@ impl ParquetDataCatalog {
         }
 
         log::info!(
-            "Writing {} batches of {type_name} data to {path:?}",
-            batches.len()
+            "Writing {} batches of {type_name} data to {}",
+            batches.len(),
+            path.display(),
         );
+
+        self.execute_async(async {
+            write_batches_to_object_store(
+                &batches,
+                self.object_store.clone(),
+                &object_path,
+                Some(self.compression),
+                Some(self.max_row_group_size),
+                None,
+            )
+            .await
+        })?;
+
+        Ok(path)
+    }
+
+    /// Writes custom data to a Parquet file in the catalog.
+    ///
+    /// This method handles writing custom data types that implement `CustomDataTrait`.
+    /// Custom data is organized by type name in a `custom/{type_name}/` directory structure.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: Vector of custom data items to write (must be in ascending timestamp order).
+    /// - `start`: Optional start timestamp to override the natural data range.
+    /// - `end`: Optional end timestamp to override the natural data range.
+    /// - `skip_disjoint_check`: Whether to skip interval disjointness validation.
+    ///
+    /// # Returns
+    ///
+    /// Returns the [`PathBuf`] of the created file, or an empty path if no data was provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Data serialization to Arrow record batches fails.
+    /// - Object store write operations fail.
+    /// - File path construction fails.
+    /// - Writing would create non-disjoint timestamp intervals (unless skipped).
+    pub fn write_custom_data_batch(
+        &self,
+        data: Vec<CustomData>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        skip_disjoint_check: Option<bool>,
+    ) -> anyhow::Result<PathBuf> {
+        if data.is_empty() {
+            return Ok(PathBuf::new());
+        }
+
+        let (batch, type_name, identifier, start_ts, end_ts) = prepare_custom_data_batch(data)?;
+        let start_ts = start.unwrap_or(start_ts);
+        let end_ts = end.unwrap_or(end_ts);
+        let batches = vec![batch];
+
+        let directory = self.make_path_custom_data(&type_name, identifier.as_deref())?;
+        let filename = timestamps_to_filename(start_ts, end_ts);
+        let path = PathBuf::from(format!("{directory}/{filename}"));
+        let object_path = self.to_object_path(&path.to_string_lossy());
+
+        let file_exists =
+            self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+
+        if file_exists {
+            log::info!("File {} already exists, skipping write", path.display());
+            return Ok(path);
+        }
+
+        if !skip_disjoint_check.unwrap_or(false) {
+            let current_intervals = self.get_directory_intervals(&directory)?;
+            let new_interval = (start_ts.as_u64(), end_ts.as_u64());
+            let mut new_intervals = current_intervals.clone();
+            new_intervals.push(new_interval);
+
+            if !are_intervals_disjoint(&new_intervals) {
+                anyhow::bail!(
+                    "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
+                    non-disjoint intervals. Existing intervals: {current_intervals:?}"
+                );
+            }
+        }
 
         self.execute_async(async {
             write_batches_to_object_store(
@@ -623,7 +732,7 @@ impl ParquetDataCatalog {
             }
 
             // Create directory path: data/instruments/{instrument_id}/
-            let directory = self.make_path("instruments", Some(instrument_id.clone()))?;
+            let directory = self.make_path("instruments", Some(instrument_id.as_str()))?;
             let filename = "instrument.parquet";
             let path = PathBuf::from(format!("{directory}/{filename}"));
             let object_path = self.to_object_path(&path.to_string_lossy());
@@ -632,14 +741,18 @@ impl ParquetDataCatalog {
                 .execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
 
             if file_exists {
-                log::info!("Instrument file {path:?} already exists, skipping write");
+                log::info!(
+                    "Instrument file {} already exists, skipping write",
+                    path.display()
+                );
                 paths.push(path);
                 continue;
             }
 
             log::info!(
-                "Writing {} batches of instrument data for {instrument_id} to {path:?}",
-                batches.len()
+                "Writing {} batches of instrument data for {instrument_id} to {}",
+                batches.len(),
+                path.display(),
             );
 
             // ArrowWriter stores the full schema (including "class" metadata) in ARROW:schema.
@@ -699,7 +812,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn query_instruments(
         &self,
-        instrument_ids: Option<Vec<String>>,
+        instrument_ids: Option<&[String]>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         use nautilus_serialization::arrow::instrument::decode_instrument_any_batch;
 
@@ -728,7 +841,7 @@ impl ParquetDataCatalog {
                     let path_parts: Vec<&str> = dir_path.split('/').collect();
                     if let Some(instrument_id_dir) = path_parts.last() {
                         // Apply filter if provided
-                        if let Some(ref ids) = instrument_ids
+                        if let Some(ids) = instrument_ids
                             && !ids
                                 .iter()
                                 .map(|id| urisafe_instrument_id(id))
@@ -752,19 +865,11 @@ impl ParquetDataCatalog {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
 
-            let metadata: std::collections::HashMap<String, String> = builder_schema
-                .metadata()
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        String::from_utf8_lossy(k.as_ref()).to_string(),
-                        String::from_utf8_lossy(v.as_ref()).to_string(),
-                    )
-                })
-                .collect();
+            let metadata: std::collections::HashMap<String, String> =
+                builder_schema.metadata().clone();
 
             for batch in batches {
-                let instruments = decode_instrument_any_batch(&metadata, batch)?;
+                let instruments = decode_instrument_any_batch(&metadata, &batch)?;
                 all_instruments.extend(instruments);
             }
         }
@@ -844,14 +949,15 @@ impl ParquetDataCatalog {
         let json_path = directory.join(&filename);
 
         log::info!(
-            "Writing {} records of {type_name} data to {json_path:?}",
-            data.len()
+            "Writing {} records of {type_name} data to {}",
+            data.len(),
+            json_path.display(),
         );
 
         if write_metadata {
             let metadata = T::chunk_metadata(&data);
             let metadata_path = json_path.with_extension("metadata.json");
-            log::info!("Writing metadata to {metadata_path:?}");
+            log::info!("Writing metadata to {}", metadata_path.display());
 
             // Use object store for metadata file
             let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());
@@ -888,7 +994,10 @@ impl ParquetDataCatalog {
         data: &[T],
         type_name: &str,
     ) -> anyhow::Result<()> {
-        if !data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()) {
+        if !data
+            .array_windows()
+            .all(|[a, b]| a.ts_init() <= b.ts_init())
+        {
             anyhow::bail!("{type_name} timestamps must be in ascending order");
         }
 
@@ -976,7 +1085,7 @@ impl ParquetDataCatalog {
     pub fn extend_file_name(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
@@ -1066,6 +1175,114 @@ impl ParquetDataCatalog {
         })
     }
 
+    /// Lists all instrument identifiers for a specific data type.
+    ///
+    /// This method scans the data directory for a given data type and extracts
+    /// all unique instrument identifiers from the directory structure.
+    ///
+    /// # Parameters
+    ///
+    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "bars").
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of instrument identifier strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if directory listing fails.
+    pub fn list_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
+        self.execute_async(async {
+            let prefix = ObjectPath::from(format!("data/{data_type}/"));
+            let mut stream = self.object_store.list(Some(&prefix));
+            let mut instruments = HashSet::new();
+
+            while let Some(object) = stream.next().await {
+                let object = object?;
+                let path = object.location.as_ref();
+                let parts: Vec<&str> = path.split('/').collect();
+                if parts.len() >= 3 {
+                    instruments.insert(parts[2].to_string());
+                }
+            }
+            Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
+        })
+    }
+
+    /// Lists Parquet files matching specific criteria (data type, identifiers, time range).
+    ///
+    /// This method finds all Parquet files that match the specified criteria by filtering
+    /// files based on their directory structure and filename timestamps.
+    ///
+    /// # Parameters
+    ///
+    /// - `data_type`: The data type directory name (e.g., "quotes", "trades", "custom/MyType").
+    /// - `identifiers`: Optional list of identifiers to filter by.
+    /// - `start`: Optional start timestamp to filter files by their time range.
+    /// - `end`: Optional end timestamp to filter files by their time range.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of file paths that match the criteria.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if directory listing or file filtering fails.
+    pub fn list_parquet_files_with_criteria(
+        &self,
+        data_type: &str,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut all_files = Vec::new();
+
+        let start_u64 = start.map(|s| s.as_u64());
+        let end_u64 = end.map(|e| e.as_u64());
+
+        let base_dir = self.make_path(data_type, None)?;
+
+        // Use recursive listing to match Python's glob behavior
+        let list_result = self.execute_async(async {
+            let prefix = ObjectPath::from(format!("{base_dir}/"));
+            let mut stream = self.object_store.list(Some(&prefix));
+            let mut objects = Vec::new();
+            while let Some(object) = stream.next().await {
+                objects.push(object?);
+            }
+            Ok::<Vec<_>, anyhow::Error>(objects)
+        })?;
+
+        for object in list_result {
+            let path_str = object.location.to_string();
+
+            // Filter by identifiers if provided
+            if let Some(ids) = identifiers {
+                let path_components = extract_path_components(&path_str);
+                let mut matches = false;
+                for id in ids {
+                    if path_components.iter().any(|c| c.contains(id)) {
+                        matches = true;
+                        break;
+                    }
+                }
+
+                if !matches {
+                    continue;
+                }
+            }
+
+            // Filter by timestamp range if filename can be parsed
+            if path_str.ends_with(".parquet")
+                && query_intersects_filename(&path_str, start_u64, end_u64)
+            {
+                all_files.push(path_str);
+            }
+        }
+
+        Ok(all_files)
+    }
+
     /// Helper method to reconstruct full URI for remote object store paths
     #[must_use]
     pub fn reconstruct_full_uri(&self, path_str: &str) -> String {
@@ -1111,6 +1328,59 @@ impl ParquetDataCatalog {
     #[must_use]
     fn join_paths(&self, base: &str, path: &str) -> String {
         make_object_store_path(base, &[path])
+    }
+
+    /// Resolves a path for use with DataFusion (avoiding Windows path doubling for file://).
+    /// Returns the path as-is if it is already a full URI or absolute; otherwise builds
+    /// file:// base + path for local catalogs or reconstruct_full_uri for remote.
+    #[must_use]
+    fn resolve_path_for_datafusion(&self, path: &str) -> String {
+        if path.contains("://") {
+            return path.to_string();
+        }
+
+        if path.starts_with('/') {
+            return path.to_string();
+        }
+
+        if self.original_uri.starts_with("file://") {
+            let base = self.original_uri.trim_end_matches('/');
+            let path_trimmed = path.trim_end_matches('/');
+            return format!("{base}/{path_trimmed}");
+        }
+        self.reconstruct_full_uri(path)
+    }
+
+    /// Like resolve_path_for_datafusion but ensures the result ends with a trailing slash.
+    #[must_use]
+    fn resolve_directory_for_datafusion(&self, directory: &str) -> String {
+        let mut resolved = self.resolve_path_for_datafusion(directory);
+        if !resolved.ends_with('/') {
+            resolved.push('/');
+        }
+        resolved
+    }
+
+    /// Returns the path string to push in query_files result list: relative for file://,
+    /// full URI for remote (so callers can pass to resolve_path_for_datafusion later).
+    #[must_use]
+    fn path_for_query_list(&self, path: &str) -> String {
+        if self.original_uri.starts_with("file://") {
+            path.to_string()
+        } else {
+            self.reconstruct_full_uri(path)
+        }
+    }
+
+    /// Returns the native path string for the catalog root (for std::fs). Only valid when
+    /// !is_remote_uri(); uses parquet's file_uri_to_native_path for file:// URIs.
+    #[must_use]
+    fn native_base_path_string(&self) -> String {
+        if self.original_uri.starts_with("file://") {
+            crate::parquet::file_uri_to_native_path(&self.original_uri)
+        } else {
+            self.original_uri.clone()
+        }
     }
 
     /// Helper method to check if the original URI uses a remote object store scheme
@@ -1217,7 +1487,10 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
-        // Register the object store with the session for remote URIs
+        // Register the object store with the session for remote URIs only.
+        // For local file:// we do not register: we pass full file URLs to register_parquet
+        // so DataFusion's default file provider handles them (avoids path doubling on Windows
+        // where a registered store would receive a path that gets prefixed again).
         if self.is_remote_uri() {
             let url = url::Url::parse(&self.original_uri)?;
             let host = url
@@ -1261,26 +1534,10 @@ impl ParquetDataCatalog {
                 let table_name = format!("{}_{}", T::path_prefix(), safe_sql_identifier);
                 let query = build_query(&table_name, start, end, where_clause);
 
-                // Convert directory path to filesystem path for DataFusion
-                // Ensure directory path ends with / to be treated as a directory
-                let resolved_path = if directory.starts_with('/') {
-                    // Path is already absolute
-                    if directory.ends_with('/') {
-                        directory
-                    } else {
-                        format!("{directory}/")
-                    }
-                } else {
-                    // Path is relative, reconstruct full URI and ensure trailing slash
-                    let mut full_uri = self.reconstruct_full_uri(&directory);
-                    if !full_uri.ends_with('/') {
-                        full_uri.push('/');
-                    }
-                    full_uri
-                };
+                let resolved_path = self.resolve_directory_for_datafusion(&directory);
 
                 self.session
-                    .add_file::<T>(&table_name, &resolved_path, Some(&query))?;
+                    .add_file::<T>(&table_name, &resolved_path, Some(&query), None)?;
             }
         } else {
             // Register files individually (for operations requiring precise file control)
@@ -1299,17 +1556,9 @@ impl ParquetDataCatalog {
                 );
                 let query = build_query(&table_name, start, end, where_clause);
 
-                // Convert object store path to filesystem path for DataFusion
-                // Only apply reconstruction if the path is not already absolute
-                let resolved_path = if file_uri.starts_with('/') {
-                    // Path is already absolute, use as-is
-                    file_uri.clone()
-                } else {
-                    // Path is relative, reconstruct full URI
-                    self.reconstruct_full_uri(file_uri)
-                };
+                let resolved_path = self.resolve_path_for_datafusion(file_uri);
                 self.session
-                    .add_file::<T>(&table_name, &resolved_path, Some(&query))?;
+                    .add_file::<T>(&table_name, &resolved_path, Some(&query), None)?;
             }
         }
 
@@ -1446,6 +1695,80 @@ impl ParquetDataCatalog {
         Ok(to_variant::<T>(all_data))
     }
 
+    /// Queries custom data dynamically by type name.
+    ///
+    /// This method allows querying custom data types without compile-time knowledge of the type.
+    /// It uses dynamic schema decoding based on the type name stored in metadata.
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The name of the custom data type to query.
+    /// - `identifiers`: Optional list of instrument identifiers to filter by.
+    /// - `start`: Optional start timestamp for filtering.
+    /// - `end`: Optional end timestamp for filtering.
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering.
+    /// - `files`: Optional list of specific files to query.
+    /// - `_optimize_file_loading`: Whether to optimize file loading (currently unused).
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `Data` enum variants containing the custom data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File discovery fails.
+    /// - Data decoding fails.
+    /// - Query execution fails.
+    #[allow(clippy::too_many_arguments)]
+    pub fn query_custom_data_dynamic(
+        &mut self,
+        type_name: &str,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        _optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<Data>> {
+        self.reset_session();
+        let path_prefix = format!("custom/{type_name}");
+
+        let files = if let Some(f) = files {
+            f.into_iter()
+                .map(|p| self.to_object_path(&p).to_string())
+                .collect::<Vec<_>>()
+        } else {
+            self.list_parquet_files_with_criteria(&path_prefix, identifiers, start, end)?
+        };
+
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let table_name = "custom_data_table";
+
+        // Use CustomDataDecoder for all custom data. Pass type_name so decode can look up
+        // the type when Parquet/DataFusion does not preserve schema metadata. Callers must
+        // ensure Rust custom types are registered via ensure_custom_data_registered::<T>().
+        for file in files {
+            let resolved_path = self.resolve_path_for_datafusion(&file);
+            let sql_query = build_query(table_name, start, end, where_clause);
+
+            self.session
+                .add_file::<CustomDataDecoder>(
+                    table_name,
+                    &resolved_path,
+                    Some(&sql_query),
+                    Some(type_name),
+                )
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        }
+
+        let query_result = self.session.get_query_result();
+        Ok(query_result.collect())
+    }
+
     /// Queries all Parquet files for a specific data type and optional instrument IDs.
     ///
     /// This method finds all Parquet files that match the specified criteria and returns
@@ -1575,10 +1898,8 @@ impl ParquetDataCatalog {
         // Apply timestamp filtering
         file_paths.retain(|file_path| query_intersects_filename(file_path, start_u64, end_u64));
 
-        // Convert to full URIs
         for file_path in file_paths {
-            let full_uri = self.reconstruct_full_uri(&file_path);
-            files.push(full_uri);
+            files.push(self.path_for_query_list(&file_path));
         }
 
         Ok(files)
@@ -1646,7 +1967,7 @@ impl ParquetDataCatalog {
     /// Queries any instrument data for the specified instrument(s) and time range.
     pub fn instruments(
         &self,
-        instrument_ids: Option<Vec<String>>,
+        instrument_ids: Option<&[String]>,
         _start: Option<UnixNanos>,
         _end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -1875,7 +2196,7 @@ impl ParquetDataCatalog {
         start: u64,
         end: u64,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -1931,7 +2252,7 @@ impl ParquetDataCatalog {
     pub fn query_first_timestamp(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -1991,7 +2312,7 @@ impl ParquetDataCatalog {
     pub fn query_last_timestamp(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         let intervals = self.get_intervals(data_cls, identifier)?;
 
@@ -2042,9 +2363,9 @@ impl ParquetDataCatalog {
     pub fn get_intervals(
         &self,
         data_cls: &str,
-        identifier: Option<String>,
+        identifier: Option<&str>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let directory = self.make_path(data_cls, identifier.clone())?;
+        let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 
         // For bars, fall back to partial matching when the exact directory
@@ -2055,7 +2376,7 @@ impl ParquetDataCatalog {
             return Ok(intervals);
         }
 
-        let safe_id = urisafe_instrument_id(&identifier.unwrap());
+        let safe_id = urisafe_instrument_id(identifier.unwrap());
 
         // Use relative path so list_directory_stems doesn't double-prefix
         // for remote catalogs (make_path already includes base_path)
@@ -2070,7 +2391,7 @@ impl ParquetDataCatalog {
             if extract_bar_type_instrument_id(&decoded) == Some(safe_id.as_str()) {
                 // Use decoded name to avoid double percent-encoding
                 // (to_object_path uses Path::from which re-encodes)
-                let subdir_path = self.make_path(data_cls, Some(decoded.into_owned()))?;
+                let subdir_path = self.make_path(data_cls, Some(&decoded))?;
                 all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
             }
         }
@@ -2216,14 +2537,26 @@ impl ParquetDataCatalog {
     /// // Returns: "/base/path/data/bars/BTCUSD-1H"
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn make_path(&self, type_name: &str, identifier: Option<String>) -> anyhow::Result<String> {
+    pub fn make_path(&self, type_name: &str, identifier: Option<&str>) -> anyhow::Result<String> {
         let mut components = vec!["data".to_string(), type_name.to_string()];
 
         if let Some(id) = identifier {
-            let safe_id = urisafe_instrument_id(&id);
+            let safe_id = urisafe_instrument_id(id);
             components.push(safe_id);
         }
 
+        let path = make_object_store_path_owned(&self.base_path, components);
+        Ok(path)
+    }
+
+    /// Builds the directory path for custom data: `data/custom/{type_name}[/{identifier segments}]`.
+    /// Identifier can contain `//` for subdirectories (normalized to `/`); path is safe for writing.
+    pub fn make_path_custom_data(
+        &self,
+        type_name: &str,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let components = custom_data_path_components(type_name, identifier);
         let path = make_object_store_path_owned(&self.base_path, components);
         Ok(path)
     }
@@ -2331,6 +2664,11 @@ impl ParquetDataCatalog {
         ObjectPath::parse(to_parse).map_err(anyhow::Error::from)
     }
 
+    #[allow(dead_code)]
+    fn to_file_path(&self, path: &ObjectPath) -> String {
+        path.to_string()
+    }
+
     /// Helper method to move a file using object store rename operation
     pub fn move_file(&self, old_path: &ObjectPath, new_path: &ObjectPath) -> anyhow::Result<()> {
         self.execute_async(async {
@@ -2388,26 +2726,7 @@ impl ParquetDataCatalog {
         // For local filesystem paths, use filesystem operations to detect empty directories
         // For remote object stores, we can only list directories that contain files
         if !self.is_remote_uri() {
-            // Use filesystem operations for local paths
-            // For local stores, base_path is empty, so we use original_uri
-            let directory = if self.original_uri.starts_with("file://") {
-                // Extract path from file:// URI
-                if let Ok(url) = url::Url::parse(&self.original_uri)
-                    && let Ok(base_path) = url.to_file_path()
-                {
-                    base_path.join(subdirectory)
-                } else {
-                    // Fallback: strip file:// prefix manually
-                    let path_str = self
-                        .original_uri
-                        .strip_prefix("file://")
-                        .unwrap_or(&self.original_uri);
-                    std::path::PathBuf::from(path_str).join(subdirectory)
-                }
-            } else {
-                // Local path without file:// prefix - use original_uri directly
-                std::path::PathBuf::from(&self.original_uri).join(subdirectory)
-            };
+            let directory = PathBuf::from(self.native_base_path_string()).join(subdirectory);
 
             // Check if directory exists
             if !directory.exists() {
@@ -2711,25 +3030,9 @@ impl ParquetDataCatalog {
             })?
         } else {
             // For local filesystem paths
-            let directory = if self.original_uri.starts_with("file://") {
-                if let Ok(url) = url::Url::parse(&self.original_uri)
-                    && let Ok(base_path) = url.to_file_path()
-                {
-                    base_path.join(subdirectory).join(instance_id)
-                } else {
-                    let path_str = self
-                        .original_uri
-                        .strip_prefix("file://")
-                        .unwrap_or(&self.original_uri);
-                    std::path::PathBuf::from(path_str)
-                        .join(subdirectory)
-                        .join(instance_id)
-                }
-            } else {
-                std::path::PathBuf::from(&self.original_uri)
-                    .join(subdirectory)
-                    .join(instance_id)
-            };
+            let directory = PathBuf::from(self.native_base_path_string())
+                .join(subdirectory)
+                .join(instance_id);
 
             if !directory.exists() {
                 return Ok(Vec::new());
@@ -2826,8 +3129,12 @@ impl ParquetDataCatalog {
                         closes.into_iter().map(Data::from).collect()
                     }
                     _ => {
-                        // Unknown data type - skip it
-                        continue;
+                        if data_cls.starts_with("custom/") {
+                            self.decode_custom_batches_to_data(batches, false)?
+                        } else {
+                            // Unknown data type - skip it
+                            continue;
+                        }
                     }
                 };
 
@@ -2843,6 +3150,52 @@ impl ParquetDataCatalog {
         });
 
         Ok(all_data)
+    }
+
+    /// Decodes multiple record batches of custom data (data_cls starts with "custom/") into a single
+    /// `Vec<Data>`. Optionally replaces `ts_init` column with `ts_event` before decoding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any batch fails to decode.
+    fn decode_custom_batches_to_data(
+        &self,
+        batches: Vec<RecordBatch>,
+        use_ts_event_for_ts_init: bool,
+    ) -> anyhow::Result<Vec<Data>> {
+        orchestration_decode_custom_batches_to_data(batches, use_ts_event_for_ts_init)
+    }
+
+    /// Decodes a RecordBatch to Data objects based on metadata.
+    ///
+    /// This method determines the data type from metadata and decodes the batch accordingly.
+    /// It supports both standard data types and custom data types when `allow_custom_fallback`
+    /// is true (e.g. when called from `decode_custom_batches_to_data` for files under
+    /// `custom/`). When false, unknown type names produce an error instead of attempting
+    /// custom decode, so malformed or typo'd built-in metadata fails explicitly.
+    ///
+    /// # Parameters
+    ///
+    /// - `metadata`: Schema metadata containing type information.
+    /// - `batch`: The RecordBatch to decode.
+    /// - `allow_custom_fallback`: If true, unknown type_name is decoded via custom data
+    ///   registry; if false, unknown type_name returns an error.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of Data enum variants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if decoding fails or the type is unknown (and custom fallback not allowed).
+    #[allow(dead_code)] // used by tests
+    fn decode_batch_to_data(
+        &self,
+        metadata: &std::collections::HashMap<String, String>,
+        batch: RecordBatch,
+        allow_custom_fallback: bool,
+    ) -> anyhow::Result<Vec<Data>> {
+        orchestration_decode_batch_to_data(metadata, batch, allow_custom_fallback)
     }
 
     /// Converts stream data from feather files to parquet files.
@@ -3084,7 +3437,7 @@ impl ParquetDataCatalog {
         instance_id: &str,
         data_cls: &str,
         subdirectory: Option<&str>,
-        identifiers: Option<Vec<String>>,
+        identifiers: Option<&[String]>,
         use_ts_event_for_ts_init: bool,
     ) -> anyhow::Result<()> {
         let subdirectory = subdirectory.unwrap_or("backtest");
@@ -3099,12 +3452,8 @@ impl ParquetDataCatalog {
         let data_name = data_cls.to_snake_case();
 
         // List all feather files for this data class
-        let feather_files = self.list_feather_files(
-            subdirectory,
-            instance_id,
-            &data_name,
-            identifiers.as_deref(),
-        )?;
+        let feather_files =
+            self.list_feather_files(subdirectory, instance_id, &data_name, identifiers)?;
 
         if feather_files.is_empty() {
             return Ok(());
@@ -3200,7 +3549,23 @@ impl ParquetDataCatalog {
                     self.write_to_parquet(data, None, None, None)?;
                 }
                 _ => {
-                    anyhow::bail!("Unknown data class: {data_cls}");
+                    if data_cls.starts_with("custom/") {
+                        let data =
+                            self.decode_custom_batches_to_data(batches, use_ts_event_for_ts_init)?;
+                        let custom_items: Vec<CustomData> = data
+                            .into_iter()
+                            .filter_map(|d| match d {
+                                Data::Custom(c) => Some(c),
+                                _ => None,
+                            })
+                            .collect();
+
+                        if !custom_items.is_empty() {
+                            self.write_custom_data_batch(custom_items, None, None, None)?;
+                        }
+                    } else {
+                        anyhow::bail!("Unknown data class: {data_cls}");
+                    }
                 }
             }
         }
@@ -3388,7 +3753,7 @@ fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
 /// assert_eq!(nanos, 1609459200000000000);
 /// ```
 fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
-    Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
+    Ok(iso8601_to_unix_nanos(iso_timestamp)?.into())
 }
 
 /// Converts an instrument ID to a URI-safe format by removing forward slashes
@@ -3432,6 +3797,18 @@ fn extract_bar_type_instrument_id(bar_type_dir: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+/// Normalizes a custom data identifier for use in directory paths.
+/// Replaces `//` with `/`, and filters out empty segments and `..` to prevent path traversal.
+#[must_use]
+pub fn safe_directory_identifier(identifier: &str) -> String {
+    let normalized = identifier.replace("//", "/");
+    let segments: Vec<&str> = normalized
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != "..")
+        .collect();
+    segments.join("/")
 }
 
 /// Extracts the identifier from a file path.
@@ -3867,7 +4244,7 @@ fn query_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) ->
     }
 
     let interval_set = get_interval_set(closed_intervals);
-    let query_range = (Bound::Included(start), Bound::Included(end));
+    let query_range = (RangeBound::Included(start), RangeBound::Included(end));
     let query_diff = interval_set.get_interval_difference(&query_range);
     let mut result: Vec<(u64, u64)> = Vec::new();
 
@@ -3911,8 +4288,8 @@ fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
         }
 
         tree.insert((
-            Bound::Included(start),
-            Bound::Excluded(end.saturating_add(1)),
+            RangeBound::Included(start),
+            RangeBound::Excluded(end.saturating_add(1)),
         ));
     }
 
@@ -3935,58 +4312,32 @@ fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
 ///
 /// Returns `Some((start, end))` for valid intervals, `None` for empty intervals.
 fn interval_to_tuple(
-    interval: (Bound<&u64>, Bound<&u64>),
+    interval: (RangeBound<&u64>, RangeBound<&u64>),
     query_start: u64,
     query_end: u64,
 ) -> Option<(u64, u64)> {
     let (bound_start, bound_end) = interval;
 
     let start = match bound_start {
-        Bound::Included(val) => *val,
-        Bound::Excluded(val) => val.saturating_add(1),
-        Bound::Unbounded => query_start,
+        RangeBound::Included(val) => *val,
+        RangeBound::Excluded(val) => val.saturating_add(1),
+        RangeBound::Unbounded => query_start,
     };
 
     let end = match bound_end {
-        Bound::Included(val) => *val,
-        Bound::Excluded(val) => {
+        RangeBound::Included(val) => *val,
+        RangeBound::Excluded(val) => {
             if *val == 0 {
                 return None; // Empty interval
             }
             val - 1
         }
-        Bound::Unbounded => query_end,
+        RangeBound::Unbounded => query_end,
     };
 
     if start <= end {
         Some((start, end))
     } else {
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    #[case("EURUSD.SIM-1-MINUTE-LAST-EXTERNAL", Some("EURUSD.SIM"))]
-    #[case("ESM4.XCME-5-SECOND-MID-INTERNAL", Some("ESM4.XCME"))]
-    #[case("BTC-USDT.BINANCE-1-HOUR-LAST-EXTERNAL", Some("BTC-USDT.BINANCE"))]
-    #[case("A-B-C.VENUE-15-TICK-BID-EXTERNAL", Some("A-B-C.VENUE"))]
-    #[case(
-        "EURUSD.SIM-1-MINUTE-LAST-EXTERNAL@15-MINUTE-EXTERNAL",
-        Some("EURUSD.SIM")
-    )]
-    #[case(
-        "BTC-USDT.BINANCE-1-TICK-LAST-INTERNAL@5-MINUTE-EXTERNAL",
-        Some("BTC-USDT.BINANCE")
-    )]
-    #[case("AAPL.XNAS", None)]
-    #[case("", None)]
-    fn test_extract_bar_type_instrument_id(#[case] input: &str, #[case] expected: Option<&str>) {
-        assert_eq!(extract_bar_type_instrument_id(input), expected);
     }
 }

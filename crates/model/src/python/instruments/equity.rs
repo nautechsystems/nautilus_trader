@@ -33,6 +33,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Equity {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -102,7 +103,7 @@ impl Equity {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(Equity)
     }
 

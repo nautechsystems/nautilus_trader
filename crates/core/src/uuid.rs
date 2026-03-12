@@ -38,6 +38,10 @@ pub(crate) const UUID4_LEN: usize = 37;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.core")
+)]
 pub struct UUID4 {
     /// The UUID v4 value as a fixed-length C string byte array (includes null terminator).
     pub(crate) value: [u8; 37], // cbindgen issue using the constant in the array

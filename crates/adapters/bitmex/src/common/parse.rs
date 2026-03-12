@@ -18,7 +18,7 @@
 use std::{borrow::Cow, str::FromStr};
 
 use chrono::{DateTime, Utc};
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{Params, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::bar::BarType,
     enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide, TriggerType},
@@ -36,7 +36,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BITMEX_VENUE,
-        enums::{BitmexExecInstruction, BitmexLiquidityIndicator, BitmexSide},
+        enums::{BitmexExecInstruction, BitmexLiquidityIndicator, BitmexPegPriceType, BitmexSide},
     },
     websocket::messages::BitmexMarginMsg,
 };
@@ -464,6 +464,37 @@ pub fn parse_account_state(
         ts_init,
         None,
     ))
+}
+
+/// Extracts the peg price type from order command parameters.
+///
+/// # Errors
+///
+/// Returns an error if the value is present but not a valid `BitmexPegPriceType`.
+pub fn parse_peg_price_type(params: Option<&Params>) -> anyhow::Result<Option<BitmexPegPriceType>> {
+    let value = params.and_then(|p| p.get_str("peg_price_type"));
+    match value {
+        Some(s) => BitmexPegPriceType::from_str(s)
+            .map(Some)
+            .map_err(|_| anyhow::anyhow!("Invalid peg_price_type: {s}")),
+        None => Ok(None),
+    }
+}
+
+/// Extracts the peg offset value from order command parameters.
+///
+/// # Errors
+///
+/// Returns an error if the value is present but not a valid `f64`.
+pub fn parse_peg_offset_value(params: Option<&Params>) -> anyhow::Result<Option<f64>> {
+    let value = params.and_then(|p| p.get_str("peg_offset_value"));
+    match value {
+        Some(s) => s
+            .parse::<f64>()
+            .map(Some)
+            .map_err(|_| anyhow::anyhow!("Invalid peg_offset_value: {s}")),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

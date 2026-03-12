@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
-use nautilus_common::{custom::CustomData, signal::Signal};
+use nautilus_common::signal::Signal;
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, HasTsInit, QuoteTick, TradeTick},
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -30,9 +30,7 @@ use nautilus_model::{
 use sqlx::{PgPool, Row};
 
 use super::models::{
-    orders::OrderSnapshotModel,
-    positions::PositionSnapshotModel,
-    types::{CustomDataModel, SignalModel},
+    orders::OrderSnapshotModel, positions::PositionSnapshotModel, types::SignalModel,
 };
 use crate::sql::models::{
     accounts::AccountEventModel,
@@ -674,7 +672,7 @@ impl DatabaseQueries {
 
         "#)
             .bind(order_event.id().to_string())
-            .bind(order_event.kind())
+            .bind(order_event.type_name())
             .bind(order_event.client_order_id().to_string())
             .bind(order_event.order_type().map(|x| x.to_string()))
             .bind(order_event.order_side().map(|x| x.to_string()))
@@ -912,7 +910,7 @@ impl DatabaseQueries {
                 if account_events.is_empty() {
                     return Ok(None);
                 }
-                let account = AccountAny::from_events(account_events).unwrap();
+                let account = AccountAny::from_events(&account_events).unwrap();
                 Ok(Some(account))
             }
             Err(e) => anyhow::bail!("Failed to load account events: {e}"),
@@ -1183,34 +1181,59 @@ impl DatabaseQueries {
 
     /// Inserts a `CustomData` entry via the provided `pool`.
     ///
+    /// Serializes the model `CustomData` to full JSON and stores it in the JSONB `value` column.
+    ///
     /// # Errors
     ///
     /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_custom_data(pool: &PgPool, data: &CustomData) -> anyhow::Result<()> {
+        let json_bytes = serde_json::to_vec(data)
+            .map_err(|e| anyhow::anyhow!("CustomData must be valid JSON: {e}"))?;
+        let value_json: serde_json::Value = serde_json::from_slice(&json_bytes)
+            .map_err(|e| anyhow::anyhow!("CustomData value must be valid JSON: {e}"))?;
+        let data_type_obj = value_json
+            .get("data_type")
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| anyhow::anyhow!("CustomData JSON missing data_type"))?;
+        let data_type_name = data_type_obj
+            .get("type_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let metadata_json = data_type_obj
+            .get("metadata")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        let identifier = data_type_obj
+            .get("identifier")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         sqlx::query(
             r#"
-            INSERT INTO "custom" (
-                data_type, metadata, value, ts_event, ts_init, created_at, updated_at
-            ) VALUES (
-                $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            )
+            INSERT INTO "custom" (data_type, metadata, identifier, value, ts_event, ts_init, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
-            DO UPDATE
-            SET
-                data_type = $1, metadata = $2, value = $3, ts_event = $4, ts_init = $5,
+            DO UPDATE SET
+                data_type = EXCLUDED.data_type,
+                metadata = EXCLUDED.metadata,
+                identifier = EXCLUDED.identifier,
+                value = EXCLUDED.value,
+                ts_event = EXCLUDED.ts_event,
+                ts_init = EXCLUDED.ts_init,
                 updated_at = CURRENT_TIMESTAMP
         "#,
         )
-        .bind(data.data_type.type_name().to_string())
+        .bind(data_type_name)
+        .bind(&metadata_json)
+        .bind(identifier)
+        .bind(&value_json)
         .bind(
-            data.data_type
-                .metadata()
-                .as_ref()
-                .map_or_else(|| Ok(serde_json::Value::Null), serde_json::to_value)?,
+            value_json
+                .get("ts_event")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| data.ts_init().as_u64())
+                .to_string(),
         )
-        .bind(data.value.to_vec())
-        .bind(data.ts_event.to_string())
-        .bind(data.ts_init.to_string())
+        .bind(data.ts_init().to_string())
         .execute(pool)
         .await
         .map(|_| ())
@@ -1219,6 +1242,8 @@ impl DatabaseQueries {
 
     /// Loads all `CustomData` entries of `data_type` via the provided `pool`.
     ///
+    /// Filters by `data_type`, `metadata`, and `identifier` columns to match the requested data type.
+    ///
     /// # Errors
     ///
     /// Returns an error if the SQL SELECT or deserialization fails.
@@ -1226,22 +1251,56 @@ impl DatabaseQueries {
         pool: &PgPool,
         data_type: &DataType,
     ) -> anyhow::Result<Vec<CustomData>> {
-        // TODO: This metadata JSON could be more efficient at some point
-        let metadata_json = data_type
-            .metadata()
-            .as_ref()
-            .map_or(Ok(serde_json::Value::Null), |metadata| {
-                serde_json::to_value(metadata)
-            })?;
+        let metadata_json = data_type.metadata().as_ref().map_or(
+            Ok(serde_json::Value::Object(serde_json::Map::new())),
+            serde_json::to_value,
+        )?;
 
-        sqlx::query_as::<_, CustomDataModel>(
-            r#"SELECT * FROM "custom" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_init ASC"#,
-        )
-        .bind(data_type.type_name())
-        .bind(metadata_json)
-        .fetch_all(pool)
-        .await
-        .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|e| anyhow::anyhow!("Failed to load custom data: {e}"))
+        let type_name = data_type.type_name();
+        let short_type = type_name.rsplit([':', '.']).next().unwrap_or(type_name);
+
+        let rows = match data_type.identifier() {
+            Some(identifier) => {
+                sqlx::query(
+                    r#"SELECT value, ts_event, ts_init FROM "custom"
+                   WHERE (data_type = $1 OR data_type = $2)
+                     AND metadata = $3
+                     AND identifier = $4
+                   ORDER BY ts_init ASC"#,
+                )
+                .bind(type_name)
+                .bind(short_type)
+                .bind(&metadata_json)
+                .bind(identifier)
+                .fetch_all(pool)
+                .await
+            }
+            None => {
+                sqlx::query(
+                    r#"SELECT value, ts_event, ts_init FROM "custom"
+                   WHERE (data_type = $1 OR data_type = $2)
+                     AND metadata = $3
+                     AND identifier = ''
+                   ORDER BY ts_init ASC"#,
+                )
+                .bind(type_name)
+                .bind(short_type)
+                .bind(&metadata_json)
+                .fetch_all(pool)
+                .await
+            }
+        }
+        .map_err(|e| anyhow::anyhow!("Failed to load custom data: {e}"))?;
+
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            let value_json: serde_json::Value = row.try_get("value")?;
+            let json_bytes = serde_json::to_vec(&value_json)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize JSON: {e}"))?;
+            let custom =
+                CustomData::from_json_bytes(&json_bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
+            results.push(custom);
+        }
+        Ok(results)
     }
 }

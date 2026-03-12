@@ -45,7 +45,7 @@ use nautilus_model::{
 use nautilus_okx::{
     common::{enums::OKXInstrumentType, models::OKXInstrument, parse::parse_instrument_any},
     http::client::OKXResponse,
-    websocket::{client::OKXWebSocketClient, messages::NautilusWsMessage},
+    websocket::{client::OKXWebSocketClient, messages::OKXWsMessage},
 };
 use serde_json::{Value, json};
 
@@ -457,7 +457,7 @@ async fn test_websocket_connection() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
 
     wait_until_async(
@@ -506,7 +506,7 @@ async fn test_trades_subscription_flow() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -526,8 +526,8 @@ async fn test_trades_subscription_flow() {
         .expect("stream ended unexpectedly");
 
     match message {
-        NautilusWsMessage::Data(data) => {
-            assert!(!data.is_empty(), "expected trade payload");
+        OKXWsMessage::ChannelData { data, .. } => {
+            assert!(!data.is_null(), "expected trade payload");
         }
         other => panic!("unexpected message: {other:?}"),
     }
@@ -547,7 +547,7 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -593,7 +593,7 @@ async fn test_heartbeat_timeout_reconnection() {
     )
     .expect("construct client");
 
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -674,7 +674,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -781,7 +781,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -874,7 +874,7 @@ async fn test_login_failure_emits_error() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     let connect_result = tokio::time::timeout(Duration::from_secs(1), client.connect()).await;
 
@@ -910,7 +910,7 @@ async fn test_subscription_restoration_tracking() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -954,7 +954,6 @@ async fn test_subscription_restoration_tracking() {
 
     state.clear_subscription_events().await;
 
-    // Wait to ensure events are cleared
     wait_until_async(
         || {
             let state = state.clone();
@@ -1035,7 +1034,7 @@ async fn test_true_auto_reconnect_with_verification() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1056,8 +1055,8 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("stream closed too early");
 
     match first {
-        NautilusWsMessage::Data(payload) => {
-            assert!(!payload.is_empty());
+        OKXWsMessage::ChannelData { data, .. } => {
+            assert!(!data.is_null());
         }
         other => panic!("unexpected message before reconnect: {other:?}"),
     }
@@ -1071,17 +1070,23 @@ async fn test_true_auto_reconnect_with_verification() {
     )
     .await;
 
-    let second = tokio::time::timeout(Duration::from_secs(3), stream.next())
-        .await
-        .expect("second message timeout")
-        .expect("stream closed after reconnect");
-
-    match second {
-        NautilusWsMessage::Data(payload) => {
-            assert!(!payload.is_empty());
+    // After reconnect, may receive Reconnected/Authenticated signals before data
+    let mut got_data = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout_at(deadline, stream.next()).await {
+            Ok(Some(OKXWsMessage::ChannelData { data, .. })) => {
+                assert!(!data.is_null());
+                got_data = true;
+                break;
+            }
+            Ok(Some(OKXWsMessage::Reconnected | OKXWsMessage::Authenticated)) => {}
+            Ok(Some(other)) => panic!("unexpected message after reconnect: {other:?}"),
+            Ok(None) => panic!("stream closed after reconnect"),
+            Err(_) => panic!("timeout waiting for data after reconnect"),
         }
-        other => panic!("unexpected message after reconnect: {other:?}"),
     }
+    assert!(got_data, "never received data after reconnect");
 
     client.close().await.expect("close failed");
 }
@@ -1097,7 +1102,7 @@ async fn test_sends_pong_for_text_ping() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1127,7 +1132,7 @@ async fn test_sends_pong_for_control_ping() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1160,7 +1165,7 @@ async fn test_unsubscribe_orders_sends_request() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1219,7 +1224,7 @@ async fn test_subscribe_to_orderbook() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1260,7 +1265,7 @@ async fn test_multiple_symbols_subscription() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1309,7 +1314,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1423,7 +1428,7 @@ async fn test_auth_and_subscription_restoration_order() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1441,7 +1446,6 @@ async fn test_auth_and_subscription_restoration_order() {
 
     state.clear_subscription_events().await;
 
-    // Wait to ensure events are cleared
     wait_until_async(
         || {
             let state = state.clone();
@@ -1501,7 +1505,7 @@ async fn test_unauthenticated_private_channel_rejection() {
     )
     .expect("construct client");
 
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1535,7 +1539,6 @@ async fn test_unauthenticated_private_channel_rejection() {
 
 #[tokio::test]
 async fn test_rapid_consecutive_reconnections() {
-    // Test that rapid consecutive disconnects/reconnects don't cause state corruption
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1543,14 +1546,13 @@ async fn test_rapid_consecutive_reconnections() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
-    // Subscribe to multiple channels
     client
         .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
         .await
@@ -1576,9 +1578,7 @@ async fn test_rapid_consecutive_reconnections() {
     let initial_login_count = *state.login_count.lock().await;
     assert_eq!(initial_login_count, 1, "Should have 1 initial login");
 
-    // Perform 3 rapid disconnect/reconnect cycles
     for cycle in 1..=3 {
-        // Clear subscription events to verify fresh resubscriptions
         state.clear_subscription_events().await;
 
         // Wait to ensure events are cleared
@@ -1593,13 +1593,11 @@ async fn test_rapid_consecutive_reconnections() {
 
         state.drop_next_connection.store(true, Ordering::Relaxed);
 
-        // Trigger disconnect by subscribing to a new channel
         client
             .subscribe_trades(InstrumentId::from("ETH-USD.OKX"), false)
             .await
             .expect("subscribe trigger failed");
 
-        // Wait for reconnection
         wait_until_async(
             || {
                 let state = state.clone();
@@ -1610,7 +1608,6 @@ async fn test_rapid_consecutive_reconnections() {
         )
         .await;
 
-        // Wait for subscription restoration (20s to account for slower CI runners)
         wait_until_async(
             || {
                 let state = state.clone();
@@ -1628,7 +1625,6 @@ async fn test_rapid_consecutive_reconnections() {
         )
         .await;
 
-        // Verify subscriptions were restored in this cycle
         let events = state.subscription_events().await;
         assert!(
             events
@@ -1644,8 +1640,6 @@ async fn test_rapid_consecutive_reconnections() {
         );
     }
 
-    // Verify re-authentication happened during reconnections
-    // Use >= because rapid reconnections can cause race conditions in auth call timing
     let final_login_count = *state.login_count.lock().await;
     assert!(
         final_login_count >= 4,
@@ -1666,7 +1660,7 @@ async fn test_multiple_partial_subscription_failures() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1676,7 +1670,6 @@ async fn test_multiple_partial_subscription_failures() {
     let btc = InstrumentId::from("BTC-USD.OKX");
     let eth = InstrumentId::from("ETH-USD.OKX");
 
-    // Subscribe to multiple channels
     client
         .subscribe_trades(btc, false)
         .await
@@ -1708,7 +1701,6 @@ async fn test_multiple_partial_subscription_failures() {
 
     state.clear_subscription_events().await;
 
-    // Wait to ensure events are cleared
     wait_until_async(
         || {
             let state = state.clone();
@@ -1718,21 +1710,17 @@ async fn test_multiple_partial_subscription_failures() {
     )
     .await;
 
-    // Set up one subscription to fail on next reconnect
     {
         let mut pending = state.fail_next_subscriptions.lock().await;
         pending.push("orders:SPOT".to_string());
     }
 
-    // Trigger disconnect
     state.drop_next_connection.store(true, Ordering::Relaxed);
     client
         .subscribe_trades(InstrumentId::from("SOL-USD.OKX"), false)
         .await
         .expect("trigger disconnect failed");
 
-    // Wait for the failure + automatic retry cycle
-    // Flow: reconnect → try orders:SPOT → fail → drop → reconnect → retry successfully
     wait_until_async(
         || {
             let state = state.clone();
@@ -1752,7 +1740,6 @@ async fn test_multiple_partial_subscription_failures() {
 
     let events = state.subscription_events().await;
 
-    // Verify failure followed by successful retry
     assert!(
         events
             .iter()
@@ -1766,7 +1753,6 @@ async fn test_multiple_partial_subscription_failures() {
         "Orders should succeed on retry: {events:?}"
     );
 
-    // Other subscriptions should succeed
     let other_success = events
         .iter()
         .filter(|(key, _, ok)| *ok && !key.contains("orders"))
@@ -1781,7 +1767,6 @@ async fn test_multiple_partial_subscription_failures() {
 
 #[tokio::test]
 async fn test_reconnection_race_condition() {
-    // Test disconnect request during active reconnection
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1789,7 +1774,7 @@ async fn test_reconnection_race_condition() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1814,33 +1799,27 @@ async fn test_reconnection_race_condition() {
     )
     .await;
 
-    // Add significant auth delay to create a window for race condition
     {
         let mut delay = state.auth_response_delay_ms.lock().await;
         *delay = Some(1000);
     }
 
-    // Trigger first disconnect
     state.drop_next_connection.store(true, Ordering::Relaxed);
     client
         .subscribe_trades(InstrumentId::from("ETH-USD.OKX"), false)
         .await
         .expect("trigger disconnect failed");
 
-    // Wait a bit for reconnection to start but not complete (due to auth delay)
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // Trigger another disconnect while reconnection is in progress
     state.drop_next_connection.store(true, Ordering::Relaxed);
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Clear the delay
     {
         let mut delay = state.auth_response_delay_ms.lock().await;
         *delay = None;
     }
 
-    // Client should eventually recover
     wait_until_async(
         || {
             let state = state.clone();
@@ -1850,7 +1829,6 @@ async fn test_reconnection_race_condition() {
     )
     .await;
 
-    // Wait for subscriptions to restore
     wait_until_async(
         || {
             let state = state.clone();
@@ -1871,7 +1849,6 @@ async fn test_reconnection_race_condition() {
     )
     .await;
 
-    // Verify subscriptions are restored
     let subscriptions = state.subscriptions.lock().await;
     let trades_count = subscriptions
         .iter()
@@ -1903,22 +1880,18 @@ async fn test_subscribe_after_stream_call() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client.wait_until_active(5.0).await.expect("wait failed");
 
-    // Take stream (moves out_rx ownership)
     let _stream = client.stream();
 
-    // Spawn task with stream
     tokio::spawn(async move {
         tokio::pin!(_stream);
-        // Stream processing would happen here
     });
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Now try to subscribe - should work because handler is still alive
     let result = client
         .subscribe_book(InstrumentId::from("BTC-USD.OKX"))
         .await;
@@ -1941,7 +1914,7 @@ async fn test_batch_cancel_orders_sends_message() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1971,7 +1944,7 @@ async fn test_is_active_lifecycle() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     assert!(
         !client.is_active(),
@@ -2007,7 +1980,7 @@ async fn test_is_active_false_after_close() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     client.connect().await.expect("connect failed");
     client
@@ -2035,8 +2008,6 @@ async fn test_is_active_false_after_close() {
 
 #[tokio::test]
 async fn test_is_active_false_during_reconnection() {
-    // Guard the is_active() semantics during reconnection:
-    // During reconnection, is_active() MUST return false so wait_until_active() waits
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -2044,7 +2015,7 @@ async fn test_is_active_false_during_reconnection() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     client.connect().await.expect("connect failed");
     client
@@ -2088,7 +2059,6 @@ async fn test_is_active_false_during_reconnection() {
     )
     .await;
 
-    // This is critical - if is_active() returns true, wait_until_active() returns immediately
     assert!(
         !client.is_active(),
         "Client should not be active during reconnection"

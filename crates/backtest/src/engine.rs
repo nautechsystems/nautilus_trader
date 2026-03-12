@@ -15,7 +15,7 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
+use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
@@ -40,10 +40,10 @@ use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formattin
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel};
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     position::Position,
@@ -57,138 +57,8 @@ use crate::{
     accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
     data_client::BacktestDataClient, data_iterator::BacktestDataIterator,
     exchange::SimulatedExchange, execution_client::BacktestExecutionClient,
-    modules::SimulationModule,
+    modules::SimulationModule, result::BacktestResult,
 };
-
-/// Results from a completed backtest run.
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        skip_from_py_object
-    )
-)]
-pub struct BacktestResult {
-    pub trader_id: String,
-    pub machine_id: String,
-    pub instance_id: UUID4,
-    pub run_config_id: Option<String>,
-    pub run_id: Option<UUID4>,
-    pub run_started: Option<UnixNanos>,
-    pub run_finished: Option<UnixNanos>,
-    pub backtest_start: Option<UnixNanos>,
-    pub backtest_end: Option<UnixNanos>,
-    pub elapsed_time_secs: f64,
-    pub iterations: usize,
-    pub total_events: usize,
-    pub total_orders: usize,
-    pub total_positions: usize,
-    pub stats_pnls: AHashMap<String, AHashMap<String, f64>>,
-    pub stats_returns: AHashMap<String, f64>,
-    pub stats_general: AHashMap<String, f64>,
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BacktestResult {
-    #[getter]
-    #[pyo3(name = "trader_id")]
-    fn py_trader_id(&self) -> &str {
-        &self.trader_id
-    }
-
-    #[getter]
-    #[pyo3(name = "machine_id")]
-    fn py_machine_id(&self) -> &str {
-        &self.machine_id
-    }
-
-    #[getter]
-    #[pyo3(name = "instance_id")]
-    const fn py_instance_id(&self) -> UUID4 {
-        self.instance_id
-    }
-
-    #[getter]
-    #[pyo3(name = "run_config_id")]
-    fn py_run_config_id(&self) -> Option<&str> {
-        self.run_config_id.as_deref()
-    }
-
-    #[getter]
-    #[pyo3(name = "elapsed_time_secs")]
-    const fn py_elapsed_time_secs(&self) -> f64 {
-        self.elapsed_time_secs
-    }
-
-    #[getter]
-    #[pyo3(name = "iterations")]
-    const fn py_iterations(&self) -> usize {
-        self.iterations
-    }
-
-    #[getter]
-    #[pyo3(name = "total_events")]
-    const fn py_total_events(&self) -> usize {
-        self.total_events
-    }
-
-    #[getter]
-    #[pyo3(name = "total_orders")]
-    const fn py_total_orders(&self) -> usize {
-        self.total_orders
-    }
-
-    #[getter]
-    #[pyo3(name = "total_positions")]
-    const fn py_total_positions(&self) -> usize {
-        self.total_positions
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_pnls")]
-    fn py_stats_pnls(&self) -> HashMap<String, HashMap<String, f64>> {
-        self.stats_pnls
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.iter().map(|(k2, v2)| (k2.clone(), *v2)).collect(),
-                )
-            })
-            .collect()
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_returns")]
-    fn py_stats_returns(&self) -> HashMap<String, f64> {
-        self.stats_returns
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_general")]
-    fn py_stats_general(&self) -> HashMap<String, f64> {
-        self.stats_general
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "BacktestResult(trader_id='{}', elapsed={:.2}s, iterations={}, orders={}, positions={})",
-            self.trader_id,
-            self.elapsed_time_secs,
-            self.iterations,
-            self.total_orders,
-            self.total_positions,
-        )
-    }
-}
 
 /// Core backtesting engine for running event-driven strategy backtests on historical data.
 ///
@@ -201,7 +71,7 @@ impl BacktestResult {
 /// - Multi-venue and multi-asset support.
 /// - Realistic order matching and execution simulation.
 /// - Strategy and portfolio performance analysis.
-/// - Seamless transition from backtesting to live trading.
+/// - Transition from backtesting to live trading.
 pub struct BacktestEngine {
     instance_id: UUID4,
     config: BacktestEngineConfig,
@@ -286,6 +156,30 @@ impl BacktestEngine {
         &mut self.kernel
     }
 
+    /// Returns the trader ID for this engine.
+    #[must_use]
+    pub fn trader_id(&self) -> TraderId {
+        self.kernel.trader_id()
+    }
+
+    /// Returns the unique instance ID for this engine.
+    #[must_use]
+    pub fn instance_id(&self) -> UUID4 {
+        self.instance_id
+    }
+
+    /// Returns the current iteration count.
+    #[must_use]
+    pub fn iteration(&self) -> usize {
+        self.iteration
+    }
+
+    /// Returns the list of registered venue identifiers.
+    #[must_use]
+    pub fn list_venues(&self) -> Vec<Venue> {
+        self.venues.keys().copied().collect()
+    }
+
     /// # Errors
     ///
     /// Returns an error if initializing the simulated exchange for the venue fails.
@@ -300,6 +194,7 @@ impl BacktestEngine {
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
         leverages: AHashMap<InstrumentId, Decimal>,
+        margin_model: Option<MarginModelAny>,
         modules: Vec<Box<dyn SimulationModule>>,
         fill_model: FillModelAny,
         fee_model: FeeModelAny,
@@ -319,6 +214,8 @@ impl BacktestEngine {
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        queue_position: Option<bool>,
+        oto_full_trigger: Option<bool>,
         price_protection_points: Option<u32>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
@@ -337,6 +234,7 @@ impl BacktestEngine {
             base_currency,
             default_leverage,
             leverages,
+            margin_model,
             modules,
             self.kernel.cache.clone(),
             self.kernel.clock.clone(),
@@ -358,6 +256,8 @@ impl BacktestEngine {
             use_market_order_acks,
             allow_cash_borrowing,
             frozen_account,
+            queue_position,
+            oto_full_trigger,
             price_protection_points,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
@@ -368,7 +268,7 @@ impl BacktestEngine {
         let exec_client = BacktestExecutionClient::new(
             self.config.trader_id(),
             account_id,
-            exchange.clone(),
+            &exchange,
             self.kernel.cache.clone(),
             self.kernel.clock.clone(),
             routing,
@@ -410,7 +310,7 @@ impl BacktestEngine {
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     ///
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+    pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
             if matches!(instrument, InstrumentAny::CurrencyPair(_))
@@ -434,7 +334,7 @@ impl BacktestEngine {
         self.kernel
             .data_engine
             .borrow_mut()
-            .process(&instrument as &dyn Any);
+            .process(instrument as &dyn Any);
         log::info!(
             "Added instrument {} to exchange {}",
             instrument_id,
@@ -601,9 +501,10 @@ impl BacktestEngine {
             self.run_started = Some(UnixNanos::from(std::time::SystemTime::now()));
             self.backtest_start = Some(start_ns);
 
-            // Initialize exchange accounts
             for exchange in self.venues.values() {
-                exchange.borrow_mut().initialize_account();
+                let mut ex = exchange.borrow_mut();
+                ex.initialize_account();
+                ex.load_open_orders();
             }
 
             // Re-set clocks after account init
@@ -936,19 +837,27 @@ impl BacktestEngine {
     }
 
     fn route_data_to_exchange(&self, data: &Data) {
+        if matches!(
+            data,
+            Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_)
+        ) {
+            return;
+        }
+
         let venue = data.instrument_id().venue;
         if let Some(exchange) = self.venues.get(&venue) {
-            let mut ex = exchange.borrow_mut();
+            let mut exchange = exchange.borrow_mut();
+
             match data {
-                Data::Delta(delta) => ex.process_order_book_delta(*delta),
-                Data::Deltas(deltas) => ex.process_order_book_deltas((**deltas).clone()),
-                Data::Quote(quote) => ex.process_quote_tick(quote),
-                Data::Trade(trade) => ex.process_trade_tick(trade),
-                Data::Bar(bar) => ex.process_bar(*bar),
-                Data::InstrumentClose(close) => ex.process_instrument_close(*close),
-                Data::Depth10(depth) => ex.process_order_book_depth10(depth),
-                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
-                    // Not routed to exchange — processed by data engine only
+                Data::Delta(delta) => exchange.process_order_book_delta(*delta),
+                Data::Deltas(deltas) => exchange.process_order_book_deltas(deltas),
+                Data::Quote(quote) => exchange.process_quote_tick(quote),
+                Data::Trade(trade) => exchange.process_trade_tick(trade),
+                Data::Bar(bar) => exchange.process_bar(*bar),
+                Data::InstrumentClose(close) => exchange.process_instrument_close(*close),
+                Data::Depth10(depth) => exchange.process_order_book_depth10(depth),
+                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_) => {
+                    unreachable!("filtered by early return above")
                 }
             }
         } else {
@@ -1132,7 +1041,7 @@ impl BacktestEngine {
         self.settle_venues(ts_now);
 
         for exchange in self.venues.values() {
-            exchange.borrow().process_modules(ts_now);
+            exchange.borrow_mut().process_modules(ts_now);
         }
 
         // Post-settle any commands emitted by modules
@@ -1197,9 +1106,23 @@ impl BacktestEngine {
         log_info!(" BACKTEST PRE-RUN", color = LogColor::Cyan);
         log_info!("=================================================================", color = LogColor::Cyan);
 
+        let cache = self.kernel.cache.borrow();
         for exchange in self.venues.values() {
             let ex = exchange.borrow();
+            log_info!("=================================================================", color = LogColor::Cyan);
             log::info!(" SimulatedVenue {} ({})", ex.id, ex.account_type);
+            log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+
+            if let Some(account) = cache.account_for_venue(&ex.id) {
+                log::info!("Balances starting:");
+                let account_ref: &dyn Account = match account {
+                    AccountAny::Cash(cash) => cash,
+                    AccountAny::Margin(margin) => margin,
+                };
+                for balance in account_ref.starting_balances().values() {
+                    log::info!("  {balance}");
+                }
+            }
         }
 
         log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);

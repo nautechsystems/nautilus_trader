@@ -35,18 +35,21 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{providers::InstrumentProvider, testing::wait_until_async};
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
     http::{
-        client::PolymarketRawHttpClient,
+        clob::PolymarketClobHttpClient,
+        gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
         query::{
             CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaMarketsParams,
             GetOrdersParams, GetTradesParams,
         },
     },
+    providers::PolymarketInstrumentProvider,
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -63,6 +66,8 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+    gamma_force_error: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for TestServerState {
@@ -74,6 +79,8 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            gamma_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }
@@ -89,34 +96,50 @@ fn load_json(filename: &str) -> Value {
 }
 
 fn test_credential() -> Credential {
-    Credential::new(
-        "test_api_key".to_string(),
-        TEST_API_SECRET_B64,
-        "test_pass".to_string(),
-    )
-    .unwrap()
+    Credential::new("test_api_key", TEST_API_SECRET_B64, "test_pass".to_string()).unwrap()
 }
 
-fn create_authed_client(addr: &SocketAddr) -> PolymarketRawHttpClient {
-    PolymarketRawHttpClient::with_credential(
+fn create_clob_client(addr: &SocketAddr) -> PolymarketClobHttpClient {
+    PolymarketClobHttpClient::new(
         test_credential(),
         TEST_ADDRESS.to_string(),
         Some(format!("http://{addr}")),
-        None,
         Some(5),
     )
     .unwrap()
 }
 
-fn create_client_with_gamma(addr: &SocketAddr) -> PolymarketRawHttpClient {
-    PolymarketRawHttpClient::with_credential(
-        test_credential(),
-        TEST_ADDRESS.to_string(),
-        Some(format!("http://{addr}")),
-        Some(format!("http://{addr}")),
-        Some(5),
-    )
-    .unwrap()
+fn create_gamma_client(addr: &SocketAddr) -> PolymarketGammaRawHttpClient {
+    PolymarketGammaRawHttpClient::new(Some(format!("http://{addr}")), Some(5)).unwrap()
+}
+
+fn create_gamma_domain_client(addr: &SocketAddr) -> PolymarketGammaHttpClient {
+    PolymarketGammaHttpClient::new(Some(format!("http://{addr}")), Some(5)).unwrap()
+}
+
+fn gamma_market_with_slug(slug: &str, condition_id: &str, token_ids: [&str; 2]) -> Value {
+    json!({
+        "id": "100001",
+        "conditionId": condition_id,
+        "questionID": "0xquestion_test",
+        "clobTokenIds": format!("[\"{}\", \"{}\"]", token_ids[0], token_ids[1]),
+        "outcomes": "[\"Yes\", \"No\"]",
+        "outcomePrices": "[\"0.60\", \"0.40\"]",
+        "question": format!("Test market for slug {slug}"),
+        "description": "Test description",
+        "startDate": "2025-01-01T00:00:00Z",
+        "endDate": "2025-12-31T23:59:59Z",
+        "active": true,
+        "closed": false,
+        "acceptingOrders": true,
+        "enableOrderBook": true,
+        "orderPriceMinTickSize": 0.01,
+        "orderMinSize": 5.0,
+        "makerBaseFee": 0,
+        "takerBaseFee": 30,
+        "slug": slug,
+        "negRisk": false
+    })
 }
 
 fn extract_headers(headers: &HeaderMap) -> AHashMap<String, String> {
@@ -244,7 +267,24 @@ async fn handle_cancel_market(
     Json(load_json("http_batch_cancel_response.json")).into_response()
 }
 
-async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response {
+async fn handle_gamma_markets(
+    State(state): State<TestServerState>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> Response {
+    if state
+        .gamma_force_error
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    if let Some(slug) = params.get("slug") {
+        let slug_map = state.gamma_slug_responses.lock().await;
+        if let Some(v) = slug_map.get(slug) {
+            return Json(v.clone()).into_response();
+        }
+    }
+
     let resp = state.gamma_response.lock().await;
     match resp.as_ref() {
         Some(v) => Json(v.clone()).into_response(),
@@ -299,7 +339,7 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 async fn test_get_orders_returns_orders() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -319,7 +359,7 @@ async fn test_get_orders_returns_orders() {
 async fn test_get_trades_returns_trades() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let trades = client.get_trades(GetTradesParams::default()).await.unwrap();
 
@@ -332,7 +372,7 @@ async fn test_get_trades_returns_trades() {
 async fn test_get_balance_allowance_returns_data() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let balance = client
         .get_balance_allowance(GetBalanceAllowanceParams::default())
@@ -351,7 +391,7 @@ async fn test_get_balance_allowance_returns_data() {
 async fn test_cancel_order_sends_order_id_in_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 
     client.cancel_order(order_id).await.unwrap();
@@ -366,7 +406,7 @@ async fn test_cancel_order_sends_order_id_in_body() {
 async fn test_cancel_orders_sends_ids_array() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let id1 = "0x1111111111111111111111111111111111111111111111111111111111111111";
     let id2 = "0x2222222222222222222222222222222222222222222222222222222222222222";
 
@@ -384,7 +424,7 @@ async fn test_cancel_orders_sends_ids_array() {
 async fn test_cancel_all_sends_no_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     client.cancel_all().await.unwrap();
 
@@ -398,7 +438,7 @@ async fn test_cancel_all_sends_no_body() {
 async fn test_cancel_market_orders_sends_market_param() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
     let market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
 
     let params = CancelMarketOrdersParams {
@@ -424,7 +464,7 @@ async fn test_cancel_market_orders_sends_market_param() {
 async fn test_authenticated_requests_include_poly_headers() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -460,7 +500,7 @@ async fn test_rate_limit_returns_error() {
     let state = TestServerState::default();
     state.rate_limit_after.store(2, Ordering::Relaxed);
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     assert!(client.get_orders(GetOrdersParams::default()).await.is_ok());
     assert!(client.get_orders(GetOrdersParams::default()).await.is_ok());
@@ -521,7 +561,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
     state.orders_pages.lock().await.push_back(page2);
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
 
@@ -541,7 +581,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
 async fn test_post_order_sends_order_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     let order = load_json("http_signed_order.json");
     let order: PolymarketOrder = serde_json::from_value(order).unwrap();
@@ -568,7 +608,7 @@ async fn test_get_orders_with_caller_provided_cursor_not_overwritten() {
 
     // The server returns a single page ending with LTE= from the default handler
     let addr = start_mock_server(state.clone()).await;
-    let client = create_authed_client(&addr);
+    let client = create_clob_client(&addr);
 
     // Pass an explicit cursor; should NOT be overwritten with MA==
     let params = GetOrdersParams {
@@ -589,7 +629,7 @@ async fn test_get_gamma_markets_bare_array_response() {
     *state.gamma_response.lock().await = Some(json!([gamma_market]));
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_client_with_gamma(&addr);
+    let client = create_gamma_client(&addr);
 
     let markets = client
         .get_gamma_markets(GetGammaMarketsParams::default())
@@ -608,7 +648,7 @@ async fn test_get_gamma_markets_wrapped_data_response() {
     *state.gamma_response.lock().await = Some(json!({"data": [gamma_market]}));
 
     let addr = start_mock_server(state.clone()).await;
-    let client = create_client_with_gamma(&addr);
+    let client = create_gamma_client(&addr);
 
     let markets = client
         .get_gamma_markets(GetGammaMarketsParams::default())
@@ -617,4 +657,133 @@ async fn test_get_gamma_markets_wrapped_data_response() {
 
     assert_eq!(markets.len(), 1);
     assert_eq!(markets[0].condition_id, "0xabc123def456789");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_by_slugs_does_not_set_initialized() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "test-slug",
+        "0xcondition_a",
+        ["11111111111111111111", "22222222222222222222"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("test-slug".to_string(), json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    provider
+        .load_by_slugs(vec!["test-slug".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(
+        !provider.store().is_initialized(),
+        "load_by_slugs must not mark the store as initialized"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_by_slugs_then_load_triggers_load_all_fallback() {
+    let state = TestServerState::default();
+    let slug_market = gamma_market_with_slug(
+        "slug-a",
+        "0xcondition_slug_a",
+        ["33333333333333333333", "44444444444444444444"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("slug-a".to_string(), json!([slug_market]));
+
+    let bulk_market = gamma_market_with_slug(
+        "slug-bulk",
+        "0xcondition_bulk",
+        ["55555555555555555555", "66666666666666666666"],
+    );
+    *state.gamma_response.lock().await = Some(json!([bulk_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    provider
+        .load_by_slugs(vec!["slug-a".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(provider.store().count(), 2);
+
+    // load() for an unknown ID triggers load_all since store is not initialized
+    let unknown_id = InstrumentId::from("UNKNOWN-UNKNOWN.POLYMARKET");
+    let result = provider.load(&unknown_id, None).await;
+
+    // load_all was called (store is now initialized), but unknown instrument still not found
+    assert!(result.is_err());
+    assert!(provider.store().is_initialized());
+    // The bulk market instruments were loaded by the fallback
+    assert!(provider.store().count() >= 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_by_slugs_all_fail_returns_error() {
+    let state = TestServerState::default();
+    state
+        .gamma_force_error
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let result = client
+        .request_instruments_by_slugs(vec!["bad-slug-a".to_string(), "bad-slug-b".to_string()])
+        .await;
+
+    assert!(result.is_err(), "All-slug failure must propagate as error");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("slug requests failed"),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_by_slugs_partial_failure_succeeds() {
+    let state = TestServerState::default();
+    let good_market = gamma_market_with_slug(
+        "good-slug",
+        "0xcondition_good",
+        ["77777777777777777777", "88888888888888888888"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("good-slug".to_string(), json!([good_market]));
+    // "bad-slug" has no slug entry and force_error is off, so it returns [] (no markets)
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let instruments = client
+        .request_instruments_by_slugs(vec!["good-slug".to_string(), "bad-slug".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        instruments.len(),
+        2,
+        "good-slug produces 2 instruments (Yes/No)"
+    );
 }

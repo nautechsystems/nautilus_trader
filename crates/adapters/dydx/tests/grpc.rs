@@ -15,10 +15,20 @@
 
 //! Unit tests for dYdX gRPC module components.
 
+use std::collections::HashMap;
+
 use chrono::{Duration, Utc};
-use nautilus_dydx::grpc::{
-    ChainId, DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderGoodUntil, OrderMarketParams,
-    SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+use nautilus_dydx::{
+    grpc::{
+        ChainId, DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderGoodUntil, OrderMarketParams,
+        SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+    },
+    proto::dydxprotocol::{
+        clob::{
+            MsgBatchCancel, MsgCancelOrder, OrderBatch, OrderId, msg_cancel_order::GoodTilOneof,
+        },
+        subaccounts::SubaccountId,
+    },
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -53,7 +63,7 @@ fn test_chain_id_variants() {
 
 #[rstest]
 fn test_short_term_order_maximum_lifetime() {
-    assert_eq!(SHORT_TERM_ORDER_MAXIMUM_LIFETIME, 20);
+    assert_eq!(SHORT_TERM_ORDER_MAXIMUM_LIFETIME, 40);
 }
 
 #[rstest]
@@ -449,15 +459,15 @@ fn test_order_good_until_block_range() {
     let current_block = 1000u32;
     let max_valid_block = current_block + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
-    assert!(max_valid_block <= 1020);
+    assert!(max_valid_block <= 1040);
 
     // Blocks within range
     assert!(current_block < max_valid_block);
     assert!(current_block + 10 <= max_valid_block);
-    assert!(current_block + 20 <= max_valid_block);
+    assert!(current_block + 40 <= max_valid_block);
 
     // Block beyond range would need long-term order
-    assert!(current_block + 21 > max_valid_block);
+    assert!(current_block + 41 > max_valid_block);
 }
 
 #[rstest]
@@ -503,4 +513,226 @@ fn test_decimal_precision_preserved() {
     let quantums = market.quantize_quantity(quantity).unwrap();
     // Should quantize to step boundary
     assert!(quantums > 0);
+}
+
+fn sample_subaccount(owner: &str, number: u32) -> SubaccountId {
+    SubaccountId {
+        owner: owner.to_string(),
+        number,
+    }
+}
+
+#[rstest]
+fn test_cancel_order_short_term_message_construction() {
+    let client_id = 42u32;
+    let clob_pair_id = 0u32;
+    let block_height = 1000u32;
+    let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
+
+    let msg = MsgCancelOrder {
+        order_id: Some(OrderId {
+            subaccount_id: Some(sample_subaccount("dydx1test", 0)),
+            client_id,
+            order_flags: 0, // short-term
+            clob_pair_id,
+        }),
+        good_til_oneof: Some(GoodTilOneof::GoodTilBlock(good_til_block)),
+    };
+
+    let order_id = msg.order_id.as_ref().unwrap();
+    assert_eq!(order_id.client_id, 42);
+    assert_eq!(order_id.order_flags, 0);
+    assert_eq!(order_id.clob_pair_id, 0);
+
+    let subaccount = order_id.subaccount_id.as_ref().unwrap();
+    assert_eq!(subaccount.owner, "dydx1test");
+    assert_eq!(subaccount.number, 0);
+
+    match msg.good_til_oneof.unwrap() {
+        GoodTilOneof::GoodTilBlock(block) => {
+            assert_eq!(block, 1040);
+        }
+        _ => panic!("Expected GoodTilBlock for short-term cancel"),
+    }
+}
+
+#[rstest]
+fn test_cancel_order_long_term_message_construction() {
+    let client_id = 100u32;
+    let clob_pair_id = 1u32;
+    let cancel_good_til = (Utc::now() + Duration::days(90)).timestamp() as u32;
+
+    let msg = MsgCancelOrder {
+        order_id: Some(OrderId {
+            subaccount_id: Some(sample_subaccount("dydx1wallet", 2)),
+            client_id,
+            order_flags: 64, // long-term
+            clob_pair_id,
+        }),
+        good_til_oneof: Some(GoodTilOneof::GoodTilBlockTime(cancel_good_til)),
+    };
+
+    let order_id = msg.order_id.as_ref().unwrap();
+    assert_eq!(order_id.client_id, 100);
+    assert_eq!(order_id.order_flags, 64);
+    assert_eq!(order_id.clob_pair_id, 1);
+
+    let subaccount = order_id.subaccount_id.as_ref().unwrap();
+    assert_eq!(subaccount.owner, "dydx1wallet");
+    assert_eq!(subaccount.number, 2);
+
+    match msg.good_til_oneof.unwrap() {
+        GoodTilOneof::GoodTilBlockTime(ts) => {
+            assert_eq!(ts, cancel_good_til);
+            // Should be roughly 90 days from now
+            let now = Utc::now().timestamp() as u32;
+            let eighty_nine_days = 89 * 24 * 3600;
+            assert!(ts > now + eighty_nine_days);
+        }
+        _ => panic!("Expected GoodTilBlockTime for long-term cancel"),
+    }
+}
+
+#[rstest]
+fn test_cancel_order_conditional_message_construction() {
+    let client_id = 200u32;
+    let clob_pair_id = 0u32;
+    let cancel_good_til = (Utc::now() + Duration::days(90)).timestamp() as u32;
+
+    let msg = MsgCancelOrder {
+        order_id: Some(OrderId {
+            subaccount_id: Some(sample_subaccount("dydx1test", 0)),
+            client_id,
+            order_flags: 32, // conditional
+            clob_pair_id,
+        }),
+        good_til_oneof: Some(GoodTilOneof::GoodTilBlockTime(cancel_good_til)),
+    };
+
+    let order_id = msg.order_id.as_ref().unwrap();
+    assert_eq!(order_id.order_flags, 32);
+
+    match msg.good_til_oneof.unwrap() {
+        GoodTilOneof::GoodTilBlockTime(_) => {}
+        _ => panic!("Expected GoodTilBlockTime for conditional cancel"),
+    }
+}
+
+#[rstest]
+fn test_batch_cancel_short_term_single_market() {
+    let block_height = 500u32;
+    let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
+
+    let msg = MsgBatchCancel {
+        subaccount_id: Some(sample_subaccount("dydx1test", 0)),
+        short_term_cancels: vec![OrderBatch {
+            clob_pair_id: 0,
+            client_ids: vec![10, 20, 30],
+        }],
+        good_til_block,
+    };
+
+    let subaccount = msg.subaccount_id.as_ref().unwrap();
+    assert_eq!(subaccount.owner, "dydx1test");
+    assert_eq!(subaccount.number, 0);
+
+    assert_eq!(msg.short_term_cancels.len(), 1);
+    assert_eq!(msg.short_term_cancels[0].clob_pair_id, 0);
+    assert_eq!(msg.short_term_cancels[0].client_ids, vec![10, 20, 30]);
+    assert_eq!(msg.good_til_block, 540);
+}
+
+#[rstest]
+fn test_batch_cancel_short_term_multiple_markets() {
+    let block_height = 1000u32;
+    let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
+
+    // Simulate grouping orders by clob_pair_id (the logic in build_batch_cancel_short_term)
+    let orders: Vec<(u32, u32)> = vec![
+        (0, 10), // BTC market, client_id=10
+        (1, 20), // ETH market, client_id=20
+        (0, 30), // BTC market, client_id=30
+        (1, 40), // ETH market, client_id=40
+        (0, 50), // BTC market, client_id=50
+    ];
+
+    let mut clob_groups: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (clob_pair_id, client_id) in &orders {
+        clob_groups
+            .entry(*clob_pair_id)
+            .or_default()
+            .push(*client_id);
+    }
+
+    let short_term_cancels: Vec<OrderBatch> = clob_groups
+        .into_iter()
+        .map(|(clob_pair_id, client_ids)| OrderBatch {
+            clob_pair_id,
+            client_ids,
+        })
+        .collect();
+
+    let msg = MsgBatchCancel {
+        subaccount_id: Some(sample_subaccount("dydx1test", 0)),
+        short_term_cancels,
+        good_til_block,
+    };
+
+    assert_eq!(msg.short_term_cancels.len(), 2);
+    assert_eq!(msg.good_til_block, 1040);
+
+    // Find BTC batch (clob_pair_id=0)
+    let btc_batch = msg
+        .short_term_cancels
+        .iter()
+        .find(|b| b.clob_pair_id == 0)
+        .unwrap();
+    assert_eq!(btc_batch.client_ids.len(), 3);
+    assert!(btc_batch.client_ids.contains(&10));
+    assert!(btc_batch.client_ids.contains(&30));
+    assert!(btc_batch.client_ids.contains(&50));
+
+    // Find ETH batch (clob_pair_id=1)
+    let eth_batch = msg
+        .short_term_cancels
+        .iter()
+        .find(|b| b.clob_pair_id == 1)
+        .unwrap();
+    assert_eq!(eth_batch.client_ids.len(), 2);
+    assert!(eth_batch.client_ids.contains(&20));
+    assert!(eth_batch.client_ids.contains(&40));
+}
+
+#[rstest]
+fn test_batch_cancel_partitioning_by_order_lifetime() {
+    use nautilus_dydx::execution::types::{
+        ORDER_FLAG_CONDITIONAL, ORDER_FLAG_LONG_TERM, ORDER_FLAG_SHORT_TERM,
+    };
+
+    // Simulate the partitioning logic from batch_cancel_orders:
+    // orders are (instrument_id, client_id, order_flags)
+    let orders: Vec<(u32, u32)> = vec![
+        (0, 10),  // short-term, clob_pair_id=0
+        (64, 20), // long-term
+        (0, 30),  // short-term, clob_pair_id=0
+        (32, 40), // conditional
+        (0, 50),  // short-term, clob_pair_id=1
+    ];
+
+    #[allow(clippy::type_complexity)]
+    let (short_term, stateful): (Vec<&(u32, u32)>, Vec<&(u32, u32)>) = orders
+        .iter()
+        .partition(|(flags, _)| *flags == ORDER_FLAG_SHORT_TERM);
+
+    assert_eq!(short_term.len(), 3, "Three short-term orders");
+    assert_eq!(
+        stateful.len(),
+        2,
+        "Two stateful orders (long-term + conditional)"
+    );
+
+    // Verify flag constants match protocol values
+    assert_eq!(ORDER_FLAG_SHORT_TERM, 0);
+    assert_eq!(ORDER_FLAG_LONG_TERM, 64);
+    assert_eq!(ORDER_FLAG_CONDITIONAL, 32);
 }

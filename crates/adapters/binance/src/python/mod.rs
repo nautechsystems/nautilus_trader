@@ -18,10 +18,6 @@
 pub mod config;
 pub mod enums;
 pub mod factories;
-pub mod http_futures;
-pub mod http_spot;
-pub mod websocket_futures;
-pub mod websocket_spot;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_system::{
@@ -34,25 +30,9 @@ use crate::{
     common::enums::{BinanceEnvironment, BinancePositionSide, BinanceProductType},
     config::{BinanceDataClientConfig, BinanceExecClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
-    futures::{
-        http::{
-            client::BinanceFuturesHttpClient,
-            query::{
-                BatchCancelItem as FuturesBatchCancelItem,
-                BatchModifyItem as FuturesBatchModifyItem, BatchOrderItem as FuturesBatchOrderItem,
-            },
-        },
-        websocket::client::BinanceFuturesWebSocketClient,
-    },
-    spot::{
-        http::{
-            client::BinanceSpotHttpClient,
-            query::{BatchCancelItem as SpotBatchCancelItem, BatchOrderItem as SpotBatchOrderItem},
-        },
-        websocket::streams::client::BinanceSpotWebSocketClient,
-    },
 };
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_binance_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -65,6 +45,7 @@ fn extract_binance_data_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_binance_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -77,6 +58,7 @@ fn extract_binance_exec_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_binance_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -89,6 +71,7 @@ fn extract_binance_data_config(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_binance_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -113,15 +96,6 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BinanceProductType>()?;
     m.add_class::<BinanceEnvironment>()?;
     m.add_class::<BinancePositionSide>()?;
-    m.add_class::<BinanceSpotHttpClient>()?;
-    m.add_class::<BinanceFuturesHttpClient>()?;
-    m.add_class::<BinanceSpotWebSocketClient>()?;
-    m.add_class::<BinanceFuturesWebSocketClient>()?;
-    m.add_class::<FuturesBatchOrderItem>()?;
-    m.add_class::<FuturesBatchCancelItem>()?;
-    m.add_class::<FuturesBatchModifyItem>()?;
-    m.add_class::<SpotBatchOrderItem>()?;
-    m.add_class::<SpotBatchCancelItem>()?;
     m.add_class::<BinanceDataClientConfig>()?;
     m.add_class::<BinanceExecClientConfig>()?;
     m.add_class::<BinanceDataClientFactory>()?;

@@ -138,6 +138,7 @@ skip = [
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
   { crate = "getrandom" },
+  { crate = "r-efi" },
   { crate = "rand" },
   { crate = "rand_chacha" },
   { crate = "rand_core" },

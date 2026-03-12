@@ -77,3 +77,13 @@ rstest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 turmoil = { workspace = true }
+
+[[bench]]
+name = "ratelimiter"
+path = "benches/ratelimiter.rs"
+harness = false
+
+[[bench]]
+name = "http_response"
+path = "benches/http_response.rs"
+harness = false

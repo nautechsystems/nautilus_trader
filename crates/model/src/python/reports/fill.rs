@@ -27,6 +27,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FillReport {
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -61,8 +62,8 @@ impl FillReport {
         client_order_id: Option<ClientOrderId>,
         venue_position_id: Option<PositionId>,
         report_id: Option<UUID4>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             account_id,
             instrument_id,
             venue_order_id,
@@ -77,7 +78,7 @@ impl FillReport {
             ts_event.into(),
             ts_init.into(),
             report_id,
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

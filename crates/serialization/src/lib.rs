@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
+//! Data serialization and format conversion for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
+//! The `nautilus-serialization` crate provides data serialization capabilities for converting
 //! trading data between different formats including Apache Arrow and Cap'n Proto.
 //! This enables efficient data storage, retrieval, and interoperability across different systems:
 //!
@@ -23,13 +23,13 @@
 //! - **Parquet file operations**: High-performance columnar storage for historical data analysis.
 //! - **Record batch processing**: Efficient batch operations for time-series data.
 //! - **Schema management**: Type-safe schema definitions with metadata preservation.
-//! - **Cross-format conversion**: Seamless data interchange between Arrow, Cap'n Proto, and native types.
+//! - **Cross-format conversion**: Data interchange between Arrow, Cap'n Proto, and native types.
 //! - **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange (requires `capnp` feature).
 //! - **SBE decode utilities**: Zero-copy cursor and shared decode errors for SBE parsers (requires `sbe` feature).
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
@@ -63,14 +63,17 @@
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
+/// Re-export custom data registration for use by persistence and tests.
+#[cfg(feature = "arrow")]
+pub use arrow::custom::ensure_custom_data_registered;
+/// Re-export MsgPack serialization helpers for consumers expecting to configure codecs via this crate.
+pub use nautilus_core::serialization::msgpack;
+
 #[cfg(feature = "capnp")]
 pub mod capnp;
 
 #[cfg(feature = "sbe")]
 pub mod sbe;
-
-/// Re-export MsgPack serialization helpers for consumers expecting to configure codecs via this crate.
-pub use nautilus_core::serialization::msgpack;
 
 #[cfg(feature = "capnp")]
 macro_rules! include_capnp_module {

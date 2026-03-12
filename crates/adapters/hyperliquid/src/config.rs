@@ -116,6 +116,10 @@ pub struct HyperliquidExecClientConfig {
     pub private_key: Option<String>,
     /// Optional vault address for vault operations.
     pub vault_address: Option<String>,
+    /// Optional main account address when using an agent wallet (API sub-key).
+    /// When set, used for balance queries, position reports, and WS subscriptions
+    /// instead of the address derived from the private key.
+    pub account_address: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
@@ -149,6 +153,7 @@ impl Default for HyperliquidExecClientConfig {
         Self {
             private_key: None,
             vault_address: None,
+            account_address: None,
             base_url_ws: None,
             base_url_http: None,
             base_url_exchange: None,
@@ -196,5 +201,27 @@ impl HyperliquidExecClientConfig {
         self.base_url_http
             .clone()
             .unwrap_or_else(|| info_url(self.is_testnet).to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_exec_config_default_account_address_is_none() {
+        let config = HyperliquidExecClientConfig::default();
+        assert!(config.account_address.is_none());
+    }
+
+    #[rstest]
+    fn test_exec_config_with_account_address() {
+        let config = HyperliquidExecClientConfig {
+            account_address: Some("0x1234".to_string()),
+            ..HyperliquidExecClientConfig::default()
+        };
+        assert_eq!(config.account_address.as_deref(), Some("0x1234"));
     }
 }

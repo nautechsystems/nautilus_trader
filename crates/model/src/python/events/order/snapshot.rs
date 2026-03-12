@@ -19,6 +19,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use crate::events::OrderSnapshot;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderSnapshot {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {

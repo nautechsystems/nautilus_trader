@@ -31,6 +31,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -218,10 +219,10 @@ config_tester = ExecTesterConfig(
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
+    enable_limit_buys=True,
+    enable_limit_sells=True,
     # open_position_on_start_qty=order_qty,
-    # open_position_time_in_force=TimeInForce.IOC,
+    open_position_time_in_force=TimeInForce.IOC,
     # tob_offset_ticks=0,
     # stop_offset_ticks=1,
     order_qty=order_qty,
@@ -234,7 +235,7 @@ config_tester = ExecTesterConfig(
     # stop_trigger_type=TriggerType.LAST_PRICE,
     # stop_offset_ticks=50,  # Offset from current price for stop trigger
     # stop_limit_offset_ticks=10,  # Additional offset for STOP_LIMIT orders
-    enable_stop_sells=True,
+    # enable_stop_sells=True,
     stop_order_type=OrderType.STOP_MARKET,
     stop_trigger_type=TriggerType.LAST_PRICE,
     stop_offset_ticks=50,

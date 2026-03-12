@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.93.1 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.93.1 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.93.1 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.93.1 | 3.12-3.14 |
+| `Linux (x86_64)`   | 1.94.0 | 3.12-3.14 |
+| `Linux (ARM64)`    | 1.94.0 | 3.12-3.14 |
+| `macOS (ARM64)`    | 1.94.0 | 3.12-3.14 |
+| `Windows (x86_64)` | 1.94.0 | 3.12-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -27,36 +27,40 @@
 
 ## Introduction
 
-NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
-providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
+NautilusTrader is an open-source, production-grade, Rust-native engine for multi-asset,
+multi-venue trading systems.
 
-The platform is *AI-first*, designed to develop and deploy algorithmic trading strategies within a highly performant
-and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
-environment consistent with the production live trading environment.
+The system spans research, deterministic simulation, and live execution within a single
+event-driven architecture, with Python serving as the control plane for strategy logic,
+configuration, and orchestration.
 
-NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
-and live deployment workloads.
+This separation provides the performance and safety of a compiled trading engine with
+the flexibility of Python for system composition and strategy development.
+Trading systems can also be written entirely in Rust for mission-critical workloads.
 
-The platform is also universal, and asset-class-agnostic — with any REST API or WebSocket feed able to be integrated via modular
-adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
-including FX, Equities, Futures, Options, Crypto, DeFi, and Betting — enabling seamless operations across multiple venues simultaneously.
+The same execution semantics and deterministic time model operate in both research and
+live systems. Strategies deploy from research to production with no code changes,
+providing research-to-live parity and reducing the divergence that typically introduces
+deployment risk.
+
+NautilusTrader is asset-class-agnostic. Any venue with a REST API or WebSocket feed can be
+integrated through modular adapters. Current integrations span crypto exchanges (CEX and
+DEX), traditional markets (FX, equities, futures, options), and betting exchanges.
 
 ![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader.png "nautilus-trader")
 
 ## Features
 
-- **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
-- **Reliable**: Rust-powered type- and thread-safety, with optional Redis-backed state persistence.
-- **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
-- **Flexible**: Modular adapters mean any REST API or WebSocket feed can be integrated.
+- **Fast**: Rust core with asynchronous networking using [tokio](https://crates.io/crates/tokio).
+- **Reliable**: Type- and thread-safety backed by Rust, with optional Redis-backed state persistence.
+- **Portable**: Runs on Linux, macOS, and Windows. Deploy using Docker.
+- **Flexible**: Modular adapters integrate any REST API or WebSocket feed.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTC`, `GTD`, `DAY`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency orders including `OCO`, `OUO`, `OTO`.
-- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the [cache](https://nautilustrader.io/docs/latest/concepts/cache) and [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
-- **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
-- **Live**: Use identical strategy implementations between backtesting and live deployments.
-- **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
-- **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+- **Customizable**: User-defined components, or assemble entire systems from scratch using the [cache](https://nautilustrader.io/docs/latest/concepts/cache) and [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+- **Backtesting**: Multiple venues, instruments, and strategies simultaneously using historical quote tick, trade tick, bar, order book, and custom data with nanosecond resolution.
+- **Live**: Identical strategy implementations between research and live deployment.
+- **Multi-venue**: Run market-making and cross-venue strategies across multiple venues simultaneously.
+- **AI Training**: Engine fast enough to train AI trading agents (RL/ES).
 
 ![nautilus](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
@@ -67,40 +71,19 @@ including FX, Equities, Futures, Options, Crypto, DeFi, and Betting — enabling
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python**: Native binary core components.
-- **Parity between backtesting and live trading**: Identical strategy code.
-- **Reduced operational risk**: Enhanced risk management functionality, logical accuracy, and type safety.
-- **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
+Trading strategy research is often conducted in Python using vectorized approaches, while
+production trading systems are implemented separately using event-driven architectures in
+compiled languages.
 
-Traditionally, trading strategy research and backtesting might be conducted in Python
-using vectorized methods, with the strategy then needing to be reimplemented in a more event-driven way
-using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
-express the granular time and event dependent complexity of real-time trading, where compiled languages have
-proven to be more suitable due to their inherently higher performance, and type safety.
+NautilusTrader removes this separation.
 
-One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
-have all been written entirely in [Rust](https://www.rust-lang.org/) or [Cython](https://cython.org/).
-This means we're using the right tools for the job, where systems programming languages compile performant binaries,
-with CPython C extension modules then able to offer a Python-native environment, suitable for professional quantitative traders and trading firms.
+A Rust-native core provides a deterministic event-driven runtime for both research and live
+execution, while Python serves as the control plane. The same architecture, execution
+semantics, and time model operate across both environments, allowing strategies to move
+from research to production without reimplementation.
 
-## Why Python?
-
-Python was originally created decades ago as a simple scripting language with a clean straightforward syntax.
-It has since evolved into a fully fledged general purpose object-oriented programming language.
-Based on the TIOBE index, Python is currently the most popular programming language in the world.
-Not only that, Python has become the *de facto lingua franca* of data science, machine learning, and artificial intelligence.
-
-## Why Rust?
-
-[Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is "blazingly fast" and memory-efficient (comparable to C and C++) with no garbage collector.
-It can power mission-critical systems, run on embedded devices, and easily integrates with other languages.
-
-Rust's rich type system and ownership model guarantee memory-safety and thread-safety in safe code,
-eliminating many classes of bugs at compile-time. Overall safety in this project also depends on
-correctly upheld invariants in unsafe blocks and FFI boundaries.
-
-The project utilizes Rust for core performance-critical components. Python bindings are implemented via Cython and [PyO3](https://pyo3.rs)—no Rust toolchain is required at install time.
+Python bindings are provided via [PyO3](https://pyo3.rs), with an ongoing migration from
+Cython. No Rust toolchain is required at install time.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -152,7 +135,7 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) docu
 ## Roadmap
 
 The [Roadmap](/ROADMAP.md) outlines NautilusTrader's strategic direction.
-Current priorities include porting the core to Rust, improving documentation, and enhancing code ergonomics.
+Current priorities include completing the Rust-native core, improving documentation, and enhancing code ergonomics.
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
@@ -486,8 +469,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 ## Examples
 
-Indicators and strategies can be developed in both Python and Cython. For performance and
-latency-sensitive applications, we recommend using Cython. Below are some examples:
+Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
+latency-sensitive applications, we recommend Rust. Below are some examples:
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
 - [indicator](/nautilus_trader/indicators/) implementations written in Cython.
@@ -531,7 +514,7 @@ http://127.0.0.1:8888/lab
 
 ## Development
 
-We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
+We aim to provide the most pleasant developer experience possible for this hybrid codebase of Rust, Python, and Cython.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/) for helpful information.
 
 > [!TIP]

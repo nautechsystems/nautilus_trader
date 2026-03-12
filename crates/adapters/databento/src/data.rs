@@ -220,22 +220,16 @@ impl DatabentoDataClient {
     }
 
     /// Gets or creates a feed handler for the specified dataset.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the feed handler cannot be created.
-    fn get_or_create_feed_handler(&self, dataset: &str) -> anyhow::Result<()> {
+    fn get_or_create_feed_handler(&self, dataset: &str) {
         let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
 
         if !channels.contains_key(dataset) {
             log::info!("Creating new feed handler for dataset: {dataset}");
-            let cmd_tx = self.initialize_live_feed(dataset.to_string())?;
+            let cmd_tx = self.initialize_live_feed(dataset.to_string());
             channels.insert(dataset.to_string(), cmd_tx);
 
             log::debug!("Feed handler created for dataset: {dataset}, channel stored");
         }
-
-        Ok(())
     }
 
     /// Sends a command to a specific dataset's feed handler.
@@ -255,14 +249,10 @@ impl DatabentoDataClient {
     }
 
     /// Initializes the live feed handler for streaming data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the feed handler cannot be started.
     fn initialize_live_feed(
         &self,
         dataset: String,
-    ) -> anyhow::Result<tokio::sync::mpsc::UnboundedSender<LiveCommand>> {
+    ) -> tokio::sync::mpsc::UnboundedSender<LiveCommand> {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(1000);
 
@@ -359,7 +349,7 @@ impl DatabentoDataClient {
             handles.push(msg_handle);
         }
 
-        Ok(cmd_tx)
+        cmd_tx
     }
 }
 
@@ -494,7 +484,7 @@ impl DataClient for DatabentoDataClient {
             !channels.contains_key(&dataset)
         };
 
-        self.get_or_create_feed_handler(&dataset)?;
+        self.get_or_create_feed_handler(&dataset);
 
         // Start the feed handler if it was newly created
         if was_new_handler {
@@ -530,7 +520,7 @@ impl DataClient for DatabentoDataClient {
             !channels.contains_key(&dataset)
         };
 
-        self.get_or_create_feed_handler(&dataset)?;
+        self.get_or_create_feed_handler(&dataset);
 
         // Start the feed handler if it was newly created
         if was_new_handler {
@@ -566,7 +556,7 @@ impl DataClient for DatabentoDataClient {
             !channels.contains_key(&dataset)
         };
 
-        self.get_or_create_feed_handler(&dataset)?;
+        self.get_or_create_feed_handler(&dataset);
 
         // Start the feed handler if it was newly created
         if was_new_handler {
@@ -602,7 +592,7 @@ impl DataClient for DatabentoDataClient {
             !channels.contains_key(&dataset)
         };
 
-        self.get_or_create_feed_handler(&dataset)?;
+        self.get_or_create_feed_handler(&dataset);
 
         // Start the feed handler if it was newly created
         if was_new_handler {
@@ -641,7 +631,7 @@ impl DataClient for DatabentoDataClient {
             !channels.contains_key(&dataset)
         };
 
-        self.get_or_create_feed_handler(&dataset)?;
+        self.get_or_create_feed_handler(&dataset);
 
         // Start the feed handler if it was newly created
         if was_new_handler {

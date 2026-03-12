@@ -80,10 +80,6 @@ pub fn binance_ws_order_quota() -> Quota {
 /// This client provides order management via WebSocket with SBE-encoded responses,
 /// complementing the HTTP client with lower-latency order submission.
 #[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
-)]
 pub struct BinanceSpotWsTradingClient {
     url: String,
     credential: Arc<Credential>,

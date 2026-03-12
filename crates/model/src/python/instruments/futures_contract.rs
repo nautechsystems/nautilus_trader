@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FuturesContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -113,7 +114,7 @@ impl FuturesContract {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(FuturesContract)
     }
 

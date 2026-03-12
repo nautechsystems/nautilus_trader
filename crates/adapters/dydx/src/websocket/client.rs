@@ -50,11 +50,14 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
+use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_model::{
+    data::BarType,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
 };
@@ -68,7 +71,8 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use super::{
-    enums::{DydxWsChannel, DydxWsOperation, NautilusWsMessage},
+    dispatch::DydxWsDispatchState,
+    enums::{DydxWsChannel, DydxWsOperation, DydxWsOutputMessage},
     error::{DydxWsError, DydxWsResult},
     handler::{FeedHandler, HandlerCommand},
     messages::DydxSubscription,
@@ -107,39 +111,23 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 pub struct DydxWebSocketClient {
-    /// The WebSocket connection URL.
     url: String,
-    /// Optional credential for private channels (only wallet address is used).
     credential: Option<Arc<DydxCredential>>,
-    /// Whether authentication is required for this client.
     requires_auth: bool,
-    /// Authentication tracker for WebSocket connections.
     auth_tracker: AuthTracker,
-    /// Subscription state tracker for managing channel subscriptions.
     subscriptions: SubscriptionState,
-    /// Shared connection state (lock-free atomic).
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
-    /// Shared instrument cache for parsing market data.
-    ///
-    /// When constructed via `new_*_with_cache()`, this is shared with HTTP/execution clients.
-    /// When constructed via `new_public()` or `new_private()`, a new cache is created.
     instrument_cache: Arc<InstrumentCache>,
-    /// Optional account ID for account message parsing.
     account_id: Option<AccountId>,
-    /// Optional heartbeat interval in seconds.
     heartbeat: Option<u64>,
-    /// Command channel sender to handler (wrapped in RwLock so updates are visible across clones).
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    /// Receiver for parsed Nautilus messages from handler.
-    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
-    /// Background handler task handle.
-    handler_task: Option<tokio::task::JoinHandle<()>>,
-    /// Whether to timestamp bars at close time (open + interval).
-    bars_timestamp_on_close: bool,
-    /// Shared client order ID encoder for bidirectional mapping.
+    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DydxWsOutputMessage>>,
+    handler_task: Option<Arc<tokio::task::JoinHandle<()>>>,
     encoder: Arc<ClientOrderIdEncoder>,
+    bar_types: Arc<DashMap<String, BarType>>,
+    bars_timestamp_on_close: Arc<AtomicBool>,
+    ws_dispatch_state: Arc<DydxWsDispatchState>,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -158,8 +146,10 @@ impl Clone for DydxWebSocketClient {
             cmd_tx: self.cmd_tx.clone(),
             out_rx: None,       // Cannot clone receiver - only one owner allowed
             handler_task: None, // Cannot clone task handle
-            bars_timestamp_on_close: self.bars_timestamp_on_close,
             encoder: self.encoder.clone(),
+            bar_types: self.bar_types.clone(),
+            bars_timestamp_on_close: self.bars_timestamp_on_close.clone(),
+            ws_dispatch_state: self.ws_dispatch_state.clone(),
         }
     }
 }
@@ -202,8 +192,10 @@ impl DydxWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
-            bars_timestamp_on_close: true,
             encoder: Arc::new(ClientOrderIdEncoder::new()),
+            bar_types: Arc::new(DashMap::new()),
+            bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
+            ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
         }
     }
 
@@ -257,8 +249,10 @@ impl DydxWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
-            bars_timestamp_on_close: true,
             encoder: Arc::new(ClientOrderIdEncoder::new()),
+            bar_types: Arc::new(DashMap::new()),
+            bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
+            ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
         }
     }
 
@@ -293,11 +287,6 @@ impl DydxWebSocketClient {
         self.connection_mode.clone()
     }
 
-    /// Sets whether to timestamp bars at close time (open + interval).
-    pub fn set_bars_timestamp_on_close(&mut self, value: bool) {
-        self.bars_timestamp_on_close = value;
-    }
-
     /// Sets the account ID for account message parsing.
     pub fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = Some(account_id);
@@ -321,40 +310,19 @@ impl DydxWebSocketClient {
     /// Caches a single instrument.
     ///
     /// Any existing instrument with the same ID will be replaced.
-    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        self.instrument_cache
-            .insert_instrument_only(instrument.clone());
-
-        // Before connect() the handler isn't running; this send will fail and that's expected
-        // because connect() replays the instruments via InitializeInstruments
-        if let Ok(cmd_tx) = self.cmd_tx.try_read()
-            && let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(instrument)))
-        {
-            log::debug!("Failed to send UpdateInstrument command to handler: {e}");
-        }
+        self.instrument_cache.insert_instrument_only(instrument);
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same IDs will be replaced.
-    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
         log::debug!(
             "Caching {} instruments in WebSocket client",
             instruments.len()
         );
-        self.instrument_cache
-            .insert_instruments_only(instruments.clone());
-
-        // Before connect() the handler isn't running; this send will fail and that's expected
-        // because connect() replays the instruments via InitializeInstruments
-        if !instruments.is_empty()
-            && let Ok(cmd_tx) = self.cmd_tx.try_read()
-            && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments))
-        {
-            log::debug!("Failed to send InitializeInstruments command to handler: {e}");
-        }
+        self.instrument_cache.insert_instruments_only(instruments);
     }
 
     /// Returns a reference to the shared instrument cache.
@@ -367,6 +335,28 @@ impl DydxWebSocketClient {
     #[must_use]
     pub fn encoder(&self) -> &Arc<ClientOrderIdEncoder> {
         &self.encoder
+    }
+
+    /// Returns a reference to the bar type registrations map.
+    #[must_use]
+    pub fn bar_types(&self) -> &Arc<DashMap<String, BarType>> {
+        &self.bar_types
+    }
+
+    /// Returns a reference to the shared WebSocket dispatch state.
+    pub fn ws_dispatch_state(&self) -> &Arc<DydxWsDispatchState> {
+        &self.ws_dispatch_state
+    }
+
+    /// Sets whether bar timestamps use the close time.
+    pub fn set_bars_timestamp_on_close(&self, value: bool) {
+        self.bars_timestamp_on_close.store(value, Ordering::Relaxed);
+    }
+
+    /// Returns whether bar timestamps use the close time.
+    #[must_use]
+    pub fn bars_timestamp_on_close(&self) -> bool {
+        self.bars_timestamp_on_close.load(Ordering::Relaxed)
     }
 
     /// Returns all cached instruments.
@@ -399,15 +389,15 @@ impl DydxWebSocketClient {
         self.instrument_cache.get_by_market(ticker)
     }
 
-    /// Takes ownership of the inbound typed message receiver.
+    /// Takes ownership of the inbound message receiver.
     /// Returns None if the receiver has already been taken or not connected.
     pub fn take_receiver(
         &mut self,
-    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>> {
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<DydxWsOutputMessage>> {
         self.out_rx.take()
     }
 
-    /// Returns a stream of typed WebSocket messages.
+    /// Returns a stream of venue-specific WebSocket messages.
     ///
     /// Takes ownership of the message receiver and returns it as a `Stream`.
     ///
@@ -416,7 +406,7 @@ impl DydxWebSocketClient {
     /// Panics if the receiver has already been taken.
     pub fn stream(
         &mut self,
-    ) -> impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static {
+    ) -> impl futures_util::Stream<Item = DydxWsOutputMessage> + Send + 'static {
         let mut rx = self
             .out_rx
             .take()
@@ -432,7 +422,7 @@ impl DydxWebSocketClient {
     /// Connects the websocket client in handler mode with automatic reconnection.
     ///
     /// Spawns a background handler task that owns the WebSocketClient and processes
-    /// raw messages into typed [`NautilusWsMessage`] values.
+    /// raw messages into venue-specific [`DydxWsOutputMessage`] values.
     ///
     /// # Errors
     ///
@@ -443,7 +433,7 @@ impl DydxWebSocketClient {
         }
 
         // Reset stop signal from any previous disconnect
-        self.signal.store(false, Ordering::Relaxed);
+        self.signal.store(false, Ordering::Release);
 
         let (message_handler, raw_rx) = channel_message_handler();
 
@@ -477,7 +467,7 @@ impl DydxWebSocketClient {
 
         // Create fresh channels for this connection
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<DydxWsOutputMessage>();
 
         // Update the shared cmd_tx so all clones see the new sender
         {
@@ -486,76 +476,69 @@ impl DydxWebSocketClient {
         }
         self.out_rx = Some(out_rx);
 
-        // Replay cached instruments to the new handler
-        if self.instrument_cache.is_empty() {
-            log::warn!("No cached instruments to replay to WebSocket handler");
-        } else {
-            let cached_instruments = self.instrument_cache.all_instruments();
-            log::debug!(
-                "Replaying {} cached instruments to WebSocket handler",
-                cached_instruments.len()
-            );
-            let cmd_tx_guard = self.cmd_tx.read().await;
-
-            if let Err(e) =
-                cmd_tx_guard.send(HandlerCommand::InitializeInstruments(cached_instruments))
-            {
-                log::error!("Failed to replay instruments to handler: {e}");
-            }
-        }
-
         // Spawn handler task
-        let account_id = self.account_id;
         let signal = self.signal.clone();
         let subscriptions = self.subscriptions.clone();
-        let bars_timestamp_on_close = self.bars_timestamp_on_close;
 
         let handler_task = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
-                account_id,
-                cmd_rx,
-                out_tx,
-                raw_rx,
-                client,
-                signal,
-                subscriptions,
-                bars_timestamp_on_close,
-            );
+            let mut handler =
+                FeedHandler::new(cmd_rx, out_tx, raw_rx, client, signal, subscriptions);
             handler.run().await;
         });
 
-        self.handler_task = Some(handler_task);
+        self.handler_task = Some(Arc::new(handler_task));
         log::info!("Connected dYdX WebSocket: {}", self.url);
         Ok(())
     }
 
-    /// Disconnects the websocket client.
+    /// Disconnects the websocket client gracefully.
+    ///
+    /// Sends a disconnect command to the handler, sets the stop signal, then
+    /// awaits the handler task with a timeout before aborting.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client cannot be accessed.
     pub async fn disconnect(&mut self) -> DydxWsResult<()> {
-        // Set stop signal
-        self.signal.store(true, Ordering::Relaxed);
+        // 1. Send disconnect command so the handler can close the WS connection
+        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
+            log::debug!("Failed to send disconnect command: {e}");
+        }
 
-        // Reset connection mode to Closed so is_connected() returns false
-        // and subsequent connect() calls will create new channels
+        // 2. Set stop signal with Release ordering
+        self.signal.store(true, Ordering::Release);
+
+        // 3. Await handler task with timeout, abort if stuck
+        if let Some(task_handle) = self.handler_task.take() {
+            match Arc::try_unwrap(task_handle) {
+                Ok(handle) => {
+                    let abort_handle = handle.abort_handle();
+                    match tokio::time::timeout(Duration::from_secs(2), handle).await {
+                        Ok(Ok(())) => log::debug!("Handler task completed"),
+                        Ok(Err(e)) => log::error!("Handler task error: {e:?}"),
+                        Err(_) => {
+                            log::warn!("Timeout waiting for handler task, aborting");
+                            abort_handle.abort();
+                        }
+                    }
+                }
+                Err(arc_handle) => {
+                    log::debug!("Cannot unwrap task handle, aborting");
+                    arc_handle.abort();
+                }
+            }
+        }
+
+        // Reset connection mode to Closed
         self.connection_mode
             .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
 
-        // Abort handler task if it exists
-        if let Some(handle) = self.handler_task.take() {
-            handle.abort();
-        }
-
-        // Drop receiver to stop any consumers
         self.out_rx = None;
 
         log::debug!("Disconnected dYdX WebSocket");
         Ok(())
     }
 
-    /// Sends a text message via the handler.
     async fn send_text_inner(&self, text: &str) -> DydxWsResult<()> {
         self.cmd_tx
             .read()

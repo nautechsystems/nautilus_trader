@@ -17,5 +17,6 @@
     "orderMinSize": 5.0,
     "makerBaseFee": 0,
     "takerBaseFee": 30,
-    "slug": "will-btc-exceed-100k-by-end-of-2025"
+    "slug": "will-btc-exceed-100k-by-end-of-2025",
+    "negRisk": false
 }

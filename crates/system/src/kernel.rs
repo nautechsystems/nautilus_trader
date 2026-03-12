@@ -145,9 +145,9 @@ impl NautilusKernel {
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
 
-        DataEngine::register_msgbus_handlers(data_engine.clone());
-        RiskEngine::register_msgbus_handlers(risk_engine.clone());
-        ExecutionEngine::register_msgbus_handlers(exec_engine.clone());
+        DataEngine::register_msgbus_handlers(&data_engine);
+        RiskEngine::register_msgbus_handlers(&risk_engine);
+        ExecutionEngine::register_msgbus_handlers(&exec_engine);
 
         let trader = Trader::new(
             config.trader_id(),
@@ -501,7 +501,7 @@ impl NautilusKernel {
     ///
     /// Note: Async connection (connect/disconnect) is handled by LiveNode for live clients.
     /// This method only handles synchronous start operations on execution clients.
-    fn start_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    fn start_clients(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {
@@ -527,7 +527,7 @@ impl NautilusKernel {
     ///
     /// Note: Async disconnection is handled by LiveNode for live clients.
     /// This method only handles synchronous stop operations on execution clients.
-    fn stop_all_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    fn stop_all_clients(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {

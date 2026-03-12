@@ -19,7 +19,9 @@ mod common;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use nautilus_betfair::{data::BetfairDataClient, provider::NavigationFilter};
+use nautilus_betfair::{
+    config::BetfairDataConfig, data::BetfairDataClient, provider::NavigationFilter,
+};
 use nautilus_common::{
     clients::DataClient,
     live::runner::set_data_event_sender,
@@ -56,6 +58,7 @@ fn create_test_data_client(
         http_client,
         test_credential(),
         plain_stream_config(stream_port),
+        BetfairDataConfig::default(),
         NavigationFilter::default(),
         currency,
         None,
@@ -131,12 +134,8 @@ async fn test_data_client_subscribe_sends_market_subscription() {
     let server = tokio::spawn(async move {
         let (mut reader, write_half) = accept_and_auth(&listener).await;
 
-        // Skip auth line, capture marketSubscription
+        // Capture the marketSubscription sent after the initial auth handshake
         let mut line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
-            .await
-            .unwrap();
-        line.clear();
         tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
             .await
             .unwrap();
@@ -184,6 +183,89 @@ async fn test_data_client_subscribe_sends_market_subscription() {
 
     client.disconnect().await.unwrap();
     let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_deduplicates_same_market_subscription() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx) = create_test_data_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, write_half) = accept_and_auth(&listener).await;
+
+        let mut first_line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut first_line)
+            .await
+            .unwrap();
+
+        let mut second_line = String::new();
+        let second_result = tokio::time::timeout(
+            Duration::from_millis(500),
+            tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut second_line),
+        )
+        .await;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        drop(write_half);
+
+        (
+            first_line.trim().to_string(),
+            matches!(second_result, Ok(Ok(bytes)) if bytes > 0),
+        )
+    });
+
+    client.connect().await.unwrap();
+
+    let first_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
+        "1.180294978",
+        6146434,
+        rust_decimal::Decimal::ZERO,
+    );
+    let second_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
+        "1.180294978",
+        40273293,
+        rust_decimal::Decimal::ZERO,
+    );
+
+    let first_cmd = SubscribeBookDeltas::new(
+        first_instrument_id,
+        BookType::L2_MBP,
+        None,
+        Some(Venue::from("BETFAIR")),
+        UUID4::new(),
+        nautilus_core::UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+    let second_cmd = SubscribeBookDeltas::new(
+        second_instrument_id,
+        BookType::L2_MBP,
+        None,
+        Some(Venue::from("BETFAIR")),
+        UUID4::new(),
+        nautilus_core::UnixNanos::default(),
+        None,
+        false,
+        None,
+        None,
+    );
+
+    client.subscribe_book_deltas(&first_cmd).unwrap();
+    client.subscribe_book_deltas(&second_cmd).unwrap();
+
+    let (first_msg, saw_second_message) = server.await.unwrap();
+    let json: Value = serde_json::from_str(&first_msg).unwrap();
+    assert_eq!(json["op"], "marketSubscription");
+    assert!(
+        !saw_second_message,
+        "Expected only one subscription for the same market"
+    );
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

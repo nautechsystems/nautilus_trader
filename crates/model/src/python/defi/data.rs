@@ -37,6 +37,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Block {
     #[getter]
     #[pyo3(name = "chain")]
@@ -138,9 +139,10 @@ impl Block {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolSwap {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -211,14 +213,14 @@ impl PoolSwap {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -277,9 +279,10 @@ impl PoolSwap {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolLiquidityUpdate {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -355,14 +358,14 @@ impl PoolLiquidityUpdate {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -463,9 +466,10 @@ impl PoolLiquidityUpdate {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFeeCollect {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -530,14 +534,14 @@ impl PoolFeeCollect {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -620,9 +624,10 @@ impl PoolFeeCollect {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFlash {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -692,14 +697,14 @@ impl PoolFlash {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -782,9 +787,10 @@ impl PoolFlash {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Transaction {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         hash: String,

@@ -26,23 +26,23 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::http::client::PolymarketHttpClient;
+use crate::http::gamma::PolymarketGammaHttpClient;
 
 /// Provides Polymarket instruments via the Gamma API.
 ///
-/// Wraps [`PolymarketHttpClient`] with an [`InstrumentStore`] and a
+/// Wraps [`PolymarketGammaHttpClient`] with an [`InstrumentStore`] and a
 /// token_id index for resolving WebSocket asset IDs to instruments.
 #[derive(Debug)]
 pub struct PolymarketInstrumentProvider {
     store: InstrumentStore,
-    http_client: PolymarketHttpClient,
+    http_client: PolymarketGammaHttpClient,
     token_index: AHashMap<Ustr, InstrumentId>,
 }
 
 impl PolymarketInstrumentProvider {
     /// Creates a new [`PolymarketInstrumentProvider`] with an empty store.
     #[must_use]
-    pub fn new(http_client: PolymarketHttpClient) -> Self {
+    pub fn new(http_client: PolymarketGammaHttpClient) -> Self {
         Self {
             store: InstrumentStore::new(),
             http_client,
@@ -73,9 +73,33 @@ impl PolymarketInstrumentProvider {
             .collect()
     }
 
+    /// Loads instruments for the given slugs additively into the store.
+    ///
+    /// Unlike [`Self::load_all`], this does **not** clear existing instruments or
+    /// mark the store as initialized, allowing incremental loading of
+    /// slug-based markets alongside bulk data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    pub async fn load_by_slugs(&mut self, slugs: Vec<String>) -> anyhow::Result<()> {
+        let instruments = self.http_client.request_instruments_by_slugs(slugs).await?;
+
+        for instrument in &instruments {
+            self.token_index.insert(
+                Ustr::from(instrument.raw_symbol().as_str()),
+                instrument.id(),
+            );
+        }
+
+        self.store.add_bulk(instruments);
+
+        Ok(())
+    }
+
     /// Returns a reference to the underlying HTTP client.
     #[must_use]
-    pub fn http_client(&self) -> &PolymarketHttpClient {
+    pub fn http_client(&self) -> &PolymarketGammaHttpClient {
         &self.http_client
     }
 }

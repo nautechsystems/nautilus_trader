@@ -100,8 +100,8 @@ runs:
 
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit'
-      # https://github.com/taiki-e/install-action # v2.53.2
-      uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+      # https://github.com/taiki-e/install-action
+      uses: taiki-e/install-action@cede0bb282aae847dfa8aacca3a41c86d973d4d7 # v2.68.1
       with:
         tool: nextest
 

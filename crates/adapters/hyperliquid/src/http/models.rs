@@ -491,11 +491,11 @@ where
     T: Serialize,
 {
     /// Create a new exchange request with the given action.
-    pub fn new(action: T, nonce: u64, signature: String) -> Result<Self, String> {
+    pub fn new(action: T, nonce: u64, signature: &str) -> Result<Self, String> {
         Ok(Self {
             action,
             nonce,
-            signature: HyperliquidSignature::from_hex(&signature)?,
+            signature: HyperliquidSignature::from_hex(signature)?,
             vault_address: None,
             expires_after: None,
         })
@@ -505,13 +505,13 @@ where
     pub fn with_vault(
         action: T,
         nonce: u64,
-        signature: String,
+        signature: &str,
         vault_address: String,
     ) -> Result<Self, String> {
         Ok(Self {
             action,
             nonce,
-            signature: HyperliquidSignature::from_hex(&signature)?,
+            signature: HyperliquidSignature::from_hex(signature)?,
             vault_address: Some(vault_address),
             expires_after: None,
         })

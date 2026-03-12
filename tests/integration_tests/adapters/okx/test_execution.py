@@ -204,6 +204,9 @@ async def test_connect_success(exec_client_builder, monkeypatch):
         business_ws.subscribe_orders_algo.assert_awaited_once_with(
             nautilus_pyo3.OKXInstrumentType.SPOT,
         )
+        business_ws.subscribe_algo_advance.assert_awaited_once_with(
+            nautilus_pyo3.OKXInstrumentType.SPOT,
+        )
         private_ws.subscribe_fills.assert_not_called()
         private_ws.subscribe_account.assert_awaited_once()
     finally:

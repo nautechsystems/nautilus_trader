@@ -63,18 +63,16 @@ impl DydxHttpClient {
     fn py_request_instruments<'py>(
         &self,
         py: Python<'py>,
-        maker_fee: Option<String>,
-        taker_fee: Option<String>,
+        maker_fee: Option<&str>,
+        taker_fee: Option<&str>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let maker = maker_fee
-            .as_ref()
-            .map(|s| Decimal::from_str(s))
+            .map(Decimal::from_str)
             .transpose()
             .map_err(to_pyvalue_err)?;
 
         let taker = taker_fee
-            .as_ref()
-            .map(|s| Decimal::from_str(s))
+            .map(Decimal::from_str)
             .transpose()
             .map_err(to_pyvalue_err)?;
 

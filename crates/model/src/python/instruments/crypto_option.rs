@@ -33,6 +33,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CryptoOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -124,7 +125,7 @@ impl CryptoOption {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(CryptoOption)
     }
 
@@ -220,8 +221,8 @@ impl CryptoOption {
 
     #[getter]
     #[pyo3(name = "lot_size")]
-    fn py_lot_size(&self) -> Option<Quantity> {
-        Some(self.lot_size)
+    fn py_lot_size(&self) -> Quantity {
+        self.lot_size
     }
 
     #[getter]

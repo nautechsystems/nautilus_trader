@@ -20,7 +20,7 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use nautilus_model::data::{
-    Bar, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+    Bar, DataFFI, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };
 use pyo3::{prelude::*, types::PyCapsule};
 
@@ -80,22 +80,22 @@ impl DataBackendSession {
 
         match data_type {
             NautilusDataType::OrderBookDelta => slf
-                .add_file::<OrderBookDelta>(table_name, file_path, sql_query)
+                .add_file::<OrderBookDelta>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::OrderBookDepth10 => slf
-                .add_file::<OrderBookDepth10>(table_name, file_path, sql_query)
+                .add_file::<OrderBookDepth10>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::QuoteTick => slf
-                .add_file::<QuoteTick>(table_name, file_path, sql_query)
+                .add_file::<QuoteTick>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::TradeTick => slf
-                .add_file::<TradeTick>(table_name, file_path, sql_query)
+                .add_file::<TradeTick>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::Bar => slf
-                .add_file::<Bar>(table_name, file_path, sql_query)
+                .add_file::<Bar>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::MarkPriceUpdate => slf
-                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query)
+                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
         }
     }
@@ -128,11 +128,18 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
+    /// The capsule contains a CVec of DataFFI (C layout) so Cython capsule_to_list can read it.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         match slf.next() {
             Some(acc) if !acc.is_empty() => {
-                let cvec = slf.set_chunk(acc);
+                let ffi_data: Vec<DataFFI> = acc
+                    .into_iter()
+                    .map(DataFFI::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(to_pyruntime_err)?;
+                let cvec: CVec = ffi_data.into();
                 Python::attach(|py| {
+                    // No destructor: Python must call drop_cvec_pycapsule to take ownership and free.
                     match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
                         Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
                         Err(e) => Err(to_pyruntime_err(e)),

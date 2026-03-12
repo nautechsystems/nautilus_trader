@@ -22,7 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, greeks::OptionGreekValues,
+        option_chain::OptionGreeks,
     },
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -469,6 +470,60 @@ pub fn parse_ticker_option_index_price(
         ts_event,
         ts_init,
     ))
+}
+
+/// Parses an option ticker payload into [`OptionGreeks`].
+///
+/// # Errors
+///
+/// Returns an error if any of the greek fields cannot be parsed as f64.
+pub fn parse_ticker_option_greeks(
+    msg: &BybitWsTickerOptionMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OptionGreeks> {
+    let ts_event = parse_millis_i64(msg.ts, "ticker.ts")?;
+
+    let delta: f64 = msg.data.delta.parse().context("invalid delta")?;
+    let gamma: f64 = msg.data.gamma.parse().context("invalid gamma")?;
+    let vega: f64 = msg.data.vega.parse().context("invalid vega")?;
+    let theta: f64 = msg.data.theta.parse().context("invalid theta")?;
+
+    let bid_iv: f64 = msg.data.bid_iv.parse().context("invalid bid_iv")?;
+    let ask_iv: f64 = msg.data.ask_iv.parse().context("invalid ask_iv")?;
+    let mark_iv: f64 = msg
+        .data
+        .mark_price_iv
+        .parse()
+        .context("invalid mark_price_iv")?;
+    let underlying_price: f64 = msg
+        .data
+        .underlying_price
+        .parse()
+        .context("invalid underlying_price")?;
+    let open_interest: f64 = msg
+        .data
+        .open_interest
+        .parse()
+        .context("invalid open_interest")?;
+
+    Ok(OptionGreeks {
+        instrument_id: instrument.id(),
+        greeks: OptionGreekValues {
+            delta,
+            gamma,
+            vega,
+            theta,
+            rho: 0.0, // Bybit doesn't provide rho
+        },
+        mark_iv: Some(mark_iv),
+        bid_iv: Some(bid_iv),
+        ask_iv: Some(ask_iv),
+        underlying_price: Some(underlying_price),
+        open_interest: Some(open_interest),
+        ts_event,
+        ts_init,
+    })
 }
 
 pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNanos> {

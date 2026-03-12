@@ -25,7 +25,7 @@ use nautilus_model::{
         Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta,
         OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::BookType,
+    enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
     types::Money,
 };
@@ -34,7 +34,8 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 use crate::{
     config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType},
-    engine::{BacktestEngine, BacktestResult},
+    engine::BacktestEngine,
+    result::BacktestResult,
 };
 
 /// Orchestrates catalog-driven backtests from run configurations.
@@ -126,6 +127,7 @@ impl BacktestNode {
                     venue_config.base_currency(),
                     default_leverage,
                     leverages,
+                    None, // margin_model
                     Vec::new(),
                     FillModelAny::default(),
                     FeeModelAny::default(),
@@ -145,6 +147,8 @@ impl BacktestNode {
                     Some(venue_config.liquidity_consumption()),
                     Some(venue_config.allow_cash_borrowing()),
                     Some(venue_config.frozen_account()),
+                    Some(venue_config.queue_position()),
+                    Some(venue_config.oto_trigger_mode() == OtoTriggerMode::Full),
                     Some(venue_config.price_protection_points()),
                 )?;
             }
@@ -152,13 +156,13 @@ impl BacktestNode {
             for data_config in config.data() {
                 let catalog = create_catalog(data_config)?;
                 let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
-                let filter = if instr_ids.is_empty() {
+                let filter: Option<Vec<String>> = if instr_ids.is_empty() {
                     None
                 } else {
                     Some(instr_ids.iter().map(ToString::to_string).collect())
                 };
 
-                let instruments = catalog.query_instruments(filter)?;
+                let instruments = catalog.query_instruments(filter.as_deref())?;
 
                 if !instr_ids.is_empty() && instruments.is_empty() {
                     let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
@@ -169,7 +173,7 @@ impl BacktestNode {
                 }
 
                 for instrument in instruments {
-                    engine.add_instrument(instrument)?;
+                    engine.add_instrument(&instrument)?;
                 }
             }
 

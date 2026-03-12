@@ -17,7 +17,7 @@
 
 use std::{
     fmt::Display,
-    ops::{Add, Mul},
+    ops::{Add, Deref, Mul},
 };
 
 use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
@@ -37,6 +37,69 @@ const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
 /// Scale for vega to express as absolute percent change when building BlackScholesGreeksResult.
 const VEGA_PERCENT_FACTOR: f64 = 0.01;
 
+/// Core option Greek sensitivity values (the 5 standard sensitivities).
+/// Designed as a composable building block embedded in all Greeks-carrying types.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub struct OptionGreekValues {
+    pub delta: f64,
+    pub gamma: f64,
+    pub vega: f64,
+    pub theta: f64,
+    pub rho: f64,
+}
+
+impl Add for OptionGreekValues {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            delta: self.delta + rhs.delta,
+            gamma: self.gamma + rhs.gamma,
+            vega: self.vega + rhs.vega,
+            theta: self.theta + rhs.theta,
+            rho: self.rho + rhs.rho,
+        }
+    }
+}
+
+impl Mul<f64> for OptionGreekValues {
+    type Output = Self;
+
+    fn mul(self, scalar: f64) -> Self {
+        Self {
+            delta: self.delta * scalar,
+            gamma: self.gamma * scalar,
+            vega: self.vega * scalar,
+            theta: self.theta * scalar,
+            rho: self.rho * scalar,
+        }
+    }
+}
+
+impl Mul<OptionGreekValues> for f64 {
+    type Output = OptionGreekValues;
+
+    fn mul(self, greeks: OptionGreekValues) -> OptionGreekValues {
+        greeks * self
+    }
+}
+
+impl Display for OptionGreekValues {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OptionGreekValues(delta={:.4}, gamma={:.4}, vega={:.4}, theta={:.4}, rho={:.4})",
+            self.delta, self.gamma, self.vega, self.theta, self.rho
+        )
+    }
+}
+
+/// Trait for types carrying Greek sensitivity values.
+pub trait HasGreeks {
+    fn greeks(&self) -> OptionGreekValues;
+}
+
 #[inline(always)]
 fn norm_pdf(x: f64) -> f64 {
     FRAC_SQRT_2_PI * (-0.5 * x * x).exp()
@@ -50,6 +113,10 @@ fn norm_pdf(x: f64) -> f64 {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct BlackScholesGreeksResult {
     pub price: f64,
     pub vol: f64,
@@ -60,6 +127,7 @@ pub struct BlackScholesGreeksResult {
     pub itm_prob: f64,
 }
 
+// Standardized Generalized Black-Scholes Greeks implementation
 // dS_t = S_t * (b * dt + vol * dW_t) (stock)
 // dC_t = r * C_t * dt (cash numeraire)
 #[allow(clippy::too_many_arguments)]
@@ -73,24 +141,33 @@ pub fn black_scholes_greeks_exact(
     t: f64,
 ) -> BlackScholesGreeksResult {
     let phi = if is_call { 1.0 } else { -1.0 };
-    let scaled_vol = vol * t.sqrt();
+    let sqrt_t = t.sqrt();
+    let scaled_vol = vol * sqrt_t;
+
+    // d1 and d2 calculations
     let d1 = ((s / k).ln() + (b + 0.5 * vol.powi(2)) * t) / scaled_vol;
     let d2 = d1 - scaled_vol;
+
+    // Probabilities and PDF
     let cdf_phi_d1 = DefaultSpecialFn::norm_cdf(phi * d1);
     let cdf_phi_d2 = DefaultSpecialFn::norm_cdf(phi * d2);
-    let dist_d1 = norm_pdf(d1);
-    let df = ((b - r) * t).exp();
-    let s_t = s * df;
-    let k_t = k * (-r * t).exp();
+    let pdf_d1 = norm_pdf(d1);
 
-    let price = phi * (s_t * cdf_phi_d1 - k_t * cdf_phi_d2);
-    let delta = phi * df * cdf_phi_d1;
-    let gamma = df * dist_d1 / (s * scaled_vol);
-    let vega = s_t * t.sqrt() * dist_d1 * VEGA_PERCENT_FACTOR;
-    let theta = (s_t * (-dist_d1 * vol / (2.0 * t.sqrt()) - phi * (b - r) * cdf_phi_d1)
-        - phi * r * k_t * cdf_phi_d2)
-        * THETA_DAILY_FACTOR;
-    let itm_prob = cdf_phi_d2;
+    // Discounting factors
+    let df_b = ((b - r) * t).exp();
+    let df_r = (-r * t).exp();
+
+    // Price and common Greeks
+    let price = phi * (s * df_b * cdf_phi_d1 - k * df_r * cdf_phi_d2);
+    let delta = phi * df_b * cdf_phi_d1;
+    let gamma = (df_b * pdf_d1) / (s * scaled_vol);
+    let vega = s * df_b * sqrt_t * pdf_d1 * VEGA_PERCENT_FACTOR;
+
+    // Decay due to volatility, Drift/Cost of Carry component, Interest rate component on strike
+    let theta_v = -(s * df_b * pdf_d1 * vol) / (2.0 * sqrt_t);
+    let theta_b = -phi * (b - r) * s * df_b * cdf_phi_d1;
+    let theta_r = -phi * r * k * df_r * cdf_phi_d2;
+    let theta = (theta_v + theta_b + theta_r) * THETA_DAILY_FACTOR;
 
     BlackScholesGreeksResult {
         price,
@@ -99,7 +176,7 @@ pub fn black_scholes_greeks_exact(
         gamma,
         vega,
         theta,
-        itm_prob,
+        itm_prob: cdf_phi_d2,
     }
 }
 
@@ -221,10 +298,8 @@ pub struct GreeksData {
     pub vol: f64,
     pub pnl: f64,
     pub price: f64,
-    pub delta: f64,
-    pub gamma: f64,
-    pub vega: f64,
-    pub theta: f64,
+    /// Core Greek sensitivity values (delta, gamma, vega, theta, rho).
+    pub greeks: OptionGreekValues,
     // in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
     pub itm_prob: f64,
 }
@@ -248,10 +323,7 @@ impl GreeksData {
         vol: f64,
         pnl: f64,
         price: f64,
-        delta: f64,
-        gamma: f64,
-        vega: f64,
-        theta: f64,
+        greeks: OptionGreekValues,
         itm_prob: f64,
     ) -> Self {
         Self {
@@ -271,10 +343,7 @@ impl GreeksData {
             vol,
             pnl,
             price,
-            delta,
-            gamma,
-            vega,
-            theta,
+            greeks,
             itm_prob,
         }
     }
@@ -302,12 +371,25 @@ impl GreeksData {
             vol: 0.0,
             pnl: 0.0,
             price: 0.0,
-            delta,
-            gamma: 0.0,
-            vega: 0.0,
-            theta: 0.0,
+            greeks: OptionGreekValues {
+                delta,
+                ..Default::default()
+            },
             itm_prob: 0.0,
         }
+    }
+}
+
+impl Deref for GreeksData {
+    type Target = OptionGreekValues;
+    fn deref(&self) -> &Self::Target {
+        &self.greeks
+    }
+}
+
+impl HasGreeks for GreeksData {
+    fn greeks(&self) -> OptionGreekValues {
+        self.greeks
     }
 }
 
@@ -330,10 +412,7 @@ impl Default for GreeksData {
             vol: 0.0,
             pnl: 0.0,
             price: 0.0,
-            delta: 0.0,
-            gamma: 0.0,
-            vega: 0.0,
-            theta: 0.0,
+            greeks: OptionGreekValues::default(),
             itm_prob: 0.0,
         }
     }
@@ -350,10 +429,10 @@ impl Display for GreeksData {
             self.vol * 100.0,
             self.pnl,
             self.price,
-            self.delta,
-            self.gamma,
-            self.vega,
-            self.theta,
+            self.greeks.delta,
+            self.greeks.gamma,
+            self.greeks.vega,
+            self.greeks.theta,
             self.quantity,
             unix_nanos_to_iso8601(self.ts_init)
         )
@@ -364,29 +443,26 @@ impl Display for GreeksData {
 impl Mul<&GreeksData> for f64 {
     type Output = GreeksData;
 
-    fn mul(self, greeks: &GreeksData) -> GreeksData {
+    fn mul(self, g: &GreeksData) -> GreeksData {
         GreeksData {
-            ts_init: greeks.ts_init,
-            ts_event: greeks.ts_event,
-            instrument_id: greeks.instrument_id,
-            is_call: greeks.is_call,
-            strike: greeks.strike,
-            expiry: greeks.expiry,
-            expiry_in_days: greeks.expiry_in_days,
-            expiry_in_years: greeks.expiry_in_years,
-            multiplier: greeks.multiplier,
-            quantity: greeks.quantity,
-            underlying_price: greeks.underlying_price,
-            interest_rate: greeks.interest_rate,
-            cost_of_carry: greeks.cost_of_carry,
-            vol: greeks.vol,
-            pnl: self * greeks.pnl,
-            price: self * greeks.price,
-            delta: self * greeks.delta,
-            gamma: self * greeks.gamma,
-            vega: self * greeks.vega,
-            theta: self * greeks.theta,
-            itm_prob: greeks.itm_prob,
+            ts_init: g.ts_init,
+            ts_event: g.ts_event,
+            instrument_id: g.instrument_id,
+            is_call: g.is_call,
+            strike: g.strike,
+            expiry: g.expiry,
+            expiry_in_days: g.expiry_in_days,
+            expiry_in_years: g.expiry_in_years,
+            multiplier: g.multiplier,
+            quantity: g.quantity,
+            underlying_price: g.underlying_price,
+            interest_rate: g.interest_rate,
+            cost_of_carry: g.cost_of_carry,
+            vol: g.vol,
+            pnl: self * g.pnl,
+            price: self * g.price,
+            greeks: g.greeks * self,
+            itm_prob: g.itm_prob,
         }
     }
 }
@@ -403,10 +479,7 @@ pub struct PortfolioGreeks {
     pub ts_event: UnixNanos,
     pub pnl: f64,
     pub price: f64,
-    pub delta: f64,
-    pub gamma: f64,
-    pub vega: f64,
-    pub theta: f64,
+    pub greeks: OptionGreekValues,
 }
 
 impl PortfolioGreeks {
@@ -426,11 +499,21 @@ impl PortfolioGreeks {
             ts_event,
             pnl,
             price,
-            delta,
-            gamma,
-            vega,
-            theta,
+            greeks: OptionGreekValues {
+                delta,
+                gamma,
+                vega,
+                theta,
+                rho: 0.0,
+            },
         }
+    }
+}
+
+impl Deref for PortfolioGreeks {
+    type Target = OptionGreekValues;
+    fn deref(&self) -> &Self::Target {
+        &self.greeks
     }
 }
 
@@ -441,10 +524,7 @@ impl Default for PortfolioGreeks {
             ts_event: UnixNanos::default(),
             pnl: 0.0,
             price: 0.0,
-            delta: 0.0,
-            gamma: 0.0,
-            vega: 0.0,
-            theta: 0.0,
+            greeks: OptionGreekValues::default(),
         }
     }
 }
@@ -456,10 +536,10 @@ impl Display for PortfolioGreeks {
             "PortfolioGreeks(pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, ts_event={}, ts_init={})",
             self.pnl,
             self.price,
-            self.delta,
-            self.gamma,
-            self.vega,
-            self.theta,
+            self.greeks.delta,
+            self.greeks.gamma,
+            self.greeks.vega,
+            self.greeks.theta,
             unix_nanos_to_iso8601(self.ts_event),
             unix_nanos_to_iso8601(self.ts_init)
         )
@@ -475,25 +555,19 @@ impl Add for PortfolioGreeks {
             ts_event: self.ts_event,
             pnl: self.pnl + other.pnl,
             price: self.price + other.price,
-            delta: self.delta + other.delta,
-            gamma: self.gamma + other.gamma,
-            vega: self.vega + other.vega,
-            theta: self.theta + other.theta,
+            greeks: self.greeks + other.greeks,
         }
     }
 }
 
 impl From<GreeksData> for PortfolioGreeks {
-    fn from(greeks: GreeksData) -> Self {
+    fn from(g: GreeksData) -> Self {
         Self {
-            ts_init: greeks.ts_init,
-            ts_event: greeks.ts_event,
-            pnl: greeks.pnl,
-            price: greeks.price,
-            delta: greeks.delta,
-            gamma: greeks.gamma,
-            vega: greeks.vega,
-            theta: greeks.theta,
+            ts_init: g.ts_init,
+            ts_event: g.ts_event,
+            pnl: g.pnl,
+            price: g.price,
+            greeks: g.greeks,
         }
     }
 }
@@ -501,6 +575,24 @@ impl From<GreeksData> for PortfolioGreeks {
 impl HasTsInit for PortfolioGreeks {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+}
+
+impl HasGreeks for PortfolioGreeks {
+    fn greeks(&self) -> OptionGreekValues {
+        self.greeks
+    }
+}
+
+impl HasGreeks for BlackScholesGreeksResult {
+    fn greeks(&self) -> OptionGreekValues {
+        OptionGreekValues {
+            delta: self.delta,
+            gamma: self.gamma,
+            vega: self.vega,
+            theta: self.theta,
+            rho: 0.0,
+        }
     }
 }
 
@@ -595,10 +687,13 @@ mod tests {
             0.2,
             250.0,
             25.5,
-            0.65,
-            0.003,
-            15.2,
-            -0.08,
+            OptionGreekValues {
+                delta: 0.65,
+                gamma: 0.003,
+                vega: 15.2,
+                theta: -0.08,
+                rho: 0.0,
+            },
             0.75,
         )
     }
@@ -1184,10 +1279,13 @@ mod tests {
             0.25,
             -150.0, // Negative PnL
             8.5,
-            -0.35, // Negative delta for put
-            0.002,
-            12.8,
-            -0.06,
+            OptionGreekValues {
+                delta: -0.35,
+                gamma: 0.002,
+                vega: 12.8,
+                theta: -0.06,
+                rho: 0.0,
+            },
             0.25,
         );
 

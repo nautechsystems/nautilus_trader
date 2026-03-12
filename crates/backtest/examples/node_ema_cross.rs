@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
 
     let temp_dir = TempDir::new()?;
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     catalog.write_instruments(vec![instrument])?;
     catalog.write_to_parquet(quotes, None, None, None)?;
 
@@ -108,6 +108,8 @@ fn main() -> anyhow::Result<()> {
         OmsType::Hedging,
         AccountType::Margin,
         BookType::L1_MBP,
+        None,
+        None,
         None,
         None,
         None,

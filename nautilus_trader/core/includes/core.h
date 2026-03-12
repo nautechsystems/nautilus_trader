@@ -26,6 +26,16 @@
 #define NANOSECONDS_IN_MICROSECOND 1000
 
 /**
+ * Number of nanoseconds in one minute.
+ */
+#define NANOSECONDS_IN_MINUTE (60 * NANOSECONDS_IN_SECOND)
+
+/**
+ * Number of seconds in one minute.
+ */
+#define SECONDS_IN_MINUTE 60
+
+/**
  * Maximum capacity in characters for a [`StackStr`].
  */
 #define STACKSTR_CAPACITY 36

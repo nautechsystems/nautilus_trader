@@ -111,8 +111,8 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
         let is_delisted = asset.is_delisted.unwrap_or(false);
 
         let price_decimals = (PERP_MAX_DECIMALS - asset.sz_decimals as i32).max(0) as u32;
-        let tick_size = pow10_neg(price_decimals)?;
-        let lot_size = pow10_neg(asset.sz_decimals)?;
+        let tick_size = pow10_neg(price_decimals);
+        let lot_size = pow10_neg(asset.sz_decimals);
 
         let symbol = format!("{}-USD-PERP", asset.name);
 
@@ -173,8 +173,8 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
             .ok_or_else(|| format!("Quote token index {} not found", pair.tokens[1]))?;
 
         let price_decimals = (SPOT_MAX_DECIMALS - base_token.sz_decimals as i32).max(0) as u32;
-        let tick_size = pow10_neg(price_decimals)?;
-        let lot_size = pow10_neg(base_token.sz_decimals)?;
+        let tick_size = pow10_neg(price_decimals);
+        let lot_size = pow10_neg(base_token.sz_decimals);
 
         let symbol = format!("{}-{}-SPOT", base_token.name, quote_token.name);
 
@@ -210,13 +210,13 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
     Ok(defs)
 }
 
-fn pow10_neg(decimals: u32) -> Result<Decimal, String> {
+fn pow10_neg(decimals: u32) -> Decimal {
     if decimals == 0 {
-        return Ok(Decimal::ONE);
+        return Decimal::ONE;
     }
 
     // Build 1 / 10^decimals using integer arithmetic
-    Ok(Decimal::from_i128_with_scale(1, decimals))
+    Decimal::from_i128_with_scale(1, decimals)
 }
 
 pub fn get_currency(code: &str) -> Currency {
@@ -623,9 +623,9 @@ mod tests {
 
     #[rstest]
     fn test_pow10_neg() {
-        assert_eq!(pow10_neg(0).unwrap(), dec!(1));
-        assert_eq!(pow10_neg(1).unwrap(), dec!(0.1));
-        assert_eq!(pow10_neg(5).unwrap(), dec!(0.00001));
+        assert_eq!(pow10_neg(0), dec!(1));
+        assert_eq!(pow10_neg(1), dec!(0.1));
+        assert_eq!(pow10_neg(5), dec!(0.00001));
     }
 
     #[rstest]

@@ -153,7 +153,10 @@ pub fn create_tls_config_from_certs_dir(
     install_cryptographic_provider();
 
     if !certs_dir.is_dir() {
-        anyhow::bail!("Certificate path is not a directory: {certs_dir:?}");
+        anyhow::bail!(
+            "Certificate path is not a directory: {}",
+            certs_dir.display()
+        );
     }
 
     let mut all_certs: Vec<(std::path::PathBuf, Vec<CertificateDer<'static>>)> = Vec::new();
@@ -182,10 +185,31 @@ pub fn create_tls_config_from_certs_dir(
         }
     }
 
-    // If key found, first cert becomes client cert; otherwise all certs are CA roots
-    let client_cert = if client_key.is_some() && !all_certs.is_empty() {
-        let (_, cert) = all_certs.remove(0);
-        Some(cert)
+    // If key found, find the matching client cert by trial validation
+    let client_cert = if let Some(ref key) = client_key
+        && !all_certs.is_empty()
+    {
+        let mut matched = None;
+        for i in 0..all_certs.len() {
+            let test_config = rustls::ClientConfig::builder()
+                .with_root_certificates(rustls::RootCertStore::empty())
+                .with_client_auth_cert(all_certs[i].1.clone(), key.clone_key());
+
+            if test_config.is_ok() {
+                let (path, cert) = all_certs.remove(i);
+                log::debug!("Matched client certificate from {}", path.display());
+                matched = Some(cert);
+                break;
+            }
+        }
+
+        if matched.is_none() {
+            log::warn!(
+                "Private key found but no matching client certificate in {}",
+                certs_dir.display()
+            );
+        }
+        matched
     } else {
         None
     };
@@ -193,7 +217,7 @@ pub fn create_tls_config_from_certs_dir(
     for (path, certs) in all_certs {
         for cert in certs {
             if let Err(e) = root_store.add(cert) {
-                log::warn!("Invalid certificate in {path:?}: {e}");
+                log::warn!("Invalid certificate in {}: {e}", path.display());
             }
         }
     }
@@ -206,12 +230,14 @@ pub fn create_tls_config_from_certs_dir(
 
     if require_client_auth {
         anyhow::bail!(
-            "Client certificate or private key missing in {certs_dir:?} but client auth required",
+            "Client certificate or private key missing in {} but client auth required",
+            certs_dir.display(),
         );
     }
 
     log::debug!(
-        "No TLS client certificate/key pair found in {certs_dir:?}; proceeding without client authentication"
+        "No TLS client certificate/key pair found in {}; proceeding without client authentication",
+        certs_dir.display(),
     );
 
     Ok(builder.with_no_client_auth())
@@ -231,7 +257,7 @@ fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
         return Ok(key.into());
     }
 
-    anyhow::bail!("No valid private key found in {path:?}");
+    anyhow::bail!("No valid private key found in {}", path.display());
 }
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {

@@ -40,7 +40,12 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
@@ -51,6 +56,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
+anyhow = { workspace = true }
 indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -63,6 +69,7 @@ uuid = { workspace = true }
 arrow = { workspace = true, optional = true }
 capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -341,10 +341,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     _ => {}
                 }
             }
-            Message::Ping(_) => {
-                if socket.send(Message::Pong(vec![].into())).await.is_err() {
-                    break;
-                }
+            Message::Ping(_) if socket.send(Message::Pong(vec![].into())).await.is_err() => {
+                break;
             }
             Message::Close(_) => break,
             _ => {}

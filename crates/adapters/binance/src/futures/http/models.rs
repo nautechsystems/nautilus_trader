@@ -30,6 +30,8 @@ use serde_json::Value;
 use ustr::Ustr;
 
 use crate::common::{
+    consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+    encoder::decode_broker_id,
     enums::{
         BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
         BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
@@ -840,7 +842,7 @@ pub struct BinanceLeverageResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceCancelAllOrdersResponse {
     /// Response code (200 = success).
-    pub code: String,
+    pub code: i32,
     /// Response message.
     pub msg: String,
 }
@@ -939,7 +941,10 @@ impl BinanceFuturesOrder {
             .update_time
             .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
 
-        let client_order_id = ClientOrderId::new(&self.client_order_id);
+        let client_order_id = ClientOrderId::new(decode_broker_id(
+            &self.client_order_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let venue_order_id = VenueOrderId::new(self.order_id.to_string());
 
         let order_side = match self.side {
@@ -1223,7 +1228,10 @@ impl BinanceFuturesAlgoOrder {
             .or(self.create_time)
             .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
 
-        let client_order_id = ClientOrderId::new(&self.client_algo_id);
+        let client_order_id = ClientOrderId::new(decode_broker_id(
+            &self.client_algo_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let venue_order_id = self.actual_order_id.as_ref().map_or_else(
             || VenueOrderId::new(self.algo_id.to_string()),
             |id| VenueOrderId::new(id.clone()),
@@ -1642,5 +1650,84 @@ mod tests {
         assert_eq!(response.client_algo_id, "test-algo-order-1");
         assert_eq!(response.code, "200");
         assert_eq!(response.msg, "success");
+    }
+
+    #[rstest]
+    fn test_order_to_report_decodes_broker_id() {
+        let json = r#"{
+            "orderId": 12345678,
+            "symbol": "BTCUSDT",
+            "status": "NEW",
+            "clientOrderId": "x-aHRE4BCj-T0000000000000",
+            "price": "50000.00",
+            "avgPrice": "0.00",
+            "origQty": "0.001",
+            "executedQty": "0.000",
+            "cumQuote": "0.00",
+            "timeInForce": "GTC",
+            "type": "LIMIT",
+            "reduceOnly": false,
+            "closePosition": false,
+            "side": "BUY",
+            "positionSide": "BOTH",
+            "stopPrice": "0.00",
+            "workingType": "CONTRACT_PRICE",
+            "priceProtect": false,
+            "origType": "LIMIT",
+            "priceMatch": "NONE",
+            "selfTradePreventionMode": "NONE",
+            "goodTillDate": 0,
+            "time": 1625474304765,
+            "updateTime": 1625474304765
+        }"#;
+
+        let order: BinanceFuturesOrder = serde_json::from_str(json).unwrap();
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("O-20200101-000000-000-000-0")),
+        );
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_decodes_broker_id() {
+        let json = r#"{
+            "algoId": 123456789,
+            "clientAlgoId": "x-aHRE4BCj-Rmy-algo-order-1",
+            "algoType": "CONDITIONAL",
+            "type": "STOP_MARKET",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "positionSide": "BOTH",
+            "timeInForce": "GTC",
+            "quantity": "0.001",
+            "algoStatus": "NEW",
+            "triggerPrice": "45000.00",
+            "workingType": "MARK_PRICE",
+            "reduceOnly": false,
+            "createTime": 1625474304765,
+            "updateTime": 1625474304765
+        }"#;
+
+        let order: BinanceFuturesAlgoOrder = serde_json::from_str(json).unwrap();
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("my-algo-order-1")),
+        );
     }
 }

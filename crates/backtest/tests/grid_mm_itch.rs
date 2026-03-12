@@ -65,6 +65,7 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
             Some(Currency::from("USD")),
             None,
             AHashMap::new(),
+            None,
             vec![],
             FillModelAny::default(),
             FeeModelAny::default(),
@@ -85,9 +86,11 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
-    engine.add_instrument(instrument.clone()).unwrap();
+    engine.add_instrument(instrument).unwrap();
     engine
 }
 
@@ -132,14 +135,13 @@ fn test_grid_mm_itch_catalog_load() {
 
     // Write deltas to a temp catalog then query back
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     catalog
         .write_to_parquet(deltas.clone(), None, None, None)
         .unwrap();
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     let loaded_deltas: Vec<OrderBookDelta> = catalog
         .query_typed_data(
             Some(vec![instrument_id.to_string()]),

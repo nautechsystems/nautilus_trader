@@ -696,7 +696,49 @@ DataTesterConfig::new(client_id, vec![instrument_id])
 
 ---
 
-## Group 8: Lifecycle
+## Group 8: Option greeks
+
+Test option greeks and option chain subscriptions.
+
+| TC     | Name                        | Description                                    | Skip when              |
+|--------|-----------------------------|------------------------------------------------|------------------------|
+| TC-D62 | Subscribe option greeks     | `OptionGreeks` data for a single instrument.   | No greeks support.     |
+| TC-D63 | Subscribe option chain      | `OptionChainSlice` snapshots for a series.     | No chain support.      |
+
+### TC-D62: Subscribe option greeks
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, option instrument loaded.                           |
+| **Action**         | DataTester subscribes to option greeks updates.                        |
+| **Event sequence** | `OptionGreeks` events received in `on_option_greeks`.                  |
+| **Pass criteria**  | Greeks received with valid delta, gamma, vega, theta values.           |
+| **Skip when**      | Adapter does not support option greeks subscriptions.                  |
+
+**Considerations:**
+
+- Greeks are only available for option instruments.
+- Values depend on the venue's pricing model and may update on every quote change.
+
+### TC-D63: Subscribe option chain
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, option instruments loaded for the series.           |
+| **Action**         | DataTester subscribes to option chain snapshots for a series.          |
+| **Event sequence** | `OptionChainSlice` snapshots received in `on_option_chain`.            |
+| **Pass criteria**  | Chain snapshot contains greeks for instruments matching the series.     |
+| **Skip when**      | Adapter does not support option chain subscriptions.                   |
+
+**Considerations:**
+
+- Option chain subscriptions are managed by the DataEngine, which creates per-instrument
+  quote and greeks subscriptions internally.
+- ATM-relative strike ranges require a forward price bootstrap before subscriptions begin.
+
+---
+
+## Group 9: Lifecycle
 
 Test actor lifecycle behavior: unsubscribe handling and custom parameters.
 

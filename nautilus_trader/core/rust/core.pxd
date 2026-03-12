@@ -16,6 +16,12 @@ cdef extern from "../includes/core.h":
     # Number of nanoseconds in one microsecond.
     const uint64_t NANOSECONDS_IN_MICROSECOND # = 1000
 
+    # Number of nanoseconds in one minute.
+    const uint64_t NANOSECONDS_IN_MINUTE # = (60 * NANOSECONDS_IN_SECOND)
+
+    # Number of seconds in one minute.
+    const uint64_t SECONDS_IN_MINUTE # = 60
+
     # Maximum capacity in characters for a [`StackStr`].
     const uintptr_t STACKSTR_CAPACITY # = 36
 

@@ -43,19 +43,20 @@ use crate::{
 #[pyfunction(name = "tardis_normalize_symbol_str")]
 #[pyo3(signature = (symbol, exchange, instrument_type, is_inverse=None))]
 pub fn py_tardis_normalize_symbol_str(
-    symbol: String,
-    exchange: String,
-    instrument_type: String,
+    symbol: &str,
+    exchange: &str,
+    instrument_type: &str,
     is_inverse: Option<bool>,
 ) -> PyResult<String> {
-    let symbol = Ustr::from(&symbol);
-    let exchange: TardisExchange = parse_enum(&exchange, stringify!(exchange))?;
+    let symbol = Ustr::from(symbol);
+    let exchange: TardisExchange = parse_enum(exchange, stringify!(exchange))?;
     let instrument_type: TardisInstrumentType =
-        parse_enum(&instrument_type, stringify!(instrument_type))?;
+        parse_enum(instrument_type, stringify!(instrument_type))?;
 
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_tardis_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -68,6 +69,7 @@ fn extract_tardis_data_factory(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn extract_tardis_data_config(
     py: Python<'_>,
     config: Py<PyAny>,

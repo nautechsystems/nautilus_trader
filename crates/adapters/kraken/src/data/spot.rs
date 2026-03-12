@@ -18,8 +18,8 @@
 use std::{
     future::Future,
     sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -43,23 +43,32 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
+    UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{Bar, Data, OrderBookDeltas, OrderBookDeltas_API},
     enums::{AggregationSource, BookType},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
+
+type OhlcBufferKey = (Ustr, u32);
+type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
 
 use crate::{
     common::consts::KRAKEN_VENUE,
     config::KrakenDataClientConfig,
     http::KrakenSpotHttpClient,
-    websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
+    websocket::spot_v2::{
+        client::KrakenSpotWebSocketClient,
+        messages::KrakenSpotWsMessage,
+        parse::{parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar},
+    },
 };
 
 /// Kraken Spot data client.
@@ -130,7 +139,7 @@ impl KrakenSpotDataClient {
             .and_then(|guard| guard.get(instrument_id).cloned())
     }
 
-    async fn load_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http
             .request_instruments(None)
@@ -168,7 +177,11 @@ impl KrakenSpotDataClient {
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
         let stream = self.ws.stream().map_err(|e| anyhow::anyhow!("{e}"))?;
         let data_sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let book_sequence = Arc::new(AtomicU64::new(0));
+        let ohlc_buffer: OhlcBuffer = Arc::new(Mutex::new(AHashMap::new()));
         let cancellation_token = self.cancellation_token.clone();
+        let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             tokio::pin!(stream);
@@ -177,15 +190,24 @@ impl KrakenSpotDataClient {
                 tokio::select! {
                     () = cancellation_token.cancelled() => {
                         log::debug!("Spot message handler cancelled");
+                        Self::flush_ohlc_buffer(&ohlc_buffer, &data_sender);
                         break;
                     }
                     msg = stream.next() => {
                         match msg {
                             Some(ws_msg) => {
-                                Self::handle_ws_message(ws_msg, &data_sender);
+                                Self::handle_ws_message(
+                                    ws_msg,
+                                    &data_sender,
+                                    &instruments,
+                                    &book_sequence,
+                                    &ohlc_buffer,
+                                    clock,
+                                );
                             }
                             None => {
                                 log::debug!("Spot WebSocket stream ended");
+                                Self::flush_ohlc_buffer(&ohlc_buffer, &data_sender);
                                 break;
                             }
                         }
@@ -198,34 +220,144 @@ impl KrakenSpotDataClient {
         Ok(())
     }
 
-    fn handle_ws_message(
-        msg: NautilusWsMessage,
+    fn lookup_instrument(
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        symbol: &str,
+    ) -> Option<InstrumentAny> {
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), *KRAKEN_VENUE);
+        instruments
+            .read()
+            .ok()
+            .and_then(|guard| guard.get(&instrument_id).cloned())
+    }
+
+    fn flush_ohlc_buffer(
+        ohlc_buffer: &OhlcBuffer,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ) {
+        let Ok(mut buffer) = ohlc_buffer.lock() else {
+            return;
+        };
+        let bars: Vec<Bar> = buffer.drain().map(|(_, (bar, _))| bar).collect();
+        for bar in bars {
+            if let Err(e) = sender.send(DataEvent::Data(Data::Bar(bar))) {
+                log::error!("Failed to send buffered bar: {e}");
+            }
+        }
+    }
+
+    fn handle_ws_message(
+        msg: KrakenSpotWsMessage,
+        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        book_sequence: &Arc<AtomicU64>,
+        ohlc_buffer: &OhlcBuffer,
+        clock: &'static AtomicTime,
+    ) {
+        let ts_init = clock.get_time_ns();
+
         match msg {
-            NautilusWsMessage::Data(data_vec) => {
-                for data in data_vec {
-                    if let Err(e) = sender.send(DataEvent::Data(data)) {
-                        log::error!("Failed to send data event: {e}");
+            KrakenSpotWsMessage::Ticker(tickers) => {
+                for ticker in &tickers {
+                    let Some(instrument) =
+                        Self::lookup_instrument(instruments, ticker.symbol.as_str())
+                    else {
+                        log::warn!("No instrument for symbol: {}", ticker.symbol);
+                        continue;
+                    };
+                    match parse_quote_tick(ticker, &instrument, ts_init) {
+                        Ok(quote) => {
+                            if let Err(e) = sender.send(DataEvent::Data(Data::Quote(quote))) {
+                                log::error!("Failed to send quote: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse quote tick: {e}"),
                     }
                 }
             }
-            NautilusWsMessage::Deltas(deltas) => {
-                let api_deltas = OrderBookDeltas_API::new(deltas);
-                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(api_deltas))) {
-                    log::error!("Failed to send deltas event: {e}");
+            KrakenSpotWsMessage::Trade(trades) => {
+                for trade in &trades {
+                    let Some(instrument) =
+                        Self::lookup_instrument(instruments, trade.symbol.as_str())
+                    else {
+                        log::warn!("No instrument for symbol: {}", trade.symbol);
+                        continue;
+                    };
+                    match parse_trade_tick(trade, &instrument, ts_init) {
+                        Ok(tick) => {
+                            if let Err(e) = sender.send(DataEvent::Data(Data::Trade(tick))) {
+                                log::error!("Failed to send trade: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse trade tick: {e}"),
+                    }
                 }
             }
-            NautilusWsMessage::Reconnected => {
+            KrakenSpotWsMessage::Book {
+                data,
+                is_snapshot: _,
+            } => {
+                for book in &data {
+                    let Some(instrument) =
+                        Self::lookup_instrument(instruments, book.symbol.as_str())
+                    else {
+                        log::warn!("No instrument for symbol: {}", book.symbol);
+                        continue;
+                    };
+                    let sequence = book_sequence.load(Ordering::Relaxed);
+                    match parse_book_deltas(book, &instrument, sequence, ts_init) {
+                        Ok(delta_vec) => {
+                            if delta_vec.is_empty() {
+                                continue;
+                            }
+                            book_sequence.fetch_add(delta_vec.len() as u64, Ordering::Relaxed);
+                            let deltas = OrderBookDeltas::new(instrument.id(), delta_vec);
+                            let api_deltas = OrderBookDeltas_API::new(deltas);
+                            if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(api_deltas))) {
+                                log::error!("Failed to send deltas: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse book deltas: {e}"),
+                    }
+                }
+            }
+            KrakenSpotWsMessage::Ohlc(ohlc_data) => {
+                let Ok(mut buffer) = ohlc_buffer.lock() else {
+                    log::error!("OHLC buffer lock poisoned");
+                    return;
+                };
+                for ohlc in &ohlc_data {
+                    let Some(instrument) =
+                        Self::lookup_instrument(instruments, ohlc.symbol.as_str())
+                    else {
+                        log::warn!("No instrument for symbol: {}", ohlc.symbol);
+                        continue;
+                    };
+                    match parse_ws_bar(ohlc, &instrument, ts_init) {
+                        Ok(new_bar) => {
+                            let key: (Ustr, u32) = (ohlc.symbol, ohlc.interval);
+                            let new_interval_begin = UnixNanos::from(
+                                ohlc.interval_begin.timestamp_nanos_opt().unwrap_or(0) as u64,
+                            );
+
+                            if let Some((buffered_bar, buffered_begin)) = buffer.get(&key)
+                                && new_interval_begin != *buffered_begin
+                                && let Err(e) =
+                                    sender.send(DataEvent::Data(Data::Bar(*buffered_bar)))
+                            {
+                                log::error!("Failed to send bar: {e}");
+                            }
+
+                            buffer.insert(key, (new_bar, new_interval_begin));
+                        }
+                        Err(e) => log::error!("Failed to parse bar: {e}"),
+                    }
+                }
+            }
+            KrakenSpotWsMessage::Execution(_) => {}
+            KrakenSpotWsMessage::Reconnected => {
                 log::info!("Spot WebSocket reconnected");
             }
-            NautilusWsMessage::OrderRejected(_)
-            | NautilusWsMessage::OrderAccepted(_)
-            | NautilusWsMessage::OrderCanceled(_)
-            | NautilusWsMessage::OrderExpired(_)
-            | NautilusWsMessage::OrderUpdated(_)
-            | NautilusWsMessage::OrderStatusReport(_)
-            | NautilusWsMessage::FillReport(_) => {}
         }
     }
 }
@@ -308,7 +440,6 @@ impl DataClient for KrakenSpotDataClient {
             .context("Spot WebSocket failed to become active")?;
 
         self.spawn_message_handler()?;
-        self.ws.cache_instruments(instruments.clone());
 
         for instrument in instruments {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {

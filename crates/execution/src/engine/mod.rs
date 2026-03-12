@@ -135,15 +135,15 @@ impl ExecutionEngine {
     }
 
     /// Registers all message bus handlers for the execution engine.
-    pub fn register_msgbus_handlers(engine: Rc<RefCell<Self>>) {
-        let weak = WeakCell::from(Rc::downgrade(&engine));
+    pub fn register_msgbus_handlers(engine: &Rc<RefCell<Self>>) {
+        let weak = WeakCell::from(Rc::downgrade(engine));
 
         let weak1 = weak.clone();
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::exec_engine_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
                 if let Some(rc) = weak1.upgrade() {
-                    rc.borrow().execute(cmd);
+                    rc.borrow().execute(&cmd);
                 }
             }),
         );
@@ -167,7 +167,7 @@ impl ExecutionEngine {
             MessagingSwitchboard::exec_engine_process(),
             TypedIntoHandler::from(move |event: OrderEventAny| {
                 if let Some(rc) = weak2.upgrade() {
-                    rc.borrow_mut().process(event);
+                    rc.borrow_mut().process(&event);
                 }
             }),
         );
@@ -177,7 +177,7 @@ impl ExecutionEngine {
             MessagingSwitchboard::exec_engine_reconcile_execution_report(),
             TypedIntoHandler::from(move |report: ExecutionReport| {
                 if let Some(rc) = weak3.upgrade() {
-                    rc.borrow_mut().reconcile_execution_report(report);
+                    rc.borrow_mut().reconcile_execution_report(&report);
                 }
             }),
         );
@@ -393,6 +393,19 @@ impl ExecutionEngine {
         adapters
     }
 
+    /// Returns all registered execution clients.
+    #[must_use]
+    pub fn get_all_clients(&self) -> Vec<&dyn ExecutionClient> {
+        let mut clients: Vec<&dyn ExecutionClient> =
+            self.clients.values().map(|a| a.client.as_ref()).collect();
+
+        if let Some(default) = &self.default_client {
+            clients.push(default.client.as_ref());
+        }
+
+        clients
+    }
+
     #[must_use]
     /// Returns execution clients that would handle the given orders.
     ///
@@ -476,10 +489,10 @@ impl ExecutionEngine {
     pub fn register_external_order_claims(
         &mut self,
         strategy_id: StrategyId,
-        instrument_ids: HashSet<InstrumentId>,
+        instrument_ids: &HashSet<InstrumentId>,
     ) -> anyhow::Result<()> {
         // Validate all instruments first
-        for instrument_id in &instrument_ids {
+        for instrument_id in instrument_ids {
             if let Some(existing) = self.external_order_claims.get(instrument_id) {
                 anyhow::bail!(
                     "External order claim for {instrument_id} already exists for {existing}"
@@ -488,7 +501,7 @@ impl ExecutionEngine {
         }
 
         // If validation passed, insert all claims
-        for instrument_id in &instrument_ids {
+        for instrument_id in instrument_ids {
             self.external_order_claims
                 .insert(*instrument_id, strategy_id);
         }
@@ -528,7 +541,7 @@ impl ExecutionEngine {
         let results = join_all(futures).await;
 
         for error in results.into_iter().filter_map(Result::err) {
-            log::error!("Failed to connect execution client: {error}");
+            log::error!("Failed to connect execution client: {error:#}");
         }
     }
 
@@ -646,8 +659,8 @@ impl ExecutionEngine {
     }
 
     /// Reconciles an execution report.
-    pub fn reconcile_execution_report(&mut self, report: ExecutionReport) {
-        match &report {
+    pub fn reconcile_execution_report(&mut self, report: &ExecutionReport) {
+        match report {
             ExecutionReport::Order(order_report) => {
                 self.reconcile_order_status_report(order_report);
             }
@@ -876,13 +889,13 @@ impl ExecutionEngine {
     }
 
     /// Executes a trading command by routing it to the appropriate execution client.
-    pub fn execute(&self, command: TradingCommand) {
-        self.execute_command(&command);
+    pub fn execute(&self, command: &TradingCommand) {
+        self.execute_command(command);
     }
 
     /// Processes an order event, updating internal state and routing as needed.
-    pub fn process(&mut self, event: OrderEventAny) {
-        self.handle_event(&event);
+    pub fn process(&mut self, event: &OrderEventAny) {
+        self.handle_event(event);
     }
 
     /// Starts the execution engine.
@@ -1266,7 +1279,7 @@ impl ExecutionEngine {
                 }
             }
             _ => {
-                let _ = self.apply_event_to_order(&mut order, event.clone());
+                let _ = self.apply_event_to_order(&mut order, event);
             }
         }
     }
@@ -1371,18 +1384,18 @@ impl ExecutionEngine {
 
         self.check_overfill(order, &fill)?;
         let event = OrderEventAny::Filled(fill);
-        self.apply_order_event(order, event)
+        self.apply_order_event(order, &event)
     }
 
     fn apply_event_to_order(
         &self,
         order: &mut OrderAny,
-        event: OrderEventAny,
+        event: &OrderEventAny,
     ) -> anyhow::Result<()> {
         self.apply_order_event(order, event)
     }
 
-    fn apply_order_event(&self, order: &mut OrderAny, event: OrderEventAny) -> anyhow::Result<()> {
+    fn apply_order_event(&self, order: &mut OrderAny, event: &OrderEventAny) -> anyhow::Result<()> {
         if let Err(e) = order.apply(event.clone()) {
             match e {
                 OrderError::InvalidStateTransition => {
@@ -1418,7 +1431,7 @@ impl ExecutionEngine {
         }
 
         let topic = switchboard::get_event_orders_topic(event.strategy_id());
-        msgbus::publish_order_event(topic, &event);
+        msgbus::publish_order_event(topic, event);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
@@ -1482,7 +1495,7 @@ impl ExecutionEngine {
         let position = if instrument.is_spread() {
             None
         } else {
-            self.handle_position_update(instrument.clone(), fill, oms_type);
+            self.handle_position_update(&instrument, fill, oms_type);
             let position_id = fill.position_id.unwrap();
             self.cache.borrow().position(&position_id).cloned()
         };
@@ -1525,7 +1538,7 @@ impl ExecutionEngine {
     /// This function mirrors the Python `_handle_position_update` method.
     fn handle_position_update(
         &mut self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         fill: OrderFilled,
         oms_type: OmsType,
     ) {
@@ -1568,7 +1581,7 @@ impl ExecutionEngine {
 
     fn open_position(
         &self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         position: Option<&Position>,
         fill: OrderFilled,
         oms_type: OmsType,
@@ -1588,10 +1601,8 @@ impl ExecutionEngine {
             self.reopen_position(position, oms_type)?;
         }
 
-        let position = Position::new(&instrument, fill);
-        self.cache
-            .borrow_mut()
-            .add_position(position.clone(), oms_type)?; // TODO: Remove clone (change method)
+        let position = Position::new(instrument, fill);
+        self.cache.borrow_mut().add_position(&position, oms_type)?;
 
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(&position);
@@ -1676,7 +1687,7 @@ impl ExecutionEngine {
 
     fn flip_position(
         &mut self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         position: &mut Position,
         fill: OrderFilled,
         oms_type: OmsType,

@@ -208,7 +208,7 @@ impl DataClient for TardisDataClient {
 
             // Parse and emit Nautilus instrument definitions
             for inst in instruments_info {
-                for instrument in parse_instrument_any(inst, None, None, normalize_symbols) {
+                for instrument in parse_instrument_any(&inst, None, None, normalize_symbols) {
                     if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                         log::error!("Failed to send instrument event: {e}");
                     }
@@ -284,10 +284,10 @@ impl DataClient for TardisDataClient {
                                 if let Some(info) = info {
                                     let event = if matches!(ws_msg, WsMessage::DerivativeTicker(_))
                                     {
-                                        parse_tardis_ws_message_funding_rate(ws_msg, info)
+                                        parse_tardis_ws_message_funding_rate(ws_msg, &info)
                                             .map(DataEvent::FundingRate)
                                     } else {
-                                        parse_tardis_ws_message(ws_msg, info, &book_snapshot_output)
+                                        parse_tardis_ws_message(ws_msg, &info, &book_snapshot_output)
                                             .map(DataEvent::Data)
                                     };
 

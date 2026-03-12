@@ -148,15 +148,21 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
 
-        # Get user address from HTTP client for WebSocket subscriptions
-        # Use vault address when vault trading, otherwise order/fill
-        # updates for the vault will be missed
+        self._fee_refresh_task: asyncio.Task | None = None
+
+        # Get user address from HTTP client for WebSocket subscriptions.
+        # Resolution order: account_address (agent wallet) → vault_address → EOA
         self._user_address: str | None = None
         try:
             eoa_address = self._client.get_user_address()
-            self._user_address = config.vault_address or eoa_address
+            self._user_address = config.account_address or config.vault_address or eoa_address
             self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
-            if config.vault_address:
+            if config.account_address:
+                self._log.info(
+                    f"Account address (agent wallet, WS subscriptions): {config.account_address}",
+                    LogColor.BLUE,
+                )
+            elif config.vault_address:
                 self._log.info(
                     f"Vault address (WS subscriptions): {config.vault_address}",
                     LogColor.BLUE,

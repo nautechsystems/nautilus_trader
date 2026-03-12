@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Data persistence and storage for [NautilusTrader](http://nautilustrader.io).
+Data persistence and storage for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-persistence` crate provides data persistence capabilities including reading and writing
 trading data to various storage backends. This includes Apache Parquet file support, streaming data
@@ -14,7 +14,7 @@ pipelines, and cloud storage integration for historical data management.
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

@@ -29,7 +29,10 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use super::{
-    consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE},
+    consts::{
+        BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN, BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION,
+        BETFAIR_VENUE,
+    },
     types::SelectionId,
 };
 use crate::{
@@ -86,6 +89,34 @@ pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
 #[must_use]
 pub fn parse_millis_timestamp(timestamp_ms: u64) -> UnixNanos {
     UnixNanos::from(timestamp_ms * NANOSECONDS_IN_MILLISECOND)
+}
+
+/// Truncates a client order ID to a Betfair `customer_order_ref`.
+///
+/// Takes the last 32 characters to preserve the high-entropy UUID suffix.
+/// Returns the full string if it is already 32 characters or shorter.
+#[must_use]
+pub fn make_customer_order_ref(client_order_id: &str) -> String {
+    let len = client_order_id.len();
+    if len <= BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN {
+        client_order_id.to_string()
+    } else {
+        client_order_id[len - BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN..].to_string()
+    }
+}
+
+/// Legacy truncation that takes the first 32 characters.
+///
+/// Pre-existing orders may use this format. Register both truncations
+/// on reconnect to match orders regardless of which convention was used.
+#[must_use]
+pub fn make_customer_order_ref_legacy(client_order_id: &str) -> String {
+    let len = client_order_id.len();
+    if len <= BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN {
+        client_order_id.to_string()
+    } else {
+        client_order_id[..BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN].to_string()
+    }
 }
 
 /// Parses a Betfair [`MarketCatalogue`] into a vec of [`InstrumentAny`].
@@ -621,5 +652,61 @@ mod tests {
         let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
         assert_eq!(selection_id, 19248890);
         assert_eq!(handicap, Decimal::new(15, 1));
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_short_id() {
+        let result = make_customer_order_ref("O-20240101-001");
+        assert_eq!(result, "O-20240101-001");
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_exactly_32_chars() {
+        let id = "12345678901234567890123456789012";
+        assert_eq!(id.len(), 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result, id);
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_truncates_to_last_32() {
+        // UUID-style ID longer than 32 chars
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        assert!(id.len() > 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result.len(), 32);
+        // Should keep the last 32 characters (high-entropy UUID tail)
+        assert_eq!(result, &id[id.len() - 32..]);
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_legacy_short_id() {
+        let result = make_customer_order_ref_legacy("O-20240101-001");
+        assert_eq!(result, "O-20240101-001");
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_legacy_truncates_to_first_32() {
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        assert!(id.len() > 32);
+        let result = make_customer_order_ref_legacy(id);
+        assert_eq!(result.len(), 32);
+        assert_eq!(result, &id[..32]);
+    }
+
+    #[rstest]
+    fn test_legacy_and_current_differ_for_long_ids() {
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        let current = make_customer_order_ref(id);
+        let legacy = make_customer_order_ref_legacy(id);
+        assert_ne!(current, legacy);
+    }
+
+    #[rstest]
+    fn test_legacy_and_current_same_for_short_ids() {
+        let id = "O-20240101-001";
+        let current = make_customer_order_ref(id);
+        let legacy = make_customer_order_ref_legacy(id);
+        assert_eq!(current, legacy);
     }
 }

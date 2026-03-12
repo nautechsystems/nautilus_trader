@@ -1,24 +1,22 @@
 # Live Trading
 
-NautilusTrader enables traders to deploy their backtested strategies in a real-time
-trading environment with no code changes. This transition from backtesting to live trading
-is a core feature of the platform, ensuring consistency and reliability.
+NautilusTrader deploys backtested strategies to live markets with no code changes.
 
-**Live trading involves real financial risk and requires a careful, risk-managed approach.
-Before deploying to production, ensure you thoroughly understand all aspects of system configuration,
-node operations, execution reconciliation, and the differences between backtesting and live trading.**
-
-This guide provides an overview of the key aspects of live trading.
+**Live trading involves real financial risk. Before deploying to production, understand
+system configuration, node operations, execution reconciliation, and the differences
+between backtesting and live trading.**
 
 :::danger[Jupyter notebooks not recommended for live trading]
-Running live trading nodes in Jupyter notebooks is **not recommended** due to event loop conflicts and operational risks:
+Do not run live trading nodes in Jupyter notebooks. Event loop conflicts and
+operational risks make them unsuitable:
 
-- Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop management.
-- Workarounds like `nest_asyncio` are not production-grade solutions.
-- Notebooks are unstable for production: cells can be re-executed out of order, kernels can crash, and state can be lost.
-- Lacks proper logging, monitoring, and graceful shutdown capabilities required for production trading systems.
+- Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop.
+- Workarounds like `nest_asyncio` are not production-grade.
+- Cells can run out of order, kernels can crash, and state can disappear.
+- Notebooks lack the logging, monitoring, and graceful shutdown needed for production trading.
 
-Use Jupyter notebooks for backtesting, analysis, and experimentation. For live trading, run your trading nodes as standalone Python scripts or services with proper process management.
+Use Jupyter for backtesting, analysis, and experimentation. For live trading, run nodes
+as standalone Python scripts or services.
 :::
 
 :::warning[One TradingNode per process]
@@ -29,11 +27,10 @@ See [Processes and threads](architecture.md#processes-and-threads) for details.
 :::
 
 :::warning[Do not block the event loop]
-User code running on the event loop thread (strategy callbacks, actor handlers, and `on_event`
-methods) should return as quickly as possible. This applies to both Python and Rust implementations.
-Expensive operations such as model inference, heavy calculations, or synchronous I/O can degrade
-performance and compromise correctness (missed fills, stale data, delayed order submissions).
-Offload long-running work to an executor, or to a separate thread/process.
+User code on the event loop thread (strategy callbacks, actor handlers, `on_event` methods)
+must return quickly. This applies to both Python and Rust. Blocking operations like model
+inference, heavy calculations, or synchronous I/O cause missed fills, stale data, and
+delayed order submissions. Offload long-running work to an executor or a separate thread/process.
 :::
 
 :::info[Platform differences]
@@ -44,14 +41,9 @@ behavior and Ctrl+C (SIGINT) support.
 
 ## Configuration
 
-When operating a live trading system, configuring your execution engine and strategies properly is
-essential for ensuring reliability, accuracy, and performance. The following is an overview of the
-key concepts and settings involved for live configuration.
-
 ### `TradingNodeConfig`
 
-The main configuration class for live trading systems is `TradingNodeConfig`,
-which inherits from `NautilusKernelConfig` and provides live-specific config options:
+`TradingNodeConfig` inherits from `NautilusKernelConfig` and adds live-specific options:
 
 ```python
 from nautilus_trader.config import TradingNodeConfig
@@ -91,8 +83,6 @@ config = TradingNodeConfig(
 
 #### Cache database configuration
 
-Configure data persistence with a backing database:
-
 ```python
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
@@ -114,8 +104,6 @@ cache_config = CacheConfig(
 
 #### MessageBus configuration
 
-Configure message routing and external streaming:
-
 ```python
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import DatabaseConfig
@@ -133,7 +121,8 @@ message_bus_config = MessageBusConfig(
 
 ### Multi-venue configuration
 
-Live trading systems often connect to multiple venues. Here's an example of configuring both spot and futures markets for Binance:
+A node can connect to multiple venues. This example configures both
+spot and futures markets for Binance:
 
 ```python
 config = TradingNodeConfig(
@@ -167,58 +156,58 @@ config = TradingNodeConfig(
 
 ### ExecutionEngine configuration
 
-The `LiveExecEngineConfig` sets up the live execution engine, managing order processing, execution events, and reconciliation with trading venues.
-The following outlines the main configuration options.
-
-By configuring these parameters thoughtfully, you can ensure that your trading system operates efficiently,
-handles orders correctly, and remains resilient in the face of potential issues, such as lost events or conflicting data/information.
-
-For full details see the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig).
+`LiveExecEngineConfig` controls order processing, execution events, and
+venue reconciliation. For full details see the
+[API Reference](/docs/python-api-latest/config.html#nautilus_trader.live.config.LiveExecEngineConfig).
 
 #### Reconciliation
 
-**Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
+Recovers missed order and position events to keep system state consistent with the venue.
 
-| Setting                           | Default | Description                                                                                        |
-|-----------------------------------|---------|----------------------------------------------------------------------------------------------------|
-| `reconciliation`                  | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
-| `reconciliation_lookback_mins`    | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
-| `reconciliation_instrument_ids`   | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
-| `filtered_client_order_ids`       | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
+| Setting                         | Default | Description                                                                     |
+|---------------------------------|---------|---------------------------------------------------------------------------------|
+| `reconciliation`                | True    | Activate reconciliation at startup to align internal state with the venue.      |
+| `reconciliation_lookback_mins`  | None    | How far back (minutes) to request past events for reconciling uncached state.   |
+| `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                    |
+| `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue-side duplicates).     |
 
-See [Execution reconciliation](#execution-reconciliation) for additional background.
+See [Execution reconciliation](#execution-reconciliation) for details.
 
 #### Order filtering
 
-**Purpose**: Manages which order events and reports should be processed by the system to avoid conflicts with other trading nodes and unnecessary data handling.
+Controls which order events and reports the system processes, preventing conflicts
+across trading nodes.
 
-| Setting                            | Default | Description                                                                                                |
-|------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `filter_unclaimed_external_orders` | False   | Filters out unclaimed external orders to prevent irrelevant orders from impacting the strategy.            |
-| `filter_position_reports`          | False   | Filters out position status reports, useful when multiple nodes trade the same account to avoid conflicts. |
+| Setting                            | Default | Description                                                                   |
+|------------------------------------|---------|-------------------------------------------------------------------------------|
+| `filter_unclaimed_external_orders` | False   | Drop unclaimed external orders so they do not affect the strategy.            |
+| `filter_position_reports`          | False   | Drop position status reports. Useful when multiple nodes trade one account.   |
 
 :::note[Order tagging behavior]
-During reconciliation, orders are tagged to distinguish their origin:
+Reconciliation tags orders by origin:
 
-- **`VENUE` tag**: Applied to external orders discovered from the venue (placed outside this system).
-- **`RECONCILIATION` tag**: Applied to synthetic orders generated internally to align position discrepancies.
+- **`VENUE` tag**: external orders discovered at the venue (placed outside this system).
+- **`RECONCILIATION` tag**: synthetic orders generated to align position discrepancies.
 
-When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders are filtered. `RECONCILIATION`-tagged orders (synthetic) are never filtered, ensuring position alignment always succeeds regardless of filter settings.
+When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders are filtered.
+`RECONCILIATION`-tagged orders are never filtered, so position alignment always succeeds.
 :::
 
 #### Continuous reconciliation
 
-**Purpose**: Maintains accurate execution state through a continuous reconciliation loop that runs *after* startup reconciliation completes, this loop:
+A background loop starts after startup reconciliation completes. It:
 
-- (1) Monitors in-flight orders for delays exceeding a configured threshold.
-- (2) Reconciles open orders with the venue at configurable intervals.
-- (3) Audits internal *own* order books against the venue's public books.
+- Monitors in-flight orders for delays exceeding a configured threshold.
+- Reconciles open orders with the venue at configurable intervals.
+- Audits internal *own* order books against the venue's public books.
 
-**Startup sequence**: The continuous reconciliation loop waits for startup reconciliation to complete before beginning periodic checks. This prevents race conditions where continuous checks might interfere with the initial state reconciliation. The `reconciliation_startup_delay_secs` parameter applies an additional delay *after* startup reconciliation completes.
+The loop waits for startup reconciliation to finish before starting periodic checks.
+The `reconciliation_startup_delay_secs` parameter adds a further delay *after* startup
+reconciliation completes, giving the system time to stabilize.
 
-If an order's status cannot be reconciled after exhausting all retries, the engine resolves the order as follows:
+When retries are exhausted, the engine resolves the order as follows:
 
-**In-flight order timeout resolution** (when venue doesn't respond after max retries):
+**In-flight order timeout resolution** (venue does not respond after max retries):
 
 | Current status   | Resolved to | Rationale                                  |
 |------------------|-------------|--------------------------------------------|
@@ -239,121 +228,134 @@ If an order's status cannot be reconciled after exhausting all retries, the engi
 | `PARTIALLY_FILLED` | Not found    | `CANCELED`  | Order doesn't exist but had fills (reconciles fill history).        |
 
 :::note
-**Important reconciliation caveats:**
+**Reconciliation caveats:**
 
-- **"Not found" resolutions**: These are only performed in full-history mode (`open_check_open_only=False`). In open-only mode (`open_check_open_only=True`, the default), these checks are intentionally skipped. This is because open-only mode uses venue-specific "open orders" endpoints which exclude closed orders by design, making it impossible to distinguish between genuinely missing orders and recently closed ones.
-- **Recent order protection**: The engine skips reconciliation actions for orders with last event timestamp within the `open_check_threshold_ms` window (default 5 seconds). This prevents false positives from race conditions where orders may still be processing at the venue.
-- **Targeted query safeguard**: Before marking orders as `REJECTED` or `CANCELED` when "not found", the engine attempts a targeted single-order query to the venue. This helps prevent false negatives due to bulk query limitations or timing delays.
-- **`FILLED` orders**: When a `FILLED` order is "not found" at the venue, this is considered normal behavior (venues often don't track completed orders) and is ignored without generating warnings.
+- **"Not found" resolutions** only apply in full-history mode (`open_check_open_only=False`).
+  Open-only mode (the default) skips these checks because venue "open orders" endpoints
+  exclude closed orders by design, making it impossible to distinguish missing orders from
+  recently closed ones.
+- **Recent order protection**: the engine skips reconciliation for orders whose last event
+  falls within the `open_check_threshold_ms` window (default 5s). This prevents false
+  positives from race conditions where the venue is still processing.
+- **Targeted query safeguard**: before marking an order `REJECTED` or `CANCELED` when
+  "not found", the engine issues a single-order query to the venue.
+  This catches false negatives from bulk query limitations or timing delays.
+- **`FILLED` orders** that are "not found" at the venue are silently ignored. Venues
+  commonly drop completed orders from their query results.
 
 :::
 
 #### Retry coordination and lookback behavior
 
-The execution engine reuses a single retry counter (`_recon_check_retries`) for both the inflight loop (bounded by `inflight_check_retries`) and the open-order loop (bounded by `open_check_missing_retries`). This shared budget ensures the stricter limit wins and prevents duplicate venue queries for the same order state.
+The inflight loop and open-order loop share a single retry counter
+(`_recon_check_retries`), bounded by `inflight_check_retries` and
+`open_check_missing_retries` respectively. The stricter limit wins,
+and avoids duplicate venue queries for the same order state.
 
-When the open-order loop exhausts its retries, the engine issues one targeted `GenerateOrderStatusReport` probe before applying a terminal state. If the venue returns the order, reconciliation proceeds and the retry counter resets automatically.
+When the open-order loop exhausts retries, the engine issues one targeted
+`GenerateOrderStatusReport` probe before applying a terminal state. If the
+venue returns the order, reconciliation proceeds and the retry counter resets.
 
-**Single-order query protection**: To prevent rate limit exhaustion when many orders need individual queries, the engine limits single-order queries per reconciliation cycle via `max_single_order_queries_per_cycle` (default: 10). When this limit is reached, remaining orders are deferred to the next cycle. Additionally, the engine adds a configurable delay (`single_order_query_delay_ms`, default: 100ms) between single-order queries to further prevent rate limiting. This ensures the system can handle scenarios where bulk queries fail for hundreds of orders without overwhelming the venue API.
+**Single-order query protection**: the engine caps single-order queries per
+cycle via `max_single_order_queries_per_cycle` (default: 10). Remaining
+orders are deferred to the next cycle. A configurable delay
+(`single_order_query_delay_ms`, default: 100ms) spaces out consecutive
+queries to avoid rate limits. This handles bulk query failures across hundreds of orders
+without overwhelming the venue API.
 
-Orders that age beyond `open_check_lookback_mins` rely on this targeted probe. Keep the lookback generous for venues with short history windows, and consider increasing `open_check_threshold_ms` if venue timestamps lag the local clock so recently updated orders are not marked missing prematurely.
+Orders older than `open_check_lookback_mins` rely on this targeted probe.
+Keep the lookback generous for venues with short history windows. Increase
+`open_check_threshold_ms` if venue timestamps lag the local clock, so
+recently updated orders are not marked missing prematurely.
 
-This ensures the trading node maintains a consistent execution state even under unreliable conditions.
-
-| Setting                              | Default        | Description                                                                                                                         |
-|--------------------------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | Determines how frequently the system checks in-flight order status. Set to 0 to disable.                                            |
-| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
-| `inflight_check_retries`             | 5&nbsp;retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
-| `open_check_interval_secs`           | None           | Determines how frequently (in seconds) open orders are checked at the venue. Set to None or 0.0 to disable. Recommended: 5-10 seconds, considering API rate limits. |
-| `open_check_open_only`               | True           | When enabled, only open orders are requested during checks; if disabled, full order history is fetched (resource-intensive).         |
-| `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling during continuous reconciliation. Only orders modified within this window are considered. |
-| `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since the order's last cached event before open-order checks act on venue discrepancies (missing, mismatched status, etc.). |
-| `open_check_missing_retries`         | 5&nbsp;retries | Maximum retries before resolving an order that is open in cache but not found at venue. Prevents false positives from race conditions. |
-| `max_single_order_queries_per_cycle` | 10             | Maximum number of single-order queries per reconciliation cycle. Prevents rate limit exhaustion when many orders fail bulk query checks. |
-| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (milliseconds) between single-order queries to prevent rate limit exhaustion. |
-| `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Additional delay (seconds) applied *after* startup reconciliation completes before starting continuous reconciliation loop. Provides time for additional system stabilization. |
-| `own_books_audit_interval_secs`      | None           | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
-| `position_check_interval_secs`       | None           | Interval (seconds) between checks for position discrepancies between cache and venue. When a discrepancy is detected, the system queries for missing fills. Set to None to disable. Recommended: 30-60 seconds. |
-| `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports when a position discrepancy is detected. Only fills within this window are requested from the venue. |
-| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum elapsed time (milliseconds) since the position's last local activity before acting on discrepancies. Prevents race conditions with in-flight fills. |
-| `position_check_retries`             | 3&nbsp;retries | Maximum reconciliation attempts for a position discrepancy before the engine stops retrying. Once exceeded, an error is logged and the instrument is no longer actively reconciled until the discrepancy resolves. |
+| Setting                              | Default        | Description                                                                                      |
+|--------------------------------------|----------------|--------------------------------------------------------------------------------------------------|
+| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in-flight order status. Set to 0 to disable.                                  |
+| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in-flight order triggers a venue status check. Lower if colocated.                |
+| `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in-flight order with the venue.                                      |
+| `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s.|
+| `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource-intensive).          |
+| `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling. Only orders modified within this window.     |
+| `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since last cached event before acting on venue discrepancies.                       |
+| `open_check_missing_retries`         | 5&nbsp;retries | Max retries before resolving an order open in cache but not found at venue.                      |
+| `max_single_order_queries_per_cycle` | 10             | Cap on single-order queries per cycle. Prevents rate-limit exhaustion.                           |
+| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single-order queries to avoid rate limits.                                    |
+| `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                   |
+| `own_books_audit_interval_secs`      | None           | Interval (seconds) between auditing own order books against public books.                        |
+| `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s. |
+| `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                     |
+| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                  |
+| `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
 
 :::warning
-**Important configuration guidelines:**
 
-- **`open_check_lookback_mins`**: Do not reduce below 60 minutes. This lookback window must be sufficiently generous for your venue's order history retention. Setting it too short can trigger false "missing order" resolutions even with built-in safeguards, as orders may appear missing when they're simply outside the query window.
-- **`reconciliation_startup_delay_secs`**: Do not reduce below 10 seconds for production systems. This delay is applied *after* startup reconciliation completes, allowing additional time for system stabilization before continuous reconciliation checks begin. This prevents continuous checks from starting immediately after startup reconciliation finishes.
+- **`open_check_lookback_mins`**: do not reduce below 60 minutes. A short window
+  triggers false "missing order" resolutions because orders fall outside the query range.
+- **`reconciliation_startup_delay_secs`**: do not reduce below 10 seconds in production.
+  The delay lets the system stabilize after startup reconciliation before continuous
+  checks begin.
 
 :::
 
 #### Additional options
 
-The following additional options provide further control over execution behavior:
-
-| Setting                            | Default | Description                                                                                                |
-|------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `allow_overfills`                  | False   | If enabled, allows order fills that exceed the order quantity (logs warning instead of raising). Useful when position reconciliation races with exchange fill events. |
-| `generate_missing_orders`          | True    | If `LIMIT` order events will be generated during reconciliation to align position discrepancies. These orders use strategy ID `EXTERNAL` with tag `RECONCILIATION`, ensuring proper position netting. |
-| `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
-| `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
-| `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
-| `debug`                            | False   | Enable debug mode for additional execution logging.                                                        |
+| Setting                            | Default | Description                                                                                     |
+|------------------------------------|---------|-------------------------------------------------------------------------------------------------|
+| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.     |
+| `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
+| `snapshot_orders`                  | False   | Take order snapshots on order events.                                                           |
+| `snapshot_positions`               | False   | Take position snapshots on position events.                                                     |
+| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                  |
+| `debug`                            | False   | Enable debug logging for execution.                                                             |
 
 #### Memory management
 
-**Purpose**: Periodically purges closed orders, closed positions, and account events from the in-memory cache to optimize resource usage and performance during extended / HFT operations.
+Periodically purges closed orders, closed positions, and account events from the
+in-memory cache, keeping memory bounded during long-running or HFT sessions.
 
-| Setting                                | Default | Description                                                                                                                             |
-|----------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records.    |
-| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete.    |
-| `purge_closed_positions_interval_mins` | None    | Sets how frequently (in minutes) closed positions are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete.  |
-| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records.   |
-| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes.                            |
-| `purge_from_database`                  | False   | If enabled, purge operations will also delete data from the backing database (Redis/PostgreSQL), not just memory. **Use with caution**. |
+| Setting                                | Default | Description                                                                        |
+|----------------------------------------|---------|------------------------------------------------------------------------------------|
+| `purge_closed_orders_interval_mins`    | None    | How often (minutes) to purge closed orders from memory. Recommended: 10-15 min.    |
+| `purge_closed_orders_buffer_mins`      | None    | How long (minutes) an order must be closed before purging. Recommended: 60 min.    |
+| `purge_closed_positions_interval_mins` | None    | How often (minutes) to purge closed positions from memory. Recommended: 10-15 min. |
+| `purge_closed_positions_buffer_mins`   | None    | How long (minutes) a position must be closed before purging. Recommended: 60 min.  |
+| `purge_account_events_interval_mins`   | None    | How often (minutes) to purge account events from memory. Recommended: 10-15 min.   |
+| `purge_account_events_lookback_mins`   | None    | How old (minutes) an account event must be before purging. Recommended: 60 min.    |
+| `purge_from_database`                  | False   | Also delete from the backing database (Redis/PostgreSQL). **Use with caution**.    |
 
-By configuring these memory management settings appropriately, you can prevent memory usage from growing
-indefinitely during long-running / HFT sessions while ensuring that recently closed orders, closed positions, and account events
-remain available in memory for any ongoing operations that might require them.
-Set an interval to enable the relevant purge loop; leaving it unset disables both scheduling and deletion.
-Each loop delegates to the cache APIs described in [Purging cached state](cache.md#purging-cached-state).
+Setting an interval enables the purge loop; leaving it unset disables scheduling and
+deletion. Database records are unaffected unless `purge_from_database` is true. Each
+loop delegates to the cache APIs described in
+[Purging cached state](cache.md#purging-cached-state).
 
 #### Queue management
 
-**Purpose**: Handles the internal buffering of order events to ensure smooth processing and to prevent system resource overloads.
-
-| Setting                          | Default  | Description                                                                                          |
-|----------------------------------|----------|------------------------------------------------------------------------------------------------------|
-| `qsize`                          | 100,000  | Sets the size of internal queue buffers, managing the flow of data within the engine.                |
-| `graceful_shutdown_on_exception` | False    | If the system should perform a graceful shutdown when an unexpected exception occurs during message queue processing (does not include user actor/strategy exceptions). |
+| Setting                          | Default | Description                                                                     |
+|----------------------------------|---------|---------------------------------------------------------------------------------|
+| `qsize`                          | 100,000 | Size of internal queue buffers.                                                 |
+| `graceful_shutdown_on_exception` | False   | Gracefully shut down on unexpected queue processing exceptions (not user code). |
 
 ### Strategy configuration
 
-The `StrategyConfig` class outlines the configuration for trading strategies, ensuring that each strategy operates with the correct parameters and manages orders effectively.
-For a complete parameter list see the `StrategyConfig` [API Reference](../api_reference/config#class-strategyconfig).
+For a complete parameter list see the `StrategyConfig`
+[API Reference](/docs/python-api-latest/config.html#nautilus_trader.trading.config.StrategyConfig).
 
 #### Identification
 
-**Purpose**: Provides unique identifiers for each strategy to prevent conflicts and ensure proper tracking of orders.
-
-| Setting                     | Default | Description                                                                                            |
-|-----------------------------|---------|--------------------------------------------------------------------------------------------------------|
-| `strategy_id`               | None    | A unique ID for the strategy, ensuring it can be distinctly identified.                                |
-| `order_id_tag`              | None    | A unique tag for the strategy's orders, differentiating them from multiple strategies.                 |
+| Setting        | Default | Description                                                   |
+|----------------|---------|---------------------------------------------------------------|
+| `strategy_id`  | None    | Unique strategy identifier.                                   |
+| `order_id_tag` | None    | Unique tag appended to this strategy's order IDs.             |
 
 #### Order management
 
-**Purpose**: Controls strategy-level order handling including position-ID processing, claiming relevant external orders, automating contingent order logic (OUO/OCO), and tracking GTD expirations.
-
-| Setting                     | Default | Description                                                                                                            |
-|-----------------------------|---------|------------------------------------------------------------------------------------------------------------------------|
-| `oms_type`                  | None    | Specifies the [OMS type](../concepts/execution#oms-configuration), for position ID handling and order processing flow. |
-| `use_uuid_client_order_ids` | False   | If UUID4's should be used for client order ID values. |
-| `external_order_claims`     | None    | Lists instrument IDs for external orders the strategy should claim, aiding accurate order management. |
-| `manage_contingent_orders`  | False   | If enabled, the strategy automatically manages OTO, OCO, and OUO contingent orders. |
-| `manage_gtd_expiry`         | False   | If enabled, the strategy manages GTD expirations, ensuring orders remain active as intended. |
+| Setting                     | Default | Description                                                                                |
+|-----------------------------|---------|--------------------------------------------------------------------------------------------|
+| `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing.  |
+| `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                     |
+| `external_order_claims`     | None    | Instrument IDs whose external orders this strategy claims.                                 |
+| `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                  |
+| `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                         |
 
 ### Windows signal handling
 
@@ -363,25 +365,23 @@ Windows: asyncio event loops do not implement `loop.add_signal_handler`. As a re
 programmatic shutdown; SIGTERM parity is not expected on Windows.
 :::
 
-On Windows, asyncio event loops do not implement `loop.add_signal_handler`, so Unix-style signal
-integration is unavailable. As a result, `TradingNode` does not receive OS signals via asyncio on
-Windows and will not gracefully stop unless you intervene.
+On Windows, asyncio event loops do not implement `loop.add_signal_handler`, so Unix-style
+signal integration is unavailable. `TradingNode` does not receive OS signals via asyncio
+on Windows and will not stop gracefully unless you intervene.
 
-Recommended approaches on Windows:
+Recommended approaches:
 
-- Wrap `run` with a `try/except KeyboardInterrupt` and call `node.stop()` then `node.dispose()`.
-  Ctrl+C on Windows raises `KeyboardInterrupt` in the main thread, providing a clean teardown path.
-- Alternatively, publish a `ShutdownSystem` command programmatically (or call `shutdown_system(...)`
-  from an actor/component) to trigger the same shutdown path.
+- Wrap `run` with `try/except KeyboardInterrupt` and call `node.stop()` then `node.dispose()`.
+  Ctrl+C raises `KeyboardInterrupt` in the main thread, giving you a clean teardown path.
+- Publish a `ShutdownSystem` command programmatically (or call `shutdown_system(...)` from
+  an actor/component) to trigger the same shutdown path.
 
-The “inflight check loop task still pending” message is consistent with the lack of asyncio signal
-handling on Windows, i.e., the normal graceful shutdown path isn’t being triggered.
+The “inflight check loop task still pending” message appears because the normal graceful
+shutdown path is not triggered. This is tracked as
+[#2785](https://github.com/nautechsystems/nautilus_trader/issues/2785).
 
-This is tracked as an enhancement request to support Ctrl+C (SIGINT) for Windows in the legacy path.
-<https://github.com/nautechsystems/nautilus_trader/issues/2785>.
-
-For the new v2 system, `LiveNode` already supports Ctrl+C cleanly via `tokio::signal::ctrl_c()` and a
-Python SIGINT bridge, so the runner stops and tasks are shut down cleanly.
+The v2 `LiveNode` already handles Ctrl+C via `tokio::signal::ctrl_c()` and a Python SIGINT
+bridge, so runner and tasks shut down cleanly.
 
 Example pattern for Windows:
 
@@ -399,9 +399,9 @@ finally:
 
 ## Execution reconciliation
 
-Execution reconciliation is the process of aligning the external state of reality for orders and positions
-(both closed and open) with the system's internal state built from events.
-This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` has reconciliation capability.
+Execution reconciliation aligns the venue's actual order and position state with the
+system's internal state built from events. Only the `LiveExecutionEngine` performs
+reconciliation, since backtesting controls both sides.
 
 :::note[Terminology]
 An **in-flight order** is one awaiting venue acknowledgement:
@@ -413,52 +413,51 @@ An **in-flight order** is one awaiting venue acknowledgement:
 These orders are monitored by the continuous reconciliation loop to detect stale or lost messages.
 :::
 
-There are two main scenarios for reconciliation:
+Two scenarios:
 
-- **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state.
-- **No previous cached execution state**: Where there is no cached state, all orders and positions that exist externally are generated from scratch.
+- **Cached state exists**: report data generates missing events to align the state.
+- **No cached state**: all orders and positions at the venue are generated from scratch.
 
 :::tip
-**Best practice**: Persist all execution events to the cache database to minimize reliance on venue history, ensuring full recovery even with short lookback windows.
+Persist all execution events to the cache database. This reduces reliance on venue history
+and allows full recovery even with short lookback windows.
 :::
 
 ### Reconciliation configuration
 
-Unless reconciliation is disabled by setting the `reconciliation` configuration parameter to false,
-the execution engine will perform the execution reconciliation procedure for each venue.
-Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
+Unless `reconciliation` is set to false, the execution engine reconciles state for each
+venue at startup. The `reconciliation_lookback_mins` parameter controls how far back the
+engine requests history.
 
 :::tip
-We recommend not setting a specific `reconciliation_lookback_mins`. This allows the requests made
-to the venues to use the maximum execution history available for reconciliation.
+Leave `reconciliation_lookback_mins` unset. This lets the engine request the maximum
+execution history the venue provides.
 :::
 
 :::warning
-If executions have occurred prior to the lookback window, any necessary events will be generated to align
-internal and external states. This may result in some information loss that could have been avoided with a longer lookback window.
-
-Additionally, some venues may filter or drop execution information under certain conditions, resulting
-in further information loss. This would not occur if all events were persisted in the cache database.
+Executions before the lookback window still generate alignment events, but with some
+information loss that a longer window would avoid. Some venues also filter or drop
+older execution data. Persisting all events to the cache database prevents both issues.
 :::
 
-Each strategy can also be configured to claim any external orders for an instrument ID generated during
-reconciliation using the `external_order_claims` configuration parameter.
-This is useful in situations where, at system start, there is no cached state or it is desirable for
-a strategy to resume its operations and continue managing existing open orders for a specific instrument.
+Each strategy can claim external orders for an instrument ID generated during reconciliation
+via the `external_order_claims` config parameter. This lets a strategy resume managing open
+orders when no cached state exists.
 
-Orders generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` during position reconciliation are internal to the engine and cannot be claimed via `external_order_claims`.
-They exist solely to align position discrepancies and should not be managed by user strategies.
+Orders generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` during position
+reconciliation are internal to the engine. They cannot be claimed via `external_order_claims`
+and should not be managed by user strategies.
 
 :::tip
-To detect external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`. These orders are included in portfolio calculations and position tracking like any other order.
+To detect external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`. These orders participate in portfolio calculations and position tracking like any other order.
 :::
 
-For a full list of live trading options see the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig).
+For all live trading options, see the `LiveExecEngineConfig` [API Reference](/docs/python-api-latest/config.html#nautilus_trader.live.config.LiveExecEngineConfig).
 
 ### Reconciliation procedure
 
-The reconciliation procedure is standardized for all adapter execution clients and uses the following
-methods to produce an execution mass status:
+All adapter execution clients follow the same reconciliation procedure, calling three methods
+to produce an execution mass status:
 
 - `generate_order_status_reports`
 - `generate_fill_reports`
@@ -477,123 +476,122 @@ flowchart TD
     Gen --> Done
 ```
 
-The system state is then reconciled with the reports, which represent external "reality":
+The system reconciles its state against these reports, which represent external reality:
 
-- **Duplicate Check**:
-  - Duplicate order reports within the batch are deduplicated with warnings logged.
-  - Duplicate trade IDs within the batch are logged as warnings for investigation.
-- **Order Reconciliation**:
-  - Generate and apply events necessary to update orders from any cached state to the current state.
-  - If any trade reports are missing, inferred `OrderFilled` events are generated.
-  - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated.
-  - Fill report data consistency is verified using tolerance-based comparisons for price and commission differences.
-- **Position Reconciliation**:
-  - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
-  - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
-  - When `generate_missing_orders` is enabled (default: True), orders are generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` to align position discrepancies discovered during reconciliation.
-  - A hierarchical price determination strategy ensures reconciliation can proceed even with limited data:
-    1. **Calculated reconciliation price** (preferred): Uses the reconciliation price function to achieve target average positions.
-    2. **Market mid-price**: Falls back to current bid-ask midpoint if reconciliation price cannot be calculated.
-    3. **Current position average**: Uses existing position average price if no market data is available.
-    4. **MARKET order** (last resort): When no price information exists (no positions, no market data), a MARKET order is generated.
-  - LIMIT orders are used when a price can be determined (cases 1-3), ensuring accurate PnL calculations.
-  - MARKET orders are only used as a last resort when starting fresh with no available pricing data.
-  - Zero quantity differences after precision rounding are handled gracefully.
-- **Partial Window Adjustment**:
-  - When `reconciliation_lookback_mins` is set, the reconciliation window may not capture the complete position history (missing opening fills).
-  - The system automatically adjusts fills to ensure accurate position reconstruction using lifecycle analysis:
-    - Detects zero-crossings (when position qty crosses through FLAT) to identify separate position lifecycles.
+- **Duplicate check**:
+  - Deduplicates order reports within the batch and logs warnings.
+  - Logs duplicate trade IDs as warnings for investigation.
+- **Order reconciliation**:
+  - Generates and applies events to move orders from cached state to current state.
+  - Infers `OrderFilled` events for missing trade reports.
+  - Generates external order events for unrecognized client order IDs or reports missing a client order ID.
+  - Verifies fill report data consistency with tolerance-based price and commission comparisons.
+- **Position reconciliation**:
+  - Matches the net position per instrument against venue position reports using instrument precision.
+  - Generates external order events when order reconciliation leaves a position that differs from the venue.
+  - When `generate_missing_orders` is enabled (default: True), generates orders with strategy ID `EXTERNAL` and tag `RECONCILIATION` to align discrepancies.
+  - Falls through a price hierarchy when generating reconciliation orders:
+    1. **Calculated reconciliation price** (preferred): targets the correct average position.
+    2. **Market mid-price**: uses the current bid-ask midpoint.
+    3. **Current position average**: uses the existing position's average price.
+    4. **MARKET order** (last resort): used only when no price data exists (no positions, no market data).
+  - Uses LIMIT orders when a price can be determined (cases 1-3) to preserve PnL accuracy.
+  - Skips zero quantity differences after precision rounding.
+- **Partial window adjustment**:
+  - When `reconciliation_lookback_mins` is set, the window may miss opening fills.
+  - The system adjusts fills using lifecycle analysis to reconstruct positions accurately:
+    - Detects zero-crossings (position qty crosses through FLAT) to identify separate lifecycles.
     - Adds synthetic opening fills when the earliest lifecycle is incomplete.
-    - Filters out closed lifecycles when current lifecycle matches venue position.
-    - Replaces mismatched current lifecycle with synthetic fill reflecting venue position.
-  - Synthetic fills use calculated reconciliation prices to achieve target average positions.
+    - Filters out closed lifecycles when the current lifecycle matches the venue position.
+    - Replaces a mismatched current lifecycle with a synthetic fill reflecting the venue position.
+  - Synthetic fills use calculated reconciliation prices to target correct average positions.
   - See [Partial window adjustment scenarios](#partial-window-adjustment-scenarios) for details.
-- **Exception Handling**:
+- **Exception handling**:
   - Individual adapter failures do not abort the entire reconciliation process.
-  - Missing order status reports are handled gracefully when fill reports arrive first.
+  - Fill reports arriving before order status reports are deferred until order state is available.
 
-If reconciliation fails, the system will not continue to start, and an error will be logged.
+If reconciliation fails, the system logs an error and does not start.
 
 ### Common reconciliation scenarios
 
-The scenarios below are split between startup reconciliation (mass status) and runtime/continuous checks (in-flight order checks, open-order polls, and own-books audits).
+The tables below cover startup reconciliation (mass status) and runtime checks (in-flight order checks, open-order polls, own-books audits).
 
 #### Startup reconciliation
 
-| Scenario                               | Description                                                                                       | System behavior                                                                  |
-|----------------------------------------|---------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
-| **Order state discrepancy**            | Local order state differs from venue (e.g., local shows `SUBMITTED`, venue shows `REJECTED`).     | Updates local order to match venue state and emits missing events.               |
-| **Missed fills**                       | Venue fills an order but the engine misses the fill event.                                        | Generates missing `OrderFilled` events.                                          |
-| **Multiple fills**                     | Order has multiple partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                           |
-| **External orders**                    | Orders exist on venue but not in local cache (placed externally or from another system).          | Creates orders from venue reports with strategy ID `EXTERNAL` and tag `VENUE`.   |
-| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                                    | Updates order state to `CANCELED` while preserving fill history.                 |
-| **Different fill data**                | Venue reports different fill price/commission than cached.                                        | Preserves cached fill data; logs discrepancies from reports.                     |
-| **Filtered orders**                    | Orders marked for filtering via configuration.                                                    | Skips reconciliation based on `filtered_client_order_ids` or instrument filters. |
-| **Duplicate order reports**            | Multiple orders with same identifier in venue reports.                                            | Deduplicated with warning logged.                                                |
-| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY LIMIT order with calculated price when `generate_missing_orders=True`.  |
-| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`. |
-| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.             |
-| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position. |
-| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".              | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
+| Scenario                               | Description                                                                              | System behavior                                                                 |
+|----------------------------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).              | Updates local order to match venue state, emits missing events.                 |
+| **Missed fills**                       | Venue filled an order but the engine missed the event.                                   | Generates missing `OrderFilled` events.                                         |
+| **Multiple fills**                     | Order has partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                          |
+| **External orders**                    | Orders exist on venue but not in local cache.                                            | Creates orders with strategy ID `EXTERNAL` and tag `VENUE`.                     |
+| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                           | Updates state to `CANCELED`, preserves fill history.                            |
+| **Different fill data**                | Venue reports different fill price/commission than cached.                               | Preserves cached data, logs discrepancies.                                      |
+| **Filtered orders**                    | Orders marked for filtering via config.                                                  | Skips based on `filtered_client_order_ids` or instrument filters.               |
+| **Duplicate order reports**            | Multiple orders share the same identifier.                                               | Deduplicates with warning logged.                                               |
+| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                            | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.  |
+| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                         | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`. |
+| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long).          | Generates opposite-side LIMIT order with calculated price.                      |
+| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).           | Generates LIMIT order to close internal and open external position.             |
+| **Internal reconciliation orders**     | Orders with strategy ID `EXTERNAL` and tag `RECONCILIATION`.                             | Never filtered, regardless of `filter_unclaimed_external_orders`.               |
 
-#### Runtime/continuous checks
+#### Runtime checks
 
-| Scenario                               | Description                                                                 | System behavior                                                                                                        |
-|----------------------------------------|-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
-| **In-flight order timeout**            | In-flight order remains unconfirmed beyond threshold.                       | After `inflight_check_retries`, resolves to `REJECTED` to maintain consistent state.                                   |
-| **Open orders check discrepancy**      | Periodic open-orders poll detects a state change at the venue.              | At `open_check_interval_secs`, confirms status (respecting `open_check_open_only`) and applies transitions if changed. |
-| **Own books audit mismatch**           | Own order books diverge from venue public books.                            | At `own_books_audit_interval_secs`, audits and logs inconsistencies for investigation.                                 |
+| Scenario                          | Description                                             | System behavior                                                        |
+|-----------------------------------|---------------------------------------------------------|------------------------------------------------------------------------|
+| **In-flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                |
+| **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions. |
+| **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.       |
 
 ### Common reconciliation issues
 
-- **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
-- **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
-- **Duplicate order IDs**: Duplicate client order IDs or trade IDs in mass status reports are deduplicated with warnings logged. Multiple duplicates may indicate venue data integrity issues.
-- **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
+- **Missing trade reports**: Some venues filter out older trades. Increase `reconciliation_lookback_mins` or cache all events locally.
+- **Position mismatches**: External orders that predate the lookback window cause position drift. Flatten the account before restarting to reset state.
+- **Duplicate order IDs**: Deduplicated with warnings logged. Frequent duplicates may indicate venue data integrity issues.
+- **Precision differences**: Small decimal differences are handled using instrument precision. Large discrepancies may indicate missing orders.
 - **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
 
 :::tip
-For persistent reconciliation issues, consider dropping cached state or flattening accounts before system restart.
+For persistent issues, drop cached state or flatten accounts before restarting.
 :::
 
 ### Reconciliation invariants
 
-The reconciliation system maintains the following invariants to ensure position accuracy:
+The reconciliation system maintains three invariants:
 
-1. **Position quantity accuracy**: The system ensures the final position quantity matches the venue exactly (within instrument precision).
-2. **Average entry price accuracy**: The system ensures the position's average entry price matches the venue's reported average price (within configured tolerance, default 0.01%).
-3. **PnL calculation integrity**: All generated fills (including synthetic fills) use calculated prices that preserve correct unrealized PnL based on venue position data.
+1. **Position quantity**: the final quantity matches the venue within instrument precision.
+2. **Average entry price**: the position's average entry price matches the venue's reported price within tolerance (default 0.01%).
+3. **PnL integrity**: all generated fills, including synthetic fills, use calculated prices that preserve correct unrealized PnL.
 
-These invariants are maintained even when:
+These hold even when:
 
-- The reconciliation window doesn't capture complete fill history.
+- The reconciliation window misses complete fill history.
 - Fills are missing from venue reports.
 - Position lifecycles span beyond the lookback window.
-- Multiple position flips (zero-crossings) have occurred.
+- Multiple zero-crossings have occurred.
 
 ### Partial window adjustment scenarios
 
-When the reconciliation window doesn't capture complete position history (limited `reconciliation_lookback_mins`),
-the system analyzes position lifecycles from fills - and applies adjustments to ensure accurate position reconstruction while maintaining the reconciliation invariants.
+When `reconciliation_lookback_mins` limits the window, the system analyzes position lifecycles
+from fills and adjusts to reconstruct positions accurately.
 
-| Scenario                                   | Description                                                                                                           | System behavior |
-|--------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|-----------------|
-| **Complete lifecycle**                     | All fills from position opening to current state are captured within the window.                                      | No adjustment - fills returned unchanged. |
-| **Incomplete single lifecycle**            | Window misses opening fills, but no zero-crossings detected (position accumulated in one direction).                  | Adds synthetic opening fill at the beginning with calculated price to achieve target average position. |
-| **Multiple lifecycles - current matches**  | Zero-crossings detected, current lifecycle (after last zero-crossing) matches venue position.                         | Filters out old lifecycles - returns only fills from current lifecycle (after last zero-crossing). |
-| **Multiple lifecycles - current mismatch** | Zero-crossings detected, current lifecycle doesn't match venue position (window missed some current lifecycle fills). | Replaces entire current lifecycle with single synthetic fill reflecting venue position. |
-| **Flat position**                          | Venue reports FLAT position regardless of fill history.                                                               | No adjustment - fills returned unchanged. |
-| **No fills**                               | Reconciliation window contains no fill reports.                                                                       | No adjustment - empty result. |
+| Scenario                                   | Description                                                                  | System behavior                                                             |
+|--------------------------------------------|------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| **Complete lifecycle**                     | All fills from opening to current state are captured.                        | No adjustment.                                                              |
+| **Incomplete single lifecycle**            | Window misses opening fills, no zero-crossings.                              | Adds synthetic opening fill with calculated price.                          |
+| **Multiple lifecycles, current matches**   | Zero-crossings detected, current lifecycle matches venue.                    | Filters out old lifecycles, returns current only.                           |
+| **Multiple lifecycles, current mismatch**  | Zero-crossings detected, current lifecycle differs from venue.               | Replaces current lifecycle with a single synthetic fill.                    |
+| **Flat position**                          | Venue reports FLAT regardless of fill history.                               | No adjustment.                                                              |
+| **No fills**                               | Window contains no fill reports.                                             | No adjustment, empty result.                                                |
 
 **Key concepts:**
 
-- **Zero-crossing**: When position quantity crosses through zero (FLAT), marking the boundary between separate position lifecycles.
-- **Lifecycle**: A sequence of fills between zero-crossings representing a continuous position open-close cycle.
-- **Synthetic fill**: A calculated fill report created by the system to represent missing trading activity, using reconciliation price calculations to achieve correct average positions.
-- **Tolerance**: Position matching uses configurable price tolerance (default: 0.0001 = 0.01% relative difference) to account for minor calculation differences.
+- **Zero-crossing**: position quantity crosses through zero (FLAT), marking a lifecycle boundary.
+- **Lifecycle**: a sequence of fills between zero-crossings representing one open-close cycle.
+- **Synthetic fill**: a calculated fill report representing missing activity, priced to achieve the correct average position.
+- **Tolerance**: position matching uses configurable price tolerance (default 0.0001 = 0.01%) to absorb minor calculation differences.
 
 ## Related guides
 
-- [Adapters](adapters.md) - Venue connectivity for live trading.
+- [Adapters](adapters.md) - Venue connectivity.
 - [Execution](execution.md) - Order execution in live environments.
-- [Backtesting](backtesting.md) - Test strategies before live deployment.
+- [Backtesting](backtesting.md) - Testing strategies before deployment.

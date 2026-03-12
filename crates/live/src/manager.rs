@@ -32,7 +32,10 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, nanos_to_millis},
+    datetime::{
+        NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, mins_to_nanos, mins_to_secs,
+        nanos_to_millis,
+    },
 };
 use nautilus_execution::{
     engine::ExecutionEngine,
@@ -246,7 +249,7 @@ impl ExecutionManagerConfig {
 
 /// Execution report for continuous reconciliation.
 /// This is a simplified report type used during runtime reconciliation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExecutionReport {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
@@ -337,6 +340,12 @@ impl ExecutionManager {
             position_recon_retries: AHashMap::new(),
             recent_fills_cache: AHashMap::new(),
         }
+    }
+
+    /// Returns the current clock timestamp in nanoseconds.
+    #[must_use]
+    pub fn generate_timestamp_ns(&self) -> UnixNanos {
+        self.clock.borrow().timestamp_ns()
     }
 
     /// Reconciles orders and fills from a mass status report.
@@ -430,7 +439,7 @@ impl ExecutionManager {
                     continue;
                 }
 
-                if let Some(mut order) = self.get_order(client_order_id) {
+                if let Some(order) = self.get_order(client_order_id) {
                     let instrument = self.get_instrument(&report.instrument_id);
                     log::info!(
                         color = LogColor::Blue as u8;
@@ -447,7 +456,7 @@ impl ExecutionManager {
                         .map(|f| f.iter().collect())
                         .unwrap_or_default();
                     let order_events = self.reconcile_order_with_fills(
-                        &mut order,
+                        &order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -470,8 +479,7 @@ impl ExecutionManager {
                     ) {
                         log::warn!("Failed to add venue order ID index: {e}");
                     }
-                } else if let Some(mut order) =
-                    self.get_order_by_venue_order_id(&report.venue_order_id)
+                } else if let Some(order) = self.get_order_by_venue_order_id(&report.venue_order_id)
                 {
                     // Fallback: match by venue_order_id
                     let instrument = self.get_instrument(&report.instrument_id);
@@ -491,7 +499,7 @@ impl ExecutionManager {
                         .map(|f| f.iter().collect())
                         .unwrap_or_default();
                     let order_events = self.reconcile_order_with_fills(
-                        &mut order,
+                        &order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -548,8 +556,7 @@ impl ExecutionManager {
                         orders_skipped_no_instrument += 1;
                     }
                 }
-            } else if let Some(mut order) = self.get_order_by_venue_order_id(&report.venue_order_id)
-            {
+            } else if let Some(order) = self.get_order_by_venue_order_id(&report.venue_order_id) {
                 // Fallback: match by venue_order_id
                 let instrument = self.get_instrument(&report.instrument_id);
                 log::info!(
@@ -567,7 +574,7 @@ impl ExecutionManager {
                     .map(|f| f.iter().collect())
                     .unwrap_or_default();
                 let order_events = self.reconcile_order_with_fills(
-                    &mut order,
+                    &order,
                     report,
                     &order_fills,
                     instrument.as_ref(),
@@ -681,14 +688,14 @@ impl ExecutionManager {
                 continue;
             }
 
-            if let Some(mut order) = order {
+            if let Some(order) = order {
                 let instrument_id = order.instrument_id();
                 if let Some(instrument) = self.get_instrument(&instrument_id) {
                     let mut sorted_fills: Vec<&FillReport> = fills.iter().collect();
                     sorted_fills.sort_by_key(|f| f.ts_event);
 
                     for fill in sorted_fills {
-                        if let Some(event) = self.create_order_fill(&mut order, fill, &instrument) {
+                        if let Some(event) = self.create_order_fill(&order, fill, &instrument) {
                             fills_applied += 1;
                             events.push(event);
                         }
@@ -700,7 +707,7 @@ impl ExecutionManager {
         events.sort_by_key(|e| e.ts_event());
 
         for event in &events {
-            exec_engine.borrow_mut().process(event.clone());
+            exec_engine.borrow_mut().process(event);
         }
 
         let mut positions_created = 0usize;
@@ -753,7 +760,7 @@ impl ExecutionManager {
                         &positions_with_fills,
                     ) {
                         for event in position_events {
-                            exec_engine.borrow_mut().process(event.clone());
+                            exec_engine.borrow_mut().process(&event);
                             events.push(event);
                         }
                         positions_created += 1;
@@ -906,7 +913,7 @@ impl ExecutionManager {
     /// A vector of order events generated to reconcile discrepancies.
     pub async fn check_open_orders(
         &mut self,
-        clients: &[Rc<dyn ExecutionClient>],
+        clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking order consistency between cached-state and venues");
 
@@ -939,13 +946,19 @@ impl ExecutionManager {
         let mut all_reports = Vec::new();
         let mut venue_reported_ids = AHashSet::new();
 
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let start = self.config.open_check_lookback_mins.map(|mins| {
+            let lookback_ns = mins_to_nanos(mins);
+            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
+        });
+
         for client in clients {
             let mut cmd = GenerateOrderStatusReports::new(
                 UUID4::new(),
-                self.clock.borrow().timestamp_ns(),
-                true, // open_only
+                ts_now,
+                self.config.open_check_open_only,
                 None, // instrument_id - query all
-                None, // start
+                start,
                 None, // end
                 None, // params
                 None, // correlation_id
@@ -1000,12 +1013,21 @@ impl ExecutionManager {
             }
         }
 
-        // Handle orders missing at venue
+        // Handle orders missing at venue (skip in open_only mode where the
+        // venue response may omit recently closed orders). When a lookback
+        // window is set, only consider orders within that window so older
+        // GTC orders outside the query range are not falsely marked missing.
         if !self.config.open_check_open_only {
-            let cached_ids: AHashSet<ClientOrderId> = filtered_orders
-                .iter()
-                .map(|o| o.client_order_id())
-                .collect();
+            let candidates: Vec<&OrderAny> = if let Some(cutoff) = start {
+                filtered_orders
+                    .iter()
+                    .filter(|o| o.ts_last() >= cutoff)
+                    .collect()
+            } else {
+                filtered_orders.iter().collect()
+            };
+            let cached_ids: AHashSet<ClientOrderId> =
+                candidates.iter().map(|o| o.client_order_id()).collect();
             let missing_at_venue: AHashSet<ClientOrderId> = cached_ids
                 .difference(&venue_reported_ids)
                 .copied()
@@ -1030,7 +1052,7 @@ impl ExecutionManager {
     /// A vector of fill events generated to reconcile position discrepancies.
     pub async fn check_positions_consistency(
         &mut self,
-        clients: &[Rc<dyn ExecutionClient>],
+        clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
 
@@ -1215,7 +1237,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let buffer_secs = (buffer_mins as u64) * 60;
+        let buffer_secs = mins_to_secs(buffer_mins as u64);
 
         self.cache
             .borrow_mut()
@@ -1229,7 +1251,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let buffer_secs = (buffer_mins as u64) * 60;
+        let buffer_secs = mins_to_secs(buffer_mins as u64);
 
         self.cache
             .borrow_mut()
@@ -1243,7 +1265,7 @@ impl ExecutionManager {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let lookback_secs = (lookback_mins as u64) * 60;
+        let lookback_secs = mins_to_secs(lookback_mins as u64);
 
         self.cache
             .borrow_mut()
@@ -2074,7 +2096,7 @@ impl ExecutionManager {
     /// to ensure correct state transitions (matching Python behavior).
     fn reconcile_order_with_fills(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         report: &OrderStatusReport,
         fills: &[&FillReport],
         instrument: Option<&InstrumentAny>,
@@ -2261,7 +2283,7 @@ impl ExecutionManager {
             generate_external_order_status_events(&order, report, account_id, instrument, ts_now);
 
         if !fills.is_empty() {
-            let mut cached_order = self.get_order(&client_order_id).unwrap();
+            let cached_order = self.get_order(&client_order_id).unwrap();
             let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
             sorted_fills.sort_by_key(|f| f.ts_event);
 
@@ -2270,7 +2292,7 @@ impl ExecutionManager {
                     let terminal_event = order_events.pop();
                     for fill in sorted_fills {
                         if let Some(fill_event) =
-                            self.create_order_fill(&mut cached_order, fill, instrument)
+                            self.create_order_fill(&cached_order, fill, instrument)
                         {
                             order_events.push(fill_event);
                         }
@@ -2292,7 +2314,7 @@ impl ExecutionManager {
                     let mut real_fill_total = Decimal::ZERO;
                     for fill in &sorted_fills {
                         if let Some(fill_event) =
-                            self.create_order_fill(&mut cached_order, fill, instrument)
+                            self.create_order_fill(&cached_order, fill, instrument)
                         {
                             real_fill_total += fill.last_qty.as_decimal();
                             order_events.push(fill_event);
@@ -2480,7 +2502,7 @@ impl ExecutionManager {
 
     fn create_order_fill(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         fill: &FillReport,
         instrument: &InstrumentAny,
     ) -> Option<OrderEventAny> {

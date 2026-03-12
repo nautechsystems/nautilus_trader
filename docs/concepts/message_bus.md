@@ -1,8 +1,8 @@
 # Message Bus
 
-The `MessageBus` is a fundamental part of the platform, enabling communication between system components
-through message passing. This design creates a loosely coupled architecture where components can interact
-without direct dependencies.
+The `MessageBus` enables communication between system components through message passing.
+This design creates a loosely coupled architecture where components interact without
+direct dependencies.
 
 The *messaging patterns* include:
 
@@ -42,7 +42,7 @@ self.msgbus.publish("MyTopic", "MyMessage")
 ## Messaging styles
 
 NautilusTrader is an **event-driven** framework where components communicate by sending and receiving messages.
-Understanding the different messaging styles is crucial for building effective trading systems.
+Understanding the different messaging styles helps when building trading systems.
 
 This guide explains the three primary messaging patterns available in NautilusTrader:
 
@@ -52,8 +52,7 @@ This guide explains the three primary messaging patterns available in NautilusTr
 | **Actor-Based - Publish/Subscribe Data**     | Structured trading data exchange            | Trading metrics, indicators, data needing persistence |
 | **Actor-Based - Publish/Subscribe Signal**   | Lightweight notifications                   | Simple alerts, flags, status updates                  |
 
-Each approach serves different purposes and offers unique advantages. This guide will help you decide which messaging
-pattern to use in your NautilusTrader applications.
+Each approach serves different purposes. This section helps you decide which pattern to use.
 
 ### MessageBus publish/subscribe to topics
 
@@ -114,9 +113,9 @@ This approach provides a way to exchange trading specific data between `Actor`s 
 (note: each `Strategy` inherits from `Actor`). It inherits from `Data`, which ensures proper timestamping
 and ordering of events - crucial for correct backtest processing.
 
-#### Key Benefits and Use Cases
+#### Key benefits and use cases
 
-The Data publish/subscribe approach excels when you need:
+The Data publish/subscribe approach works well when you need:
 
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
 - **Proper event ordering** via built-in timestamps (`ts_event`, `ts_init`) crucial for backtest accuracy.
@@ -174,9 +173,9 @@ def on_data(self, data: Data):
 **Signals** are a lightweight way to publish and subscribe to simple notifications within the actor framework.
 This is the simplest messaging approach, requiring no custom class definitions.
 
-#### Key Benefits and Use Cases
+#### Key benefits and use cases
 
-The Signal messaging approach shines when you need:
+The Signal messaging approach works well when you need:
 
 - **Simple, lightweight notifications/alerts** like "RiskThresholdExceeded" or "TrendUp".
 - **Quick, on-the-fly messaging** without defining custom classes.
@@ -263,9 +262,7 @@ Under the hood, when a backing database (or any other compatible technology) is 
 all outgoing messages are first serialized, then transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a separate thread (implemented in Rust).
 In this separate thread, the message is written to its final destination, which is presently Redis streams.
 
-This design is primarily driven by performance considerations. By offloading the I/O operations to a separate thread,
-we ensure that the main thread remains unblocked and can continue its tasks without being hindered by the potentially
-time-consuming operations involved in interacting with a database or client.
+Offloading I/O to a separate thread keeps the main thread unblocked.
 
 ### Serialization
 

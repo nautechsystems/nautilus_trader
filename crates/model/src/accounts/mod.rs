@@ -19,6 +19,7 @@ pub mod any;
 pub mod base;
 pub mod cash;
 pub mod margin;
+pub mod margin_model;
 
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;

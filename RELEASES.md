@@ -1,3 +1,68 @@
+# NautilusTrader 1.225.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added option chains and greeks in Rust (#3637), thanks @filipmacek
+- Added option chains and greeks in Python (#3677), thanks @filipmacek
+- Added custom data registration, persistence, and routing in Rust (#3542), thanks @faysou
+- Added Databento Arrow serialization for imbalance and statistics (#3689), thanks for reporting @GianC0
+- Added Hyperliquid agent wallet support (#3668), thanks @oh92
+
+### Breaking Changes
+- Renamed `OrderEvent.kind()` to `type_name()` in Rust
+- Renamed instrument `type_str` PyO3 getter to `type_name`
+
+### Security
+- Hardened Docker Compose to bind all ports to localhost and add `no-new-privileges` to all services
+- Upgraded all `nautilustrader.io` URLs from HTTP to HTTPS (#3686), thanks @04cb
+
+### Fixes
+- Fixed `PRICE_UNDEF` panic in `OrderBookDelta.to_pyo3_list` Cython conversion (#3697), thanks @zshuang15
+- Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom
+- Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
+- Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
+- Fixed time bar historical event deferral (#3698), thanks @faysou
+- Fixed `SimulatedExchange` account balance adjustment mutation (#3704), thanks for reporting @thaning0
+- Fixed Sandbox reconciliation missing `account_id` (#3705), thanks for reporting @eliotOrderson
+- Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
+- Fixed Binance algo order update (#3665), thanks @qu1zzyboy
+- Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
+- Fixed Databento price precision truncation for fractional tick sizes (#3696), thanks @pandashark
+- Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
+- Fixed Interactive Brokers docs `request_ticks` API and add contract example (#3699), thanks @faysou
+- Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
+
+### Internal Improvements
+- Added `SpreadQuoteAggregator` (#3698), thanks @faysou
+- Added Python strategy support to v2 `LiveNode` with `add_strategy_from_config`
+- Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
+- Refactored computation of greeks (#3691), thanks @faysou
+- Refactored Polymarket HTTP client and improved outcome enum (#3702), thanks @filipmacek
+- Improved socket clients reconnect and shutdown reliability
+- Improved Databento live price precision handling with maps populated from instrument definitions
+- Refined `AtomicTime` mode switching and datetime panics
+- Standardized `type_name()` across order events and instruments
+- Optimized network client performance and add benchmarks
+- Upgraded Rust (MSRV) to 1.94.0
+- Upgraded `databento` crate to v0.43.0
+- Upgraded `redis` crate to v1.0.5
+- Upgraded `tokio` crate to v1.50.0
+
+### Documentation
+- Added Options concept guide with chain architecture, subscription API, strike filtering, and snapshot modes
+- Added Greeks concept guide covering venue-provided and local calculator paths
+- Added adapter developer guide sections for WS unit tests, close/stream patterns, and split-client architecture
+- Added Interactive brokers docs `request_ticks` API fix and contract example (#3699), thanks @faysou
+- Rewrote Live Trading concept guide for accuracy (reconciliation, periodic timers, lookback windows)
+- Rewrote Custom Data architecture docs for two-mode (Rust/Python) registration
+- Improved Value Types concept guide with full arithmetic operator and unary operation docs
+- Improved accuracy of Greeks and Options concept guides, thanks @faysou
+- Migrated Python API reference from sphinx-markdown-builder to Sphinx HTML with Furo theme
+- Updated all API reference links to Sphinx HTML paths
+
+---
+
 # NautilusTrader 1.224.0 Beta
 
 Released on 3rd March 2026 (UTC).

@@ -285,7 +285,7 @@ mod tests {
         // Add position to cache
         cache
             .borrow_mut()
-            .add_position(position.clone(), OmsType::Hedging)
+            .add_position(&position, OmsType::Hedging)
             .unwrap();
 
         let position_id = ids_generator.get_position_id(&market_order_buy, None);
@@ -319,7 +319,7 @@ mod tests {
         cache
             .as_ref()
             .borrow_mut()
-            .add_position(position.clone(), OmsType::Netting)
+            .add_position(&position, OmsType::Netting)
             .unwrap();
 
         // position id should be returned for the existing position

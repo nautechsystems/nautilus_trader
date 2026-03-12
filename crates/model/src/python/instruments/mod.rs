@@ -71,8 +71,9 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
 /// # Errors
 ///
 /// Returns a `PyErr` if extraction fails or the instrument type is unsupported.
+#[allow(clippy::needless_pass_by_value)]
 pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult<InstrumentAny> {
-    match instrument.getattr(py, "type_str")?.extract::<&str>(py)? {
+    match instrument.getattr(py, "type_name")?.extract::<&str>(py)? {
         stringify!(BettingInstrument) => Ok(InstrumentAny::Betting(
             instrument.extract::<BettingInstrument>(py)?,
         )),

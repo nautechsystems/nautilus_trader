@@ -232,6 +232,7 @@ def _create_ws_mock() -> MagicMock:
     mock.get_subscriptions = MagicMock(return_value=[])
     mock.subscribe_orders = AsyncMock()
     mock.subscribe_orders_algo = AsyncMock()
+    mock.subscribe_algo_advance = AsyncMock()
     mock.subscribe_fills = AsyncMock()
     mock.subscribe_account = AsyncMock()
     mock.batch_cancel_orders = AsyncMock()

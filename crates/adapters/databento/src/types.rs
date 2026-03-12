@@ -13,16 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{collections::HashMap, ffi::c_char, sync::Arc};
 
 use databento::dbn;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    data::{HasTsInit, custom::CustomDataTrait},
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
@@ -75,7 +76,7 @@ pub struct DatabentoPublisher {
         from_py_object
     )
 )]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DatabentoImbalance {
     // The instrument ID for the imbalance data.
     pub instrument_id: InstrumentId,
@@ -102,6 +103,20 @@ pub struct DatabentoImbalance {
 }
 
 impl DatabentoImbalance {
+    /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata.insert("size_precision".to_string(), size_precision.to_string());
+        metadata
+    }
+
     /// Creates a new [`DatabentoImbalance`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
@@ -134,6 +149,56 @@ impl DatabentoImbalance {
     }
 }
 
+impl HasTsInit for DatabentoImbalance {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl CustomDataTrait for DatabentoImbalance {
+    fn type_name(&self) -> &'static str {
+        "DatabentoImbalance"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+        Arc::new(self.clone())
+    }
+
+    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+        if let Some(o) = other.as_any().downcast_ref::<Self>() {
+            self == o
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
+    }
+
+    fn type_name_static() -> &'static str {
+        "DatabentoImbalance"
+    }
+
+    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
+        let parsed: Self = serde_json::from_value(value)?;
+        Ok(Arc::new(parsed))
+    }
+}
+
 /// Represents a market statistics snapshot.
 ///
 /// This data type includes the populated data fields provided by `Databento`,
@@ -145,7 +210,7 @@ impl DatabentoImbalance {
         from_py_object
     )
 )]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DatabentoStatistics {
     // The instrument ID for the statistics message.
     pub instrument_id: InstrumentId,
@@ -176,6 +241,20 @@ pub struct DatabentoStatistics {
 }
 
 impl DatabentoStatistics {
+    /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata.insert("size_precision".to_string(), size_precision.to_string());
+        metadata
+    }
+
     /// Creates a new [`DatabentoStatistics`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
@@ -209,5 +288,55 @@ impl DatabentoStatistics {
             ts_recv,
             ts_init,
         }
+    }
+}
+
+impl HasTsInit for DatabentoStatistics {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl CustomDataTrait for DatabentoStatistics {
+    fn type_name(&self) -> &'static str {
+        "DatabentoStatistics"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+        Arc::new(self.clone())
+    }
+
+    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+        if let Some(o) = other.as_any().downcast_ref::<Self>() {
+            self == o
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
+    }
+
+    fn type_name_static() -> &'static str {
+        "DatabentoStatistics"
+    }
+
+    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
+        let parsed: Self = serde_json::from_value(value)?;
+        Ok(Arc::new(parsed))
     }
 }

@@ -27,7 +27,7 @@ impl KrakenDataClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "KRAKEN"
     }
 }
@@ -40,7 +40,7 @@ impl KrakenExecutionClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "KRAKEN"
     }
 }

@@ -176,6 +176,9 @@ pub struct GammaMarket {
     /// URL slug.
     #[serde(rename = "slug")]
     pub market_slug: Option<String>,
+    /// Whether the market uses neg-risk CTF exchange.
+    #[serde(rename = "negRisk")]
+    pub neg_risk: Option<bool>,
 }
 
 /// Tick size response from CLOB `GET /tick-size`.
@@ -212,7 +215,7 @@ mod tests {
         assert_eq!(order.status, PolymarketOrderStatus::Live);
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.order_type, PolymarketOrderType::GTC);
-        assert_eq!(order.outcome, PolymarketOutcome::Yes);
+        assert_eq!(order.outcome, PolymarketOutcome::yes());
         assert_eq!(order.original_size, dec!(100.0000));
         assert_eq!(order.price, dec!(0.5000));
         assert_eq!(order.size_matched, dec!(25.0000));
@@ -228,7 +231,7 @@ mod tests {
         assert_eq!(order.status, PolymarketOrderStatus::Matched);
         assert_eq!(order.side, PolymarketOrderSide::Sell);
         assert_eq!(order.order_type, PolymarketOrderType::FOK);
-        assert_eq!(order.outcome, PolymarketOutcome::No);
+        assert_eq!(order.outcome, PolymarketOutcome::no());
         assert_eq!(order.size_matched, dec!(50.0000));
         assert_eq!(order.expiration, Some("1735689600".to_string()));
         assert!(order.associate_trades.is_none());
@@ -256,7 +259,7 @@ mod tests {
         assert_eq!(trade.fee_rate_bps, dec!(0));
         assert_eq!(trade.price, dec!(0.5000));
         assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
-        assert_eq!(trade.outcome, PolymarketOutcome::Yes);
+        assert_eq!(trade.outcome, PolymarketOutcome::yes());
         assert_eq!(trade.bucket_index, 0);
         assert_eq!(trade.trader_side, PolymarketLiquiditySide::Taker);
         assert_eq!(trade.maker_orders.len(), 2);
@@ -270,7 +273,7 @@ mod tests {
         assert_eq!(first.matched_amount, dec!(25.0000));
         assert_eq!(first.fee_rate_bps, dec!(0));
         assert_eq!(first.price, dec!(0.5000));
-        assert_eq!(first.outcome, PolymarketOutcome::Yes);
+        assert_eq!(first.outcome, PolymarketOutcome::yes());
 
         let second = &trade.maker_orders[1];
         assert_eq!(second.fee_rate_bps, dec!(10));

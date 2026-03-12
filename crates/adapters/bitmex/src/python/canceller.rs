@@ -95,7 +95,7 @@ impl CancelBroadcaster {
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.cache_instrument(inst_any);
+        self.cache_instrument(&inst_any);
         Ok(())
     }
 

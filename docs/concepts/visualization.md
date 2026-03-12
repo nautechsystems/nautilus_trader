@@ -1,13 +1,12 @@
 # Visualization
 
 NautilusTrader provides interactive HTML tearsheets for analyzing backtest results through
-an extensible visualization system built on Plotly. The system emphasizes configurability
-and extensibility, allowing you to generate performance reports with minimal
-code while maintaining the flexibility to add custom charts and themes.
+an extensible visualization system built on Plotly. You can generate reports with minimal
+code and add custom charts and themes.
 
 ## Overview
 
-The visualization system is built on three core pillars:
+The visualization system has three parts:
 
 1. **Chart Registry** - Decoupled chart definitions that can be extended with custom visualizations.
 2. **Theme System** - Consistent styling with built-in and custom themes.
@@ -271,7 +270,7 @@ heights `[0.50, 0.22, 0.16, 0.12]` to give more space to the top row tables.
 
 ## Custom charts
 
-The registry pattern makes adding custom charts straightforward. Charts are functions that
+The registry pattern lets you add custom charts. Charts are functions that
 render traces onto a Plotly figure object.
 
 ### Registering a custom chart

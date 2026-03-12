@@ -3231,8 +3231,11 @@ cdef class SimulatedExchange:
             )
             return
 
-        balance.total = balance.total + adjustment
-        balance.free = balance.free + adjustment
+        cdef AccountBalance new_balance = AccountBalance(
+            total=balance.total.add(adjustment),
+            locked=balance.locked,
+            free=balance.free.add(adjustment),
+        )
 
         cdef list[MarginBalance] margins = []
         if account.is_margin_account:
@@ -3240,7 +3243,7 @@ cdef class SimulatedExchange:
 
         # Generate and handle event
         self.exec_client.generate_account_state(
-            balances=[balance],
+            balances=[new_balance],
             margins=margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),

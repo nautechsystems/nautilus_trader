@@ -2793,7 +2793,7 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
     account_id: AccountId,
 ) {
     let config = OrderMatchingEngineConfig::new(
-        false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false, false,
     )
     .with_price_protection_points(Some(600));
 
@@ -2862,7 +2862,7 @@ fn test_process_stop_orders_with_protection_both_accepted(
     // With trigger-time semantics, stop orders don't require bid/ask at submission
     // Protection is computed when the stop triggers
     let config = OrderMatchingEngineConfig::new(
-        false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false, false,
     )
     .with_price_protection_points(Some(600));
 
@@ -5668,7 +5668,7 @@ fn test_settlement_price_used_on_contract_expiration(
     let position = Position::new(&instrument_es, fill);
     cache
         .borrow_mut()
-        .add_position(position, OmsType::Netting)
+        .add_position(&position, OmsType::Netting)
         .unwrap();
 
     clear_order_event_handler_messages(&order_event_handler);

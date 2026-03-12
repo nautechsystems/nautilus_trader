@@ -17,13 +17,11 @@
 //!
 //! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance`
 //!
-//! Requires environment variables:
-//! - BINANCE_API_KEY: Your Binance API key
-//! - BINANCE_API_SECRET: Your Binance API secret
-//!
-//! Optional environment variables (for SBE data streams):
-//! - BINANCE_ED25519_API_KEY
-//! - BINANCE_ED25519_API_SECRET
+//! Requires environment variables based on the configured environment
+//! (Ed25519 keys are auto-detected):
+//! - Mainnet: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+//! - Testnet: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+//! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
 
 use nautilus_binance::{
     common::enums::{BinanceEnvironment, BinanceProductType},
@@ -60,6 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_types: vec![BinanceProductType::Spot],
+        environment: BinanceEnvironment::Mainnet,
         ..Default::default()
     };
 

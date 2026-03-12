@@ -421,7 +421,7 @@ async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::err
 
     run_all_edge_tests(
         &mut grpc_client,
-        &mut account,
+        &account,
         &wallet_address,
         &http_client,
         &raw_http,
@@ -432,7 +432,7 @@ async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::err
 
 async fn run_all_edge_tests(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     address: &str,
     http: &DydxHttpClient,
     raw_http: &DydxRawHttpClient,
@@ -670,7 +670,7 @@ async fn test_duplicate_cancel(
 
 async fn test_rapid_sequence(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     http: &DydxHttpClient,
     _raw_http: &DydxRawHttpClient,
     address: &str,
@@ -721,7 +721,7 @@ async fn test_rapid_sequence(
 
 async fn test_batch_cancel(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     http: &DydxHttpClient,
     raw_http: &DydxRawHttpClient,
     address: &str,

@@ -16,7 +16,6 @@
 //! Python bindings for Strategy with complete order and position management.
 
 use std::{
-    any::Any,
     cell::{RefCell, UnsafeCell},
     collections::HashMap,
     fmt::Debug,
@@ -46,15 +45,15 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::{BookType, OmsType, OrderSide, PositionSide, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderExpired,
-        OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
-        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
-        PositionChanged, PositionClosed, PositionOpened,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
+        OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
         AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
@@ -186,6 +185,7 @@ impl StrategyConfig {
 #[pyo3::pymethods]
 impl ImportableStrategyConfig {
     #[new]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_new(strategy_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
         let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
             let kwargs = PyDict::new(py);
@@ -252,6 +252,7 @@ impl Debug for PyStrategyInner {
     }
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 impl PyStrategyInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
@@ -453,16 +454,48 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    // TODO: Position events don't have PyO3 bindings yet, so these are stubbed
-    fn dispatch_on_position_opened(&self, _event: PositionOpened) -> PyResult<()> {
+    fn dispatch_on_order_canceled(&self, event: OrderCanceled) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_canceled", (event.into_py_any_unwrap(py),))
+            })?;
+        }
         Ok(())
     }
 
-    fn dispatch_on_position_changed(&self, _event: PositionChanged) -> PyResult<()> {
+    fn dispatch_on_order_filled(&self, event: OrderFilled) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_filled", (event.into_py_any_unwrap(py),))
+            })?;
+        }
         Ok(())
     }
 
-    fn dispatch_on_position_closed(&self, _event: PositionClosed) -> PyResult<()> {
+    fn dispatch_on_position_opened(&self, event: PositionOpened) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_position_opened", (event.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_position_changed(&self, event: PositionChanged) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_position_changed", (event.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_position_closed(&self, event: PositionClosed) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_position_closed", (event.into_py_any_unwrap(py),))
+            })?;
+        }
         Ok(())
     }
 
@@ -718,9 +751,9 @@ impl DataActor for PyStrategyInner {
     }
 
     #[allow(unused_variables)]
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
         Python::attach(|py| {
-            let py_data = py.None();
+            let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
         })
@@ -788,6 +821,16 @@ impl DataActor for PyStrategyInner {
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         self.dispatch_on_instrument_close(*update)
             .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+    }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
+        self.dispatch_on_order_filled(*event)
+            .map_err(|e| anyhow::anyhow!("Python on_order_filled failed: {e}"))
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
+        self.dispatch_on_order_canceled(*event)
+            .map_err(|e| anyhow::anyhow!("Python on_order_canceled failed: {e}"))
     }
 }
 
@@ -940,16 +983,28 @@ impl PyStrategy {
 
 #[pyo3::pymethods]
 impl PyStrategy {
+    /// Creates a new [`PyStrategy`] instance.
+    ///
+    /// Accepts `None` or any Python object. If the object is a [`StrategyConfig`]
+    /// (or can be extracted as one via `from_py_object`), its values are used;
+    /// otherwise the strategy falls back to [`StrategyConfig::default()`].
+    ///
+    /// This permissive signature is required so that Python subclasses can pass
+    /// a **custom** config dataclass to their `__init__`; the Rust
+    /// `add_strategy_from_config` then extracts `strategy_id`, `log_events`, etc.
+    /// via `getattr` and calls the corresponding setters separately.
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<StrategyConfig>) -> Self {
-        Self::new(config)
+    fn py_new(config: Option<Py<PyAny>>) -> Self {
+        let strategy_config =
+            config.and_then(|obj| Python::attach(|py| obj.extract::<StrategyConfig>(py).ok()));
+        Self::new(strategy_config)
     }
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    #[allow(unused_variables)]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<StrategyConfig>) {
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
         slf.borrow_mut().set_python_instance(py_self);
     }
@@ -1314,8 +1369,9 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "on_data")]
-    fn py_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        self.inner_mut().dispatch_on_data(data)
+    fn py_on_data(&mut self, py: Python<'_>, data: CustomData) -> PyResult<()> {
+        self.inner_mut()
+            .dispatch_on_data(Py::new(py, data)?.into_any())
     }
 
     #[pyo3(name = "on_signal")]

@@ -97,7 +97,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+    fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut returns = BTreeMap::new();
         let nanos_per_day = 86_400_000_000_000;
         let start_time = 1_600_000_000_000_000_000;
@@ -129,7 +129,7 @@ mod tests {
     fn test_no_drawdown() {
         let ratio = CalmarRatio::new(Some(252));
         // Only positive returns, no drawdown
-        let returns = create_returns(vec![0.01; 252]);
+        let returns = create_returns(&vec![0.01; 252]);
         let result = ratio.calculate_from_returns(&returns);
 
         // Should be NaN when no drawdown (undefined ratio)
@@ -146,7 +146,7 @@ mod tests {
         // Add a drawdown period
         returns_vec.extend(vec![-0.002; 52]); // Small negative returns
 
-        let returns = create_returns(returns_vec);
+        let returns = create_returns(&returns_vec);
         let result = ratio.calculate_from_returns(&returns).unwrap();
 
         // Calmar should be positive (CAGR / |Max DD|)
@@ -158,11 +158,11 @@ mod tests {
         let ratio = CalmarRatio::new(Some(252));
 
         // Strategy A: Higher return, same drawdown
-        let returns_a = create_returns(vec![0.002; 252]);
+        let returns_a = create_returns(&vec![0.002; 252]);
         let calmar_a = ratio.calculate_from_returns(&returns_a);
 
         // Strategy B: Lower return
-        let returns_b = create_returns(vec![0.001; 252]);
+        let returns_b = create_returns(&vec![0.001; 252]);
         let calmar_b = ratio.calculate_from_returns(&returns_b);
 
         // Higher CAGR should give higher Calmar (assuming same drawdown pattern)

@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PerpetualContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -120,7 +121,7 @@ impl PerpetualContract {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(PerpetualContract)
     }
 

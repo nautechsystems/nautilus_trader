@@ -94,7 +94,7 @@ mod tests {
         );
         assert_eq!(order.matched_amount, dec!(50.0000));
         assert_eq!(order.order_id, "0xorder001");
-        assert_eq!(order.outcome, PolymarketOutcome::Yes);
+        assert_eq!(order.outcome, PolymarketOutcome::yes());
         assert_eq!(order.price, dec!(0.6000));
     }
 
@@ -119,7 +119,7 @@ mod tests {
             "price": "0.4"
         }"#;
         let order: PolymarketMakerOrder = serde_json::from_str(json).unwrap();
-        assert_eq!(order.outcome, PolymarketOutcome::No);
+        assert_eq!(order.outcome, PolymarketOutcome::no());
     }
 
     #[rstest]
@@ -144,7 +144,7 @@ mod tests {
         let m0 = &trade.maker_orders[0];
         assert_eq!(m0.matched_amount, dec!(25.0000));
         assert_eq!(m0.fee_rate_bps, dec!(0));
-        assert_eq!(m0.outcome, PolymarketOutcome::Yes);
+        assert_eq!(m0.outcome, PolymarketOutcome::yes());
 
         let m1 = &trade.maker_orders[1];
         assert_eq!(m1.matched_amount, dec!(5.0000));

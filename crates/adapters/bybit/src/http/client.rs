@@ -64,8 +64,8 @@ use super::{
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
         BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
-        BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
-        BybitWalletBalanceResponse,
+        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse, BybitTradeHistoryResponse,
+        BybitTradesResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -2836,6 +2836,44 @@ impl BybitHttpClient {
                 Ok(response.result.list.into_iter().map(Into::into).collect())
             }
         }
+    }
+
+    /// Requests raw option tickers for a given base coin.
+    ///
+    /// Returns `Vec<BybitTickerOption>` with the raw fields including `underlying_price`.
+    /// Used for fetching forward prices for option chain bootstrap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_tickers_raw(
+        &self,
+        base_coin: &str,
+    ) -> anyhow::Result<Vec<BybitTickerOption>> {
+        let params = BybitTickersParams {
+            category: BybitProductType::Option,
+            symbol: None,
+            base_coin: Some(base_coin.to_string()),
+            exp_date: None,
+        };
+        let response: BybitTickersOptionResponse = self.inner.get_tickers(&params).await?;
+        Ok(response.result.list)
+    }
+
+    /// Request raw option tickers with custom params.
+    ///
+    /// This allows fetching a single instrument by setting `symbol` in the params,
+    /// instead of fetching all options for a base coin.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_tickers_raw_with_params(
+        &self,
+        params: &BybitTickersParams,
+    ) -> anyhow::Result<Vec<BybitTickerOption>> {
+        let response: BybitTickersOptionResponse = self.inner.get_tickers(params).await?;
+        Ok(response.result.list)
     }
 
     /// Request recent trade tick history for a given symbol.

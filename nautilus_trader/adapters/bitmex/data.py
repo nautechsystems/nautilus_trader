@@ -318,22 +318,29 @@ class BitmexDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_instrument(pyo3_instrument_id)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        instruments = await self._http_client.request_instruments(self._active_only)
-        for instrument in instruments:
-            self._handle_instrument(instrument)
-        self._send_response(
-            msg_type=type(request),
-            correlation_id=request.id,
+        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
+        instruments = [transform_instrument_from_pyo3(i) for i in pyo3_instruments]
+        self._handle_instruments(
+            request.venue,
+            instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        instruments = await self._http_client.request_instruments(self._active_only)
-        for instrument in instruments:
-            if instrument.id == request.instrument_id:
-                self._handle_instrument(instrument)
-                self._send_response(
-                    msg_type=type(request),
-                    correlation_id=request.id,
+        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
+        pyo3_target_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        for pyo3_instrument in pyo3_instruments:
+            if pyo3_instrument.id == pyo3_target_id:
+                instrument = transform_instrument_from_pyo3(pyo3_instrument)
+                self._handle_instrument(
+                    instrument,
+                    request.id,
+                    request.start,
+                    request.end,
+                    request.params,
                 )
                 return
 

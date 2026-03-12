@@ -73,7 +73,7 @@ pub async fn revoke_builder_fee(
     private_key: &str,
     is_testnet: bool,
 ) -> Result<BuilderFeeApprovalResult> {
-    let pk = EvmPrivateKey::new(private_key.to_string())?;
+    let pk = EvmPrivateKey::new(private_key)?;
     let wallet_address = derive_address(&pk)?;
 
     let nonce = SystemTime::now()

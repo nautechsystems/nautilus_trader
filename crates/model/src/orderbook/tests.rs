@@ -2107,15 +2107,10 @@ fn test_book_filtered_with_status_filter() {
     status_filter.insert(OrderStatus::Accepted);
 
     // Get filtered maps with status filter
-    let bids_filtered = book.bids_filtered_as_map(
-        None,
-        Some(&own_book),
-        Some(status_filter.clone()),
-        None,
-        None,
-    );
+    let bids_filtered =
+        book.bids_filtered_as_map(None, Some(&own_book), Some(&status_filter), None, None);
     let asks_filtered =
-        book.asks_filtered_as_map(None, Some(&own_book), Some(status_filter), None, None);
+        book.asks_filtered_as_map(None, Some(&own_book), Some(&status_filter), None, None);
     // Check that only ACCEPTED own orders are subtracted
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(70))); // 100 - 30 = 70
     assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(70))); // 100 - 30 = 70
@@ -2345,7 +2340,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let bids_filtered = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(accepted_buffer),
         Some(now.into()),
     );
@@ -2353,7 +2348,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let asks_filtered = book.asks_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(accepted_buffer),
         Some(now.into()),
     );
@@ -2369,7 +2364,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let bids_short_buffer = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(short_buffer),
         Some(now.into()),
     );
@@ -2377,7 +2372,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let asks_short_buffer = book.asks_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(short_buffer),
         Some(now.into()),
     );
@@ -2393,7 +2388,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let bids_long_buffer = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(long_buffer),
         Some(now.into()),
     );
@@ -2401,7 +2396,7 @@ fn test_book_filtered_with_accepted_buffer() {
     let asks_long_buffer = book.asks_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter.clone()),
+        Some(&status_filter),
         Some(long_buffer),
         Some(now.into()),
     );
@@ -2490,7 +2485,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     let bids_filtered_submitted = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter),
+        Some(&status_filter),
         Some(accepted_buffer),
         Some(now.into()),
     );
@@ -2507,7 +2502,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     let bids_filtered_both = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter_both.clone()),
+        Some(&status_filter_both),
         Some(accepted_buffer),
         Some(now.into()),
     );
@@ -2522,7 +2517,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     let bids_filtered_long_buffer = book.bids_filtered_as_map(
         None,
         Some(&own_book),
-        Some(status_filter_both),
+        Some(&status_filter_both),
         Some(long_buffer),
         Some(now.into()),
     );
@@ -2793,7 +2788,7 @@ fn test_book_group_with_status_filter() {
         dec!(1.0),
         None,
         Some(&own_book),
-        Some(status_filter),
+        Some(&status_filter),
         None,
         None,
     );
@@ -4410,7 +4405,7 @@ fn test_status_filtering_bids_as_map() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_orders = book.bids_as_map(Some(filter_submitted), None, None);
+    let submitted_orders = book.bids_as_map(Some(&filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
     assert_eq!(submitted_orders.get(&dec!(100.00)).unwrap().len(), 1); // One order at 100.00
     assert_eq!(
@@ -4423,7 +4418,7 @@ fn test_status_filtering_bids_as_map() {
     let mut filter_accepted_canceled = AHashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
-    let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled), None, None);
+    let accepted_canceled_orders = book.bids_as_map(Some(&filter_accepted_canceled), None, None);
     assert_eq!(accepted_canceled_orders.len(), 2); // Two price levels
     assert_eq!(
         accepted_canceled_orders.get(&dec!(100.00)).unwrap().len(),
@@ -4434,7 +4429,7 @@ fn test_status_filtering_bids_as_map() {
     // Filter for non-existent status
     let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
-    let filled_orders = book.bids_as_map(Some(filter_filled), None, None);
+    let filled_orders = book.bids_as_map(Some(&filter_filled), None, None);
     assert_eq!(filled_orders.len(), 0); // No orders match
 }
 
@@ -4487,7 +4482,7 @@ fn test_status_filtering_asks_as_map() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_orders = book.asks_as_map(Some(filter_submitted), None, None);
+    let submitted_orders = book.asks_as_map(Some(&filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
     assert_eq!(submitted_orders.get(&dec!(101.00)).unwrap().len(), 1); // One order at 101.00
     assert_eq!(
@@ -4563,7 +4558,7 @@ fn test_status_filtering_bid_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None, None, None);
+    let submitted_quantities = book.bid_quantity(Some(&filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(100.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
@@ -4573,7 +4568,7 @@ fn test_status_filtering_bid_quantity() {
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_quantities =
-        book.bid_quantity(Some(filter_accepted_canceled), None, None, None, None);
+        book.bid_quantity(Some(&filter_accepted_canceled), None, None, None, None);
     assert_eq!(accepted_canceled_quantities.len(), 2); // Two price levels
     assert_eq!(
         accepted_canceled_quantities.get(&dec!(100.00)),
@@ -4652,7 +4647,7 @@ fn test_status_filtering_ask_quantity() {
     // Filter for just SUBMITTED status
     let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
-    let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None, None, None);
+    let submitted_quantities = book.ask_quantity(Some(&filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
     assert_eq!(submitted_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10
     assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
@@ -4661,7 +4656,7 @@ fn test_status_filtering_ask_quantity() {
     let mut filter_multiple = AHashSet::new();
     filter_multiple.insert(OrderStatus::Submitted);
     filter_multiple.insert(OrderStatus::Canceled);
-    let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None, None, None);
+    let multiple_quantities = book.ask_quantity(Some(&filter_multiple), None, None, None, None);
     assert_eq!(multiple_quantities.len(), 2); // Two price levels
     assert_eq!(multiple_quantities.get(&dec!(101.00)), Some(&dec!(10))); // 10 (Submitted only)
     assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
@@ -4669,7 +4664,7 @@ fn test_status_filtering_ask_quantity() {
     // Check empty price levels are filtered out
     let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
-    let filled_quantities = book.ask_quantity(Some(filter_filled), None, None, None, None);
+    let filled_quantities = book.ask_quantity(Some(&filter_filled), None, None, None, None);
     assert_eq!(filled_quantities.len(), 0); // No orders match
 }
 
@@ -5319,7 +5314,7 @@ fn test_own_book_group_with_status_and_buffer() {
 
     // Group with a buffer of 300 ns - only orders accepted before 700 ns should be included
     let grouped_bids = own_book.bid_quantity(
-        Some(status_filter.clone()),
+        Some(&status_filter),
         None,
         Some(dec!(1.0)),
         Some(300),
@@ -5332,7 +5327,7 @@ fn test_own_book_group_with_status_and_buffer() {
 
     // Test with a smaller buffer of 50 ns - all orders should be included
     let grouped_all = own_book.bid_quantity(
-        Some(status_filter),
+        Some(&status_filter),
         None,
         Some(dec!(1.0)),
         Some(50),

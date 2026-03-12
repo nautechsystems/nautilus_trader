@@ -24,10 +24,11 @@ use ustr::Ustr;
 use crate::live::listener::MessageBusListener;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MessageBusListener {
     #[new]
-    fn py_new() -> PyResult<Self> {
-        Ok(Self::new())
+    fn py_new() -> Self {
+        Self::new()
     }
 
     #[pyo3(name = "is_active")]
@@ -46,8 +47,8 @@ impl MessageBusListener {
     }
 
     #[pyo3(name = "publish")]
-    fn py_publish(&self, topic: String, payload: Vec<u8>) {
-        self.publish(Ustr::from(&topic), Bytes::from(payload));
+    fn py_publish(&self, topic: &str, payload: Vec<u8>) {
+        self.publish(Ustr::from(topic), Bytes::from(payload));
     }
 
     #[pyo3(name = "stream")]

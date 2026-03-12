@@ -95,6 +95,7 @@ fn main() -> anyhow::Result<()> {
         None,            // base_currency
         None,            // default_leverage (defaults to 10x for Margin)
         AHashMap::new(), // per-instrument leverages
+        None,            // margin_model
         vec![],          // simulation modules
         FillModelAny::default(),
         FeeModelAny::default(),
@@ -114,12 +115,14 @@ fn main() -> anyhow::Result<()> {
         None, // liquidity_consumption
         None, // allow_cash_borrowing
         None, // frozen_account
+        None, // queue_position
+        None, // oto_full_trigger
         None, // price_protection_points
     )?;
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument)?;
+    engine.add_instrument(&instrument)?;
 
     engine.add_strategy(EmaCross::new(
         instrument_id,

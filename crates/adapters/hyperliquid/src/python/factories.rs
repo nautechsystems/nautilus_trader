@@ -34,7 +34,7 @@ impl HyperliquidDataClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "HYPERLIQUID"
     }
 }
@@ -47,7 +47,7 @@ impl HyperliquidExecutionClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "HYPERLIQUID"
     }
 }

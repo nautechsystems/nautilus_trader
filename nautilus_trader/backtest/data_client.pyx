@@ -42,6 +42,7 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
+from nautilus_trader.data.messages cimport SubscribeOptionGreeks
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -54,6 +55,7 @@ from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
+from nautilus_trader.data.messages cimport UnsubscribeOptionGreeks
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -337,6 +339,11 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_instrument_status(command.instrument_id)
         # Do nothing else for backtest
 
+    cpdef void subscribe_option_greeks(self, SubscribeOptionGreeks command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        self._add_subscription_option_greeks(command.instrument_id)
+
     cpdef void subscribe_instrument_close(self, SubscribeInstrumentClose command):
         Condition.not_none(command.instrument_id, "instrument_id")
 
@@ -406,6 +413,11 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         self._remove_subscription_instrument_status(command.instrument_id)
         # Do nothing else for backtest
+
+    cpdef void unsubscribe_option_greeks(self, UnsubscribeOptionGreeks command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        self._remove_subscription_option_greeks(command.instrument_id)
 
     cpdef void unsubscribe_instrument_close(self, UnsubscribeInstrumentClose command):
         Condition.not_none(command.instrument_id, "instrument_id")

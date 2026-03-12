@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BinaryOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -117,7 +118,7 @@ impl BinaryOption {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(BinaryOption)
     }
 

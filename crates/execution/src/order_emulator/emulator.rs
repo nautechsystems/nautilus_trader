@@ -304,10 +304,10 @@ impl OrderEmulator {
         Ok(())
     }
 
-    pub fn on_event(&mut self, event: OrderEventAny) {
+    pub fn on_event(&mut self, event: &OrderEventAny) {
         log::info!("{RECV}{EVT} {event}");
 
-        self.manager.handle_event(event.clone());
+        self.manager.handle_event(event);
 
         if let Some(order) = self.cache.borrow().order(&event.client_order_id())
             && order.is_closed()
@@ -333,10 +333,10 @@ impl OrderEmulator {
 
         match command {
             TradingCommand::SubmitOrder(command) => self.handle_submit_order(command),
-            TradingCommand::SubmitOrderList(command) => self.handle_submit_order_list(command),
-            TradingCommand::ModifyOrder(command) => self.handle_modify_order(command),
+            TradingCommand::SubmitOrderList(ref command) => self.handle_submit_order_list(command),
+            TradingCommand::ModifyOrder(ref command) => self.handle_modify_order(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
-            TradingCommand::CancelAllOrders(command) => self.handle_cancel_all_orders(command),
+            TradingCommand::CancelAllOrders(ref command) => self.handle_cancel_all_orders(command),
             _ => log::error!("Cannot handle command: unrecognized {command:?}"),
         }
     }
@@ -538,7 +538,7 @@ impl OrderEmulator {
         log::info!("Emulating {order}");
     }
 
-    fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
+    fn handle_submit_order_list(&mut self, command: &SubmitOrderList) {
         self.check_monitoring(command.strategy_id, command.position_id);
 
         let orders: Vec<OrderAny> = self
@@ -570,7 +570,7 @@ impl OrderEmulator {
         }
     }
 
-    fn handle_modify_order(&mut self, command: ModifyOrder) {
+    fn handle_modify_order(&mut self, command: &ModifyOrder) {
         if let Some(order) = self.cache.borrow().order(&command.client_order_id) {
             let price = match command.price {
                 Some(price) => Some(price),
@@ -657,7 +657,7 @@ impl OrderEmulator {
         }
     }
 
-    fn handle_cancel_all_orders(&mut self, command: CancelAllOrders) {
+    fn handle_cancel_all_orders(&mut self, command: &CancelAllOrders) {
         let instrument_id = command.instrument_id;
         let matching_core = match self.matching_cores.get(&instrument_id) {
             Some(core) => core,
@@ -726,7 +726,7 @@ impl OrderEmulator {
         self.manager.send_risk_event(OrderEventAny::Updated(event));
     }
 
-    pub fn on_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
+    pub fn on_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         log::debug!("Processing {deltas:?}");
 
         let instrument_id = &deltas.instrument_id;
@@ -1257,7 +1257,7 @@ impl OrderEmulator {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
+    fn update_trailing_stop_order(&self, order: &mut OrderAny) {
         let Some(matching_core) = self.matching_cores.get(&order.instrument_id()) else {
             log::error!(
                 "Cannot update trailing-stop order: no matching core for instrument {}",

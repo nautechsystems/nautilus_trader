@@ -11,7 +11,7 @@ How to install NautilusTrader on your machine.
 
 ## Quickstart
 
-The **Quickstart** provides a step-by-step walk through for setting up your first backtest.
+Run your first backtest in five minutes. No data downloads, no catalog setup.
 
 ## Examples in repository
 
@@ -22,7 +22,7 @@ The following table lists example locations ordered by recommended learning prog
 | Directory                   | Contains                                                                                                                    |
 |:----------------------------|:----------------------------------------------------------------------------------------------------------------------------|
 | [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples)                 | Fully runnable, self-contained Python examples.                                                                                     |
-| [docs/tutorials/](../tutorials/)           | Jupyter notebook tutorials demonstrating common workflows.                                                                              |
+| [docs/tutorials/](../tutorials/)           | Tutorials demonstrating common workflows.                                                                              |
 | [docs/concepts/](../concepts/)            | Concept guides with concise code snippets illustrating key features. |
 | [nautilus_trader/examples/](../../nautilus_trader/examples/) | Pure-Python examples of basic strategies, indicators, and execution algorithms.                                     |
 | [tests/unit_tests/](../../tests/unit_tests/)         | Unit tests covering core functionality and edge cases.                      |

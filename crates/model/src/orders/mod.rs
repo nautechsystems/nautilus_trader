@@ -771,7 +771,7 @@ impl OrderCore {
         Ok(())
     }
 
-    fn triggered(&mut self, _event: &OrderTriggered) {}
+    fn triggered(&self, _event: &OrderTriggered) {}
 
     fn canceled(&mut self, event: &OrderCanceled) {
         self.ts_closed = Some(event.ts_event);

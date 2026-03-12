@@ -82,7 +82,7 @@ impl BacktestExecutionClient {
     pub fn new(
         trader_id: TraderId,
         account_id: AccountId,
-        exchange: Rc<RefCell<SimulatedExchange>>,
+        exchange: &Rc<RefCell<SimulatedExchange>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
         routing: Option<bool>,

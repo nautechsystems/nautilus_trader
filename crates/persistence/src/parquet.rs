@@ -436,7 +436,7 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
-#[allow(unused_variables)]
+#[allow(unused_variables, clippy::needless_pass_by_value)]
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,
@@ -555,18 +555,37 @@ fn path_to_file_uri(path: &str) -> String {
     }
 }
 
+/// Converts a file:// URI to a native path for the current platform.
+/// On Windows, "file:///C:/x/y" becomes "C:\x\y" so LocalFileSystem and std::fs work correctly.
+#[cfg(windows)]
+pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
+    let without_scheme = uri
+        .strip_prefix("file://")
+        .or_else(|| uri.strip_prefix("file:"))
+        .unwrap_or(uri);
+    // Strip leading slash so "/C:/x/y" -> "C:/x/y", then use native separators
+    let without_leading = without_scheme.trim_start_matches('/');
+    without_leading.replace('/', "\\")
+}
+
+/// Converts a file:// URI to a path string for Unix (no-op; object_store accepts slash paths).
+#[cfg(not(windows))]
+pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
+    uri.strip_prefix("file://").unwrap_or(uri).to_string()
+}
+
 /// Helper function to create local file system object store
 fn create_local_store(
     uri: &str,
     is_file_uri: bool,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let path = if is_file_uri {
-        uri.strip_prefix("file://").unwrap_or(uri)
+        file_uri_to_native_path(uri)
     } else {
-        uri
+        uri.to_string()
     };
 
-    let local_store = object_store::local::LocalFileSystem::new_with_prefix(path)?;
+    let local_store = object_store::local::LocalFileSystem::new_with_prefix(&path)?;
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
 

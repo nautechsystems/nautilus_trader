@@ -69,6 +69,7 @@ impl HyperliquidExecClientConfig {
     #[pyo3(signature = (
         private_key = None,
         vault_address = None,
+        account_address = None,
         is_testnet = None,
         base_url_ws = None,
         base_url_http = None,
@@ -84,6 +85,7 @@ impl HyperliquidExecClientConfig {
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
+        account_address: Option<String>,
         is_testnet: Option<bool>,
         base_url_ws: Option<String>,
         base_url_http: Option<String>,
@@ -99,6 +101,7 @@ impl HyperliquidExecClientConfig {
         Self {
             private_key,
             vault_address,
+            account_address,
             base_url_ws,
             base_url_http,
             base_url_exchange,

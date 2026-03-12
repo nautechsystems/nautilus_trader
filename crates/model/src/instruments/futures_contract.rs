@@ -44,6 +44,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct FuturesContract {
     /// The instrument ID.
     pub id: InstrumentId,
@@ -132,7 +136,7 @@ impl FuturesContract {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(exchange))?;
         check_valid_string_ascii(underlying.as_str(), stringify!(underlying))?;
         check_equal_u8(
             price_precision,
@@ -365,6 +369,22 @@ impl Instrument for FuturesContract {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    fn margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        self.taker_fee
     }
 }
 

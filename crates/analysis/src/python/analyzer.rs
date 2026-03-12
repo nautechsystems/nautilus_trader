@@ -24,7 +24,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
-    analyzer::PortfolioAnalyzer,
+    analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
         expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
         loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
@@ -84,6 +84,7 @@ impl PortfolioAnalyzer {
     }
 
     #[pyo3(name = "register_statistic")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_register_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -170,6 +171,7 @@ impl PortfolioAnalyzer {
     }
 
     #[pyo3(name = "deregister_statistic")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_deregister_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -179,71 +181,71 @@ impl PortfolioAnalyzer {
         match type_name.as_str() {
             "MaxWinner" => {
                 let stat = statistic.extract::<MaxWinner>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "MinWinner" => {
                 let stat = statistic.extract::<MinWinner>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "AvgWinner" => {
                 let stat = statistic.extract::<AvgWinner>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "MaxLoser" => {
                 let stat = statistic.extract::<MaxLoser>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "MinLoser" => {
                 let stat = statistic.extract::<MinLoser>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "AvgLoser" => {
                 let stat = statistic.extract::<AvgLoser>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "Expectancy" => {
                 let stat = statistic.extract::<Expectancy>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "WinRate" => {
                 let stat = statistic.extract::<WinRate>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "ReturnsVolatility" => {
                 let stat = statistic.extract::<ReturnsVolatility>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "ReturnsAverage" => {
                 let stat = statistic.extract::<ReturnsAverage>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "ReturnsAverageLoss" => {
                 let stat = statistic.extract::<ReturnsAverageLoss>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "ReturnsAverageWin" => {
                 let stat = statistic.extract::<ReturnsAverageWin>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "SharpeRatio" => {
                 let stat = statistic.extract::<SharpeRatio>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "SortinoRatio" => {
                 let stat = statistic.extract::<SortinoRatio>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "ProfitFactor" => {
                 let stat = statistic.extract::<ProfitFactor>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "RiskReturnRatio" => {
                 let stat = statistic.extract::<RiskReturnRatio>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             "LongRatio" => {
                 let stat = statistic.extract::<LongRatio>(py)?;
-                self.deregister_statistic(Arc::new(stat));
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {
                 return Err(to_pyvalue_err(format!(
@@ -261,6 +263,7 @@ impl PortfolioAnalyzer {
     }
 
     #[pyo3(name = "add_positions")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_add_positions(&mut self, py: Python, positions: Vec<Py<PyAny>>) -> PyResult<()> {
         // Extract Position objects from Cython wrappers
         let positions: Vec<Position> = positions

@@ -21,9 +21,8 @@ use std::error::Error;
 use futures_util::StreamExt;
 use nautilus_bybit::{
     common::enums::{BybitEnvironment, BybitProductType},
-    websocket::{client::BybitWebSocketClient, messages::NautilusWsMessage},
+    websocket::{client::BybitWebSocketClient, messages::BybitWsMessage},
 };
-use nautilus_model::data::Data;
 use tokio::{pin, signal};
 
 #[tokio::main]
@@ -57,96 +56,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::select! {
             Some(event) = stream.next() => {
                 match event {
-                    NautilusWsMessage::Data(data_vec) => {
-                        log::info!("data update: count={}", data_vec.len());
-                        for data in data_vec {
-                            match data {
-                                Data::Trade(tick) => {
-                                    log::info!("trade: instrument={}, price={}, size={}", tick.instrument_id, tick.price, tick.size);
-                                }
-                                Data::Quote(quote) => {
-                                    log::info!("quote: instrument={}, bid={}, ask={}", quote.instrument_id, quote.bid_price, quote.ask_price);
-                                }
-                                Data::Bar(bar) => {
-                                    log::info!("bar: bar_type={}, close={}", bar.bar_type, bar.close);
-                                }
-                                _ => {
-                                    log::debug!("other data type");
-                                }
-                            }
-                        }
+                    BybitWsMessage::Orderbook(msg) => {
+                        log::info!(
+                            "orderbook: topic={}, type={}, count={}",
+                            msg.topic, msg.msg_type, msg.data.b.len() + msg.data.a.len()
+                        );
                     }
-                    NautilusWsMessage::Deltas(deltas) => {
-                        log::info!("orderbook deltas: instrument={}, sequence={}", deltas.instrument_id, deltas.sequence);
-                    }
-                    NautilusWsMessage::FundingRates(rates) => {
-                        log::info!("funding rate updates: count={}", rates.len());
-                        for rate in rates {
+                    BybitWsMessage::Trade(msg) => {
+                        for trade in &msg.data {
                             log::info!(
-                                "funding rate: instrument={}, rate={}, next_funding={:?}",
-                                rate.instrument_id, rate.rate, rate.next_funding_ns
+                                "trade: symbol={}, price={}, size={}, side={:?}",
+                                trade.s, trade.p, trade.v, trade.taker_side
                             );
                         }
                     }
-                    NautilusWsMessage::MarkPrices(prices) => {
-                        log::info!("mark price updates: count={}", prices.len());
-                        for price in prices {
+                    BybitWsMessage::Kline(msg) => {
+                        for kline in &msg.data {
                             log::info!(
-                                "mark price: instrument={}, value={}",
-                                price.instrument_id, price.value
+                                "kline: topic={}, close={}, confirm={}",
+                                msg.topic, kline.close, kline.confirm
                             );
                         }
                     }
-                    NautilusWsMessage::IndexPrices(prices) => {
-                        log::info!("index price updates: count={}", prices.len());
-                        for price in prices {
-                            log::info!(
-                                "index price: instrument={}, value={}",
-                                price.instrument_id, price.value
-                            );
-                        }
+                    BybitWsMessage::TickerLinear(msg) => {
+                        log::info!(
+                            "ticker linear: symbol={}, last_price={:?}, mark_price={:?}",
+                            msg.data.symbol, msg.data.last_price, msg.data.mark_price
+                        );
                     }
-                    NautilusWsMessage::OrderStatusReports(reports) => {
-                        log::info!("order status reports: count={}", reports.len());
-                        for report in reports {
-                            log::info!(
-                                "order status report: instrument={}, client_order_id={:?}, venue_order_id={:?}, status={:?}",
-                                report.instrument_id, report.client_order_id, report.venue_order_id, report.order_status
-                            );
-                        }
+                    BybitWsMessage::TickerOption(msg) => {
+                        log::info!(
+                            "ticker option: symbol={}, bid={}, ask={}",
+                            msg.data.symbol, msg.data.bid_price, msg.data.ask_price
+                        );
                     }
-                    NautilusWsMessage::FillReports(reports) => {
-                        log::info!("fill reports: count={}", reports.len());
-                        for report in reports {
-                            log::info!(
-                                "fill report: instrument={}, client_order_id={:?}, venue_order_id={:?}, last_qty={}, last_px={}",
-                                report.instrument_id, report.client_order_id, report.venue_order_id, report.last_qty, report.last_px
-                            );
-                        }
+                    BybitWsMessage::Error(err) => {
+                        log::error!("WebSocket error: code={}, message={}", err.code, err.message);
                     }
-                    NautilusWsMessage::PositionStatusReport(report) => {
-                        log::info!("position status report: instrument={}, quantity={}", report.instrument_id, report.quantity);
-                    }
-                    NautilusWsMessage::AccountState(state) => {
-                        log::info!("account state: account_id={}, balances={}", state.account_id, state.balances.len());
-                    }
-                    NautilusWsMessage::OrderRejected(event) => {
-                        log::warn!("order rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
-                    }
-                    NautilusWsMessage::OrderCancelRejected(event) => {
-                        log::warn!("order cancel rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
-                    }
-                    NautilusWsMessage::OrderModifyRejected(event) => {
-                        log::warn!("order modify rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
-                    }
-                    NautilusWsMessage::Error(err) => {
-                        log::error!("websocket error: code={}, message={}", err.code, err.message);
-                    }
-                    NautilusWsMessage::Reconnected => {
+                    BybitWsMessage::Reconnected => {
                         log::warn!("WebSocket reconnected");
                     }
-                    NautilusWsMessage::Authenticated => {
-                        log::info!("Authenticated successfully");
+                    BybitWsMessage::Auth(result) => {
+                        log::info!("Auth result: success={:?}", result.success);
+                    }
+                    _ => {
+                        log::trace!("Other message received");
                     }
                 }
             }

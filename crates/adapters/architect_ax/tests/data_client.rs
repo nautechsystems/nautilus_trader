@@ -29,24 +29,28 @@ use nautilus_architect_ax::{
     config::AxDataClientConfig,
     data::AxDataClient,
     http::client::AxHttpClient,
-    websocket::{data::client::AxMdWebSocketClient, messages::NautilusDataWsMessage},
+    websocket::{
+        data::client::AxMdWebSocketClient,
+        messages::{AxDataWsMessage, AxMdMessage},
+    },
 };
 use nautilus_common::{
     clients::DataClient as DataClientTrait,
     live::runner::set_data_event_sender,
     messages::{
         DataEvent,
-        data::{SubscribeQuotes, SubscribeTrades},
+        data::{SubscribeBars, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades},
     },
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
-    data::Data,
+    data::{BarType, Data},
+    enums::BookType,
     identifiers::{ClientId, InstrumentId},
 };
 use rstest::rstest;
 
-use crate::common::server::{create_test_instrument, start_test_server, wait_for_connection};
+use crate::common::server::{start_test_server, wait_for_connection};
 
 fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -56,45 +60,31 @@ fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
 
 #[rstest]
 #[tokio::test]
-async fn test_handler_parses_l1_to_quote_tick() {
+async fn test_handler_emits_l1_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
-    // Cache instrument before connect
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
-
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
-    // Subscribe triggers mock server to send L1 book message
     client
         .subscribe_quotes("EURUSD-PERP")
         .await
         .expect("Subscribe failed");
 
-    // Read from stream and verify quote tick is parsed
     let stream = client.stream();
     tokio::pin!(stream);
 
     let result = tokio::time::timeout(Duration::from_secs(3), stream.next()).await;
 
     match result {
-        Ok(Some(NautilusDataWsMessage::Data(data_vec))) => {
-            assert!(!data_vec.is_empty(), "Expected at least one data item");
-            match &data_vec[0] {
-                Data::Quote(quote) => {
-                    assert_eq!(quote.instrument_id.symbol.as_str(), "EURUSD-PERP");
-                    assert!(quote.bid_price.as_f64() > 0.0);
-                    assert!(quote.ask_price.as_f64() > 0.0);
-                }
-                other => panic!("Expected Quote, was {other:?}"),
-            }
+        Ok(Some(AxDataWsMessage::MdMessage(AxMdMessage::BookL1(book)))) => {
+            assert_eq!(book.s.as_str(), "EURUSD-PERP");
         }
-        Ok(Some(other)) => panic!("Expected Data message, was {other:?}"),
+        Ok(Some(other)) => panic!("Expected MdMessage::BookL1, was {other:?}"),
         Ok(None) => panic!("Stream ended unexpectedly"),
-        Err(_) => panic!("Timeout waiting for quote tick"),
+        Err(_) => panic!("Timeout waiting for L1 message"),
     }
 
     client.close().await;
@@ -102,13 +92,10 @@ async fn test_handler_parses_l1_to_quote_tick() {
 
 #[rstest]
 #[tokio::test]
-async fn test_handler_parses_trade_tick() {
+async fn test_handler_emits_trade_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
-
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -121,16 +108,11 @@ async fn test_handler_parses_trade_tick() {
     let stream = client.stream();
     tokio::pin!(stream);
 
-    // Mock server sends book then trade - skip non-trade messages
     let trade = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             match stream.next().await {
-                Some(NautilusDataWsMessage::Data(data_vec)) => {
-                    for data in data_vec {
-                        if let Data::Trade(trade) = data {
-                            return trade;
-                        }
-                    }
+                Some(AxDataWsMessage::MdMessage(AxMdMessage::Trade(trade))) => {
+                    return trade;
                 }
                 Some(_) => {}
                 None => panic!("Stream closed without receiving a trade"),
@@ -138,23 +120,18 @@ async fn test_handler_parses_trade_tick() {
         }
     })
     .await
-    .expect("Timeout waiting for trade tick");
+    .expect("Timeout waiting for trade message");
 
-    assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
-    assert!(trade.price.as_f64() > 0.0);
-    assert!(trade.size.as_f64() > 0.0);
+    assert_eq!(trade.s.as_str(), "EURUSD-PERP");
     client.close().await;
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_handler_parses_l2_to_order_book_deltas() {
+async fn test_handler_emits_l2_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
-
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -170,12 +147,12 @@ async fn test_handler_parses_l2_to_order_book_deltas() {
     let result = tokio::time::timeout(Duration::from_secs(3), stream.next()).await;
 
     match result {
-        Ok(Some(NautilusDataWsMessage::Deltas(deltas))) => {
-            assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
+        Ok(Some(AxDataWsMessage::MdMessage(AxMdMessage::BookL2(book)))) => {
+            assert_eq!(book.s.as_str(), "EURUSD-PERP");
         }
-        Ok(Some(other)) => panic!("Expected Deltas message, was {other:?}"),
+        Ok(Some(other)) => panic!("Expected MdMessage::BookL2, was {other:?}"),
         Ok(None) => panic!("Stream ended unexpectedly"),
-        Err(_) => panic!("Timeout waiting for order book deltas"),
+        Err(_) => panic!("Timeout waiting for order book message"),
     }
 
     client.close().await;
@@ -183,13 +160,10 @@ async fn test_handler_parses_l2_to_order_book_deltas() {
 
 #[rstest]
 #[tokio::test]
-async fn test_handler_parses_candle_to_bar() {
+async fn test_handler_emits_candle_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
-
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -202,25 +176,19 @@ async fn test_handler_parses_candle_to_bar() {
     let stream = client.stream();
     tokio::pin!(stream);
 
-    // Handler only emits bar when candle closes (timestamp changes)
-    // Mock server sends two candles, so we should receive one bar
-    let bar = tokio::time::timeout(Duration::from_secs(5), async {
+    let candle = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             match stream.next().await {
-                Some(NautilusDataWsMessage::Bar(bar)) => return bar,
+                Some(AxDataWsMessage::MdMessage(AxMdMessage::Candle(candle))) => return candle,
                 Some(_) => {}
-                None => panic!("Stream closed without receiving a bar"),
+                None => panic!("Stream closed without receiving a candle"),
             }
         }
     })
     .await
-    .expect("Timeout waiting for bar");
+    .expect("Timeout waiting for candle message");
 
-    assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
-    assert!(bar.open.as_f64() > 0.0);
-    assert!(bar.high.as_f64() > 0.0);
-    assert!(bar.low.as_f64() > 0.0);
-    assert!(bar.close.as_f64() > 0.0);
+    assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
 
     client.close().await;
 }
@@ -232,7 +200,6 @@ async fn test_handler_ignores_unknown_symbol() {
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
-    // Don't cache any instrument - messages should be ignored
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
@@ -244,12 +211,14 @@ async fn test_handler_ignores_unknown_symbol() {
     let stream = client.stream();
     tokio::pin!(stream);
 
-    // Should timeout because messages are ignored (no instrument cached)
-    let result = tokio::time::timeout(Duration::from_millis(500), stream.next()).await;
+    // Handler now emits raw venue messages regardless of instrument cache.
+    // The consumer is responsible for filtering unknown symbols.
+    // Just verify the stream produces messages without crashing.
+    let result = tokio::time::timeout(Duration::from_secs(1), stream.next()).await;
 
     assert!(
-        result.is_err(),
-        "Expected timeout when instrument not cached"
+        result.is_ok(),
+        "Expected handler to forward raw messages even without instrument cache"
     );
 
     client.close().await;
@@ -369,4 +338,214 @@ async fn test_data_client_emits_trade_tick_via_channel() {
 
     assert!(found_trade, "Expected to receive a trade tick event");
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_connect_disconnect() {
+    let _rx = setup_data_channel();
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let http_client =
+        AxHttpClient::new(Some(http_url), None, None, None, None, None, None).unwrap();
+    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+
+    let config = AxDataClientConfig::default();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client");
+
+    assert!(!client.is_connected());
+
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+    assert!(client.is_connected());
+
+    client.disconnect().await.expect("Failed to disconnect");
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_emits_instruments_on_connect() {
+    let mut rx = setup_data_channel();
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let http_client =
+        AxHttpClient::new(Some(http_url), None, None, None, None, None, None).unwrap();
+    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+
+    let config = AxDataClientConfig::default();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client");
+
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let mut instrument_count = 0;
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, DataEvent::Instrument(_)) {
+            instrument_count += 1;
+        }
+    }
+
+    assert!(
+        instrument_count > 0,
+        "Expected instrument events on connect"
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_subscribe_book_deltas_via_channel() {
+    let mut rx = setup_data_channel();
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let http_client =
+        AxHttpClient::new(Some(http_url), None, None, None, None, None, None).unwrap();
+    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+
+    let config = AxDataClientConfig::default();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client");
+
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let subscribe_cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+        false,
+        None,
+        None,
+    );
+    client
+        .subscribe_book_deltas(&subscribe_cmd)
+        .expect("Subscribe failed");
+
+    // Wait for a Deltas event (skip instrument events from connect)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!timeout.is_zero(), "Timeout waiting for book deltas event");
+
+        match tokio::time::timeout(timeout, rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::Deltas(deltas)))) => {
+                assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
+                break;
+            }
+            Ok(Some(DataEvent::Instrument(_))) => {}
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("Channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for book deltas event"),
+        }
+    }
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_subscribe_bars_via_channel() {
+    let mut rx = setup_data_channel();
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let http_client =
+        AxHttpClient::new(Some(http_url), None, None, None, None, None, None).unwrap();
+    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+
+    let config = AxDataClientConfig::default();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client");
+
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let bar_type = BarType::from("EURUSD-PERP.AX-1-MINUTE-LAST-EXTERNAL");
+    let subscribe_cmd = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+        None,
+    );
+    client
+        .subscribe_bars(&subscribe_cmd)
+        .expect("Subscribe failed");
+
+    // Wait for a Bar event (mock server sends 2 candles with different
+    // timestamps so the handler emits the first as a closed bar)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!timeout.is_zero(), "Timeout waiting for bar event");
+
+        match tokio::time::timeout(timeout, rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::Bar(bar)))) => {
+                assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
+                break;
+            }
+            Ok(Some(DataEvent::Instrument(_))) => {}
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("Channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for bar event"),
+        }
+    }
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_reset_clears_state() {
+    let _rx = setup_data_channel();
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let http_url = format!("http://{addr}");
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let http_client =
+        AxHttpClient::new(Some(http_url), None, None, None, None, None, None).unwrap();
+    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+
+    let config = AxDataClientConfig::default();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client");
+
+    // Reset before connect should succeed
+    client.reset().expect("Reset failed");
+    assert!(!client.is_connected());
+
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+    assert!(client.is_connected());
+
+    // Reset after connect should clear state
+    client.reset().expect("Reset failed");
 }

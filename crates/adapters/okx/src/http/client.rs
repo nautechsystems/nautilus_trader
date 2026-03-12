@@ -2982,7 +2982,7 @@ impl OKXHttpClient {
             };
 
             let report = match parse_fill_report(
-                detail,
+                &detail,
                 account_id,
                 inst.id(),
                 inst.price_precision(),
@@ -3085,7 +3085,7 @@ impl OKXHttpClient {
             };
 
             match parse_position_status_report(
-                position,
+                &position,
                 account_id,
                 inst.id(),
                 inst.size_precision(),

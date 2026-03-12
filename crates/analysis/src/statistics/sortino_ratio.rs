@@ -112,7 +112,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+    fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut new_return = BTreeMap::new();
         let one_day_in_nanos = 86_400_000_000_000;
         let start_time = 1_600_000_000_000_000_000;
@@ -128,7 +128,7 @@ mod tests {
     #[rstest]
     fn test_empty_returns() {
         let ratio = SortinoRatio::new(None);
-        let returns = create_returns(vec![]);
+        let returns = create_returns(&[]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());
@@ -137,7 +137,7 @@ mod tests {
     #[rstest]
     fn test_zero_downside_deviation() {
         let ratio = SortinoRatio::new(None);
-        let returns = create_returns(vec![0.02, 0.03, 0.01]);
+        let returns = create_returns(&[0.02, 0.03, 0.01]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());
@@ -146,7 +146,7 @@ mod tests {
     #[rstest]
     fn test_valid_sortino_ratio() {
         let ratio = SortinoRatio::new(Some(252));
-        let returns = create_returns(vec![-0.01, 0.02, -0.015, 0.005, -0.02]);
+        let returns = create_returns(&[-0.01, 0.02, -0.015, 0.005, -0.02]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(approx_eq!(

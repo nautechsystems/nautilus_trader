@@ -44,6 +44,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct MarketToLimitOrder {
     core: OrderCore,
     pub price: Option<Price>,
@@ -425,12 +429,13 @@ impl Order for MarketToLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+
+        self.core.apply(event.clone())?;
+
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         }
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
-
-        self.core.apply(event)?;
 
         if is_order_filled && let Some(price) = self.price {
             self.core.set_slippage(price);

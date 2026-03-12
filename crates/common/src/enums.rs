@@ -51,6 +51,10 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
     #[default]
@@ -121,6 +125,10 @@ impl ComponentState {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum ComponentTrigger {
     /// A trigger for the component to initialize.
     Initialize = 1,
@@ -185,6 +193,10 @@ pub enum ComponentTrigger {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum Environment {
     Backtest,
     Sandbox,
@@ -221,6 +233,10 @@ pub enum Environment {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
 )]
 pub enum LogLevel {
     /// The **OFF** log level. A level lower than all other log levels (off).
@@ -279,6 +295,10 @@ pub enum LogLevel {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
 )]
 pub enum LogColor {
     /// The default/normal log color.
@@ -362,6 +382,10 @@ impl From<Level> for LogColor {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum LogFormat {
     /// Header log format. This ANSI escape code is used for magenta text color,
     /// often used for headers or titles in the log output.
@@ -412,6 +436,10 @@ pub enum LogFormat {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
 )]
 pub enum SerializationEncoding {
     /// The MessagePack encoding.

@@ -2033,6 +2033,84 @@ class TestActor:
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
+    def test_subscribe_option_greeks(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_option_greeks(AUDUSD_SIM.id)
+
+        # Assert
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_option_greeks() == [expected_instrument]
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_option_greeks(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_option_greeks(AUDUSD_SIM.id)
+
+        # Act
+        actor.unsubscribe_option_greeks(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.subscribed_option_greeks() == []
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_option_chain(self) -> None:
+        # Arrange
+        from nautilus_trader.core.nautilus_pyo3 import OptionSeriesId
+
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        series_id = OptionSeriesId("SIM", "AUD", "USD", 1_704_067_200_000_000_000)
+
+        # Act
+        actor.subscribe_option_chain(series_id)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_option_chain(self) -> None:
+        # Arrange
+        from nautilus_trader.core.nautilus_pyo3 import OptionSeriesId
+
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        series_id = OptionSeriesId("SIM", "AUD", "USD", 1_704_067_200_000_000_000)
+        actor.subscribe_option_chain(series_id)
+
+        # Act
+        actor.unsubscribe_option_chain(series_id)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
     def test_subscribe_order_fills(self) -> None:
         # Arrange
         actor = MockActor()

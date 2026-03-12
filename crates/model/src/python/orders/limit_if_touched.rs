@@ -36,6 +36,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LimitIfTouchedOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -103,8 +104,8 @@ impl LimitIfTouchedOrder {
 
     #[staticmethod]
     #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(Self::from(init))
+    fn py_create(init: OrderInitialized) -> Self {
+        Self::from(init)
     }
 
     #[staticmethod]

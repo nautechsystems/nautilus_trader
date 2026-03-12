@@ -63,42 +63,39 @@ impl OrderEmulatorAdapter {
             .expect("Failed to register OrderEmulator");
 
         // Set self-reference for subscription handlers
-        Self::initialize_self_ref(emulator.clone());
+        Self::initialize_self_ref(&emulator);
 
-        Self::initialize_execute_handler(emulator.clone());
-        Self::initialize_on_event_handler(emulator.clone());
-        Self::initialize_submit_order_handler(emulator.clone());
-        Self::initialize_cancel_order_handler(emulator.clone());
-        Self::initialize_modify_order_handler(emulator.clone());
+        Self::initialize_execute_handler(&emulator);
+        Self::initialize_on_event_handler(&emulator);
+        Self::initialize_submit_order_handler(&emulator);
+        Self::initialize_cancel_order_handler(&emulator);
+        Self::initialize_modify_order_handler(&emulator);
 
         Self { emulator }
     }
 
-    fn initialize_self_ref(emulator: Rc<RefCell<OrderEmulator>>) {
-        let self_ref = WeakCell::from(Rc::downgrade(&emulator));
+    fn initialize_self_ref(emulator: &Rc<RefCell<OrderEmulator>>) {
+        let self_ref = WeakCell::from(Rc::downgrade(emulator));
         emulator.borrow_mut().set_self_ref(self_ref);
     }
 
-    fn initialize_submit_order_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let handler =
-            SubmitOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(&emulator)));
+    fn initialize_submit_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
+        let handler = SubmitOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
         emulator.borrow_mut().set_submit_order_handler(handler);
     }
 
-    fn initialize_cancel_order_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let handler =
-            CancelOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(&emulator)));
+    fn initialize_cancel_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
+        let handler = CancelOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
         emulator.borrow_mut().set_cancel_order_handler(handler);
     }
 
-    fn initialize_modify_order_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let handler =
-            ModifyOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(&emulator)));
+    fn initialize_modify_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
+        let handler = ModifyOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
         emulator.borrow_mut().set_modify_order_handler(handler);
     }
 
-    fn initialize_execute_handler(emulator: Rc<RefCell<OrderEmulator>>) {
-        let emulator_weak = WeakCell::from(Rc::downgrade(&emulator));
+    fn initialize_execute_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
+        let emulator_weak = WeakCell::from(Rc::downgrade(emulator));
         let handler = TypedIntoHandler::from(move |cmd| {
             if let Some(emulator_rc) = emulator_weak.upgrade() {
                 emulator_rc.borrow_mut().execute(cmd);
@@ -109,10 +106,10 @@ impl OrderEmulatorAdapter {
         register_trading_command_endpoint(endpoint, handler);
     }
 
-    fn initialize_on_event_handler(emulator: Rc<RefCell<OrderEmulator>>) {
+    fn initialize_on_event_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
         let handler = TypedHandler::new(OrderEmulatorOnEventHandler::new(
             Ustr::from(UUID4::new().as_str()),
-            WeakCell::from(Rc::downgrade(&emulator)),
+            WeakCell::from(Rc::downgrade(emulator)),
         ));
 
         emulator.borrow_mut().set_on_event_handler(handler);

@@ -21,6 +21,7 @@ use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
 };
+use ustr::Ustr;
 
 use super::check_client_id_or_venue;
 
@@ -271,6 +272,41 @@ impl RequestFundingRates {
             start,
             end,
             limit,
+            client_id,
+            request_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestForwardPrices {
+    pub venue: Venue,
+    pub underlying: Ustr,
+    pub instrument_id: Option<InstrumentId>,
+    pub client_id: Option<ClientId>,
+    pub request_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<Params>,
+}
+
+impl RequestForwardPrices {
+    /// Creates a new [`RequestForwardPrices`] instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        venue: Venue,
+        underlying: Ustr,
+        instrument_id: Option<InstrumentId>,
+        client_id: Option<ClientId>,
+        request_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            venue,
+            underlying,
+            instrument_id,
             client_id,
             request_id,
             ts_init,

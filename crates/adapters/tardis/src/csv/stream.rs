@@ -88,7 +88,7 @@ impl DeltaStreamIterator {
                 let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
-                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000);
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
@@ -117,7 +117,7 @@ impl DeltaStreamIterator {
         reader: &mut Reader<Box<dyn std::io::Read>>,
         record: &mut StringRecord,
         sample_size: usize,
-    ) -> anyhow::Result<(u8, u8)> {
+    ) -> (u8, u8) {
         let mut max_price_precision = 0u8;
         let mut max_size_precision = 0u8;
         let mut records_scanned = 0;
@@ -136,7 +136,7 @@ impl DeltaStreamIterator {
             }
         }
 
-        Ok((max_price_precision, max_size_precision))
+        (max_price_precision, max_size_precision)
     }
 }
 
@@ -347,7 +347,7 @@ impl BatchedDeltasStreamIterator {
             } else {
                 // One or both precisions missing, detect from sample including first record
                 let (detected_price, detected_size) =
-                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000);
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
@@ -377,7 +377,7 @@ impl BatchedDeltasStreamIterator {
         reader: &mut Reader<Box<dyn std::io::Read>>,
         record: &mut StringRecord,
         sample_size: usize,
-    ) -> anyhow::Result<(u8, u8)> {
+    ) -> (u8, u8) {
         let mut max_price_precision = 0u8;
         let mut max_size_precision = 0u8;
         let mut records_scanned = 0;
@@ -396,7 +396,7 @@ impl BatchedDeltasStreamIterator {
             }
         }
 
-        Ok((max_price_precision, max_size_precision))
+        (max_price_precision, max_size_precision)
     }
 
     fn fill_pending_batches(&mut self) -> Option<anyhow::Result<()>> {
@@ -598,7 +598,7 @@ impl QuoteStreamIterator {
                 let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
-                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000);
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
@@ -624,7 +624,7 @@ impl QuoteStreamIterator {
         reader: &mut Reader<Box<dyn std::io::Read>>,
         record: &mut StringRecord,
         sample_size: usize,
-    ) -> anyhow::Result<(u8, u8)> {
+    ) -> (u8, u8) {
         let mut max_price_precision = 2u8;
         let mut max_size_precision = 0u8;
         let mut records_scanned = 0;
@@ -660,7 +660,7 @@ impl QuoteStreamIterator {
             }
         }
 
-        Ok((max_price_precision, max_size_precision))
+        (max_price_precision, max_size_precision)
     }
 }
 
@@ -792,7 +792,7 @@ impl TradeStreamIterator {
                 let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
-                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000);
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
@@ -818,7 +818,7 @@ impl TradeStreamIterator {
         reader: &mut Reader<Box<dyn std::io::Read>>,
         record: &mut StringRecord,
         sample_size: usize,
-    ) -> anyhow::Result<(u8, u8)> {
+    ) -> (u8, u8) {
         let mut max_price_precision = 2u8;
         let mut max_size_precision = 0u8;
         let mut records_scanned = 0;
@@ -837,7 +837,7 @@ impl TradeStreamIterator {
             }
         }
 
-        Ok((max_price_precision, max_size_precision))
+        (max_price_precision, max_size_precision)
     }
 }
 
@@ -982,7 +982,7 @@ impl Depth10StreamIterator {
                 let mut reader = create_csv_reader(&filepath)?;
                 let mut record = StringRecord::new();
                 let (detected_price, detected_size) =
-                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000)?;
+                    Self::detect_precision_from_sample(&mut reader, &mut record, 10_000);
                 (
                     price_precision.unwrap_or(detected_price),
                     size_precision.unwrap_or(detected_size),
@@ -1005,7 +1005,7 @@ impl Depth10StreamIterator {
         })
     }
 
-    fn process_snapshot5(&mut self, data: TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
+    fn process_snapshot5(&self, data: &TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1074,7 +1074,7 @@ impl Depth10StreamIterator {
         )
     }
 
-    fn process_snapshot25(&mut self, data: TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
+    fn process_snapshot25(&self, data: &TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1157,7 +1157,7 @@ impl Depth10StreamIterator {
         reader: &mut Reader<Box<dyn std::io::Read>>,
         record: &mut StringRecord,
         sample_size: usize,
-    ) -> anyhow::Result<(u8, u8)> {
+    ) -> (u8, u8) {
         let mut max_price_precision = 2u8;
         let mut max_size_precision = 0u8;
         let mut records_scanned = 0;
@@ -1217,7 +1217,7 @@ impl Depth10StreamIterator {
             }
         }
 
-        Ok((max_price_precision, max_size_precision))
+        (max_price_precision, max_size_precision)
     }
 }
 
@@ -1246,11 +1246,11 @@ impl Iterator for Depth10StreamIterator {
                         5 => self
                             .record
                             .deserialize::<TardisOrderBookSnapshot5Record>(None)
-                            .map(|data| self.process_snapshot5(data)),
+                            .map(|data| self.process_snapshot5(&data)),
                         25 => self
                             .record
                             .deserialize::<TardisOrderBookSnapshot25Record>(None)
-                            .map(|data| self.process_snapshot25(data)),
+                            .map(|data| self.process_snapshot25(&data)),
                         _ => return Some(Err(anyhow::anyhow!("Invalid levels: {}", self.levels))),
                     };
 

@@ -113,7 +113,7 @@ pub fn validate_instrument_common(
     }
 
     if let Some(quantity) = min_quantity {
-        check_positive_quantity(quantity, "max_quantity")?;
+        check_positive_quantity(quantity, "min_quantity")?;
     }
 
     if let Some(notional) = max_notional {

@@ -36,6 +36,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
     vault_address: str | None = None,
+    account_address: str | None = None,
     timeout_secs: int = 10,
     testnet: bool = False,
     proxy_url: str | None = None,
@@ -58,6 +59,9 @@ def get_cached_hyperliquid_http_client(
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
         Note: The PyO3 client handles credentials internally.
+    account_address : str, optional
+        The main account address when using an agent wallet (API sub-key).
+        If ``None`` then will source the `HYPERLIQUID_ACCOUNT_ADDRESS` env var.
     timeout_secs : int, default 10
         The timeout (seconds) for HTTP requests to Hyperliquid.
     testnet : bool, default False
@@ -76,6 +80,7 @@ def get_cached_hyperliquid_http_client(
     return nautilus_pyo3.HyperliquidHttpClient(
         private_key=private_key,
         vault_address=vault_address,
+        account_address=account_address,
         is_testnet=testnet,
         timeout_secs=timeout_secs,
         proxy_url=proxy_url,
@@ -209,6 +214,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         client = get_cached_hyperliquid_http_client(
             private_key=config.private_key,
             vault_address=config.vault_address,
+            account_address=config.account_address,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
             proxy_url=config.http_proxy_url,

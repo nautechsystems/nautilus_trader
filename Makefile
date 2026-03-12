@@ -348,7 +348,7 @@ docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 .PHONY: docs-python
 docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	uv run --active --no-sync sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
@@ -667,6 +667,16 @@ build-debug-v2:  #-- Build the v2 Python package in debug mode (fast incremental
 	$(info $(M) Building v2 extension in debug mode...)
 	$Q cd python && uv run maturin develop
 
+.PHONY: py-stubs-v2
+py-stubs-v2:  #-- Regenerate v2 Python type stubs from Rust bindings
+	$(info $(M) Generating v2 Python type stubs...)
+	$Q python python/generate_stubs.py
+
+.PHONY: update-v2
+update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
+	$(info $(M) Updating v2 uv lockfile...)
+	$Q cd python && uv lock --upgrade
+
 .PHONY: pytest-v2
 pytest-v2:  #-- Run v2 Python tests
 	$(info $(M) Running v2 Python tests...)
@@ -709,7 +719,7 @@ help:  #-- Show this help message and exit
 		CYAN = "\033[0;36m"; \
 		RESET = "\033[0m"; \
 	} \
-	/^[$$()% a-zA-Z_-]+:.*?#--/ { \
+	/^[$$()% a-zA-Z0-9_-]+:.*?#--/ { \
 		if (length($$1) > target_maxlen) target_maxlen = length($$1); \
 		targets[NR] = $$1; descriptions[NR] = $$2; \
 	} \

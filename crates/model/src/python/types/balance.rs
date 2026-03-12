@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AccountBalance {
     #[new]
     fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
@@ -105,6 +106,7 @@ impl AccountBalance {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginBalance {
     #[new]
     fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> Self {

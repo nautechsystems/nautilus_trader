@@ -91,6 +91,11 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 url = { workspace = true }
 
+# Run with `cargo bench -p nautilus-binance --bench encoder`
+[[bench]]
+name = "encoder"
+harness = false
+
 [[bin]]
 name = "binance-spot-http-public"
 path = "bin/http_public.rs"

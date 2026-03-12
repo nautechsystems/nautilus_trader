@@ -45,11 +45,13 @@ crates/adapters/your_adapter/
 │   │   └── query.rs         # Request and query builders
 │   ├── websocket/           # WebSocket implementation
 │   │   ├── client.rs        # WebSocket client
+│   │   ├── dispatch.rs      # Execution event dispatch and order routing
 │   │   ├── enums.rs         # WebSocket-specific enums
 │   │   ├── error.rs         # WebSocket-specific error types
-│   │   ├── handler.rs       # Message handler / feed handler
-│   │   ├── messages.rs      # Structs for stream payloads
-│   │   └── parse.rs         # Message parsing functions
+│   │   ├── handler.rs       # Feed handler (I/O boundary)
+│   │   ├── messages.rs      # Frame and message enums
+│   │   ├── parse.rs         # Message parsing functions
+│   │   └── subscription.rs  # Subscription topic helpers (optional)
 │   ├── python/              # PyO3 Python bindings
 │   │   ├── enums.rs         # Python-exposed enums
 │   │   ├── http.rs          # Python HTTP client bindings
@@ -336,8 +338,8 @@ minimise allocations and comparisons.
 
 All clients that cache instruments must implement three methods with standardized names: `cache_instruments()`
 (plural, bulk replace), `cache_instrument()` (singular, upsert), and `get_instrument()` (retrieve by symbol).
-WebSocket clients should use the dual-tier cache architecture (outer `DashMap`, inner `AHashMap`, command channel
-sync) documented under WebSocket patterns.
+WebSocket clients store instruments in `Arc<DashMap<Ustr, InstrumentAny>>` on the outer client for
+thread-safe access across clones.
 
 ### Testing helpers (`common/testing.rs`)
 
@@ -697,16 +699,22 @@ The underlying `WebSocketClient` sends a `RECONNECTED` sentinel message when rec
 - Tracks subscription state for reconnection logic.
 - Stores instruments cache for replay on reconnect.
 - Sends commands to handler via `cmd_tx` channel.
-- Receives domain events via `out_rx` channel.
+- Receives venue events via `out_rx` channel.
 
 **Inner handler** (`{Venue}WsFeedHandler`):
 
 - Runs in dedicated Tokio task as stateless I/O boundary.
 - Owns `WebSocketClient` exclusively (no `RwLock` needed).
 - Processes commands from `cmd_rx` → serializes to JSON → sends via WebSocket.
-- Receives raw WebSocket messages → deserializes → transforms to `NautilusWsMessage` → emits via `out_tx`.
+- Receives raw WebSocket messages → deserializes into `{Venue}WsFrame` → converts to `{Venue}WsMessage` → emits via `out_tx`.
 - Owns pending request state using `AHashMap<K, V>` (single-threaded, no locking).
-- Owns working instruments cache for transformations.
+- Uses `VecDeque<{Venue}WsMessage>` to buffer multi-message yields from a single frame parse.
+
+Some venues expose separate WebSocket endpoints for market data and order management
+(different URLs, authentication flows, or message protocols). In this case, split into
+two client+handler pairs under `websocket/data/` and `websocket/orders/` subdirectories,
+each following the same two-layer pattern. Name them `{Venue}MdWebSocketClient` /
+`{Venue}MdWsFeedHandler` and `{Venue}OrdersWebSocketClient` / `{Venue}OrdersWsFeedHandler`.
 
 **Communication pattern:**
 
@@ -714,7 +722,7 @@ The underlying `WebSocketClient` sends a `RECONNECTED` sentinel message when rec
 flowchart LR
     subgraph client["Client (orchestrator)"]
         cmd_tx["cmd_tx<br/>├ Subscribe { args }<br/>├ PlaceOrder { params }<br/>└ MassCancel { id }"]
-        out_rx["out_rx<br/>← NautilusWsMessage<br/>← Authenticated<br/>← OrderAccepted"]
+        out_rx["out_rx<br/>← {Venue}WsMessage<br/>← Authenticated<br/>← ChannelData"]
     end
 
     subgraph handler["Handler (I/O boundary)"]
@@ -733,15 +741,16 @@ flowchart LR
 
 - **No shared locks on hot path**: Handler owns `WebSocketClient`, client sends commands via lock-free mpsc channel.
 - **Command pattern for all sends**: Subscriptions, orders, cancellations all route through `HandlerCommand` enum.
-- **Event pattern for state**: Handler emits `NautilusWsMessage` events (including `Authenticated`), client maintains state from events.
+- **Event pattern for state**: Handler emits `{Venue}WsMessage` events (including `Authenticated`), client maintains state from events.
 - **Pending state ownership**: Handler owns `AHashMap` for matching responses (no `Arc<DashMap>` between layers).
+- **Message buffering**: Handler uses `VecDeque<{Venue}WsMessage>` for frames that produce multiple output messages. The `next()` method drains the queue before polling channels.
 - **Python constraint**: Client uses `Arc<DashMap>` only for state Python might query; handler uses `AHashMap` for internal matching.
 
 ### Authentication
 
 Authentication state is managed through events:
 
-- Handler processes `Login` response → **returns** `NautilusWsMessage::Authenticated` immediately.
+- Handler processes `Login` response → **returns** `{Venue}WsMessage::Authenticated` immediately.
 - Client receives event → updates local auth state → proceeds with subscriptions.
 - `AuthTracker` may be shared via `Arc` for state queries, but handler returns events directly (no blocking).
 
@@ -806,7 +815,7 @@ On reconnection, restore authentication and subscriptions:
 1. **Track subscriptions**: Preserve original subscription arguments in collections (e.g., `Arc<DashMap>`) to avoid parsing topics back to arguments.
 
 2. **Reconnection flow**:
-   - Receive `NautilusWsMessage::Reconnected` from handler.
+   - Receive `{Venue}WsMessage::Reconnected` from handler.
    - If authenticated: Re-authenticate and wait for confirmation.
    - Restore all tracked subscriptions via handler commands.
 
@@ -856,22 +865,94 @@ Support both WebSocket control frame pings and application-level text pings:
 
 The handler should check for ping messages early in the message processing loop and respond immediately to maintain connection health.
 
-### Instrument cache architecture
+### Disconnection lifecycle (`close`)
 
-WebSocket clients that cache instruments use a **dual-tier pattern** for performance:
+The `close()` method follows a three-step shutdown sequence: signal, command, await.
 
-- **Outer client**: `Arc<DashMap<Ustr, InstrumentAny>>` provides thread-safe cache for concurrent Python access.
-- **Inner handler**: `AHashMap<Ustr, InstrumentAny>` provides local cache for single-threaded hot path during message parsing.
-- **Command channel**: `tokio::sync::mpsc::unbounded_channel` synchronizes updates from outer to inner.
+```rust
+impl MyWebSocketClient {
+    pub async fn close(&mut self) -> Result<(), MyWsError> {
+        tracing::debug!("Starting close process");
 
-**Command enum pattern:**
+        // 1. Send disconnect command so handler can clean up gracefully
+        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
+            tracing::warn!("Failed to send disconnect command to handler: {e}");
+        }
 
-- `HandlerCommand::InitializeInstruments(Vec<InstrumentAny>)` replays cache on connect.
-- `HandlerCommand::UpdateInstrument(InstrumentAny)` syncs individual updates post-connection.
+        // 2. Set stop signal so handler loop exits after processing disconnect
+        self.signal.store(true, Ordering::Release);
 
-**Important:** When `cache_instrument()` is called after connection, it must send an
-`UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically
-(e.g., from WebSocket updates) won't be available for parsing market data.
+        // 3. Await task handle with timeout, abort if stuck
+        if let Some(task_handle) = self.task_handle.take() {
+            match Arc::try_unwrap(task_handle) {
+                Ok(handle) => {
+                    let abort_handle = handle.abort_handle();
+                    match tokio::time::timeout(Duration::from_secs(2), handle).await {
+                        Ok(Ok(())) => tracing::debug!("Handler task completed"),
+                        Ok(Err(e)) => tracing::error!("Handler task error: {e:?}"),
+                        Err(_) => {
+                            tracing::warn!("Timeout waiting for handler task, aborting");
+                            abort_handle.abort();
+                        }
+                    }
+                }
+                Err(arc_handle) => {
+                    tracing::debug!("Cannot unwrap task handle, aborting");
+                    arc_handle.abort();
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+```
+
+**Key points:**
+
+- Send `Disconnect` before setting the stop signal so the handler processes it before exiting.
+- Return `Result<(), {Venue}WsError>` so callers can handle failures.
+- Use `Ordering::Release` on the signal store so the handler sees the write.
+- Extract `abort_handle` before awaiting so it remains available after timeout.
+- When `Arc::try_unwrap` fails (other clones exist), abort directly.
+
+### Stream consumption (`stream`)
+
+The outer client exposes a `stream()` method that hands ownership of `out_rx` to the
+caller as an async stream. Data and execution clients call this once to drive their
+message processing loop:
+
+```rust
+impl MyWebSocketClient {
+    pub fn stream(&mut self) -> impl Stream<Item = MyWsMessage> + 'static {
+        let rx = self
+            .out_rx
+            .take()
+            .expect("Stream receiver already taken or not connected");
+        let mut rx = Arc::try_unwrap(rx)
+            .expect("Cannot take ownership - other references exist");
+        async_stream::stream! {
+            while let Some(msg) = rx.recv().await {
+                yield msg;
+            }
+        }
+    }
+}
+```
+
+The data/execution client consumes the stream in a `tokio::select!` loop with a
+cancellation token or stop signal, matching on `{Venue}WsMessage` variants and calling
+parse functions to produce Nautilus domain types.
+
+### Subscription topic helpers (`subscription.rs`)
+
+When a venue's subscription topics have complex structure (multiple parameter types,
+instrument type / family / ID variants, candle width encoding), extract topic building
+and parsing into `websocket/subscription.rs`. This keeps `client.rs` focused on
+connection lifecycle and `handler.rs` focused on I/O.
+
+For venues with simple `{channel}:{symbol}` topics, inline helpers in the client are
+sufficient and a separate module is not needed.
 
 ### Handler configuration constants
 
@@ -887,45 +968,117 @@ Place these in `websocket/handler.rs` or `common/consts.rs` depending on scope.
 
 ### Message routing
 
-Define two message enums for the transformation pipeline:
+The handler uses two message enums to separate wire deserialization from emitted events.
+The data and execution client layers convert emitted events into Nautilus domain types.
 
-1. **`{Venue}WsMessage`**: Venue-specific message variants parsed directly from WebSocket JSON (login responses, subscriptions, channel data). Use `#[serde(untagged)]` or explicit tags based on venue format.
+Define two enums:
 
-2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
+1. **`{Venue}WsFrame`**: Serde-deserialized wire frames. Contains every JSON shape the venue
+   can send (login responses, subscription acks, channel data, order responses, errors, pings).
+   Typically `pub(super)` since only the handler uses it.
 
-The handler parses incoming JSON into `{Venue}WsMessage`, transforms it to `NautilusWsMessage`,
-and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
+2. **`{Venue}WsMessage`**: Handler output events emitted on `out_tx`. Contains the subset of
+   wire data the client needs plus synthetic control variants (`Reconnected`, `Authenticated`,
+   `SendFailed`) that have no wire representation. This is the `pub` type consumers match on.
+
+The handler deserializes raw text into `{Venue}WsFrame`, handles control frames internally
+(subscription acks, login, pings), and converts relevant frames into `{Venue}WsMessage` events
+sent via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks,
+which convert venue types to Nautilus domain types using parse functions.
 
 #### Message type naming convention
 
-Types prefixed with `Nautilus` contain only Nautilus domain types (normalized data ready for the
-trading system). Types prefixed with the venue name (e.g., `Binance`, `Deribit`) contain raw
-exchange-specific types that require further processing.
+Types prefixed with the venue name (e.g., `OKX`, `Bitmex`) contain raw exchange-specific types.
+Types prefixed with `Nautilus` contain normalized domain types ready for the trading system.
 
-**Top-level output enum:**
+**Wire frame enum (serde-deserialized, handler-internal):**
 
 ```rust
-pub enum NautilusWsMessage {
-    Data(NautilusDataWsMessage),          // Normalized market data
-    Exec(NautilusExecWsMessage),          // Normalized execution events
-    Error(BinanceWsErrorMsg),
+pub(super) enum MyWsFrame {
+    Login { event, code, msg, conn_id },
+    Subscription { event, arg, conn_id, code, msg },
+    OrderResponse { id, op, code, msg, data },
+    BookData { arg, action, data: Vec<MyBookMsg> },
+    Data { arg, data: Value },
+    Error { code, msg },
+    Ping,
     Reconnected,
 }
 ```
 
-**Pattern for multi-stage processing:**
+**Handler output enum (emitted to client):**
 
-When execution messages require additional context lookup (e.g., correlating order updates with pending order maps), use a `Raw` variant:
+```rust
+pub enum MyWsMessage {
+    BookData { arg, action, data: Vec<MyBookMsg> },
+    ChannelData { channel, inst_id, data: Value },
+    Orders(Vec<MyOrderMsg>),
+    OrderResponse { id, op, code, msg, data },
+    SendFailed { request_id, client_order_id, op, error },
+    Instruments(Vec<MyInstrument>),
+    Error(MyWebSocketError),
+    Reconnected,
+    Authenticated,
+}
+```
 
-1. The data handler emits `NautilusWsMessage::ExecRaw(raw_msg)` for raw execution messages.
-2. The execution handler receives `ExecRaw`, performs context lookup, and produces `NautilusExecWsMessage`.
-3. The outer client routes normalized `NautilusExecWsMessage` events to callbacks.
+The frame enum includes every wire shape (login acks, subscription acks, pings) for
+deserialization. The output enum drops shapes the handler consumes internally and adds synthetic
+variants (`Authenticated`, `SendFailed`) that originate in handler logic, not on the wire.
 
-This separation ensures:
+Include `OrderResponse` for venue acknowledgements (place, cancel, amend) and `SendFailed` for
+WebSocket send failures after retries are exhausted. The execution client dispatch layer converts
+these into Nautilus rejection events (`OrderRejected`, `OrderCancelRejected`, etc.).
 
-- `NautilusExecWsMessage` only contains fully-resolved Nautilus domain types.
-- Raw venue messages flow through internal channels without polluting the normalized output.
-- Each handler has a single responsibility (parsing vs context resolution).
+**Conversion in data/exec client:**
+
+The data client's message loop matches on `{Venue}WsMessage` variants and calls parse functions
+to produce Nautilus domain types (`Data`, `OrderBookDeltas`, etc.). The execution client's
+dispatch layer handles `OrderResponse`, `SendFailed`, and `Orders` variants. This keeps
+the handler focused on I/O and deserialization while the client layers own domain conversion.
+
+The execution dispatch converts order and fill messages using a two-tier routing contract:
+
+1. The handler emits venue-specific order types (e.g., `Orders(Vec<MyOrderMsg>)`).
+2. The client dispatch layer tracks which orders were submitted through this client.
+3. **Tracked order**: convert venue types to order events (`OrderAccepted`, `OrderCanceled`,
+   `OrderFilled`, etc.) and synthesize any missing lifecycle events (e.g., `OrderAccepted`
+   before a fast fill).
+4. **External/unknown order**: convert to reports (`OrderStatusReport` or `FillReport`) for
+   downstream reconciliation.
+
+#### `WsDispatchState`
+
+Execution dispatch state lives in a `WsDispatchState` struct defined in `websocket/dispatch.rs`.
+It tracks which lifecycle events have already been emitted to prevent duplicates across
+reconnections and fast-fill races:
+
+```rust
+#[derive(Debug, Default)]
+pub struct WsDispatchState {
+    pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
+    pub emitted_accepted: DashSet<ClientOrderId>,
+    pub triggered_orders: DashSet<ClientOrderId>,
+    pub filled_orders: DashSet<ClientOrderId>,
+    clearing: AtomicBool,
+}
+```
+
+| Field               | Purpose                                                         |
+|---------------------|-----------------------------------------------------------------|
+| `order_identities`  | Maps client order ID to identity metadata set at submission.    |
+| `emitted_accepted`  | Prevents duplicate `OrderAccepted` events.                      |
+| `triggered_orders`  | Tracks conditional orders that have triggered.                  |
+| `filled_orders`     | Prevents duplicate `OrderFilled` events on reconnect replay.    |
+| `clearing`          | Guards concurrent eviction when sets reach capacity.            |
+
+Each `DashSet` is bounded by a `DEDUP_CAPACITY` constant (typically 10,000). When a set
+reaches capacity, `evict_if_full()` clears it atomically using a compare-exchange on the
+`clearing` flag to prevent concurrent clears.
+
+The `dispatch_ws_message()` free function in the same module routes `{Venue}WsMessage`
+variants to the appropriate order event builders, using `WsDispatchState` for dedup
+and `OrderIdentity` for tracked-vs-external classification.
 
 ### Error handling
 
@@ -952,13 +1105,13 @@ impl MyWebSocketClient {
 WebSocket send failures (handler → network) should be retried by the handler using `RetryManager`:
 
 ```rust
-pub struct FeedHandler {
+pub struct MyWsFeedHandler {
     inner: Option<WebSocketClient>,
     retry_manager: RetryManager<MyWsError>,
     // ...
 }
 
-impl FeedHandler {
+impl MyWsFeedHandler {
     async fn send_with_retry(&self, payload: String, rate_limit_keys: Option<Vec<String>>) -> Result<(), MyWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager.execute_with_retry(
@@ -982,9 +1135,13 @@ impl FeedHandler {
         match self.send_with_retry(payload, Some(vec![RATE_LIMIT_KEY])).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                // Emit OrderRejected event after retries exhausted
-                let rejected = OrderRejected::new(...);
-                let _ = self.out_tx.send(NautilusWsMessage::OrderRejected(rejected));
+                // Emit SendFailed so the exec client dispatch can produce OrderRejected
+                let _ = self.out_tx.send(MyWsMessage::SendFailed {
+                    request_id: request_id.clone(),
+                    client_order_id: Some(client_order_id),
+                    op: Some(MyWsOperation::Order),
+                    error: e.to_string(),
+                });
                 Err(anyhow::anyhow!("Failed to send order: {e}"))
             }
         }
@@ -1003,7 +1160,8 @@ fn should_retry_error(error: &MyWsError) -> bool {
 
 - Client propagates channel failures immediately (handler unavailable).
 - Handler retries transient WebSocket failures (network issues, timeouts).
-- Emit error events (`OrderRejected`, `OrderCancelRejected`) when retries exhausted.
+- Handler emits `SendFailed` when retries are exhausted; the exec client dispatch converts
+  these into Nautilus rejection events (`OrderRejected`, `OrderCancelRejected`).
 - Use `RetryManager` from `nautilus_network::retry` for consistent backoff.
 
 ### Naming conventions
@@ -1012,33 +1170,33 @@ Adapters follow standardized naming conventions for consistency across all venue
 
 #### Channel naming: `raw` → `msg` → `out`
 
-WebSocket message channels follow a three-stage transformation pipeline:
+WebSocket message channels follow a two-stage transformation pipeline within the handler:
 
 | Stage | Type | Description | Example |
 |-------|------|-------------|---------|
 | `raw` | Raw WebSocket frames | Bytes/text from the network layer. | `raw_rx: UnboundedReceiver<Message>` |
-| `msg` | Venue-specific messages | Parsed venue message types. | `msg_rx: UnboundedReceiver<BybitWsMessage>` |
-| `out` | Nautilus domain messages | Normalized platform messages. | `out_tx: UnboundedSender<NautilusWsMessage>` |
+| `out` | Venue-specific messages | Parsed venue message types. | `out_tx: UnboundedSender<MyWsMessage>` |
+
+The handler deserializes raw frames into venue-specific types and emits them on `out_tx`.
+The data and execution client layers then convert venue types into Nautilus domain types.
 
 **Example flow:**
 
 ```rust
-// Client creates venue message and output channels
-let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();  // Venue messages (BybitWsMessage)
-let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();  // Nautilus messages (NautilusWsMessage)
+// Client creates output channel for venue messages
+let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();  // Venue messages (MyWsMessage)
 
-// Handler receives venue messages, outputs Nautilus messages
-let handler = FeedHandler::new(
+// Handler receives raw frames, outputs venue messages
+let handler = MyWsFeedHandler::new(
     cmd_rx,
-    msg_rx,  // Input: BybitWsMessage
-    out_tx,  // Output: NautilusWsMessage
+    raw_rx,  // Input: Message (raw WebSocket frames)
+    out_tx,  // Output: MyWsMessage
     // ...
 );
 ```
 
-Channel names reflect the data transformation stage, not the destination. Use `raw_*` only for raw
-WebSocket frames (`Message`), `msg_*` for venue-specific message types, and `out_*` for Nautilus
-domain messages.
+Channel names reflect the data transformation stage, not the destination. Use `raw_*` for raw
+WebSocket frames (`Message`) and `out_*` for venue-specific message types.
 
 ### Backpressure strategy
 
@@ -1058,23 +1216,23 @@ Structs holding references to lower-level components follow these conventions:
 | `inner`       | `Option<WebSocketClient>`                           | Network-level WebSocket client (handler only, exclusively owned). |
 | `cmd_tx`      | `Arc<tokio::sync::RwLock<UnboundedSender<...>>>`   | Command channel to handler (client side). |
 | `cmd_rx`      | `UnboundedReceiver<HandlerCommand>`                 | Command channel from client (handler side). |
-| `out_tx`      | `UnboundedSender<NautilusWsMessage>`                | Output channel to client (handler side). |
-| `out_rx`      | `Option<Arc<UnboundedReceiver<NautilusWsMessage>>>` | Output channel from handler (client side). |
+| `out_tx`      | `UnboundedSender<{Venue}WsMessage>`                 | Output channel to client (handler side). |
+| `out_rx`      | `Option<Arc<UnboundedReceiver<{Venue}WsMessage>>>`  | Output channel from handler (client side). |
 | `task_handle` | `Option<Arc<JoinHandle<()>>>`                       | Handler task handle. |
 
 **Example:**
 
 ```rust
 // Client struct
-pub struct OKXWebSocketClient {
+pub struct MyWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<UnboundedReceiver<NautilusWsMessage>>>,
+    out_rx: Option<Arc<UnboundedReceiver<MyWsMessage>>>,
     task_handle: Option<Arc<JoinHandle<()>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,  // Lock-free connection state
     // ...
 }
 
-impl OKXWebSocketClient {
+impl MyWebSocketClient {
     async fn send_cmd(&self, cmd: HandlerCommand) -> Result<(), Error> {
         self.cmd_tx.read().await.send(cmd)
             .map_err(|e| Error::ClientError(format!("Handler not available: {e}")))
@@ -1082,12 +1240,13 @@ impl OKXWebSocketClient {
 }
 
 // Handler struct
-pub struct FeedHandler {
+pub(super) struct MyWsFeedHandler {
     inner: Option<WebSocketClient>,  // Exclusively owned - no RwLock
     cmd_rx: UnboundedReceiver<HandlerCommand>,
     raw_rx: UnboundedReceiver<Message>,
-    out_tx: UnboundedSender<NautilusWsMessage>,
+    out_tx: UnboundedSender<MyWsMessage>,
     pending_requests: AHashMap<String, RequestData>,  // Single-threaded - no locks
+    pending_messages: VecDeque<MyWsMessage>,           // Multi-message buffer
     // ...
 }
 ```
@@ -1216,6 +1375,34 @@ Unit tests belong in `#[cfg(test)]` blocks within source modules, not in the `te
 
 Tests should exercise production code paths. If a test only verifies that `Vec::extend()` works or that chrono can parse a date string, it provides no value.
 
+##### WebSocket unit test coverage
+
+WebSocket unit tests exercise three areas: message deserialization, parse dispatch, and handler
+logic. Each area lives in a `#[cfg(test)]` block within the module it tests.
+
+**Message types (`messages.rs`):**
+
+- Deserialize every message variant from fixture JSON files in `test_data/`.
+- Round-trip tests: serialize a constructed struct, deserialize the output, and assert equality.
+  Round-trip tests catch field renames, missing `skip_serializing_if` attributes, and precision
+  loss that deserialization-only tests miss.
+- Cover edge cases in venue payloads: null optional fields, empty arrays, zero quantities.
+
+**Parse functions (`parse.rs`):**
+
+- Exercise the fast-path byte scanner for each type tag or discriminant value.
+- Exercise the slow-path fallback (fields not at expected byte positions).
+- Verify unknown type tags produce a descriptive error, not a panic.
+
+**Handler logic (`handler.rs`):**
+
+- Verify the handler filters internal messages (heartbeats, subscription acks, pong frames)
+  and does not forward them to consumers.
+- Verify reconnect signals trigger re-authentication and emit the `Reconnected` variant.
+- Verify multi-message buffering: when a single raw frame produces multiple output messages,
+  all messages appear in the correct order from `next()`.
+- Verify pending-order cleanup on error and success responses.
+
 #### Integration tests
 
 Integration tests belong in the `tests/` directory and exercise the public API against mock infrastructure.
@@ -1253,7 +1440,7 @@ proves the same core behaviours.
 - **Reconnect behaviour** – simulate a disconnect and verify the client re-authenticates, restores public channels,
   and skips private channels that were explicitly unsubscribed pre-disconnect.
 - **Message routing** – feed representative data/ack/error payloads through the socket and assert they arrive on the
-  public stream as the correct `NautilusWsMessage` variant.
+  public stream as the correct `{Venue}WsMessage` variant.
 - **Quota tagging** – (optional but recommended) validate that order/cancel/amend operations are tagged with the
   appropriate quota label so rate limiting can be enforced independently of subscription traffic.
 
@@ -1538,6 +1725,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_subscribe_instrument_close` in your adapter subclass")
 
+    async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
+        raise NotImplementedError("implement `_subscribe_option_greeks` in your adapter subclass")
+
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         raise NotImplementedError("implement `_unsubscribe` in your adapter subclass")
 
@@ -1576,6 +1766,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_unsubscribe_instrument_close` in your adapter subclass")
+
+    async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
+        raise NotImplementedError("implement `_unsubscribe_option_greeks` in your adapter subclass")
 
     async def _request(self, request: RequestData) -> None:
         raise NotImplementedError("implement `_request` in your adapter subclass")
@@ -1623,6 +1816,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_subscribe_funding_rates`         | Subscribes to funding rate updates.                     |
 | `_subscribe_instrument_status`     | Subscribes to instrument status updates.                |
 | `_subscribe_instrument_close`      | Subscribes to instrument close price updates.           |
+| `_subscribe_option_greeks`         | Subscribes to option greeks updates.                    |
 | `_unsubscribe`                     | Unsubscribes from generic data (base for custom types). |
 | `_unsubscribe_instruments`         | Unsubscribes from market data for multiple instruments. |
 | `_unsubscribe_instrument`          | Unsubscribes from market data for a single instrument.  |
@@ -1636,6 +1830,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_unsubscribe_funding_rates`       | Unsubscribes from funding rate updates.                 |
 | `_unsubscribe_instrument_status`   | Unsubscribes from instrument status updates.            |
 | `_unsubscribe_instrument_close`    | Unsubscribes from instrument close price updates.       |
+| `_unsubscribe_option_greeks`       | Unsubscribes from option greeks updates.                |
 | `_request`                         | Requests generic data (base for custom types).          |
 | `_request_instrument`              | Requests historical data for a single instrument.       |
 | `_request_instruments`             | Requests historical data for multiple instruments.      |

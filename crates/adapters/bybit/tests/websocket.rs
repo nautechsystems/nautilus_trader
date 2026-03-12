@@ -45,8 +45,8 @@ use nautilus_bybit::{
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     data::BarType,
-    identifiers::{InstrumentId, StrategyId, TraderId},
-    instruments::{CurrencyPair, InstrumentAny},
+    identifiers::InstrumentId,
+    instruments::CurrencyPair,
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
@@ -2191,11 +2191,6 @@ async fn test_batch_place_orders_with_cache_keys() {
     )
     .await;
 
-    // Cache instrument with proper key format (symbol-PRODUCT_TYPE)
-    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
-    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
-
-    // Create batch place orders with raw symbol (will be converted to cache key internally)
     let orders = vec![BybitWsPlaceOrderParams {
         category: BybitProductType::Linear,
         symbol: Ustr::from("BTCUSDT"),
@@ -2225,12 +2220,7 @@ async fn test_batch_place_orders_with_cache_keys() {
         tp_limit_price: None,
     }];
 
-    let trader_id = TraderId::from("TRADER-001");
-    let strategy_id = StrategyId::from("STRATEGY-001");
-
-    let result = client
-        .batch_place_orders(trader_id, strategy_id, orders)
-        .await;
+    let result = client.batch_place_orders(orders).await;
 
     assert!(
         result.is_ok(),
@@ -2277,12 +2267,7 @@ async fn test_batch_amend_orders() {
         sl_trigger_by: None,
     }];
 
-    let trader_id = TraderId::from("TRADER-001");
-    let strategy_id = StrategyId::from("STRATEGY-001");
-
-    let result = client
-        .batch_amend_orders(trader_id, strategy_id, orders)
-        .await;
+    let result = client.batch_amend_orders(orders).await;
 
     assert!(result.is_ok(), "Batch amend orders should succeed");
 
@@ -2312,15 +2297,6 @@ async fn test_batch_cancel_orders() {
     )
     .await;
 
-    let trader_id = TraderId::from("TESTER-001");
-    let strategy_id = StrategyId::from("S-001");
-
-    // Cache instruments so cancel registration can resolve instrument IDs
-    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
-    let ethusdt_linear = make_linear_pair("ETHUSDT", "ETH", "USDT");
-    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
-    client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt_linear));
-
     let orders = vec![
         BybitWsCancelOrderParams {
             category: BybitProductType::Linear,
@@ -2336,9 +2312,7 @@ async fn test_batch_cancel_orders() {
         },
     ];
 
-    let result = client
-        .batch_cancel_orders(trader_id, strategy_id, orders)
-        .await;
+    let result = client.batch_cancel_orders(orders).await;
 
     assert!(result.is_ok(), "Batch cancel orders should succeed");
 
@@ -2366,11 +2340,6 @@ async fn test_batch_cancel_orders_chunking_over_20() {
     )
     .await;
 
-    let trader_id = TraderId::from("TESTER-001");
-    let strategy_id = StrategyId::from("S-001");
-    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
-    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
-
     // 25 orders forces chunking into batches of 20 + 5
     let orders: Vec<BybitWsCancelOrderParams> = (0..25)
         .map(|i| BybitWsCancelOrderParams {
@@ -2381,9 +2350,7 @@ async fn test_batch_cancel_orders_chunking_over_20() {
         })
         .collect();
 
-    let result = client
-        .batch_cancel_orders(trader_id, strategy_id, orders)
-        .await;
+    let result = client.batch_cancel_orders(orders).await;
 
     assert!(result.is_ok(), "Batch cancel with chunking should succeed");
 
@@ -2411,13 +2378,9 @@ async fn test_batch_cancel_orders_empty_list() {
     )
     .await;
 
-    let trader_id = TraderId::from("TESTER-001");
-    let strategy_id = StrategyId::from("S-001");
     let orders: Vec<BybitWsCancelOrderParams> = vec![];
 
-    let result = client
-        .batch_cancel_orders(trader_id, strategy_id, orders)
-        .await;
+    let result = client.batch_cancel_orders(orders).await;
 
     assert!(
         result.is_ok(),
@@ -2449,7 +2412,6 @@ async fn test_build_cancel_order_params_requires_order_id() {
     .await;
 
     let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
-    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear.clone()));
 
     let result =
         client.build_cancel_order_params(BybitProductType::Linear, btcusdt_linear.id, None, None);

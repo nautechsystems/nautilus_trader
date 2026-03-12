@@ -31,7 +31,7 @@ pub(crate) mod indicators;
 pub mod registry;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 // Re-exports
 pub use data_actor::{DataActor, DataActorConfig, DataActorCore};

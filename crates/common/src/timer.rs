@@ -46,6 +46,10 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
 /// Represents a time event occurring at the event timestamp.
 ///
 /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
@@ -313,6 +317,11 @@ impl Ord for TimeEventHandler {
     }
 }
 
+pub(crate) trait Timer {
+    fn is_expired(&self) -> bool;
+    fn cancel(&mut self);
+}
+
 /// A test timer for user with a `TestClock`.
 ///
 /// `TestTimer` simulates time progression in a controlled environment,
@@ -412,6 +421,16 @@ impl TestTimer {
     ///
     /// Used to stop the timer before its scheduled stop time.
     pub const fn cancel(&mut self) {
+        self.is_expired = true;
+    }
+}
+
+impl Timer for TestTimer {
+    fn is_expired(&self) -> bool {
+        self.is_expired
+    }
+
+    fn cancel(&mut self) {
         self.is_expired = true;
     }
 }

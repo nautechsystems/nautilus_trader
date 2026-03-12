@@ -92,3 +92,8 @@ nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
 rstest = { workspace = true }
+
+[[bin]]
+name = "polymarket-updown-markets"
+path = "bin/updown_markets.rs"
+doc = false

@@ -41,24 +41,45 @@
 //! - Never use `block_on()` - it blocks the runtime.
 //! - Always clone before async blocks for lifetime requirements.
 
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicU64, Ordering},
+};
+
+use ahash::AHashMap;
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
+use nautilus_core::{
+    python::{call_python_threadsafe, to_pyruntime_err},
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    data::{BarType, Data, OrderBookDeltas, OrderBookDeltas_API},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    reports::{FillReport, OrderStatusReport},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
+        consts::KRAKEN_VENUE,
         enums::{KrakenEnvironment, KrakenProductType},
         urls::get_kraken_ws_private_url,
     },
     config::KrakenDataClientConfig,
-    websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
+    websocket::spot_v2::{
+        client::KrakenSpotWebSocketClient,
+        messages::KrakenSpotWsMessage,
+        parse::{
+            parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar,
+            parse_ws_fill_report, parse_ws_order_status_report,
+        },
+    },
 };
 
 #[pymethods]
@@ -72,7 +93,7 @@ impl KrakenSpotWebSocketClient {
         heartbeat_secs: Option<u64>,
         api_key: Option<String>,
         api_secret: Option<String>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
 
         let (resolved_api_key, resolved_api_secret) =
@@ -102,7 +123,7 @@ impl KrakenSpotWebSocketClient {
 
         let token = CancellationToken::new();
 
-        Ok(Self::new(config, token))
+        Self::new(config, token)
     }
 
     #[getter]
@@ -132,36 +153,13 @@ impl KrakenSpotWebSocketClient {
         self.get_subscriptions()
     }
 
-    #[pyo3(name = "cache_instrument")]
-    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
-        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
-        Ok(())
-    }
-
-    #[pyo3(name = "set_account_id")]
-    fn py_set_account_id(&self, account_id: AccountId) {
-        self.set_account_id(account_id);
-    }
-
-    #[pyo3(name = "cache_client_order")]
-    fn py_cache_client_order(
-        &self,
-        client_order_id: ClientOrderId,
-        _venue_order_id: Option<VenueOrderId>,
-        instrument_id: InstrumentId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-    ) {
-        // Note: venue_order_id not used for spot yet, but kept for API consistency
-        self.cache_client_order(client_order_id, instrument_id, trader_id, strategy_id);
-    }
-
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -171,117 +169,251 @@ impl KrakenSpotWebSocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
 
-        let mut instruments_any = Vec::new();
+        let instruments_map = Arc::new(RwLock::new(AHashMap::<InstrumentId, InstrumentAny>::new()));
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-            instruments_any.push(inst_any);
+
+            if let Ok(mut guard) = instruments_map.write() {
+                guard.insert(inst_any.id(), inst_any);
+            }
         }
 
+        let account_id = self.account_id_shared().clone();
+        let truncated_id_map = self.truncated_id_map().clone();
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.connect().await.map_err(to_pyruntime_err)?;
 
-            // Cache instruments after connection is established
-            client.cache_instruments(instruments_any);
-
             let stream = client.stream().map_err(to_pyruntime_err)?;
+            let clock = get_atomic_clock_realtime();
+            let book_sequence = Arc::new(AtomicU64::new(0));
 
             get_runtime().spawn(async move {
                 tokio::pin!(stream);
+                let order_qty_cache: Arc<RwLock<AHashMap<String, f64>>> =
+                    Arc::new(RwLock::new(AHashMap::new()));
 
                 while let Some(msg) = stream.next().await {
+                    let ts_init = clock.get_time_ns();
+
                     match msg {
-                        NautilusWsMessage::Data(data_vec) => {
-                            Python::attach(|py| {
-                                for data in data_vec {
-                                    let py_obj = data_to_pycapsule(py, data);
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                }
-                            });
-                        }
-                        NautilusWsMessage::Deltas(deltas) => {
-                            Python::attach(|py| {
-                                let py_obj = data_to_pycapsule(
-                                    py,
-                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                        KrakenSpotWsMessage::Ticker(tickers) => {
+                            for ticker in &tickers {
+                                let instrument_id = InstrumentId::new(
+                                    Symbol::new(ticker.symbol.as_str()),
+                                    *KRAKEN_VENUE,
                                 );
-                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                            });
+                                let instrument = instruments_map
+                                    .read()
+                                    .ok()
+                                    .and_then(|g| g.get(&instrument_id).cloned());
+
+                                if let Some(ref inst) = instrument {
+                                    match parse_quote_tick(ticker, inst, ts_init) {
+                                        Ok(quote) => {
+                                            Python::attach(|py| {
+                                                let py_obj =
+                                                    data_to_pycapsule(py, Data::Quote(quote));
+                                                call_python_threadsafe(
+                                                    py, &call_soon, &callback, py_obj,
+                                                );
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse quote tick: {e}");
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        NautilusWsMessage::OrderRejected(event) => {
-                            Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                        KrakenSpotWsMessage::Trade(trades) => {
+                            for trade in &trades {
+                                let instrument_id = InstrumentId::new(
+                                    Symbol::new(trade.symbol.as_str()),
+                                    *KRAKEN_VENUE,
+                                );
+                                let instrument = instruments_map
+                                    .read()
+                                    .ok()
+                                    .and_then(|g| g.get(&instrument_id).cloned());
+
+                                if let Some(ref inst) = instrument {
+                                    match parse_trade_tick(trade, inst, ts_init) {
+                                        Ok(tick) => {
+                                            Python::attach(|py| {
+                                                let py_obj =
+                                                    data_to_pycapsule(py, Data::Trade(tick));
+                                                call_python_threadsafe(
+                                                    py, &call_soon, &callback, py_obj,
+                                                );
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse trade tick: {e}");
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to convert OrderRejected to Python: {e}");
-                                }
-                            });
+                            }
                         }
-                        NautilusWsMessage::OrderAccepted(event) => {
-                            Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                        KrakenSpotWsMessage::Book {
+                            data,
+                            is_snapshot: _,
+                        } => {
+                            for book in &data {
+                                let instrument_id = InstrumentId::new(
+                                    Symbol::new(book.symbol.as_str()),
+                                    *KRAKEN_VENUE,
+                                );
+                                let instrument = instruments_map
+                                    .read()
+                                    .ok()
+                                    .and_then(|g| g.get(&instrument_id).cloned());
+
+                                if let Some(ref inst) = instrument {
+                                    let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
+                                    match parse_book_deltas(book, inst, sequence, ts_init) {
+                                        Ok(delta_vec) => {
+                                            if delta_vec.is_empty() {
+                                                continue;
+                                            }
+                                            let deltas = OrderBookDeltas::new(inst.id(), delta_vec);
+                                            Python::attach(|py| {
+                                                let py_obj = data_to_pycapsule(
+                                                    py,
+                                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                                );
+                                                call_python_threadsafe(
+                                                    py, &call_soon, &callback, py_obj,
+                                                );
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse book deltas: {e}");
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to convert OrderAccepted to Python: {e}");
-                                }
-                            });
+                            }
                         }
-                        NautilusWsMessage::OrderCanceled(event) => {
-                            Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                        KrakenSpotWsMessage::Ohlc(ohlc_data) => {
+                            for ohlc in &ohlc_data {
+                                let instrument_id = InstrumentId::new(
+                                    Symbol::new(ohlc.symbol.as_str()),
+                                    *KRAKEN_VENUE,
+                                );
+                                let instrument = instruments_map
+                                    .read()
+                                    .ok()
+                                    .and_then(|g| g.get(&instrument_id).cloned());
+
+                                if let Some(ref inst) = instrument {
+                                    match parse_ws_bar(ohlc, inst, ts_init) {
+                                        Ok(bar) => {
+                                            Python::attach(|py| {
+                                                let py_obj = data_to_pycapsule(py, Data::Bar(bar));
+                                                call_python_threadsafe(
+                                                    py, &call_soon, &callback, py_obj,
+                                                );
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse bar: {e}");
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to convert OrderCanceled to Python: {e}");
-                                }
-                            });
+                            }
                         }
-                        NautilusWsMessage::OrderExpired(event) => {
-                            Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                        KrakenSpotWsMessage::Execution(executions) => {
+                            let acct_id = account_id.read().ok().and_then(|g| *g);
+                            let Some(acct_id) = acct_id else {
+                                log::trace!(
+                                    "Execution message received but no account_id set (data-only client)"
+                                );
+                                continue;
+                            };
+
+                            for exec in &executions {
+                                let symbol = match &exec.symbol {
+                                    Some(s) => s.as_str(),
+                                    None => {
+                                        log::debug!(
+                                            "Execution without symbol: exec_type={:?}, order_id={}",
+                                            exec.exec_type,
+                                            exec.order_id
+                                        );
+                                        continue;
+                                    }
+                                };
+
+                                let instrument_id = InstrumentId::new(
+                                    Symbol::new(symbol),
+                                    *KRAKEN_VENUE,
+                                );
+                                let instrument = instruments_map
+                                    .read()
+                                    .ok()
+                                    .and_then(|g| g.get(&instrument_id).cloned());
+
+                                let Some(ref inst) = instrument else {
+                                    log::warn!("No instrument for symbol: {symbol}");
+                                    continue;
+                                };
+
+                                let cached_qty = exec.cl_ord_id.as_ref().and_then(|id| {
+                                    order_qty_cache.read().ok().and_then(|c| c.get(id).copied())
+                                });
+
+                                if let (Some(qty), Some(cl_ord_id)) =
+                                    (exec.order_qty, &exec.cl_ord_id)
+                                    && let Ok(mut cache) = order_qty_cache.write()
+                                {
+                                    cache.insert(cl_ord_id.clone(), qty);
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to convert OrderExpired to Python: {e}");
+
+                                match parse_ws_order_status_report(
+                                    exec, inst, acct_id, cached_qty, ts_init,
+                                ) {
+                                    Ok(mut report) => {
+                                        if let Some(ref cl_ord_id) = exec.cl_ord_id {
+                                            let full_id = truncated_id_map
+                                                .read()
+                                                .ok()
+                                                .and_then(|map| map.get(cl_ord_id).copied())
+                                                .unwrap_or_else(|| ClientOrderId::new(cl_ord_id));
+                                            report = report.with_client_order_id(full_id);
+                                        }
+                                        dispatch_order_status_report(
+                                            report, &call_soon, &callback,
+                                        );
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to parse order status report: {e}");
+                                    }
                                 }
-                            });
+
+                                if exec.exec_id.is_some() {
+                                    match parse_ws_fill_report(exec, inst, acct_id, ts_init) {
+                                        Ok(mut report) => {
+                                            if let Some(ref cl_ord_id) = exec.cl_ord_id {
+                                                let full_id = truncated_id_map
+                                                    .read()
+                                                    .ok()
+                                                    .and_then(|map| map.get(cl_ord_id).copied())
+                                                    .unwrap_or_else(|| {
+                                                        ClientOrderId::new(cl_ord_id)
+                                                    });
+                                                report.client_order_id = Some(full_id);
+                                            }
+                                            dispatch_fill_report(report, &call_soon, &callback);
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse fill report: {e}");
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        NautilusWsMessage::OrderUpdated(event) => {
-                            Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to convert OrderUpdated to Python: {e}");
-                                }
-                            });
-                        }
-                        NautilusWsMessage::OrderStatusReport(report) => {
-                            Python::attach(|py| match (*report).into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to convert OrderStatusReport to Python: {e}"
-                                    );
-                                }
-                            });
-                        }
-                        NautilusWsMessage::FillReport(report) => {
-                            Python::attach(|py| match (*report).into_py_any(py) {
-                                Ok(py_obj) => {
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to convert FillReport to Python: {e}");
-                                }
-                            });
-                        }
-                        NautilusWsMessage::Reconnected => {
+                        KrakenSpotWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
                         }
                     }
@@ -347,6 +479,37 @@ impl KrakenSpotWebSocketClient {
             client.close().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
+    }
+
+    #[pyo3(name = "set_account_id")]
+    fn py_set_account_id(&self, account_id: AccountId) {
+        self.set_account_id(account_id);
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.cache_instrument(inst_any);
+        Ok(())
+    }
+
+    #[pyo3(name = "cache_client_order")]
+    fn py_cache_client_order(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+    ) {
+        self.cache_client_order(
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            trader_id,
+            strategy_id,
+        );
     }
 
     #[pyo3(name = "subscribe_book")]
@@ -504,4 +667,30 @@ impl KrakenSpotWebSocketClient {
             Ok(())
         })
     }
+}
+
+fn dispatch_order_status_report(
+    report: OrderStatusReport,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    Python::attach(|py| match report.into_py_any(py) {
+        Ok(py_obj) => {
+            call_python_threadsafe(py, call_soon, callback, py_obj);
+        }
+        Err(e) => {
+            log::error!("Failed to convert OrderStatusReport to Python: {e}");
+        }
+    });
+}
+
+fn dispatch_fill_report(report: FillReport, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    Python::attach(|py| match report.into_py_any(py) {
+        Ok(py_obj) => {
+            call_python_threadsafe(py, call_soon, callback, py_obj);
+        }
+        Err(e) => {
+            log::error!("Failed to convert FillReport to Python: {e}");
+        }
+    });
 }

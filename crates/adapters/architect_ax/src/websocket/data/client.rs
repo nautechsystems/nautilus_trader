@@ -28,7 +28,6 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
@@ -38,10 +37,10 @@ use nautilus_network::{
 };
 use ustr::Ustr;
 
-use super::handler::{FeedHandler, HandlerCommand};
+use super::handler::{AxMdWsFeedHandler, HandlerCommand};
 use crate::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
-    websocket::messages::NautilusDataWsMessage,
+    websocket::messages::AxDataWsMessage,
 };
 
 /// Default heartbeat interval in seconds.
@@ -74,14 +73,14 @@ impl core::fmt::Display for AxWsClientError {
 impl std::error::Error for AxWsClientError {}
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct SymbolDataTypes {
-    pub(crate) quotes: bool,
-    pub(crate) trades: bool,
-    pub(crate) book_level: Option<AxMarketDataLevel>,
+pub struct SymbolDataTypes {
+    pub quotes: bool,
+    pub trades: bool,
+    pub book_level: Option<AxMarketDataLevel>,
 }
 
 impl SymbolDataTypes {
-    pub(crate) fn effective_level(&self) -> Option<AxMarketDataLevel> {
+    pub fn effective_level(&self) -> Option<AxMarketDataLevel> {
         if let Some(level) = self.book_level {
             return Some(level);
         }
@@ -101,24 +100,16 @@ impl SymbolDataTypes {
 ///
 /// Provides streaming market data including tickers, trades, order books, and candles.
 /// Requires Bearer token authentication obtained via the HTTP `/api/authenticate` endpoint.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
-    )
-)]
 pub struct AxMdWebSocketClient {
     url: String,
     heartbeat: Option<u64>,
     auth_token: Option<String>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusDataWsMessage>>>,
+    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxDataWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     request_id_counter: Arc<AtomicI64>,
     subscribe_lock: Arc<tokio::sync::Mutex<()>>,
     symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
@@ -147,7 +138,6 @@ impl Clone for AxMdWebSocketClient {
             task_handle: None,
             subscriptions: self.subscriptions.clone(),
             subscribe_lock: Arc::clone(&self.subscribe_lock),
-            instruments_cache: Arc::clone(&self.instruments_cache),
             request_id_counter: Arc::clone(&self.request_id_counter),
             symbol_data_types: Arc::clone(&self.symbol_data_types),
         }
@@ -175,7 +165,6 @@ impl AxMdWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
-            instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(DashMap::new()),
@@ -202,7 +191,6 @@ impl AxMdWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
-            instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(DashMap::new()),
@@ -244,6 +232,12 @@ impl AxMdWebSocketClient {
         self.subscriptions.len()
     }
 
+    /// Returns the symbol data types map (shared with handler).
+    #[must_use]
+    pub fn symbol_data_types(&self) -> Arc<DashMap<String, SymbolDataTypes>> {
+        Arc::clone(&self.symbol_data_types)
+    }
+
     fn next_request_id(&self) -> i64 {
         self.request_id_counter.fetch_add(1, Ordering::Relaxed)
     }
@@ -256,27 +250,6 @@ impl AxMdWebSocketClient {
         let symbol_ustr = symbol.map_or_else(|| Ustr::from(""), Ustr::from);
         self.subscriptions
             .is_subscribed(&channel_ustr, &symbol_ustr)
-    }
-
-    /// Caches an instrument for use during message parsing.
-    pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let symbol = instrument.symbol().inner();
-        self.instruments_cache.insert(symbol, instrument.clone());
-
-        if self.is_active() {
-            let cmd = HandlerCommand::UpdateInstrument(Box::new(instrument));
-            let cmd_tx = self.cmd_tx.clone();
-            get_runtime().spawn(async move {
-                let guard = cmd_tx.read().await;
-                let _ = guard.send(cmd);
-            });
-        }
-    }
-
-    /// Returns a cached instrument by symbol.
-    #[must_use]
-    pub fn get_cached_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache.get(symbol).map(|r| r.clone())
     }
 
     /// Establishes the WebSocket connection.
@@ -388,7 +361,7 @@ impl AxMdWebSocketClient {
 
         self.connection_mode.store(client.connection_mode_atomic());
 
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusDataWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxDataWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -396,32 +369,15 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::SetClient(client)).await?;
 
-        if !self.instruments_cache.is_empty() {
-            let cached_instruments: Vec<InstrumentAny> = self
-                .instruments_cache
-                .iter()
-                .map(|entry| entry.value().clone())
-                .collect();
-            self.send_cmd(HandlerCommand::InitializeInstruments(cached_instruments))
-                .await?;
-        }
-
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
-        let symbol_data_types = Arc::clone(&self.symbol_data_types);
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
-                signal.clone(),
-                cmd_rx,
-                raw_rx,
-                out_tx.clone(),
-                subscriptions.clone(),
-                symbol_data_types,
-            );
+            let mut handler =
+                AxMdWsFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
 
             while let Some(msg) = handler.next().await {
-                if matches!(msg, NautilusDataWsMessage::Reconnected) {
+                if matches!(msg, AxDataWsMessage::Reconnected) {
                     log::info!("WebSocket reconnected, subscriptions will be replayed");
                 }
 
@@ -797,7 +753,7 @@ impl AxMdWebSocketClient {
     /// # Panics
     ///
     /// Panics if called before `connect()` or if the stream has already been taken.
-    pub fn stream(&mut self) -> impl futures_util::Stream<Item = NautilusDataWsMessage> + 'static {
+    pub fn stream(&mut self) -> impl futures_util::Stream<Item = AxDataWsMessage> + 'static {
         let rx = self
             .out_rx
             .take()

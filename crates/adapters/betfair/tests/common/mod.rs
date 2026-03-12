@@ -16,10 +16,11 @@
 //! Shared test infrastructure for Betfair integration tests.
 
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -76,6 +77,7 @@ pub fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 #[derive(Clone, Default)]
 pub struct MockState {
     pub login_count: Arc<AtomicUsize>,
+    pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
@@ -95,22 +97,28 @@ async fn handle_navigation() -> impl IntoResponse {
     )
 }
 
-async fn handle_betting(body: Bytes) -> impl IntoResponse {
+async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let result = match method {
-        "SportsAPING/v1.0/listMarketCatalogue" => {
-            let fixture = load_fixture("rest/betting_list_market_catalogue.json");
-            serde_json::from_str::<Value>(&fixture).unwrap()
+    let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
+
+    let result = if let Some(value) = override_result {
+        value
+    } else {
+        match method {
+            "SportsAPING/v1.0/listMarketCatalogue" => {
+                let fixture = load_fixture("rest/betting_list_market_catalogue.json");
+                serde_json::from_str::<Value>(&fixture).unwrap()
+            }
+            "SportsAPING/v1.0/placeOrders" => {
+                let fixture = load_fixture("rest/betting_place_order_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
+            _ => serde_json::json!(null),
         }
-        "SportsAPING/v1.0/placeOrders" => {
-            let fixture = load_fixture("rest/betting_place_order_success.json");
-            let v: Value = serde_json::from_str(&fixture).unwrap();
-            v["result"].clone()
-        }
-        _ => serde_json::json!(null),
     };
 
     let response = serde_json::json!({
@@ -206,12 +214,20 @@ pub async fn accept_and_auth(
 }
 
 pub fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {
-    BetfairHttpClient::new(test_credential(), Some(10), Some(1), Some(100), None)
-        .unwrap()
-        .with_urls(
-            format!("http://{addr}/login"),
-            format!("http://{addr}/betting"),
-            format!("http://{addr}/accounts"),
-            format!("http://{addr}/navigation"),
-        )
+    BetfairHttpClient::new(
+        test_credential(),
+        Some(10),
+        Some(1),
+        Some(100),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_urls(
+        format!("http://{addr}/login"),
+        format!("http://{addr}/betting"),
+        format!("http://{addr}/accounts"),
+        format!("http://{addr}/navigation"),
+    )
 }

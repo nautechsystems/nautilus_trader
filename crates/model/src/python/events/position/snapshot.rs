@@ -19,6 +19,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use crate::events::PositionSnapshot;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionSnapshot {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {

@@ -43,6 +43,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct OrderRejected {
     /// The trader ID associated with the event.
     pub trader_id: TraderId,
@@ -125,12 +129,13 @@ impl Display for OrderRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, client_order_id={}, account_id={}, reason='{}', ts_event={})",
+            "{}(instrument_id={}, client_order_id={}, account_id={}, reason='{}', due_post_only={}, ts_event={})",
             stringify!(OrderRejected),
             self.instrument_id,
             self.client_order_id,
             self.account_id,
             self.reason,
+            self.due_post_only != 0,
             self.ts_event
         )
     }
@@ -141,7 +146,7 @@ impl OrderEvent for OrderRejected {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderRejected)
     }
 
@@ -403,7 +408,7 @@ mod tests {
         assert_eq!(
             display,
             "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
-        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)"
+        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', due_post_only=false, ts_event=0)"
         );
     }
 
@@ -440,7 +445,7 @@ mod tests {
         let order_rejected = create_test_order_rejected();
 
         assert_eq!(order_rejected.id(), order_rejected.event_id);
-        assert_eq!(order_rejected.kind(), "OrderRejected");
+        assert_eq!(order_rejected.type_name(), "OrderRejected");
         assert_eq!(order_rejected.order_type(), None);
         assert_eq!(order_rejected.order_side(), None);
         assert_eq!(order_rejected.trader_id(), TraderId::from("TRADER-001"));

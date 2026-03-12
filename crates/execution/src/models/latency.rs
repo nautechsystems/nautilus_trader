@@ -44,6 +44,14 @@ pub trait LatencyModel: Debug {
 /// Python's behavior. For example, if `base_latency_nanos = 100ms` and
 /// `insert_latency_nanos = 200ms`, the effective insert latency will be 300ms.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        unsendable,
+        from_py_object
+    )
+)]
 pub struct StaticLatencyModel {
     base_latency_nanos: UnixNanos,
     insert_latency_nanos: UnixNanos,

@@ -480,9 +480,9 @@ fn test_position_ids_filtering(mut cache: Cache) {
     pos_closed.ts_closed = Some(UnixNanos::from(1));
 
     // Insert into cache
-    cache.add_position(pos_a.clone(), OmsType::Netting).unwrap();
-    cache.add_position(pos_b, OmsType::Netting).unwrap();
-    cache.add_position(pos_closed, OmsType::Netting).unwrap();
+    cache.add_position(&pos_a, OmsType::Netting).unwrap();
+    cache.add_position(&pos_b, OmsType::Netting).unwrap();
+    cache.add_position(&pos_closed, OmsType::Netting).unwrap();
 
     // Assertions
     assert_eq!(cache.position_ids(None, None, None, None).len(), 3);
@@ -808,9 +808,7 @@ fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         None,
     );
     let position = Position::new(&audusd_sim, filled.into());
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
     let result = cache.position(&position.id);
     assert_eq!(result, Some(&position));
@@ -1507,9 +1505,7 @@ fn test_purge_order() {
 
     let mut position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
     // Close the position to test purging from closed positions
     let order_close = OrderTestBuilder::new(OrderType::Market)
@@ -1630,9 +1626,7 @@ fn test_purge_position() {
     let position_id = position.id;
 
     // Add position to cache
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
     // Verify the position exists and is open
     assert!(cache.position_exists(&position_id));
@@ -1704,9 +1698,7 @@ fn test_purge_open_position_skips_purge() {
     let position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
 
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
     // Verify position is open
     assert!(position.is_open());
@@ -1760,9 +1752,7 @@ fn test_purge_closed_positions_does_not_purge_reopened_position() {
     let position_id = position.id;
 
     // Add position to cache
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
     cache.update_position(&position).unwrap();
 
     // Verify position is LONG
@@ -2146,7 +2136,7 @@ fn test_purge_position_cleans_up_account_positions_index() {
 
     let position = Position::new(&instrument, filled.into());
     let position_id = position.id;
-    cache.add_position(position, OmsType::Hedging).unwrap();
+    cache.add_position(&position, OmsType::Hedging).unwrap();
 
     // Verify position is in account index (populated by add_position)
     assert!(cache.index.account_positions.contains_key(&account_id));
@@ -2766,9 +2756,7 @@ fn test_position_flip_netting_mode_cleans_up_closed_index() {
     let position_id = position.id;
 
     // Add position to cache
-    cache
-        .add_position(position.clone(), OmsType::Netting)
-        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
 
     // Verify position is LONG and in open index
     assert!(position.is_long());
@@ -2837,7 +2825,7 @@ fn test_position_flip_netting_mode_cleans_up_closed_index() {
     // Add the reopened position to cache
     // THIS IS THE KEY TEST: add_position should remove from closed index
     cache
-        .add_position(position_reopened.clone(), OmsType::Netting)
+        .add_position(&position_reopened, OmsType::Netting)
         .unwrap();
 
     // The reopened position should be in open index, NOT closed index

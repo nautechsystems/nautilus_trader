@@ -5,125 +5,257 @@
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-analysis]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-architect-ax]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-architect-ax]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-backtest]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-backtest]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
+[[unpublished.nautilus-binance]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-bitmex]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-bitmex]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-blockchain]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-blockchain]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-bybit]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-bybit]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-cli]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-cli]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-common]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-common]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-core]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-core]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-cryptography]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-cryptography]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-data]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-data]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-databento]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-databento]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-deribit]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-deribit]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
+[[unpublished.nautilus-dydx]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-execution]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-execution]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-hyperliquid]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-hyperliquid]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-indicators]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-indicators]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-infrastructure]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-infrastructure]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-kraken]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-kraken]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-live]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-live]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-model]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-model]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-network]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-network]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-okx]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-okx]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-persistence]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-persistence]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-portfolio]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-portfolio]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-risk]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-risk]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-sandbox]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-sandbox]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-serialization]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-serialization]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-system]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-system]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[unpublished.nautilus-tardis]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-tardis]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-testkit]]
 version = "0.54.0"
 audited_as = "0.53.0"
 
+[[unpublished.nautilus-testkit]]
+version = "0.55.0"
+audited_as = "0.54.0"
+
 [[unpublished.nautilus-trading]]
 version = "0.54.0"
 audited_as = "0.53.0"
+
+[[unpublished.nautilus-trading]]
+version = "0.55.0"
+audited_as = "0.54.0"
 
 [[publisher.bumpalo]]
 version = "3.20.2"
@@ -2085,6 +2217,30 @@ criteria = "safe-to-deploy"
 delta = "0.1.3 -> 0.1.6"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
+[[audits.mozilla.audits.deranged]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.3.11"
+notes = """
+This crate contains a decent bit of `unsafe` code, however all internal
+unsafety is verified with copious assertions (many are compile-time), and
+otherwise the unsafety is documented and left to the caller to verify.
+"""
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.deranged]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.3.11 -> 0.4.0"
+aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.deranged]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.4.0 -> 0.5.8"
+notes = "New unsafe code is properly guarded"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
 [[audits.mozilla.audits.digest]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -2304,6 +2460,39 @@ aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-ch
 who = "Makoto Kato <m_kato@ga2.so-net.ne.jp>"
 criteria = "safe-to-deploy"
 delta = "0.7.5 -> 0.8.0"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.num-conv]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = """
+Very straightforward, simple crate. No dependencies, unsafe, extern,
+side-effectful std functions, etc.
+"""
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.num-conv]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.1.0 -> 0.2.0"
+notes = "Revision only removes code"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.objc2-core-foundation]]
+who = "Andy Leiserson <aleiserson@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.3.2"
+notes = """
+Contains substantial unsafe code, as is typical for FFI.
+
+The (non-published) `header-translator` crate that produces generated bindings
+in this crate was also reviewed, in lieu of a full review of the generated
+bindings.
+
+Users of this crate should be aware of the information in
+https://github.com/madsmtm/objc2/blob/main/crates/objc2/src/topics/frameworks_soundness.md.
+"""
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.objc2-encode]]
@@ -2613,6 +2802,68 @@ who = "Jan-Erik Rediger <jrediger@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "1.0.43 -> 1.0.69"
 aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-core]]
+who = "Kershaw Chang <kershaw@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-core]]
+who = "Kershaw Chang <kershaw@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.0 -> 0.1.1"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-core]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.1.1 -> 0.1.2"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-core]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.1.2 -> 0.1.4"
+aggregated-from = "https://raw.githubusercontent.com/mozilla/glean/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-core]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.1.4 -> 0.1.8"
+notes = "No unsafe code"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-macros]]
+who = "Kershaw Chang <kershaw@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.2.6"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-macros]]
+who = "Kershaw Chang <kershaw@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.6 -> 0.2.10"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-macros]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.10 -> 0.2.18"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-macros]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.2.18 -> 0.2.22"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.time-macros]]
+who = "Lars Eggert <lars@eggert.org>"
+criteria = "safe-to-deploy"
+delta = "0.2.22 -> 0.2.27"
+notes = "Refactors some unsafe code, nothing new"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.tinyvec_macros]]
 who = "Drew Willcoxon <adw@mozilla.com>"

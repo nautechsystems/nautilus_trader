@@ -127,3 +127,17 @@ name = "deribit-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = []
 doc = false
+
+# Run with `cargo run -p nautilus-deribit --example deribit-greeks-tester`
+[[example]]
+name = "deribit-greeks-tester"
+path = "examples/node_greeks.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run -p nautilus-deribit --example deribit-option-chain-tester`
+[[example]]
+name = "deribit-option-chain"
+path = "examples/node_option_chain.rs"
+required-features = []
+doc = false

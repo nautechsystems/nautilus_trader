@@ -333,13 +333,40 @@ pub fn decode_price_or_undef(value: i64, precision: u8) -> Price {
     }
 }
 
+/// Computes the minimum decimal precision needed to represent a raw price value
+/// expressed in units of 1e-9, by counting trailing decimal zeros.
+///
+/// For example, a raw value of `3_906_250` (representing 0.00390625) has 1 trailing
+/// zero, so the precision is `9 - 1 = 8`.
+#[inline(always)]
+#[must_use]
+pub fn precision_from_raw(value: i64) -> u8 {
+    let mut v = value.unsigned_abs();
+    if v == 0 {
+        return 0;
+    }
+    let mut trailing = 0u8;
+    while trailing < 9 && v.is_multiple_of(10) {
+        v /= 10;
+        trailing += 1;
+    }
+    9 - trailing
+}
+
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
+///
+/// The precision is derived from the actual tick value to avoid truncation of
+/// fractional tick sizes (e.g., treasury futures with 1/256 or 1/32 ticks).
+/// The derived precision is floored at `precision` (typically the currency precision).
 #[inline(always)]
 #[must_use]
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from_raw(decode_raw_price_i64(value), precision),
+        _ => {
+            let derived = precision_from_raw(value).max(precision);
+            Price::from_raw(decode_raw_price_i64(value), derived)
+        }
     }
 }
 
@@ -1608,13 +1635,33 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, 0)]
+    #[case(1, 9)] // 0.000000001 needs 9 decimal places
+    #[case(10, 8)] // 0.00000001 needs 8
+    #[case(3_906_250, 8)] // ZT: 1/256 = 0.00390625
+    #[case(7_812_500, 7)] // ZF: 1/128 = 0.0078125
+    #[case(15_625_000, 6)] // ZN: 1/64 = 0.015625
+    #[case(31_250_000, 5)] // ZB: 1/32 = 0.03125
+    #[case(250_000_000, 2)] // ES: 0.25
+    #[case(1_000_000_000, 0)] // 1.0
+    #[case(10_000_000_000, 0)] // 10.0
+    fn test_precision_from_raw(#[case] value: i64, #[case] expected: u8) {
+        assert_eq!(precision_from_raw(value), expected);
+    }
+
+    #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
     #[case(
         10_000_000_000,
         2,
         Price::from_raw(decode_raw_price_i64(10_000_000_000), 2)
-    )]
+    )] // 10.0: derived=0, max(0,2)=2
+    #[case(3_906_250, 2, Price::from_raw(decode_raw_price_i64(3_906_250), 8))] // ZT 1/256: derived=8, max(8,2)=8
+    #[case(7_812_500, 2, Price::from_raw(decode_raw_price_i64(7_812_500), 7))] // ZF 1/128: derived=7, max(7,2)=7
+    #[case(15_625_000, 2, Price::from_raw(decode_raw_price_i64(15_625_000), 6))] // ZN 1/64: derived=6, max(6,2)=6
+    #[case(31_250_000, 2, Price::from_raw(decode_raw_price_i64(31_250_000), 5))] // ZB 1/32: derived=5, max(5,2)=5
+    #[case(250_000_000, 2, Price::from_raw(decode_raw_price_i64(250_000_000), 2))] // ES 0.25: derived=2, max(2,2)=2
     fn test_decode_price_increment(
         #[case] value: i64,
         #[case] precision: u8,

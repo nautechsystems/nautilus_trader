@@ -128,7 +128,7 @@ impl TestContext {
             .unwrap();
     }
 
-    fn add_position(&self, position: Position) {
+    fn add_position(&self, position: &Position) {
         self.cache
             .borrow_mut()
             .add_position(position, OmsType::Hedging)
@@ -3192,7 +3192,7 @@ async fn test_reconcile_hedge_position_matching_quantities() {
 
     // Add existing position to cache with 5.0 qty
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3244,7 +3244,7 @@ async fn test_reconcile_hedge_position_discrepancy_generates_order() {
 
     // Add existing position to cache with 5.0 qty
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3340,7 +3340,7 @@ async fn test_reconcile_hedge_position_discrepancy_disabled() {
 
     // Add existing position with different qty than venue reports
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3985,7 +3985,7 @@ async fn test_netting_position_cross_zero_long_to_short() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4060,7 +4060,7 @@ async fn test_netting_position_cross_zero_short_to_long() {
         "4.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4135,7 +4135,7 @@ async fn test_netting_position_flat_report_closes_cached_position() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4848,7 +4848,7 @@ async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
         "5.0",
         "0.00", // Zero price - will be treated as no avg_px in some paths
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4899,7 +4899,7 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -6002,8 +6002,8 @@ async fn test_check_open_orders_defers_with_recent_local_activity() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6058,8 +6058,8 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6115,8 +6115,8 @@ async fn test_check_open_orders_proceeds_without_local_activity() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6157,9 +6157,9 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     ctx.add_order(order.clone());
     ctx.cache.borrow_mut().update_order(&order).unwrap();
 
-    // Venue returns no reports - order was never placed
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    // Venue returns no reports, order was never placed
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6189,10 +6189,10 @@ async fn test_position_check_retries_stops_after_max() {
 
     // Add position to cache but NOT the instrument — forces reconciliation to
     // return None on the cache.instrument() lookup
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // First attempt: detects discrepancy, can't reconcile, retry count -> 1
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6222,9 +6222,9 @@ async fn test_position_check_retries_clears_when_discrepancy_resolves() {
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
 
     // First: add position without instrument to force a failed retry
-    ctx.add_position(position);
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    ctx.add_position(&position);
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(events.is_empty()); // Failed, retry count = 1
@@ -6255,10 +6255,10 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
 
     ctx.add_instrument(instrument.clone());
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // First call: reconciliation succeeds (generates events to match venue=flat)
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6303,7 +6303,7 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     // Should produce events (counter was pruned, not suppressed)
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6454,11 +6454,11 @@ async fn test_position_check_dedup_skips_second_hedge_position_same_instrument()
     );
 
     // Omit instrument from cache to force the retry path
-    ctx.add_position(pos_long);
-    ctx.add_position(pos_short);
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // Three cycles: each increments retry by 1 (not 2) thanks to dedup
     ctx.manager.check_positions_consistency(&clients).await;
@@ -6498,7 +6498,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
     let flat_report = PositionStatusReport::new(
         test_account_id(),
@@ -6511,8 +6511,8 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         None,
         None,
     );
-    let mock_client = Rc::new(MockPositionExecutionClient::new(vec![], vec![flat_report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![flat_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
@@ -6552,7 +6552,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(
@@ -6581,7 +6581,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
     let venue_report = PositionStatusReport::new(
         test_account_id(),
@@ -6594,11 +6594,8 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         None,
         Some(dec!(3000.00)),
     );
-    let mock_client = Rc::new(MockPositionExecutionClient::new(
-        vec![],
-        vec![venue_report.clone()],
-    ));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report.clone()]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
@@ -6637,7 +6634,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     // Counter retained — retries still exhausted
     let events = ctx.manager.check_positions_consistency(&clients).await;

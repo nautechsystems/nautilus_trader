@@ -22,13 +22,13 @@ The major architectural techniques and design patterns employed by NautilusTrade
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
 - [Crash-only design](#crash-only-design)
 
-These techniques have been used to assist in achieving certain architectural quality attributes.
+These techniques help achieve certain architectural quality attributes.
 
 ### Quality attributes
 
-Architectural decisions are often a trade-off between competing priorities. The
-below is a list of some of the most important quality attributes which are considered
-when making design and architectural decisions, roughly in order of 'weighting'.
+Architectural decisions are often a trade-off between competing priorities.
+The following quality attributes guide design and architectural decisions,
+roughly in order of weighting.
 
 - Reliability
 - Performance
@@ -54,8 +54,8 @@ business requirements. Practically this means we:
 - Track “assurance debt” alongside feature work so new integrations extend the
   safety net rather than bypass it.
 
-This approach preserves the platform’s delivery cadence while giving mission
-critical flows the additional scrutiny they need.
+This approach preserves the platform’s delivery cadence while giving
+high-stakes flows the additional scrutiny they need.
 
 Further reading: [High Assurance Rust](https://highassurance.rs/).
 
@@ -169,7 +169,7 @@ The NautilusTrader codebase is actually both a framework for composing trading
 
 ### Core components
 
-The platform is built around several key components that work together to provide a complete trading system:
+Several core components work together to form the trading system:
 
 #### `NautilusKernel`
 
@@ -228,8 +228,8 @@ Provides risk management:
 
 ### Environment contexts
 
-An environment context in NautilusTrader defines the type of data and trading venue you are working
-with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
+An environment context in NautilusTrader defines the type of data and trading venue you work with.
+Understanding these contexts matters for backtesting, development, and live trading.
 
 Here are the available environments you can work with:
 
@@ -248,25 +248,25 @@ core system, providing various hooks for user-defined or custom component implem
 
 ### Data and execution flow patterns
 
-Understanding how data and execution flow through the system is crucial for effective use of the platform:
+Understanding how data and execution flow through the system helps when working with the platform:
 
 #### Data flow pattern
 
-1. **External Data Ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
-2. **Data Processing**: The `DataEngine` handles data processing for internal components.
-3. **Caching**: Processed data is stored in the high-performance `Cache` for fast access.
-4. **Event Publishing**: Data events are published to the `MessageBus`.
-5. **Consumer Delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
+1. **External data ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
+2. **Data processing**: The `DataEngine` handles data processing for internal components.
+3. **Caching**: Processed data is stored in the `Cache` for fast access.
+4. **Event publishing**: Data events are published to the `MessageBus`.
+5. **Consumer delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
 
 #### Execution flow pattern
 
-1. **Command Generation**: User strategies create trading commands.
-2. **Command Publishing**: Commands are sent through the `MessageBus`.
-3. **Risk Validation**: The `RiskEngine` validates trading commands against configured risk rules.
-4. **Execution Routing**: The `ExecutionEngine` routes commands to appropriate venues.
-5. **External Submission**: The `ExecutionClient` submits orders to external trading venues.
-6. **Event Flow Back**: Order events (fills, cancellations) flow back through the system.
-7. **State Updates**: Portfolio and position states are updated based on execution events.
+1. **Command generation**: Strategies create trading commands.
+2. **Command publishing**: Commands are sent through the `MessageBus`.
+3. **Risk validation**: The `RiskEngine` validates trading commands against configured risk rules.
+4. **Execution routing**: The `ExecutionEngine` routes commands to appropriate venues.
+5. **External submission**: The `ExecutionClient` submits orders to external trading venues.
+6. **Event flow back**: Order events (fills, cancellations) flow back through the system.
+7. **State updates**: Portfolio and position states update based on execution events.
 
 #### Component state management
 
@@ -415,7 +415,7 @@ The traits are managed by separate registries to support their different access 
 
 ### Messaging
 
-For modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
+For modularity and loose coupling, an efficient `MessageBus` passes messages (data, commands, and events) between components.
 
 #### Threading model
 
@@ -447,11 +447,11 @@ ultimately deliver events to the single-threaded core.
 
 ## Framework organization
 
-The codebase is organized with a layering of abstraction levels, and generally
-grouped into logical subpackages of cohesive concepts. You can navigate to the documentation
-for each of these subpackages from the left nav menu.
+The codebase organizes into layers of abstraction, grouped into logical subpackages
+of cohesive concepts. You can navigate to the documentation for each subpackage
+from the left nav menu.
 
-### Core / low-Level
+### Core / low-level
 
 - `core`: Constants, functions and low-level components used throughout the framework.
 - `common`: Common parts for assembling the frameworks various components.
@@ -589,7 +589,7 @@ Rust or Cython to be installed at runtime.
 
 ### Type safety
 
-The design of the platform prioritizes software correctness and safety at the highest level.
+The platform design prioritizes software correctness and safety.
 
 The Rust codebase under `crates/` relies on the `rustc` compiler's guarantees for safe code.
 Any `unsafe` blocks are explicit opt-outs where we must uphold the required invariants ourselves
@@ -612,8 +612,8 @@ The above exceptions are not explicitly documented to prevent excessive bloating
 
 ### Errors and exceptions
 
-Every attempt has been made to accurately document the possible exceptions which
-can be raised from NautilusTrader code, and the conditions which will trigger them.
+The documentation aims to cover all possible exceptions that NautilusTrader code
+can raise, and the conditions that trigger them.
 
 :::warning
 There may be other undocumented exceptions which can be raised by Python's standard

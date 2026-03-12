@@ -286,8 +286,8 @@ impl HyperliquidRawHttpClient {
         ])
     }
 
-    fn signer_id(&self) -> Result<SignerId> {
-        Ok(SignerId("hyperliquid:default".into()))
+    fn signer_id(&self) -> SignerId {
+        SignerId("hyperliquid:default".into())
     }
 
     fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
@@ -516,7 +516,7 @@ impl HyperliquidRawHttpClient {
             .as_ref()
             .ok_or_else(|| Error::auth("nonce manager missing"))?;
 
-        let signer_id = self.signer_id()?;
+        let signer_id = self.signer_id();
         let time_nonce = nonce_manager.next(signer_id)?;
 
         let action_value = serde_json::to_value(action)
@@ -545,12 +545,12 @@ impl HyperliquidRawHttpClient {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 nonce_u64,
-                sig,
+                &sig,
                 vault.to_string(),
             )
             .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         } else {
-            HyperliquidExchangeRequest::new(action.clone(), nonce_u64, sig)
+            HyperliquidExchangeRequest::new(action.clone(), nonce_u64, &sig)
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         };
 
@@ -622,7 +622,7 @@ impl HyperliquidRawHttpClient {
             .as_ref()
             .ok_or_else(|| Error::auth("nonce manager missing"))?;
 
-        let signer_id = self.signer_id()?;
+        let signer_id = self.signer_id();
         let time_nonce = nonce_manager.next(signer_id)?;
         // No need to validate - next() guarantees a valid, unused nonce
 
@@ -650,12 +650,12 @@ impl HyperliquidRawHttpClient {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 time_nonce.as_millis() as u64,
-                sig,
+                &sig,
                 vault.to_string(),
             )
             .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         } else {
-            HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
+            HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, &sig)
                 .map_err(|e| Error::bad_request(format!("Failed to create request: {e}")))?
         };
 
@@ -752,6 +752,10 @@ pub struct HyperliquidHttpClient {
     /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
+    /// Optional override address for queries (agent wallet / API sub-key support).
+    /// When set, used for balance queries, position reports, and WS subscriptions
+    /// instead of the address derived from the private key.
+    account_address: Option<String>,
     normalize_prices: bool,
 }
 
@@ -800,6 +804,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         }
     }
@@ -841,6 +846,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         })
     }
@@ -860,6 +866,7 @@ impl HyperliquidHttpClient {
     pub fn with_credentials(
         private_key: Option<String>,
         vault_address: Option<String>,
+        account_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
@@ -888,6 +895,12 @@ impl HyperliquidHttpClient {
             None => env::var(vault_env_var).ok(),
         };
 
+        // Resolve account address: explicit value -> env var -> None
+        let resolved_account_address = match account_address {
+            Some(addr) => Some(addr),
+            None => env::var("HYPERLIQUID_ACCOUNT_ADDRESS").ok(),
+        };
+
         match resolved_pk {
             Some(pk) => {
                 let raw_client = HyperliquidRawHttpClient::from_credentials(
@@ -905,6 +918,7 @@ impl HyperliquidHttpClient {
                     asset_indices: Arc::new(RwLock::new(AHashMap::new())),
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
+                    account_address: resolved_account_address,
                     normalize_prices: true,
                 })
             }
@@ -943,6 +957,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         })
     }
@@ -973,14 +988,23 @@ impl HyperliquidHttpClient {
         self.inner.get_user_address()
     }
 
-    /// Gets the account address for queries: vault address if configured,
-    /// otherwise the user (EOA) address.
+    /// Gets the account address for queries: account_address if configured
+    /// (agent wallet), then vault address, otherwise the user (EOA) address.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns [`Error::Auth`] if the client has no signer configured and
+    /// no account_address override is set.
     pub fn get_account_address(&self) -> Result<String> {
+        if let Some(addr) = &self.account_address {
+            return Ok(addr.clone());
+        }
         self.inner.get_account_address()
+    }
+
+    /// Sets the account address override for queries (agent wallet support).
+    pub fn set_account_address(&mut self, address: Option<String>) {
+        self.account_address = address;
     }
 
     /// Caches a single instrument.
@@ -2151,7 +2175,7 @@ impl HyperliquidHttpClient {
                 let ts_init = self.clock.get_time_ns();
 
                 match order_status {
-                    HyperliquidExecOrderStatus::Resting { resting } => self
+                    HyperliquidExecOrderStatus::Resting { resting } => Ok(self
                         .create_order_status_report(
                             instrument_id,
                             Some(client_order_id),
@@ -2167,13 +2191,13 @@ impl HyperliquidHttpClient {
                             &instrument,
                             account_id,
                             ts_init,
-                        ),
+                        )),
                     HyperliquidExecOrderStatus::Filled { filled } => {
                         let filled_qty = Quantity::new(
                             filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
                             instrument.size_precision(),
                         );
-                        self.create_order_status_report(
+                        Ok(self.create_order_status_report(
                             instrument_id,
                             Some(client_order_id),
                             VenueOrderId::new(filled.oid.to_string()),
@@ -2188,7 +2212,7 @@ impl HyperliquidHttpClient {
                             &instrument,
                             account_id,
                             ts_init,
-                        )
+                        ))
                     }
                     HyperliquidExecOrderStatus::Error { error } => {
                         Err(Error::bad_request(format!("Order rejected: {error}")))
@@ -2238,7 +2262,7 @@ impl HyperliquidHttpClient {
         _instrument: &InstrumentAny,
         account_id: AccountId,
         ts_init: UnixNanos,
-    ) -> Result<OrderStatusReport> {
+    ) -> OrderStatusReport {
         let ts_accepted = self.clock.get_time_ns();
         let ts_last = ts_accepted;
         let report_id = UUID4::new();
@@ -2270,7 +2294,7 @@ impl HyperliquidHttpClient {
                 .with_trigger_type(TriggerType::Default);
         }
 
-        Ok(report)
+        report
     }
 
     /// Submit multiple orders to the Hyperliquid exchange in a single request.
@@ -2384,7 +2408,7 @@ impl HyperliquidHttpClient {
                                 &instrument,
                                 account_id,
                                 ts_init,
-                            )?
+                            )
                         }
                         HyperliquidExecOrderStatus::Filled { filled } => {
                             // Order was filled immediately
@@ -2407,7 +2431,7 @@ impl HyperliquidHttpClient {
                                 &instrument,
                                 account_id,
                                 ts_init,
-                            )?
+                            )
                         }
                         HyperliquidExecOrderStatus::Error { error } => {
                             return Err(Error::bad_request(format!(

@@ -15,6 +15,7 @@
 
 //! Python bindings for the Ax adapter.
 
+pub mod config;
 pub mod http;
 pub mod websocket;
 
@@ -26,7 +27,7 @@ use pyo3::{prelude::*, types::PyType};
 use crate::{
     common::enums::{AxEnvironment, AxMarketDataLevel},
     http::client::AxHttpClient,
-    websocket::{data::AxMdWebSocketClient, orders::AxOrdersWebSocketClient},
+    python::websocket::{PyAxMdWebSocketClient, PyAxOrdersWebSocketClient},
 };
 
 #[pymethods]
@@ -110,9 +111,11 @@ impl AxMarketDataLevel {
 pub fn architect(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
+    m.add_class::<crate::config::AxDataClientConfig>()?;
+    m.add_class::<crate::config::AxExecClientConfig>()?;
     m.add_class::<AxHttpClient>()?;
-    m.add_class::<AxMdWebSocketClient>()?;
-    m.add_class::<AxOrdersWebSocketClient>()?;
+    m.add_class::<PyAxMdWebSocketClient>()?;
+    m.add_class::<PyAxOrdersWebSocketClient>()?;
 
     Ok(())
 }

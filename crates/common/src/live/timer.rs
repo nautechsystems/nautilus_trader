@@ -42,7 +42,7 @@ use ustr::Ustr;
 use super::runtime::get_runtime;
 use crate::{
     runner::TimeEventSender,
-    timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
+    timer::{TimeEvent, TimeEventCallback, TimeEventHandler, Timer},
 };
 
 /// A live timer for use with a `LiveClock`.
@@ -266,6 +266,18 @@ impl LiveTimer {
         if let Some(ref handle) = self.task_handle {
             handle.abort();
         }
+    }
+}
+
+impl Timer for LiveTimer {
+    fn is_expired(&self) -> bool {
+        self.task_handle
+            .as_ref()
+            .is_some_and(tokio::task::JoinHandle::is_finished)
+    }
+
+    fn cancel(&mut self) {
+        Self::cancel(self);
     }
 }
 

@@ -32,7 +32,7 @@ fn single_stream_bench(c: &mut Criterion) {
             || {
                 let mut catalog = DataBackendSession::new(chunk_size);
                 catalog
-                    .add_file::<QuoteTick>("quote_tick", file_path, None)
+                    .add_file::<QuoteTick>("quote_tick", file_path, None, None)
                     .unwrap();
                 catalog.get_query_result()
             },
@@ -66,11 +66,21 @@ fn multi_stream_bench(c: &mut Criterion) {
 
                         if file_name.contains("quotes") {
                             catalog
-                                .add_file::<QuoteTick>(file_name, path.to_str().unwrap(), None)
+                                .add_file::<QuoteTick>(
+                                    file_name,
+                                    path.to_str().unwrap(),
+                                    None,
+                                    None,
+                                )
                                 .unwrap();
                         } else if file_name.contains("trades") {
                             catalog
-                                .add_file::<TradeTick>(file_name, path.to_str().unwrap(), None)
+                                .add_file::<TradeTick>(
+                                    file_name,
+                                    path.to_str().unwrap(),
+                                    None,
+                                    None,
+                                )
                                 .unwrap();
                         }
                     }

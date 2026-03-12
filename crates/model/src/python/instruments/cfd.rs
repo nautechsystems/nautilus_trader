@@ -33,6 +33,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Cfd {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -111,7 +112,7 @@ impl Cfd {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(Cfd)
     }
 

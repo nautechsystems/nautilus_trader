@@ -29,7 +29,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures_util::Stream;
 use nautilus_common::{enums::LogColor, live::get_runtime, log_info};
 use nautilus_core::{
@@ -96,6 +96,9 @@ pub struct DeribitWebSocketClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions_state: SubscriptionState,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    option_greeks_subs: Arc<DashSet<InstrumentId>>,
+    mark_price_subs: Arc<DashSet<InstrumentId>>,
+    index_price_subs: Arc<DashSet<InstrumentId>>,
     cancellation_token: CancellationToken,
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
@@ -192,6 +195,9 @@ impl DeribitWebSocketClient {
             task_handle: None,
             subscriptions_state,
             instruments_cache: Arc::new(DashMap::new()),
+            option_greeks_subs: Arc::new(DashSet::new()),
+            mark_price_subs: Arc::new(DashSet::new()),
+            index_price_subs: Arc::new(DashSet::new()),
             cancellation_token: CancellationToken::new(),
             account_id: None,
             bars_timestamp_on_close: true,
@@ -389,6 +395,31 @@ impl DeribitWebSocketClient {
         }
     }
 
+    /// Sets the shared option greeks subscription set for handler-side gating.
+    pub fn set_option_greeks_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+        self.option_greeks_subs = subs;
+    }
+
+    /// Sets the shared mark price subscription set for handler-side gating.
+    pub fn set_mark_price_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+        self.mark_price_subs = subs;
+    }
+
+    /// Sets the shared index price subscription set for handler-side gating.
+    pub fn set_index_price_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+        self.index_price_subs = subs;
+    }
+
+    /// Registers an instrument for option greeks emission from ticker messages.
+    pub fn add_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.option_greeks_subs.insert(instrument_id);
+    }
+
+    /// Unregisters an instrument from option greeks emission.
+    pub fn remove_option_greeks_sub(&self, instrument_id: &InstrumentId) {
+        self.option_greeks_subs.remove(instrument_id);
+    }
+
     /// Connects to the Deribit WebSocket API.
     ///
     /// # Errors
@@ -475,6 +506,9 @@ impl DeribitWebSocketClient {
             out_tx,
             self.auth_tracker.clone(),
             self.subscriptions_state.clone(),
+            self.option_greeks_subs.clone(),
+            self.mark_price_subs.clone(),
+            self.index_price_subs.clone(),
             self.account_id,
             self.bars_timestamp_on_close,
             self.subscribe_errors.clone(),

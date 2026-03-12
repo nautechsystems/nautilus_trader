@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
+//! Technical analysis indicators for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-indicators` crate provides a comprehensive collection of technical analysis indicators
+//! The `nautilus-indicators` crate provides a collection of technical analysis indicators
 //! for quantitative trading and market research. This includes a wide variety of indicators
 //! organized by category, with a unified trait-based architecture for consistent usage:
 //!
@@ -32,7 +32,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

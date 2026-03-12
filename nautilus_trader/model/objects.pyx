@@ -247,11 +247,11 @@ cdef class Quantity:
     def __neg__(self) -> decimal.Decimal:
         return self.as_decimal().__neg__()
 
-    def __pos__(self) -> decimal.Decimal:
-        return self.as_decimal().__pos__()
+    def __pos__(self) -> Quantity:
+        return self
 
-    def __abs__(self) -> decimal.Decimal:
-        return abs(self.as_decimal())
+    def __abs__(self) -> Quantity:
+        return self
 
     def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)
@@ -801,14 +801,16 @@ cdef class Price:
             return float(a) % float(b)
         return Price._extract_decimal(a) % Price._extract_decimal(b)
 
-    def __neg__(self) -> decimal.Decimal:
-        return self.as_decimal().__neg__()
+    def __neg__(self) -> Price:
+        return Price.from_raw_c(-self._mem.raw, self._mem.precision)
 
-    def __pos__(self) -> decimal.Decimal:
-        return self.as_decimal().__pos__()
+    def __pos__(self) -> Price:
+        return self
 
-    def __abs__(self) -> decimal.Decimal:
-        return abs(self.as_decimal())
+    def __abs__(self) -> Price:
+        if self._mem.raw < 0:
+            return Price.from_raw_c(-self._mem.raw, self._mem.precision)
+        return self
 
     def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)
@@ -1307,14 +1309,16 @@ cdef class Money:
             return float(a) % float(b)
         return Money._extract_decimal(a) % Money._extract_decimal(b)
 
-    def __neg__(self) -> decimal.Decimal:
-        return self.as_decimal().__neg__()
+    def __neg__(self) -> Money:
+        return Money.from_raw_c(-self._mem.raw, self.currency)
 
-    def __pos__(self) -> decimal.Decimal:
-        return self.as_decimal().__pos__()
+    def __pos__(self) -> Money:
+        return self
 
-    def __abs__(self) -> decimal.Decimal:
-        return abs(self.as_decimal())
+    def __abs__(self) -> Money:
+        if self._mem.raw < 0:
+            return Money.from_raw_c(-self._mem.raw, self.currency)
+        return self
 
     def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)

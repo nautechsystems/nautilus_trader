@@ -239,7 +239,7 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             log::info!("Using wallet address from config/env: {addr}");
             addr
         } else if let Some(credential) = DydxCredential::resolve(
-            dydx_config.private_key.clone(),
+            dydx_config.private_key.as_deref(),
             dydx_config.is_testnet(),
             dydx_config.authenticator_ids.clone(),
         )? {

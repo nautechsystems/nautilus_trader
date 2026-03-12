@@ -43,7 +43,7 @@ use crate::{
 #[must_use]
 pub fn parse_tardis_ws_message(
     msg: WsMessage,
-    info: Arc<TardisInstrumentMiniInfo>,
+    info: &Arc<TardisInstrumentMiniInfo>,
     book_snapshot_output: &BookSnapshotOutput,
 ) -> Option<Data> {
     match msg {
@@ -56,7 +56,7 @@ pub fn parse_tardis_ws_message(
             }
 
             match parse_book_change_msg_as_deltas(
-                msg,
+                &msg,
                 info.price_precision,
                 info.size_precision,
                 info.instrument_id,
@@ -71,7 +71,7 @@ pub fn parse_tardis_ws_message(
         WsMessage::BookSnapshot(msg) => match msg.bids.len() {
             1 => {
                 match parse_book_snapshot_msg_as_quote(
-                    msg,
+                    &msg,
                     info.price_precision,
                     info.size_precision,
                     info.instrument_id,
@@ -86,7 +86,7 @@ pub fn parse_tardis_ws_message(
             _ => match book_snapshot_output {
                 BookSnapshotOutput::Depth10 => {
                     match parse_book_snapshot_msg_as_depth10(
-                        msg,
+                        &msg,
                         info.price_precision,
                         info.size_precision,
                         info.instrument_id,
@@ -100,7 +100,7 @@ pub fn parse_tardis_ws_message(
                 }
                 BookSnapshotOutput::Deltas => {
                     match parse_book_snapshot_msg_as_deltas(
-                        msg,
+                        &msg,
                         info.price_precision,
                         info.size_precision,
                         info.instrument_id,
@@ -130,7 +130,7 @@ pub fn parse_tardis_ws_message(
         }
         WsMessage::TradeBar(msg) => {
             match parse_bar_msg(
-                msg,
+                &msg,
                 info.price_precision,
                 info.size_precision,
                 info.instrument_id,
@@ -154,11 +154,11 @@ pub fn parse_tardis_ws_message(
 #[must_use]
 pub fn parse_tardis_ws_message_funding_rate(
     msg: WsMessage,
-    info: Arc<TardisInstrumentMiniInfo>,
+    info: &Arc<TardisInstrumentMiniInfo>,
 ) -> Option<FundingRateUpdate> {
     match msg {
         WsMessage::DerivativeTicker(msg) => {
-            match parse_derivative_ticker_msg(msg, info.instrument_id) {
+            match parse_derivative_ticker_msg(&msg, info.instrument_id) {
                 Ok(funding_rate) => funding_rate,
                 Err(e) => {
                     log::error!("Failed to parse derivative ticker message for funding rate: {e}");
@@ -177,14 +177,14 @@ pub fn parse_tardis_ws_message_funding_rate(
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_change_msg_as_deltas(
-    msg: BookChangeMsg,
+    msg: &BookChangeMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<OrderBookDeltas_API> {
     parse_book_msg_as_deltas(
-        msg.bids,
-        msg.asks,
+        &msg.bids,
+        &msg.asks,
         msg.is_snapshot,
         price_precision,
         size_precision,
@@ -201,14 +201,14 @@ pub fn parse_book_change_msg_as_deltas(
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_snapshot_msg_as_deltas(
-    msg: BookSnapshotMsg,
+    msg: &BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<OrderBookDeltas_API> {
     parse_book_msg_as_deltas(
-        msg.bids,
-        msg.asks,
+        &msg.bids,
+        &msg.asks,
         true,
         price_precision,
         size_precision,
@@ -224,7 +224,7 @@ pub fn parse_book_snapshot_msg_as_deltas(
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_snapshot_msg_as_depth10(
-    msg: BookSnapshotMsg,
+    msg: &BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
@@ -295,8 +295,8 @@ pub fn parse_book_snapshot_msg_as_depth10(
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_msg_as_deltas(
-    bids: Vec<BookLevel>,
-    asks: Vec<BookLevel>,
+    bids: &[BookLevel],
+    asks: &[BookLevel],
     is_snapshot: bool,
     price_precision: u8,
     size_precision: u8,
@@ -386,7 +386,7 @@ pub fn parse_book_level(
     price_precision: u8,
     size_precision: u8,
     side: OrderSide,
-    level: BookLevel,
+    level: &BookLevel,
     is_snapshot: bool,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -427,7 +427,7 @@ pub fn parse_book_level(
 ///
 /// Returns an error if missing bid/ask levels or invalid sizes.
 pub fn parse_book_snapshot_msg_as_quote(
-    msg: BookSnapshotMsg,
+    msg: &BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
@@ -499,7 +499,7 @@ pub fn parse_trade_msg(
 ///
 /// Returns an error if the bar specification cannot be parsed.
 pub fn parse_bar_msg(
-    msg: BarMsg,
+    msg: &BarMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
@@ -526,7 +526,7 @@ pub fn parse_bar_msg(
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds or decimal conversion fails.
 pub fn parse_derivative_ticker_msg(
-    msg: DerivativeTickerMsg,
+    msg: &DerivativeTickerMsg,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<Option<FundingRateUpdate>> {
     // Only process if we have funding rate data
@@ -587,7 +587,7 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let deltas =
-            parse_book_change_msg_as_deltas(msg, price_precision, size_precision, instrument_id)
+            parse_book_change_msg_as_deltas(&msg, price_precision, size_precision, instrument_id)
                 .unwrap();
 
         assert_eq!(deltas.deltas.len(), 1);
@@ -625,7 +625,7 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let deltas =
-            parse_book_snapshot_msg_as_deltas(msg, price_precision, size_precision, instrument_id)
+            parse_book_snapshot_msg_as_deltas(&msg, price_precision, size_precision, instrument_id)
                 .unwrap();
 
         let clear_delta = deltas.deltas[0];
@@ -684,9 +684,13 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
-        let depth10 =
-            parse_book_snapshot_msg_as_depth10(msg, price_precision, size_precision, instrument_id)
-                .unwrap();
+        let depth10 = parse_book_snapshot_msg_as_depth10(
+            &msg,
+            price_precision,
+            size_precision,
+            instrument_id,
+        )
+        .unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
         assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT.value());
@@ -736,7 +740,7 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let quote =
-            parse_book_snapshot_msg_as_quote(msg, price_precision, size_precision, instrument_id)
+            parse_book_snapshot_msg_as_quote(&msg, price_precision, size_precision, instrument_id)
                 .expect("Failed to parse book snapshot quote message");
 
         assert_eq!(quote.instrument_id, instrument_id);
@@ -775,7 +779,7 @@ mod tests {
         let price_precision = 1;
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let bar = parse_bar_msg(msg, price_precision, size_precision, instrument_id).unwrap();
+        let bar = parse_bar_msg(&msg, price_precision, size_precision, instrument_id).unwrap();
 
         assert_eq!(
             bar.bar_type,
@@ -805,7 +809,7 @@ mod tests {
             0,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, info, &BookSnapshotOutput::Depth10);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
         assert!(matches!(result.unwrap(), Data::Depth10(_)));
@@ -826,7 +830,7 @@ mod tests {
             0,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, info, &BookSnapshotOutput::Deltas);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
 
         assert!(result.is_some());
         assert!(matches!(result.unwrap(), Data::Deltas(_)));

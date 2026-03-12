@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Portfolio management and risk analysis for [NautilusTrader](http://nautilustrader.io).
+//! Portfolio management and risk analysis for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-portfolio` crate provides comprehensive portfolio management capabilities including
+//! The `nautilus-portfolio` crate provides portfolio management capabilities including
 //! real-time position tracking, performance calculations, and risk management. This includes
 //! sophisticated portfolio analytics and multi-currency support:
 //!
@@ -31,7 +31,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
@@ -61,6 +61,9 @@
 pub mod config;
 pub mod manager;
 pub mod portfolio;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports
 pub use portfolio::Portfolio;

@@ -14,11 +14,6 @@
 
 //! WebSocket message types for Bybit public and private channels.
 
-use nautilus_model::{
-    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
-    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
-};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -90,44 +85,6 @@ pub enum BybitWsMessage {
     Reconnected,
     /// Explicit pong event (text-based heartbeat acknowledgement).
     Pong,
-}
-
-/// Nautilus domain message emitted after parsing Bybit WebSocket events.
-///
-/// This enum contains fully-parsed Nautilus domain objects ready for consumption
-/// by the Python layer without additional processing.
-#[derive(Debug, Clone)]
-pub enum NautilusWsMessage {
-    /// Market data (trades, quotes, bars).
-    Data(Vec<Data>),
-    /// Order book deltas.
-    Deltas(OrderBookDeltas),
-    /// Mark price updates from ticker stream.
-    MarkPrices(Vec<MarkPriceUpdate>),
-    /// Index price updates from ticker stream.
-    IndexPrices(Vec<IndexPriceUpdate>),
-    /// Funding rate updates from ticker stream.
-    FundingRates(Vec<FundingRateUpdate>),
-    /// Order status reports from account stream or operation responses.
-    OrderStatusReports(Vec<OrderStatusReport>),
-    /// Fill reports from executions.
-    FillReports(Vec<FillReport>),
-    /// Position status report.
-    PositionStatusReport(PositionStatusReport),
-    /// Account state from wallet updates.
-    AccountState(AccountState),
-    /// Order rejected event (from failed order submission).
-    OrderRejected(OrderRejected),
-    /// Order cancel rejected event (from failed cancel operation).
-    OrderCancelRejected(OrderCancelRejected),
-    /// Order modify rejected event (from failed amend operation).
-    OrderModifyRejected(OrderModifyRejected),
-    /// Error from venue or client.
-    Error(BybitWebSocketError),
-    /// WebSocket reconnected notification.
-    Reconnected,
-    /// Authentication successful notification.
-    Authenticated,
 }
 
 /// Represents an error event surfaced by the WebSocket client.

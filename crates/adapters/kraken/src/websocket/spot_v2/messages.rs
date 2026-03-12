@@ -16,11 +16,6 @@
 //! Data models for Kraken WebSocket v2 API messages.
 
 use chrono::{DateTime, Utc};
-use nautilus_model::{
-    data::{Data, OrderBookDeltas},
-    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderUpdated},
-    reports::{FillReport, OrderStatusReport},
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
@@ -31,18 +26,17 @@ use super::enums::{
 };
 use crate::common::enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce};
 
-/// Nautilus WebSocket message types for Kraken adapter.
+/// Output message types from the Kraken Spot v2 WebSocket handler.
 #[derive(Clone, Debug)]
-pub enum NautilusWsMessage {
-    Data(Vec<Data>),
-    Deltas(OrderBookDeltas),
-    OrderRejected(OrderRejected),
-    OrderAccepted(OrderAccepted),
-    OrderCanceled(OrderCanceled),
-    OrderExpired(OrderExpired),
-    OrderUpdated(OrderUpdated),
-    OrderStatusReport(Box<OrderStatusReport>),
-    FillReport(Box<FillReport>),
+pub enum KrakenSpotWsMessage {
+    Ticker(Vec<KrakenWsTickerData>),
+    Trade(Vec<KrakenWsTradeData>),
+    Book {
+        data: Vec<KrakenWsBookData>,
+        is_snapshot: bool,
+    },
+    Ohlc(Vec<KrakenWsOhlcData>),
+    Execution(Vec<KrakenWsExecutionData>),
     Reconnected,
 }
 

@@ -147,7 +147,7 @@ impl HyperliquidDataClient {
         *HYPERLIQUID_VENUE
     }
 
-    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+    async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http_client
             .request_instruments()

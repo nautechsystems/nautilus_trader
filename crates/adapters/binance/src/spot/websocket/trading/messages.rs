@@ -148,7 +148,7 @@ pub enum NautilusWsApiMessage {
 /// Metadata for a pending request.
 ///
 /// Stored in the handler to match responses to their originating requests.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum RequestMeta {
     /// Pending order placement.
     PlaceOrder,

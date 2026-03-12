@@ -15,14 +15,28 @@
 
 //! Venue-specific enums for the Polymarket CLOB API.
 
+use std::fmt::{Debug, Display};
+
 use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, TimeInForce};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::{Display, EnumString};
+use strum::{Display as StrumDisplay, EnumString};
+use ustr::Ustr;
 
 /// EIP-712 signature type for order signing.
 ///
 /// Serialized as a numeric value (0/1/2) on the wire.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object,
+    )
+)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum SignatureType {
@@ -31,15 +45,75 @@ pub enum SignatureType {
     PolyGnosisSafe = 2,
 }
 
-/// Binary outcome for a Polymarket prediction market.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
-pub enum PolymarketOutcome {
-    Yes,
-    No,
+/// Outcome label for a Polymarket market token.
+///
+/// Free-form string from the API (e.g. "Yes", "No", "Up", "Down").
+/// Every Polymarket market has exactly two outcome tokens; this holds
+/// whichever label the API assigns to one of them.
+#[repr(C)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PolymarketOutcome(Ustr);
+
+impl PolymarketOutcome {
+    #[must_use]
+    pub fn yes() -> Self {
+        Self(Ustr::from("Yes"))
+    }
+
+    #[must_use]
+    pub fn no() -> Self {
+        Self(Ustr::from("No"))
+    }
+
+    #[must_use]
+    pub fn up() -> Self {
+        Self(Ustr::from("Up"))
+    }
+
+    #[must_use]
+    pub fn down() -> Self {
+        Self(Ustr::from("Down"))
+    }
+
+    #[must_use]
+    pub const fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl Debug for PolymarketOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"", self.0)
+    }
+}
+
+impl Display for PolymarketOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for PolymarketOutcome {
+    fn from(value: &str) -> Self {
+        Self(Ustr::from(value))
+    }
+}
+
+impl From<Ustr> for PolymarketOutcome {
+    fn from(value: Ustr) -> Self {
+        Self(value)
+    }
 }
 
 /// Order side on the Polymarket CLOB.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketOrderSide {
@@ -48,7 +122,9 @@ pub enum PolymarketOrderSide {
 }
 
 /// Liquidity side for fills.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketLiquiditySide {
@@ -57,7 +133,9 @@ pub enum PolymarketLiquiditySide {
 }
 
 /// Order type (time-in-force variant) on the Polymarket CLOB.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 pub enum PolymarketOrderType {
     FOK,
     /// Immediate or cancel.
@@ -67,7 +145,9 @@ pub enum PolymarketOrderType {
 }
 
 /// WebSocket event type for user channel messages.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketEventType {
@@ -79,7 +159,9 @@ pub enum PolymarketEventType {
 }
 
 /// Order status on the Polymarket CLOB.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketOrderStatus {
@@ -95,7 +177,9 @@ pub enum PolymarketOrderStatus {
 }
 
 /// Trade settlement status on the Polymarket exchange.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Display, EnumString, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, StrumDisplay, EnumString, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketTradeStatus {

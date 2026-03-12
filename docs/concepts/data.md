@@ -1,7 +1,6 @@
 # Data
 
-NautilusTrader provides a set of built-in data types specifically designed to represent a trading domain.
-These data types include:
+NautilusTrader provides built-in data types for the trading domain:
 
 - `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
 - `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas for more efficient processing.
@@ -15,9 +14,9 @@ These data types include:
 - `InstrumentStatus`: An instrument-level status event.
 - `InstrumentClose`: The closing price of an instrument.
 
-NautilusTrader is designed primarily to operate on granular order book data, providing the highest realism
-for execution simulations in backtesting.
-However, backtests can also be conducted on any of the supported market data types, depending on the desired simulation fidelity.
+NautilusTrader operates primarily on granular order book data for the highest realism
+in execution simulations. Backtests can also run on any supported market data type,
+depending on the desired simulation fidelity.
 
 ## Order books
 
@@ -585,7 +584,7 @@ of the Nautilus core, currently in development.
 
 ### Fixed-point precision and raw values
 
-NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types to ensure precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
+NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types for precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
 
 #### Raw value requirements
 
@@ -823,7 +822,7 @@ catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
 # With storage options
 catalog = ParquetDataCatalog.from_uri(
     "s3://my-bucket/nautilus-data/",
-    storage_options={
+    fs_storage_options={
         "access_key_id": "your-key",
         "secret_access_key": "your-secret"
     }
@@ -1233,7 +1232,7 @@ catalog.query(
 
 ### Catalog operations
 
-The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and ensure data integrity.
+The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and maintain data integrity.
 
 #### Reset file names
 
@@ -1826,9 +1825,39 @@ GreeksTestData(
 )
 ```
 
+#### Python-only custom data with the PyO3 catalog
+
+To use custom data with the Rust-backed catalog (`ParquetDataCatalogV2` from `nautilus_pyo3`), use the
+`@customdataclass_pyo3()` decorator instead of `@customdataclass`. This adds the methods the Rust catalog
+expects (JSON and Arrow IPC serialization). After defining your class, register it once. You can pass either
+the **type** (recommended) or a **sample instance**:
+
+```python
+from nautilus_trader.core.nautilus_pyo3 import ParquetDataCatalogV2
+from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+from nautilus_trader.model.custom import customdataclass_pyo3
+
+
+@customdataclass_pyo3()
+class MarketTickPython:
+    symbol: str = ""
+    price: float = 0.0
+    volume: int = 0
+
+
+# Register by type (no instance needed; call once, e.g. at startup)
+register_custom_data_class(MarketTickPython)
+
+catalog = ParquetDataCatalogV2("/path/to/catalog")
+catalog.write_custom_data([MarketTickPython(1, 1, "AAPL", 150.5, 1000)])
+result = catalog.query("MarketTickPython", None, None, None, None, None, True)
+```
+
+See `nautilus_trader.model.custom.customdataclass_pyo3` for details.
+
 #### Custom data type stub
 
-To enhance development convenience and improve code suggestions in your IDE, you can create a `.pyi`
+For better IDE code suggestions, you can create a `.pyi`
 stub file with the proper constructor signature for your custom data types as well as type hints for attributes.
 This is particularly useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize
 and provide suggestions for the class's methods and attributes.
@@ -1857,5 +1886,7 @@ class GreeksData(Data):
 ## Related guides
 
 - [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Options](options.md) - Option instruments, chain subscriptions, and strike filtering.
+- [Greeks](greeks.md) - Venue-provided and locally computed option Greeks.
 - [Cache](cache.md) - Data storage and retrieval.
 - [Adapters](adapters.md) - Data sources and connectivity.

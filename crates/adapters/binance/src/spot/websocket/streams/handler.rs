@@ -184,7 +184,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle binary SBE frame.
-    fn handle_binary_frame(&mut self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
+    fn handle_binary_frame(&self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
         match decode_sbe(data) {
             Ok(MarketDataMessage::Trades(event)) => self.handle_trades_event(&event),
             Ok(MarketDataMessage::BestBidAsk(event)) => self.handle_bbo_event(&event),
@@ -202,7 +202,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle text JSON frame.
     fn handle_text_frame(&mut self, text: &str) -> Vec<BinanceSpotWsMessage> {
         if let Ok(response) = serde_json::from_str::<BinanceWsResponse>(text) {
-            self.handle_subscription_response(response);
+            self.handle_subscription_response(&response);
             return vec![];
         }
 
@@ -237,7 +237,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle subscription response.
-    fn handle_subscription_response(&mut self, response: BinanceWsResponse) {
+    fn handle_subscription_response(&mut self, response: &BinanceWsResponse) {
         if let Some(streams) = self.pending_requests.remove(&response.id) {
             if response.result.is_none() {
                 // Success - confirm subscriptions
@@ -263,7 +263,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle trades stream event.
     fn handle_trades_event(
         &self,
-        event: &crate::common::sbe::stream::TradesStreamEvent,
+        event: &crate::spot::sbe::stream::TradesStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -285,7 +285,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle best bid/ask event.
     fn handle_bbo_event(
         &self,
-        event: &crate::common::sbe::stream::BestBidAskStreamEvent,
+        event: &crate::spot::sbe::stream::BestBidAskStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -303,7 +303,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle depth snapshot event.
     fn handle_depth_snapshot(
         &self,
-        event: &crate::common::sbe::stream::DepthSnapshotStreamEvent,
+        event: &crate::spot::sbe::stream::DepthSnapshotStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -326,7 +326,7 @@ impl BinanceSpotWsFeedHandler {
     /// Handle depth diff event.
     fn handle_depth_diff(
         &self,
-        event: &crate::common::sbe::stream::DepthDiffStreamEvent,
+        event: &crate::spot::sbe::stream::DepthDiffStreamEvent,
     ) -> Vec<BinanceSpotWsMessage> {
         let symbol = Ustr::from(&event.symbol);
 
@@ -369,7 +369,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle unsubscribe command.
-    async fn handle_unsubscribe(&mut self, streams: Vec<String>) -> anyhow::Result<()> {
+    async fn handle_unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
         let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
         let request = BinanceWsSubscription::unsubscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;

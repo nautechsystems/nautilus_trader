@@ -839,7 +839,7 @@ pub fn parse_spot_margin_position_from_balance(
 /// Returns an error if any numeric fields cannot be parsed into their target types.
 #[allow(clippy::too_many_lines)]
 pub fn parse_position_status_report(
-    position: OKXPosition,
+    position: &OKXPosition,
     account_id: AccountId,
     instrument_id: InstrumentId,
     size_precision: u8,
@@ -975,7 +975,7 @@ pub fn parse_position_status_report(
 ///
 /// Returns an error if the OKX transaction detail cannot be parsed.
 pub fn parse_fill_report(
-    detail: OKXTransactionDetail,
+    detail: &OKXTransactionDetail,
     account_id: AccountId,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -1440,7 +1440,7 @@ fn parse_common_instrument_data(
 /// Generic instrument parsing function that delegates to type-specific parsers.
 fn parse_instrument_with_parser<P: InstrumentParser>(
     definition: &OKXInstrument,
-    parser: P,
+    parser: &P,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
     maker_fee: Option<Decimal>,
@@ -1526,7 +1526,7 @@ pub fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     parse_instrument_with_parser(
         definition,
-        SpotInstrumentParser,
+        &SpotInstrumentParser,
         margin_init,
         margin_maint,
         maker_fee,
@@ -2079,6 +2079,11 @@ pub fn parse_account_state(
         ts_init,
         None,
     ))
+}
+
+/// Converts an optional `UnixNanos` to an optional `DateTime<Utc>`.
+pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<chrono::DateTime<chrono::Utc>> {
+    value.map(|nanos| nanos.to_datetime_utc())
 }
 
 #[cfg(test)]
@@ -3132,7 +3137,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let position_report = parse_position_status_report(
-            okx_position,
+            &okx_position,
             account_id,
             instrument_id,
             8,
@@ -3380,7 +3385,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let fill_report = parse_fill_report(
-            transaction_detail,
+            &transaction_detail,
             account_id,
             instrument_id,
             2,
@@ -3551,7 +3556,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             8,
@@ -3619,7 +3624,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             8,
@@ -3687,7 +3692,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             8,
@@ -3755,7 +3760,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             8,
@@ -3827,7 +3832,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             8,
@@ -3899,7 +3904,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("ETH-USDT.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             4,
@@ -3967,7 +3972,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("ETH-USDT.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             4,
@@ -4035,7 +4040,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("ETH-USDT.OKX");
         let report = parse_position_status_report(
-            position,
+            &position,
             account_id,
             instrument_id,
             4,

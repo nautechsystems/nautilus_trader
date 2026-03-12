@@ -16,7 +16,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::Neg,
     str::FromStr,
 };
 
@@ -27,6 +26,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use crate::types::{Currency, Money, money::MoneyRaw};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Money {
     #[new]
     fn py_new(amount: f64, currency: Currency) -> PyResult<Self> {
@@ -292,22 +292,20 @@ impl Money {
         }
     }
 
-    fn __neg__(&self) -> Decimal {
-        self.as_decimal().neg()
+    fn __neg__(&self) -> Self {
+        -*self
     }
 
-    fn __pos__(&self) -> Decimal {
-        let mut value = self.as_decimal();
-        value.set_sign_positive(true);
-        value
+    fn __pos__(&self) -> Self {
+        *self
     }
 
-    fn __abs__(&self) -> Decimal {
-        self.as_decimal().abs()
+    fn __abs__(&self) -> Self {
+        if self.raw < 0 { -*self } else { *self }
     }
 
-    fn __int__(&self) -> u64 {
-        self.as_f64() as u64
+    fn __int__(&self) -> i64 {
+        self.as_f64() as i64
     }
 
     fn __float__(&self) -> f64 {
@@ -346,8 +344,8 @@ impl Money {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> PyResult<Self> {
-        Ok(Self::from_raw(raw, currency))
+    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> Self {
+        Self::from_raw(raw, currency)
     }
 
     #[staticmethod]

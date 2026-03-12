@@ -39,6 +39,7 @@ use rust_decimal::Decimal;
 use crate::{data::FundingRateUpdate, identifiers::InstrumentId, python::common::PY_MODULE_MODEL};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FundingRateUpdate {
     #[new]
     #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, next_funding_ns=None))]
@@ -133,7 +134,7 @@ impl FundingRateUpdate {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn py_to_dict(&self, py: Python<'_>) -> Py<PyAny> {
         let mut dict = HashMap::new();
         dict.insert(
             "type".to_string(),
@@ -162,11 +163,12 @@ impl FundingRateUpdate {
             "ts_init".to_string(),
             self.ts_init.as_u64().into_py_any_unwrap(py),
         );
-        Ok(dict.into_py_any_unwrap(py))
+        dict.into_py_any_unwrap(py)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_from_dict(py: Python<'_>, values: Py<PyAny>) -> PyResult<Self> {
         let dict = values.cast_bound::<pyo3::types::PyDict>(py)?;
 
@@ -205,18 +207,6 @@ impl FundingRateUpdate {
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
         ))
-    }
-
-    #[pyo3(name = "from_json")]
-    #[staticmethod]
-    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "from_msgpack")]
-    #[staticmethod]
-    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "to_json")]
@@ -261,20 +251,20 @@ impl FundingRateUpdate {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        Ok((
+    fn __getstate__(&self, py: Python) -> Py<PyAny> {
+        (
             self.instrument_id.to_string(),
             self.rate.to_string(),
             self.next_funding_ns.map(|ts| ts.as_u64()),
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .into_py_any_unwrap(py))
+            .into_py_any_unwrap(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
+        let state = self.__getstate__(py);
         Ok((safe_constructor, PyTuple::empty(py), state).into_py_any_unwrap(py))
     }
 
@@ -288,6 +278,21 @@ impl FundingRateUpdate {
             UnixNanos::default(),
             UnixNanos::default(),
         )
+    }
+}
+
+#[pymethods]
+impl FundingRateUpdate {
+    #[pyo3(name = "from_json")]
+    #[staticmethod]
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "from_msgpack")]
+    #[staticmethod]
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 }
 

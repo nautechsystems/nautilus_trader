@@ -49,7 +49,6 @@ use nautilus_common::{
         CacheConfig,
         database::{CacheDatabaseAdapter, CacheMap},
     },
-    custom::CustomData,
     enums::SerializationEncoding,
     live::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
@@ -59,7 +58,7 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, FundingRateUpdate, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -98,6 +97,7 @@ const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
 const SNAPSHOTS: &str = "snapshots";
 const HEALTH: &str = "health";
+const CUSTOM: &str = "custom";
 
 // Index keys
 const INDEX_ORDER_IDS: &str = "index:order_ids";
@@ -322,17 +322,59 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Loads custom data from Redis matching the given `data_type` (blocking).
+    ///
+    /// Spawns the async query on the global Nautilus runtime and blocks until
+    /// the result arrives via a channel. Safe from any thread context (Python,
+    /// test runtimes, plain threads).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or the reply channel is closed.
+    pub fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        let con = self.con.clone();
+        let trader_key = self.trader_key.clone();
+        let data_type = data_type.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = DatabaseQueries::load_custom_data(&con, &trader_key, &data_type).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send custom data result for '{data_type}': {e:?}");
+            }
+        });
+
+        blocking_recv(&rx).map_err(|e| anyhow::anyhow!("load_custom_data channel closed: {e}"))?
+    }
+
     /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
     ///
     /// # Errors
     ///
     /// Returns an error if the command cannot be sent to the background task channel.
-    pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
+    pub fn insert(&self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
+    }
+
+    /// Stores custom data in Redis (key format: `custom:<ts_init_020>:<uuid>`, value: full JSON).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails or the insert command cannot be sent.
+    pub fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
+        let json_bytes = serde_json::to_vec(data)
+            .map_err(|e| anyhow::anyhow!("CustomData serialization failed: {e}"))?;
+        let ts_init = data.ts_init().as_u64();
+        let key = format!(
+            "{CUSTOM}{REDIS_DELIMITER}{:020}{REDIS_DELIMITER}{}",
+            ts_init,
+            UUID4::new()
+        );
+        self.insert(key, Some(vec![Bytes::from(json_bytes)]))
     }
 
     /// Sends an update command for `key` with optional `payload` to Redis via the background task.
@@ -361,7 +403,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    /// Delete the given order from the database with comprehensive index cleanup.
+    /// Delete the given order from the database with full index cleanup.
     ///
     /// # Errors
     ///
@@ -409,7 +451,7 @@ impl RedisCacheDatabase {
         Ok(())
     }
 
-    /// Delete the given position from the database with comprehensive index cleanup.
+    /// Delete the given position from the database with full index cleanup.
     ///
     /// # Errors
     ///
@@ -612,7 +654,7 @@ async fn drain_buffer(
             DatabaseOperation::Insert => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
-                    if let Err(e) = insert(&mut pipe, collection, &key, payload) {
+                    if let Err(e) = insert(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
                     }
                 } else {
@@ -622,7 +664,7 @@ async fn drain_buffer(
             DatabaseOperation::Update => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
-                    if let Err(e) = update(&mut pipe, collection, &key, payload) {
+                    if let Err(e) = update(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
                     }
                 } else {
@@ -651,16 +693,11 @@ async fn drain_buffer(
     }
 }
 
-fn insert(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    value: Vec<Bytes>,
-) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
-        INDEX => insert_index(pipe, key, &value),
+        INDEX => insert_index(pipe, key, value),
         GENERAL => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
@@ -702,6 +739,10 @@ fn insert(
             Ok(())
         }
         HEALTH => {
+            insert_string(pipe, key, value[0].as_ref());
+            Ok(())
+        }
+        CUSTOM => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -776,13 +817,8 @@ fn insert_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
     pipe.rpush(key, value);
 }
 
-fn update(
-    pipe: &mut Pipeline,
-    collection: &str,
-    key: &str,
-    value: Vec<Bytes>,
-) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
         ACCOUNTS => {
@@ -1126,11 +1162,125 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>> {
+        anyhow::bail!("Loading signals from Redis cache adapter not supported")
+    }
+
+    fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        self.database.load_custom_data(data_type)
+    }
+
+    fn load_order_snapshot(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        anyhow::bail!("Loading order snapshots from Redis cache adapter not supported")
+    }
+
+    fn load_position_snapshot(
+        &self,
+        position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        anyhow::bail!("Loading position snapshots from Redis cache adapter not supported")
+    }
+
+    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        anyhow::bail!("Loading quote data for Redis cache adapter not supported")
+    }
+
+    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn load_funding_rates(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_signal(&self, signal: &Signal) -> anyhow::Result<()> {
+        anyhow::bail!("Saving signals for Redis cache adapter not supported")
+    }
+
+    fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
+        let json_bytes = serde_json::to_vec(data)
+            .map_err(|e| anyhow::anyhow!("CustomData serialization failed: {e}"))?;
+        let ts_init = data.ts_init().as_u64();
+        let key = format!(
+            "{CUSTOM}{REDIS_DELIMITER}{:020}{REDIS_DELIMITER}{}",
+            ts_init,
+            UUID4::new()
+        );
+        self.database
+            .insert(key, Some(vec![Bytes::from(json_bytes)]))
+    }
+
+    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -1222,111 +1372,6 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
         todo!()
-    }
-
-    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()> {
-        anyhow::bail!("Saving market data for Redis cache adapter not supported")
-    }
-
-    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
-        anyhow::bail!("Saving market data for Redis cache adapter not supported")
-    }
-
-    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
-        anyhow::bail!("Loading quote data for Redis cache adapter not supported")
-    }
-
-    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
-        anyhow::bail!("Saving market data for Redis cache adapter not supported")
-    }
-
-    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
-        anyhow::bail!("Loading market data for Redis cache adapter not supported")
-    }
-
-    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        anyhow::bail!("Loading market data for Redis cache adapter not supported")
-    }
-
-    fn load_funding_rates(
-        &self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
-        anyhow::bail!("Loading market data for Redis cache adapter not supported")
-    }
-
-    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()> {
-        anyhow::bail!("Saving market data for Redis cache adapter not supported")
-    }
-
-    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
-        anyhow::bail!("Loading market data for Redis cache adapter not supported")
-    }
-
-    fn add_signal(&self, signal: &Signal) -> anyhow::Result<()> {
-        anyhow::bail!("Saving signals for Redis cache adapter not supported")
-    }
-
-    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>> {
-        anyhow::bail!("Loading signals from Redis cache adapter not supported")
-    }
-
-    fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
-        anyhow::bail!("Saving custom data for Redis cache adapter not supported")
-    }
-
-    fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
-        anyhow::bail!("Loading custom data from Redis cache adapter not supported")
-    }
-
-    fn load_order_snapshot(
-        &self,
-        client_order_id: &ClientOrderId,
-    ) -> anyhow::Result<Option<OrderSnapshot>> {
-        anyhow::bail!("Loading order snapshots from Redis cache adapter not supported")
-    }
-
-    fn load_position_snapshot(
-        &self,
-        position_id: &PositionId,
-    ) -> anyhow::Result<Option<PositionSnapshot>> {
-        anyhow::bail!("Loading position snapshots from Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(

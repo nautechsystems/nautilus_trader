@@ -1656,7 +1656,7 @@ impl OrderMatchingEngine {
         for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
                 ClientOrderId::from(format!("EXPIRATION-{}-{}", self.venue, UUID4::new()).as_str());
-            let mut order = OrderAny::Market(MarketOrder::new(
+            let order = OrderAny::Market(MarketOrder::new(
                 trader_id,
                 strategy_id,
                 instrument_id,
@@ -1691,11 +1691,11 @@ impl OrderMatchingEngine {
             }
 
             let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
-            self.generate_order_accepted(&mut order, venue_order_id);
+            self.generate_order_accepted(&order, venue_order_id);
             let fill_price = self.settlement_price.unwrap_or(close.close_price);
             self.apply_fills(
-                &mut order,
-                vec![(fill_price, quantity)],
+                &order,
+                &[(fill_price, quantity)],
                 LiquiditySide::Taker,
                 Some(position_id),
                 None,
@@ -1770,7 +1770,9 @@ impl OrderMatchingEngine {
                                 format!("Rejected OTO order from {parent_order_id}").into(),
                             );
                         } else if parent_order.status() == OrderStatus::Accepted
-                            && parent_order.status() == OrderStatus::Triggered
+                            || parent_order.status() == OrderStatus::Triggered
+                            || (self.config.oto_full_trigger
+                                && parent_order.status() == OrderStatus::PartiallyFilled)
                         {
                             log::info!(
                                 "Pending OTO order {} triggers from {parent_order_id}",
@@ -2038,7 +2040,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_market_order(&mut self, order: &mut OrderAny) {
+    fn process_market_order(&mut self, order: &OrderAny) {
         if order.time_in_force() == TimeInForce::AtTheOpen
             || order.time_in_force() == TimeInForce::AtTheClose
         {
@@ -2164,7 +2166,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_market_to_limit_order(&mut self, order: &mut OrderAny) {
+    fn process_market_to_limit_order(&mut self, order: &OrderAny) {
         // Check that market exists
         if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
             || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
@@ -2555,7 +2557,7 @@ impl OrderMatchingEngine {
     }
 
     fn maybe_activate_trailing_stop(
-        &mut self,
+        &self,
         order: &mut OrderAny,
         bid: Option<Price>,
         ask: Option<Price>,
@@ -2698,7 +2700,7 @@ impl OrderMatchingEngine {
                     continue;
                 }
 
-                self.update_trailing_stop_order(&mut any);
+                self.update_trailing_stop_order(&any);
 
                 // Persist the activated/updated trailing stop back to the core
                 let _ = self.core.delete_order(match_info.client_order_id);
@@ -2924,7 +2926,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn determine_market_price_and_volume(&mut self, order: &OrderAny) -> Vec<(Price, Quantity)> {
+    fn determine_market_price_and_volume(&self, order: &OrderAny) -> Vec<(Price, Quantity)> {
         let price = match order.order_side().as_specified() {
             OrderSideSpecified::Buy => Price::max(FIXED_PRECISION),
             OrderSideSpecified::Sell => Price::min(FIXED_PRECISION),
@@ -3107,7 +3109,13 @@ impl OrderMatchingEngine {
             );
         }
 
-        self.apply_fills(&mut order, fills, LiquiditySide::Taker, None, position);
+        self.apply_fills(
+            &order,
+            &fills,
+            LiquiditySide::Taker,
+            None,
+            position.as_ref(),
+        );
     }
 
     fn filter_fills_by_protection(
@@ -3140,7 +3148,7 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the order has no price (design error).
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let order = match self.cache.borrow().order(&client_order_id).cloned() {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
@@ -3261,11 +3269,11 @@ impl OrderMatchingEngine {
 
                 let liquidity_side = order.liquidity_side().unwrap();
                 self.apply_fills(
-                    &mut order,
-                    fills,
+                    &order,
+                    &fills,
                     liquidity_side,
                     venue_position_id,
-                    position,
+                    position.as_ref(),
                 );
             }
             None => panic!("Limit order must have a price"),
@@ -3274,15 +3282,15 @@ impl OrderMatchingEngine {
 
     fn apply_fills(
         &mut self,
-        order: &mut OrderAny,
-        fills: Vec<(Price, Quantity)>,
+        order: &OrderAny,
+        fills: &[(Price, Quantity)],
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
-        position: Option<Position>,
+        position: Option<&Position>,
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
-            for (fill_px, fill_qty) in &fills {
+            for (fill_px, fill_qty) in fills {
                 total_size = total_size.add(*fill_qty);
             }
 
@@ -3315,7 +3323,7 @@ impl OrderMatchingEngine {
 
         let mut initial_market_to_limit_fill = false;
 
-        for &(mut fill_px, ref fill_qty) in &fills {
+        for &(mut fill_px, ref fill_qty) in fills {
             assert!(
                 (fill_px.precision == self.instrument.price_precision()),
                 "Invalid price precision for fill price {} when instrument price precision is {}.\
@@ -3392,7 +3400,7 @@ impl OrderMatchingEngine {
                 effective_fill_qty,
                 liquidity_side,
                 venue_position_id,
-                position.clone(),
+                position,
             );
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
@@ -3426,12 +3434,12 @@ impl OrderMatchingEngine {
 
     fn fill_order(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         last_px: Price,
         last_qty: Quantity,
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
-        position: Option<Position>,
+        position: Option<&Position>,
     ) {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();
@@ -3599,7 +3607,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn update_limit_order(&mut self, order: &mut OrderAny, quantity: Quantity, price: Price) {
+    fn update_limit_order(&mut self, order: &OrderAny, quantity: Quantity, price: Price) {
         if self
             .core
             .is_limit_matched(order.order_side_specified(), price)
@@ -3637,12 +3645,7 @@ impl OrderMatchingEngine {
         self.generate_order_updated(order, quantity, Some(price), None, None);
     }
 
-    fn update_stop_market_order(
-        &mut self,
-        order: &mut OrderAny,
-        quantity: Quantity,
-        trigger_price: Price,
-    ) {
+    fn update_stop_market_order(&self, order: &OrderAny, quantity: Quantity, trigger_price: Price) {
         if self
             .core
             .is_stop_matched(order.order_side_specified(), trigger_price)
@@ -3758,8 +3761,8 @@ impl OrderMatchingEngine {
     }
 
     fn update_market_if_touched_order(
-        &mut self,
-        order: &mut OrderAny,
+        &self,
+        order: &OrderAny,
         quantity: Quantity,
         trigger_price: Price,
     ) {
@@ -3871,7 +3874,7 @@ impl OrderMatchingEngine {
         self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
     }
 
-    fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
+    fn update_trailing_stop_order(&self, order: &OrderAny) {
         let (new_trigger_price, new_price) = trailing_stop_calculate(
             self.instrument.price_increment(),
             order.trigger_price(),
@@ -4245,7 +4248,7 @@ impl OrderMatchingEngine {
         msgbus::send_order_event(endpoint, event);
     }
 
-    fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
+    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
         let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
@@ -4327,7 +4330,7 @@ impl OrderMatchingEngine {
 
     fn generate_order_updated(
         &self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         quantity: Quantity,
         price: Option<Price>,
         trigger_price: Option<Price>,
@@ -4412,7 +4415,7 @@ impl OrderMatchingEngine {
     #[allow(clippy::too_many_arguments)]
     fn generate_order_filled(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         venue_order_id: VenueOrderId,
         venue_position_id: Option<PositionId>,
         last_qty: Quantity,

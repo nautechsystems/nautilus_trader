@@ -28,7 +28,7 @@ impl BybitDataClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "BYBIT"
     }
 }
@@ -41,7 +41,7 @@ impl BybitExecutionClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "BYBIT"
     }
 }

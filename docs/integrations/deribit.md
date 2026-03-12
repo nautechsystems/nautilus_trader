@@ -249,7 +249,7 @@ Deribit offers two post-only modes:
    Deribit automatically adjusts the price to one tick inside the spread.
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
-The Nautilus adapter uses **reject mode** (`reject_post_only=true`) to ensure deterministic behavior.
+The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
 If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
 event is emitted with the `due_post_only` flag set to `true`.
 

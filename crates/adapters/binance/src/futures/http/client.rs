@@ -63,13 +63,14 @@ use super::{
 use crate::common::{
     consts::{
         BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH, BINANCE_FAPI_RATE_LIMITS,
-        BinanceRateLimitQuota,
+        BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
     },
     credential::Credential,
+    encoder::encode_broker_id,
     enums::{
         BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
         BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType, BinanceSide,
-        BinanceTimeInForce,
+        BinanceTimeInForce, BinanceWorkingType,
     },
     models::BinanceErrorResponse,
     parse::{parse_coinm_instrument, parse_usdm_instrument},
@@ -324,7 +325,7 @@ impl BinanceRawFuturesHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         serde_json::from_slice(&response.body)
@@ -408,7 +409,7 @@ impl BinanceRawFuturesHttpClient {
             .await?;
 
         if !response.status.is_success() {
-            return self.parse_error_response(response);
+            return self.parse_error_response(&response);
         }
 
         serde_json::from_slice::<T>(&response.body)
@@ -445,7 +446,7 @@ impl BinanceRawFuturesHttpClient {
         }
     }
 
-    fn parse_error_response<T>(&self, response: HttpResponse) -> BinanceFuturesHttpResult<T> {
+    fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceFuturesHttpResult<T> {
         let status = response.status.as_u16();
         let body = String::from_utf8_lossy(&response.body).to_string();
 
@@ -1071,10 +1072,6 @@ impl BinanceFuturesInstrument {
 
 /// Binance Futures HTTP client for USD-M and COIN-M perpetuals.
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
-)]
 pub struct BinanceFuturesHttpClient {
     raw: BinanceRawFuturesHttpClient,
     product_type: BinanceProductType,
@@ -1511,6 +1508,7 @@ impl BinanceFuturesHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         reduce_only: bool,
+        post_only: bool,
         position_side: Option<BinancePositionSide>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
@@ -1518,7 +1516,11 @@ impl BinanceFuturesHttpClient {
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
-        let binance_tif = BinanceTimeInForce::try_from(time_in_force)?;
+        let binance_tif = if post_only {
+            BinanceTimeInForce::Gtx
+        } else {
+            BinanceTimeInForce::try_from(time_in_force)?
+        };
 
         let requires_trigger_price = matches!(
             order_type,
@@ -1542,7 +1544,7 @@ impl BinanceFuturesHttpClient {
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let stop_price_str = trigger_price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         let params = BinanceNewOrderParams {
             symbol,
@@ -1602,6 +1604,9 @@ impl BinanceFuturesHttpClient {
         trigger_price: Option<Price>,
         reduce_only: bool,
         position_side: Option<BinancePositionSide>,
+        activation_price: Option<Price>,
+        callback_rate: Option<String>,
+        working_type: Option<BinanceWorkingType>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
@@ -1622,7 +1627,7 @@ impl BinanceFuturesHttpClient {
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let trigger_price_str = trigger_price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         let params = BinanceNewAlgoOrderParams {
             symbol,
@@ -1638,12 +1643,12 @@ impl BinanceFuturesHttpClient {
             } else {
                 None
             },
-            working_type: None,
+            working_type,
             close_position: None,
             price_protect: None,
             reduce_only: if reduce_only { Some(true) } else { None },
-            activation_price: None,
-            callback_rate: None,
+            activation_price: activation_price.map(|p| p.to_string()),
+            callback_rate,
             client_algo_id: Some(client_id_str),
             good_till_date: None,
             recv_window: None,
@@ -1708,7 +1713,8 @@ impl BinanceFuturesHttpClient {
         let params = BinanceModifyOrderParams {
             symbol,
             order_id,
-            orig_client_order_id: client_order_id.map(|id| id.to_string()),
+            orig_client_order_id: client_order_id
+                .map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)),
             side: binance_side,
             quantity: quantity.to_string(),
             price: price.to_string(),
@@ -1765,7 +1771,8 @@ impl BinanceFuturesHttpClient {
         let params = BinanceCancelOrderParams {
             symbol,
             order_id,
-            orig_client_order_id: client_order_id.map(|id| id.to_string()),
+            orig_client_order_id: client_order_id
+                .map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)),
             recv_window: None,
         };
 
@@ -1784,7 +1791,10 @@ impl BinanceFuturesHttpClient {
     pub async fn cancel_algo_order(&self, client_order_id: ClientOrderId) -> anyhow::Result<()> {
         let params = BinanceAlgoOrderQueryParams {
             algo_id: None,
-            client_algo_id: Some(client_order_id.to_string()),
+            client_algo_id: Some(encode_broker_id(
+                &client_order_id,
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            )),
             recv_window: None,
         };
 
@@ -1817,7 +1827,7 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.raw.cancel_all_orders(&params).await?;
-        if response.code.parse::<i32>().unwrap_or(0) == 200 {
+        if response.code == 200 {
             Ok(vec![])
         } else {
             anyhow::bail!("Cancel all orders failed: {}", response.msg);
@@ -1838,7 +1848,7 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.raw.cancel_all_algo_orders(&params).await?;
-        if response.code.parse::<i32>().unwrap_or(0) == 200 {
+        if response.code == 200 {
             Ok(())
         } else {
             anyhow::bail!("Cancel all algo orders failed: {}", response.msg);
@@ -1892,7 +1902,10 @@ impl BinanceFuturesHttpClient {
     ) -> BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> {
         let params = BinanceAlgoOrderQueryParams {
             algo_id: None,
-            client_algo_id: Some(client_order_id.to_string()),
+            client_algo_id: Some(encode_broker_id(
+                &client_order_id,
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            )),
             recv_window: None,
         };
 
@@ -1970,7 +1983,8 @@ impl BinanceFuturesHttpClient {
             .transpose()
             .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
 
-        let orig_client_order_id = client_order_id.map(|id| id.to_string());
+        let orig_client_order_id =
+            client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
 
         let params = BinanceOrderQueryParams {
             symbol,
@@ -2323,7 +2337,7 @@ mod tests {
             body: Bytes::from(r#"{"code":-1121,"msg":"Invalid symbol."}"#),
         };
 
-        let result: BinanceFuturesHttpResult<()> = client.parse_error_response(response);
+        let result: BinanceFuturesHttpResult<()> = client.parse_error_response(&response);
 
         match result {
             Err(BinanceFuturesHttpError::BinanceError { code, message }) => {

@@ -31,6 +31,10 @@ use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for live data engines.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveDataEngineConfig {
     /// The queue size for the engine's internal queue buffers.
@@ -50,6 +54,10 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
 }
 
 /// Configuration for live risk engines.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveRiskEngineConfig {
     /// The queue size for the engine's internal queue buffers.
@@ -69,6 +77,10 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
 }
 
 /// Configuration for live execution engines.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LiveExecEngineConfig {
     /// If reconciliation is active at start-up.
@@ -183,6 +195,10 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
 }
 
 /// Configuration for live client message routing.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct RoutingConfig {
     /// If the client should be registered as the default routing client.
@@ -192,6 +208,10 @@ pub struct RoutingConfig {
 }
 
 /// Configuration for instrument providers.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstrumentProviderConfig {
     /// Whether to load all instruments on startup.
@@ -213,6 +233,10 @@ impl Default for InstrumentProviderConfig {
 }
 
 /// Configuration for live data clients.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LiveDataClientConfig {
     /// If `DataClient` will emit bar updates when a new bar opens.
@@ -224,6 +248,10 @@ pub struct LiveDataClientConfig {
 }
 
 /// Configuration for live execution clients.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LiveExecClientConfig {
     /// The client's instrument provider configuration.
@@ -233,6 +261,10 @@ pub struct LiveExecClientConfig {
 }
 
 /// Configuration for live Nautilus system nodes.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone)]
 pub struct LiveNodeConfig {
     /// The trading environment.
@@ -377,7 +409,7 @@ impl NautilusKernelConfig for LiveNodeConfig {
     }
 
     fn portfolio(&self) -> Option<PortfolioConfig> {
-        self.portfolio.clone()
+        self.portfolio
     }
 
     fn streaming(&self) -> Option<StreamingConfig> {

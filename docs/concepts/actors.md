@@ -69,11 +69,11 @@ Override these methods to hook into lifecycle events:
 | Method          | When called                                                         |
 |-----------------|---------------------------------------------------------------------|
 | `on_start()`    | Actor is starting (subscribe to data here).                         |
-| `on_stop()`     | Actor is stopping (cancel timers, cleanup resources).               |
+| `on_stop()`     | Actor is stopping (cancel timers, clean up resources).              |
 | `on_resume()`   | Actor is resuming from a stopped state.                             |
 | `on_reset()`    | Reset indicators and internal state (called between backtest runs). |
 | `on_degrade()`  | Actor is entering a degraded state (partial functionality).         |
-| `on_fault()`    | Actor has encountered a critical fault.                             |
+| `on_fault()`    | Actor has encountered a fault.                                      |
 | `on_dispose()`  | Actor is being disposed (final cleanup).                            |
 
 ## Timers and alerts
@@ -117,13 +117,12 @@ For custom messaging between components, see the [Message Bus](message_bus.md) g
 
 ## Data handling and callbacks
 
-When working with data in Nautilus, it's important to understand the relationship between data
-*requests/subscriptions* and their corresponding callback handlers. The system uses different handlers
-depending on whether the data is historical or real-time.
+The system uses different callback handlers depending on whether data is historical or real-time.
+Understanding the relationship between data *requests/subscriptions* and their handlers is key.
 
 ### Historical vs real-time data
 
-The system distinguishes between two types of data flow:
+The system distinguishes between two data flows:
 
 1. **Historical data** (from *requests*):
    - Obtained through methods like `request_bars()`, `request_quote_ticks()`, etc.
@@ -137,7 +136,7 @@ The system distinguishes between two types of data flow:
 
 ### Callback handlers
 
-Here's how different data operations map to their handlers:
+Different data operations map to these handlers:
 
 | Operation                            | Category   | Handler                  | Purpose                                           |
 |--------------------------------------|------------|--------------------------|---------------------------------------------------|
@@ -155,6 +154,8 @@ Here's how different data operations map to their handlers:
 | `subscribe_funding_rates()`          | Real-time  | `on_funding_rate()`      | Live funding rate updates.                        |
 | `subscribe_instrument_status()`      | Real-time  | `on_instrument_status()` | Live instrument status updates.                   |
 | `subscribe_instrument_close()`       | Real-time  | `on_instrument_close()`  | Live instrument close updates.                    |
+| `subscribe_option_greeks()`          | Real-time  | `on_option_greeks()`     | Live option greeks updates.                       |
+| `subscribe_option_chain()`           | Real-time  | `on_option_chain()`      | Live option chain slice snapshots.                |
 | `subscribe_order_fills()`            | Real-time  | `on_order_filled()`      | Live order fill events for an instrument.         |
 | `subscribe_order_cancels()`          | Real-time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
 | `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
@@ -171,7 +172,7 @@ Here's how different data operations map to their handlers:
 
 ### Example
 
-Here's an example demonstrating both historical and real-time data handling:
+This example shows both historical and real-time data handling:
 
 ```python
 from nautilus_trader.common.actor import Actor
@@ -221,8 +222,8 @@ class MyActor(Actor):
         self.log.info(f"Received real-time bar: {bar}")
 ```
 
-This separation between historical and real-time data handlers allows for different processing logic
-based on the data context. For example, you might want to:
+Separating historical and real-time handlers lets you apply different processing logic
+based on context. For example:
 
 - Use historical data to initialize indicators or establish baseline metrics.
 - Process real-time data differently for live trading decisions.
@@ -236,10 +237,10 @@ as the data might be coming from a request rather than a subscription.
 
 ## Order fill subscriptions
 
-Actors can subscribe to order fill events for specific instruments using `subscribe_order_fills()`. This is useful
-for monitoring trading activity, implementing custom fill analysis, or tracking execution quality.
+Actors can subscribe to order fill events for specific instruments using `subscribe_order_fills()`.
+This is useful for monitoring trading activity, fill analysis, or tracking execution quality.
 
-When subscribed, all order fills for the specified instrument are forwarded to the `on_order_filled()` handler,
+When subscribed, the handler `on_order_filled()` receives all fills for the specified instrument,
 regardless of which strategy or component generated the original order.
 
 ### Example
@@ -281,16 +282,16 @@ class FillMonitorActor(Actor):
 ```
 
 :::note
-Order fill subscriptions are message bus-only subscriptions and do not involve the data engine.
-The `on_order_filled()` handler will only receive events while the actor is in a running state.
+Order fill subscriptions use the message bus only and do not involve the data engine.
+The `on_order_filled()` handler receives events only while the actor is running.
 :::
 
 ## Order cancel subscriptions
 
-Actors can subscribe to order cancel events for specific instruments using `subscribe_order_cancels()`. This is useful
-for monitoring order cancellations, implementing custom cancel analysis, or tracking order lifecycle events.
+Actors can subscribe to order cancel events for specific instruments using `subscribe_order_cancels()`.
+This is useful for monitoring cancellations or tracking order lifecycle events.
 
-When subscribed, all order cancels for the specified instrument are forwarded to the `on_order_canceled()` handler,
+When subscribed, the handler `on_order_canceled()` receives all cancels for the specified instrument,
 regardless of which strategy or component generated the original order.
 
 ### Example
@@ -330,8 +331,8 @@ class CancelMonitorActor(Actor):
 ```
 
 :::note
-Order cancel subscriptions are message bus-only subscriptions and do not involve the data engine.
-The `on_order_canceled()` handler will only receive events while the actor is in a running state.
+Order cancel subscriptions use the message bus only and do not involve the data engine.
+The `on_order_canceled()` handler receives events only while the actor is running.
 :::
 
 ## Related guides

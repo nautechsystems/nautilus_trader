@@ -432,7 +432,8 @@ def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
     fully_qualified_name = data_cls.__module__ + ":" + data_cls.__qualname__
     return nautilus_pyo3.DataType(
         fully_qualified_name,
-        data_type.metadata,  # PyO3 expects a `String` for this parameter
+        data_type.metadata,
+        data_type.identifier,
     )
 
 
@@ -442,20 +443,29 @@ def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> Dat
     return DataType(
         data_cls,
         data_type_pyo3.metadata,
+        data_type_pyo3.identifier,
     )
 
 
 def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
+    """
+    Convert cache CustomData to PyO3 CustomData.
+
+    Uses JSON roundtrip: cache CustomData (Cython) -> JSON -> deserialize_custom_from_json
+    -> Rust CustomData wrapper.
+
+    """
     data_type_pyo3 = transform_data_type_to_pyo3(data.data_type)
-    return nautilus_pyo3.CustomData(
-        data_type_pyo3,
-        value=msgspec.json.encode(data.data.to_dict()),
-        ts_event=data.ts_event,
-        ts_init=data.ts_init,
-    )
+    payload = msgspec.json.encode(data.data.to_dict())
+    inner = nautilus_pyo3.deserialize_custom_from_json(data.data_type.type_name, bytes(payload))
+    return nautilus_pyo3.CustomData(data_type_pyo3, inner)
 
 
 def transform_custom_data_from_pyo3(data: nautilus_pyo3.CustomData) -> CustomData:
+    """
+    Convert PyO3 CustomData to cache CustomData.
+    """
     data_type = transform_data_type_from_pyo3(data.data_type)
-    data = Data(data.value, data.ts_event, data.ts_init)
-    return CustomData(data_type, data)
+    value = data.data.to_json()  # type: ignore[attr-defined]
+    inner = Data(msgspec.json.decode(value), data.ts_event, data.ts_init)
+    return CustomData(data_type, inner)

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
@@ -27,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBook {
     #[new]
     fn py_new(instrument_id: InstrumentId, book_type: BookType) -> Self {
@@ -209,10 +211,11 @@ impl OrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.bids_filtered_as_map(
             depth,
             own_book,
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             accepted_buffer_ns,
             ts_now,
         )
@@ -228,10 +231,11 @@ impl OrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.asks_filtered_as_map(
             depth,
             own_book,
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             accepted_buffer_ns,
             ts_now,
         )
@@ -248,11 +252,12 @@ impl OrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.group_bids_filtered(
             group_size,
             depth,
             own_book,
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             accepted_buffer_ns,
             ts_now,
         )
@@ -269,11 +274,12 @@ impl OrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.group_asks_filtered(
             group_size,
             depth,
             own_book,
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             accepted_buffer_ns,
             ts_now,
         )
@@ -289,10 +295,11 @@ impl OrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> PyResult<Self> {
+        let status_set: Option<AHashSet<OrderStatus>> = status.map(|s| s.into_iter().collect());
         self.filtered_view_checked(
             own_book,
             depth,
-            status.map(|s| s.into_iter().collect()),
+            status_set.as_ref(),
             accepted_buffer_ns,
             ts_now,
         )

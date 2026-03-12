@@ -175,25 +175,23 @@ pub struct Greeks<T> {
     pub itm_prob: T,
 }
 
-/// Lightweight kernel for IV search - only computes price and vega
+/// Lightweight kernel for IV search - only computes price and vega.
+/// `phi` is +1 for call, -1 for put (caller does the select once).
 #[inline(always)]
 fn pricing_kernel_price_vega<T: BlackScholesReal>(
-    s: T,
+    s_forward: T,
     k: T,
-    disc: T,
+    df_r: T,
     d1: T,
     d2: T,
     sqrt_t: T,
-    is_call: T::Mask,
+    phi: T,
 ) -> (T, T) {
-    let (n_d1, pdf_d1) = d1.cdf_with_pdf();
-    let n_d2 = d2.cdf();
+    let (cdf_phi_d1, pdf_d1) = (phi * d1).cdf_with_pdf();
+    let cdf_phi_d2 = (phi * d2).cdf();
 
-    let c_price = s * n_d1 - k * disc * n_d2;
-    let p_price = c_price - s + k * disc;
-    let price = T::select(is_call, c_price, p_price);
-
-    let vega = s * sqrt_t * pdf_d1;
+    let price = phi * (s_forward * cdf_phi_d1 - k * df_r * cdf_phi_d2);
+    let vega = s_forward * sqrt_t * pdf_d1;
 
     (price, vega)
 }
@@ -201,40 +199,33 @@ fn pricing_kernel_price_vega<T: BlackScholesReal>(
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
 fn pricing_kernel<T: BlackScholesReal>(
-    s: T,
+    s_forward: T,
     k: T,
-    disc: T,
+    df_r: T,
     d1: T,
     d2: T,
-    inv_vol_sqrt_t: T,
+    inv_scaled_vol: T,
     vol: T,
     sqrt_t: T,
     t: T,
     r: T,
     b: T,
-    s_orig: T,
-    is_call: T::Mask,
+    s: T,
+    phi: T,
 ) -> Greeks<T> {
-    let (n_d1, pdf_d1) = d1.cdf_with_pdf();
-    let n_d2 = d2.cdf();
+    let (cdf_phi_d1, pdf_d1) = (phi * d1).cdf_with_pdf();
+    let cdf_phi_d2 = (phi * d2).cdf();
 
-    let c_price = s * n_d1 - k * disc * n_d2;
-    let p_price = c_price - s + k * disc;
+    let df_b = ((b - r) * t).exp();
+    let price = phi * (s_forward * cdf_phi_d1 - k * df_r * cdf_phi_d2);
+    let delta = phi * df_b * cdf_phi_d1;
+    let vega = s_forward * sqrt_t * pdf_d1;
+    let gamma = df_b * pdf_d1 * inv_scaled_vol / s;
 
-    let vega = s * sqrt_t * pdf_d1;
-    let df = ((b - r) * t).exp();
-    let gamma = df * pdf_d1 * inv_vol_sqrt_t / s_orig;
-
-    let theta_base = -(vega * vol) * (T::splat(2.0) * t).recip_precise();
-    let phi_theta = T::select(is_call, T::splat(1.0), -T::splat(1.0));
-    let c_theta = theta_base - r * k * disc * n_d2 - phi_theta * (b - r) * s * n_d1;
-    let p_theta =
-        theta_base + r * k * disc * (T::splat(1.0) - n_d2) - phi_theta * (b - r) * s * n_d1;
-
-    let price = T::select(is_call, c_price, p_price);
-    let delta = T::select(is_call, n_d1, n_d1 - T::splat(1.0));
-    let theta = T::select(is_call, c_theta, p_theta);
-    let itm_prob = T::select(is_call, n_d2, T::splat(1.0) - n_d2);
+    let theta_v = -(s_forward * pdf_d1 * vol) * (T::splat(2.0) * sqrt_t).recip_precise();
+    let theta_b = -phi * (b - r) * s_forward * cdf_phi_d1;
+    let theta_r = -phi * r * k * df_r * cdf_phi_d2;
+    let theta = theta_v + theta_b + theta_r;
 
     Greeks {
         price,
@@ -243,7 +234,7 @@ fn pricing_kernel<T: BlackScholesReal>(
         gamma,
         vega,
         theta,
-        itm_prob,
+        itm_prob: cdf_phi_d2,
     }
 }
 
@@ -259,26 +250,29 @@ pub fn compute_greeks<T: BlackScholesReal>(
     is_call: T::Mask,
 ) -> Greeks<T> {
     let sqrt_t = t.sqrt();
-    let vol_sqrt_t = vol * sqrt_t;
-    let inv_vol_sqrt_t = vol_sqrt_t.recip_precise();
-    let disc = (-r * t).exp();
-    let d1 = ((s / k).ln() + (b + T::splat(0.5) * vol * vol) * t) * inv_vol_sqrt_t;
-    let s_forward = s * ((b - r) * t).exp();
+    let scaled_vol = vol * sqrt_t;
+    let inv_scaled_vol = scaled_vol.recip_precise();
+    let df_r = (-r * t).exp();
+    let df_b = ((b - r) * t).exp();
+    let d1 = ((s / k).ln() + (b + T::splat(0.5) * vol * vol) * t) * inv_scaled_vol;
+    let d2 = d1 - scaled_vol;
+    let s_forward = s * df_b;
+    let phi = T::select(is_call, T::splat(1.0), T::splat(-1.0));
 
     pricing_kernel(
         s_forward,
         k,
-        disc,
+        df_r,
         d1,
-        d1 - vol_sqrt_t,
-        inv_vol_sqrt_t,
+        d2,
+        inv_scaled_vol,
         vol,
         sqrt_t,
         t,
         r,
         b,
         s,
-        is_call,
+        phi,
     )
 }
 
@@ -320,16 +314,17 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     let inv_sqrt_t = sqrt_t.recip_precise();
     let ln_sk_bt = (s.ln() - k.ln()) + (b * t); // Numerical Idea 1: Merged constant with b
     let half_t = T::splat(0.5) * t; // Numerical Idea 2: Hoisted half-time
-    let disc = (-r * t).exp();
+    let df_r = (-r * t).exp();
     let mut vol = initial_guess;
 
     // SINGLE HALLEY PASS
     let inv_vol = vol.recip_precise();
-    let inv_vst = inv_vol * inv_sqrt_t;
-    let d1 = (ln_sk_bt + half_t * vol * vol) * inv_vst;
+    let inv_scaled_vol = inv_vol * inv_sqrt_t;
+    let d1 = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol;
     let d2 = d1 - vol * sqrt_t;
     let s_forward = s * ((b - r) * t).exp();
-    let (price, vega_raw) = pricing_kernel_price_vega(s_forward, k, disc, d1, d2, sqrt_t, is_call);
+    let phi = T::select(is_call, T::splat(1.0), T::splat(-1.0));
+    let (price, vega_raw) = pricing_kernel_price_vega(s_forward, k, df_r, d1, d2, sqrt_t, phi);
 
     let diff = price - mkt_price;
     let vega = vega_raw.abs().max(T::splat(1e-9));
@@ -347,22 +342,24 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
 
     // FINAL RE-SYNC
     let inv_vol_f = vol.recip_precise();
-    let inv_vst_f = inv_vol_f * inv_sqrt_t;
-    let d1_f = (ln_sk_bt + half_t * vol * vol) * inv_vst_f;
+    let inv_scaled_vol_f = inv_vol_f * inv_sqrt_t;
+    let scaled_vol_f = vol * sqrt_t;
+    let d1_f = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol_f;
+    let d2_f = d1_f - scaled_vol_f;
     let mut g_final = pricing_kernel(
         s_forward,
         k,
-        disc,
+        df_r,
         d1_f,
-        d1_f - vol * sqrt_t,
-        inv_vst_f,
+        d2_f,
+        inv_scaled_vol_f,
         vol,
         sqrt_t,
         t,
         r,
         b,
         s,
-        is_call,
+        phi,
     );
     g_final.vol = vol;
 
@@ -448,6 +445,32 @@ mod tests {
             g_fast.theta,
             theta_exact_raw,
             g_exact.theta
+        );
+    }
+
+    #[rstest]
+    fn test_put_theta_with_cost_of_carry_not_equal_to_rate() {
+        let s = 100.0f64;
+        let k = 100.0f64;
+        let t = 1.0f64;
+        let r = 0.05f64;
+        let b = 0.0f64; // cost of carry != r (e.g. futures option)
+        let vol = 0.2f64;
+        let multiplier = 1.0f64;
+
+        let g_fast = compute_greeks::<f32>(
+            s as f32, k as f32, t as f32, r as f32, b as f32, vol as f32, false,
+        );
+
+        let g_exact = black_scholes_greeks_exact(s, r, b, vol, false, k, t);
+
+        let theta_daily_factor = 0.0027378507871321013;
+        let theta_exact_raw = g_exact.theta / (multiplier * theta_daily_factor);
+        assert!(
+            (g_fast.theta as f64 - theta_exact_raw).abs() < 1e-3,
+            "Put theta mismatch with b!=r: fast={}, exact_raw={}",
+            g_fast.theta,
+            theta_exact_raw
         );
     }
 

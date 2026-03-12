@@ -209,15 +209,15 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
 // Raw value validation
 // -----------------------------------------------------------------------------
 
-/// Returns `Ok(true)` if validation should be skipped, `Ok(false)` to proceed.
+/// Returns `true` if validation should be skipped, `false` to proceed.
 ///
 /// Validation is skipped when precision >= FIXED_PRECISION because every bit of the raw
 /// value is significant. For precision > FIXED_PRECISION without the defi feature,
 /// a debug assertion fires to surface potential misuse during development.
 #[inline(always)]
-fn should_skip_validation(precision: u8) -> anyhow::Result<bool> {
+fn should_skip_validation(precision: u8) -> bool {
     if precision == FIXED_PRECISION {
-        return Ok(true);
+        return true;
     }
 
     if precision > FIXED_PRECISION {
@@ -228,10 +228,10 @@ fn should_skip_validation(precision: u8) -> anyhow::Result<bool> {
             "precision {precision} exceeds FIXED_PRECISION {FIXED_PRECISION}: \
              raw value validation is not possible at this precision"
         );
-        return Ok(true);
+        return true;
     }
 
-    Ok(false)
+    false
 }
 
 /// Builds the error for invalid fixed-point raw values (cold path).
@@ -281,7 +281,7 @@ fn invalid_raw_error(
 /// (only when `precision < FIXED_PRECISION`).
 #[inline(always)]
 pub fn check_fixed_raw_u128(raw: u128, precision: u8) -> anyhow::Result<()> {
-    if should_skip_validation(precision)? {
+    if should_skip_validation(precision) {
         return Ok(());
     }
 
@@ -306,7 +306,7 @@ pub fn check_fixed_raw_u128(raw: u128, precision: u8) -> anyhow::Result<()> {
 /// Returns an error if the raw value has non-zero bits beyond the precision scale.
 #[inline(always)]
 pub fn check_fixed_raw_u64(raw: u64, precision: u8) -> anyhow::Result<()> {
-    if should_skip_validation(precision)? {
+    if should_skip_validation(precision) {
         return Ok(());
     }
 
@@ -352,7 +352,7 @@ pub fn check_fixed_raw_u64(raw: u64, precision: u8) -> anyhow::Result<()> {
 /// (only when `precision < FIXED_PRECISION`).
 #[inline(always)]
 pub fn check_fixed_raw_i128(raw: i128, precision: u8) -> anyhow::Result<()> {
-    if should_skip_validation(precision)? {
+    if should_skip_validation(precision) {
         return Ok(());
     }
 
@@ -377,7 +377,7 @@ pub fn check_fixed_raw_i128(raw: i128, precision: u8) -> anyhow::Result<()> {
 /// Returns an error if the raw value has non-zero bits beyond the precision scale.
 #[inline(always)]
 pub fn check_fixed_raw_i64(raw: i64, precision: u8) -> anyhow::Result<()> {
-    if should_skip_validation(precision)? {
+    if should_skip_validation(precision) {
         return Ok(());
     }
 

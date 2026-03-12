@@ -188,6 +188,7 @@ impl DeribitWebSocketClient {
     }
 
     #[pyo3(name = "connect")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -267,6 +268,11 @@ impl DeribitWebSocketClient {
                                 }
                             }
                         }),
+                        NautilusWsMessage::OptionGreeks(greeks) => {
+                            call_python_with_data(&call_soon, &callback, |py| {
+                                Py::new(py, greeks).map(|obj| obj.into_any())
+                            });
+                        }
                         // Execution events - route to Python callback
                         NautilusWsMessage::OrderStatusReports(reports) => Python::attach(|py| {
                             for report in reports {
@@ -553,6 +559,52 @@ impl DeribitWebSocketClient {
         instrument_id: InstrumentId,
         interval: Option<DeribitUpdateInterval>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to option greeks for the given instrument.
+    ///
+    /// Registers the instrument in the `option_greeks_subs` set so the handler
+    /// emits `OptionGreeks` from ticker messages, then subscribes to the ticker channel.
+    #[pyo3(name = "subscribe_option_greeks")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_subscribe_option_greeks<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.add_option_greeks_sub(instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from option greeks for the given instrument.
+    ///
+    /// Removes the instrument from the `option_greeks_subs` set and unsubscribes
+    /// from the ticker channel.
+    #[pyo3(name = "unsubscribe_option_greeks")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_unsubscribe_option_greeks<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.remove_option_greeks_sub(&instrument_id);
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {

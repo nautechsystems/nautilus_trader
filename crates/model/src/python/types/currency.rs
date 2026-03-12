@@ -21,6 +21,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 use crate::{enums::CurrencyType, types::Currency};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Currency {
     #[new]
     fn py_new(

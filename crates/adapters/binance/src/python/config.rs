@@ -67,6 +67,8 @@ impl BinanceExecClientConfig {
         environment = None,
         base_url_http = None,
         base_url_ws = None,
+        base_url_ws_trading = None,
+        use_ws_trading = true,
         api_key = None,
         api_secret = None,
     ))]
@@ -78,6 +80,8 @@ impl BinanceExecClientConfig {
         environment: Option<BinanceEnvironment>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
+        base_url_ws_trading: Option<String>,
+        use_ws_trading: bool,
         api_key: Option<String>,
         api_secret: Option<String>,
     ) -> Self {
@@ -88,6 +92,8 @@ impl BinanceExecClientConfig {
             environment: environment.unwrap_or(BinanceEnvironment::Mainnet),
             base_url_http,
             base_url_ws,
+            base_url_ws_trading,
+            use_ws_trading,
             api_key,
             api_secret,
         }

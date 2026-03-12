@@ -26,6 +26,14 @@ use crate::{
 /// Represents an event where a position has changed.
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct PositionChanged {
     /// The trader ID associated with the event.
     pub trader_id: TraderId,

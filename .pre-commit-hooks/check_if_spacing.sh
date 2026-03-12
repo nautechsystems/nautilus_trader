@@ -114,6 +114,13 @@ while IFS= read -r line; do
       continue
     fi
 
+    # Exempt: match arm guard (prev line is multi-alternative pattern with `|`)
+    if [[ "$prev_trimmed" =~ [[:alnum:]][[:space:]]*\|[[:space:]]*[[:alnum:]] ]] &&
+      ! [[ "$prev_trimmed" =~ \|\| ]]; then
+      prev_content="$content"
+      continue
+    fi
+
     # Exempt: shared identifier with line above (pure bash, no subprocesses)
     condition="${trimmed#if }"
     has_shared=false

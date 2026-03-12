@@ -30,6 +30,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolProfiler {
     #[getter]
     #[pyo3(name = "pool")]

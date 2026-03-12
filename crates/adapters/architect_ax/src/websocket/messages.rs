@@ -26,12 +26,7 @@ use nautilus_core::{
     },
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDeltas},
-    events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled, OrderRejected,
-    },
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    reports::{FillReport, OrderStatusReport},
     types::Currency,
 };
 use rust_decimal::Decimal;
@@ -51,48 +46,23 @@ use crate::{
     http::models::AxOrderRejectReason,
 };
 
-/// Nautilus domain message emitted after parsing Ax WebSocket events.
+/// Market data WebSocket message emitted by the data handler.
 ///
-/// This enum contains fully-parsed Nautilus domain objects ready for consumption
-/// by the DataClient without additional processing.
+/// Contains raw venue types for downstream consumers to parse
+/// into Nautilus domain objects.
 #[derive(Debug, Clone)]
-pub enum NautilusDataWsMessage {
-    /// Market data (trades, quotes).
-    Data(Vec<Data>),
-    /// Order book deltas.
-    Deltas(OrderBookDeltas),
-    /// Bar/candle data.
-    Bar(Bar),
-    /// Heartbeat message.
-    Heartbeat,
-    /// Error from venue or client.
-    Error(AxWsError),
+pub enum AxDataWsMessage {
+    /// Parsed market data message from the venue.
+    MdMessage(AxMdMessage),
     /// WebSocket reconnected notification.
     Reconnected,
-}
-
-/// Nautilus domain messages for the Ax orders WebSocket.
-///
-/// This enum contains parsed messages from the WebSocket stream.
-/// Variants contain fully-parsed Nautilus domain objects.
-#[derive(Debug, Clone)]
-pub enum NautilusExecWsMessage {
-    /// Order accepted by the venue.
-    OrderAccepted(OrderAccepted),
-    /// Order filled (partial or complete).
-    OrderFilled(Box<OrderFilled>),
-    /// Order canceled.
-    OrderCanceled(OrderCanceled),
-    /// Order expired.
-    OrderExpired(OrderExpired),
-    /// Order rejected by venue.
-    OrderRejected(OrderRejected),
-    /// Order cancel rejected by venue.
-    OrderCancelRejected(OrderCancelRejected),
-    /// Order status reports from order updates.
-    OrderStatusReports(Vec<OrderStatusReport>),
-    /// Fill reports from executions.
-    FillReports(Vec<FillReport>),
+    /// A candle subscription was removed (clear cached state for this key).
+    CandleUnsubscribed {
+        /// Instrument symbol.
+        symbol: Ustr,
+        /// Candle width/interval.
+        width: AxCandleWidth,
+    },
 }
 
 /// Subscribe request for market data.
@@ -185,7 +155,6 @@ pub enum AxMdMessage {
     Trade(AxMdTrade),
     Candle(AxMdCandle),
     Heartbeat(AxMdHeartbeat),
-    /// Subscription response (success or already subscribed).
     SubscriptionResponse(AxMdSubscriptionResponse),
     Error(AxWsError),
 }
@@ -802,13 +771,13 @@ pub struct AxWsCancelRejected {
     pub txt: Option<String>,
 }
 
-/// Internal raw message from the Ax orders WebSocket.
+/// Venue-level order event from the Ax orders WebSocket.
 ///
 /// This enum uses serde's tagged deserialization to automatically
 /// discriminate between different event types based on the "t" field.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "t")]
-pub(crate) enum AxWsOrderEvent {
+pub enum AxWsOrderEvent {
     /// Heartbeat message.
     #[serde(rename = "h")]
     Heartbeat,
@@ -858,7 +827,7 @@ pub(crate) enum AxWsOrderResponse {
 
 /// Internal raw message from the Ax orders WebSocket.
 #[derive(Debug, Clone)]
-pub(crate) enum AxWsRawMessage {
+pub(crate) enum AxOrdersWsFrame {
     /// Error response message (has "rid" and "err").
     Error(AxWsOrderErrorResponse),
     /// Response message (has "rid" and "res").
@@ -867,13 +836,14 @@ pub(crate) enum AxWsRawMessage {
     Event(Box<AxWsOrderEvent>),
 }
 
-/// Ax-specific messages for the orders WebSocket.
+/// Messages from the Ax orders WebSocket handler.
 ///
-/// This enum contains response and control messages from the WebSocket stream.
+/// Contains venue-level events and responses for downstream consumers
+/// to parse into Nautilus domain objects.
 #[derive(Debug, Clone)]
 pub enum AxOrdersWsMessage {
-    /// Nautilus domain messages parsed from order events.
-    Nautilus(NautilusExecWsMessage),
+    /// Venue-level order event.
+    Event(Box<AxWsOrderEvent>),
     /// Place order response.
     PlaceOrderResponse(AxWsPlaceOrderResponse),
     /// Cancel order response.
@@ -1306,7 +1276,7 @@ mod tests {
     fn test_raw_message_error_variant() {
         let json = include_str!("../../test_data/ws_order_error_response.json");
         let msg = parse_order_message(json).unwrap();
-        assert!(matches!(msg, AxWsRawMessage::Error(_)));
+        assert!(matches!(msg, AxOrdersWsFrame::Error(_)));
     }
 
     #[rstest]
@@ -1315,7 +1285,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::List(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
         ));
     }
 
@@ -1325,7 +1295,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Event(ref e) if matches!(**e, AxWsOrderEvent::Acknowledged(_))
+            AxOrdersWsFrame::Event(ref e) if matches!(**e, AxWsOrderEvent::Acknowledged(_))
         ));
     }
 
@@ -1335,7 +1305,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::PlaceOrder(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::PlaceOrder(_))
         ));
     }
 
@@ -1345,7 +1315,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::CancelOrder(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::CancelOrder(_))
         ));
     }
 
@@ -1355,7 +1325,7 @@ mod tests {
         let msg = parse_order_message(json).unwrap();
         assert!(matches!(
             msg,
-            AxWsRawMessage::Response(AxWsOrderResponse::OpenOrders(_))
+            AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(_))
         ));
     }
 }

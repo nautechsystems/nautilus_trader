@@ -27,6 +27,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginAccount {
     #[new]
     fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
@@ -97,8 +98,8 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "is_unleveraged")]
-    fn py_is_unleveraged(&self, instrument_id: InstrumentId) -> PyResult<bool> {
-        Ok(self.is_unleveraged(instrument_id))
+    fn py_is_unleveraged(&self, instrument_id: InstrumentId) -> bool {
+        self.is_unleveraged(instrument_id)
     }
 
     #[pyo3(name = "initial_margins")]
@@ -124,18 +125,13 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "update_initial_margin")]
-    fn py_update_initial_margin(
-        &mut self,
-        instrument_id: InstrumentId,
-        initial_margin: Money,
-    ) -> PyResult<()> {
+    fn py_update_initial_margin(&mut self, instrument_id: InstrumentId, initial_margin: Money) {
         self.update_initial_margin(instrument_id, initial_margin);
-        Ok(())
     }
 
     #[pyo3(name = "initial_margin")]
-    fn py_initial_margin(&self, instrument_id: InstrumentId) -> PyResult<Money> {
-        Ok(self.initial_margin(instrument_id))
+    fn py_initial_margin(&self, instrument_id: InstrumentId) -> Money {
+        self.initial_margin(instrument_id)
     }
 
     #[pyo3(name = "update_maintenance_margin")]
@@ -143,14 +139,13 @@ impl MarginAccount {
         &mut self,
         instrument_id: InstrumentId,
         maintenance_margin: Money,
-    ) -> PyResult<()> {
+    ) {
         self.update_maintenance_margin(instrument_id, maintenance_margin);
-        Ok(())
     }
 
     #[pyo3(name = "maintenance_margin")]
-    fn py_maintenance_margin(&self, instrument_id: InstrumentId) -> PyResult<Money> {
-        Ok(self.maintenance_margin(instrument_id))
+    fn py_maintenance_margin(&self, instrument_id: InstrumentId) -> Money {
+        self.maintenance_margin(instrument_id)
     }
 
     #[pyo3(name = "calculate_initial_margin")]

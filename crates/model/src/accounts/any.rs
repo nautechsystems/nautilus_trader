@@ -101,7 +101,7 @@ impl AccountAny {
     ///
     /// Returns an error if `events` is empty.
     #[allow(clippy::missing_panics_doc)] // Guarded by empty check above
-    pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
+    pub fn from_events(events: &[AccountState]) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");
         }

@@ -101,6 +101,8 @@ GEMINI.md
 
 # Nautilus specific
 .ipynb_checkpoints/
+/docs/getting_started/*.ipynb
+/docs/tutorials/*.ipynb
 bench_data/
 /api_reference/
 /catalog/
@@ -114,6 +116,7 @@ nautilus_trader/test_kit/mocks/.nautilus/
 nautilus_trader.egg-info
 tests/test_data/catalog/
 tests/test_data/large/*
+tests/test_data/local/
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
 tests/test_data/**/backtest/**

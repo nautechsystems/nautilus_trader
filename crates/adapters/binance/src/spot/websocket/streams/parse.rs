@@ -21,14 +21,12 @@ use nautilus_model::{
     enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::TradeId,
     instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
 };
 
-use crate::common::{
-    fixed::{mantissa_to_price, mantissa_to_quantity},
-    sbe::stream::{
-        BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, MessageHeader,
-        StreamDecodeError, TradesStreamEvent, template_id,
-    },
+use crate::spot::sbe::stream::{
+    BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, MessageHeader,
+    StreamDecodeError, TradesStreamEvent, template_id,
 };
 
 /// Decoded market data message.
@@ -84,8 +82,16 @@ pub fn parse_trades_event(event: &TradesStreamEvent, instrument: &InstrumentAny)
         .trades
         .iter()
         .map(|t| {
-            let price = mantissa_to_price(t.price_mantissa, event.price_exponent, price_precision);
-            let size = mantissa_to_quantity(t.qty_mantissa, event.qty_exponent, size_precision);
+            let price = Price::from_mantissa_exponent(
+                t.price_mantissa,
+                event.price_exponent,
+                price_precision,
+            );
+            let size = Quantity::from_mantissa_exponent(
+                t.qty_mantissa as u64,
+                event.qty_exponent,
+                size_precision,
+            );
             let ts_event = UnixNanos::from(event.transact_time_us as u64 * 1000); // us to ns
 
             let trade = TradeTick::new(
@@ -112,18 +118,26 @@ pub fn parse_bbo_event(event: &BestBidAskStreamEvent, instrument: &InstrumentAny
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = mantissa_to_price(
+    let bid_price = Price::from_mantissa_exponent(
         event.bid_price_mantissa,
         event.price_exponent,
         price_precision,
     );
-    let bid_size = mantissa_to_quantity(event.bid_qty_mantissa, event.qty_exponent, size_precision);
-    let ask_price = mantissa_to_price(
+    let bid_size = Quantity::from_mantissa_exponent(
+        event.bid_qty_mantissa as u64,
+        event.qty_exponent,
+        size_precision,
+    );
+    let ask_price = Price::from_mantissa_exponent(
         event.ask_price_mantissa,
         event.price_exponent,
         price_precision,
     );
-    let ask_size = mantissa_to_quantity(event.ask_qty_mantissa, event.qty_exponent, size_precision);
+    let ask_size = Quantity::from_mantissa_exponent(
+        event.ask_qty_mantissa as u64,
+        event.qty_exponent,
+        size_precision,
+    );
     let ts_event = UnixNanos::from(event.event_time_us as u64 * 1000); // us to ns
 
     QuoteTick::new(
@@ -156,8 +170,16 @@ pub fn parse_depth_snapshot(
 
     // Add bid levels
     for (i, level) in event.bids.iter().enumerate() {
-        let price = mantissa_to_price(level.price_mantissa, event.price_exponent, price_precision);
-        let size = mantissa_to_quantity(level.qty_mantissa, event.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            level.price_mantissa,
+            event.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            level.qty_mantissa as u64,
+            event.qty_exponent,
+            size_precision,
+        );
         let flags = if i == event.bids.len() - 1 && event.asks.is_empty() {
             RecordFlag::F_LAST as u8
         } else {
@@ -179,8 +201,16 @@ pub fn parse_depth_snapshot(
 
     // Add ask levels
     for (i, level) in event.asks.iter().enumerate() {
-        let price = mantissa_to_price(level.price_mantissa, event.price_exponent, price_precision);
-        let size = mantissa_to_quantity(level.qty_mantissa, event.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            level.price_mantissa,
+            event.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            level.qty_mantissa as u64,
+            event.qty_exponent,
+            size_precision,
+        );
         let flags = if i == event.asks.len() - 1 {
             RecordFlag::F_LAST as u8
         } else {
@@ -225,8 +255,16 @@ pub fn parse_depth_diff(
 
     // Add bid updates
     for (i, level) in event.bids.iter().enumerate() {
-        let price = mantissa_to_price(level.price_mantissa, event.price_exponent, price_precision);
-        let size = mantissa_to_quantity(level.qty_mantissa, event.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            level.price_mantissa,
+            event.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            level.qty_mantissa as u64,
+            event.qty_exponent,
+            size_precision,
+        );
 
         // Zero size means delete, otherwise update
         let action = if level.qty_mantissa == 0 {
@@ -256,8 +294,16 @@ pub fn parse_depth_diff(
 
     // Add ask updates
     for (i, level) in event.asks.iter().enumerate() {
-        let price = mantissa_to_price(level.price_mantissa, event.price_exponent, price_precision);
-        let size = mantissa_to_quantity(level.qty_mantissa, event.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            level.price_mantissa,
+            event.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            level.qty_mantissa as u64,
+            event.qty_exponent,
+            size_precision,
+        );
 
         let action = if level.qty_mantissa == 0 {
             BookAction::Delete
@@ -297,7 +343,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::sbe::stream::STREAM_SCHEMA_ID;
+    use crate::spot::sbe::stream::STREAM_SCHEMA_ID;
 
     fn make_bbo_buffer() -> Vec<u8> {
         let mut buf = vec![0u8; 70];

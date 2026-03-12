@@ -28,10 +28,11 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Bet {
     #[new]
-    fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Self::new(price, stake, side))
+    fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> Self {
+        Self::new(price, stake, side)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -59,19 +60,15 @@ impl Bet {
     /// Create a bet from a stake or liability, depending on the bet side.
     #[staticmethod]
     #[pyo3(name = "from_stake_or_liability")]
-    fn py_from_stake_or_liability(
-        price: Decimal,
-        volume: Decimal,
-        side: BetSide,
-    ) -> PyResult<Self> {
-        Ok(Self::from_stake_or_liability(price, volume, side))
+    fn py_from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
+        Self::from_stake_or_liability(price, volume, side)
     }
 
     /// Create a bet from a given stake.
     #[staticmethod]
     #[pyo3(name = "from_stake")]
-    fn py_from_stake(price: Decimal, stake: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Self::from_stake(price, stake, side))
+    fn py_from_stake(price: Decimal, stake: Decimal, side: BetSide) -> Self {
+        Self::from_stake(price, stake, side)
     }
 
     /// Create a bet from a given liability.
@@ -79,8 +76,8 @@ impl Bet {
     /// Raises a ValueError if the bet side is not Lay.
     #[staticmethod]
     #[pyo3(name = "from_liability")]
-    fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Self::from_liability(price, liability, side))
+    fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
+        Self::from_liability(price, liability, side)
     }
 
     /// Returns the bet's price.
@@ -148,6 +145,7 @@ impl Bet {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetPosition {
     #[new]
     fn py_new() -> Self {
@@ -232,8 +230,10 @@ impl BetPosition {
 /// # Errors
 ///
 /// Returns a `PyErr` if the PnL calculation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "calc_bets_pnl")]
+#[allow(clippy::needless_pass_by_value)]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
     Ok(calc_bets_pnl(&bets))
 }
@@ -243,6 +243,7 @@ pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
 /// # Errors
 ///
 /// Returns a `PyErr` if the input parameters are invalid.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "probability_to_bet")]
 pub fn py_probability_to_bet(
@@ -258,6 +259,7 @@ pub fn py_probability_to_bet(
 /// # Errors
 ///
 /// Returns a `PyErr` if the input parameters are invalid.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "inverse_probability_to_bet")]
 pub fn py_inverse_probability_to_bet(

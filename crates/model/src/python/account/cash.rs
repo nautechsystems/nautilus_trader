@@ -27,6 +27,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CashAccount {
     #[new]
     #[pyo3(signature = (event, calculate_account_state, allow_borrowing = false))]
@@ -44,11 +45,6 @@ impl CashAccount {
             CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
-    }
-
-    #[getter]
-    fn id(&self) -> AccountId {
-        self.id
     }
 
     #[getter]

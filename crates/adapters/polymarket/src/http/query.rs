@@ -163,6 +163,8 @@ pub struct GetGammaMarketsParams {
     pub order: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ascending: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
 }
 
 /// Paginated response wrapper for CLOB list endpoints.
@@ -328,6 +330,29 @@ mod tests {
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("\"id\""));
         assert!(json.contains("0xorder123"));
+    }
+
+    #[rstest]
+    fn test_get_gamma_markets_params_slug() {
+        let params = GetGammaMarketsParams {
+            slug: Some("btc-updown-15m-1741500000".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"slug\""));
+        assert!(json.contains("btc-updown-15m-1741500000"));
+        assert!(!json.contains("\"active\""));
+    }
+
+    #[rstest]
+    fn test_get_gamma_markets_params_skips_none_slug() {
+        let params = GetGammaMarketsParams {
+            active: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(!json.contains("\"slug\""));
+        assert!(json.contains("\"active\""));
     }
 
     #[rstest]

@@ -49,6 +49,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarketOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -116,8 +117,8 @@ impl MarketOrder {
 
     #[staticmethod]
     #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(Self::from(init))
+    fn py_create(init: OrderInitialized) -> Self {
+        Self::from(init)
     }
 
     #[staticmethod]
@@ -398,7 +399,7 @@ impl MarketOrder {
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item(
             "commissions",
-            commissions_from_indexmap(py, self.commissions().clone())?,
+            commissions_from_indexmap(py, self.commissions())?,
         )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),

@@ -66,6 +66,10 @@ use crate::defi::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct PoolProfiler {
     /// Pool definition.
     pub pool: SharedPool,
@@ -353,7 +357,7 @@ impl PoolProfiler {
     ///
     /// This method performs a complete swap simulation without modifying pool state,
     /// working entirely on stack-allocated local copies of state variables. It returns
-    /// a comprehensive [`SwapQuote`] containing all swap results and profiling data,
+    /// a [`SwapQuote`] containing all swap results and profiling data,
     /// including a complete audit trail of crossed ticks.
     ///
     ///
@@ -597,7 +601,7 @@ impl PoolProfiler {
     }
 
     // panics-doc-ok (transitive via check_if_initialized)
-    /// Returns a comprehensive swap quote without modifying pool state.
+    /// Returns a swap quote without modifying pool state.
     ///
     /// This method simulates a swap and provides detailed profiling metrics including:
     /// - Amounts of tokens that would be exchanged
@@ -724,13 +728,13 @@ impl PoolProfiler {
         size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
     }
 
-    /// Finds the maximum trade size with comprehensive search diagnostics.
+    /// Finds the maximum trade size with search diagnostics.
     /// This is the detailed version of [`Self::size_for_impact_bps`] that returns
     /// extensive information about the search process.It is useful for debugging,
     /// monitoring, and analyzing search behavior in production.
     ///
     /// # Returns
-    /// Detailed result with size and comprehensive search diagnostics
+    /// Detailed result with size and search diagnostics
     ///
     /// # Errors
     /// Returns error if:

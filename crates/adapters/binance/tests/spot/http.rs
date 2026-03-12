@@ -26,16 +26,14 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_binance::{
-    common::{
-        enums::{BinanceEnvironment, BinanceSide, BinanceTimeInForce},
-        sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
-    },
+    common::enums::{BinanceEnvironment, BinanceSide, BinanceTimeInForce},
     spot::{
         enums::BinanceSpotOrderType,
         http::{
             client::{BinanceRawSpotHttpClient, BinanceSpotHttpClient},
             query::{AccountInfoParams, DepthParams},
         },
+        sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -1711,6 +1709,8 @@ async fn test_domain_submit_order() {
             Some(Price::from("50000.00")),
             None,
             false,
+            false,
+            None,
         )
         .await
         .unwrap();

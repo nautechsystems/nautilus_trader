@@ -20,6 +20,8 @@ pub mod catalog;
 pub mod feather;
 pub mod wranglers;
 
+use nautilus_model::data::ensure_rust_extractor_registered;
+use nautilus_serialization::arrow::custom::ensure_custom_data_registered;
 use pyo3::prelude::*;
 
 /// Loaded as `nautilus_pyo3.persistence`.
@@ -29,6 +31,13 @@ use pyo3::prelude::*;
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    ensure_custom_data_registered::<crate::test_data::RustTestCustomData>();
+    ensure_custom_data_registered::<crate::test_data::MacroYieldCurveData>();
+    let _ = ensure_rust_extractor_registered::<crate::test_data::RustTestCustomData>();
+    let _ = ensure_rust_extractor_registered::<crate::test_data::MacroYieldCurveData>();
+
+    // Test/example types (RustTestCustomData, MacroYieldCurveData) are exposed so Python tests
+    // and examples can use them; they are not gated behind cfg(test) to keep the extension build simple.
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<backend::session::NautilusDataType>()?;
@@ -39,5 +48,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<wranglers::depth::OrderBookDepth10DataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
+    m.add_class::<crate::test_data::RustTestCustomData>()?;
+    m.add_class::<crate::test_data::MacroYieldCurveData>()?;
     Ok(())
 }

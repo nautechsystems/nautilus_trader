@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Network functionality for [NautilusTrader](http://nautilustrader.io).
+//! Network functionality for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-network` crate provides networking components including HTTP, WebSocket, and raw TCP socket
 //! clients, rate limiting, backoff strategies, and socket TLS utilities for connecting to
@@ -21,7 +21,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

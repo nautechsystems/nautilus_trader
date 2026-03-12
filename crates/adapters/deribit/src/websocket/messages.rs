@@ -17,7 +17,10 @@
 
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
+    data::{
+        Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas, greeks::OptionGreekValues,
+        option_chain::OptionGreeks,
+    },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
         OrderModifyRejected, OrderRejected, OrderUpdated,
@@ -25,7 +28,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -270,6 +273,15 @@ pub struct DeribitTickerMsg {
     // Options-specific fields
     /// Greeks (options).
     pub greeks: Option<DeribitGreeks>,
+    /// Mark implied volatility (options).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_iv: Option<Decimal>,
+    /// Bid implied volatility (options).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub bid_iv: Option<Decimal>,
+    /// Ask implied volatility (options).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub ask_iv: Option<Decimal>,
     /// Underlying price (options).
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub underlying_price: Option<Decimal>,
@@ -290,6 +302,19 @@ pub struct DeribitGreeks {
     pub theta: Decimal,
     #[serde(deserialize_with = "deserialize_decimal")]
     pub rho: Decimal,
+}
+
+impl DeribitGreeks {
+    /// Converts Deribit Greeks (Decimal) to Nautilus `OptionGreekValues` (f64).
+    pub fn to_greek_values(&self) -> OptionGreekValues {
+        OptionGreekValues {
+            delta: self.delta.to_f64().unwrap_or(0.0),
+            gamma: self.gamma.to_f64().unwrap_or(0.0),
+            vega: self.vega.to_f64().unwrap_or(0.0),
+            theta: self.theta.to_f64().unwrap_or(0.0),
+            rho: self.rho.to_f64().unwrap_or(0.0),
+        }
+    }
 }
 
 /// Quote data from quote.{instrument} channel.
@@ -731,6 +756,8 @@ pub enum NautilusWsMessage {
     Instrument(Box<InstrumentAny>),
     /// Funding rate updates (for perpetual instruments).
     FundingRates(Vec<FundingRateUpdate>),
+    /// Exchange-provided option Greeks from ticker data.
+    OptionGreeks(OptionGreeks),
     /// Order status reports (for reconciliation, not real-time events).
     OrderStatusReports(Vec<OrderStatusReport>),
     /// Fill reports from user.trades subscription or order responses.

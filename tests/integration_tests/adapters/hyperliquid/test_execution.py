@@ -104,6 +104,19 @@ def exec_client_builder(
 
 
 @pytest.mark.asyncio
+async def test_account_address_used_for_user_address(exec_client_builder, monkeypatch):
+    # Arrange
+    agent_account = "0xabcdef1234567890abcdef1234567890abcdef12"
+    client, ws_client, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"account_address": agent_account},
+    )
+
+    # Assert
+    assert client._user_address == agent_account
+
+
+@pytest.mark.asyncio
 async def test_connect_success(exec_client_builder, monkeypatch):
     # Arrange
     client, ws_client, http_client, instrument_provider = exec_client_builder(

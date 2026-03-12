@@ -141,7 +141,6 @@ async fn test_subscribe_markets_sends_subscription() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await // market subscription
     });
 
@@ -182,7 +181,6 @@ async fn test_subscribe_orders_sends_subscription() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await // order subscription
     });
 
@@ -284,7 +282,6 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await; // market subscription
 
         write_line(
@@ -501,9 +498,7 @@ async fn test_reconnect_replays_both_subscriptions() {
 
         write_line(&mut write_half, r#"{"op":"connection","connectionId":"f"}"#).await;
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe_markets combined)
         read_line(&mut reader).await; // market sub
-        read_line(&mut reader).await; // auth (from subscribe_orders combined)
         read_line(&mut reader).await; // order sub
 
         write_line(&mut write_half, r#"{"op":"mcm","pt":1000,"clk":"ckX"}"#).await;
@@ -518,15 +513,14 @@ async fn test_reconnect_replays_both_subscriptions() {
         drop(write_half);
         drop(reader);
 
-        // Second connection — post_reconnection sends auth+market_sub and auth+order_sub
-        // (2 combined writes = 4 lines total)
+        // Second connection, post_reconnection sends auth, then each subscription
         let (socket, _) = listener.accept().await.unwrap();
         let (read_half, mut write_half) = socket.into_split();
         let mut reader = BufReader::new(read_half);
 
         write_line(&mut write_half, r#"{"op":"connection","connectionId":"s"}"#).await;
 
-        for _ in 0..4 {
+        for _ in 0..3 {
             let msg = read_line(&mut reader).await;
             if msg.is_empty() {
                 break;

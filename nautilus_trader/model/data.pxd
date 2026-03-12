@@ -77,6 +77,8 @@ cdef class DataType:
     """The data types metadata.\n\n:returns: `dict[str, object]`"""
     cdef readonly str topic
     """The data types topic string.\n\n:returns: `str`"""
+    cdef readonly object identifier
+    """Optional catalog path identifier (can contain subdirs).\n\n:returns: `str | None`"""
 
 
 cdef class CustomData(Data):
@@ -551,3 +553,32 @@ cdef class FundingRateUpdate(Data):
 
     @staticmethod
     cdef dict to_dict_c(FundingRateUpdate obj)
+
+
+cdef class OptionGreeks(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID these Greeks apply to.\n\n:returns: `InstrumentId`"""
+    cdef readonly double delta
+    """The delta.\n\n:returns: `double`"""
+    cdef readonly double gamma
+    """The gamma.\n\n:returns: `double`"""
+    cdef readonly double vega
+    """The vega.\n\n:returns: `double`"""
+    cdef readonly double theta
+    """The theta.\n\n:returns: `double`"""
+    cdef readonly double rho
+    """The rho.\n\n:returns: `double`"""
+    cdef readonly object mark_iv
+    """Mark implied volatility.\n\n:returns: `float` or ``None``"""
+    cdef readonly object bid_iv
+    """Bid implied volatility.\n\n:returns: `float` or ``None``"""
+    cdef readonly object ask_iv
+    """Ask implied volatility.\n\n:returns: `float` or ``None``"""
+    cdef readonly object underlying_price
+    """Underlying price.\n\n:returns: `float` or ``None``"""
+    cdef readonly object open_interest
+    """Open interest.\n\n:returns: `float` or ``None``"""
+    cdef readonly uint64_t ts_event
+    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """UNIX timestamp (nanoseconds) when the instance was created.\n\n:returns: `uint64_t`"""

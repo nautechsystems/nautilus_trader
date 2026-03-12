@@ -1948,7 +1948,7 @@ struct PoolTestCase {
     tests: Vec<(SwapTestCase, ExpectedSwapResult)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SwapTestCase {
     SwapExact0For1 {
         amount0: U256,
@@ -1989,7 +1989,7 @@ struct ExpectedSwapResult {
     execution_price: String,
 }
 
-fn quote_swap(pool_profiler: &mut PoolProfiler, test: SwapTestCase) -> anyhow::Result<SwapQuote> {
+fn quote_swap(pool_profiler: &PoolProfiler, test: SwapTestCase) -> anyhow::Result<SwapQuote> {
     match test {
         SwapTestCase::SwapExact0For1 {
             amount0,
@@ -2190,7 +2190,7 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
         );
 
         // Execute swap and test
-        match quote_swap(&mut profiler, swap) {
+        match quote_swap(&profiler, swap) {
             Ok(swap_quote) => {
                 // Apply swap quote to have the correct pool profiler state
                 profiler.apply_swap_quote(&swap_quote);

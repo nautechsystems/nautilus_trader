@@ -33,6 +33,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LoggerConfig {
     /// Creates a [`LoggerConfig`] from a spec string.
     ///
@@ -41,12 +42,13 @@ impl LoggerConfig {
     /// Returns a Python exception if the spec string is invalid.
     #[staticmethod]
     #[pyo3(name = "from_spec")]
-    pub fn py_from_spec(spec: String) -> PyResult<Self> {
-        Self::from_spec(&spec).map_err(to_pyvalue_err)
+    pub fn py_from_spec(spec: &str) -> PyResult<Self> {
+        Self::from_spec(spec).map_err(to_pyvalue_err)
     }
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FileWriterConfig {
     #[new]
     #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
@@ -74,6 +76,7 @@ impl FileWriterConfig {
 /// # Errors
 ///
 /// Returns a Python exception if logger initialization fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
@@ -117,6 +120,7 @@ pub fn py_init_logging(
     logging::init_logging(trader_id, instance_id, config, file_config).map_err(to_pyvalue_err)
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction()]
 #[pyo3(name = "logger_flush")]
 pub fn py_logger_flush() {
@@ -141,6 +145,7 @@ fn parse_component_levels(
 }
 
 /// Create a new log event.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logger_log")]
 pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message: &str) {
@@ -148,6 +153,7 @@ pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message:
 }
 
 /// Logs the standard Nautilus system header.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "log_header")]
 pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: &str) {
@@ -155,24 +161,28 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
 }
 
 /// Logs system information.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_static_mode")]
 pub fn py_logging_clock_set_static_mode() {
     logging_clock_set_static_mode();
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_realtime_mode")]
 pub fn py_logging_clock_set_realtime_mode() {
     logging_clock_set_realtime_mode();
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_static_time")]
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
@@ -181,6 +191,7 @@ pub fn py_logging_clock_set_static_time(time_ns: u64) {
 
 /// Returns whether the tracing subscriber has been initialized.
 #[cfg(feature = "tracing-bridge")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "tracing_is_initialized")]
 #[must_use]
@@ -202,6 +213,7 @@ pub fn py_tracing_is_initialized() -> bool {
 ///
 /// Returns a Python exception if initialization fails or if already initialized.
 #[cfg(feature = "tracing-bridge")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "init_tracing")]
 pub fn py_init_tracing() -> PyResult<()> {
@@ -220,6 +232,7 @@ pub fn py_init_tracing() -> PyResult<()> {
     unsendable,
     from_py_object
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 #[derive(Debug, Clone)]
 pub struct PyLogger {
     name: Ustr,
@@ -234,6 +247,7 @@ impl PyLogger {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyLogger {
     /// Create a new `Logger` instance.
     #[new]

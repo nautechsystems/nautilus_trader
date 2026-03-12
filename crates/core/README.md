@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
+Core foundational types and utilities for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-core` crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
 wherever possible. It supplies the essential building blocks used across the NautilusTrader
@@ -22,7 +22,7 @@ ecosystem, including:
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

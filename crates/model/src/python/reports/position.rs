@@ -28,6 +28,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionStatusReport {
     #[new]
     #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]
@@ -42,8 +43,8 @@ impl PositionStatusReport {
         report_id: Option<UUID4>,
         venue_position_id: Option<PositionId>,
         avg_px_open: Option<Decimal>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             account_id,
             instrument_id,
             position_side.as_specified(),
@@ -53,7 +54,7 @@ impl PositionStatusReport {
             report_id,
             venue_position_id,
             avg_px_open,
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

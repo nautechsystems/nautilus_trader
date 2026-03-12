@@ -1,0 +1,56 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "currentOrders": [
+      {
+        "betId": "229430281400",
+        "marketId": "1.185781465",
+        "selectionId": 9249757,
+        "handicap": 0.0,
+        "priceSize": {
+          "price": 6.0,
+          "size": 20.0
+        },
+        "bspLiability": 0.0,
+        "side": "BACK",
+        "status": "EXECUTION_COMPLETE",
+        "persistenceType": "LAPSE",
+        "orderType": "LIMIT",
+        "placedDate": "2021-07-30T06:15:00.000Z",
+        "averagePriceMatched": 0.0,
+        "sizeMatched": 0.0,
+        "sizeRemaining": 0.0,
+        "sizeLapsed": 20.0,
+        "sizeCancelled": 0.0,
+        "sizeVoided": 0.0,
+        "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
+        "customerOrderRef": "O-20210730-001"
+      },
+      {
+        "betId": "229430281401",
+        "marketId": "1.185781465",
+        "selectionId": 40273293,
+        "handicap": 0.0,
+        "priceSize": {
+          "price": 2.5,
+          "size": 50.0
+        },
+        "bspLiability": 0.0,
+        "side": "LAY",
+        "status": "EXECUTION_COMPLETE",
+        "persistenceType": "LAPSE",
+        "orderType": "LIMIT",
+        "placedDate": "2021-07-30T06:16:00.000Z",
+        "averagePriceMatched": 2.4,
+        "sizeMatched": 30.0,
+        "sizeRemaining": 0.0,
+        "sizeLapsed": 10.0,
+        "sizeCancelled": 0.0,
+        "sizeVoided": 10.0,
+        "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY"
+      }
+    ],
+    "moreAvailable": false
+  }
+}

@@ -79,6 +79,8 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
+from nautilus_trader.data.messages cimport SubscribeOptionChain
+from nautilus_trader.data.messages cimport SubscribeOptionGreeks
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -91,6 +93,8 @@ from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
+from nautilus_trader.data.messages cimport UnsubscribeOptionChain
+from nautilus_trader.data.messages cimport UnsubscribeOptionGreeks
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -105,6 +109,7 @@ from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OptionGreeks
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
@@ -527,6 +532,38 @@ cdef class Actor(Component):
         ----------
         funding_rate : FundingRateUpdate
             The funding rate update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_option_greeks(self, OptionGreeks option_greeks):
+        """
+        Actions to be performed when running and receives option greeks.
+
+        Parameters
+        ----------
+        option_greeks : OptionGreeks
+            The option greeks received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_option_chain(self, option_chain_slice):
+        """
+        Actions to be performed when running and receives an option chain slice.
+
+        Parameters
+        ----------
+        option_chain_slice : OptionChainSlice
+            The option chain slice received.
 
         Warnings
         --------
@@ -2003,6 +2040,108 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
 
+    cpdef void subscribe_option_greeks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `OptionGreeks` data for the given instrument ID.
+
+        Once subscribed, any matching option greeks data published on the message bus is forwarded
+        to the `on_option_greeks` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_option_greeks_topic(instrument_id),
+            handler=self.handle_option_greeks,
+        )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef SubscribeOptionGreeks command = SubscribeOptionGreeks(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_option_chain(
+        self,
+        object series_id,
+        object strike_range = None,
+        object snapshot_interval_ms = None,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to `OptionChainSlice` snapshots for the given series.
+
+        The data engine manages the option chain lifecycle including quote/greeks
+        subscriptions for individual instruments, ATM tracking, and periodic snapshots.
+
+        Parameters
+        ----------
+        series_id : OptionSeriesId
+            The option series to subscribe to.
+        strike_range : StrikeRange, optional
+            The strike range filter. If ``None`` then all strikes are included.
+        snapshot_interval_ms : int, optional
+            Snapshot interval in milliseconds. If ``None`` then operates in raw mode
+            (publish on every quote update).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(series_id, "series_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        series_id_str = str(series_id)
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_option_chain_topic(series_id_str),
+            handler=self.handle_option_chain,
+        )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef Venue venue = Venue(str(series_id.venue))
+
+        cdef SubscribeOptionChain command = SubscribeOptionChain(
+            series_id=series_id,
+            strike_range=strike_range,
+            snapshot_interval_ms=snapshot_interval_ms,
+            client_id=client_id,
+            venue=venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
     cpdef void subscribe_order_fills(self, InstrumentId instrument_id):
         """
         Subscribe to all order fills for the given instrument ID.
@@ -2654,6 +2793,93 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {instrument_id} InstrumentClose")
+
+    cpdef void unsubscribe_option_greeks(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `OptionGreeks` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_option_greeks_topic(instrument_id),
+            handler=self.handle_option_greeks,
+        )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef UnsubscribeOptionGreeks command = UnsubscribeOptionGreeks(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_option_chain(
+        self,
+        object series_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from `OptionChainSlice` snapshots for the given series.
+
+        Parameters
+        ----------
+        series_id : OptionSeriesId
+            The option series to unsubscribe from.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(series_id, "series_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        series_id_str = str(series_id)
+
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_option_chain_topic(series_id_str),
+            handler=self.handle_option_chain,
+        )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef Venue venue = Venue(str(series_id.venue))
+
+        cdef UnsubscribeOptionChain command = UnsubscribeOptionChain(
+            series_id=series_id,
+            client_id=client_id,
+            venue=venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id):
         """
@@ -4475,6 +4701,56 @@ cdef class Actor(Component):
         cdef Indicator indicator
         for indicator in indicators:
             indicator.handle_bar(bar)
+
+    cpdef void handle_option_greeks(self, OptionGreeks option_greeks):
+        """
+        Handle the given option greeks.
+
+        If state is ``RUNNING`` then passes to `on_option_greeks`.
+
+        Parameters
+        ----------
+        option_greeks : OptionGreeks
+            The option greeks received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(option_greeks, "option_greeks")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_option_greeks(option_greeks)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(option_greeks)}", e)
+                raise
+
+    cpdef void handle_option_chain(self, option_chain_slice):
+        """
+        Handle the given option chain slice.
+
+        If state is ``RUNNING`` then passes to `on_option_chain`.
+
+        Parameters
+        ----------
+        option_chain_slice : OptionChainSlice
+            The option chain slice received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(option_chain_slice, "option_chain_slice")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_option_chain(option_chain_slice)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(option_chain_slice)}", e)
+                raise
 
     cpdef void handle_instrument_status(self, InstrumentStatus data):
         """

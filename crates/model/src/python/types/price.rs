@@ -16,7 +16,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::Neg,
     str::FromStr,
 };
 
@@ -31,6 +30,7 @@ use crate::types::fixed::fixed_i128_to_f64;
 use crate::types::price::{Price, PriceRaw};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Price {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
@@ -276,18 +276,16 @@ impl Price {
         }
     }
 
-    fn __neg__(&self) -> Decimal {
-        self.as_decimal().neg()
+    fn __neg__(&self) -> Self {
+        -*self
     }
 
-    fn __pos__(&self) -> Decimal {
-        let mut value = self.as_decimal();
-        value.set_sign_positive(true);
-        value
+    fn __pos__(&self) -> Self {
+        *self
     }
 
-    fn __abs__(&self) -> Decimal {
-        self.as_decimal().abs()
+    fn __abs__(&self) -> Self {
+        if self.raw < 0 { -*self } else { *self }
     }
 
     fn __int__(&self) -> i64 {
@@ -375,6 +373,19 @@ impl Price {
         self.is_positive()
     }
 
+    #[pyo3(name = "as_decimal")]
+    fn py_as_decimal(&self) -> Decimal {
+        self.as_decimal()
+    }
+
+    #[pyo3(name = "to_formatted_str")]
+    fn py_to_formatted_str(&self) -> String {
+        self.to_formatted_string()
+    }
+}
+
+#[pymethods]
+impl Price {
     #[cfg(feature = "high-precision")]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
@@ -385,15 +396,5 @@ impl Price {
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
-    }
-
-    #[pyo3(name = "as_decimal")]
-    fn py_as_decimal(&self) -> Decimal {
-        self.as_decimal()
-    }
-
-    #[pyo3(name = "to_formatted_str")]
-    fn py_to_formatted_str(&self) -> String {
-        self.to_formatted_string()
     }
 }

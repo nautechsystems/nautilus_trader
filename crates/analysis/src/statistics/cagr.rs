@@ -89,7 +89,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+    fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut returns = BTreeMap::new();
         let nanos_per_day = 86_400_000_000_000;
         let start_time = 1_600_000_000_000_000_000;
@@ -122,7 +122,7 @@ mod tests {
         // Simulate 252 days with 0.1% daily return
         // Total return = (1.001)^252 - 1 ≈ 0.288 (28.8%)
         // CAGR should be approximately same as total return for full year
-        let returns = create_returns(vec![0.001; 252]);
+        let returns = create_returns(&vec![0.001; 252]);
         let result = cagr.calculate_from_returns(&returns).unwrap();
 
         // For 252 days of 0.1% daily return
@@ -135,7 +135,7 @@ mod tests {
         let cagr = CAGR::new(Some(252));
         // Simulate 126 days (half year) with total return of 10%
         let daily_return = (1.10_f64.powf(1.0 / 126.0)) - 1.0;
-        let returns = create_returns(vec![daily_return; 126]);
+        let returns = create_returns(&vec![daily_return; 126]);
         let result = cagr.calculate_from_returns(&returns).unwrap();
 
         // CAGR should annualize the 10% half-year return
@@ -147,7 +147,7 @@ mod tests {
     fn test_negative_returns() {
         let cagr = CAGR::new(Some(252));
         // Simulate losses
-        let returns = create_returns(vec![-0.001; 252]);
+        let returns = create_returns(&vec![-0.001; 252]);
         let result = cagr.calculate_from_returns(&returns).unwrap();
 
         // Should be negative

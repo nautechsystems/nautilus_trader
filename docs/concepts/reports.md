@@ -7,8 +7,8 @@ class, and how these reports are used for PnL accounting and backtest post-run a
 
 The `ReportProvider` class in NautilusTrader generates structured analytical reports from
 trading data, transforming raw orders, fills, positions, and account states into pandas DataFrames
-for analysis and visualization. These reports are essential for understanding strategy performance,
-analyzing execution quality, and ensuring accurate PnL accounting.
+for analysis and visualization. These reports help you evaluate strategy performance,
+analyze execution quality, and verify PnL accounting.
 
 Reports can be generated using two approaches:
 
@@ -423,16 +423,13 @@ The `ReportProvider` works with several system components:
 
 ## Summary
 
-The `ReportProvider` class offers a suite of analytical reports for evaluating
-trading performance. These reports transform raw trading data into structured DataFrames,
-enabling detailed analysis of orders, fills, positions, and account states. Understanding
-how to generate and interpret these reports is essential for strategy development,
-performance evaluation, and accurate PnL accounting, particularly when dealing with
-position snapshots in `NETTING` OMS.
+The `ReportProvider` generates reports from orders, fills, positions, and account
+states as structured DataFrames for analysis and visualization. For accurate total
+PnL in `NETTING` OMS, include position snapshots when generating reports.
 
 ## Related guides
 
-- [Visualization](visualization.md) - Learn how to create interactive tearsheets and charts from backtest results.
-- [Portfolio](portfolio.md) - Explore portfolio statistics and performance metrics.
-- [Backtesting](backtesting.md) - Learn how to run backtests that generate reports.
-- [Cache](cache.md) - Understand the cache system that stores data for reports.
+- [Visualization](visualization.md) - Interactive tearsheets and charts from backtest results.
+- [Portfolio](portfolio.md) - Portfolio statistics and performance metrics.
+- [Backtesting](backtesting.md) - Running backtests that generate reports.
+- [Cache](cache.md) - Cache system that stores data for reports.

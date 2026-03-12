@@ -30,6 +30,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBookDeltas {
     #[new]
     fn py_new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> PyResult<Self> {
@@ -107,7 +108,7 @@ impl OrderBookDeltas {
     #[staticmethod]
     #[pyo3(name = "from_pycapsule")]
     #[allow(unsafe_code)]
-    pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
+    pub fn py_from_pycapsule(capsule: &Bound<'_, PyAny>) -> Self {
         let capsule: &Bound<'_, PyCapsule> = capsule
             .cast::<PyCapsule>()
             .expect("Error on downcast to `&PyCapsule`");

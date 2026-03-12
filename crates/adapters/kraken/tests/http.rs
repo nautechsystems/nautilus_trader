@@ -134,9 +134,9 @@ fn manifest_path() -> PathBuf {
 fn load_test_data(filename: &str) -> Value {
     let path = manifest_path().join("test_data").join(filename);
     let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to load test data from {path:?}: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to load test data from {}: {e}", path.display()));
     serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse test data from {path:?}: {e}"))
+        .unwrap_or_else(|e| panic!("Failed to parse test data from {}: {e}", path.display()))
 }
 
 fn has_auth_headers(headers: &HeaderMap) -> bool {

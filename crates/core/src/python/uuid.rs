@@ -33,6 +33,7 @@ use super::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl UUID4 {
     /// Creates a new [`UUID4`] instance.
     ///

@@ -20,6 +20,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
+    data::{CustomData, DataType},
     identifiers::{AccountId, ClientOrderId, PositionId, TraderId},
     python::{
         account::account_any_to_pyobject, instruments::instrument_any_to_pyobject,
@@ -37,8 +38,8 @@ use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 #[pymethods]
 impl RedisCacheDatabase {
     #[new]
-    fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
-        let config = serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
+    fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: &[u8]) -> PyResult<Self> {
+        let config = serde_json::from_slice(config_json).map_err(to_pyvalue_err)?;
         let result =
             get_runtime().block_on(async { Self::new(trader_id, instance_id, config).await });
         result.map_err(to_pyruntime_err)
@@ -154,6 +155,7 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "read_bulk")]
+    #[allow(clippy::needless_pass_by_value)]
     fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<Py<PyAny>>>> {
         let result = get_runtime().block_on(async { self.read_bulk(&keys).await });
         match result {
@@ -205,5 +207,21 @@ impl RedisCacheDatabase {
         let account_id = AccountId::new(account_id);
         self.delete_account_event(&account_id, event_id)
             .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_custom_data")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn py_add_custom_data(&mut self, data: CustomData) -> PyResult<()> {
+        self.add_custom_data(&data).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_custom_data")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn py_load_custom_data(
+        &mut self,
+        py: Python<'_>,
+        data_type: DataType,
+    ) -> PyResult<Vec<CustomData>> {
+        py.detach(|| self.load_custom_data(&data_type).map_err(to_pyvalue_err))
     }
 }

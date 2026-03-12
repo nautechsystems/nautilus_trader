@@ -95,6 +95,7 @@ impl InstrumentStatus {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentStatus {
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -214,20 +215,8 @@ impl InstrumentStatus {
 
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(instrument_id: &InstrumentId) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(instrument_id))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
+    fn py_get_metadata(instrument_id: &InstrumentId) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id)
     }
 
     /// Return a dictionary representation of the object.
@@ -246,6 +235,21 @@ impl InstrumentStatus {
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    }
+}
+
+#[pymethods]
+impl InstrumentStatus {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: &[u8]) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_msgpack")]
+    fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 }
 

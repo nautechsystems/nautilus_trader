@@ -29,6 +29,7 @@ use pyo3::{
 use crate::identifiers::symbol::Symbol;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Symbol {
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {
@@ -58,6 +59,7 @@ impl Symbol {
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {

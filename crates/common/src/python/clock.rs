@@ -41,15 +41,64 @@ use crate::{
     unsendable,
     from_py_object
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 #[derive(Debug, Clone)]
 pub struct PyClock(Rc<RefCell<dyn Clock>>);
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyClock {
     #[staticmethod]
     #[pyo3(name = "new_test")]
     fn py_new_test() -> Self {
         Self(Rc::new(RefCell::new(TestClock::default())))
+    }
+
+    /// Returns the current UNIX timestamp in nanoseconds (ns).
+    #[pyo3(name = "timestamp_ns")]
+    fn py_timestamp_ns(&self) -> u64 {
+        self.0.borrow().timestamp_ns().as_u64()
+    }
+
+    /// Returns the current UNIX timestamp in microseconds (μs).
+    #[pyo3(name = "timestamp_us")]
+    fn py_timestamp_us(&self) -> u64 {
+        self.0.borrow().timestamp_us()
+    }
+
+    /// Returns the current UNIX timestamp in milliseconds (ms).
+    #[pyo3(name = "timestamp_ms")]
+    fn py_timestamp_ms(&self) -> u64 {
+        self.0.borrow().timestamp_ms()
+    }
+
+    /// Returns the current UNIX timestamp in seconds.
+    #[pyo3(name = "timestamp")]
+    fn py_timestamp(&self) -> f64 {
+        self.0.borrow().timestamp()
+    }
+
+    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
+    #[pyo3(name = "utc_now")]
+    fn py_utc_now(&self) -> DateTime<Utc> {
+        self.0.borrow().utc_now()
+    }
+
+    /// Returns the names of active timers in the clock.
+    #[pyo3(name = "timer_names")]
+    fn py_timer_names(&self) -> Vec<String> {
+        self.0
+            .borrow()
+            .timer_names()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    /// Returns the count of active timers in the clock.
+    #[pyo3(name = "timer_count")]
+    fn py_timer_count(&self) -> usize {
+        self.0.borrow().timer_count()
     }
 
     #[pyo3(name = "register_default_handler")]

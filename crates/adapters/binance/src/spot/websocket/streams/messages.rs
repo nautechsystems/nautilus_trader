@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::enums::BinanceWsMethod;
 // Re-export SBE stream types for convenience
-pub use crate::common::sbe::stream::{
+pub use crate::spot::sbe::stream::{
     BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, PriceLevel, Trade,
     TradesStreamEvent,
 };

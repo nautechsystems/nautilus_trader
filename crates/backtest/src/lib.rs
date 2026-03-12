@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Backtest engine for [NautilusTrader](http://nautilustrader.io).
+//! Backtest engine for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-backtest` crate provides a comprehensive event-driven backtesting framework that allows
+//! The `nautilus-backtest` crate provides an event-driven backtesting framework that allows
 //! quantitative traders to test and validate trading strategies on historical data with high
 //! fidelity market simulation. The system replicates real market conditions including:
 //!
@@ -23,12 +23,12 @@
 //! - Market data replay with configurable latency and fill models.
 //! - Order matching engines with realistic execution simulation.
 //! - Multi-venue and multi-asset backtesting capabilities.
-//! - Comprehensive configuration and state management.
-//! - Integration with live trading systems for seamless deployment.
+//! - Configuration and state management.
+//! - Integration with live trading systems for direct deployment.
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
@@ -66,6 +66,7 @@ pub mod engine;
 pub mod exchange;
 pub mod execution_client;
 pub mod modules;
+pub mod result;
 
 #[cfg(feature = "streaming")]
 pub mod node;

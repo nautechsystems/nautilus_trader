@@ -209,13 +209,13 @@ impl OrderManager {
     ///
     /// Note: Only handles specific terminal/actionable events. Other events
     /// like `OrderSubmitted`, `OrderAccepted`, etc. are no-ops for the order manager.
-    pub fn handle_event(&mut self, event: OrderEventAny) {
+    pub fn handle_event(&mut self, event: &OrderEventAny) {
         match event {
-            OrderEventAny::Rejected(event) => self.handle_order_rejected(event),
-            OrderEventAny::Canceled(event) => self.handle_order_canceled(event),
-            OrderEventAny::Expired(event) => self.handle_order_expired(event),
-            OrderEventAny::Updated(event) => self.handle_order_updated(event),
-            OrderEventAny::Filled(event) => self.handle_order_filled(event),
+            OrderEventAny::Rejected(event) => self.handle_order_rejected(*event),
+            OrderEventAny::Canceled(event) => self.handle_order_canceled(*event),
+            OrderEventAny::Expired(event) => self.handle_order_expired(*event),
+            OrderEventAny::Updated(event) => self.handle_order_updated(*event),
+            OrderEventAny::Filled(event) => self.handle_order_filled(*event),
             _ => {}
         }
     }
@@ -230,7 +230,7 @@ impl OrderManager {
 
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+                self.handle_contingencies(&order);
             }
         } else {
             log::error!(
@@ -250,7 +250,7 @@ impl OrderManager {
 
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+                self.handle_contingencies(&order);
             }
         } else {
             log::error!(
@@ -265,7 +265,7 @@ impl OrderManager {
         let cloned_order = self.cache.borrow().order(&expired.client_order_id).cloned();
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies(order);
+                self.handle_contingencies(&order);
             }
         } else {
             log::error!(
@@ -280,7 +280,7 @@ impl OrderManager {
         let cloned_order = self.cache.borrow().order(&updated.client_order_id).cloned();
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
-                self.handle_contingencies_update(order);
+                self.handle_contingencies_update(&order);
             }
         } else {
             log::error!(
@@ -409,7 +409,7 @@ impl OrderManager {
                     }
                 }
             }
-            Some(ContingencyType::Ouo) => self.handle_contingencies(order),
+            Some(ContingencyType::Ouo) => self.handle_contingencies(&order),
             _ => {}
         }
     }
@@ -417,7 +417,7 @@ impl OrderManager {
     /// # Panics
     ///
     /// Panics if a contingent order cannot be found for the given client order ID.
-    pub fn handle_contingencies(&mut self, order: OrderAny) {
+    pub fn handle_contingencies(&mut self, order: &OrderAny) {
         let (filled_qty, leaves_qty, is_spawn_active) =
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
                 if let (Some(filled), Some(leaves)) = (
@@ -474,10 +474,11 @@ impl OrderManager {
                         self.modify_order_quantity(&contingent_order, filled_qty);
                     }
                 }
-                Some(ContingencyType::Oco) => {
-                    if order.is_closed() && (order.exec_spawn_id().is_none() || !is_spawn_active) {
-                        self.cancel_order(&contingent_order);
-                    }
+                Some(ContingencyType::Oco)
+                    if order.is_closed()
+                        && (order.exec_spawn_id().is_none() || !is_spawn_active) =>
+                {
+                    self.cancel_order(&contingent_order);
                 }
                 Some(ContingencyType::Ouo) => {
                     if (leaves_qty.raw == 0 && order.exec_spawn_id().is_some())
@@ -497,7 +498,7 @@ impl OrderManager {
     /// # Panics
     ///
     /// Panics if an OCO contingent order cannot be found for the given client order ID.
-    pub fn handle_contingencies_update(&mut self, order: OrderAny) {
+    pub fn handle_contingencies_update(&mut self, order: &OrderAny) {
         let quantity = match order.exec_spawn_id() {
             Some(exec_spawn_id) => {
                 if let Some(qty) = self
@@ -570,7 +571,11 @@ impl OrderManager {
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log_cmd_send(&command);
-        let endpoint = MessagingSwitchboard::risk_engine_execute();
+
+        // Use queued endpoint for re-entrancy safety, commands may be sent from
+        // within event handlers which hold a mutable borrow on the strategy.
+        // This mirrors the pattern used by `send_exec_command()`.
+        let endpoint = MessagingSwitchboard::risk_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }
 

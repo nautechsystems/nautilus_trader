@@ -36,6 +36,10 @@ use crate::{
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct AccountBalance {
     /// The account balance currency.
     pub currency: Currency,
@@ -58,6 +62,20 @@ impl AccountBalance {
     ///
     /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
+        check_predicate_true(
+            total.currency == locked.currency,
+            &format!(
+                "`total` currency ({}) != `locked` currency ({})",
+                total.currency, locked.currency
+            ),
+        )?;
+        check_predicate_true(
+            total.currency == free.currency,
+            &format!(
+                "`total` currency ({}) != `free` currency ({})",
+                total.currency, free.currency
+            ),
+        )?;
         check_predicate_true(
             total == locked + free,
             &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
@@ -114,6 +132,10 @@ impl Display for AccountBalance {
         eq,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct MarginBalance {
     pub initial: Money,

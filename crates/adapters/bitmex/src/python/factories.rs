@@ -47,7 +47,7 @@ impl BitmexDataClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "BITMEX"
     }
 }
@@ -60,7 +60,7 @@ impl BitmexExecutionClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "BITMEX"
     }
 }

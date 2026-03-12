@@ -47,6 +47,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-persistence?/python",
   "nautilus-trading/python",
   "pyo3",
   "streaming",
@@ -72,6 +73,8 @@ nautilus-trading = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 ustr = { workspace = true }

@@ -780,7 +780,7 @@ impl CancelBroadcaster {
     }
 
     /// Caches an instrument in all HTTP clients in the pool.
-    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, instrument: &InstrumentAny) {
         for transport in self.transports.iter() {
             transport.executor.add_instrument(instrument.clone());
         }

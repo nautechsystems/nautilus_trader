@@ -791,8 +791,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids, dataset = result
 
             # Allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
-            schema: str | None = command.params.get("schema")
-            if schema is None or schema not in [
+            supported_schemas = {
                 DatabentoSchema.MBP_1.value,
                 DatabentoSchema.BBO_1S.value,
                 DatabentoSchema.BBO_1M.value,
@@ -801,10 +800,14 @@ class DatabentoDataClient(LiveMarketDataClient):
                 DatabentoSchema.CBBO_1M.value,
                 DatabentoSchema.TBBO.value,
                 DatabentoSchema.TCBBO.value,
-            ]:
+            }
+            schema: str | None = command.params.get("schema")
+            if schema is not None and schema not in supported_schemas:
                 self._log.warning(
-                    f"Schema {schema} not supported for quotes. Defaulting to {DatabentoSchema.MBP_1}",
+                    f"Schema '{schema}' not supported for quotes, defaulting to {DatabentoSchema.MBP_1}",
                 )
+                schema = DatabentoSchema.MBP_1.value
+            elif schema is None:
                 schema = DatabentoSchema.MBP_1.value
 
             start: int | None = command.params.get("start_ns")
@@ -1646,7 +1649,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_data(data)
 
     def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
-        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.BLUE)
+        pass  # Already logged by the Rust feed handler
 
     def _handle_msg(
         self,

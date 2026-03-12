@@ -27,6 +27,7 @@ pub mod client_order_id;
 pub mod component_id;
 pub mod exec_algorithm_id;
 pub mod instrument_id;
+pub mod option_series_id;
 pub mod order_list_id;
 pub mod position_id;
 pub mod strategy_id;
@@ -43,8 +44,9 @@ pub mod stubs;
 pub use crate::identifiers::{
     account_id::AccountId, actor_id::ActorId, client_id::ClientId, client_order_id::ClientOrderId,
     component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-    order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, symbol::Symbol,
-    trade_id::TradeId, trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+    option_series_id::OptionSeriesId, order_list_id::OrderListId, position_id::PositionId,
+    strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId, venue::Venue,
+    venue_order_id::VenueOrderId,
 };
 
 impl_from_str_for_identifier!(account_id::AccountId);
