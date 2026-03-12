@@ -111,7 +111,7 @@ provider = "ibkr"
 venue = "IBKR"
 ibg_host = "127.0.0.1"
 ibg_port = 4002
-ibg_client_id = 7
+ibg_client_id = 107
 
 [account_scopes.dockerized_gateway]
 trading_mode = "live"
@@ -127,7 +127,7 @@ provider = "ibkr"
 venue = "IBKR"
 ibg_host = "127.0.0.1"
 ibg_port = 4002
-ibg_client_id = 8
+ibg_client_id = 108
 
 [account_scopes.dockerized_gateway]
 trading_mode = "live"

@@ -1510,6 +1510,54 @@ def test_build_node_keeps_ibkr_reference_balance_snapshot_provider_profile_owned
     assert strategy.reference_balance_snapshot_provider is None
 
 
+def test_attach_reference_balance_snapshot_provider_uses_none_port_with_dockerized_gateway(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedStrategy:
+        def configure_reference_balance_snapshot_provider(self, provider) -> None:
+            captured["provider"] = provider
+
+    monkeypatch.setattr(
+        run_node,
+        "get_cached_ibkr_reference_balance_provider",
+        lambda config: captured.setdefault("provider_config", config) or object(),
+    )
+
+    run_node._attach_reference_balance_snapshot_provider(
+        strategy=_CapturedStrategy(),
+        config={
+            "venues": {
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4002,
+                        "ibg_client_id": 7,
+                        "dockerized_gateway": {
+                            "trading_mode": "live",
+                            "read_only_api": True,
+                        },
+                    },
+                },
+            },
+        },
+        strategy_spec=SimpleNamespace(
+            capabilities=SimpleNamespace(uses_profile_account_projection=False),
+        ),
+    )
+
+    provider_config = captured["provider_config"]
+    assert provider_config.dockerized_gateway is not None
+    assert provider_config.ibg_port is None
+    assert provider_config.ibg_client_id == 7
+    assert captured["provider"] is not None
+
+
 def test_build_node_real_makerv4_strategy_satisfies_trader_registration_contract(
     monkeypatch,
 ) -> None:

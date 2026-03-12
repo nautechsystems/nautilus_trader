@@ -372,9 +372,10 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert scopes["hyperliquid.xyz.main"]["venue"] == "HYPERLIQUID"
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
-    assert scopes["ibkr.reference.main"]["ibg_client_id"] == 7
+    assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
     assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
+    assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 108
 
 
 def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() -> None:
@@ -416,6 +417,25 @@ def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
         client_ids.append(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert len(client_ids) == len(set(client_ids))
+
+
+def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_ids() -> None:
+    repo_root = _repo_root()
+    shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
+    shared_client_ids = {
+        row["ibg_client_id"]
+        for row in shared_config["account_scopes"]
+        if row["provider"] == "ibkr"
+    }
+    strategy_client_ids: set[int] = set()
+
+    for entry in ACTIVE_STRATEGIES:
+        active_config = _load_toml(
+            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
+        )
+        strategy_client_ids.add(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
+
+    assert shared_client_ids.isdisjoint(strategy_client_ids)
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:

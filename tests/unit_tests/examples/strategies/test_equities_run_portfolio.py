@@ -119,6 +119,10 @@ def _account_scopes() -> list[dict[str, object]]:
             "ibg_host": "127.0.0.1",
             "ibg_port": 4002,
             "ibg_client_id": 7,
+            "dockerized_gateway": {
+                "trading_mode": "live",
+                "read_only_api": True,
+            },
         },
         {
             "scope_id": "ibkr.hedge.main",
@@ -127,6 +131,10 @@ def _account_scopes() -> list[dict[str, object]]:
             "ibg_host": "127.0.0.1",
             "ibg_port": 4002,
             "ibg_client_id": 8,
+            "dockerized_gateway": {
+                "trading_mode": "live",
+                "read_only_api": True,
+            },
         },
     ]
 
@@ -300,8 +308,85 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
         "msft_tradexyz_makerv3",
     )
     assert len(captured_provider_configs) == 2
+    assert captured_provider_configs[0].dockerized_gateway is not None
+    assert captured_provider_configs[0].ibg_port is None
     assert captured_provider_configs[0].ibg_client_id == 7
+    assert captured_provider_configs[1].dockerized_gateway is not None
+    assert captured_provider_configs[1].ibg_port is None
     assert captured_provider_configs[1].ibg_client_id == 8
+
+
+def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_client_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_provider_configs: list[object] = []
+
+    def _fake_cached_ibkr_provider(provider_config):
+        captured_provider_configs.append(provider_config)
+        return _CountingAccountProjectionProvider(rows=[])
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        _fake_cached_ibkr_provider,
+    )
+
+    build_profile_account_provider_bindings(
+        config={
+            "account_scopes": [
+                {
+                    "scope_id": "hyperliquid.xyz.main",
+                    "provider": "hyperliquid",
+                    "venue": "HYPERLIQUID",
+                },
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 0,
+                },
+                {
+                    "scope_id": "ibkr.hedge.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 8,
+                },
+            ],
+            "strategy_contracts": [
+                _strategy_contract(
+                    "aapl_tradexyz_makerv3",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+            ],
+        },
+    )
+
+    assert len(captured_provider_configs) == 2
+    assert captured_provider_configs[0].ibg_client_id == 0
+
+
+def test_build_profile_account_provider_bindings_rejects_missing_shared_scope() -> None:
+    with pytest.raises(ValueError, match=r"ibkr\.reference\.main"):
+        build_profile_account_provider_bindings(
+            config={
+                "account_scopes": [
+                    {
+                        "scope_id": "hyperliquid.xyz.main",
+                        "provider": "hyperliquid",
+                        "venue": "HYPERLIQUID",
+                    },
+                ],
+                "strategy_contracts": [
+                    _strategy_contract(
+                        "aapl_tradexyz_makerv3",
+                        reference_account_scope_id="ibkr.reference.main",
+                    ),
+                ],
+            },
+        )
 
 
 def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_scope(

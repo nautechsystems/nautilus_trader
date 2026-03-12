@@ -38,8 +38,10 @@ def _build_ibkr_account_provider(
     return get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=scope_config.ibg_host or "127.0.0.1",
-            ibg_port=scope_config.ibg_port,
-            ibg_client_id=scope_config.ibg_client_id or 1,
+            ibg_port=None if dockerized_gateway is not None else scope_config.ibg_port,
+            ibg_client_id=(
+                1 if scope_config.ibg_client_id is None else scope_config.ibg_client_id
+            ),
             dockerized_gateway=dockerized_gateway,
             connection_timeout=300,
             request_timeout_secs=60,

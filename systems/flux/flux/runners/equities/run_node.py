@@ -232,14 +232,17 @@ def _attach_reference_balance_snapshot_provider(
     if adapter_id not in {"ibkr", "interactive_brokers"}:
         return
 
+    dockerized_gateway = _dockerized_ib_gateway_config(ibkr_cfg)
     provider = get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
             ibg_port=(
-                None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
+                None
+                if dockerized_gateway is not None or ibkr_cfg.get("ibg_port") is None
+                else int(ibkr_cfg.get("ibg_port"))
             ),
             ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
-            dockerized_gateway=_dockerized_ib_gateway_config(ibkr_cfg),
+            dockerized_gateway=dockerized_gateway,
             connection_timeout=int(ibkr_cfg.get("connection_timeout", 300)),
             request_timeout_secs=int(ibkr_cfg.get("request_timeout_secs", 60)),
             account_id=_optional_text(ibkr_cfg.get("account_id")),
