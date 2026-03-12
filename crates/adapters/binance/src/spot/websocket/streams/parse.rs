@@ -343,7 +343,16 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::spot::sbe::stream::STREAM_SCHEMA_ID;
+    use crate::{
+        common::parse::parse_spot_instrument_sbe,
+        spot::{
+            http::models::{
+                BinanceLotSizeFilterSbe, BinancePriceFilterSbe, BinanceSymbolFiltersSbe,
+                BinanceSymbolSbe,
+            },
+            sbe::stream::{PriceLevel, STREAM_SCHEMA_ID, Trade},
+        },
+    };
 
     fn make_bbo_buffer() -> Vec<u8> {
         let mut buf = vec![0u8; 70];
@@ -370,6 +379,45 @@ mod tests {
         body[51..58].copy_from_slice(b"BTCUSDT");
 
         buf
+    }
+
+    fn sample_instrument() -> InstrumentAny {
+        let symbol = BinanceSymbolSbe {
+            symbol: "ETHUSDT".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            status: 0,
+            order_types: 0,
+            iceberg_allowed: true,
+            oco_allowed: true,
+            oto_allowed: false,
+            quote_order_qty_market_allowed: true,
+            allow_trailing_stop: true,
+            cancel_replace_allowed: true,
+            amend_allowed: true,
+            is_spot_trading_allowed: true,
+            is_margin_trading_allowed: false,
+            filters: BinanceSymbolFiltersSbe {
+                price_filter: Some(BinancePriceFilterSbe {
+                    price_exponent: -8,
+                    min_price: 1_000_000,
+                    max_price: 100_000_000_000_000,
+                    tick_size: 1_000_000,
+                }),
+                lot_size_filter: Some(BinanceLotSizeFilterSbe {
+                    qty_exponent: -8,
+                    min_qty: 10_000,
+                    max_qty: 900_000_000_000,
+                    step_size: 10_000,
+                }),
+            },
+            permissions: vec![vec!["SPOT".to_string()]],
+        };
+
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        parse_spot_instrument_sbe(&symbol, ts, ts).unwrap()
     }
 
     #[rstest]
@@ -421,5 +469,202 @@ mod tests {
             }
             _ => panic!("Expected BestBidAsk"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_trades_event() {
+        let instrument = sample_instrument();
+        let event = TradesStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            transact_time_us: 1_700_000_000_100_000,
+            price_exponent: -2,
+            qty_exponent: -4,
+            trades: vec![
+                Trade {
+                    id: 1,
+                    price_mantissa: 12_345,
+                    qty_mantissa: 25_000,
+                    is_buyer_maker: false,
+                },
+                Trade {
+                    id: 2,
+                    price_mantissa: 12_340,
+                    qty_mantissa: 10_000,
+                    is_buyer_maker: true,
+                },
+            ],
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let data = parse_trades_event(&event, &instrument);
+
+        assert_eq!(data.len(), 2);
+        match &data[0] {
+            Data::Trade(trade) => {
+                assert_eq!(trade.instrument_id, instrument.id());
+                assert_eq!(trade.price, Price::new(123.45, 2));
+                assert_eq!(trade.size, Quantity::new(2.5, 4));
+                assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+                assert_eq!(trade.trade_id, TradeId::new("1"));
+                assert_eq!(
+                    trade.ts_event,
+                    UnixNanos::from(1_700_000_000_100_000_000u64)
+                );
+                assert_eq!(trade.ts_init, UnixNanos::from(1_700_000_000_100_000_000u64));
+            }
+            other => panic!("Expected trade data, was {other:?}"),
+        }
+        match &data[1] {
+            Data::Trade(trade) => assert_eq!(trade.aggressor_side, AggressorSide::Seller),
+            other => panic!("Expected trade data, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_bbo_event() {
+        let instrument = sample_instrument();
+        let event = BestBidAskStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            book_update_id: 123,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bid_price_mantissa: 12_345,
+            bid_qty_mantissa: 25_000,
+            ask_price_mantissa: 12_350,
+            ask_qty_mantissa: 30_000,
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let quote = parse_bbo_event(&event, &instrument);
+
+        assert_eq!(quote.instrument_id, instrument.id());
+        assert_eq!(quote.bid_price, Price::new(123.45, 2));
+        assert_eq!(quote.ask_price, Price::new(123.50, 2));
+        assert_eq!(quote.bid_size, Quantity::new(2.5, 4));
+        assert_eq!(quote.ask_size, Quantity::new(3.0, 4));
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(quote.ts_init, UnixNanos::from(1_700_000_000_000_000_000u64));
+    }
+
+    #[rstest]
+    fn test_parse_depth_snapshot() {
+        let instrument = sample_instrument();
+        let event = DepthSnapshotStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            book_update_id: 123,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bids: vec![PriceLevel {
+                price_mantissa: 12_345,
+                qty_mantissa: 25_000,
+            }],
+            asks: vec![PriceLevel {
+                price_mantissa: 12_350,
+                qty_mantissa: 30_000,
+            }],
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let deltas = parse_depth_snapshot(&event, &instrument).unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument.id());
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[1].action, BookAction::Add);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.price, Price::new(123.45, 2));
+        assert_eq!(deltas.deltas[1].order.size, Quantity::new(2.5, 4));
+        assert_eq!(deltas.deltas[2].action, BookAction::Add);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.price, Price::new(123.50, 2));
+        assert_eq!(deltas.deltas[2].order.size, Quantity::new(3.0, 4));
+        assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(
+            deltas.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_depth_snapshot_empty_returns_none() {
+        let instrument = sample_instrument();
+        let event = DepthSnapshotStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            book_update_id: 123,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bids: vec![],
+            asks: vec![],
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let deltas = parse_depth_snapshot(&event, &instrument);
+
+        assert!(deltas.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_depth_diff() {
+        let instrument = sample_instrument();
+        let event = DepthDiffStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            first_book_update_id: 100,
+            last_book_update_id: 101,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bids: vec![
+                PriceLevel {
+                    price_mantissa: 12_345,
+                    qty_mantissa: 25_000,
+                },
+                PriceLevel {
+                    price_mantissa: 12_340,
+                    qty_mantissa: 0,
+                },
+            ],
+            asks: vec![PriceLevel {
+                price_mantissa: 12_350,
+                qty_mantissa: 30_000,
+            }],
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let deltas = parse_depth_diff(&event, &instrument).unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument.id());
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[2].action, BookAction::Update);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(
+            deltas.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_depth_diff_empty_returns_none() {
+        let instrument = sample_instrument();
+        let event = DepthDiffStreamEvent {
+            event_time_us: 1_700_000_000_000_000,
+            first_book_update_id: 100,
+            last_book_update_id: 101,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bids: vec![],
+            asks: vec![],
+            symbol: Ustr::from("ETHUSDT"),
+        };
+
+        let deltas = parse_depth_diff(&event, &instrument);
+
+        assert!(deltas.is_none());
     }
 }

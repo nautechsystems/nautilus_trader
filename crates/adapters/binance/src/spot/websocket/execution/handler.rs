@@ -55,6 +55,8 @@ pub fn parse_raw_message(msg: Message) -> Option<BinanceSpotUdsMessage> {
         }
     };
 
+    let value = value.get("event").cloned().unwrap_or(value);
+
     let event_type = value.get("e")?.as_str()?;
 
     match event_type {
@@ -102,11 +104,12 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
+    use crate::common::testing::load_fixture_string;
 
     #[rstest]
     fn test_parse_execution_report_new() {
-        let json = include_str!("../../../../test_data/ws_spot_execution_report_new.json");
-        let msg = Message::Text(json.to_string().into());
+        let json = load_fixture_string("spot/user_data_json/execution_report_wrapped.json");
+        let msg = Message::Text(json.into());
         let result = parse_raw_message(msg);
 
         assert!(matches!(
@@ -129,8 +132,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_account_position() {
-        let json = include_str!("../../../../test_data/ws_spot_account_position.json");
-        let msg = Message::Text(json.to_string().into());
+        let json = load_fixture_string("spot/user_data_json/account_position_wrapped.json");
+        let msg = Message::Text(json.into());
         let result = parse_raw_message(msg);
 
         assert!(matches!(
@@ -141,8 +144,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_balance_update() {
-        let json = include_str!("../../../../test_data/ws_spot_balance_update.json");
-        let msg = Message::Text(json.to_string().into());
+        let json = load_fixture_string("spot/user_data_json/balance_update_wrapped.json");
+        let msg = Message::Text(json.into());
         let result = parse_raw_message(msg);
 
         assert!(matches!(
@@ -174,5 +177,17 @@ mod tests {
         let json = r#"{"e": "unknownEvent", "E": 1709654400000}"#;
         let msg = Message::Text(json.to_string().into());
         assert!(parse_raw_message(msg).is_none());
+    }
+
+    #[rstest]
+    fn test_parse_legacy_top_level_execution_report_still_works() {
+        let json = include_str!("../../../../test_data/ws_spot_execution_report_new.json");
+        let msg = Message::Text(json.to_string().into());
+        let result = parse_raw_message(msg);
+
+        assert!(matches!(
+            result,
+            Some(BinanceSpotUdsMessage::ExecutionReport(_))
+        ));
     }
 }

@@ -711,6 +711,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_fixture_string;
 
     #[rstest]
     fn test_listen_key_response_deserialize() {
@@ -721,34 +722,28 @@ mod tests {
 
     #[rstest]
     fn test_ticker_price_deserialize() {
-        let json = r#"{"symbol": "BTCUSDT", "price": "50000.00"}"#;
-        let response: TickerPrice = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.price, "50000.00");
+        let json = load_fixture_string("spot/http_json/ticker_price_response.json");
+        let response: TickerPrice = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "LTCBTC");
+        assert_eq!(response.price, "4.00000200");
     }
 
     #[rstest]
     fn test_book_ticker_deserialize() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "bidPrice": "49999.00",
-            "bidQty": "1.5",
-            "askPrice": "50001.00",
-            "askQty": "2.0"
-        }"#;
-        let response: BookTicker = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.bid_price, "49999.00");
-        assert_eq!(response.ask_price, "50001.00");
+        let json = load_fixture_string("spot/http_json/book_ticker_response.json");
+        let response: BookTicker = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "LTCBTC");
+        assert_eq!(response.bid_price, "4.00000000");
+        assert_eq!(response.ask_price, "4.00000200");
     }
 
     #[rstest]
     fn test_avg_price_deserialize() {
-        let json = r#"{"mins": 5, "price": "50000.00", "closeTime": 1734300000000}"#;
-        let response: AvgPrice = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/avg_price_response.json");
+        let response: AvgPrice = serde_json::from_str(&json).unwrap();
         assert_eq!(response.mins, 5);
-        assert_eq!(response.price, "50000.00");
-        assert_eq!(response.close_time, 1734300000000);
+        assert_eq!(response.price, "9.35751834");
+        assert_eq!(response.close_time, 1694061154503);
     }
 
     #[rstest]
@@ -766,26 +761,12 @@ mod tests {
 
     #[rstest]
     fn test_batch_order_result_success() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "orderId": 12345,
-            "orderListId": -1,
-            "clientOrderId": "my-order-1",
-            "transactTime": 1734300000000,
-            "price": "50000.00",
-            "origQty": "0.1",
-            "executedQty": "0.0",
-            "cummulativeQuoteQty": "0.0",
-            "status": "NEW",
-            "timeInForce": "GTC",
-            "type": "LIMIT",
-            "side": "BUY"
-        }"#;
-        let result: BatchOrderResult = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/new_order_full_response.json");
+        let result: BatchOrderResult = serde_json::from_str(&json).unwrap();
         match result {
             BatchOrderResult::Success(order) => {
                 assert_eq!(order.symbol, "BTCUSDT");
-                assert_eq!(order.order_id, 12345);
+                assert_eq!(order.order_id, 28);
             }
             BatchOrderResult::Error(_) => panic!("Expected Success"),
         }
@@ -806,27 +787,12 @@ mod tests {
 
     #[rstest]
     fn test_batch_cancel_result_success() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "orderId": 12345,
-            "orderListId": -1,
-            "origClientOrderId": "my-order-1",
-            "clientOrderId": "cancel-1",
-            "transactTime": 1734300000000,
-            "price": "50000.00",
-            "origQty": "0.1",
-            "executedQty": "0.0",
-            "cummulativeQuoteQty": "0.0",
-            "status": "CANCELED",
-            "timeInForce": "GTC",
-            "type": "LIMIT",
-            "side": "BUY"
-        }"#;
-        let result: BatchCancelResult = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/cancel_order_response.json");
+        let result: BatchCancelResult = serde_json::from_str(&json).unwrap();
         match result {
             BatchCancelResult::Success(cancel) => {
-                assert_eq!(cancel.symbol, "BTCUSDT");
-                assert_eq!(cancel.order_id, 12345);
+                assert_eq!(cancel.symbol, "LTCBTC");
+                assert_eq!(cancel.order_id, 4);
             }
             BatchCancelResult::Error(_) => panic!("Expected Success"),
         }
@@ -847,32 +813,10 @@ mod tests {
 
     #[rstest]
     fn test_ticker_24hr_deserialize() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "priceChange": "100.00",
-            "priceChangePercent": "0.2",
-            "weightedAvgPrice": "50050.00",
-            "prevClosePrice": "49950.00",
-            "lastPrice": "50050.00",
-            "lastQty": "0.01",
-            "bidPrice": "50049.00",
-            "bidQty": "1.0",
-            "askPrice": "50051.00",
-            "askQty": "1.0",
-            "openPrice": "49950.00",
-            "highPrice": "50200.00",
-            "lowPrice": "49800.00",
-            "volume": "1000.0",
-            "quoteVolume": "50000000.0",
-            "openTime": 1734200000000,
-            "closeTime": 1734300000000,
-            "firstId": 1000,
-            "lastId": 2000,
-            "count": 1000
-        }"#;
-        let response: Ticker24hr = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.last_price, "50050.00");
-        assert_eq!(response.count, 1000);
+        let json = load_fixture_string("spot/http_json/ticker_24hr_response.json");
+        let response: Ticker24hr = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "BNBBTC");
+        assert_eq!(response.last_price, "4.00000200");
+        assert_eq!(response.count, 76);
     }
 }

@@ -219,17 +219,18 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_event_fixture;
 
     #[rstest]
     fn test_deserialize_execution_report_new() {
-        let json = include_str!("../../../../test_data/ws_spot_execution_report_new.json");
-        let msg: BinanceSpotExecutionReport = serde_json::from_str(json).unwrap();
+        let json = load_event_fixture("spot/user_data_json/execution_report_wrapped.json");
+        let msg: BinanceSpotExecutionReport = serde_json::from_value(json).unwrap();
 
         assert_eq!(msg.event_type, "executionReport");
-        assert_eq!(msg.symbol.as_str(), "ETHUSDT");
+        assert_eq!(msg.symbol.as_str(), "ETHBTC");
         assert_eq!(msg.execution_type, BinanceSpotExecutionType::New);
         assert_eq!(msg.order_status, BinanceOrderStatus::New);
-        assert_eq!(msg.order_id, 12345678);
+        assert_eq!(msg.order_id, 4293153);
         assert_eq!(msg.side, BinanceSide::Buy);
     }
 
@@ -257,21 +258,21 @@ mod tests {
 
     #[rstest]
     fn test_deserialize_account_position() {
-        let json = include_str!("../../../../test_data/ws_spot_account_position.json");
-        let msg: BinanceSpotAccountPositionMsg = serde_json::from_str(json).unwrap();
+        let json = load_event_fixture("spot/user_data_json/account_position_wrapped.json");
+        let msg: BinanceSpotAccountPositionMsg = serde_json::from_value(json).unwrap();
 
         assert_eq!(msg.event_type, "outboundAccountPosition");
         assert!(!msg.balances.is_empty());
-        assert_eq!(msg.balances[0].asset.as_str(), "USDT");
+        assert_eq!(msg.balances[0].asset.as_str(), "ETH");
     }
 
     #[rstest]
     fn test_deserialize_balance_update() {
-        let json = include_str!("../../../../test_data/ws_spot_balance_update.json");
-        let msg: BinanceSpotBalanceUpdateMsg = serde_json::from_str(json).unwrap();
+        let json = load_event_fixture("spot/user_data_json/balance_update_wrapped.json");
+        let msg: BinanceSpotBalanceUpdateMsg = serde_json::from_value(json).unwrap();
 
         assert_eq!(msg.event_type, "balanceUpdate");
         assert_eq!(msg.asset.as_str(), "BTC");
-        assert_eq!(msg.delta, "0.00100000");
+        assert_eq!(msg.delta, "100.00000000");
     }
 }

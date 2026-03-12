@@ -453,3 +453,237 @@ pub fn extract_event_type(json: &serde_json::Value) -> Option<BinanceWsEventType
     json.get("e")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde::de::DeserializeOwned;
+    use serde_json::json;
+
+    use super::*;
+    use crate::{
+        common::{
+            enums::BinanceTradingStatus,
+            parse::parse_usdm_instrument,
+            testing::{load_fixture_string, load_json_fixture},
+        },
+        futures::http::models::BinanceFuturesUsdSymbol,
+    };
+
+    const PRICE_PRECISION: u8 = 8;
+    const SIZE_PRECISION: u8 = 3;
+
+    fn sample_futures_symbol() -> BinanceFuturesUsdSymbol {
+        BinanceFuturesUsdSymbol {
+            symbol: Ustr::from("BTCUSDT"),
+            pair: Ustr::from("BTCUSDT"),
+            contract_type: "PERPETUAL".to_string(),
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
+            status: BinanceTradingStatus::Trading,
+            maint_margin_percent: "2.5000".to_string(),
+            required_margin_percent: "5.0000".to_string(),
+            base_asset: Ustr::from("BTC"),
+            quote_asset: Ustr::from("USDT"),
+            margin_asset: Ustr::from("USDT"),
+            price_precision: PRICE_PRECISION as i32,
+            quantity_precision: SIZE_PRECISION as i32,
+            base_asset_precision: 8,
+            quote_precision: 8,
+            underlying_type: Some("COIN".to_string()),
+            underlying_sub_type: vec!["PoW".to_string()],
+            settle_plan: None,
+            trigger_protect: Some("0.0500".to_string()),
+            liquidation_fee: Some("0.012500".to_string()),
+            market_take_bound: Some("0.05".to_string()),
+            order_types: vec!["LIMIT".to_string(), "MARKET".to_string()],
+            time_in_force: vec!["GTC".to_string(), "IOC".to_string()],
+            filters: vec![
+                json!({
+                    "filterType": "PRICE_FILTER",
+                    "tickSize": "0.00000001",
+                    "maxPrice": "1000000",
+                    "minPrice": "0.00000001"
+                }),
+                json!({
+                    "filterType": "LOT_SIZE",
+                    "stepSize": "0.001",
+                    "maxQty": "1000",
+                    "minQty": "0.001"
+                }),
+            ],
+        }
+    }
+
+    fn sample_instrument() -> InstrumentAny {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        parse_usdm_instrument(&sample_futures_symbol(), ts, ts).unwrap()
+    }
+
+    fn load_market_fixture<T: DeserializeOwned>(filename: &str) -> T {
+        let path = format!("futures/market_data_json/{filename}");
+        serde_json::from_str(&load_fixture_string(&path))
+            .unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"))
+    }
+
+    #[rstest]
+    fn test_parse_agg_trade() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesAggTradeMsg = load_market_fixture("agg_trade_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let trade = parse_agg_trade(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(trade.instrument_id, instrument.id());
+        assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
+        assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.trade_id, TradeId::new("5933014"));
+        assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
+        assert_eq!(trade.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_trade() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let trade = parse_trade(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(trade.instrument_id, instrument.id());
+        assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
+        assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.trade_id, TradeId::new("5933014"));
+        assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
+        assert_eq!(trade.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_book_ticker() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesBookTickerMsg = load_market_fixture("book_ticker_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let quote = parse_book_ticker(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument.id());
+        assert_eq!(quote.bid_price, Price::new(25.3519, PRICE_PRECISION));
+        assert_eq!(quote.ask_price, Price::new(25.3652, PRICE_PRECISION));
+        assert_eq!(quote.bid_size, Quantity::new(31.21, SIZE_PRECISION));
+        assert_eq!(quote.ask_size, Quantity::new(40.66, SIZE_PRECISION));
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_568_014_460_891_000_000u64)
+        );
+        assert_eq!(quote.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_depth_update() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let deltas = parse_depth_update(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument.id());
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.sequence, 160);
+        assert_eq!(deltas.ts_event, UnixNanos::from(123_456_788_000_000u64));
+        assert_eq!(deltas.ts_init, ts_init);
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(
+            deltas.deltas[0].order.price,
+            Price::new(0.0024, PRICE_PRECISION)
+        );
+        assert_eq!(
+            deltas.deltas[0].order.size,
+            Quantity::new(10.0, SIZE_PRECISION)
+        );
+        assert_eq!(deltas.deltas[1].action, BookAction::Update);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::new(0.0026, PRICE_PRECISION)
+        );
+        assert_eq!(
+            deltas.deltas[1].order.size,
+            Quantity::new(100.0, SIZE_PRECISION)
+        );
+        assert_eq!(deltas.deltas[1].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    fn test_parse_mark_price() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let (mark, index, funding) = parse_mark_price(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(mark.instrument_id, instrument.id());
+        assert_eq!(mark.value, Price::new(11794.15, PRICE_PRECISION));
+        assert_eq!(index.value, Price::new(11784.62659091, PRICE_PRECISION));
+        assert_eq!(mark.ts_event, UnixNanos::from(1_562_305_380_000_000_000u64));
+        assert_eq!(funding.instrument_id, instrument.id());
+        assert_eq!(funding.rate.to_string(), "0.00038167");
+        assert_eq!(
+            funding.next_funding_ns,
+            Some(UnixNanos::from(1_562_306_400_000_000_000u64))
+        );
+        assert_eq!(
+            funding.ts_event,
+            UnixNanos::from(1_562_305_380_000_000_000u64)
+        );
+        assert_eq!(funding.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_kline_closed() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesKlineMsg = load_market_fixture("kline_stream_closed.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let bar = parse_kline(&msg, &instrument, ts_init).unwrap().unwrap();
+
+        assert_eq!(bar.bar_type.instrument_id(), instrument.id());
+        assert_eq!(bar.open, Price::new(0.001, PRICE_PRECISION));
+        assert_eq!(bar.high, Price::new(0.0025, PRICE_PRECISION));
+        assert_eq!(bar.low, Price::new(0.001, PRICE_PRECISION));
+        assert_eq!(bar.close, Price::new(0.002, PRICE_PRECISION));
+        assert_eq!(bar.volume, Quantity::new(1000.0, SIZE_PRECISION));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_638_747_719_999_000_000u64));
+        assert_eq!(bar.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_kline_open_returns_none() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesKlineMsg = load_market_fixture("kline_stream_open.json");
+
+        let bar = parse_kline(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert!(bar.is_none());
+    }
+
+    #[rstest]
+    fn test_extract_symbol() {
+        let json = load_json_fixture("futures/market_data_json/book_ticker_stream.json");
+
+        let symbol = extract_symbol(&json);
+
+        assert_eq!(symbol, Some(Ustr::from("BNBUSDT")));
+    }
+
+    #[rstest]
+    fn test_extract_event_type() {
+        let json = load_json_fixture("futures/market_data_json/mark_price_stream.json");
+
+        let event_type = extract_event_type(&json);
+
+        assert_eq!(event_type, Some(BinanceWsEventType::MarkPriceUpdate));
+    }
+}

@@ -1023,7 +1023,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::BinanceTradingStatus;
+    use crate::common::enums::{BinanceContractStatus, BinanceTradingStatus};
 
     fn sample_usdm_symbol() -> BinanceFuturesUsdSymbol {
         BinanceFuturesUsdSymbol {
@@ -1065,6 +1065,92 @@ mod tests {
                 }),
             ],
         }
+    }
+
+    fn sample_coinm_symbol() -> BinanceFuturesCoinSymbol {
+        BinanceFuturesCoinSymbol {
+            symbol: Ustr::from("BTCUSD_PERP"),
+            pair: Ustr::from("BTCUSD"),
+            contract_type: "PERPETUAL".to_string(),
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
+            contract_status: Some(BinanceContractStatus::Trading),
+            contract_size: 100,
+            maint_margin_percent: "2.5000".to_string(),
+            required_margin_percent: "5.0000".to_string(),
+            base_asset: Ustr::from("BTC"),
+            quote_asset: Ustr::from("USD"),
+            margin_asset: Ustr::from("BTC"),
+            price_precision: 1,
+            quantity_precision: 0,
+            base_asset_precision: 8,
+            quote_precision: 8,
+            equal_qty_precision: None,
+            trigger_protect: Some("0.0500".to_string()),
+            liquidation_fee: Some("0.012500".to_string()),
+            market_take_bound: Some("0.05".to_string()),
+            order_types: vec!["LIMIT".to_string(), "MARKET".to_string()],
+            time_in_force: vec!["GTC".to_string(), "IOC".to_string()],
+            filters: vec![
+                json!({
+                    "filterType": "PRICE_FILTER",
+                    "tickSize": "0.10",
+                    "maxPrice": "1000000",
+                    "minPrice": "0.10"
+                }),
+                json!({
+                    "filterType": "LOT_SIZE",
+                    "stepSize": "1",
+                    "maxQty": "1000",
+                    "minQty": "1"
+                }),
+            ],
+        }
+    }
+
+    fn sample_spot_symbol_sbe() -> BinanceSymbolSbe {
+        BinanceSymbolSbe {
+            symbol: "ETHUSDT".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            status: SBE_STATUS_TRADING,
+            order_types: 0,
+            iceberg_allowed: true,
+            oco_allowed: true,
+            oto_allowed: false,
+            quote_order_qty_market_allowed: true,
+            allow_trailing_stop: true,
+            cancel_replace_allowed: true,
+            amend_allowed: true,
+            is_spot_trading_allowed: true,
+            is_margin_trading_allowed: false,
+            filters: crate::spot::http::models::BinanceSymbolFiltersSbe {
+                price_filter: Some(BinancePriceFilterSbe {
+                    price_exponent: -8,
+                    min_price: 1_000_000,
+                    max_price: 100_000_000_000_000,
+                    tick_size: 1_000_000,
+                }),
+                lot_size_filter: Some(BinanceLotSizeFilterSbe {
+                    qty_exponent: -8,
+                    min_qty: 10_000,
+                    max_qty: 900_000_000_000,
+                    step_size: 10_000,
+                }),
+            },
+            permissions: vec![vec!["SPOT".to_string()]],
+        }
+    }
+
+    fn sample_spot_instrument() -> InstrumentAny {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        parse_spot_instrument_sbe(&sample_spot_symbol_sbe(), ts, ts).unwrap()
+    }
+
+    fn sample_account_id() -> AccountId {
+        AccountId::from("BINANCE-SPOT-001")
     }
 
     #[rstest]
@@ -1126,6 +1212,307 @@ mod tests {
                 .to_string()
                 .contains("Missing PRICE_FILTER")
         );
+    }
+
+    #[rstest]
+    fn test_parse_coinm_perpetual() {
+        let symbol = sample_coinm_symbol();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let result = parse_coinm_instrument(&symbol, ts, ts).unwrap();
+
+        match result {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.to_string(), "BTCUSD_PERP-PERP.BINANCE");
+                assert_eq!(perp.raw_symbol.to_string(), "BTCUSD_PERP");
+                assert_eq!(perp.base_currency.code.as_str(), "BTC");
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
+                assert!(perp.is_inverse);
+                assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
+                assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_sbe() {
+        let symbol = sample_spot_symbol_sbe();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let result = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap();
+
+        match result {
+            InstrumentAny::CurrencyPair(pair) => {
+                assert_eq!(pair.id.to_string(), "ETHUSDT.BINANCE");
+                assert_eq!(pair.raw_symbol.to_string(), "ETHUSDT");
+                assert_eq!(pair.base_currency.code.as_str(), "ETH");
+                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.price_increment, Price::from_str("0.01").unwrap());
+                assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
+            }
+            other => panic!("Expected CurrencyPair, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_trades_sbe() {
+        let instrument = sample_spot_instrument();
+        let trades = BinanceTrades {
+            price_exponent: -2,
+            qty_exponent: -4,
+            trades: vec![
+                crate::spot::http::models::BinanceTrade {
+                    id: 1,
+                    price_mantissa: 12_345,
+                    qty_mantissa: 25_000,
+                    quote_qty_mantissa: 0,
+                    time: 1_700_000_000_000_000,
+                    is_buyer_maker: false,
+                    is_best_match: true,
+                },
+                crate::spot::http::models::BinanceTrade {
+                    id: 2,
+                    price_mantissa: 12_340,
+                    qty_mantissa: 10_000,
+                    quote_qty_mantissa: 0,
+                    time: 1_700_000_000_500_000,
+                    is_buyer_maker: true,
+                    is_best_match: true,
+                },
+            ],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let result = parse_spot_trades_sbe(&trades, &instrument, ts_init).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].instrument_id, instrument.id());
+        assert_eq!(result[0].price.as_f64(), 123.45);
+        assert_eq!(result[0].size.as_f64(), 2.5);
+        assert_eq!(result[0].aggressor_side, AggressorSide::Buyer);
+        assert_eq!(result[0].trade_id, TradeId::new("1"));
+        assert_eq!(
+            result[0].ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(result[0].ts_init, ts_init);
+        assert_eq!(result[1].aggressor_side, AggressorSide::Seller);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_sbe() {
+        let instrument = sample_spot_instrument();
+        let order = BinanceOrderResponse {
+            price_exponent: -2,
+            qty_exponent: -4,
+            order_id: 42,
+            order_list_id: Some(77),
+            price_mantissa: 12_345,
+            orig_qty_mantissa: 25_000,
+            executed_qty_mantissa: 10_000,
+            cummulative_quote_qty_mantissa: 123_450_000,
+            status: SbeOrderStatus::PartiallyFilled,
+            time_in_force: SbeTimeInForce::Gtc,
+            order_type: SbeOrderType::LimitMaker,
+            side: SbeOrderSide::Buy,
+            stop_price_mantissa: None,
+            iceberg_qty_mantissa: None,
+            time: 1_700_000_000_000_000,
+            update_time: 1_700_000_000_100_000,
+            is_working: true,
+            working_time: Some(1_700_000_000_050_000),
+            orig_quote_order_qty_mantissa: 0,
+            self_trade_prevention_mode:
+                crate::spot::sbe::spot::self_trade_prevention_mode::SelfTradePreventionMode::None,
+            client_order_id: "client-123".to_string(),
+            symbol: "ETHUSDT".to_string(),
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report =
+            parse_order_status_report_sbe(&order, sample_account_id(), &instrument, ts_init)
+                .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("client-123"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("42"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.quantity.as_f64(), 2.5);
+        assert_eq!(report.filled_qty.as_f64(), 1.0);
+        assert_eq!(report.order_list_id, Some(OrderListId::new("77")));
+        assert_eq!(report.price, Some(Price::new(123.45, 2)));
+        assert_eq!(report.avg_px.unwrap().to_string(), "123.45");
+        assert!(report.post_only);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_700_000_000_100_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_new_order_response_sbe() {
+        let instrument = sample_spot_instrument();
+        let response = BinanceNewOrderResponse {
+            price_exponent: -2,
+            qty_exponent: -4,
+            order_id: 99,
+            order_list_id: Some(7),
+            transact_time: 1_700_000_000_000_000,
+            price_mantissa: 12_100,
+            orig_qty_mantissa: 20_000,
+            executed_qty_mantissa: 5_000,
+            cummulative_quote_qty_mantissa: 60_500_000,
+            status: SbeOrderStatus::New,
+            time_in_force: SbeTimeInForce::Gtc,
+            order_type: SbeOrderType::StopLossLimit,
+            side: SbeOrderSide::Sell,
+            stop_price_mantissa: Some(12_000),
+            working_time: Some(1_700_000_000_000_000),
+            self_trade_prevention_mode:
+                crate::spot::sbe::spot::self_trade_prevention_mode::SelfTradePreventionMode::None,
+            client_order_id: "client-456".to_string(),
+            symbol: "ETHUSDT".to_string(),
+            fills: vec![],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report =
+            parse_new_order_response_sbe(&response, sample_account_id(), &instrument, ts_init)
+                .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("client-456"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("99"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.quantity.as_f64(), 2.0);
+        assert_eq!(report.filled_qty.as_f64(), 0.5);
+        assert_eq!(report.order_list_id, Some(OrderListId::new("7")));
+        assert_eq!(report.price, Some(Price::new(121.0, 2)));
+        assert_eq!(report.trigger_price, Some(Price::new(120.0, 2)));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(report.avg_px.unwrap().to_string(), "121");
+        assert!(!report.post_only);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_sbe() {
+        let instrument = sample_spot_instrument();
+        let trade = BinanceAccountTrade {
+            price_exponent: -2,
+            qty_exponent: -4,
+            commission_exponent: -8,
+            id: 123,
+            order_id: 456,
+            order_list_id: None,
+            price_mantissa: 12_345,
+            qty_mantissa: 25_000,
+            quote_qty_mantissa: 0,
+            commission_mantissa: 10_000,
+            time: 1_700_000_000_000_000,
+            is_buyer: false,
+            is_maker: true,
+            is_best_match: true,
+            symbol: "ETHUSDT".to_string(),
+            commission_asset: "USDT".to_string(),
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report = parse_fill_report_sbe(
+            &trade,
+            sample_account_id(),
+            &instrument,
+            Currency::from("USDT"),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.venue_order_id, VenueOrderId::new("456"));
+        assert_eq!(report.trade_id, TradeId::new("123"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty.as_f64(), 2.5);
+        assert_eq!(report.last_px.as_f64(), 123.45);
+        assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+        assert_eq!(report.commission.as_f64(), 0.0001);
+        assert_eq!(
+            report.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+        assert!(report.client_order_id.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_klines_to_bars() {
+        use nautilus_model::enums::{AggregationSource, PriceType};
+
+        let instrument = sample_spot_instrument();
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let klines = BinanceKlines {
+            price_exponent: -2,
+            qty_exponent: -4,
+            klines: vec![crate::spot::http::models::BinanceKline {
+                open_time: 1_700_000_000_000,
+                open_price: 12_000,
+                high_price: 12_500,
+                low_price: 11_900,
+                close_price: 12_345,
+                volume: 1_234_500_i128.to_le_bytes(),
+                close_time: 1_700_000_059_999,
+                quote_volume: 0_i128.to_le_bytes(),
+                num_trades: 100,
+                taker_buy_base_volume: 0_i128.to_le_bytes(),
+                taker_buy_quote_volume: 0_i128.to_le_bytes(),
+            }],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let bars = parse_klines_to_bars(&klines, bar_type, &instrument, ts_init).unwrap();
+
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].bar_type, bar_type);
+        assert_eq!(bars[0].open, Price::new(120.0, 2));
+        assert_eq!(bars[0].high, Price::new(125.0, 2));
+        assert_eq!(bars[0].low, Price::new(119.0, 2));
+        assert_eq!(bars[0].close, Price::new(123.45, 2));
+        assert_eq!(bars[0].volume, Quantity::new(123.45, 4));
+        assert_eq!(
+            bars[0].ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(bars[0].ts_init, ts_init);
     }
 
     mod bar_spec_tests {

@@ -363,9 +363,19 @@ fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::futures::websocket::messages::BinanceFuturesOrderUpdateMsg;
+    use crate::{
+        common::{
+            consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID, encoder::encode_broker_id,
+            testing::load_fixture_string,
+        },
+        futures::websocket::messages::{
+            BinanceFuturesAccountUpdateMsg, BinanceFuturesAlgoUpdateMsg,
+            BinanceFuturesOrderUpdateMsg,
+        },
+    };
 
     const PRICE_PRECISION: u8 = 2;
     const SIZE_PRECISION: u8 = 3;
@@ -378,10 +388,15 @@ mod tests {
         AccountId::from("BINANCE-FUTURES-001")
     }
 
+    fn load_user_data_fixture<T: DeserializeOwned>(filename: &str) -> T {
+        let path = format!("futures/user_data_json/{filename}");
+        serde_json::from_str(&load_fixture_string(&path))
+            .unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"))
+    }
+
     #[rstest]
     fn test_parse_order_update_to_order_status_new() {
-        let json = include_str!("../../../test_data/ws_futures_order_trade_update_new.json");
-        let msg: BinanceFuturesOrderUpdateMsg = serde_json::from_str(json).unwrap();
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let report = parse_futures_order_update_to_order_status(
@@ -398,18 +413,14 @@ mod tests {
         assert_eq!(report.instrument_id, instrument_id());
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        assert_eq!(report.order_type, OrderType::Limit);
-        assert_eq!(report.venue_order_id, VenueOrderId::new("12345678"));
-        assert_eq!(
-            report.client_order_id,
-            Some(ClientOrderId::from("O-20200101-000000-000-000-0")),
-        );
+        assert_eq!(report.order_type, OrderType::TrailingStopMarket);
+        assert_eq!(report.venue_order_id, VenueOrderId::new("8886774"));
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from("TEST")));
     }
 
     #[rstest]
     fn test_parse_order_update_to_fill_report() {
-        let json = include_str!("../../../test_data/ws_futures_order_trade_update_trade.json");
-        let msg: BinanceFuturesOrderUpdateMsg = serde_json::from_str(json).unwrap();
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let report = parse_futures_order_update_to_fill(
@@ -426,17 +437,15 @@ mod tests {
         assert_eq!(report.instrument_id, instrument_id());
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(report.trade_id, TradeId::new("98765432"));
-        assert_eq!(
-            report.client_order_id,
-            Some(ClientOrderId::from("O-20200101-000000-000-000-0")),
-        );
+        assert_eq!(report.trade_id, TradeId::new("12345678"));
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from("TEST")));
+        assert_eq!(report.last_qty, Quantity::new(0.001, SIZE_PRECISION));
+        assert_eq!(report.last_px, Price::new(7100.50, PRICE_PRECISION));
     }
 
     #[rstest]
     fn test_parse_account_update() {
-        let json = include_str!("../../../test_data/ws_futures_account_update.json");
-        let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(json).unwrap();
+        let msg: BinanceFuturesAccountUpdateMsg = load_user_data_fixture("account_update.json");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let state = parse_futures_account_update(&msg, account_id(), ts_init).unwrap();
@@ -444,5 +453,85 @@ mod tests {
         assert_eq!(state.account_id, account_id());
         assert_eq!(state.account_type, AccountType::Margin);
         assert!(state.is_reported);
+        assert_eq!(state.balances.len(), 1);
+    }
+
+    #[rstest]
+    fn test_parse_algo_update_to_order_status_canceled() {
+        let msg: BinanceFuturesAlgoUpdateMsg = load_user_data_fixture("algo_update_canceled.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let report = parse_futures_algo_update_to_order_status(
+            &msg.algo_order,
+            msg.event_time,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, instrument_id());
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("Q5xaq5EGKgXXa0fD7fs0Ip")),
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("2148719"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_type, OrderType::LimitIfTouched);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.quantity, Quantity::new(0.01, SIZE_PRECISION));
+        assert_eq!(report.filled_qty, Quantity::new(0.0, SIZE_PRECISION));
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_750_515_742_303_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_750_515_742_303_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_algo_update_to_order_status_new_returns_none() {
+        let msg: BinanceFuturesAlgoUpdateMsg = load_user_data_fixture("algo_update_new.json");
+        let report = parse_futures_algo_update_to_order_status(
+            &msg.algo_order,
+            msg.event_time,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            UnixNanos::default(),
+        );
+
+        assert!(report.is_none());
+    }
+
+    #[rstest]
+    fn test_decode_order_client_id() {
+        let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
+        let original = ClientOrderId::from("O-20200101-000000-000-000-1");
+        msg.order.client_order_id = encode_broker_id(&original, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+
+        let decoded = decode_order_client_id(&msg.order);
+
+        assert_eq!(decoded, original);
+    }
+
+    #[rstest]
+    fn test_decode_algo_client_id() {
+        let mut msg: BinanceFuturesAlgoUpdateMsg =
+            load_user_data_fixture("algo_update_canceled.json");
+        let original = ClientOrderId::from("O-20200101-000000-000-000-2");
+        msg.algo_order.client_algo_id =
+            encode_broker_id(&original, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+
+        let decoded = decode_algo_client_id(&msg.algo_order);
+
+        assert_eq!(decoded, original);
     }
 }

@@ -228,6 +228,38 @@ impl BinanceRawSpotHttpClient {
         self.request(Method::GET, path, params, true, false).await
     }
 
+    /// Performs a signed POST request and returns raw response bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing or the request fails.
+    pub async fn post_signed<P>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
+        self.request(Method::POST, path, params, true, true).await
+    }
+
+    /// Performs a signed DELETE request and returns raw response bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing or the request fails.
+    pub async fn delete_signed<P>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> BinanceSpotHttpResult<Vec<u8>>
+    where
+        P: Serialize + ?Sized,
+    {
+        self.request(Method::DELETE, path, params, true, true).await
+    }
+
     async fn request<P>(
         &self,
         method: Method,
@@ -1000,7 +1032,7 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.request(Method::POST, path, params, true, true).await
+        self.post_signed(path, params).await
     }
 
     /// Performs a signed DELETE request for cancel operations.
@@ -1012,7 +1044,7 @@ impl BinanceRawSpotHttpClient {
     where
         P: Serialize + ?Sized,
     {
-        self.request(Method::DELETE, path, params, true, true).await
+        self.delete_signed(path, params).await
     }
 
     /// Creates a new order.

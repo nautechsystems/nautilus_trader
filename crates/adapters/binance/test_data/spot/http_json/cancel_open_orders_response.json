@@ -1,0 +1,100 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "origClientOrderId": "E6APeyTJvkMvLMYMqu1KQ4",
+    "orderId": 11,
+    "orderListId": -1,
+    "clientOrderId": "pXLV6Hz6mprAcVYpVMTGgx",
+    "transactTime": 1684804350068,
+    "price": "0.089853",
+    "origQty": "0.178622",
+    "executedQty": "0.000000",
+    "origQuoteOrderQty": "0.000000",
+    "cummulativeQuoteQty": "0.000000",
+    "status": "CANCELED",
+    "timeInForce": "GTC",
+    "type": "LIMIT",
+    "side": "BUY",
+    "selfTradePreventionMode": "NONE"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "origClientOrderId": "A3EF2HCwxgZPFMrfwbgrhv",
+    "orderId": 13,
+    "orderListId": -1,
+    "clientOrderId": "pXLV6Hz6mprAcVYpVMTGgx",
+    "transactTime": 1684804350069,
+    "price": "0.090430",
+    "origQty": "0.178622",
+    "executedQty": "0.000000",
+    "origQuoteOrderQty": "0.000000",
+    "cummulativeQuoteQty": "0.000000",
+    "status": "CANCELED",
+    "timeInForce": "GTC",
+    "type": "LIMIT",
+    "side": "BUY",
+    "selfTradePreventionMode": "NONE"
+  },
+  {
+    "orderListId": 1929,
+    "contingencyType": "OCO",
+    "listStatusType": "ALL_DONE",
+    "listOrderStatus": "ALL_DONE",
+    "listClientOrderId": "2inzWQdDvZLHbbAmAozX2N",
+    "transactionTime": 1585230948299,
+    "symbol": "BTCUSDT",
+    "orders": [
+      {
+        "symbol": "BTCUSDT",
+        "orderId": 20,
+        "clientOrderId": "CwOOIPHSmYywx6jZX77TdL"
+      },
+      {
+        "symbol": "BTCUSDT",
+        "orderId": 21,
+        "clientOrderId": "461cPg51vQjV3zIMOXNz39"
+      }
+    ],
+    "orderReports": [
+      {
+        "symbol": "BTCUSDT",
+        "origClientOrderId": "CwOOIPHSmYywx6jZX77TdL",
+        "orderId": 20,
+        "orderListId": 1929,
+        "clientOrderId": "pXLV6Hz6mprAcVYpVMTGgx",
+        "transactTime": 1688005070874,
+        "price": "0.668611",
+        "origQty": "0.690354",
+        "executedQty": "0.000000",
+        "origQuoteOrderQty": "0.000000",
+        "cummulativeQuoteQty": "0.000000",
+        "status": "CANCELED",
+        "timeInForce": "GTC",
+        "type": "STOP_LOSS_LIMIT",
+        "side": "BUY",
+        "stopPrice": "0.378131",
+        "icebergQty": "0.017083",
+        "selfTradePreventionMode": "NONE"
+      },
+      {
+        "symbol": "BTCUSDT",
+        "origClientOrderId": "461cPg51vQjV3zIMOXNz39",
+        "orderId": 21,
+        "orderListId": 1929,
+        "clientOrderId": "pXLV6Hz6mprAcVYpVMTGgx",
+        "transactTime": 1688005070874,
+        "price": "0.008791",
+        "origQty": "0.690354",
+        "executedQty": "0.000000",
+        "origQuoteOrderQty": "0.000000",
+        "cummulativeQuoteQty": "0.000000",
+        "status": "CANCELED",
+        "timeInForce": "GTC",
+        "type": "LIMIT_MAKER",
+        "side": "BUY",
+        "icebergQty": "0.639962",
+        "selfTradePreventionMode": "NONE"
+      }
+    ]
+  }
+]

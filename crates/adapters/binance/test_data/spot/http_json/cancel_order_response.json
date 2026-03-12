@@ -1,0 +1,18 @@
+{
+  "symbol": "LTCBTC",
+  "origClientOrderId": "myOrder1",
+  "orderId": 4,
+  "orderListId": -1,
+  "clientOrderId": "cancelMyOrder1",
+  "transactTime": 1684804350068,
+  "price": "2.00000000",
+  "origQty": "1.00000000",
+  "executedQty": "0.00000000",
+  "origQuoteOrderQty": "0.000000",
+  "cummulativeQuoteQty": "0.00000000",
+  "status": "CANCELED",
+  "timeInForce": "GTC",
+  "type": "LIMIT",
+  "side": "BUY",
+  "selfTradePreventionMode": "NONE"
+}
