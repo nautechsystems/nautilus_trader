@@ -52,6 +52,10 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     twofa_timeout_action : {"exit", "restart"}, optional
         Action for the container after a second-factor timeout. If omitted and
         `auto_restart_time` is set, the gateway defaults to ``restart``.
+    manage_container : bool, optional, default True
+        Whether this config is responsible for starting and owning the dockerized
+        gateway container. Set to ``False`` for clients that should connect to an
+        already-managed gateway without starting or restarting it themselves.
 
     """
 
@@ -66,6 +70,7 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     time_zone: str | None = None
     relogin_after_twofa_timeout: bool = False
     twofa_timeout_action: Literal["exit", "restart"] | None = None
+    manage_container: bool = True
 
     def __repr__(self):
         masked_username = self._mask_sensitive_info(self.username)

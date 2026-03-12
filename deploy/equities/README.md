@@ -49,7 +49,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
 - The old single-canary wording still applies as a safety invariant: shared IBKR contract entry must mirror the active canary route before that route is added to the enrolled stock set.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
-- The checked-in MakerV3 nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ`, `005380.KRX`, and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false` and `[node.venues.IBKR.dockerized_gateway].twofa_timeout_action = "restart"` so the read-only IBKR reference path remains explicit and hardened.
+- The checked-in MakerV3 nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ`, `005380.KRX`, and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false`. `ibkr.reference.main` is the only equities IBKR gateway owner; enrolled nodes keep a non-owning `[node.venues.IBKR.dockerized_gateway]` block with `manage_container = false` so they connect to the shared gateway without starting or restarting it.
 - Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
 - `SMSN` and `SKHX` remain intentionally out of the enrolled set until exact IBKR qualification is verified; do not guess those routes into the live allowlist.
 
@@ -193,7 +193,8 @@ Expected smoke result:
 ## After-hours production validation
 
 - Confirm the active strategy file keeps `use_regular_trading_hours = false` so IBKR reference data remains available outside RTH.
-- Confirm the active `node.venues.IBKR.dockerized_gateway` block keeps `twofa_timeout_action = "restart"` so an expired 2FA window forces the containerized gateway back through the login flow instead of idling indefinitely.
+- Confirm `ibkr.reference.main` keeps `twofa_timeout_action = "exit"` so a missed 2FA window fails closed instead of generating repeat pushes.
+- Confirm enrolled strategy files keep `node.venues.IBKR.dockerized_gateway.manage_container = false` so node processes never own gateway restarts.
 - Confirm each active strategy keeps a qualifiable IBKR reference instrument. The checked-in set includes examples such as `AAPL.NASDAQ`, `005380.KRX`, and `USAR.NASDAQ`; do not switch any of them to `BLUEOCEAN`.
 - Confirm the IBKR account has the required after-hours permissions for the configured exchange and instrument.
 - Confirm the active Hyperliquid config still carries `vault_address_env` when vault routing is required.

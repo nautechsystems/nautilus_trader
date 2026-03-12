@@ -59,10 +59,7 @@ use_regular_trading_hours = false
 [node.venues.IBKR.dockerized_gateway]
 trading_mode = "live"
 read_only_api = true
-auto_restart_time = "11:45 PM"
-time_zone = "America/New_York"
-relogin_after_twofa_timeout = true
-twofa_timeout_action = "restart"
+manage_container = false
 
 [strategy]
 strategy_id = "hood_tradexyz_makerv3"

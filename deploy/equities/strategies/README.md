@@ -27,8 +27,9 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
 - `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ`, `005380.KRX`, or `USAR.NASDAQ`.
 - `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the restored MakerV3 contract.
-- `[node.venues.IBKR.dockerized_gateway]` carries the read-only live gateway runtime, including the nightly `11:45 PM America/New_York` restart window.
-- `[node.venues.IBKR.dockerized_gateway].twofa_timeout_action = "restart"` keeps the containerized gateway from idling after an expired 2FA window.
+- `[node.venues.IBKR.dockerized_gateway]` is now a non-owning client contract for enrolled nodes.
+- `[node.venues.IBKR.dockerized_gateway].manage_container = false` keeps node processes from starting or restarting the shared IBKR gateway.
+- The only equities gateway owner lives in shared config under `ibkr.reference.main`; nodes connect to that gateway but do not manage 2FA policy.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
 - Keep the shared `[[contracts]]` IBKR entries aligned with the enrolled reference instruments, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.

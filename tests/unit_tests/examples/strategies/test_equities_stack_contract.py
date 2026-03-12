@@ -206,10 +206,8 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert '[node.venues.IBKR.dockerized_gateway]' in template
     assert 'trading_mode = "live"' in template
     assert 'read_only_api = true' in template
-    assert 'auto_restart_time = "11:45 PM"' in template
-    assert 'time_zone = "America/New_York"' in template
-    assert "relogin_after_twofa_timeout = true" in template
-    assert 'twofa_timeout_action = "restart"' in template
+    assert "manage_container = false" in template
+    assert 'twofa_timeout_action = "exit"' not in template
     assert identity["strategy_id"] == "symbol_tradexyz_makerv3"
     assert identity["strategy_instance_id"] == "symbol_tradexyz_makerv3"
     assert identity["external_strategy_id"] == "symbol_tradexyz_makerv3"
@@ -289,11 +287,12 @@ def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
         )
         assert config["node"]["venues"]["IBKR"]["instrument_id"] == entry["ibkr_instrument_id"]
         assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
+        assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["manage_container"] is False
         assert (
             config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"]
             == "TRADE_XYZ_VAULT_ADDRESS"
         )
-        assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["twofa_timeout_action"] == "restart"
+        assert "twofa_timeout_action" not in config["node"]["venues"]["IBKR"]["dockerized_gateway"]
 
 
 def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
@@ -367,15 +366,22 @@ def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_i
 def test_equities_live_config_declares_shared_account_scopes() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     scopes = {row["scope_id"]: row for row in config["account_scopes"]}
+    reference_gateway = scopes["ibkr.reference.main"]["dockerized_gateway"]
+    hedge_gateway = scopes["ibkr.hedge.main"]["dockerized_gateway"]
 
     assert scopes["hyperliquid.xyz.main"]["provider"] == "hyperliquid"
     assert scopes["hyperliquid.xyz.main"]["venue"] == "HYPERLIQUID"
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
+    assert reference_gateway["manage_container"] is True
+    assert reference_gateway["relogin_after_twofa_timeout"] is False
+    assert reference_gateway["twofa_timeout_action"] == "exit"
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
     assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
     assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 108
+    assert hedge_gateway["manage_container"] is False
+    assert "twofa_timeout_action" not in hedge_gateway
 
 
 def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() -> None:
@@ -436,6 +442,18 @@ def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_id
         strategy_client_ids.add(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert shared_client_ids.isdisjoint(strategy_client_ids)
+
+
+def test_equities_shared_gateway_owner_is_configured_once() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    owners = [
+        row["scope_id"]
+        for row in config["account_scopes"]
+        if row.get("provider") == "ibkr"
+        and row.get("dockerized_gateway", {}).get("manage_container") is True
+    ]
+
+    assert owners == ["ibkr.reference.main"]
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
@@ -701,13 +719,14 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "shared IBKR contract entry must mirror the active canary route" in readme
     assert "vault_address_env" in readme
     assert 'use_regular_trading_hours = false' in readme
-    assert 'twofa_timeout_action = "restart"' in readme
+    assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
+    assert 'twofa_timeout_action = "exit"' in readme
 
     assert "<stock>_tradexyz_makerv3.toml" in strategies_readme
     assert "aapl_tradexyz_makerv4.toml.disabled" in strategies_readme
     assert "AAPL.NASDAQ" in strategies_readme
     assert "use_regular_trading_hours = false" in strategies_readme
-    assert 'twofa_timeout_action = "restart"' in strategies_readme
+    assert "manage_container = false" in strategies_readme
     assert "TRADE_XYZ_VAULT_ADDRESS" in strategies_readme
     assert (
         "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument"

@@ -116,10 +116,11 @@ ibg_client_id = 107
 [account_scopes.dockerized_gateway]
 trading_mode = "live"
 read_only_api = true
+manage_container = true
 auto_restart_time = "11:45 PM"
 time_zone = "America/New_York"
-relogin_after_twofa_timeout = true
-twofa_timeout_action = "restart"
+relogin_after_twofa_timeout = false
+twofa_timeout_action = "exit"
 
 [[account_scopes]]
 scope_id = "ibkr.hedge.main"
@@ -132,10 +133,7 @@ ibg_client_id = 108
 [account_scopes.dockerized_gateway]
 trading_mode = "live"
 read_only_api = true
-auto_restart_time = "11:45 PM"
-time_zone = "America/New_York"
-relogin_after_twofa_timeout = true
-twofa_timeout_action = "restart"
+manage_container = false
 
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_makerv3"
