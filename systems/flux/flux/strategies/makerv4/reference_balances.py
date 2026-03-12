@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import threading
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -47,6 +48,8 @@ class _StandaloneIbkrRuntime:
     cache: Cache
     clock: LiveClock
     log: logging.Logger
+    loop: asyncio.AbstractEventLoop
+    thread: threading.Thread
 
 
 class IbkrReferenceBalanceSnapshotProvider:
@@ -73,6 +76,7 @@ class IbkrReferenceBalanceSnapshotProvider:
         if self._task is not None:
             self._task.cancel()
             self._task = None
+        self._stop_standalone_runtime()
 
     def snapshot(self) -> dict[str, Any] | None:
         if self._latest_snapshot is None:
@@ -92,6 +96,36 @@ class IbkrReferenceBalanceSnapshotProvider:
 
         runtime = self._standalone_runtime
         if runtime is None:
+            runtime = self._ensure_standalone_runtime()
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._fetch_snapshot(runtime),
+                runtime.loop,
+            )
+            self._latest_snapshot = future.result(
+                timeout=self._config.connection_timeout + self._config.request_timeout_secs,
+            )
+            self._last_refresh_monotonic = time.monotonic()
+        except Exception as exc:
+            with suppress(Exception):
+                runtime.log.warning(f"IBKR reference balance refresh failed: {exc}")
+        return self.snapshot()
+
+    def _ensure_standalone_runtime(self) -> _StandaloneIbkrRuntime:
+        runtime = self._standalone_runtime
+        if (
+            runtime is not None
+            and runtime.thread.is_alive()
+            and not runtime.loop.is_closed()
+        ):
+            return runtime
+
+        ready = threading.Event()
+        holder: dict[str, _StandaloneIbkrRuntime] = {}
+
+        def _run_loop() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             clock = LiveClock()
             runtime = _StandaloneIbkrRuntime(
                 msgbus=MessageBus(
@@ -101,15 +135,42 @@ class IbkrReferenceBalanceSnapshotProvider:
                 cache=Cache(database=None),
                 clock=clock,
                 log=logging.getLogger("nautilus-equities-account-projection"),
+                loop=loop,
+                thread=threading.current_thread(),
             )
-            self._standalone_runtime = runtime
-        try:
-            self._latest_snapshot = asyncio.run(self._fetch_snapshot(runtime))
-            self._last_refresh_monotonic = time.monotonic()
-        except Exception as exc:
-            with suppress(Exception):
-                runtime.log.warning(f"IBKR reference balance refresh failed: {exc}")
-        return self.snapshot()
+            holder["runtime"] = runtime
+            ready.set()
+            try:
+                loop.run_forever()
+            finally:
+                pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.close()
+
+        thread = threading.Thread(
+            target=_run_loop,
+            name=f"ibkr-reference-balance-{self._config.ibg_client_id}",
+            daemon=True,
+        )
+        thread.start()
+        if not ready.wait(timeout=5):
+            raise RuntimeError("Timed out starting standalone IBKR balance refresh loop")
+        runtime = holder["runtime"]
+        self._standalone_runtime = runtime
+        return runtime
+
+    def _stop_standalone_runtime(self) -> None:
+        runtime = self._standalone_runtime
+        if runtime is None:
+            return
+        self._standalone_runtime = None
+        if not runtime.loop.is_closed():
+            runtime.loop.call_soon_threadsafe(runtime.loop.stop)
+        if runtime.thread.is_alive():
+            runtime.thread.join(timeout=5)
 
     async def _run(self, strategy: Any) -> None:
         try:
