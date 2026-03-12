@@ -267,7 +267,11 @@ class IbkrReferenceBalanceSnapshotProvider:
         for currency in sorted(summary):
             values = summary[currency]
             total = values.get("NetLiquidation")
+            if total is None:
+                total = values.get("TotalCashValue")
             free = values.get("FullAvailableFunds")
+            if free is None:
+                free = values.get("TotalCashValue")
             if total is None or free is None:
                 continue
             total_dec = Decimal(str(total))

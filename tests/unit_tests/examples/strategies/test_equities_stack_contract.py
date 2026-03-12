@@ -63,12 +63,6 @@ ACTIVE_STRATEGIES = (
         "ibkr_instrument_id": "HOOD.NASDAQ",
     },
     {
-        "symbol": "HYUNDAI",
-        "strategy_id": "hyundai_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:HYUNDAI-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "005380.KRX",
-    },
-    {
         "symbol": "INTC",
         "strategy_id": "intc_tradexyz_makerv3",
         "hyperliquid_instrument_id": "xyz:INTC-USD-PERP.HYPERLIQUID",
@@ -185,6 +179,31 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
     assert config["api"]["equities_strategy_ids"] == ACTIVE_STRATEGY_IDS
     assert config["api"]["equities_required_strategy_ids"] == ACTIVE_STRATEGY_IDS
+
+
+def test_equities_live_config_decommissions_hyundai() -> None:
+    repo_root = _repo_root()
+    config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
+    readme = _read(repo_root / "deploy/equities/README.md")
+    target = _read(repo_root / "deploy/equities/systemd/flux-equities.target")
+    sudoers = _read(repo_root / "deploy/equities/systemd/flux-pulse.sudoers")
+
+    assert "hyundai_tradexyz_makerv3" not in config["api"]["equities_strategy_ids"]
+    assert "hyundai_tradexyz_makerv3" not in config["api"]["equities_required_strategy_ids"]
+    assert "hyundai_tradexyz_makerv3" not in {
+        row["strategy_id"] for row in config["strategy_contracts"]
+    }
+    assert "xyz:HYUNDAI-USD-PERP.HYPERLIQUID" not in {
+        row["instrument_id"] for row in config["contracts"] if row["exchange"] == "hyperliquid"
+    }
+    assert "005380.KRX" not in {
+        row["instrument_id"] for row in config["contracts"] if row["exchange"] == "ibkr"
+    }
+    assert not (repo_root / "deploy/equities/strategies/hyundai_tradexyz_makerv3.toml").exists()
+    assert (repo_root / "deploy/equities/strategies/hyundai_tradexyz_makerv3.toml.disabled").exists()
+    assert "hyundai" not in readme.lower()
+    assert "hyundai_tradexyz_makerv3" not in target
+    assert "hyundai_tradexyz_makerv3" not in sudoers
 
 
 def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() -> None:

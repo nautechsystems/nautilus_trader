@@ -52,7 +52,6 @@ equities_strategy_ids = [
   "crwv_tradexyz_makerv3",
   "googl_tradexyz_makerv3",
   "hood_tradexyz_makerv3",
-  "hyundai_tradexyz_makerv3",
   "intc_tradexyz_makerv3",
   "meta_tradexyz_makerv3",
   "mstr_tradexyz_makerv3",
@@ -78,7 +77,6 @@ equities_required_strategy_ids = [
   "crwv_tradexyz_makerv3",
   "googl_tradexyz_makerv3",
   "hood_tradexyz_makerv3",
-  "hyundai_tradexyz_makerv3",
   "intc_tradexyz_makerv3",
   "meta_tradexyz_makerv3",
   "mstr_tradexyz_makerv3",
@@ -104,6 +102,11 @@ inventory_stale_after_ms = 3000
 scope_id = "hyperliquid.xyz.main"
 provider = "hyperliquid"
 venue = "HYPERLIQUID"
+private_key_env = "TRADE_XYZ_AGENT_PK"
+account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
+vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
+dex = "xyz"
+testnet = false
 
 [[account_scopes]]
 scope_id = "ibkr.reference.main"
@@ -212,15 +215,6 @@ strategy_id = "hood_tradexyz_makerv3"
 portfolio_asset_id = "HOOD"
 maker_instrument_id = "xyz:HOOD-USD-PERP.HYPERLIQUID"
 reference_instrument_id = "HOOD.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "hyundai_tradexyz_makerv3"
-portfolio_asset_id = "HYUNDAI"
-maker_instrument_id = "xyz:HYUNDAI-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "005380.KRX"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
@@ -440,16 +434,6 @@ instrument_id = "xyz:HOOD-USD-PERP.HYPERLIQUID"
 exchange = "ibkr"
 symbol = "HOOD/USD"
 instrument_id = "HOOD.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "HYUNDAI/USD"
-instrument_id = "xyz:HYUNDAI-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "HYUNDAI/USD"
-instrument_id = "005380.KRX"
 
 [[contracts]]
 exchange = "hyperliquid"

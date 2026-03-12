@@ -12,6 +12,7 @@ from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import decode_portfolio_inventory
 from flux.common.portfolio_inventory import encode_component
+from flux.runners.live.hyperliquid_account import ResolvedHyperliquidUser
 from flux.runners.equities.run_portfolio import EquitiesPortfolioAggregator
 from flux.runners.equities.run_portfolio import _equities_strategy_ids
 from flux.runners.equities.run_portfolio import _portfolio_base_assets
@@ -21,6 +22,7 @@ from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from nautilus_trader.core import nautilus_pyo3
 
 
 class _FakePipeline:
@@ -111,6 +113,11 @@ def _account_scopes() -> list[dict[str, object]]:
             "scope_id": "hyperliquid.xyz.main",
             "provider": "hyperliquid",
             "venue": "HYPERLIQUID",
+            "private_key_env": "TRADE_XYZ_AGENT_PK",
+            "account_address_env": "TRADE_XYZ_ACCOUNT_ADDRESS",
+            "vault_address_env": "TRADE_XYZ_VAULT_ADDRESS",
+            "dex": "xyz",
+            "testnet": False,
         },
         {
             "scope_id": "ibkr.reference.main",
@@ -442,6 +449,138 @@ def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_sc
     assert len(captured_provider_configs) == 2
     assert aggregator._profile_account_bindings[1].provider is not None
     assert aggregator._profile_account_bindings[2].provider is not None
+
+
+def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    funded_account = "0x1111111111111111111111111111111111111111"
+    vault_account = "0x2222222222222222222222222222222222222222"
+
+    monkeypatch.setattr(
+        "flux.runners.shared.portfolio_runner.build_redis_client",
+        lambda _cfg: _FakeRedis(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        lambda _provider_config: _CountingAccountProjectionProvider(rows=[]),
+    )
+    monkeypatch.setenv("TRADE_XYZ_AGENT_PK", "super-secret")
+    monkeypatch.setenv("TRADE_XYZ_ACCOUNT_ADDRESS", funded_account)
+    monkeypatch.setenv("TRADE_XYZ_VAULT_ADDRESS", vault_account)
+
+    captured_client_kwargs: list[dict[str, Any]] = []
+
+    class _FakeHyperliquidAccountState:
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "account_id": "HYPERLIQUID-master",
+                "balances": [
+                    {
+                        "currency": "USDC",
+                        "free": "1234.50",
+                        "locked": "0.00",
+                        "total": "1234.50",
+                    },
+                ],
+            }
+
+    class _FakeHyperliquidClient:
+        def get_user_address(self) -> str:
+            return "0x3333333333333333333333333333333333333333"
+
+        async def request_account_state(self, **kwargs: Any) -> _FakeHyperliquidAccountState:
+            assert kwargs == {
+                "account_address": vault_account,
+                "dex": "xyz",
+            }
+            return _FakeHyperliquidAccountState()
+
+        async def request_position_status_reports(self, **kwargs: Any) -> list[Any]:
+            assert kwargs == {
+                "account_address": vault_account,
+                "dex": "xyz",
+            }
+            return [
+                nautilus_pyo3.PositionStatusReport(
+                    account_id=nautilus_pyo3.AccountId("HYPERLIQUID-master"),
+                    instrument_id=nautilus_pyo3.InstrumentId.from_str(
+                        "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    ),
+                    position_side=nautilus_pyo3.PositionSide.LONG,
+                    quantity=nautilus_pyo3.Quantity.from_str("3"),
+                    avg_px_open=150.0,
+                    ts_last=1_700_000_000_000,
+                    ts_init=1_700_000_000_000,
+                    report_id=nautilus_pyo3.UUID4(),
+                ),
+            ]
+
+    def _fake_cached_hyperliquid_client(**kwargs: Any) -> _FakeHyperliquidClient:
+        captured_client_kwargs.append(dict(kwargs))
+        return _FakeHyperliquidClient()
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_hyperliquid_http_client",
+        _fake_cached_hyperliquid_client,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.resolve_hyperliquid_user",
+        lambda **_kwargs: ResolvedHyperliquidUser(
+            execution_signer="0x3333333333333333333333333333333333333333",
+            account_query_address=vault_account,
+            fee_query_address=vault_account,
+            ws_subscription_address=vault_account,
+            source="vault_address",
+        ),
+    )
+    config: dict[str, Any] = {
+        "flux": {"namespace": "flux", "schema_version": "v1"},
+        "redis": {},
+        "venues": {"reference_venue": "IBKR"},
+        "account_scopes": _account_scopes(),
+        "api": {
+            "equities_strategy_ids": ["aapl_tradexyz_makerv3"],
+        },
+        "portfolio": {"portfolio_id": "equities"},
+        "contracts": [{"exchange": "hyperliquid", "symbol": "AAPL/USD"}],
+        "strategy_contracts": [
+            _strategy_contract(
+                "aapl_tradexyz_makerv3",
+                reference_account_scope_id="ibkr.reference.main",
+            ),
+        ],
+    }
+
+    aggregator = EquitiesPortfolioAggregator(
+        config=config,
+        mode="paper",
+        logger=MagicMock(),
+    )
+
+    assert aggregator._profile_account_bindings[0].account_scope_id == "hyperliquid.xyz.main"
+    assert aggregator._profile_account_bindings[0].provider is not None
+    aggregator._profile_account_bindings[0].provider.refresh()
+    snapshot = aggregator._profile_account_bindings[0].provider.snapshot()
+    assert snapshot is not None
+    assert captured_client_kwargs == [
+        {
+            "private_key": "super-secret",
+            "account_address": funded_account,
+            "vault_address": vault_account,
+            "timeout_secs": 10,
+            "testnet": False,
+            "proxy_url": None,
+            "dex": "xyz",
+        },
+    ]
+    assert {
+        (row["exchange"], row["asset"], row.get("kind"))
+        for row in snapshot["rows"]
+    } == {
+        ("hyperliquid", "USDC", None),
+        ("hyperliquid", "AAPL", "position"),
+    }
 
 
 

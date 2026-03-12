@@ -1840,6 +1840,7 @@ def create_flux_api_app(  # noqa: C901
                         rows = filter_balance_rows_for_contract_scope(
                             snapshot_rows,
                             contracts=store._contracts,
+                            preserve_shared_account_rows=True,
                         )
                         if not rows and snapshot_rows:
                             rows = snapshot_rows
@@ -2018,6 +2019,7 @@ def create_flux_api_app(  # noqa: C901
             filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,
                 contracts=store._contracts,
+                preserve_shared_account_rows=(profile_normalized == "equities"),
             )
             if filtered_rows:
                 rows = filtered_rows

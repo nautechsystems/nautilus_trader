@@ -1,15 +1,40 @@
 from __future__ import annotations
 
+import asyncio
+import copy
+import logging
+import os
+import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
+from flux.api._payloads_balances import build_balances_rows
+from flux.api._payloads_common import canonical_naming_fields
 from flux.common.account_projection import ProfileAccountProviderBinding
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
 from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
 from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
+from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+
+
+_ACCOUNT_PROJECTION_LOG = logging.getLogger("nautilus-equities-account-projection")
+
+
+@dataclass(frozen=True)
+class HyperliquidAccountProjectionProviderConfig:
+    private_key: str | None = None
+    account_address: str | None = None
+    vault_address: str | None = None
+    dex: str | None = None
+    testnet: bool = False
+    http_timeout_secs: int = 10
+    http_proxy_url: str | None = None
+    refresh_interval_secs: float = 15.0
 
 
 def _optional_text(value: Any) -> str | None:
@@ -17,6 +42,155 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _env_value(env_name: str | None) -> str | None:
+    if env_name is None:
+        return None
+    text = env_name.strip()
+    if not text:
+        return None
+    return _optional_text(os.environ.get(text))
+
+
+class HyperliquidAccountProjectionProvider:
+    def __init__(self, config: HyperliquidAccountProjectionProviderConfig) -> None:
+        self._config = config
+        self._client = get_cached_hyperliquid_http_client(
+            private_key=config.private_key,
+            account_address=config.account_address,
+            vault_address=config.vault_address,
+            timeout_secs=config.http_timeout_secs,
+            testnet=config.testnet,
+            proxy_url=config.http_proxy_url,
+            dex=config.dex,
+        )
+        self._resolved_user: Any | None = None
+        self._latest_snapshot: dict[str, Any] | None = None
+        self._last_refresh_monotonic = 0.0
+
+    def stop(self) -> None:
+        return None
+
+    def snapshot(self) -> dict[str, Any] | None:
+        if self._latest_snapshot is None:
+            return None
+        return copy.deepcopy(self._latest_snapshot)
+
+    def refresh(self) -> dict[str, Any] | None:
+        now = time.monotonic()
+        if (
+            self._latest_snapshot is not None
+            and (now - self._last_refresh_monotonic) < self._config.refresh_interval_secs
+        ):
+            return self.snapshot()
+
+        try:
+            self._latest_snapshot = asyncio.run(self._fetch_snapshot())
+            self._last_refresh_monotonic = time.monotonic()
+        except Exception as exc:
+            _ACCOUNT_PROJECTION_LOG.warning(
+                "Hyperliquid shared-account refresh failed: %s",
+                exc,
+            )
+        return self.snapshot()
+
+    def _request_kwargs(self) -> dict[str, Any]:
+        if self._resolved_user is None:
+            self._resolved_user = resolve_hyperliquid_user(
+                client=self._client,
+                account_address=self._config.account_address,
+                vault_address=self._config.vault_address,
+                testnet=self._config.testnet,
+                http_timeout_secs=self._config.http_timeout_secs,
+                http_proxy_url=self._config.http_proxy_url,
+            )
+        kwargs: dict[str, Any] = {}
+        account_query_address = getattr(self._resolved_user, "account_query_address", None)
+        if account_query_address is not None:
+            kwargs["account_address"] = account_query_address
+        if self._config.dex is not None:
+            kwargs["dex"] = self._config.dex
+        return kwargs
+
+    async def _fetch_snapshot(self) -> dict[str, Any]:
+        request_kwargs = self._request_kwargs()
+        account_state = await self._client.request_account_state(**request_kwargs)
+        positions = await self._client.request_position_status_reports(**request_kwargs)
+
+        account_state_payload = (
+            dict(account_state.to_dict())
+            if hasattr(account_state, "to_dict")
+            else {}
+        )
+        account_id = (
+            _optional_text(account_state_payload.get("account_id"))
+            or _optional_text(request_kwargs.get("account_address"))
+            or "HYPERLIQUID"
+        )
+        ts_ms = int(
+            account_state_payload.get("ts_event")
+            or account_state_payload.get("ts_init")
+            or time.time() * 1000
+        )
+
+        raw_positions: list[dict[str, Any]] = []
+        for report in positions:
+            if hasattr(report, "to_dict"):
+                row = dict(report.to_dict())
+            elif isinstance(report, Mapping):
+                row = dict(report)
+            else:
+                continue
+            row["exchange"] = "hyperliquid"
+            row.setdefault("kind", "position")
+            row.setdefault("account_id", account_id)
+            row.setdefault("account", account_id)
+            row.setdefault("ts_ms", row.get("ts_last") or row.get("ts_init") or ts_ms)
+            raw_positions.append(row)
+
+        payload = {
+            "accounts": [
+                {
+                    "account_id": account_id,
+                    "venue": "hyperliquid",
+                    "events": [
+                        {
+                            "account_id": account_id,
+                            "venue": "hyperliquid",
+                            "balances": list(account_state_payload.get("balances") or []),
+                            "ts_ms": ts_ms,
+                        },
+                    ],
+                },
+            ],
+            "positions": raw_positions,
+            "ts_ms": ts_ms,
+        }
+        rows = build_balances_rows(
+            raw_snapshot=payload,
+            strategy_id="shared_account",
+        )
+        for row in rows:
+            if row.get("kind") != "position":
+                continue
+            naming = canonical_naming_fields(
+                instrument_id=row.get("instrument_id"),
+                exchange=row.get("exchange"),
+                asset=row.get("asset"),
+                is_position=True,
+            )
+            base_asset = _optional_text(naming.get("base_asset"))
+            if base_asset is None:
+                continue
+            base_asset = base_asset.split(":", maxsplit=1)[-1]
+            row["asset"] = base_asset
+            row["coin"] = base_asset
+            row["base"] = base_asset
+        return {
+            "source_scope": "shared_account",
+            "rows": rows,
+        }
 
 
 def _build_ibkr_account_provider(
@@ -50,6 +224,26 @@ def _build_ibkr_account_provider(
     )
 
 
+def _build_hyperliquid_account_provider(
+    *,
+    scope_config: AccountScopeConfig,
+    account_scope_id: str,
+    source_strategy_ids: tuple[str, ...],
+) -> HyperliquidAccountProjectionProvider:
+    _ = (account_scope_id, source_strategy_ids)
+    return HyperliquidAccountProjectionProvider(
+        HyperliquidAccountProjectionProviderConfig(
+            private_key=_env_value(scope_config.private_key_env),
+            account_address=_env_value(scope_config.account_address_env),
+            vault_address=_env_value(scope_config.vault_address_env),
+            dex=scope_config.dex,
+            testnet=scope_config.testnet,
+            http_timeout_secs=scope_config.http_timeout_secs or 10,
+            http_proxy_url=scope_config.http_proxy_url,
+        ),
+    )
+
+
 def build_account_projection_provider(
     *,
     scope_config: AccountScopeConfig,
@@ -59,6 +253,12 @@ def build_account_projection_provider(
     provider_id = scope_config.provider.strip().lower()
     if provider_id == "ibkr":
         return _build_ibkr_account_provider(
+            scope_config=scope_config,
+            account_scope_id=account_scope_id,
+            source_strategy_ids=source_strategy_ids,
+        )
+    if provider_id == "hyperliquid":
+        return _build_hyperliquid_account_provider(
             scope_config=scope_config,
             account_scope_id=account_scope_id,
             source_strategy_ids=source_strategy_ids,

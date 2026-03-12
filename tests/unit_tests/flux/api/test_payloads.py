@@ -892,6 +892,55 @@ def test_filter_balance_rows_for_contract_scope_keeps_stable_collateral_for_usd_
     ]
 
 
+def test_filter_balance_rows_for_contract_scope_preserves_shared_account_rows_when_requested() -> None:
+    rows = [
+        {
+            "row_id": "cash-hkd",
+            "exchange": "ibkr",
+            "asset": "HKD",
+            "total": "85671.33",
+            "source_scope": "shared_account",
+            "account_scope_id": "ibkr.reference.main",
+        },
+        {
+            "row_id": "pos-f",
+            "exchange": "ibkr",
+            "kind": "position",
+            "instrument_id": "F.NYSE",
+            "asset": "F",
+            "signed_qty": "-6",
+            "source_scope": "shared_account",
+            "account_scope_id": "ibkr.reference.main",
+        },
+        {
+            "row_id": "pos-aapl",
+            "exchange": "ibkr",
+            "kind": "position",
+            "instrument_id": "AAPL.NASDAQ",
+            "asset": "AAPL",
+            "signed_qty": "1",
+        },
+    ]
+
+    filtered = filter_balance_rows_for_contract_scope(
+        rows,
+        contracts=(
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        preserve_shared_account_rows=True,
+    )
+
+    assert [row["row_id"] for row in filtered] == [
+        "cash-hkd",
+        "pos-f",
+        "pos-aapl",
+    ]
+
+
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",

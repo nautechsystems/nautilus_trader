@@ -25,7 +25,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[strategy].param_set = "makerv3"` stays explicit for the intended active equities rollout.
 - `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
-- `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ`, `005380.KRX`, or `USAR.NASDAQ`.
+- `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` or `USAR.NASDAQ`.
 - `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the restored MakerV3 contract.
 - `[node.venues.IBKR.dockerized_gateway]` is now a non-owning client contract for enrolled nodes.
 - `[node.venues.IBKR.dockerized_gateway].manage_container = false` keeps node processes from starting or restarting the shared IBKR gateway.

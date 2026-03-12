@@ -44,10 +44,6 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@equities-node-hood_tradexyz_makerv3.service, \
   /usr/bin/systemctl restart flux@equities-node-hood_tradexyz_makerv3.service, \
   /usr/bin/journalctl -u flux@equities-node-hood_tradexyz_makerv3.service, \
-  /usr/bin/systemctl start flux@equities-node-hyundai_tradexyz_makerv3.service, \
-  /usr/bin/systemctl stop flux@equities-node-hyundai_tradexyz_makerv3.service, \
-  /usr/bin/systemctl restart flux@equities-node-hyundai_tradexyz_makerv3.service, \
-  /usr/bin/journalctl -u flux@equities-node-hyundai_tradexyz_makerv3.service, \
   /usr/bin/systemctl start flux@equities-node-intc_tradexyz_makerv3.service, \
   /usr/bin/systemctl stop flux@equities-node-intc_tradexyz_makerv3.service, \
   /usr/bin/systemctl restart flux@equities-node-intc_tradexyz_makerv3.service, \

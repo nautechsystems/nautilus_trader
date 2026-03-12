@@ -1237,6 +1237,7 @@ def filter_balance_rows_for_contract_scope(
     rows: Sequence[Mapping[str, Any]],
     *,
     contracts: Sequence[ContractCatalogEntry],
+    preserve_shared_account_rows: bool = False,
 ) -> list[dict[str, Any]]:
     """Keep only the balance rows relevant to the contract catalog in scope."""
 
@@ -1273,6 +1274,10 @@ def filter_balance_rows_for_contract_scope(
     filtered: list[dict[str, Any]] = []
     for source_row in rows:
         row = dict(source_row)
+        source_scope = decode_text(row.get("source_scope") or row.get("scope")).strip().lower()
+        if preserve_shared_account_rows and source_scope == "shared_account":
+            filtered.append(row)
+            continue
         if _is_position_row(row):
             contract_key = _row_contract_key(row, contracts=contracts)
             if contract_key in allowed_contracts:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
-import sys
 from typing import Any
 
 
@@ -27,6 +27,13 @@ class AccountScopeConfig:
     ibg_client_id: int | None = None
     account_id: str | None = None
     dockerized_gateway: dict[str, Any] | None = None
+    private_key_env: str | None = None
+    account_address_env: str | None = None
+    vault_address_env: str | None = None
+    http_proxy_url: str | None = None
+    http_timeout_secs: int | None = None
+    dex: str | None = None
+    testnet: bool = False
 
 
 def _required_text(row: Mapping[str, Any], field_name: str) -> str:
@@ -60,6 +67,15 @@ def _optional_int(row: Mapping[str, Any], field_name: str) -> int | None:
     return raw
 
 
+def _optional_bool(row: Mapping[str, Any], field_name: str, *, default: bool = False) -> bool:
+    raw = row.get(field_name)
+    if raw is None:
+        return default
+    if not isinstance(raw, bool):
+        raise TypeError(f"`{field_name}` must be a boolean when provided")
+    return raw
+
+
 def _optional_mapping(row: Mapping[str, Any], field_name: str) -> dict[str, Any] | None:
     raw = row.get(field_name)
     if raw is None:
@@ -84,6 +100,13 @@ def decode_account_scopes(rows: Iterable[Mapping[str, Any]]) -> tuple[AccountSco
                 ibg_client_id=_optional_int(row, "ibg_client_id"),
                 account_id=_optional_text(row, "account_id"),
                 dockerized_gateway=_optional_mapping(row, "dockerized_gateway"),
+                private_key_env=_optional_text(row, "private_key_env"),
+                account_address_env=_optional_text(row, "account_address_env"),
+                vault_address_env=_optional_text(row, "vault_address_env"),
+                http_proxy_url=_optional_text(row, "http_proxy_url"),
+                http_timeout_secs=_optional_int(row, "http_timeout_secs"),
+                dex=_optional_text(row, "dex"),
+                testnet=_optional_bool(row, "testnet"),
             ),
         )
     return tuple(decoded)

@@ -1683,6 +1683,165 @@ def test_balances_profile_equities_preserves_shared_account_provenance_fields(
     assert "strategy_id" not in ibkr_cash_row
 
 
+def test_balances_profile_equities_keeps_shared_account_rows_outside_contract_catalog(
+    monkeypatch,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_000_200)
+    primary_strategy_id = "aapl_tradexyz_makerv3"
+    secondary_strategy_id = "msft_tradexyz_makerv3"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=primary_strategy_id,
+            strategy_instance_id=primary_strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=primary_strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="equities",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "equities",
+            "inventory_by_asset": {
+                "AAPL": {
+                    "portfolio_id": "equities",
+                    "base_currency": "AAPL",
+                    "global_qty_base": "5",
+                    "global_qty": "5",
+                    "aggregation_mode": "partial",
+                    "global_qty_base_complete": False,
+                    "global_qty_complete": False,
+                    "ts_ms": 1_700_000_000_000,
+                    "stale_after_ms": 3_000,
+                    "components": [],
+                    "missing_required": [],
+                    "stale_required": [],
+                    "null_qty_required": [],
+                    "degraded": False,
+                },
+            },
+            "balances": {
+                "rows": [],
+            },
+            "accounts": {
+                "rows": [
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "HKD",
+                        "free": "85671.33",
+                        "total": "85671.33",
+                        "ts_ms": 1_700_000_000_100,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "ibkr.reference.main",
+                        "source_strategy_ids": [
+                            primary_strategy_id,
+                            secondary_strategy_id,
+                        ],
+                        "strategy_id": "equities",
+                    },
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "F",
+                        "kind": "position",
+                        "instrument_id": "F.NYSE",
+                        "signed_qty": "-6",
+                        "quantity": "6",
+                        "total": "-6",
+                        "free": "-6",
+                        "ts_ms": 1_700_000_000_110,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "ibkr.reference.main",
+                        "source_strategy_ids": [
+                            primary_strategy_id,
+                            secondary_strategy_id,
+                        ],
+                        "strategy_id": "equities",
+                    },
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "AAPL",
+                        "kind": "position",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "signed_qty": "5",
+                        "quantity": "5",
+                        "total": "5",
+                        "free": "5",
+                        "ts_ms": 1_700_000_000_120,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "ibkr.reference.main",
+                        "source_strategy_ids": [
+                            primary_strategy_id,
+                            secondary_strategy_id,
+                        ],
+                        "strategy_id": "equities",
+                    },
+                ],
+            },
+            "server_ts_ms": 1_700_000_000_150,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"equities": [primary_strategy_id, secondary_strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv3",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assets = {(row["exchange"], row["asset"], row.get("kind")) for row in body["data"]["rows"]}
+    assert ("ibkr", "HKD", None) in assets
+    assert ("ibkr", "F", "position") in assets
+    assert ("ibkr", "AAPL", "position") in assets
+
+
 def test_namespace_identity_check_import_order_passes_for_flux_api_modules() -> None:
     globals_dict: dict[str, object] = {}
 

@@ -12,7 +12,6 @@ Wants=flux@equities-node-crcl_tradexyz_makerv3.service
 Wants=flux@equities-node-crwv_tradexyz_makerv3.service
 Wants=flux@equities-node-googl_tradexyz_makerv3.service
 Wants=flux@equities-node-hood_tradexyz_makerv3.service
-Wants=flux@equities-node-hyundai_tradexyz_makerv3.service
 Wants=flux@equities-node-intc_tradexyz_makerv3.service
 Wants=flux@equities-node-meta_tradexyz_makerv3.service
 Wants=flux@equities-node-mstr_tradexyz_makerv3.service

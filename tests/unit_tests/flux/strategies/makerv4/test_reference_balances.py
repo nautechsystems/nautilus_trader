@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 
 from flux.strategies.makerv4 import reference_balances
 
@@ -74,3 +75,48 @@ def test_ibkr_reference_balance_provider_refresh_reuses_standalone_loop(
     assert second is not None
     assert first["rows"][0]["row_id"] == "refresh-1"
     assert second["rows"][0]["row_id"] == "refresh-2"
+
+
+def test_ibkr_reference_balance_provider_keeps_total_cash_only_currency_rows() -> None:
+    class _FakeClient:
+        def __init__(self) -> None:
+            self._callback = None
+
+        def subscribe_event(self, _name: str, callback) -> None:
+            self._callback = callback
+
+        def subscribe_account_summary(self) -> None:
+            assert self._callback is not None
+            for tag, value, currency in (
+                ("NetLiquidation", "85671.33", "HKD"),
+                ("FullAvailableFunds", "85671.33", "HKD"),
+                ("FullInitMarginReq", "0", "HKD"),
+                ("FullMaintMarginReq", "0", "HKD"),
+                ("TotalCashValue", "85671.33", "HKD"),
+                ("TotalCashValue", "1250.50", "USD"),
+            ):
+                self._callback(tag, value, currency)
+
+        def unsubscribe_event(self, _name: str) -> None:
+            return None
+
+    provider = reference_balances.IbkrReferenceBalanceSnapshotProvider(
+        reference_balances.IbkrReferenceBalanceSnapshotProviderConfig(
+            request_timeout_secs=1,
+        ),
+    )
+
+    payload = asyncio.run(
+        provider._fetch_account_payload(
+            _FakeClient(),
+            account_id="U1234567",
+            ts_ms=1_700_000_000_000,
+        ),
+    )
+
+    balances = payload["events"][0]["balances"]
+    usd_balance = next(balance for balance in balances if balance["currency"] == "USD")
+
+    assert Decimal(usd_balance["total"]) == Decimal("1250.50")
+    assert Decimal(usd_balance["free"]) == Decimal("1250.50")
+    assert Decimal(usd_balance["locked"]) == Decimal("0")
