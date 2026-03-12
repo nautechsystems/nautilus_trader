@@ -994,7 +994,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 continue
 
-            reports = cast("list[PositionStatusReport]", reports_or_exception)
+            reports = self._normalize_netting_position_reports(
+                cast("list[PositionStatusReport]", reports_or_exception),
+                log_prefix="Steady-state position report normalization",
+            )
             for report in reports:
                 venue_positions[report.instrument_id] = report
 
@@ -1715,8 +1718,9 @@ class LiveExecutionEngine(ExecutionEngine):
                     client.generate_fill_reports(fill_reports_command),
                     client.generate_position_status_reports(position_status_command),
                 )
-                position_reports = self._collapse_startup_netting_position_reports(
+                position_reports = self._normalize_netting_position_reports(
                     reports=cast("list[PositionStatusReport]", reports[2]),
+                    log_prefix="Startup position report normalization",
                 )
 
                 mass_status.add_order_reports(reports=reports[0])
@@ -1807,9 +1811,10 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return bool(cached_open_positions) and not cached_open_orders
 
-    def _collapse_startup_netting_position_reports(
+    def _normalize_netting_position_reports(
         self,
         reports: list[PositionStatusReport],
+        log_prefix: str,
     ) -> list[PositionStatusReport]:
         if len(reports) <= 1:
             return reports
@@ -1831,19 +1836,25 @@ class LiveExecutionEngine(ExecutionEngine):
                 collapsed_reports.extend(instrument_reports)
                 continue
 
+            candidate_reports = [
+                report for report in instrument_reports if report.signed_decimal_qty != 0
+            ]
+            if not candidate_reports:
+                candidate_reports = instrument_reports
+
             selected = max(
-                instrument_reports,
+                candidate_reports,
                 key=lambda report: (
                     report.ts_last,
                     report.ts_init,
-                    int(report.signed_decimal_qty != 0),
                     abs(report.signed_decimal_qty),
                 ),
             )
             self._log.info(
-                f"Collapsing {len(instrument_reports)} startup netting PositionStatusReports for "
+                f"{log_prefix}: collapsed {len(instrument_reports)} netting PositionStatusReports for "
                 f"{instrument_id} to ts_last={selected.ts_last}, "
-                f"signed_qty={selected.signed_decimal_qty}",
+                f"signed_qty={selected.signed_decimal_qty}, "
+                f"discarded_flat_duplicates={len(candidate_reports) != len(instrument_reports)}",
                 LogColor.BLUE,
             )
             collapsed_reports.append(selected)

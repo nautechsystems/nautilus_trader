@@ -1696,6 +1696,45 @@ class TestLiveExecutionEngine:
         assert position_reports[0].ts_last == 20
 
     @pytest.mark.asyncio
+    async def test_generate_startup_mass_status_keeps_nonzero_netting_report_when_newer_flat_duplicate_exists(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+
+        older_long = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=10,
+            ts_init=10,
+        )
+        newer_flat = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(),
+            report_id=UUID4(),
+            ts_last=20,
+            ts_init=20,
+        )
+
+        self.client.generate_order_status_reports = AsyncMock(return_value=[])
+        self.client.generate_fill_reports = AsyncMock(return_value=[])
+        self.client.generate_position_status_reports = AsyncMock(
+            return_value=[older_long, newer_flat],
+        )
+
+        mass_status = await self.exec_engine._generate_startup_mass_status(self.client, 60)
+
+        assert mass_status is not None
+        position_reports = mass_status.position_reports[AUDUSD_SIM.id]
+        assert len(position_reports) == 1
+        assert position_reports[0].signed_decimal_qty == Decimal("100")
+        assert position_reports[0].ts_last == 10
+
+    @pytest.mark.asyncio
     async def test_filled_qty_mismatch_with_zero_report(self):
         """
         Test that filled_qty mismatch is detected when report.filled_qty is less than
