@@ -91,10 +91,10 @@ Introduce a **shared equities account-scope contract** and complete the profile-
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Task 1 started in subagent-driven mode from the isolated equities worktree. |
-| Task 1: Add Shared Account Scope Contract | in_review_spec | spec-reviewer | Failing tests added, focused Task 1 slice now green (`27 passed`), and diff/contract grep are clean. |
-| Task 2: Fix Node Runtime Shared-Config Merge | not_started | unassigned | Plan created |
-| Task 3: Fix Profile Account Provider Wiring | not_started | unassigned | Plan created |
+| Overall | in_progress | main | Tasks 1-2 are completed on branch head; Task 3 is in progress to wire shared account providers from `account_scopes` into the equities portfolio runner. |
+| Task 1: Add Shared Account Scope Contract | completed | main | Landed in commits `f161b6e25` and `66cdc0a37`; reviewer agents timed out, controller spec/quality passes found no task-scope issues. Verified with focused Task 1 slice (`27 passed`), `git diff --check`, and contract grep. |
+| Task 2: Fix Node Runtime Shared-Config Merge | completed | main | Spec reviewer PASS confirmed the explicit equities allowlist and required test coverage. Quality reviewer did not return within two wait windows, so controller quality pass closed the task on green verification: `24 passed` in `test_equities_run_node.py`, `1 passed` lifecycle regression, `5 passed` tokenmm shared-merge subset, `ruff` clean, `git diff --check` clean. |
+| Task 3: Fix Profile Account Provider Wiring | in_progress | main | Starting TDD so `run_portfolio.py` and shared account-provider wiring build real IBKR/HL providers from shared `account_scopes` instead of expecting per-node `node.venues.*`. |
 | Task 4: Reconcile Live Balances And Portfolio Snapshot Inputs | not_started | unassigned | Plan created |
 | Task 5: Redesign IBKR Gateway Ownership And 2FA Policy | not_started | unassigned | Plan created |
 | Task 6: Add Equities Live Readiness Gate | not_started | unassigned | Plan created |

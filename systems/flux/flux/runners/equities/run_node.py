@@ -135,7 +135,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio"),
+        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes"),
     )
 
 

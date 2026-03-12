@@ -348,6 +348,117 @@ def test_build_node_injects_makerv3_portfolio_asset_id_from_strategy_contracts(m
     assert strategy.config.portfolio_asset_id == "AAPL"
 
 
+def test_load_runtime_config_keeps_strategy_contracts_and_account_scopes(
+    tmp_path: Path,
+) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "makerv3"
+external_strategy_id = "aapl_tradexyz_makerv3"
+
+[node]
+enable_execution = false
+
+[strategy]
+strategy_id = "aapl_tradexyz_makerv3"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[redis]
+host = "redis.internal"
+port = 6379
+db = 0
+
+[portfolio]
+portfolio_id = "equities"
+
+[[account_scopes]]
+scope_id = "ibkr.reference.main"
+provider = "ibkr"
+venue = "IBKR"
+
+[[strategy_contracts]]
+strategy_id = "aapl_tradexyz_makerv3"
+portfolio_asset_id = "AAPL"
+maker_instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "AAPL.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["portfolio"]["portfolio_id"] == "equities"
+    assert merged["account_scopes"][0]["scope_id"] == "ibkr.reference.main"
+    assert merged["strategy_contracts"][0]["portfolio_asset_id"] == "AAPL"
+
+
+def test_optional_strategy_config_kwargs_injects_portfolio_asset_id_from_shared_contract(
+    tmp_path: Path,
+) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[identity]
+strategy_id = "makerv3"
+external_strategy_id = "aapl_tradexyz_makerv3"
+
+[strategy]
+strategy_id = "aapl_tradexyz_makerv3"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[[account_scopes]]
+scope_id = "ibkr.reference.main"
+provider = "ibkr"
+venue = "IBKR"
+
+[[strategy_contracts]]
+strategy_id = "aapl_tradexyz_makerv3"
+portfolio_asset_id = "AAPL"
+maker_instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "AAPL.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    kwargs = run_node._optional_strategy_config_kwargs(
+        config=merged,
+        external_strategy_id="aapl_tradexyz_makerv3",
+        strategy_spec=SimpleNamespace(config_cls=_CapturedStrategyConfig),
+        strategy_cfg={},
+    )
+
+    assert kwargs["portfolio_asset_id"] == "AAPL"
+
+
 def test_strategy_spec_capabilities_expose_shared_account_projection_support() -> None:
     spec = run_node.get_strategy_spec("makerv4")
 
