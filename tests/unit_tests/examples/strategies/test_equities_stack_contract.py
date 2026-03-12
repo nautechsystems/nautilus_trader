@@ -668,7 +668,10 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "TRADE_XYZ_VAULT_ADDRESS" in readme
     assert "TWS_USERNAME" in readme
     assert "TWS_PASSWORD" in readme
-    assert "shared config merge only imports `redis` and `portfolio`" in readme
+    assert (
+        "shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, "
+        "and `[[account_scopes]]`" in readme
+    )
     assert "active node settings live in `deploy/equities/strategies/*.toml`" in readme
     assert "`[[account_scopes]]`" in readme
     assert "ibkr.reference.main" in readme
@@ -686,8 +689,15 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "use_regular_trading_hours = false" in strategies_readme
     assert 'twofa_timeout_action = "restart"' in strategies_readme
     assert "TRADE_XYZ_VAULT_ADDRESS" in strategies_readme
-    assert "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument" in strategies_readme
+    assert (
+        "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument"
+        in strategies_readme
+    )
     assert "TWS_USERNAME" in strategies_readme
+    assert (
+        "node runners inherit the shared `[redis]`, `[portfolio]`, `[[strategy_contracts]]`, "
+        "and `[[account_scopes]]` contract tables" in strategies_readme
+    )
     assert "TWS_PASSWORD" in strategies_readme
 
     assert "EQUITIES_REDIS_HOST=" in common_env

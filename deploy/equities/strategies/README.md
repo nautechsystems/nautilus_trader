@@ -58,7 +58,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - If vault trading is enabled, provide `vault_address_env` and it will take precedence for account-state queries, fee lookup, and WS subscriptions.
 - `deploy/equities/equities_stack.env` is for local paper/testnet smoke only.
 - Use the same `[flux].namespace` and `[flux].schema_version` as the shared API/bridge config.
-- Pulse-managed node services pass `--shared-config deploy/equities/equities.live.toml` so node runners inherit the shared `[redis]` and `[portfolio]` tables.
+- Pulse-managed node services pass `--shared-config deploy/equities/equities.live.toml` so node runners inherit the shared `[redis]`, `[portfolio]`, `[[strategy_contracts]]`, and `[[account_scopes]]` contract tables.
 
 Each file is a complete node config consumed directly by `python -m flux.runners.equities.run_node`.
 Start from `equities.strategy.template.toml`.
