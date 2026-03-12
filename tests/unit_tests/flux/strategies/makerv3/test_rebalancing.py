@@ -1,10 +1,47 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
+from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
+from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_details
 from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_actions
+
+
+def _desired_levels(*prices: str) -> list[tuple[Decimal, Decimal, Decimal]]:
+    return [
+        (Decimal(price), Decimal(price), Decimal(0))
+        for price in prices
+    ]
+
+
+def _bounded_side_plan(**kwargs: Any) -> Any:
+    planner = getattr(rebalancing_mod, "plan_side_bounded_convergence", None)
+    assert callable(planner), "bounded convergence planner surface missing"
+    return planner(**kwargs)
+
+
+def _result_field(result: Any, name: str) -> Any:
+    if hasattr(result, name):
+        return getattr(result, name)
+    return result[name]
+
+
+def _cancel_pairs(cancel_actions: list[Any]) -> list[tuple[int, str]]:
+    return [
+        (
+            int(action.index) if hasattr(action, "index") else int(action["index"]),
+            str(action.reason_code)
+            if hasattr(action, "reason_code")
+            else str(action["reason_code"]),
+        )
+        for action in cancel_actions
+    ]
 
 
 def test_plan_side_rebalance_actions_cancels_overflow_and_too_aggressive_orders() -> None:
@@ -53,6 +90,157 @@ def test_plan_side_rebalance_actions_frees_one_slot_for_more_aggressive_missing_
 
     assert cancel_indices == [1]
     assert missing_indices == [0]
+
+
+def test_plan_side_rebalance_actions_does_not_cancel_whole_side_on_one_step_widening() -> None:
+    cancel_actions, missing_indices = plan_side_rebalance_details(
+        side="buy",
+        active_prices=[
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, False, False],
+        desired_levels=_desired_levels("104", "103", "102", "101", "100"),
+        stale_cancel_budget=0,
+    )
+
+    assert _cancel_pairs(cancel_actions) == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
+    assert missing_indices == [4]
+
+
+def test_bounded_side_planner_peels_passive_tail_incrementally_for_single_missing_top_level() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("106"),
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, False, False, False],
+        desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
+        stale_cancel_budget=0,
+        max_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (5, REASON_CANCEL_EXCESS_LEVEL),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [0]
+
+
+def test_bounded_side_planner_keeps_stale_budget_independent_from_aggressive_reprice_budget() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, False, True],
+        desired_levels=_desired_levels("104", "103", "102", "101", "100"),
+        stale_cancel_budget=1,
+        max_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=3,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (0, REASON_CANCEL_TOO_AGGRESSIVE),
+        (4, REASON_CANCEL_STALE_ORDER),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [4]
+
+
+def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("106"),
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, True, False, False],
+        desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
+        stale_cancel_budget=1,
+        max_cancel_actions=3,
+        max_place_actions=2,
+        max_total_actions=4,
+        backlog_mode="normal",
+    )
+
+    cancel_indices = [
+        index
+        for index, _reason in _cancel_pairs(_result_field(result, "cancel_actions"))
+    ]
+    assert cancel_indices == list(dict.fromkeys(cancel_indices))
+
+
+def test_bounded_side_planner_respects_cancel_place_and_total_budgets() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("106"),
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, True, True, True],
+        desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
+        stale_cancel_budget=2,
+        max_cancel_actions=2,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    cancel_actions = list(_result_field(result, "cancel_actions"))
+    place_level_indices = list(_result_field(result, "place_level_indices"))
+
+    assert len(cancel_actions) <= 2
+    assert len(place_level_indices) <= 1
+    assert len(cancel_actions) + len(place_level_indices) <= 2
+
+
+def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels_for_capacity_only() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[
+            Decimal("106"),
+            Decimal("105"),
+            Decimal("104"),
+            Decimal("103"),
+            Decimal("102"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, False, False, False],
+        desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
+        stale_cancel_budget=0,
+        max_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (5, REASON_CANCEL_EXCESS_LEVEL),
+    ]
 
 
 def test_plan_side_rebalance_actions_rejects_invalid_inputs() -> None:

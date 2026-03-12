@@ -299,6 +299,53 @@ def test_order_cancel_rejected_nonfatal_reason_sets_retry_cooldown_and_alerts_bu
     assert stopped == []
 
 
+def test_order_cancel_rejected_terminal_missing_order_reason_reconciles_tracking(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
+    strategy._managed_client_order_ids = {"RESTING-1"}
+
+    events: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy._publish_actionable_alert = lambda **_kwargs: True
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
+
+    strategy.on_order_cancel_rejected(
+        _cancel_rejected_event(reason="order not exists or too late to cancel"),
+    )
+
+    lifecycle_events = [payload for name, payload in events if name == "order_lifecycle"]
+    assert strategy._pending_cancel_client_order_ids == set()
+    assert strategy._managed_client_order_ids == set()
+    assert strategy._cancel_reject_retry_after_ns_by_client_order_id == {}
+    assert lifecycle_events[-1]["lifecycle"] == "cancel_rejected_terminal"
+    assert lifecycle_events[-1]["client_order_id"] == "RESTING-1"
+
+
+def test_order_cancel_rejected_terminal_missing_order_reason_does_not_raise_burst_alert(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
+    strategy._managed_client_order_ids = {"RESTING-1"}
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+
+    alerts: list[dict[str, object]] = []
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
+
+    strategy.on_order_cancel_rejected(
+        _cancel_rejected_event(reason="order not exists or too late to cancel"),
+    )
+
+    assert alerts == []
+
+
 def test_order_denied_nonfatal_reason_sets_alerts_burst(strategy_factory) -> None:
     strategy = strategy_factory()
     strategy._runtime_params["order_reject_alert_after_count"] = 1

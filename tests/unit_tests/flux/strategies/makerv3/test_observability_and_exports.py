@@ -10,6 +10,7 @@ import pytest
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.strategies import MakerV3Strategy as MakerV3StrategyFromRoot
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig as MakerV3StrategyConfigFromRoot
+from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig
 from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
@@ -35,6 +36,26 @@ def _json_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, str):
         return json.loads(value)
     return value
+
+
+class _MutatingPendingCancelFirstSeen(dict[str, int]):
+    def __init__(
+        self,
+        *,
+        strategy: MakerV3Strategy,
+        mutate_client_order_id: str,
+        values: dict[str, int],
+    ) -> None:
+        super().__init__(values)
+        self._strategy = strategy
+        self._mutate_client_order_id = mutate_client_order_id
+        self._did_mutate = False
+
+    def get(self, key: object, default: Any = None) -> Any:
+        if not self._did_mutate:
+            self._did_mutate = True
+            self._strategy._pending_cancel_client_order_ids.discard(self._mutate_client_order_id)
+        return super().get(key, default)
 
 
 def test_makerv3_role_map_payload_keeps_ref_as_hedge_leg(monkeypatch) -> None:
@@ -488,6 +509,67 @@ def test_publish_state_exports_last_completed_quote_progress(
 
     state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
     assert state_payload["quote_progress"]["last_completed_quote_ts_ms"] == 1_234
+
+
+def test_quote_progress_payload_snapshots_pending_cancel_set_before_iterating(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._last_state_ns = 1_000_000_000
+    strategy._last_completed_quote_ns = 900_000_000
+    strategy._pending_cancel_client_order_ids = {"RESTING-1", "RESTING-2"}
+    strategy._pending_cancel_first_seen_ns_by_client_order_id = _MutatingPendingCancelFirstSeen(
+        strategy=strategy,
+        mutate_client_order_id="RESTING-2",
+        values={
+            "RESTING-1": 900_000_000,
+            "RESTING-2": 950_000_000,
+        },
+    )
+
+    payload = strategy._quote_progress_payload()
+
+    assert payload == {
+        "last_completed_quote_ts_ms": 900,
+        "pending_cancel_count": 2,
+        "oldest_pending_cancel_age_ms": 100,
+    }
+
+
+def test_venue_protection_path_still_publishes_blocked_state_when_pending_cancel_sets_mutate(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._managed_orders = lambda: []
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **_kwargs: True
+    strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
+    strategy.request_immediate_stop = lambda *_args, **_kwargs: None
+    strategy.stop_immediately = lambda: None
+    strategy._pending_cancel_client_order_ids = {"RESTING-1", "RESTING-2"}
+    strategy._pending_cancel_first_seen_ns_by_client_order_id = _MutatingPendingCancelFirstSeen(
+        strategy=strategy,
+        mutate_client_order_id="RESTING-2",
+        values={
+            "RESTING-1": 900_000_000,
+            "RESTING-2": 950_000_000,
+        },
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    failures_mod.handle_venue_protection(
+        strategy,
+        now_ns=1_000_000_000,
+        reason="Too many visits. Exceeded the API Rate Limit.",
+        source_event="order_cancel_rejected",
+        client_order_id="RESTING-1",
+    )
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["state"] == "blocked_venue_protection"
+    assert state_payload["quote_progress"]["pending_cancel_count"] == 2
 
 
 def test_canonical_strategy_exports_match_root_surface() -> None:
