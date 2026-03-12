@@ -16,6 +16,8 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.execution_engine import StartupOrderReference
+from nautilus_trader.live.execution_engine import StartupStrategyCacheSnapshot
 from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -6059,6 +6061,7 @@ class TestHedgeModeReconciliation:
         self.exec_engine.generate_missing_orders = False
         self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
         self.exec_engine._external_order_claims[AUDUSD_SIM.id] = StrategyId("S-001")
+        startup_account_id = self.client.account_id
 
         owned_order = TestExecStubs.limit_order(
             instrument=AUDUSD_SIM,
@@ -6067,14 +6070,25 @@ class TestHedgeModeReconciliation:
         owned_fill = TestEventStubs.order_filled(
             owned_order,
             instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
             position_id=PositionId("P-OKX-OWNED"),
             last_qty=Quantity.from_int(2_356),
             last_px=Price.from_str("1.00000"),
             trade_id=TradeId("OKX-CACHED-OWNED-1"),
         )
         owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
-        owned_order.apply(TestEventStubs.order_submitted(owned_order))
-        owned_order.apply(TestEventStubs.order_accepted(owned_order))
+        owned_order.apply(
+            TestEventStubs.order_submitted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
+        owned_order.apply(
+            TestEventStubs.order_accepted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
         owned_order.apply(owned_fill)
         self.cache.add_order(owned_order, owned_position.id)
         self.cache.add_position(owned_position, OmsType.NETTING)
@@ -6084,10 +6098,16 @@ class TestHedgeModeReconciliation:
             strategy_id=StrategyId("S-001"),
             client_order_id=ClientOrderId("OKX-OPEN-CACHED-001"),
         )
-        open_cached_order.apply(TestEventStubs.order_submitted(open_cached_order))
+        open_cached_order.apply(
+            TestEventStubs.order_submitted(
+                open_cached_order,
+                account_id=startup_account_id,
+            ),
+        )
         open_cached_order.apply(
             TestEventStubs.order_accepted(
                 open_cached_order,
+                account_id=startup_account_id,
                 venue_order_id=VenueOrderId("OKX-OPEN-VENUE-001"),
             ),
         )
@@ -6110,7 +6130,7 @@ class TestHedgeModeReconciliation:
         self.client.generate_order_status_report = capture_generate_order_status_report
 
         redundant_order_report = OrderStatusReport(
-            account_id=self.account_id,
+            account_id=startup_account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("OKX-STARTUP-ORDER-REDUNDANT-001"),
             venue_order_id=VenueOrderId("OKX-VENUE-ORDER-REDUNDANT-001"),
@@ -6128,7 +6148,7 @@ class TestHedgeModeReconciliation:
             ts_init=0,
         )
         open_order_report = OrderStatusReport(
-            account_id=self.account_id,
+            account_id=startup_account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=open_cached_order.client_order_id,
             venue_order_id=open_cached_order.venue_order_id,
@@ -6149,7 +6169,7 @@ class TestHedgeModeReconciliation:
             client_order_id=redundant_order_report.client_order_id,
             venue_order_id=redundant_order_report.venue_order_id,
             trade_id=TradeId("OKX-STARTUP-FILL-REDUNDANT-001"),
-            account_id=self.account_id,
+            account_id=startup_account_id,
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             last_qty=Quantity.from_int(2_356),
@@ -6161,7 +6181,7 @@ class TestHedgeModeReconciliation:
             ts_init=1,
         )
         position_report = PositionStatusReport(
-            account_id=self.account_id,
+            account_id=startup_account_id,
             instrument_id=AUDUSD_SIM.id,
             position_side=PositionSide.LONG,
             quantity=Quantity.from_int(2_356),
@@ -6189,24 +6209,46 @@ class TestHedgeModeReconciliation:
         assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
         assert self.cache.order(redundant_order_report.client_order_id) is None
 
-    def test_startup_snapshot_for_instrument_does_not_fall_back_to_other_account_entries(self):
-        other_account_id = AccountId("SIM-999")
-        other_order_ref = execution_engine.StartupOrderReference(
-            client_order_id=ClientOrderId("OTHER-OPEN-ORDER-001"),
-            venue_order_id=VenueOrderId("OTHER-VENUE-ORDER-001"),
-        )
+    def test_startup_snapshot_for_instrument_does_not_fall_back_to_ambiguous_other_account_entries(
+        self,
+    ):
+        first_other_account_id = AccountId("SIM-998")
+        second_other_account_id = AccountId("SIM-999")
         self.exec_engine._startup_reconciliation_snapshot = {
             (
-                other_account_id,
+                first_other_account_id,
                 AUDUSD_SIM.id,
-                StrategyId("S-OTHER"),
-            ): execution_engine.StartupStrategyCacheSnapshot(
-                account_id=other_account_id,
+                StrategyId("S-OTHER-1"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=first_other_account_id,
                 instrument_id=AUDUSD_SIM.id,
-                strategy_id=StrategyId("S-OTHER"),
+                strategy_id=StrategyId("S-OTHER-1"),
                 open_position_ids=(PositionId("P-OTHER-001"),),
                 open_position_qty=Decimal("1"),
-                open_order_refs=(other_order_ref,),
+                open_order_refs=(
+                    StartupOrderReference(
+                        client_order_id=ClientOrderId("OTHER-OPEN-ORDER-001"),
+                        venue_order_id=VenueOrderId("OTHER-VENUE-ORDER-001"),
+                    ),
+                ),
+                cached_order_count=1,
+            ),
+            (
+                second_other_account_id,
+                AUDUSD_SIM.id,
+                StrategyId("S-OTHER-2"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=second_other_account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("S-OTHER-2"),
+                open_position_ids=(PositionId("P-OTHER-002"),),
+                open_position_qty=Decimal("1"),
+                open_order_refs=(
+                    StartupOrderReference(
+                        client_order_id=ClientOrderId("OTHER-OPEN-ORDER-002"),
+                        venue_order_id=VenueOrderId("OTHER-VENUE-ORDER-002"),
+                    ),
+                ),
                 cached_order_count=1,
             ),
         }
