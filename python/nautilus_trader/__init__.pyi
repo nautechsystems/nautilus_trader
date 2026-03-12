@@ -3,6 +3,7 @@
 
 from . import _libnautilus
 from . import adapters
+from . import common
 from . import core
 from . import infrastructure
 from . import model
@@ -10,6 +11,7 @@ from . import serialization
 
 __all__ = [
     "adapters",
+    "common",
     "core",
     "infrastructure",
     "model",

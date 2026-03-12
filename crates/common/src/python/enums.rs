@@ -25,6 +25,7 @@ use crate::enums::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Environment {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -67,6 +68,7 @@ impl Environment {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LogLevel {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -109,6 +111,7 @@ impl LogLevel {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LogColor {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -151,6 +154,7 @@ impl LogColor {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ComponentState {
     const fn __hash__(&self) -> isize {
         *self as isize
@@ -158,6 +162,7 @@ impl ComponentState {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ComponentTrigger {
     const fn __hash__(&self) -> isize {
         *self as isize
@@ -165,6 +170,7 @@ impl ComponentTrigger {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LogFormat {
     const fn __hash__(&self) -> isize {
         *self as isize
@@ -172,6 +178,7 @@ impl LogFormat {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SerializationEncoding {
     const fn __hash__(&self) -> isize {
         *self as isize

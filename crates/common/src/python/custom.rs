@@ -21,6 +21,7 @@ use pyo3::prelude::*;
 use crate::custom::CustomData;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CustomData {
     #[new]
     fn py_new(data_type: DataType, value: Vec<u8>, ts_event: u64, ts_init: u64) -> Self {

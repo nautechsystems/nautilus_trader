@@ -30,6 +30,7 @@ use crate::xrate::get_exchange_rate;
 /// - `quotes_bid` or `quotes_ask` is empty.
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.
 /// - The bid or ask side of a pair is missing.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "get_exchange_rate")]
 #[pyo3(signature = (from_currency, to_currency, price_type, quotes_bid, quotes_ask))]

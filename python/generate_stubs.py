@@ -69,6 +69,7 @@ class ClassMethodFixup:
     Metadata-driven fixups for a generated stub class.
     """
 
+    python_name: str | None = None
     getters: set[str] = field(default_factory=set)
     staticmethods: set[str] = field(default_factory=set)
     classmethods: set[str] = field(default_factory=set)
@@ -104,6 +105,8 @@ MODULE_FIXUPS: dict[str, StubFixup] = {
         all_exports=("AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"),
     ),
 }
+
+MODEL_EXPORTS = frozenset(MODULE_FIXUPS["model"].all_exports)
 
 
 def run_command(
@@ -238,6 +241,9 @@ def post_process_stubs(root: Path) -> None:
         # Restore getter/staticmethod semantics from Rust bindings metadata
         content = apply_rust_class_fixups(content, rust_fixups)
 
+        # Rename wrapper classes to their public Python names
+        content = rename_stub_classes(content, rust_fixups)
+
         # Escape keywords introduced by fixup renames (e.g. py_from -> from)
         content = _escape_keyword_methods(content)
 
@@ -246,6 +252,9 @@ def post_process_stubs(root: Path) -> None:
 
         # Remove imports extracted from doc comment examples
         content = remove_docstring_imports(content)
+
+        # Import model symbols used without a module qualifier
+        content = add_missing_model_imports(content)
 
         # Normalize formatting
         content = normalize_stub_content(content)
@@ -263,9 +272,12 @@ INJECTABLE_STATICMETHODS = frozenset({"from_json", "from_msgpack"})
 
 # Methods to suppress from public stubs (implementation details, not user-facing API)
 SUPPRESSED_METHODS = frozenset({"__richcmp__", "_safe_constructor"})
-PYMETHODS_ATTR = "#[pymethods]"
+PYMETHODS_ATTRS = frozenset({"#[pymethods]", "#[pyo3::pymethods]"})
+PYCLASS_ATTR_PREFIXES = ("#[pyclass", "#[pyo3::pyclass")
 PYO3_NAME_RE = re.compile(r'#\[pyo3\(\s*name\s*=\s*"([^"]+)"')
+ATTR_NAME_RE = re.compile(r'\bname\s*=\s*"([^"]+)"')
 RUST_IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_:<>]*)\s*\{")
+RUST_STRUCT_RE = re.compile(r"^\s*(?:pub\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 RUST_FN_RE = re.compile(
     r"fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:->\s*(.*?))?\s*\{",
     flags=re.DOTALL,
@@ -286,10 +298,52 @@ def collect_rust_class_fixups(workspace_root: Path) -> dict[str, ClassMethodFixu
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/python/**/*.rs")):
         source = rust_file.read_text()
+        _collect_pyclass_name_fixups(source, fixups)
         _collect_identifier_macro_fixups(source, fixups)
         _collect_pymethod_fixups(source, fixups)
 
     return fixups
+
+
+def _collect_pyclass_name_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
+    lines = source.splitlines()
+    pending_attrs: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        if stripped.startswith("#["):
+            attribute, i = consume_rust_attribute(lines, i)
+            pending_attrs.append(attribute)
+            continue
+
+        struct_match = RUST_STRUCT_RE.match(line)
+        if struct_match is None:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        pyclass_attr = next(
+            (attr for attr in pending_attrs if attr.startswith(PYCLASS_ATTR_PREFIXES)),
+            None,
+        )
+        if pyclass_attr is not None:
+            name_match = ATTR_NAME_RE.search(pyclass_attr)
+            if name_match is not None:
+                rust_name = struct_match.group(1)
+                python_name = name_match.group(1)
+                if python_name != rust_name:
+                    fixups.setdefault(rust_name, ClassMethodFixup()).python_name = python_name
+
+        pending_attrs.clear()
+        i += 1
 
 
 def _collect_identifier_macro_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
@@ -304,7 +358,7 @@ def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -
     i = 0
 
     while i < len(lines):
-        if lines[i].strip() != PYMETHODS_ATTR:
+        if lines[i].strip() not in PYMETHODS_ATTRS:
             i += 1
             continue
 
@@ -526,6 +580,25 @@ def apply_rust_class_fixups(
         i = j
 
     return "\n".join(result)
+
+
+def rename_stub_classes(content: str, class_fixups: dict[str, ClassMethodFixup]) -> str:
+    """
+    Rename generated class names to match public Python names from `#[pyclass(name =
+    ...)]`.
+    """
+    class_renames = {
+        rust_name: fixup.python_name
+        for rust_name, fixup in class_fixups.items()
+        if fixup.python_name and fixup.python_name != rust_name
+    }
+    if not class_renames:
+        return content
+
+    for rust_name in sorted(class_renames, key=len, reverse=True):
+        content = re.sub(rf"\b{re.escape(rust_name)}\b", class_renames[rust_name], content)
+
+    return content
 
 
 def apply_class_block_fixups(
@@ -1137,6 +1210,42 @@ def remove_docstring_imports(content: str) -> str:
     lines = content.split("\n")
     lines = [line for line in lines if line.strip() not in _DOCSTRING_IMPORTS]
     return "\n".join(lines)
+
+
+def add_missing_model_imports(content: str) -> str:
+    """
+    Import exported model symbols when generated annotations use them unqualified.
+    """
+    model_import = "from nautilus_trader import model"
+    if model_import not in content:
+        return content
+
+    defined_names = {
+        match.group(1)
+        for match in re.finditer(
+            r"^class\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+            content,
+            flags=re.MULTILINE,
+        )
+    }
+
+    missing_imports = []
+    for name in sorted(MODEL_EXPORTS):
+        if name in defined_names:
+            continue
+        if f"from nautilus_trader.model import {name}" in content:
+            continue
+        if re.search(rf"(?<![.\w]){re.escape(name)}(?![\w])", content) is None:
+            continue
+        missing_imports.append(name)
+
+    if not missing_imports:
+        return content
+
+    injected_imports = "\n".join(
+        f"from nautilus_trader.model import {name}" for name in missing_imports
+    )
+    return content.replace(model_import, f"{model_import}\n{injected_imports}", 1)
 
 
 def _line_contains_name_to_remove(line: str, names_to_remove: set[str]) -> bool:

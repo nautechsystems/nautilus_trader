@@ -46,6 +46,10 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
 /// Represents a time event occurring at the event timestamp.
 ///
 /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,

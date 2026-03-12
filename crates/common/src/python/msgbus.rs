@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::pymethods;
+use pyo3::{Py, Python, pymethods, types::PyBytes};
 
 use crate::{
     enums::SerializationEncoding,
@@ -24,18 +24,18 @@ use crate::{
 };
 
 #[pymethods]
-#[allow(clippy::needless_pass_by_ref_mut)]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BusMessage {
     #[getter]
     #[pyo3(name = "topic")]
-    fn py_topic(&mut self) -> String {
+    fn py_topic(&self) -> String {
         self.topic.to_string()
     }
 
     #[getter]
     #[pyo3(name = "payload")]
-    fn py_payload(&mut self) -> &[u8] {
-        self.payload.as_ref()
+    fn py_payload(&self, py: Python<'_>) -> Py<PyBytes> {
+        PyBytes::new(py, self.payload.as_ref()).into()
     }
 
     fn __repr__(&self) -> String {
@@ -48,6 +48,7 @@ impl BusMessage {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabaseConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -153,6 +154,7 @@ impl DatabaseConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MessageBusConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]

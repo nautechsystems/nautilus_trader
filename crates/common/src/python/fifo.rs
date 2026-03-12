@@ -23,12 +23,14 @@ use crate::cache::fifo::FifoCache;
     name = "FifoCache",
     module = "nautilus_trader.core.nautilus_pyo3.common"
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 #[derive(Debug)]
 pub struct PyFifoCache {
     inner: FifoCache<String, 10_000>,
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFifoCache {
     #[new]
     fn py_new() -> Self {

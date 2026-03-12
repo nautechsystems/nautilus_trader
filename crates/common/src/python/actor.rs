@@ -63,6 +63,7 @@ use crate::{
 };
 
 #[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataActorConfig {
     #[new]
     #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
@@ -76,6 +77,7 @@ impl DataActorConfig {
 }
 
 #[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ImportableActorConfig {
     #[new]
     #[allow(clippy::needless_pass_by_value)]
@@ -520,6 +522,7 @@ fn dict_to_params(
     unsendable,
     subclass
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 pub struct PyDataActor {
     inner: Rc<UnsafeCell<PyDataActorInner>>,
 }
@@ -884,6 +887,7 @@ impl DataActor for PyDataActorInner {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyDataActor {
     #[new]
     #[pyo3(signature = (config=None))]
@@ -1126,42 +1130,6 @@ impl PyDataActor {
         self.inner_mut().dispatch_on_option_chain(slice)
     }
 
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_block")]
-    fn py_on_block(&mut self, block: Block) -> PyResult<()> {
-        self.inner_mut().dispatch_on_block(block)
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_pool")]
-    fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
-        self.inner_mut().dispatch_on_pool(pool)
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_pool_swap")]
-    fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
-        self.inner_mut().dispatch_on_pool_swap(swap)
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_pool_liquidity_update")]
-    fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
-        self.inner_mut().dispatch_on_pool_liquidity_update(update)
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_pool_fee_collect")]
-    fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) -> PyResult<()> {
-        self.inner_mut().dispatch_on_pool_fee_collect(update)
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "on_pool_flash")]
-    fn py_on_pool_flash(&mut self, flash: PoolFlash) -> PyResult<()> {
-        self.inner_mut().dispatch_on_pool_flash(flash)
-    }
-
     #[pyo3(name = "subscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_subscribe_data(
@@ -1383,101 +1351,6 @@ impl PyDataActor {
     #[pyo3(signature = (instrument_id))]
     fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
         DataActor::subscribe_order_cancels(self.inner_mut(), instrument_id);
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_blocks")]
-    #[pyo3(signature = (chain, client_id=None, params=None))]
-    fn py_subscribe_blocks(
-        &mut self,
-        py: Python<'_>,
-        chain: Blockchain,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_blocks(self.inner_mut(), chain, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_pool")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_subscribe_pool(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_pool(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_pool_swaps")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_subscribe_pool_swaps(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_pool_liquidity_updates")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_subscribe_pool_liquidity_updates(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_pool_liquidity_updates(
-            self.inner_mut(),
-            instrument_id,
-            client_id,
-            params,
-        );
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_pool_fee_collects")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_subscribe_pool_fee_collects(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_pool_fee_collects(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "subscribe_pool_flash_events")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_subscribe_pool_flash_events(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::subscribe_pool_flash_events(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
     }
 
     #[pyo3(name = "request_data")]
@@ -1871,111 +1744,6 @@ impl PyDataActor {
         DataActor::unsubscribe_order_cancels(self.inner_mut(), instrument_id);
     }
 
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_blocks")]
-    #[pyo3(signature = (chain, client_id=None, params=None))]
-    fn py_unsubscribe_blocks(
-        &mut self,
-        py: Python<'_>,
-        chain: Blockchain,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_blocks(self.inner_mut(), chain, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_pool")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_pool(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_pool(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_pool_swaps")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_pool_swaps(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_pool_liquidity_updates")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_pool_liquidity_updates(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_pool_liquidity_updates(
-            self.inner_mut(),
-            instrument_id,
-            client_id,
-            params,
-        );
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_pool_fee_collects")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_pool_fee_collects(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_pool_fee_collects(
-            self.inner_mut(),
-            instrument_id,
-            client_id,
-            params,
-        );
-        Ok(())
-    }
-
-    #[cfg(feature = "defi")]
-    #[pyo3(name = "unsubscribe_pool_flash_events")]
-    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_pool_flash_events(
-        &mut self,
-        py: Python<'_>,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<Py<PyDict>>,
-    ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_pool_flash_events(
-            self.inner_mut(),
-            instrument_id,
-            client_id,
-            params,
-        );
-        Ok(())
-    }
-
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
     fn py_on_historical_data(&mut self, data: Py<PyAny>) {
@@ -2010,6 +1778,229 @@ impl PyDataActor {
     #[pyo3(name = "on_historical_index_prices")]
     fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
+    }
+}
+
+#[cfg(feature = "defi")]
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PyDataActor {
+    #[pyo3(name = "on_block")]
+    fn py_on_block(&mut self, block: Block) -> PyResult<()> {
+        self.inner_mut().dispatch_on_block(block)
+    }
+
+    #[pyo3(name = "on_pool")]
+    fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
+        self.inner_mut().dispatch_on_pool(pool)
+    }
+
+    #[pyo3(name = "on_pool_swap")]
+    fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
+        self.inner_mut().dispatch_on_pool_swap(swap)
+    }
+
+    #[pyo3(name = "on_pool_liquidity_update")]
+    fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
+        self.inner_mut().dispatch_on_pool_liquidity_update(update)
+    }
+
+    #[pyo3(name = "on_pool_fee_collect")]
+    fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) -> PyResult<()> {
+        self.inner_mut().dispatch_on_pool_fee_collect(update)
+    }
+
+    #[pyo3(name = "on_pool_flash")]
+    fn py_on_pool_flash(&mut self, flash: PoolFlash) -> PyResult<()> {
+        self.inner_mut().dispatch_on_pool_flash(flash)
+    }
+
+    #[pyo3(name = "subscribe_blocks")]
+    #[pyo3(signature = (chain, client_id=None, params=None))]
+    fn py_subscribe_blocks(
+        &mut self,
+        py: Python<'_>,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_blocks(self.inner_mut(), chain, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_pool")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_pool(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_pool_swaps")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_swaps(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_pool_liquidity_updates")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_liquidity_updates(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_pool_liquidity_updates(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_fee_collects(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_pool_fee_collects(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_pool_flash_events")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_subscribe_pool_flash_events(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_pool_flash_events(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_blocks")]
+    #[pyo3(signature = (chain, client_id=None, params=None))]
+    fn py_unsubscribe_blocks(
+        &mut self,
+        py: Python<'_>,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_blocks(self.inner_mut(), chain, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_pool")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_pool(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_pool_swaps")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_swaps(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_pool_liquidity_updates")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_liquidity_updates(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_pool_liquidity_updates(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_pool_fee_collects")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_fee_collects(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_pool_fee_collects(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_pool_flash_events")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_pool_flash_events(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_pool_flash_events(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
+        Ok(())
     }
 }
 
