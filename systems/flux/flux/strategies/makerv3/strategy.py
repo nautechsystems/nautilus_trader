@@ -94,6 +94,21 @@ def _normalized_reject_reason(reason: Any) -> str:
     return text or "unknown"
 
 
+_TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
+    "order not exists",
+    "too late to cancel",
+    "unknown order sent",
+    "order does not exist",
+)
+
+
+def _is_terminal_cancel_reject_reason(reason: Any) -> bool:
+    normalized = failures_mod.normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS)
+
+
 def _order_side_text(side: Any) -> str | None:
     if side is None:
         return None
@@ -905,14 +920,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             last_order_event_ns = int(getattr(self, "_last_order_event_ns", 0) or 0)
             if last_order_event_ns > 0:
                 payload["last_order_event_ts_ms"] = last_order_event_ns // 1_000_000
-            pending_cancel_count = len(self._pending_cancel_client_order_ids)
+            pending_cancel_ids = tuple(self._pending_cancel_client_order_ids)
+            pending_cancel_count = len(pending_cancel_ids)
             if pending_cancel_count > 0:
                 payload["pending_cancel_count"] = pending_cancel_count
                 current_state_ns = int(getattr(self, "_last_state_ns", 0) or 0)
                 oldest_pending_cancel_ns = min(
                     (
                         int(self._pending_cancel_first_seen_ns_by_client_order_id.get(client_order_id, 0) or 0)
-                        for client_order_id in self._pending_cancel_client_order_ids
+                        for client_order_id in pending_cancel_ids
                     ),
                     default=0,
                 )
@@ -1256,6 +1272,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 f"client_order_id={client_order_id} reason={reason}",
             )
             if now_ns is None:
+                return
+            if _is_terminal_cancel_reject_reason(reason):
+                self._clear_cancel_reject_retry_after(client_order_id)
+                self._reconcile_managed_order(
+                    client_order_id,
+                    lifecycle="cancel_rejected_terminal",
+                    instrument_id=getattr(event, "instrument_id", None),
+                    reason=reason,
+                )
+                self._publish_current_state_snapshot()
                 return
             if self._startup_cleanup_pending and failures_mod.is_venue_protection_reason(reason):
                 self._set_cancel_reject_retry_after(client_order_id, now_ns=int(now_ns))
