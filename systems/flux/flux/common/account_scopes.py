@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
+import sys
 from typing import Any
+
+
+if __name__ == "flux.common.account_scopes":
+    sys.modules.setdefault("nautilus_trader.flux.common.account_scopes", sys.modules[__name__])
+elif __name__ == "nautilus_trader.flux.common.account_scopes":
+    sys.modules.setdefault("flux.common.account_scopes", sys.modules[__name__])
 
 
 @dataclass(frozen=True, slots=True)
