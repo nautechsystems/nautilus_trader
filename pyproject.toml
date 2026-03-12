@@ -87,6 +87,7 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 [dependency-groups]
 dev = [
   "cython==3.2.4", # Pinned to 3.2.4 for stability
+  "jupytext>=1.19.1,<2.0.0",
   "setuptools>=80",
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",
@@ -266,8 +267,23 @@ docstring-code-format = true
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-"**/*.ipynb" = ["S101"] # Notebooks can use asserts for demonstrations
 "build.py" = ["S603", "S607"] # Build script needs subprocess calls
+"docs/getting_started/**/*.py" = [
+  "D",
+  "E402",
+  "I001",
+  "S101",
+  "T20",
+  "B018",
+] # Jupytext tutorials: cell-split imports, asserts, print statements, bare expressions
+"docs/tutorials/**/*.py" = [
+  "D",
+  "E402",
+  "I001",
+  "S101",
+  "T20",
+  "B018",
+] # Jupytext tutorials: cell-split imports, asserts, print statements, bare expressions
 "examples/**/*.py" = [
   "DTZ",
   "S101",
@@ -301,7 +317,7 @@ warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
 mypy_path = ["."]
-exclude = "(^python/examples/|^examples/)"
+exclude = "(^python/examples/|^examples/|^docs/getting_started/|^docs/tutorials/)"
 
 [[tool.mypy.overrides]]
 strict_optional = false

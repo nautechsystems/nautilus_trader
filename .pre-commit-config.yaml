@@ -327,7 +327,7 @@ repos:
     hooks:
       - id: mypy
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
-        exclude: (^python/|^nautilus_trader/.*\.pyi$)
+        exclude: (^python/|^nautilus_trader/.*\.pyi$|^docs/(getting_started|tutorials)/)
         args: [
           "--config", "pyproject.toml",
           "--allow-incomplete-defs",
