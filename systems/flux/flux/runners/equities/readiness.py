@@ -32,6 +32,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 DEFAULT_REQUEST_TIMEOUT_SECS = 5.0
 DEFAULT_PROJECTION_MAX_AGE_MS = 120_000
 DEFAULT_REQUIRED_BALANCE_SOURCE = "portfolio_snapshot_v2"
+DEFAULT_SIGNAL_MAX_AGE_MS = 10_000
 PROJECTION_PROVIDERS = frozenset({"ibkr"})
 UNSPECIFIED_BIND_HOSTS = frozenset({"0.0.0.0", "::"})  # noqa: S104
 EQUITIES_DESCRIPTOR = get_strategy_set_descriptor("equities")
@@ -87,6 +88,22 @@ class EquitiesReadinessResult:
                 for name, check in self.checks.items()
             },
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionHealthSnapshot:
+    check: ReadinessCheck
+    missing_config_scope_ids: list[str]
+    missing_scope_ids: list[str]
+    empty_scope_ids: list[str]
+    stale_scope_ids: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SignalHealthSnapshot:
+    check: ReadinessCheck
+    healthy_strategy_count: int
+    reference_unhealthy_strategy_ids: list[str]
 
 
 def _optional_text(value: Any) -> str | None:
@@ -164,7 +181,7 @@ def _expected_projection_scope_ids(
                 if scope_id
             },
         )
-    ibkr_scope_ids = {
+    configured_projection_scope_ids = {
         scope.scope_id
         for scope in account_scopes
         if scope.provider.strip().lower() in PROJECTION_PROVIDERS
@@ -173,13 +190,185 @@ def _expected_projection_scope_ids(
         scope_id
         for contract in strategy_contracts
         for scope_id in (
-            contract.execution_account_scope_id,
             contract.reference_account_scope_id,
             contract.hedge_account_scope_id,
         )
         if scope_id
     }
-    return sorted(ibkr_scope_ids.intersection(referenced_scope_ids))
+    referenced_scope_ids.update(
+        contract.execution_account_scope_id
+        for contract in strategy_contracts
+        if contract.execution_account_scope_id in configured_projection_scope_ids
+    )
+    return sorted(referenced_scope_ids)
+
+
+def _signal_max_age_ms(payload: Mapping[str, Any]) -> int:
+    params = _mapping(payload.get("params"))
+    return _safe_int(params.get("max_age_ms")) or DEFAULT_SIGNAL_MAX_AGE_MS
+
+
+def _build_projection_health_snapshot(
+    *,
+    expected_projection_scope_ids: list[str],
+    configured_projection_scope_ids: set[str],
+    projection_payloads_by_scope_id: Mapping[str, Mapping[str, Any] | None],
+    projection_max_age_ms: int,
+    now_ms_value: int,
+) -> ProjectionHealthSnapshot:
+    missing_config_scope_ids = sorted(
+        scope_id
+        for scope_id in expected_projection_scope_ids
+        if scope_id not in configured_projection_scope_ids
+    )
+    missing_scope_ids: list[str] = []
+    empty_scope_ids: list[str] = []
+    stale_scope_ids: list[str] = []
+    for scope_id in expected_projection_scope_ids:
+        payload = projection_payloads_by_scope_id.get(scope_id)
+        if not isinstance(payload, Mapping):
+            missing_scope_ids.append(scope_id)
+            continue
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not rows:
+            empty_scope_ids.append(scope_id)
+        server_ts_ms = _safe_int(payload.get("server_ts_ms"))
+        if server_ts_ms is None or (now_ms_value - server_ts_ms > projection_max_age_ms):
+            stale_scope_ids.append(scope_id)
+    return ProjectionHealthSnapshot(
+        check=ReadinessCheck(
+            name="profile_account_projections",
+            ok=(
+                not missing_config_scope_ids
+                and not missing_scope_ids
+                and not empty_scope_ids
+                and not stale_scope_ids
+            ),
+            summary=(
+                f"expected={len(expected_projection_scope_ids)} "
+                f"config_missing={len(missing_config_scope_ids)} "
+                f"missing={len(missing_scope_ids)} empty={len(empty_scope_ids)} "
+                f"stale={len(stale_scope_ids)}"
+            ),
+            details={
+                "expected_scope_ids": expected_projection_scope_ids,
+                "missing_config_scope_ids": missing_config_scope_ids,
+                "missing_scope_ids": missing_scope_ids,
+                "empty_scope_ids": empty_scope_ids,
+                "stale_scope_ids": stale_scope_ids,
+                "projection_max_age_ms": projection_max_age_ms,
+            },
+        ),
+        missing_config_scope_ids=missing_config_scope_ids,
+        missing_scope_ids=missing_scope_ids,
+        empty_scope_ids=empty_scope_ids,
+        stale_scope_ids=stale_scope_ids,
+    )
+
+
+def _build_signal_health_snapshot(
+    *,
+    strategy_contracts: tuple[StrategyContractEntry, ...],
+    required_strategy_ids: tuple[str, ...],
+    signals_payload: Mapping[str, Any] | None,
+    max_stale_signal_legs: int,
+    max_unhealthy_strategies: int,
+) -> SignalHealthSnapshot:
+    signal_rows = signals_payload.get("strategies") if isinstance(signals_payload, Mapping) else None
+    signal_map = {
+        strategy_id: row
+        for row in signal_rows or []
+        if isinstance(row, Mapping)
+        and (strategy_id := _optional_text(row.get("id")))
+    }
+    contracts_by_strategy_id = {
+        contract.strategy_id: contract
+        for contract in strategy_contracts
+    }
+    stale_signal_legs: set[str] = set()
+    over_age_signal_legs: set[str] = set()
+    unhealthy_strategy_ids: list[str] = []
+    missing_signal_strategy_ids: list[str] = []
+    reference_unhealthy_strategy_ids: list[str] = []
+
+    for strategy_id in required_strategy_ids:
+        signal_row = signal_map.get(strategy_id)
+        if signal_row is None:
+            missing_signal_strategy_ids.append(strategy_id)
+            unhealthy_strategy_ids.append(strategy_id)
+            reference_unhealthy_strategy_ids.append(strategy_id)
+            continue
+
+        stale_legs = _signal_stale_legs(signal_row)
+        stale_signal_legs.update(stale_legs)
+        state_name = _signal_state_name(signal_row)
+        state_stale = _signal_state_stale(signal_row)
+        contract = contracts_by_strategy_id.get(strategy_id)
+        max_age_ms = _signal_max_age_ms(signal_row)
+        legs = _mapping(signal_row.get("legs"))
+        over_age_legs_for_strategy: list[str] = []
+        if contract is not None:
+            for leg_id in (
+                f"hyperliquid:{contract.maker_instrument_id}",
+                f"ibkr:{contract.reference_instrument_id}",
+            ):
+                age_ms = _safe_int(_mapping(legs.get(leg_id)).get("age_ms"))
+                if age_ms is None or age_ms > max_age_ms:
+                    over_age_legs_for_strategy.append(leg_id)
+        over_age_signal_legs.update(over_age_legs_for_strategy)
+        unhealthy = (
+            state_stale
+            or bool(stale_legs)
+            or bool(over_age_legs_for_strategy)
+            or state_name.startswith("blocked_")
+        )
+        if unhealthy:
+            unhealthy_strategy_ids.append(strategy_id)
+
+        reference_leg_id = f"ibkr:{contract.reference_instrument_id}" if contract is not None else None
+        reference_leg = _mapping(legs.get(reference_leg_id))
+        reference_unhealthy = (
+            reference_leg_id is None
+            or reference_leg_id in stale_legs
+            or reference_leg_id in over_age_legs_for_strategy
+            or not reference_leg
+            or _safe_int(reference_leg.get("age_ms")) is None
+            or state_name.startswith("blocked_reference")
+        )
+        if reference_unhealthy:
+            reference_unhealthy_strategy_ids.append(strategy_id)
+
+    stale_signal_legs_list = sorted(stale_signal_legs)
+    over_age_signal_legs_list = sorted(over_age_signal_legs)
+    failing_signal_legs = sorted(stale_signal_legs.union(over_age_signal_legs))
+    healthy_strategy_count = max(0, len(required_strategy_ids) - len(unhealthy_strategy_ids))
+    return SignalHealthSnapshot(
+        check=ReadinessCheck(
+            name="signals",
+            ok=(
+                len(failing_signal_legs) <= max_stale_signal_legs
+                and len(unhealthy_strategy_ids) <= max_unhealthy_strategies
+                and not missing_signal_strategy_ids
+            ),
+            summary=(
+                f"required={len(required_strategy_ids)} healthy={healthy_strategy_count} "
+                f"stale_legs={len(failing_signal_legs)} unhealthy={len(unhealthy_strategy_ids)}"
+            ),
+            details={
+                "required_strategy_ids": list(required_strategy_ids),
+                "missing_strategy_ids": missing_signal_strategy_ids,
+                "stale_signal_legs": stale_signal_legs_list,
+                "over_age_signal_legs": over_age_signal_legs_list,
+                "stale_signal_leg_count": len(failing_signal_legs),
+                "unhealthy_strategy_ids": unhealthy_strategy_ids,
+                "healthy_strategy_count": healthy_strategy_count,
+                "max_stale_signal_legs": max_stale_signal_legs,
+                "max_unhealthy_strategies": max_unhealthy_strategies,
+            },
+        ),
+        healthy_strategy_count=healthy_strategy_count,
+        reference_unhealthy_strategy_ids=sorted(set(reference_unhealthy_strategy_ids)),
+    )
 
 
 def evaluate_equities_readiness(
@@ -197,6 +386,11 @@ def evaluate_equities_readiness(
     thresholds: EquitiesReadinessThresholds | None = None,
 ) -> EquitiesReadinessResult:
     active_thresholds = thresholds or EquitiesReadinessThresholds()
+    configured_projection_scope_ids = {
+        scope.scope_id
+        for scope in account_scopes
+        if scope.provider.strip().lower() in PROJECTION_PROVIDERS
+    }
     expected_projection_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
@@ -246,125 +440,41 @@ def evaluate_equities_readiness(
         },
     )
 
-    missing_scope_ids: list[str] = []
-    empty_scope_ids: list[str] = []
-    stale_scope_ids: list[str] = []
-    for scope_id in expected_projection_scope_ids:
-        payload = projection_payloads_by_scope_id.get(scope_id)
-        if not isinstance(payload, Mapping):
-            missing_scope_ids.append(scope_id)
-            continue
-        rows = payload.get("rows")
-        if not isinstance(rows, list) or not rows:
-            empty_scope_ids.append(scope_id)
-        server_ts_ms = _safe_int(payload.get("server_ts_ms"))
-        if server_ts_ms is None or (
-            now_ms_value - server_ts_ms > active_thresholds.projection_max_age_ms
-        ):
-            stale_scope_ids.append(scope_id)
-    projection_check = ReadinessCheck(
-        name="profile_account_projections",
-        ok=not missing_scope_ids and not empty_scope_ids and not stale_scope_ids,
-        summary=(
-            f"expected={len(expected_projection_scope_ids)} "
-            f"missing={len(missing_scope_ids)} empty={len(empty_scope_ids)} "
-            f"stale={len(stale_scope_ids)}"
-        ),
-        details={
-            "expected_scope_ids": expected_projection_scope_ids,
-            "missing_scope_ids": missing_scope_ids,
-            "empty_scope_ids": empty_scope_ids,
-            "stale_scope_ids": stale_scope_ids,
-            "projection_max_age_ms": active_thresholds.projection_max_age_ms,
-        },
+    projection_snapshot = _build_projection_health_snapshot(
+        expected_projection_scope_ids=expected_projection_scope_ids,
+        configured_projection_scope_ids=configured_projection_scope_ids,
+        projection_payloads_by_scope_id=projection_payloads_by_scope_id,
+        projection_max_age_ms=active_thresholds.projection_max_age_ms,
+        now_ms_value=now_ms_value,
     )
+    projection_check = projection_snapshot.check
 
-    signal_rows = signals_payload.get("strategies") if isinstance(signals_payload, Mapping) else None
-    signal_map = {
-        strategy_id: row
-        for row in signal_rows or []
-        if isinstance(row, Mapping)
-        and (strategy_id := _optional_text(row.get("id")))
-    }
-    stale_signal_legs: set[str] = set()
-    unhealthy_strategy_ids: list[str] = []
-    missing_signal_strategy_ids: list[str] = []
-    reference_unhealthy_strategy_ids: list[str] = []
-    reference_leg_ids_by_strategy = {
-        contract.strategy_id: f"ibkr:{contract.reference_instrument_id}"
-        for contract in strategy_contracts
-    }
-
-    for strategy_id in required_ids:
-        signal_row = signal_map.get(strategy_id)
-        if signal_row is None:
-            missing_signal_strategy_ids.append(strategy_id)
-            unhealthy_strategy_ids.append(strategy_id)
-            reference_unhealthy_strategy_ids.append(strategy_id)
-            continue
-
-        stale_legs = _signal_stale_legs(signal_row)
-        stale_signal_legs.update(stale_legs)
-        state_name = _signal_state_name(signal_row)
-        state_stale = _signal_state_stale(signal_row)
-        unhealthy = state_stale or bool(stale_legs) or state_name.startswith("blocked_")
-        if unhealthy:
-            unhealthy_strategy_ids.append(strategy_id)
-
-        reference_leg_id = reference_leg_ids_by_strategy.get(strategy_id)
-        legs = _mapping(signal_row.get("legs"))
-        reference_leg = _mapping(legs.get(reference_leg_id))
-        reference_unhealthy = (
-            reference_leg_id is None
-            or reference_leg_id in stale_legs
-            or not reference_leg
-            or _safe_int(reference_leg.get("age_ms")) is None
-            or state_name.startswith("blocked_reference")
-        )
-        if reference_unhealthy:
-            reference_unhealthy_strategy_ids.append(strategy_id)
-
-    stale_signal_legs_list = sorted(stale_signal_legs)
-    healthy_strategy_count = max(0, len(required_ids) - len(unhealthy_strategy_ids))
-    signals_check = ReadinessCheck(
-        name="signals",
-        ok=(
-            len(stale_signal_legs_list) <= active_thresholds.max_stale_signal_legs
-            and len(unhealthy_strategy_ids) <= active_thresholds.max_unhealthy_strategies
-            and not missing_signal_strategy_ids
-        ),
-        summary=(
-            f"required={len(required_ids)} healthy={healthy_strategy_count} "
-            f"stale_legs={len(stale_signal_legs_list)} unhealthy={len(unhealthy_strategy_ids)}"
-        ),
-        details={
-            "required_strategy_ids": list(required_ids),
-            "missing_strategy_ids": missing_signal_strategy_ids,
-            "stale_signal_legs": stale_signal_legs_list,
-            "stale_signal_leg_count": len(stale_signal_legs_list),
-            "unhealthy_strategy_ids": unhealthy_strategy_ids,
-            "healthy_strategy_count": healthy_strategy_count,
-            "max_stale_signal_legs": active_thresholds.max_stale_signal_legs,
-            "max_unhealthy_strategies": active_thresholds.max_unhealthy_strategies,
-        },
+    signal_snapshot = _build_signal_health_snapshot(
+        strategy_contracts=strategy_contracts,
+        required_strategy_ids=required_ids,
+        signals_payload=signals_payload,
+        max_stale_signal_legs=active_thresholds.max_stale_signal_legs,
+        max_unhealthy_strategies=active_thresholds.max_unhealthy_strategies,
     )
+    signals_check = signal_snapshot.check
 
     ibkr_auth_check = ReadinessCheck(
         name="ibkr_auth",
         ok=(
             projection_check.ok
-            and not reference_unhealthy_strategy_ids
+            and not signal_snapshot.reference_unhealthy_strategy_ids
         ),
         summary=(
             f"projection_scopes={len(expected_projection_scope_ids)} "
-            f"reference_unhealthy={len(reference_unhealthy_strategy_ids)}"
+            f"reference_unhealthy={len(signal_snapshot.reference_unhealthy_strategy_ids)}"
         ),
         details={
             "expected_scope_ids": expected_projection_scope_ids,
-            "missing_scope_ids": missing_scope_ids,
-            "empty_scope_ids": empty_scope_ids,
-            "stale_scope_ids": stale_scope_ids,
-            "unhealthy_strategy_ids": sorted(set(reference_unhealthy_strategy_ids)),
+            "missing_config_scope_ids": projection_snapshot.missing_config_scope_ids,
+            "missing_scope_ids": projection_snapshot.missing_scope_ids,
+            "empty_scope_ids": projection_snapshot.empty_scope_ids,
+            "stale_scope_ids": projection_snapshot.stale_scope_ids,
+            "unhealthy_strategy_ids": signal_snapshot.reference_unhealthy_strategy_ids,
         },
     )
 
@@ -384,8 +494,8 @@ def evaluate_equities_readiness(
             "portfolio_id": portfolio_id,
             "required_strategy_ids": list(required_ids),
             "expected_projection_scope_ids": expected_projection_scope_ids,
-            "healthy_strategy_count": healthy_strategy_count,
-            "stale_signal_leg_count": len(stale_signal_legs_list),
+            "healthy_strategy_count": signal_snapshot.healthy_strategy_count,
+            "stale_signal_leg_count": signals_check.details["stale_signal_leg_count"],
         },
     )
 

@@ -63,6 +63,7 @@ def _healthy_signal_payload() -> dict[str, object]:
         "strategies": [
             {
                 "id": "aapl_tradexyz_makerv3",
+                "params": {"max_age_ms": "10000"},
                 "state": {"state": "bot_off"},
                 "legs": {
                     "ibkr:AAPL.NASDAQ": {"age_ms": 50},
@@ -77,6 +78,7 @@ def _healthy_signal_payload() -> dict[str, object]:
             },
             {
                 "id": "msft_tradexyz_makerv3",
+                "params": {"max_age_ms": "10000"},
                 "state": {"state": "bot_off"},
                 "legs": {
                     "ibkr:MSFT.NASDAQ": {"age_ms": 60},
@@ -179,9 +181,11 @@ def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
             "strategies": [
                 {
                     "id": "aapl_tradexyz_makerv3",
+                    "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
                         "ibkr:AAPL.NASDAQ": {"age_ms": 50},
+                        "hyperliquid:xyz:AAPL-USD-PERP.HYPERLIQUID": {"age_ms": 25},
                     },
                     "debug": {"md_health": {"stale_legs": [], "state_stale": False}},
                 },
@@ -290,6 +294,74 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
     ]
 
 
+def test_evaluate_equities_readiness_fails_when_referenced_ibkr_scopes_are_missing_from_config() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=(),
+        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.summary["expected_projection_scope_ids"] == [
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
+    assert result.checks["profile_account_projections"].details["missing_config_scope_ids"] == [
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
+    assert result.checks["ibkr_auth"].ok is False
+
+
+def test_evaluate_equities_readiness_fails_for_over_age_reference_legs() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["legs"]["ibkr:AAPL.NASDAQ"]["age_ms"] = 999_999
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["over_age_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv3",
+    ]
+    assert result.checks["ibkr_auth"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv3",
+    ]
+
+
 def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -> None:
     repo_root = _repo_root()
     script = _read(repo_root / "ops/scripts/deploy/check_equities_live_readiness.sh")
@@ -304,4 +376,3 @@ def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -
     assert "check_equities_live_readiness.sh" in readme
     assert "/api/v1/signals?profile=equities" in readme
     assert "/api/v1/balances?profile=equities" in readme
-
