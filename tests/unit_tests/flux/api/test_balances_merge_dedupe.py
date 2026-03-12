@@ -96,7 +96,7 @@ def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stabl
                     "free": "500",
                     "locked": "0",
                     "total": "500",
-                    "ts_ms": 1_700_000_000_100,
+                    "ts_ms": 1_700_000_000_000,
                     "row_id": "plumeusdt_bitget_spot_makerv3:cash:0",
                     "product_type": "spot",
                 },
@@ -107,10 +107,10 @@ def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stabl
                     "exchange": "bitget",
                     "account_id": "BITGET-001",
                     "asset": "USDT",
-                    "free": "0",
+                    "free": "500",
                     "locked": "0",
-                    "total": "0",
-                    "ts_ms": 1_700_000_000_000,
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_100,
                     "row_id": "plumeusdt_bitget_perp_makerv3:cash:0",
                     "product_type": "perp",
                 },
@@ -134,6 +134,8 @@ def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stabl
     assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
     assert row["total"] == "500"
     assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"
 
 
 def test_collapse_balance_display_rows_keeps_bitget_cash_rows_across_product_scopes() -> None:
@@ -197,3 +199,55 @@ def test_collapse_balance_display_rows_canonicalizes_shared_account_stable_cash_
     assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDC"
     assert row["total"] == "500"
     assert row["product_type"] == "spot"
+
+
+def test_collapse_balance_display_rows_keeps_shared_account_stable_cash_spot_shaped_when_perp_row_is_newer() -> None:
+    collapsed = collapse_balance_display_rows(
+        [
+            {
+                "row_id": "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+                "exchange": "bitget",
+                "account": "BITGET-001",
+                "account_id": "BITGET-001",
+                "asset": "USDT",
+                "total": "500",
+                "product_type": "spot",
+                "scope": "shared_account",
+                "ts_ms": 1_700_000_000_000,
+                "display_name_short": "USDT Spot",
+                "display_name_long": "Bitget USDT Spot",
+            },
+            {
+                "row_id": "tokenmm:cash:bitget:BITGET-001:perp:USDT",
+                "exchange": "bitget",
+                "account": "BITGET-001",
+                "account_id": "BITGET-001",
+                "asset": "USDT",
+                "total": "500",
+                "product_type": "perp",
+                "scope": "shared_account",
+                "ts_ms": 1_700_000_000_100,
+                "display_name_short": "USDT Perp",
+                "display_name_long": "Bitget USDT Perp",
+            },
+            {
+                "row_id": "tokenmm:pos:bitget:USDT.BITGET",
+                "exchange": "bitget",
+                "account": "BITGET-001",
+                "account_id": "BITGET-001",
+                "kind": "position",
+                "instrument_id": "USDT.BITGET",
+                "asset": "USDT",
+                "signed_qty": "500",
+                "quantity": "500",
+                "product_type": "spot",
+            },
+        ],
+    )
+
+    assert len(collapsed) == 1
+    row = collapsed[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"

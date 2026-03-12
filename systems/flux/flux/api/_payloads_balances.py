@@ -612,7 +612,7 @@ def _collapse_duplicate_cash_scope_rows(
 
 
 def _annotate_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    return dict(row)
+    return _normalize_shared_scope_stable_cash_row(row)
 
 
 def _row_exchange_hint(row: Mapping[str, Any]) -> str:
@@ -711,6 +711,17 @@ def _canonical_shared_stable_cash_row_id(row: Mapping[str, Any]) -> str:
     return row_id
 
 
+def _normalize_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    if not _is_shared_scope_stable_cash_row(out):
+        return out
+    out["row_id"] = _canonical_shared_stable_cash_row_id(out)
+    out["product_type"] = "spot"
+    if out.get("market_type") is not None:
+        out["market_type"] = "spot"
+    return enrich_row_with_canonical_naming(out)
+
+
 def _should_prefer_shared_stable_cash_row(
     previous_row: Mapping[str, Any],
     candidate_row: Mapping[str, Any],
@@ -765,11 +776,7 @@ def _collapse_shared_scope_stable_cash_rows(
                 keep_index = index
                 keep_row = row
 
-        canonical = dict(keep_row)
-        canonical["row_id"] = _canonical_shared_stable_cash_row_id(canonical)
-        canonical.pop("display_name_short", None)
-        canonical.pop("display_name_long", None)
-        normalized_rows[keep_index] = canonical
+        normalized_rows[keep_index] = _normalize_shared_scope_stable_cash_row(keep_row)
         for index in indexes:
             if index != keep_index:
                 drop_indexes.add(index)

@@ -3718,6 +3718,9 @@ def test_balances_profile_tokenmm_portfolio_snapshot_canonicalizes_shared_stable
     assert len(bitget_rows) == 1
     assert bitget_rows[0]["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
     assert bitget_rows[0]["total"] == "440.735561"
+    assert bitget_rows[0]["product_type"] == "spot"
+    assert bitget_rows[0]["display_name_short"] == "USDT"
+    assert bitget_rows[0]["display_name_long"] == "Bitget USDT"
     risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
     assert risk_groups["USD_CASH"]["net_mv"] == pytest.approx(440.735561)
     assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(440.735561)

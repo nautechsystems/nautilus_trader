@@ -328,6 +328,9 @@ def test_build_portfolio_snapshot_canonicalizes_identical_shared_account_stable_
     row = bitget_rows[0]
     assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
     assert row["total"] == "440.735561"
+    assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"
 
 
 def test_build_portfolio_snapshot_deduplicates_identical_non_stable_cash_across_product_scopes() -> None:
