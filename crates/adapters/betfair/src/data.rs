@@ -726,6 +726,7 @@ impl DataClient for BetfairDataClient {
 
         self.http_client.disconnect().await;
         self.is_connected.store(false, Ordering::Relaxed);
+        self.subscribed_market_ids.clear();
 
         log::info!("Betfair data client disconnected: {}", self.client_id);
         Ok(())
@@ -735,14 +736,17 @@ impl DataClient for BetfairDataClient {
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
 
+        if !self.subscribed_market_ids.insert(market_id.clone()) {
+            log::debug!("Book deltas already subscribed for market {market_id}");
+            return Ok(());
+        }
+
         let stream_client = Arc::clone(
             self.stream_client
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
         );
 
-        // Accumulate market IDs so each subscription includes all prior markets
-        self.subscribed_market_ids.insert(market_id);
         let all_ids: Vec<String> = self.subscribed_market_ids.iter().cloned().collect();
 
         let market_filter = StreamMarketFilter {
@@ -788,7 +792,7 @@ impl DataClient for BetfairDataClient {
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         // Trades are included in market subscription via EX_TRADED
-        log::info!(
+        log::debug!(
             "Trade data included in book subscription for {}",
             cmd.instrument_id
         );
@@ -808,7 +812,7 @@ impl DataClient for BetfairDataClient {
         cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         // Instrument status is included in market subscription via EX_MARKET_DEF
-        log::info!(
+        log::debug!(
             "Instrument status included in book subscription for {}",
             cmd.instrument_id
         );

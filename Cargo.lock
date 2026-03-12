@@ -4927,6 +4927,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
+ "dotenvy",
  "log",
  "nautilus-common",
  "nautilus-core",

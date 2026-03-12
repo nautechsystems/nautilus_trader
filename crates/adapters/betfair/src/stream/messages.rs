@@ -23,10 +23,12 @@
 //!
 //! <https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API>
 
+use std::str::FromStr;
+
 use ahash::AHashMap;
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use ustr::Ustr;
 
 use crate::common::{
@@ -188,10 +190,10 @@ pub struct RunnerChange {
     /// Starting price lay.
     pub spl: Option<Vec<PV>>,
     /// Starting price near (projected SP).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_lenient")]
     pub spn: Option<Decimal>,
     /// Starting price far (actual BSP).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_lenient")]
     pub spf: Option<Decimal>,
     /// Traded volume by price level.
     pub trd: Option<Vec<PV>>,
@@ -201,6 +203,84 @@ pub struct RunnerChange {
     /// Total volume matched on this runner.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub tv: Option<Decimal>,
+}
+
+fn deserialize_optional_decimal_lenient<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct LenientOptionalDecimalVisitor;
+
+    impl Visitor<'_> for LenientOptionalDecimalVisitor {
+        type Value = Option<Decimal>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("null or a decimal number as string, integer, or float")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(parse_optional_decimal_lenient(value))
+        }
+
+        fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+            self.visit_str(&value)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(value)))
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(value)))
+        }
+
+        fn visit_i128<E: serde::de::Error>(self, value: i128) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(value)))
+        }
+
+        fn visit_u128<E: serde::de::Error>(self, value: u128) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(value)))
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+            Ok(Decimal::try_from(value).ok())
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_any(LenientOptionalDecimalVisitor)
+}
+
+fn parse_optional_decimal_lenient(value: &str) -> Option<Decimal> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || is_non_finite_decimal(trimmed) {
+        return None;
+    }
+
+    if trimmed.contains('e') || trimmed.contains('E') {
+        Decimal::from_scientific(trimmed).ok()
+    } else {
+        Decimal::from_str(trimmed).ok()
+    }
+}
+
+fn is_non_finite_decimal(value: &str) -> bool {
+    value.eq_ignore_ascii_case("nan")
+        || value.eq_ignore_ascii_case("inf")
+        || value.eq_ignore_ascii_case("+inf")
+        || value.eq_ignore_ascii_case("-inf")
+        || value.eq_ignore_ascii_case("infinity")
+        || value.eq_ignore_ascii_case("+infinity")
+        || value.eq_ignore_ascii_case("-infinity")
 }
 
 /// Full market definition snapshot.
@@ -828,6 +908,37 @@ mod tests {
         let data = load_test_json("stream/status.json");
         let msg = stream_decode(data.as_bytes()).unwrap();
         assert!(matches!(msg, StreamMessage::Status(_)));
+    }
+
+    #[rstest]
+    fn test_stream_decode_lenient_sp_fields() {
+        let data = r#"{
+            "op":"mcm",
+            "pt":1773304044929,
+            "mc":[{
+                "id":"1.255095842",
+                "rc":[{
+                    "id":96146807,
+                    "spn":"Infinity",
+                    "spf":"NaN",
+                    "ltp":5.0,
+                    "tv":10.63
+                }]
+            }]
+        }"#;
+
+        let msg = stream_decode(data.as_bytes()).unwrap();
+
+        match msg {
+            StreamMessage::MarketChange(mcm) => {
+                let rc = &mcm.mc.as_ref().unwrap()[0].rc.as_ref().unwrap()[0];
+                assert_eq!(rc.spn, None);
+                assert_eq!(rc.spf, None);
+                assert_eq!(rc.ltp, Some(Decimal::new(50, 1)));
+                assert_eq!(rc.tv, Some(Decimal::new(1063, 2)));
+            }
+            other => panic!("Expected MarketChange, was {other:?}"),
+        }
     }
 
     #[rstest]

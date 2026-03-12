@@ -70,5 +70,16 @@ nautilus-execution = { workspace = true }
 nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
+dotenvy = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+
+[[example]]
+name = "betfair-data-tester"
+path = "examples/node_data_tester.rs"
+doc = false
+
+[[example]]
+name = "betfair-exec-tester"
+path = "examples/node_exec_tester.rs"
+doc = false

@@ -17,7 +17,16 @@
 
 mod common;
 
-use std::{cell::RefCell, net::SocketAddr, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    net::SocketAddr,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use nautilus_betfair::{config::BetfairExecConfig, execution::BetfairExecutionClient};
 use nautilus_common::{
@@ -25,6 +34,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     live::runner::{set_data_event_sender, set_exec_event_sender},
     messages::{DataEvent, ExecutionEvent, execution::cancel::CancelOrder},
+    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
@@ -110,22 +120,21 @@ async fn test_exec_client_connect_disconnect() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let subscription_received = Arc::new(AtomicBool::new(false));
+    let subscription_received_server = Arc::clone(&subscription_received);
 
     let server = tokio::spawn(async move {
         let (mut reader, write_half) = accept_and_auth(&listener).await;
 
-        // Skip auth line from subscribe_orders combined write
+        // Capture the order subscription sent after the initial auth handshake
         let mut line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
-            .await
-            .unwrap();
-        line.clear();
         tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
             .await
             .unwrap();
 
         let json: Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(json["op"], "orderSubscription");
+        subscription_received_server.store(true, Ordering::Relaxed);
 
         tokio::time::sleep(Duration::from_secs(2)).await;
         drop(write_half);
@@ -135,6 +144,15 @@ async fn test_exec_client_connect_disconnect() {
 
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
+
+    wait_until_async(
+        || {
+            let subscription_received = Arc::clone(&subscription_received);
+            async move { subscription_received.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
@@ -185,12 +203,8 @@ async fn test_ocm_handler_emits_order_status_report() {
     let server = tokio::spawn(async move {
         let (mut reader, mut write_half) = accept_and_auth(&listener).await;
 
-        // Wait for the subscribe_orders combined write (auth + subscription)
+        // Wait for the order subscription after the initial auth handshake
         let mut line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
-            .await
-            .unwrap();
-        line.clear();
         tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
             .await
             .unwrap();
@@ -235,12 +249,8 @@ async fn test_ocm_voided_order_emits_data_event() {
     let server = tokio::spawn(async move {
         let (mut reader, mut write_half) = accept_and_auth(&listener).await;
 
-        // Wait for the subscribe_orders combined write (auth + subscription)
+        // Wait for the order subscription after the initial auth handshake
         let mut line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
-            .await
-            .unwrap();
-        line.clear();
         tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
             .await
             .unwrap();
