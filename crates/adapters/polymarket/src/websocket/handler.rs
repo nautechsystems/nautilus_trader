@@ -31,8 +31,9 @@ use tokio_tungstenite::tungstenite::Message;
 use super::{
     client::WsChannel,
     messages::{
-        MarketSubscribeRequest, MarketUnsubscribeRequest, MarketWsMessage, PolymarketWsAuth,
-        PolymarketWsMessage, UserSubscribeRequest, UserWsMessage,
+        MarketInitialSubscribeRequest, MarketSubscribeRequest, MarketUnsubscribeRequest,
+        MarketWsMessage, PolymarketWsAuth, PolymarketWsMessage, UserSubscribeRequest,
+        UserWsMessage,
     },
 };
 use crate::common::credential::Credential;
@@ -69,6 +70,8 @@ pub(super) struct FeedHandler {
     auth_tracker: AuthTracker,
     // True once SubscribeUser has been explicitly requested by the caller
     user_subscribed: bool,
+    // True once the current market-channel session has sent its initial subscribe payload.
+    market_subscription_initialized: bool,
     // Overflow buffer for batched frames, drained before reading the next raw message
     message_buffer: Vec<PolymarketWsMessage>,
 }
@@ -98,6 +101,7 @@ impl FeedHandler {
             subscriptions,
             auth_tracker,
             user_subscribed,
+            market_subscription_initialized: false,
             message_buffer: Vec::new(),
         }
     }
@@ -116,7 +120,7 @@ impl FeedHandler {
         (self.clock.get_time_ns().as_u64() / 1_000_000_000).to_string()
     }
 
-    async fn send_subscribe_market(&self, asset_ids: &[String]) {
+    async fn send_subscribe_market(&mut self, asset_ids: &[String]) {
         let Some(ref client) = self.client else {
             log::warn!("No client available for market subscribe");
             return;
@@ -126,11 +130,19 @@ impl FeedHandler {
             self.subscriptions.mark_subscribe(id);
         }
 
-        let req = MarketSubscribeRequest {
-            assets_ids: asset_ids.to_vec(),
-            msg_type: "market",
+        let payload = if self.market_subscription_initialized {
+            serde_json::to_string(&MarketSubscribeRequest {
+                assets_ids: asset_ids.to_vec(),
+                operation: "subscribe",
+            })
+        } else {
+            serde_json::to_string(&MarketInitialSubscribeRequest {
+                assets_ids: asset_ids.to_vec(),
+                msg_type: "market",
+            })
         };
-        match serde_json::to_string(&req) {
+
+        match payload {
             Ok(payload) => {
                 if let Err(e) = client.send_text(payload, None).await {
                     for id in asset_ids {
@@ -138,6 +150,7 @@ impl FeedHandler {
                     }
                     log::error!("Failed to send market subscribe: {e}");
                 } else {
+                    self.market_subscription_initialized = true;
                     // Polymarket has no server ACK, treat successful send as confirmation
                     for id in asset_ids {
                         self.subscriptions.confirm_subscribe(id);
@@ -220,7 +233,7 @@ impl FeedHandler {
         }
     }
 
-    async fn resubscribe_all(&self) {
+    async fn resubscribe_all(&mut self) {
         match self.channel {
             WsChannel::Market => {
                 let ids = self.subscriptions.all_topics();
@@ -311,6 +324,7 @@ impl FeedHandler {
                     match raw {
                         Message::Text(text) => {
                             if text == RECONNECTED {
+                                self.market_subscription_initialized = false;
                                 self.resubscribe_all().await;
                                 return Some(PolymarketWsMessage::Reconnected);
                             }

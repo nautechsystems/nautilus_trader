@@ -56,6 +56,7 @@ const TEST_ASSET_ID_3: &str =
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribed_assets: Arc<tokio::sync::Mutex<Vec<String>>>,
+    received_market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     received_user_auth: Arc<tokio::sync::Mutex<Option<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
@@ -66,6 +67,7 @@ impl Default for TestServerState {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             subscribed_assets: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            received_market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_user_auth: Arc::new(tokio::sync::Mutex::new(None)),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -131,12 +133,31 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
                             break;
                         }
                     }
-                } else if payload.get("type").and_then(Value::as_str) == Some("market") {
+                } else if payload.get("type").and_then(Value::as_str) == Some("market")
+                    || payload.get("operation").and_then(Value::as_str).is_some()
+                {
+                    state
+                        .received_market_payloads
+                        .lock()
+                        .await
+                        .push(payload.clone());
+
                     if let Some(ids) = payload.get("assets_ids").and_then(Value::as_array) {
                         let mut assets = state.subscribed_assets.lock().await;
-                        for id in ids {
-                            if let Some(s) = id.as_str() {
-                                assets.push(s.to_string());
+                        match payload.get("operation").and_then(Value::as_str) {
+                            Some("unsubscribe") => {
+                                for id in ids {
+                                    if let Some(s) = id.as_str() {
+                                        assets.retain(|asset| asset != s);
+                                    }
+                                }
+                            }
+                            _ => {
+                                for id in ids {
+                                    if let Some(s) = id.as_str() {
+                                        assets.push(s.to_string());
+                                    }
+                                }
                             }
                         }
                     }
@@ -211,6 +232,21 @@ async fn wait_for_connection_count(state: &TestServerState, expected: usize, tim
         || {
             let state = state.clone();
             async move { *state.connection_count.lock().await == expected }
+        },
+        timeout,
+    )
+    .await;
+}
+
+async fn wait_for_market_payload_count(
+    state: &TestServerState,
+    expected: usize,
+    timeout: Duration,
+) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.received_market_payloads.lock().await.len() >= expected }
         },
         timeout,
     )
@@ -326,6 +362,69 @@ async fn test_subscribe_market_sends_assets_ids() {
     let assets = state.subscribed_assets.lock().await;
     assert!(assets.contains(&TEST_ASSET_ID.to_string()));
     assert!(assets.contains(&TEST_ASSET_ID_2.to_string()));
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_market_messages() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+
+    let mut client = PolymarketWebSocketClient::new_market(Some(ws_url));
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("initial subscribe failed");
+
+    client
+        .unsubscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("unsubscribe failed");
+
+    client
+        .subscribe_market(vec![TEST_ASSET_ID_2.to_string()])
+        .await
+        .expect("incremental subscribe failed");
+
+    wait_for_market_payload_count(&state, 3, Duration::from_secs(2)).await;
+
+    let payloads = state.received_market_payloads.lock().await.clone();
+    assert_eq!(
+        payloads.len(),
+        3,
+        "expected initial subscribe, unsubscribe, and incremental subscribe payloads"
+    );
+
+    assert_eq!(
+        payloads[0],
+        json!({
+            "assets_ids": [TEST_ASSET_ID],
+            "type": "market",
+        }),
+        "first market subscribe should use MarketInitialSubscribeRequest"
+    );
+    assert_eq!(
+        payloads[1],
+        json!({
+            "assets_ids": [TEST_ASSET_ID],
+            "operation": "unsubscribe",
+        }),
+        "unsubscribe should use MarketUnsubscribeRequest"
+    );
+    assert_eq!(
+        payloads[2],
+        json!({
+            "assets_ids": [TEST_ASSET_ID_2],
+            "operation": "subscribe",
+        }),
+        "second market subscribe should use MarketSubscribeRequest"
+    );
 
     client.disconnect().await.expect("disconnect failed");
 }
