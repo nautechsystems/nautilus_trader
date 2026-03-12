@@ -472,10 +472,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
 
     assert!(
         (expectancy - expected_expectancy).abs() < 1e-9,
-        "expected Expectancy={} to include snapshot history {}, got {}",
-        expected_expectancy,
-        snapshots_realized,
-        expectancy
+        "expected Expectancy={expected_expectancy} to include snapshot history {snapshots_realized}, found {expectancy}"
     );
 }
 
