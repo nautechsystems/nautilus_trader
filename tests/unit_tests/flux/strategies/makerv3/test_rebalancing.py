@@ -326,6 +326,7 @@ def test_bounded_side_planner_does_not_peel_keep_bucket_for_ordinary_widening_ro
     assert list(_result_field(result, "place_level_indices")) == []
     diagnostics = _result_field(result, "diagnostics")
     assert _result_field(diagnostics, "keep_level_count") == 1
+    assert _result_field(diagnostics, "budget_limited") is False
     assert _result_field(diagnostics, "total_missing_level_count") == 1
 
 

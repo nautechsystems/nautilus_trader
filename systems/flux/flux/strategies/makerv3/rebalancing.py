@@ -341,6 +341,7 @@ def plan_side_bounded_convergence(
         if idx not in selected_cancel_indices and alignment.matched_level_for_active[idx] is not None
     )
 
+    room_needed = 0
     room_created = 0
     if backlog_mode_norm == "normal":
         survivors_after_initial_cancels = len(active_prices) - len(selected_cancel_indices)
@@ -416,6 +417,11 @@ def plan_side_bounded_convergence(
         for action in cancel_actions
         if action.reason_code == REASON_CANCEL_STALE_ORDER
     )
+    selected_room_cancel_count = sum(
+        1
+        for action in cancel_actions
+        if action.reason_code == REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+    )
     total_missing_before_places = (
         len(alignment.frontier_missing_levels)
         + len(planned_room_replacements)
@@ -428,7 +434,8 @@ def plan_side_bounded_convergence(
     if backlog_mode_norm == "normal":
         budget_limited = budget_limited or (
             len(aggressive_cancel_candidates) > selected_aggressive_cancel_count
-            or total_missing_before_places > len(place_level_indices)
+            or (bool(room_cancel_candidates) and selected_room_cancel_count < room_needed)
+            or len(place_candidates) > len(place_level_indices)
         )
     backlog_limited = backlog_mode_norm != "normal" and (
         bool(aggressive_cancel_candidates)
