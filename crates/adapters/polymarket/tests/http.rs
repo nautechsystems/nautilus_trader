@@ -41,8 +41,8 @@ use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
     filters::{
-        CompositeFilter, EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter,
-        SearchFilter, TagFilter,
+        EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter, SearchFilter,
+        TagFilter,
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -1035,12 +1035,12 @@ async fn test_set_filter_then_clear_reverts() {
 
     // Set a filter and load
     let filter = MarketSlugFilter::from_slugs(vec!["filtered-slug".to_string()]);
-    provider.set_filter(Box::new(filter));
+    provider.add_filter(Box::new(filter));
     provider.load_all(None).await.unwrap();
     assert_eq!(provider.store().count(), 2);
 
-    // Clear filter and load again — should use bulk loading
-    provider.clear_filter();
+    // Clear filters and load again — should use bulk loading
+    provider.clear_filters();
     provider.load_all(None).await.unwrap();
     assert_eq!(provider.store().count(), 2);
     assert!(provider.store().is_initialized());
@@ -1116,9 +1116,10 @@ async fn test_composite_filter_combines_market_and_event_slugs() {
 
     let market_filter = MarketSlugFilter::from_slugs(vec!["composite-market".to_string()]);
     let event_filter = EventSlugFilter::from_slugs(vec!["composite-event".to_string()]);
-    let composite = CompositeFilter::new(vec![Box::new(market_filter), Box::new(event_filter)]);
-
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(composite));
+    let mut provider = PolymarketInstrumentProvider::with_filters(
+        http_client,
+        vec![Box::new(market_filter), Box::new(event_filter)],
+    );
 
     provider.load_all(None).await.unwrap();
 
@@ -1444,9 +1445,10 @@ async fn test_load_filtered_deduplicates_overlapping_results() {
         active: Some(true),
         ..Default::default()
     });
-    let composite = CompositeFilter::new(vec![Box::new(slug_filter), Box::new(query_filter)]);
-
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(composite));
+    let mut provider = PolymarketInstrumentProvider::with_filters(
+        http_client,
+        vec![Box::new(slug_filter), Box::new(query_filter)],
+    );
 
     provider.load_all(None).await.unwrap();
 

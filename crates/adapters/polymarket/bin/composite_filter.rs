@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Demonstrates combined instrument loading with [`CompositeFilter`].
+//! Demonstrates combined instrument loading with multiple filters.
 //!
 //! This example combines:
 //!
@@ -32,7 +32,7 @@
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
-    filters::{CompositeFilter, EventQueryFilter, PredicateFilter},
+    filters::{EventQueryFilter, PredicateFilter},
     http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
     providers::PolymarketInstrumentProvider,
 };
@@ -52,10 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let predicate = PredicateFilter::outcome("Yes");
 
-    let composite = CompositeFilter::new(vec![Box::new(event_query), Box::new(predicate)]);
-
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(composite));
+    let mut provider = PolymarketInstrumentProvider::with_filters(
+        http_client,
+        vec![Box::new(event_query), Box::new(predicate)],
+    );
 
     log::info!("Loading top-20 presidential election markets by liquidity (outcome='Yes')...");
     provider.load_all(None).await?;

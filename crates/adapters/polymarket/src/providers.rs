@@ -26,9 +26,9 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-pub use crate::filters::*;
-use crate::http::{
-    gamma::PolymarketGammaHttpClient, models::GammaTag, query::GetGammaMarketsParams,
+use crate::{
+    filters::InstrumentFilter,
+    http::{gamma::PolymarketGammaHttpClient, models::GammaTag, query::GetGammaMarketsParams},
 };
 
 /// Provides Polymarket instruments via the Gamma API.
@@ -36,13 +36,13 @@ use crate::http::{
 /// Wraps [`PolymarketGammaHttpClient`] with an [`InstrumentStore`] and a
 /// token_id index for resolving WebSocket asset IDs to instruments.
 ///
-/// An optional [`InstrumentFilter`] controls which instruments are loaded
-/// during `load_all()`. Without a filter, all active markets are fetched.
+/// Optional [`InstrumentFilter`]s control which instruments are loaded
+/// during `load_all()`. Without filters, all active markets are fetched.
 pub struct PolymarketInstrumentProvider {
     store: InstrumentStore,
     http_client: PolymarketGammaHttpClient,
     token_index: AHashMap<Ustr, InstrumentId>,
-    filter: Option<Box<dyn InstrumentFilter>>,
+    filters: Vec<Box<dyn InstrumentFilter>>,
 }
 
 impl Debug for PolymarketInstrumentProvider {
@@ -51,24 +51,38 @@ impl Debug for PolymarketInstrumentProvider {
             .field("store", &self.store)
             .field("http_client", &self.http_client)
             .field("token_index_len", &self.token_index.len())
-            .field("filter", &self.filter)
+            .field("filters", &self.filters)
             .finish()
     }
 }
 
 impl PolymarketInstrumentProvider {
-    /// Creates a new [`PolymarketInstrumentProvider`] with an empty store and no filter.
+    /// Creates a new [`PolymarketInstrumentProvider`] with an empty store and no filters.
     #[must_use]
     pub fn new(http_client: PolymarketGammaHttpClient) -> Self {
         Self {
             store: InstrumentStore::new(),
             http_client,
             token_index: AHashMap::new(),
-            filter: None,
+            filters: Vec::new(),
         }
     }
 
-    /// Creates a new [`PolymarketInstrumentProvider`] with the given filter.
+    /// Creates a new [`PolymarketInstrumentProvider`] with multiple filters.
+    #[must_use]
+    pub fn with_filters(
+        http_client: PolymarketGammaHttpClient,
+        filters: Vec<Box<dyn InstrumentFilter>>,
+    ) -> Self {
+        Self {
+            store: InstrumentStore::new(),
+            http_client,
+            token_index: AHashMap::new(),
+            filters,
+        }
+    }
+
+    /// Creates a new [`PolymarketInstrumentProvider`] with a single filter.
     #[must_use]
     pub fn with_filter(
         http_client: PolymarketGammaHttpClient,
@@ -78,18 +92,18 @@ impl PolymarketInstrumentProvider {
             store: InstrumentStore::new(),
             http_client,
             token_index: AHashMap::new(),
-            filter: Some(filter),
+            filters: vec![filter],
         }
     }
 
-    /// Sets the instrument filter for subsequent `load_all()` calls.
-    pub fn set_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
-        self.filter = Some(filter);
+    /// Adds an instrument filter for subsequent `load_all()` calls.
+    pub fn add_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+        self.filters.push(filter);
     }
 
-    /// Clears the instrument filter, reverting to bulk load behavior.
-    pub fn clear_filter(&mut self) {
-        self.filter = None;
+    /// Clears all instrument filters, reverting to bulk load behavior.
+    pub fn clear_filters(&mut self) {
+        self.filters.clear();
     }
 
     /// Returns the instrument for the given token ID, if found.
@@ -159,70 +173,70 @@ impl PolymarketInstrumentProvider {
         self.store.add_bulk(instruments);
     }
 
-    /// Loads instruments using the given filter, combining results from all
-    /// filter methods that return `Some`.
-    async fn load_filtered(
-        &self,
-        filter: &dyn InstrumentFilter,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
+    /// Loads instruments using all configured filters, combining results from
+    /// each filter's methods that return `Some`.
+    async fn load_filtered(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let mut instruments = Vec::new();
 
-        if let Some(slugs) = filter.market_slugs()
-            && !slugs.is_empty()
-        {
-            let result = self.http_client.request_instruments_by_slugs(slugs).await?;
-            instruments.extend(result);
-        }
+        for filter in &self.filters {
+            if let Some(slugs) = filter.market_slugs()
+                && !slugs.is_empty()
+            {
+                let result = self.http_client.request_instruments_by_slugs(slugs).await?;
+                instruments.extend(result);
+            }
 
-        if let Some(event_slugs) = filter.event_slugs()
-            && !event_slugs.is_empty()
-        {
-            let result = self
-                .http_client
-                .request_instruments_by_event_slugs(event_slugs)
-                .await?;
-            instruments.extend(result);
-        }
-
-        if let Some(params) = filter.query_params() {
-            let result = self
-                .http_client
-                .request_instruments_by_params(params)
-                .await?;
-            instruments.extend(result);
-        }
-
-        if let Some(event_queries) = filter.event_queries() {
-            for (event_slug, params) in event_queries {
+            if let Some(event_slugs) = filter.event_slugs()
+                && !event_slugs.is_empty()
+            {
                 let result = self
                     .http_client
-                    .request_instruments_by_event_query(&event_slug, params)
+                    .request_instruments_by_event_slugs(event_slugs)
                     .await?;
                 instruments.extend(result);
             }
-        }
 
-        if let Some(params) = filter.event_params() {
-            let result = self
-                .http_client
-                .request_instruments_by_event_params(params)
-                .await?;
-            instruments.extend(result);
-        }
+            if let Some(params) = filter.query_params() {
+                let result = self
+                    .http_client
+                    .request_instruments_by_params(params)
+                    .await?;
+                instruments.extend(result);
+            }
 
-        if let Some(params) = filter.search_params() {
-            let result = self
-                .http_client
-                .request_instruments_by_search(params)
-                .await?;
-            instruments.extend(result);
+            if let Some(event_queries) = filter.event_queries() {
+                for (event_slug, params) in event_queries {
+                    let result = self
+                        .http_client
+                        .request_instruments_by_event_query(&event_slug, params)
+                        .await?;
+                    instruments.extend(result);
+                }
+            }
+
+            if let Some(params) = filter.event_params() {
+                let result = self
+                    .http_client
+                    .request_instruments_by_event_params(params)
+                    .await?;
+                instruments.extend(result);
+            }
+
+            if let Some(params) = filter.search_params() {
+                let result = self
+                    .http_client
+                    .request_instruments_by_search(params)
+                    .await?;
+                instruments.extend(result);
+            }
         }
 
         // Deduplicate by InstrumentId
         let mut seen = AHashSet::new();
         instruments.retain(|inst| seen.insert(inst.id()));
 
-        instruments.retain(|inst| filter.accept(inst));
+        // Accept: AND across ALL filters
+        instruments.retain(|inst| self.filters.iter().all(|f| f.accept(inst)));
 
         Ok(instruments)
     }
@@ -333,23 +347,22 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
     }
 
     async fn load_all(&mut self, filters: Option<&HashMap<String, String>>) -> anyhow::Result<()> {
-        let instruments = match &self.filter {
-            Some(filter) => self.load_filtered(filter.as_ref()).await?,
-            None => {
-                // If HashMap filters are provided, convert to Gamma params
-                if let Some(map) = filters {
-                    if map.is_empty() {
-                        self.http_client.request_instruments().await?
-                    } else {
-                        let params = build_gamma_params_from_hashmap(map);
-                        self.http_client
-                            .request_instruments_by_params(params)
-                            .await?
-                    }
-                } else {
+        let instruments = if self.filters.is_empty() {
+            // If HashMap filters are provided, convert to Gamma params
+            if let Some(map) = filters {
+                if map.is_empty() {
                     self.http_client.request_instruments().await?
+                } else {
+                    let params = build_gamma_params_from_hashmap(map);
+                    self.http_client
+                        .request_instruments_by_params(params)
+                        .await?
                 }
+            } else {
+                self.http_client.request_instruments().await?
             }
+        } else {
+            self.load_filtered().await?
         };
 
         self.store.clear();

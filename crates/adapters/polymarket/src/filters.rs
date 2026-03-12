@@ -196,8 +196,8 @@ impl InstrumentFilter for EventQueryFilter {
 
 /// Pure post-fetch filter that accepts/rejects instruments via a closure.
 ///
-/// Does not provide any slugs or query params — use inside a [`CompositeFilter`]
-/// alongside a source filter, or after a no-filter bulk load.
+/// Does not provide any slugs or query params — combine with source filters
+/// via the provider's `with_filters()` or `add_filter()` methods.
 pub struct PredicateFilter {
     predicate: Box<dyn Fn(&InstrumentAny) -> bool>,
     label: String,
@@ -336,91 +336,6 @@ impl InstrumentFilter for TagFilter {
     }
 }
 
-/// Combines multiple filters, merging results from all inner filters.
-///
-/// Each inner filter's `market_slugs()`, `event_slugs()`, and `query_params()`
-/// are collected and merged. This avoids users needing to implement the trait
-/// manually when they want e.g. market slugs + event slugs together.
-///
-/// `query_params()` returns the **first** `Some` found — multiple param sets
-/// are not mergeable (different filters, limits, ordering).
-#[derive(Debug)]
-pub struct CompositeFilter {
-    filters: Vec<Box<dyn InstrumentFilter>>,
-}
-
-impl CompositeFilter {
-    /// Creates a new [`CompositeFilter`] from a list of inner filters.
-    pub fn new(filters: Vec<Box<dyn InstrumentFilter>>) -> Self {
-        Self { filters }
-    }
-}
-
-impl InstrumentFilter for CompositeFilter {
-    fn market_slugs(&self) -> Option<Vec<String>> {
-        let mut merged = Vec::new();
-        for filter in &self.filters {
-            if let Some(slugs) = filter.market_slugs() {
-                merged.extend(slugs);
-            }
-        }
-
-        if merged.is_empty() {
-            None
-        } else {
-            Some(merged)
-        }
-    }
-
-    fn event_slugs(&self) -> Option<Vec<String>> {
-        let mut merged = Vec::new();
-        for filter in &self.filters {
-            if let Some(slugs) = filter.event_slugs() {
-                merged.extend(slugs);
-            }
-        }
-
-        if merged.is_empty() {
-            None
-        } else {
-            Some(merged)
-        }
-    }
-
-    fn query_params(&self) -> Option<GetGammaMarketsParams> {
-        self.filters.iter().find_map(|filter| filter.query_params())
-    }
-
-    fn event_queries(&self) -> Option<Vec<(String, GetGammaMarketsParams)>> {
-        let mut merged = Vec::new();
-        for filter in &self.filters {
-            if let Some(queries) = filter.event_queries() {
-                merged.extend(queries);
-            }
-        }
-
-        if merged.is_empty() {
-            None
-        } else {
-            Some(merged)
-        }
-    }
-
-    fn event_params(&self) -> Option<GetGammaEventsParams> {
-        self.filters.iter().find_map(|filter| filter.event_params())
-    }
-
-    fn search_params(&self) -> Option<GetSearchParams> {
-        self.filters
-            .iter()
-            .find_map(|filter| filter.search_params())
-    }
-
-    fn accept(&self, instrument: &InstrumentAny) -> bool {
-        self.filters.iter().all(|f| f.accept(instrument))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
@@ -548,15 +463,6 @@ mod tests {
         assert!(filter.accept(&yes_instrument));
         assert!(!filter.accept(&no_instrument));
         assert!(!filter.accept(&no_outcome_instrument));
-    }
-
-    #[rstest]
-    fn test_composite_accept_and_all_predicates(yes_instrument: InstrumentAny) {
-        let composite = CompositeFilter::new(vec![
-            Box::new(PredicateFilter::new("always_true", |_| true)),
-            Box::new(PredicateFilter::new("always_false", |_| false)),
-        ]);
-        assert!(!composite.accept(&yes_instrument)); // AND: true && false == false
     }
 
     #[rstest]
