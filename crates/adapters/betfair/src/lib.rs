@@ -58,3 +58,6 @@ pub mod factories;
 pub mod http;
 pub mod provider;
 pub mod stream;
+
+#[cfg(feature = "python")]
+pub mod python;

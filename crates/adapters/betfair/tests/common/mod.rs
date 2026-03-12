@@ -214,12 +214,20 @@ pub async fn accept_and_auth(
 }
 
 pub fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {
-    BetfairHttpClient::new(test_credential(), Some(10), Some(1), Some(100), None)
-        .unwrap()
-        .with_urls(
-            format!("http://{addr}/login"),
-            format!("http://{addr}/betting"),
-            format!("http://{addr}/accounts"),
-            format!("http://{addr}/navigation"),
-        )
+    BetfairHttpClient::new(
+        test_credential(),
+        Some(10),
+        Some(1),
+        Some(100),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_urls(
+        format!("http://{addr}/login"),
+        format!("http://{addr}/betting"),
+        format!("http://{addr}/accounts"),
+        format!("http://{addr}/navigation"),
+    )
 }

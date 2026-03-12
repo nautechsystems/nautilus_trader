@@ -30,6 +30,8 @@ pub enum BetfairHttpError {
     JsonError(String),
     /// Network-related error.
     NetworkError(String),
+    /// Invalid client configuration.
+    InvalidConfiguration(String),
     /// Request timeout.
     Timeout(String),
     /// Request canceled.
@@ -48,6 +50,7 @@ impl Display for BetfairHttpError {
             }
             Self::JsonError(msg) => write!(f, "JSON error: {msg}"),
             Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
+            Self::InvalidConfiguration(msg) => write!(f, "Invalid configuration: {msg}"),
             Self::Timeout(msg) => write!(f, "Timeout: {msg}"),
             Self::Canceled(msg) => write!(f, "Canceled: {msg}"),
             Self::UnexpectedStatus { status, body } => {
@@ -174,6 +177,12 @@ mod tests {
             body: "Forbidden".to_string(),
         };
         assert_eq!(err.to_string(), "Unexpected status 403: Forbidden");
+    }
+
+    #[rstest]
+    fn test_display_invalid_configuration() {
+        let err = BetfairHttpError::InvalidConfiguration("bad rate".to_string());
+        assert_eq!(err.to_string(), "Invalid configuration: bad rate");
     }
 
     #[rstest]
