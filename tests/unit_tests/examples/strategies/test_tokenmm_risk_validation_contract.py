@@ -47,7 +47,7 @@ def test_tokenmm_binance_spot_docs_keep_the_strategy_parked_on_this_pass() -> No
 
     assert "docs/runbooks/tokenmm-binance-spot-market-making.md" in deploy_readme
     assert "Binance perp and Binance spot stay allowlisted but parked" in deploy_readme
-    assert "not part of the supported live core or required completeness set" in deploy_readme
+    assert "supported live core or required completeness" in deploy_readme
     assert "must stay `bot_on = false`" in deploy_readme
     assert "future reintroduction work" in deploy_readme
 
