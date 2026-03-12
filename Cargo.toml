@@ -351,7 +351,7 @@ iai = "0.1.1"
 pretty_assertions = "1.4.1"
 proptest = { version = "1.10.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
-tempfile = "3.26.0"
+tempfile = "3.27.0"
 turmoil = "0.7.1"
 
 # -----------------------------------------------------------------------------
@@ -370,7 +370,7 @@ cargo-deny = "0.19.0"
 cargo-edit = "0.13.9"
 cargo-llvm-cov = "0.8.4"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.129"
+cargo-nextest = "0.9.130"
 cargo-vet = "0.10.2"
 lychee = "0.23.0"
 

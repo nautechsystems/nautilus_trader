@@ -77,6 +77,24 @@ impl BarSpecification {
         self.to_string()
     }
 
+    #[getter]
+    #[pyo3(name = "step")]
+    fn py_step(&self) -> usize {
+        self.step.get()
+    }
+
+    #[getter]
+    #[pyo3(name = "aggregation")]
+    fn py_aggregation(&self) -> BarAggregation {
+        self.aggregation
+    }
+
+    #[getter]
+    #[pyo3(name = "price_type")]
+    fn py_price_type(&self) -> PriceType {
+        self.price_type
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

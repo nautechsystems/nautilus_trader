@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from dataclasses import field
 import keyword
 from pathlib import Path
 import re
@@ -60,6 +61,19 @@ class StubFixup:
     classes: tuple[str, ...] = ()
     imports: tuple[str, ...] = ()
     all_exports: tuple[str, ...] = ()
+
+
+@dataclass
+class ClassMethodFixup:
+    """
+    Metadata-driven fixups for a generated stub class.
+    """
+
+    getters: set[str] = field(default_factory=set)
+    staticmethods: set[str] = field(default_factory=set)
+    classmethods: set[str] = field(default_factory=set)
+    renames: dict[str, str] = field(default_factory=dict)
+    injected_staticmethods: dict[str, str] = field(default_factory=dict)
 
 
 # Classes to relocate from _libnautilus to their target modules
@@ -180,6 +194,7 @@ def generate_stubs() -> bool:
     if root.exists():
         post_process_stubs(root)
         relocate_classes_from_libnautilus(root)
+        format_stub_files(root)
 
     relative_root = dest_dir.relative_to(Path(__file__).parent)
     print(f"Type stubs written to {relative_root or Path('.')} ")
@@ -208,6 +223,8 @@ def generate_stubs() -> bool:
 
 def post_process_stubs(root: Path) -> None:
     """Post-process all stub files: fix headers, rename methods, fix return types."""
+    rust_fixups = collect_rust_class_fixups(Path(__file__).parent.parent)
+
     for stub_file in root.rglob("*.pyi"):
         content = stub_file.read_text()
         original = content
@@ -218,6 +235,12 @@ def post_process_stubs(root: Path) -> None:
         # Rename methods (py_new -> __init__, etc.)
         content = rename_methods(content)
 
+        # Restore getter/staticmethod semantics from Rust bindings metadata
+        content = apply_rust_class_fixups(content, rust_fixups)
+
+        # Escape keywords introduced by fixup renames (e.g. py_from -> from)
+        content = _escape_keyword_methods(content)
+
         # Remove imports extracted from doc comment examples
         content = remove_docstring_imports(content)
 
@@ -226,6 +249,525 @@ def post_process_stubs(root: Path) -> None:
 
         if content != original:
             stub_file.write_text(content)
+
+
+IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(
+    getters={"value"},
+    staticmethods={"_safe_constructor", "from_str"},
+)
+
+INJECTABLE_STATICMETHODS = frozenset({"from_json", "from_msgpack"})
+
+# Methods to suppress from public stubs (implementation details, not user-facing API)
+SUPPRESSED_METHODS = frozenset({"__richcmp__", "_safe_constructor"})
+PYMETHODS_ATTR = "#[pymethods]"
+PYO3_NAME_RE = re.compile(r'#\[pyo3\(\s*name\s*=\s*"([^"]+)"')
+RUST_IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_:<>]*)\s*\{")
+RUST_FN_RE = re.compile(
+    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:->\s*(.*?))?\s*\{",
+    flags=re.DOTALL,
+)
+IDENTIFIER_INVOKE_RE = re.compile(
+    r"identifier_for_python!\(\s*(?:crate::)?[A-Za-z_][A-Za-z0-9_:<>]*::([A-Za-z_][A-Za-z0-9_]*)\s*\);",
+)
+STUB_CLASS_RE = re.compile(r"^class ([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\))?:$")
+STUB_DEF_RE = re.compile(r"^\s*def ([A-Za-z_][A-Za-z0-9_]*)\(")
+BUILTIN_TYPE_NAMES = ("bool", "dict", "float", "int", "list", "set", "str")
+
+
+def collect_rust_class_fixups(workspace_root: Path) -> dict[str, ClassMethodFixup]:
+    """
+    Collect getter and staticmethod metadata from Rust PyO3 bindings.
+    """
+    fixups: dict[str, ClassMethodFixup] = {}
+
+    for rust_file in sorted(workspace_root.glob("crates/**/src/python/**/*.rs")):
+        source = rust_file.read_text()
+        _collect_identifier_macro_fixups(source, fixups)
+        _collect_pymethod_fixups(source, fixups)
+
+    return fixups
+
+
+def _collect_identifier_macro_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
+    for class_name in IDENTIFIER_INVOKE_RE.findall(source):
+        fixup = fixups.setdefault(class_name, ClassMethodFixup())
+        fixup.getters.update(IDENTIFIER_MACRO_METHOD_FIXUPS.getters)
+        fixup.staticmethods.update(IDENTIFIER_MACRO_METHOD_FIXUPS.staticmethods)
+
+
+def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
+    lines = source.splitlines()
+    i = 0
+
+    while i < len(lines):
+        if lines[i].strip() != PYMETHODS_ATTR:
+            i += 1
+            continue
+
+        j = i + 1
+        while j < len(lines) and lines[j].strip().startswith("#["):
+            j += 1
+
+        if j >= len(lines):
+            break
+
+        impl_match = RUST_IMPL_RE.match(lines[j])
+        if impl_match is None:
+            i = j + 1
+            continue
+
+        class_name = impl_match.group(1).split("::")[-1].split("<", maxsplit=1)[0]
+        brace_depth = lines[j].count("{") - lines[j].count("}")
+        block_lines = [lines[j]]
+        j += 1
+
+        while j < len(lines):
+            block_lines.append(lines[j])
+            brace_depth += lines[j].count("{") - lines[j].count("}")
+            if brace_depth <= 0:
+                break
+            j += 1
+
+        fixups.setdefault(class_name, ClassMethodFixup())
+        _collect_block_method_fixups(class_name, block_lines, fixups)
+        i = j + 1
+
+
+def _collect_block_method_fixups(
+    class_name: str,
+    block_lines: list[str],
+    fixups: dict[str, ClassMethodFixup],
+) -> None:
+    pending_attrs: list[str] = []
+    i = 1  # Skip `impl X {`
+
+    while i < len(block_lines):
+        line = block_lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        if stripped.startswith("#["):
+            attribute, i = consume_rust_attribute(block_lines, i)
+            pending_attrs.append(attribute)
+            continue
+
+        if stripped.startswith(("///", "//!")):
+            i += 1
+            continue
+
+        if "fn " not in stripped:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        method_match, i = consume_rust_method_signature(block_lines, i)
+        if method_match is not None:
+            register_rust_method_fixup(class_name, pending_attrs, method_match, fixups)
+        pending_attrs.clear()
+
+
+def consume_rust_attribute(lines: list[str], start: int) -> tuple[str, int]:
+    """
+    Consume a Rust attribute, including multi-line forms such as `#[allow(...)]`.
+    """
+    attribute_lines = [lines[start].strip()]
+    bracket_depth = attribute_lines[0].count("[") - attribute_lines[0].count("]")
+    i = start + 1
+
+    while i < len(lines) and bracket_depth > 0:
+        attribute_lines.append(lines[i].strip())
+        bracket_depth += lines[i].count("[") - lines[i].count("]")
+        i += 1
+
+    return " ".join(attribute_lines), i
+
+
+def consume_rust_method_signature(
+    lines: list[str],
+    start: int,
+) -> tuple[re.Match[str] | None, int]:
+    """
+    Consume a Rust method signature and return the regex match.
+    """
+    signature_lines = [lines[start].strip()]
+    i = start + 1
+
+    while i < len(lines) and "{" not in signature_lines[-1]:
+        signature_lines.append(lines[i].strip())
+        i += 1
+
+    signature = " ".join(signature_lines)
+    return RUST_FN_RE.search(signature), i
+
+
+def register_rust_method_fixup(
+    class_name: str,
+    attrs: list[str],
+    method_match: re.Match[str],
+    fixups: dict[str, ClassMethodFixup],
+) -> None:
+    """
+    Register getter, staticmethod, and classmethod metadata from a Rust method.
+    """
+    rust_name = method_match.group(1)
+    params = method_match.group(2)
+
+    is_getter = any(attr.startswith("#[getter") for attr in attrs)
+    is_staticmethod = any(attr.startswith("#[staticmethod") for attr in attrs)
+    is_classmethod = any(attr.startswith("#[classmethod") for attr in attrs)
+    python_name = _python_exposed_name(rust_name, attrs, is_getter)
+    if not python_name:
+        return
+
+    fallback_name = _python_exposed_name(rust_name, [], is_getter)
+    method_names = {python_name}
+    if fallback_name and fallback_name != python_name:
+        method_names.add(fallback_name)
+
+    fixup = fixups.setdefault(class_name, ClassMethodFixup())
+
+    if fallback_name and fallback_name != python_name:
+        fixup.renames[fallback_name] = python_name
+
+    if is_getter:
+        fixup.getters.update(method_names)
+
+    if is_classmethod:
+        fixup.classmethods.update(method_names)
+        return
+
+    if not is_staticmethod:
+        return
+
+    fixup.staticmethods.update(method_names)
+    if python_name not in INJECTABLE_STATICMETHODS:
+        return
+
+    rendered = render_missing_staticmethod_stub(class_name, python_name, params)
+    if rendered is not None:
+        fixup.injected_staticmethods[python_name] = rendered
+
+
+def _python_exposed_name(rust_name: str, attrs: list[str], is_getter: bool) -> str | None:
+    for attr in attrs:
+        name_match = PYO3_NAME_RE.search(attr)
+        if name_match:
+            return name_match.group(1)
+
+    if rust_name == "py_new":
+        return "__init__"
+
+    if rust_name.startswith("py_") and not keyword.iskeyword(rust_name[3:]):
+        return rust_name[3:]
+
+    if is_getter and rust_name.startswith("get_"):
+        return rust_name[4:]
+
+    return rust_name
+
+
+def render_missing_staticmethod_stub(
+    class_name: str,
+    method_name: str,
+    params: str,
+) -> str | None:
+    """
+    Render a conservative stub for missing deserializer helpers.
+    """
+    params = params.strip()
+    if method_name not in INJECTABLE_STATICMETHODS:
+        return None
+
+    if params.count(":") != 1 or not params.startswith("data:"):
+        return None
+
+    return f"    @staticmethod\n    def {method_name}(data: typing.Any) -> {class_name}: ..."
+
+
+def apply_rust_class_fixups(
+    content: str,
+    class_fixups: dict[str, ClassMethodFixup],
+) -> str:
+    """
+    Rewrite generated class methods using Rust source metadata.
+    """
+    lines = content.split("\n")
+    result: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        class_match = STUB_CLASS_RE.match(lines[i].strip())
+        if class_match is None:
+            result.append(lines[i])
+            i += 1
+            continue
+
+        class_name = class_match.group(1)
+        j = i + 1
+        while j < len(lines):
+            stripped = lines[j].strip()
+            if stripped and not lines[j].startswith((" ", "\t")):
+                break
+            j += 1
+
+        fixup = class_fixups.get(class_name)
+        if fixup is None:
+            result.extend(lines[i:j])
+        else:
+            result.extend(apply_class_block_fixups(lines[i:j], class_name, fixup))
+        i = j
+
+    return "\n".join(result)
+
+
+def apply_class_block_fixups(
+    class_block: list[str],
+    class_name: str,
+    fixup: ClassMethodFixup,
+) -> list[str]:
+    header = class_block[0]
+    body_lines = class_block[1:]
+    result = [header]
+    seen_methods: set[str] = set()
+    i = 0
+
+    while i < len(body_lines):
+        parsed = parse_stub_method_block(body_lines, i)
+        if parsed is None:
+            result.append(body_lines[i])
+            i += 1
+            continue
+
+        method_name, method_block, next_index = parsed
+        resolved_name = fixup.renames.get(method_name, method_name)
+        is_duplicate = method_name in seen_methods or resolved_name in seen_methods
+        seen_methods.add(method_name)
+        seen_methods.add(resolved_name)
+        is_suppressed = method_name in SUPPRESSED_METHODS or resolved_name in SUPPRESSED_METHODS
+        if not is_duplicate and not is_suppressed:
+            result.extend(rewrite_stub_method_block(method_name, method_block, fixup))
+        i = next_index
+
+    missing = [
+        fixup.injected_staticmethods[name]
+        for name in sorted(fixup.injected_staticmethods)
+        if name not in seen_methods
+    ]
+    if missing:
+        trailing_blank_lines: list[str] = []
+        while result and not result[-1].strip():
+            trailing_blank_lines.append(result.pop())
+
+        if result and result[-1].strip():
+            result.append("")
+        for index, method in enumerate(missing):
+            result.extend(method.split("\n"))
+            if index != len(missing) - 1:
+                result.append("")
+        result.extend(reversed(trailing_blank_lines))
+
+    return result
+
+
+def parse_stub_method_block(
+    lines: list[str],
+    start: int,
+) -> tuple[str, list[str], int] | None:
+    """
+    Parse a method block from a stub class body.
+    """
+    if start >= len(lines) or not lines[start].strip():
+        return None
+
+    method_start, def_index = find_stub_method_start(lines, start)
+    if method_start is None or def_index is None:
+        return None
+
+    signature_lines, signature_end = consume_stub_signature(lines, def_index)
+    method_end = find_stub_method_end(lines, signature_lines, signature_end)
+    method_block = lines[method_start:method_end]
+    def_line = next(line for line in method_block if line.lstrip().startswith("def "))
+    method_match = STUB_DEF_RE.match(def_line)
+    if method_match is None:
+        return None
+
+    return method_match.group(1), method_block, method_end
+
+
+def find_stub_method_start(lines: list[str], start: int) -> tuple[int | None, int | None]:
+    """
+    Find the start and definition line for a stub method block.
+    """
+    i = start
+    while i < len(lines) and lines[i].startswith("    @"):
+        i += 1
+
+    if i >= len(lines) or not lines[i].startswith("    def "):
+        return None, None
+
+    return start, i
+
+
+def consume_stub_signature(lines: list[str], start: int) -> tuple[list[str], int]:
+    """
+    Consume a stub method signature, including multi-line forms.
+    """
+    signature_lines = [lines[start]]
+    i = start + 1
+
+    while i < len(lines):
+        if signature_lines[-1].rstrip().endswith(":") or signature_lines[-1].rstrip().endswith(
+            "...",
+        ):
+            break
+        signature_lines.append(lines[i])
+        i += 1
+
+    return signature_lines, i
+
+
+def find_stub_method_end(
+    lines: list[str],
+    signature_lines: list[str],
+    signature_end: int,
+) -> int:
+    """
+    Find the end index for a stub method block.
+    """
+    if signature_lines[-1].rstrip().endswith("..."):
+        return signature_end
+
+    method_indent = 4
+    method_end = signature_end
+    while method_end < len(lines):
+        stripped = lines[method_end].strip()
+        if not stripped:
+            method_end += 1
+            continue
+        indent = len(lines[method_end]) - len(lines[method_end].lstrip())
+        if indent <= method_indent:
+            break
+        method_end += 1
+
+    return method_end
+
+
+def split_method_block(
+    method_block: list[str],
+) -> tuple[list[str], str, list[str]]:
+    """
+    Split a stub method block into decorators, signature text, and remainder.
+    """
+    decorators: list[str] = []
+    body_start = 0
+    while body_start < len(method_block) and method_block[body_start].startswith("    @"):
+        decorators.append(method_block[body_start])
+        body_start += 1
+
+    signature_lines: list[str] = []
+    signature_end = body_start
+    while signature_end < len(method_block):
+        signature_lines.append(method_block[signature_end])
+        if signature_lines[-1].rstrip().endswith(":") or signature_lines[-1].rstrip().endswith(
+            "...",
+        ):
+            signature_end += 1
+            break
+        signature_end += 1
+
+    return decorators, "\n".join(signature_lines), method_block[signature_end:]
+
+
+def _has_decorator(decorators: list[str], name: str) -> bool:
+    return any(line.strip() == name for line in decorators)
+
+
+def rewrite_stub_method_block(
+    method_name: str,
+    method_block: list[str],
+    fixup: ClassMethodFixup,
+) -> list[str]:
+    """
+    Apply decorator, receiver, and rename fixes to a stub method block.
+    """
+    needs_fixup = (
+        method_name in fixup.getters
+        or method_name in fixup.staticmethods
+        or method_name in fixup.classmethods
+        or method_name in fixup.renames
+    )
+    if not needs_fixup:
+        return method_block
+
+    decorators, signature_text, remainder = split_method_block(method_block)
+
+    if method_name in fixup.renames:
+        new_name = fixup.renames[method_name]
+        signature_text = re.sub(
+            rf"\bdef {re.escape(method_name)}\(",
+            f"def {new_name}(",
+            signature_text,
+            count=1,
+        )
+
+    if method_name in fixup.staticmethods:
+        signature_text = drop_stub_method_receiver(signature_text)
+        if not _has_decorator(decorators, "@staticmethod"):
+            decorators.append("    @staticmethod")
+    elif method_name in fixup.classmethods:
+        signature_text = replace_self_with_cls(signature_text)
+        if not _has_decorator(decorators, "@classmethod"):
+            decorators.append("    @classmethod")
+
+    if method_name in fixup.getters and not _has_decorator(decorators, "@property"):
+        decorators.append("    @property")
+
+    return decorators + signature_text.split("\n") + remainder
+
+
+def drop_stub_method_receiver(signature_text: str) -> str:
+    """
+    Remove an inserted instance receiver from a stub signature.
+    """
+    signature_text = re.sub(
+        r"(\bdef\s+\w+\(\n)([ \t]*)(?:self|cls)\s*,\s*",
+        r"\1\2",
+        signature_text,
+        count=1,
+    )
+    signature_text = re.sub(
+        r"(\bdef\s+\w+\(\n)([ \t]*)(?:self|cls)\s*(?=\n)",
+        r"\1",
+        signature_text,
+        count=1,
+    )
+    signature_text = re.sub(
+        r"(\bdef\s+\w+\()\s*(?:self|cls)\s*,\s*",
+        r"\1",
+        signature_text,
+        count=1,
+        flags=re.DOTALL,
+    )
+    signature_text = re.sub(
+        r"(\bdef\s+\w+\()\s*(?:self|cls)\s*(?=\))",
+        r"\1",
+        signature_text,
+        count=1,
+        flags=re.DOTALL,
+    )
+    return signature_text
+
+
+def replace_self_with_cls(signature_text: str) -> str:
+    """
+    Replace self receiver with cls for classmethod signatures.
+    """
+    return re.sub(r"\bself\b", "cls", signature_text, count=1)
 
 
 def fix_stub_header(content: str) -> str:
@@ -462,6 +1004,9 @@ def rename_methods(content: str) -> str:
         content,
     )
 
+    # Escape Python keywords used as method names (e.g. def from(self) -> def from_(self))
+    content = _escape_keyword_methods(content)
+
     # Escape Python keywords used as parameter names (e.g. from -> from_)
     content = _escape_keyword_params(content)
 
@@ -469,6 +1014,20 @@ def rename_methods(content: str) -> str:
     content = _escape_keyword_variants(content)
 
     return content
+
+
+def _escape_keyword_methods(content: str) -> str:
+    """
+    Append underscore to Python keywords used as method or property names.
+    """
+
+    def _escape_match(m: re.Match[str]) -> str:
+        name = m.group(1)
+        if keyword.iskeyword(name):
+            return f"def {name}_("
+        return m.group(0)
+
+    return re.sub(r"\bdef ([a-z]\w*)\(", _escape_match, content)
 
 
 def _escape_keyword_params(content: str) -> str:
@@ -621,6 +1180,20 @@ def clean_orphaned_decorators(source: str) -> str:
     return "\n".join(result)
 
 
+def normalize_builtin_type_names(content: str) -> str:
+    """
+    Replace noisy `builtins.X` spellings with bare builtin type names.
+    """
+    names = "|".join(BUILTIN_TYPE_NAMES)
+    pattern = re.compile(rf"\bbuiltins\.({names})\b")
+    content = pattern.sub(lambda match: match.group(1), content)
+
+    if "builtins." not in content:
+        content = re.sub(r"^import builtins\s*\n", "", content, flags=re.MULTILINE)
+
+    return content
+
+
 def normalize_stub_content(content: str) -> str:
     """
     Normalize type hints and formatting in stub content.
@@ -628,6 +1201,8 @@ def normalize_stub_content(content: str) -> str:
     # Replace enum.Enum with Enum when "from enum import Enum" is present
     if "from enum import Enum" in content:
         content = re.sub(r"\benum\.Enum\b", "Enum", content)
+
+    content = normalize_builtin_type_names(content)
 
     # Fix module references when using "from X import Y" style imports
     # e.g. nautilus_trader.model.X -> model.X
@@ -643,6 +1218,19 @@ def normalize_stub_content(content: str) -> str:
     content = content.rstrip() + "\n"
 
     return content
+
+
+def format_stub_files(root: Path) -> None:
+    """
+    Run ruff lint fixes and formatting on generated stub files.
+    """
+    stub_files = sorted(root.rglob("*.pyi"))
+    if not stub_files:
+        return
+
+    file_args = [str(f) for f in stub_files]
+    run_command(["ruff", "check", "--fix", *file_args], check=False)
+    run_command(["ruff", "format", *file_args], check=False)
 
 
 def build_extension() -> bool:
