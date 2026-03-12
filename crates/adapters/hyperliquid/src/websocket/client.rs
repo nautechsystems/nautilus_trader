@@ -203,7 +203,7 @@ impl HyperliquidWebSocketClient {
             );
 
             let resubscribe_all = || {
-                let topics = subscriptions.all_topics();
+                let topics = confirmed_topics_for_reconnect(&subscriptions);
                 if topics.is_empty() {
                     log::debug!("No active subscriptions to restore after reconnection");
                     return;
@@ -213,6 +213,9 @@ impl HyperliquidWebSocketClient {
                     "Resubscribing to {} active subscriptions after reconnection",
                     topics.len()
                 );
+                for topic in &topics {
+                    subscriptions.mark_failure(topic);
+                }
                 for topic in topics {
                     match subscription_from_topic(&topic) {
                         Ok(subscription) => {
@@ -939,6 +942,25 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
     }
 }
 
+fn confirmed_topics_for_reconnect(subscriptions: &SubscriptionState) -> Vec<String> {
+    let confirmed = subscriptions.confirmed();
+    let mut topics = Vec::new();
+
+    for entry in confirmed.iter() {
+        let (channel, symbols) = entry.pair();
+        for symbol in symbols {
+            if symbol.is_empty() {
+                topics.push(channel.to_string());
+            } else {
+                topics.push(format!("{channel}:{symbol}"));
+            }
+        }
+    }
+
+    topics.sort();
+    topics
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -997,5 +1019,23 @@ mod tests {
 
         let topic = subscription_topic(&sub);
         assert_eq!(topic, "candle:BTC:1h");
+    }
+
+    #[rstest]
+    fn test_confirmed_topics_for_reconnect_excludes_pending_topics() {
+        let client = HyperliquidWebSocketClient::new(Some("ws://test".to_string()), false, None);
+
+        client.subscriptions.mark_subscribe("trades:BTC");
+        client.subscriptions.confirm_subscribe("trades:BTC");
+
+        client.subscriptions.mark_subscribe("bbo:ETH");
+
+        client.subscriptions.mark_subscribe("l2Book:SOL");
+        client.subscriptions.confirm_subscribe("l2Book:SOL");
+        client.subscriptions.mark_unsubscribe("l2Book:SOL");
+
+        let topics = confirmed_topics_for_reconnect(&client.subscriptions);
+
+        assert_eq!(topics, vec!["trades:BTC"]);
     }
 }

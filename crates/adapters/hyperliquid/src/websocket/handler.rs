@@ -1,5 +1,6 @@
 //! WebSocket message handler for Hyperliquid.
 
+use std::str::FromStr;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -22,13 +23,15 @@ use nautilus_network::{
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
+use crate::common::enums::HyperliquidBarInterval;
+
 use super::{
     client::AssetContextDataType,
     enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
-        SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
+        SubscriptionRequest, WsActiveAssetCtxData, WsTradeData, WsUserEventData,
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
@@ -267,6 +270,10 @@ impl FeedHandler {
                             match serde_json::from_str::<HyperliquidWsMessage>(&text) {
                                 Ok(msg) => {
                                     let ts_init = self.clock.get_time_ns();
+                                    maybe_confirm_subscription_from_message(
+                                        &self.subscriptions,
+                                        &msg,
+                                    );
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
@@ -442,7 +449,7 @@ impl FeedHandler {
             HyperliquidWsMessage::Error { data } => {
                 log::warn!("Received error from Hyperliquid WebSocket: {data}");
             }
-            // Ignore other message types (subscription confirmations, etc)
+            // Ignore other message types.
             _ => {}
         }
 
@@ -824,6 +831,111 @@ pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
     }
 }
 
+fn maybe_confirm_subscription_from_message(
+    subscriptions: &SubscriptionState,
+    msg: &HyperliquidWsMessage,
+) {
+    match subscription_state_update_from_message(msg) {
+        Some((topic, SubscriptionTransition::Subscribe))
+            if subscriptions
+                .pending_subscribe_topics()
+                .iter()
+                .any(|candidate| candidate == &topic) =>
+        {
+            subscriptions.confirm_subscribe(&topic);
+        }
+        Some((topic, SubscriptionTransition::Unsubscribe))
+            if subscriptions
+                .pending_unsubscribe_topics()
+                .iter()
+                .any(|candidate| candidate == &topic) =>
+        {
+            subscriptions.confirm_unsubscribe(&topic);
+        }
+        _ => {}
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SubscriptionTransition {
+    Subscribe,
+    Unsubscribe,
+}
+
+fn subscription_state_update_from_message(
+    msg: &HyperliquidWsMessage,
+) -> Option<(String, SubscriptionTransition)> {
+    match msg {
+        HyperliquidWsMessage::SubscriptionResponse { data } => {
+            let topic = subscription_to_key(&data.subscription);
+            let transition = match data.method.as_str() {
+                "subscribe" => SubscriptionTransition::Subscribe,
+                "unsubscribe" => SubscriptionTransition::Unsubscribe,
+                _ => return None,
+            };
+            Some((topic, transition))
+        }
+        HyperliquidWsMessage::Trades { data } => subscription_topic_from_trade_data(data)
+            .map(|topic| (topic, SubscriptionTransition::Subscribe)),
+        HyperliquidWsMessage::Bbo { data } => Some((
+            subscription_to_key(&SubscriptionRequest::Bbo { coin: data.coin }),
+            SubscriptionTransition::Subscribe,
+        )),
+        HyperliquidWsMessage::L2Book { data } => Some((
+            subscription_to_key(&SubscriptionRequest::L2Book {
+                coin: data.coin,
+                n_sig_figs: None,
+                mantissa: None,
+            }),
+            SubscriptionTransition::Subscribe,
+        )),
+        HyperliquidWsMessage::Candle { data } => HyperliquidBarInterval::from_str(data.i.as_str())
+            .ok()
+            .map(|interval| {
+                (
+                    subscription_to_key(&SubscriptionRequest::Candle {
+                        coin: data.s,
+                        interval,
+                    }),
+                    SubscriptionTransition::Subscribe,
+                )
+            }),
+        HyperliquidWsMessage::ActiveAssetCtx { data } => {
+            let coin = match data {
+                WsActiveAssetCtxData::Perp { coin, .. }
+                | WsActiveAssetCtxData::Spot { coin, .. } => *coin,
+            };
+            Some((
+                subscription_to_key(&SubscriptionRequest::ActiveAssetCtx { coin }),
+                SubscriptionTransition::Subscribe,
+            ))
+        }
+        HyperliquidWsMessage::ActiveSpotAssetCtx { data } => {
+            let coin = match data {
+                WsActiveAssetCtxData::Perp { coin, .. }
+                | WsActiveAssetCtxData::Spot { coin, .. } => *coin,
+            };
+            Some((
+                subscription_to_key(&SubscriptionRequest::ActiveSpotAssetCtx { coin }),
+                SubscriptionTransition::Subscribe,
+            ))
+        }
+        HyperliquidWsMessage::ActiveAssetData { data } => Some((
+            subscription_to_key(&SubscriptionRequest::ActiveAssetData {
+                user: data.user.clone(),
+                coin: data.coin.to_string(),
+            }),
+            SubscriptionTransition::Subscribe,
+        )),
+        _ => None,
+    }
+}
+
+fn subscription_topic_from_trade_data(data: &[WsTradeData]) -> Option<String> {
+    data.first()
+        .map(|trade| subscription_to_key(&SubscriptionRequest::Trades { coin: trade.coin }))
+}
+
 /// Determines whether a Hyperliquid WebSocket error should trigger a retry.
 pub(crate) fn should_retry_hyperliquid_error(error: &HyperliquidWsError) -> bool {
     match error {
@@ -842,4 +954,61 @@ pub(crate) fn should_retry_hyperliquid_error(error: &HyperliquidWsError) -> bool
 /// Creates a timeout error for Hyperliquid retry logic.
 pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsError {
     HyperliquidWsError::ClientError(msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common::enums::HyperliquidSide;
+
+    use super::*;
+
+    #[test]
+    fn test_market_data_message_confirms_pending_subscription() {
+        let subscriptions = SubscriptionState::new(':');
+        subscriptions.mark_subscribe("trades:BTC");
+
+        let msg = HyperliquidWsMessage::Trades {
+            data: vec![WsTradeData {
+                coin: Ustr::from("BTC"),
+                side: HyperliquidSide::Buy,
+                px: "100.0".to_string(),
+                sz: "1.0".to_string(),
+                hash: "hash".to_string(),
+                time: 1,
+                tid: 1,
+                users: ["buyer".to_string(), "seller".to_string()],
+            }],
+        };
+
+        maybe_confirm_subscription_from_message(&subscriptions, &msg);
+
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions.all_topics(), vec!["trades:BTC"]);
+    }
+
+    #[test]
+    fn test_subscription_response_confirms_pending_unsubscribe() {
+        let subscriptions = SubscriptionState::new(':');
+        let topic = "candle:BTC:1m";
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        subscriptions.mark_unsubscribe(topic);
+
+        let msg = HyperliquidWsMessage::SubscriptionResponse {
+            data: crate::websocket::messages::SubscriptionResponseData {
+                method: "unsubscribe".to_string(),
+                subscription: SubscriptionRequest::Candle {
+                    coin: Ustr::from("BTC"),
+                    interval: HyperliquidBarInterval::OneMinute,
+                },
+            },
+        };
+
+        maybe_confirm_subscription_from_message(&subscriptions, &msg);
+
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(subscriptions.all_topics().is_empty());
+        assert_eq!(subscriptions.len(), 0);
+    }
 }

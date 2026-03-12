@@ -36,7 +36,8 @@ use super::{
     config::WebSocketConfig,
     consts::{
         CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
-        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, SEND_OPERATION_CHECK_INTERVAL_MS,
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, RECONNECT_STABILIZATION_DELAY_MS,
+        SEND_OPERATION_CHECK_INTERVAL_MS,
     },
     types::{MessageHandler, MessageReader, MessageWriter, PingHandler, WriterCommand},
 };
@@ -626,6 +627,23 @@ impl WebSocketClientInner {
         send_error_occurred
     }
 
+    /// Probes a replacement writer before declaring reconnect success.
+    ///
+    /// This closes the false-positive reconnect hole where a new socket has connected,
+    /// but the first post-reconnect send would still fail because the writer is already
+    /// closing. A lightweight ping exercises the real send path without mutating
+    /// application-level subscription state.
+    async fn probe_reconnected_writer(writer: &mut MessageWriter) -> bool {
+        log::debug!("Probing replacement writer after reconnection");
+
+        if let Err(e) = writer.send(Message::Ping(vec![].into())).await {
+            log::error!("Failed to probe replacement writer after reconnection: {e}");
+            return true;
+        }
+
+        false
+    }
+
     fn spawn_write_task(
         connection_state: Arc<AtomicU8>,
         writer: MessageWriter,
@@ -703,11 +721,15 @@ impl WebSocketClientInner {
                                 active_writer = new_writer;
                                 log::debug!("Updated writer");
 
-                                let send_error = Self::drain_reconnect_buffer(
-                                    &mut reconnect_buffer,
-                                    &mut active_writer,
-                                )
-                                .await;
+                                let send_error = if reconnect_buffer.is_empty() {
+                                    Self::probe_reconnected_writer(&mut active_writer).await
+                                } else {
+                                    Self::drain_reconnect_buffer(
+                                        &mut reconnect_buffer,
+                                        &mut active_writer,
+                                    )
+                                    .await
+                                };
 
                                 if let Err(e) = tx.send(!send_error) {
                                     log::error!(
@@ -1283,6 +1305,26 @@ impl WebSocketClient {
 
                             // Only invoke callbacks if not in disconnect state
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                tokio::time::sleep(Duration::from_millis(
+                                    RECONNECT_STABILIZATION_DELAY_MS,
+                                ))
+                                .await;
+
+                                if ConnectionMode::from_atomic(&connection_mode).is_active()
+                                    && !inner.is_alive()
+                                {
+                                    log::warn!(
+                                        "Reconnected socket did not survive stabilization window; retrying"
+                                    );
+                                    let _ = connection_mode.compare_exchange(
+                                        ConnectionMode::Active.as_u8(),
+                                        ConnectionMode::Reconnect.as_u8(),
+                                        Ordering::SeqCst,
+                                        Ordering::SeqCst,
+                                    );
+                                    continue;
+                                }
+
                                 if let Some(ref handler) = inner.message_handler {
                                     let reconnected_msg =
                                         Message::Text(RECONNECTED.to_string().into());
@@ -1892,6 +1934,96 @@ mod rust_tests {
             result.is_ok(),
             "Should receive message after reconnection within timeout"
         );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_emits_single_reconnected_after_writer_is_usable() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: die before the writer update path can safely use it.
+            // The writer task waits before swapping writers, so a short-lived connection here
+            // reproduces the false-positive reconnect seen in live equities nodes.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                sleep(Duration::from_millis(20)).await;
+                let _ = ws.close(None).await;
+            }
+
+            // Third connection: stable replacement that should be the only one that produces
+            // a RECONNECTED sentinel to consumers.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let mut reconnected_count = 0usize;
+        let collect = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(msg) = rx.recv().await
+                    && matches!(msg, Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED)
+                {
+                    reconnected_count += 1;
+                    if reconnected_count >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            collect.is_err(),
+            "should not emit RECONNECTED for the dead replacement socket"
+        );
+        assert_eq!(
+            reconnected_count, 1,
+            "only the stable replacement connection should emit RECONNECTED"
+        );
+
+        client
+            .send_text("hello-after-stable-reconnect".to_string(), None)
+            .await
+            .expect("stable replacement connection should accept sends");
 
         client.disconnect().await;
         server.abort();
