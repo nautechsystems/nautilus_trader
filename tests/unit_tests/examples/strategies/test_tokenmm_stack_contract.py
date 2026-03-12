@@ -904,6 +904,34 @@ def test_tokenmm_okx_perp_configs_default_to_cross_margin() -> None:
     assert 'OKX perp configs should set `margin_mode = "CROSS"`' in template
 
 
+def test_supported_tokenmm_perp_configs_pin_bounded_convergence_budgets() -> None:
+    expectations = {
+        "plumeusdt_bybit_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 1",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 4",
+            "max_pending_cancels_per_side = 1",
+        ),
+        "plumeusdt_okx_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 2",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 6",
+            "max_pending_cancels_per_side = 2",
+        ),
+        "plumeusdt_bitget_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 1",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 4",
+            "max_pending_cancels_per_side = 1",
+        ),
+    }
+
+    for strategy_id, required_lines in expectations.items():
+        config = _read(_strategy_config_path(strategy_id))
+        for line in required_lines:
+            assert line in config
+
+
 def test_deploy_env_examples_default_to_safe_paper_profiles_and_direct_prod_rejection() -> None:
     tokenmm_env = _read(_repo_root() / "deploy/tokenmm/tokenmm_stack.env.example")
 

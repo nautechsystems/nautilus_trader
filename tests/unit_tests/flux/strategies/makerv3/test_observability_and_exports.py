@@ -237,7 +237,12 @@ def test_quote_cycle_completed_event_contains_action_counts(clocked_strategy_fac
     assert quote_cycle_events[0]["quote_cycle_event"] == QUOTE_CYCLE_EVENT_COMPLETED
     assert quote_cycle_events[0]["reason_code"] == REASON_COMPLETED_REBALANCED
     assert quote_cycle_events[0]["cancel_count"] == 2
-    assert quote_cycle_events[0]["place_count"] == 4
+    assert quote_cycle_events[0]["place_count"] == 0
+    bounded_convergence = quote_cycle_events[0]["decision_context_json"]["bounded_convergence"]
+    assert bounded_convergence["buy"]["executed_cancel_count"] == 1
+    assert bounded_convergence["buy"]["executed_place_count"] == 0
+    assert bounded_convergence["sell"]["executed_cancel_count"] == 1
+    assert bounded_convergence["sell"]["executed_place_count"] == 0
 
 
 def test_quote_cycle_completed_event_exports_cycle_timing(

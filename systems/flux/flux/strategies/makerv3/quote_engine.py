@@ -180,6 +180,34 @@ def _worst_backlog_mode(modes: list[str]) -> str:
     return worst_mode
 
 
+def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -> dict[str, Any]:
+    cancel_reason_counts: dict[str, int] = {}
+    for action in plan.cancel_actions:
+        reason_code = str(action.reason_code)
+        cancel_reason_counts[reason_code] = cancel_reason_counts.get(reason_code, 0) + 1
+
+    diagnostics = plan.diagnostics
+    return {
+        "backlog_mode": diagnostics.backlog_mode,
+        "matched_level_count": diagnostics.matched_level_count,
+        "keep_level_count": diagnostics.keep_level_count,
+        "frontier_missing_level_count": diagnostics.frontier_missing_level_count,
+        "planned_stale_replacement_count": diagnostics.planned_stale_replacement_count,
+        "total_missing_level_count": diagnostics.total_missing_level_count,
+        "excess_cancel_candidate_count": diagnostics.excess_cancel_candidate_count,
+        "aggressive_cancel_candidate_count": diagnostics.aggressive_cancel_candidate_count,
+        "stale_cancel_candidate_count": diagnostics.stale_cancel_candidate_count,
+        "room_cancel_candidate_count": diagnostics.room_cancel_candidate_count,
+        "budget_limited": diagnostics.budget_limited,
+        "backlog_limited": diagnostics.backlog_limited,
+        "planned_cancel_count": len(plan.cancel_actions),
+        "planned_place_count": len(plan.place_level_indices),
+        "executed_cancel_count": 0,
+        "executed_place_count": 0,
+        "cancel_reason_counts": cancel_reason_counts,
+    }
+
+
 def handle_stale_quote_block(
     strategy: MakerV3Strategy,
     *,
@@ -768,6 +796,7 @@ def refresh_quotes(  # noqa: C901
         [order for order in active_orders if order.side == OrderSide.SELL],
         key=lambda order: _price_to_decimal(order.price),
     )
+    bounded_convergence: dict[str, dict[str, Any]] = {}
 
     clear_orphans = getattr(strategy, "_clear_orphaned_pending_cancels", None)
     cleared_orphans: tuple[str, ...] = ()
@@ -793,6 +822,7 @@ def refresh_quotes(  # noqa: C901
                     runtime_params=runtime_params,
                     managed_orders=[*active_buys, *active_sells],
                     per_level_outcomes=per_level_outcomes,
+                    bounded_convergence=bounded_convergence or None,
                 ),
             },
         )
@@ -842,6 +872,7 @@ def refresh_quotes(  # noqa: C901
                     runtime_params=runtime_params,
                     managed_orders=[*active_buys, *active_sells],
                     per_level_outcomes=per_level_outcomes,
+                    bounded_convergence=bounded_convergence or None,
                 ),
             },
             oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
@@ -904,6 +935,8 @@ def refresh_quotes(  # noqa: C901
             max_total_actions=side_total_actions,
             backlog_mode=backlog_mode,
         )
+        side_name = "buy" if side == OrderSide.BUY else "sell"
+        bounded_convergence[side_name] = _bounded_convergence_summary(side_plan)
 
         side_cancel_count = strategy._rebalance_side(
             side=side,
@@ -920,6 +953,7 @@ def refresh_quotes(  # noqa: C901
             quote_cycle_id=quote_cycle_id,
             decision_context_json=decision_context_json,
         )
+        bounded_convergence[side_name]["executed_cancel_count"] = side_cancel_count
         cancels += side_cancel_count
         remaining_total_actions = max(0, remaining_total_actions - side_cancel_count)
 
@@ -966,6 +1000,7 @@ def refresh_quotes(  # noqa: C901
             level_indices=allowed_level_indices,
             pending_backlog_mode=side_backlog_modes[side],
         )
+        bounded_convergence[side_name]["executed_place_count"] = side_place_count
         places += side_place_count
         remaining_total_actions = max(0, remaining_total_actions - side_place_count)
 
@@ -994,6 +1029,7 @@ def refresh_quotes(  # noqa: C901
                     runtime_params=runtime_params,
                     managed_orders=[*active_buys, *active_sells],
                     per_level_outcomes=per_level_outcomes,
+                    bounded_convergence=bounded_convergence or None,
                 ),
             },
             oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
@@ -1033,6 +1069,7 @@ def refresh_quotes(  # noqa: C901
                     runtime_params=runtime_params,
                     managed_orders=[*active_buys, *active_sells],
                     per_level_outcomes=per_level_outcomes,
+                    bounded_convergence=bounded_convergence or None,
                 ),
             },
             oldest_pending_cancel_age_ms=oldest_pending_cancel_age_ms,
@@ -1061,6 +1098,7 @@ def refresh_quotes(  # noqa: C901
                 runtime_params=runtime_params,
                 managed_orders=[*active_buys, *active_sells],
                 per_level_outcomes=per_level_outcomes,
+                bounded_convergence=bounded_convergence or None,
             ),
         },
     )

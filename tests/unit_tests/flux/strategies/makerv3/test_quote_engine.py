@@ -263,7 +263,8 @@ def test_refresh_quotes_passes_bounded_convergence_budgets_and_planned_levels_pe
     strategy._managed_orders = lambda: []
     strategy._publish_json = lambda *_args, **_kwargs: None
     strategy._publish_event = lambda *_args, **_kwargs: None
-    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    events: list[dict[str, object]] = []
+    strategy._publish_quote_cycle_event = lambda **kwargs: events.append(kwargs)
     strategy._runtime_params["max_cancels_per_side_per_cycle"] = 2
     strategy._runtime_params["max_places_per_side_per_cycle"] = 1
     strategy._runtime_params["max_total_actions_per_cycle"] = 2
@@ -305,6 +306,12 @@ def test_refresh_quotes_passes_bounded_convergence_budgets_and_planned_levels_pe
         (OrderSide.BUY, (0,)),
         (OrderSide.SELL, (0,)),
     ]
+    bounded_convergence = events[-1]["payload"]["decision_context_json"]["bounded_convergence"]
+    assert bounded_convergence["buy"]["planned_place_count"] == 1
+    assert bounded_convergence["buy"]["budget_limited"] is True
+    assert bounded_convergence["buy"]["cancel_reason_counts"] == {}
+    assert bounded_convergence["sell"]["planned_place_count"] == 1
+    assert bounded_convergence["sell"]["budget_limited"] is True
 
 
 def test_refresh_quotes_skips_when_cancel_reject_cooldown_is_active(strategy_factory) -> None:
@@ -513,6 +520,10 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
     assert (OrderSide.SELL, (0,)) in place_calls
     assert "blocked_pending_cancel" not in states
     assert events[-1]["payload"].get("backlog_mode") == "soft_throttle"
+    bounded_convergence = events[-1]["payload"]["decision_context_json"]["bounded_convergence"]
+    assert bounded_convergence["buy"]["backlog_mode"] == "soft_throttle"
+    assert bounded_convergence["buy"]["backlog_limited"] is True
+    assert bounded_convergence["sell"]["backlog_mode"] == "normal"
 
 
 def test_refresh_quotes_pending_cancel_hard_freeze_stays_unblocked_until_stall_threshold(

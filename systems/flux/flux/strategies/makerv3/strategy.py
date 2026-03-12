@@ -2161,6 +2161,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params: Mapping[str, Any] | None = None,
             managed_orders: list[Order] | None = None,
             per_level_outcomes: list[dict[str, Any]] | None = None,
+            bounded_convergence: Mapping[str, Any] | None = None,
         ) -> dict[str, Any] | None:
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
@@ -2186,6 +2187,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             if per_level_outcomes:
                 payload["per_level_outcomes"] = list(per_level_outcomes)
+
+            if bounded_convergence:
+                payload["bounded_convergence"] = _json_safe_value(dict(bounded_convergence))
 
             return payload or None
 
