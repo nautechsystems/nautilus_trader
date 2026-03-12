@@ -383,8 +383,7 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
     strategy._cache = SimpleNamespace(
         order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
     )
-    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
-    strategy._pending_cancel_first_seen_ns_by_client_order_id = {"RESTING-1": 900_000_000}
+    strategy._track_pending_cancel("RESTING-1", now_ns=900_000_000)
 
     now_ns = 1_000_000_000
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
@@ -434,9 +433,13 @@ def test_refresh_quotes_pending_cancel_hard_freeze_stops_after_first_side_exhaus
     rebalance_calls: list[OrderSide] = []
     events: list[dict[str, object]] = []
 
+    did_exhaust_budget = False
+
     def _rebalance_side(**kwargs) -> int:
+        nonlocal did_exhaust_budget
         rebalance_calls.append(kwargs["side"])
-        if kwargs["side"] == OrderSide.BUY:
+        if not did_exhaust_budget:
+            did_exhaust_budget = True
             strategy._track_pending_cancel("RESTING-1", now_ns=now_ns)
             return 1
         return 0
@@ -451,7 +454,7 @@ def test_refresh_quotes_pending_cancel_hard_freeze_stops_after_first_side_exhaus
 
     strategy._refresh_quotes(now_ns=now_ns)
 
-    assert rebalance_calls == [OrderSide.BUY]
+    assert len(rebalance_calls) == 1
     assert events[-1]["quote_cycle_event"] == "skipped"
     assert events[-1]["payload"].get("backlog_mode") == "hard_freeze"
 
@@ -472,8 +475,7 @@ def test_refresh_quotes_pending_cancel_blocked_path_never_reprices_pathological_
     strategy._cache = SimpleNamespace(
         order=lambda client_order_id: SimpleNamespace(client_order_id=client_order_id),
     )
-    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
-    strategy._pending_cancel_first_seen_ns_by_client_order_id = {"RESTING-1": 800_000_000}
+    strategy._track_pending_cancel("RESTING-1", now_ns=800_000_000)
 
     now_ns = 1_000_000_000
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000

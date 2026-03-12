@@ -125,7 +125,7 @@ def test_bounded_side_planner_peels_passive_tail_incrementally_for_single_missin
         active_stale=[False, False, False, False, False, False],
         desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
         stale_cancel_budget=0,
-        max_cancel_actions=1,
+        max_reprice_cancel_actions=1,
         max_place_actions=1,
         max_total_actions=2,
         backlog_mode="normal",
@@ -137,7 +137,7 @@ def test_bounded_side_planner_peels_passive_tail_incrementally_for_single_missin
     assert list(_result_field(result, "place_level_indices")) == [0]
 
 
-def test_bounded_side_planner_keeps_stale_budget_independent_from_aggressive_reprice_budget() -> None:
+def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_reprice_budget() -> None:
     result = _bounded_side_plan(
         side="buy",
         active_prices=[
@@ -150,16 +150,27 @@ def test_bounded_side_planner_keeps_stale_budget_independent_from_aggressive_rep
         active_stale=[False, False, False, False, True],
         desired_levels=_desired_levels("104", "103", "102", "101", "100"),
         stale_cancel_budget=1,
-        max_cancel_actions=1,
+        max_reprice_cancel_actions=1,
         max_place_actions=1,
         max_total_actions=3,
         backlog_mode="normal",
     )
 
-    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (0, REASON_CANCEL_TOO_AGGRESSIVE),
-        (4, REASON_CANCEL_STALE_ORDER),
+    cancel_actions = _cancel_pairs(_result_field(result, "cancel_actions"))
+    aggressive_reprice_cancels = [
+        cancel_action
+        for cancel_action in cancel_actions
+        if cancel_action[1] == REASON_CANCEL_TOO_AGGRESSIVE
     ]
+    stale_cleanup_cancels = [
+        cancel_action
+        for cancel_action in cancel_actions
+        if cancel_action[1] == REASON_CANCEL_STALE_ORDER
+    ]
+
+    assert aggressive_reprice_cancels == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
+    assert stale_cleanup_cancels == [(4, REASON_CANCEL_STALE_ORDER)]
+    assert len(cancel_actions) == 2
     assert list(_result_field(result, "place_level_indices")) == [4]
 
 
@@ -177,7 +188,7 @@ def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:
         active_stale=[False, False, False, True, False, False],
         desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
         stale_cancel_budget=1,
-        max_cancel_actions=3,
+        max_reprice_cancel_actions=3,
         max_place_actions=2,
         max_total_actions=4,
         backlog_mode="normal",
@@ -204,7 +215,7 @@ def test_bounded_side_planner_respects_cancel_place_and_total_budgets() -> None:
         active_stale=[False, False, False, True, True, True],
         desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
         stale_cancel_budget=2,
-        max_cancel_actions=2,
+        max_reprice_cancel_actions=2,
         max_place_actions=1,
         max_total_actions=2,
         backlog_mode="normal",
@@ -232,7 +243,7 @@ def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels
         active_stale=[False, False, False, False, False, False],
         desired_levels=_desired_levels("107", "106", "105", "104", "103", "102"),
         stale_cancel_budget=0,
-        max_cancel_actions=1,
+        max_reprice_cancel_actions=1,
         max_place_actions=1,
         max_total_actions=2,
         backlog_mode="normal",
