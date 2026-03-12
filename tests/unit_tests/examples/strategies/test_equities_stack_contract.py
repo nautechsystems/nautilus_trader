@@ -498,6 +498,14 @@ def test_equities_stack_honors_enable_execution_flag_for_nodes() -> None:
     assert 'exec_flag+=(--enable-execution)' in script
 
 
+def test_equities_systemd_installer_honors_enable_execution_flag_for_nodes() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
+
+    assert 'ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"' in script
+    assert 'if [[ "${ENABLE_EXECUTION}" == "1" ]]; then' in script
+    assert "--enable-execution" in script
+
+
 def test_equities_stack_script_is_scoped_to_equities_services_and_paths() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/equities_stack.sh")
 

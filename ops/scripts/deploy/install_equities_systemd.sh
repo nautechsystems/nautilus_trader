@@ -10,6 +10,7 @@ TARGET_PATH="${SYSTEMD_DIR}/flux-equities.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/equities/equities.live.toml"
 STRATEGIES_DIR="${ROOT_DIR}/deploy/equities/strategies"
 EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
+ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"
 
 declare -a NODE_STRATEGIES=()
 
@@ -135,13 +136,17 @@ render_node_envs() {
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="equities-node-${strategy_id}"
+    local cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live"
+    if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
+      cmd+=" --enable-execution"
+    fi
     strategy_stack_write_env \
       "${ENV_DIR}/${service_id}.env" \
       "Equities node ${strategy_id}" \
       "equities" \
       "Equities" \
       "20" \
-      "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+      "${cmd}"
     append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"
   done
 }
