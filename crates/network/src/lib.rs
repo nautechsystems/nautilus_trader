@@ -70,3 +70,5 @@ pub mod ratelimiter;
 
 /// Sentinel message to signal reconnection completion to Rust consumers.
 pub const RECONNECTED: &str = "__RECONNECTED__";
+/// Sentinel message to signal reconnect start to Rust consumers.
+pub const RECONNECTING: &str = "__RECONNECTING__";

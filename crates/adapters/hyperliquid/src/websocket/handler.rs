@@ -16,7 +16,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
-    RECONNECTED,
+    RECONNECTED, RECONNECTING,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
@@ -51,8 +51,14 @@ pub enum HandlerCommand {
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
     Disconnect,
+    /// Send an app-level Hyperliquid ping.
+    Ping,
     /// Subscribe to the given subscriptions.
     Subscribe {
+        subscriptions: Vec<SubscriptionRequest>,
+    },
+    /// Restore subscriptions after reconnect using buffered transport replay semantics.
+    RestoreSubscriptions {
         subscriptions: Vec<SubscriptionRequest>,
     },
     /// Unsubscribe from the given subscriptions.
@@ -85,6 +91,9 @@ pub(super) struct FeedHandler {
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
+    fresh_connection_validated: Arc<AtomicBool>,
+    awaiting_initial_validation: Arc<AtomicBool>,
+    awaiting_reconnect_validation: Arc<AtomicBool>,
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: Vec<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
@@ -107,6 +116,9 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
+        fresh_connection_validated: Arc<AtomicBool>,
+        awaiting_initial_validation: Arc<AtomicBool>,
+        awaiting_reconnect_validation: Arc<AtomicBool>,
         cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     ) -> Self {
         Self {
@@ -118,6 +130,9 @@ impl FeedHandler {
             out_tx,
             account_id,
             subscriptions,
+            fresh_connection_validated,
+            awaiting_initial_validation,
+            awaiting_reconnect_validation,
             retry_manager: create_websocket_retry_manager(),
             message_buffer: Vec::new(),
             instruments: AHashMap::new(),
@@ -144,7 +159,7 @@ impl FeedHandler {
         self.signal.load(Ordering::Relaxed)
     }
 
-    async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
+    async fn send_buffered_with_retry(&self, payload: String) -> anyhow::Result<()> {
         if let Some(client) = &self.client {
             self.retry_manager
                 .execute_with_retry(
@@ -152,7 +167,7 @@ impl FeedHandler {
                     || {
                         let payload = payload.clone();
                         async move {
-                            client.send_text(payload, None).await.map_err(|e| {
+                            client.queue_text(payload, None).await.map_err(|e| {
                                 HyperliquidWsError::ClientError(format!("Send failed: {e}"))
                             })
                         }
@@ -164,6 +179,66 @@ impl FeedHandler {
                 .map_err(|e| anyhow::anyhow!("{e}"))
         } else {
             Err(anyhow::anyhow!("No WebSocket client available"))
+        }
+    }
+
+    async fn send_unbuffered_with_retry(&self, payload: String) -> anyhow::Result<()> {
+        if let Some(client) = &self.client {
+            self.retry_manager
+                .execute_with_retry(
+                    "websocket_send",
+                    || {
+                        let payload = payload.clone();
+                        async move {
+                            client
+                                .send_text_unbuffered(payload, None)
+                                .await
+                                .map_err(|e| {
+                                    HyperliquidWsError::ClientError(format!("Send failed: {e}"))
+                                })
+                        }
+                    },
+                    should_retry_hyperliquid_error,
+                    create_hyperliquid_timeout_error,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))
+        } else {
+            Err(anyhow::anyhow!("No WebSocket client available"))
+        }
+    }
+
+    async fn maybe_start_initial_validation(&self) {
+        if self.fresh_connection_validated.load(Ordering::SeqCst)
+            || self.awaiting_reconnect_validation.load(Ordering::SeqCst)
+        {
+            return;
+        }
+
+        let Some(client) = &self.client else {
+            return;
+        };
+
+        if client.is_reconnecting() || self.awaiting_initial_validation.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+
+        let request = HyperliquidWsRequest::Ping;
+        match serde_json::to_string(&request) {
+            Ok(payload) => {
+                log::info!("Fresh connection validation started; queueing Hyperliquid app ping");
+                if let Err(e) = self.send_buffered_with_retry(payload).await {
+                    log::error!("Error sending fresh connection validation ping: {e}");
+                    self.awaiting_initial_validation
+                        .store(false, Ordering::SeqCst);
+                }
+            }
+            Err(e) => {
+                log::error!("Error serializing fresh connection validation ping: {e}");
+                self.awaiting_initial_validation
+                    .store(false, Ordering::SeqCst);
+            }
         }
     }
 
@@ -189,16 +264,50 @@ impl FeedHandler {
                             self.signal.store(true, Ordering::SeqCst);
                             return None;
                         }
+                        HandlerCommand::Ping => {
+                            let request = HyperliquidWsRequest::Ping;
+                            match serde_json::to_string(&request) {
+                                Ok(payload) => {
+                                    log::debug!("Sending Hyperliquid app ping: {payload}");
+                                    if let Err(e) = self.send_buffered_with_retry(payload).await {
+                                        log::error!("Error sending Hyperliquid app ping: {e}");
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Error serializing Hyperliquid app ping: {e}");
+                                }
+                            }
+                        }
                         HandlerCommand::Subscribe { subscriptions } => {
+                            self.maybe_start_initial_validation().await;
                             for subscription in subscriptions {
                                 let key = subscription_to_key(&subscription);
                                 self.subscriptions.mark_subscribe(&key);
+                                let use_buffered = self
+                                    .client
+                                    .as_ref()
+                                    .is_some_and(|client| {
+                                        self.awaiting_initial_validation
+                                            .load(Ordering::SeqCst)
+                                            ||
+                                        self.awaiting_reconnect_validation
+                                            .load(Ordering::SeqCst)
+                                            || client.is_reconnecting()
+                                    });
 
                                 let request = HyperliquidWsRequest::Subscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        log::debug!("Sending subscribe payload: {payload}");
-                                        if let Err(e) = self.send_with_retry(payload).await {
+                                        let send_result = if use_buffered {
+                                            log::debug!(
+                                                "Queueing subscribe payload for reconnect replay: {payload}"
+                                            );
+                                            self.send_buffered_with_retry(payload).await
+                                        } else {
+                                            log::debug!("Sending subscribe payload: {payload}");
+                                            self.send_unbuffered_with_retry(payload).await
+                                        };
+                                        if let Err(e) = send_result {
                                             log::error!("Error subscribing to {key}: {e}");
                                             self.subscriptions.mark_failure(&key);
                                         }
@@ -210,16 +319,60 @@ impl FeedHandler {
                                 }
                             }
                         }
+                        HandlerCommand::RestoreSubscriptions { subscriptions } => {
+                            for subscription in subscriptions {
+                                let key = subscription_to_key(&subscription);
+                                let request = HyperliquidWsRequest::Subscribe { subscription };
+                                match serde_json::to_string(&request) {
+                                    Ok(payload) => {
+                                        log::debug!("Restoring subscribe payload: {payload}");
+                                        if let Err(e) = self.send_buffered_with_retry(payload).await
+                                        {
+                                            log::error!(
+                                                "Error restoring subscription for {key}: {e}"
+                                            );
+                                            self.subscriptions.mark_failure(&key);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Error serializing restored subscription for {key}: {e}"
+                                        );
+                                        self.subscriptions.mark_failure(&key);
+                                    }
+                                }
+                            }
+                        }
                         HandlerCommand::Unsubscribe { subscriptions } => {
+                            self.maybe_start_initial_validation().await;
                             for subscription in subscriptions {
                                 let key = subscription_to_key(&subscription);
                                 self.subscriptions.mark_unsubscribe(&key);
+                                let use_buffered = self
+                                    .client
+                                    .as_ref()
+                                    .is_some_and(|client| {
+                                        self.awaiting_initial_validation
+                                            .load(Ordering::SeqCst)
+                                            ||
+                                        self.awaiting_reconnect_validation
+                                            .load(Ordering::SeqCst)
+                                            || client.is_reconnecting()
+                                    });
 
                                 let request = HyperliquidWsRequest::Unsubscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        log::debug!("Sending unsubscribe payload: {payload}");
-                                        if let Err(e) = self.send_with_retry(payload).await {
+                                        let send_result = if use_buffered {
+                                            log::debug!(
+                                                "Queueing unsubscribe payload for reconnect replay: {payload}"
+                                            );
+                                            self.send_buffered_with_retry(payload).await
+                                        } else {
+                                            log::debug!("Sending unsubscribe payload: {payload}");
+                                            self.send_unbuffered_with_retry(payload).await
+                                        };
+                                        if let Err(e) = send_result {
                                             log::error!("Error unsubscribing from {key}: {e}");
                                         }
                                     }
@@ -262,6 +415,10 @@ impl FeedHandler {
                 Some(raw_msg) = self.raw_rx.recv() => {
                     match raw_msg {
                         Message::Text(text) => {
+                            if text == RECONNECTING {
+                                log::info!("Received RECONNECTING sentinel");
+                                return Some(NautilusWsMessage::Reconnecting);
+                            }
                             if text == RECONNECTED {
                                 log::info!("Received RECONNECTED sentinel");
                                 return Some(NautilusWsMessage::Reconnected);
@@ -342,6 +499,7 @@ impl FeedHandler {
         let mut result = Vec::new();
 
         match msg {
+            HyperliquidWsMessage::Pong => result.push(NautilusWsMessage::Pong),
             HyperliquidWsMessage::OrderUpdates { data } => {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_order_updates(

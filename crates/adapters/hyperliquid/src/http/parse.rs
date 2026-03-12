@@ -855,7 +855,9 @@ mod tests {
         match instrument {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(
-                    perp.info.as_ref().and_then(|info| info.get_str("base_exposure_mode")),
+                    perp.info
+                        .as_ref()
+                        .and_then(|info| info.get_str("base_exposure_mode")),
                     Some("identity"),
                 );
             }

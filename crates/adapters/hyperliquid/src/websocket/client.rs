@@ -25,7 +25,9 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use crate::{
-    common::{enums::HyperliquidBarInterval, parse::bar_type_to_interval},
+    common::{
+        consts::reconnect_tuning, enums::HyperliquidBarInterval, parse::bar_type_to_interval,
+    },
     websocket::{
         enums::HyperliquidWsChannel,
         handler::{FeedHandler, HandlerCommand},
@@ -33,7 +35,7 @@ use crate::{
     },
 };
 
-const HYPERLIQUID_HEARTBEAT_MSG: &str = r#"{"method":"ping"}"#;
+const HYPERLIQUID_HEARTBEAT_SECS: u64 = 30;
 
 /// Represents the different data types available from asset context subscriptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,7 +69,11 @@ pub struct HyperliquidWebSocketClient {
     bar_types: Arc<DashMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+    fresh_connection_validated: Arc<AtomicBool>,
+    awaiting_initial_validation: Arc<AtomicBool>,
+    awaiting_reconnect_validation: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
     account_id: Option<AccountId>,
 }
 
@@ -85,7 +91,11 @@ impl Clone for HyperliquidWebSocketClient {
             bar_types: Arc::clone(&self.bar_types),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
             cloid_cache: Arc::clone(&self.cloid_cache),
+            fresh_connection_validated: Arc::clone(&self.fresh_connection_validated),
+            awaiting_initial_validation: Arc::clone(&self.awaiting_initial_validation),
+            awaiting_reconnect_validation: Arc::clone(&self.awaiting_reconnect_validation),
             task_handle: None,
+            heartbeat_handle: None,
             account_id: self.account_id,
         }
     }
@@ -120,6 +130,9 @@ impl HyperliquidWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
             cloid_cache: Arc::new(DashMap::new()),
+            fresh_connection_validated: Arc::new(AtomicBool::new(false)),
+            awaiting_initial_validation: Arc::new(AtomicBool::new(false)),
+            awaiting_reconnect_validation: Arc::new(AtomicBool::new(false)),
             cmd_tx: {
                 // Placeholder channel until connect() creates the real handler and replays queued instruments
                 let (tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -127,6 +140,7 @@ impl HyperliquidWebSocketClient {
             },
             out_rx: None,
             task_handle: None,
+            heartbeat_handle: None,
             account_id,
         }
     }
@@ -138,16 +152,17 @@ impl HyperliquidWebSocketClient {
             return Ok(());
         }
         let (message_handler, raw_rx) = channel_message_handler();
+        let tuning = reconnect_tuning(&self.url);
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
             heartbeat: Some(30),
-            heartbeat_msg: Some(HYPERLIQUID_HEARTBEAT_MSG.to_string()),
+            heartbeat_msg: None,
             reconnect_timeout_ms: Some(15_000),
-            reconnect_delay_initial_ms: Some(250),
-            reconnect_delay_max_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(tuning.initial_delay_ms),
+            reconnect_delay_max_ms: Some(tuning.max_delay_ms),
             reconnect_backoff_factor: Some(2.0),
-            reconnect_jitter_ms: Some(200),
+            reconnect_jitter_ms: Some(tuning.jitter_ms),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
         };
@@ -190,6 +205,9 @@ impl HyperliquidWebSocketClient {
         let subscriptions = self.subscriptions.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let cloid_cache = Arc::clone(&self.cloid_cache);
+        let fresh_connection_validated = Arc::clone(&self.fresh_connection_validated);
+        let awaiting_initial_validation = Arc::clone(&self.awaiting_initial_validation);
+        let awaiting_reconnect_validation = Arc::clone(&self.awaiting_reconnect_validation);
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -199,18 +217,21 @@ impl HyperliquidWebSocketClient {
                 out_tx,
                 account_id,
                 subscriptions.clone(),
+                Arc::clone(&fresh_connection_validated),
+                Arc::clone(&awaiting_initial_validation),
+                Arc::clone(&awaiting_reconnect_validation),
                 cloid_cache,
             );
 
-            let resubscribe_all = || {
-                let topics = confirmed_topics_for_reconnect(&subscriptions);
+            let restore_desired_subscriptions = || {
+                let topics = desired_topics_for_reconnect(&subscriptions);
                 if topics.is_empty() {
-                    log::debug!("No active subscriptions to restore after reconnection");
+                    log::debug!("No desired subscriptions to restore during reconnection");
                     return;
                 }
 
                 log::info!(
-                    "Resubscribing to {} active subscriptions after reconnection",
+                    "Queueing restore of {} desired subscriptions during reconnection",
                     topics.len()
                 );
                 for topic in &topics {
@@ -219,9 +240,11 @@ impl HyperliquidWebSocketClient {
                 for topic in topics {
                     match subscription_from_topic(&topic) {
                         Ok(subscription) => {
-                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
-                                subscriptions: vec![subscription],
-                            }) {
+                            if let Err(e) =
+                                cmd_tx_for_reconnect.send(HandlerCommand::RestoreSubscriptions {
+                                    subscriptions: vec![subscription],
+                                })
+                            {
                                 log::error!("Failed to send resubscribe command: {e}");
                             }
                         }
@@ -235,11 +258,29 @@ impl HyperliquidWebSocketClient {
             };
             loop {
                 match handler.next().await {
+                    Some(NautilusWsMessage::Reconnecting) => {
+                        if !awaiting_reconnect_validation.swap(true, Ordering::SeqCst) {
+                            log::info!(
+                                "Reconnect validation started; queueing Hyperliquid app ping"
+                            );
+                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Ping) {
+                                log::error!(
+                                    "Failed to send reconnect validation ping command: {e}"
+                                );
+                            }
+                            restore_desired_subscriptions();
+                        }
+                    }
                     Some(NautilusWsMessage::Reconnected) => {
+                        awaiting_reconnect_validation.store(false, Ordering::SeqCst);
                         log::info!("WebSocket reconnected");
-                        resubscribe_all();
                     }
                     Some(msg) => {
+                        if !fresh_connection_validated.swap(true, Ordering::SeqCst)
+                            && awaiting_initial_validation.swap(false, Ordering::SeqCst)
+                        {
+                            log::info!("Fresh WebSocket connection validated");
+                        }
                         if handler.send(msg).is_err() {
                             log::error!("Failed to send message (receiver dropped)");
                             break;
@@ -258,6 +299,14 @@ impl HyperliquidWebSocketClient {
             log::debug!("Handler task completed");
         });
         self.task_handle = Some(stream_handle);
+        self.fresh_connection_validated
+            .store(false, Ordering::SeqCst);
+        self.awaiting_initial_validation
+            .store(false, Ordering::SeqCst);
+        self.awaiting_reconnect_validation
+            .store(false, Ordering::SeqCst);
+
+        self.heartbeat_handle = Some(self.spawn_app_heartbeat_task());
         Ok(())
     }
 
@@ -275,6 +324,12 @@ impl HyperliquidWebSocketClient {
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting Hyperliquid WebSocket");
         self.signal.store(true, Ordering::Relaxed);
+        self.fresh_connection_validated
+            .store(false, Ordering::SeqCst);
+        self.awaiting_initial_validation
+            .store(false, Ordering::SeqCst);
+        self.awaiting_reconnect_validation
+            .store(false, Ordering::SeqCst);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::debug!(
@@ -303,8 +358,49 @@ impl HyperliquidWebSocketClient {
         } else {
             log::debug!("No task handle to await");
         }
+
+        if let Some(handle) = self.heartbeat_handle.take() {
+            handle.abort();
+        }
         log::debug!("Disconnected");
         Ok(())
+    }
+
+    fn spawn_app_heartbeat_task(&self) -> tokio::task::JoinHandle<()> {
+        let signal = Arc::clone(&self.signal);
+        let connection_mode = Arc::clone(&self.connection_mode);
+        let awaiting_initial_validation = Arc::clone(&self.awaiting_initial_validation);
+        let awaiting_reconnect_validation = Arc::clone(&self.awaiting_reconnect_validation);
+        let cmd_tx = Arc::clone(&self.cmd_tx);
+
+        get_runtime().spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(HYPERLIQUID_HEARTBEAT_SECS))
+                    .await;
+
+                if signal.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if awaiting_initial_validation.load(Ordering::SeqCst) {
+                    continue;
+                }
+
+                if awaiting_reconnect_validation.load(Ordering::SeqCst) {
+                    continue;
+                }
+
+                let mode = connection_mode.load();
+                if mode.load(Ordering::Relaxed) != ConnectionMode::Active as u8 {
+                    continue;
+                }
+
+                if let Err(e) = cmd_tx.read().await.send(HandlerCommand::Ping) {
+                    log::error!("Failed to send Hyperliquid app heartbeat ping command: {e}");
+                    break;
+                }
+            }
+        })
     }
 
     /// Returns true if the WebSocket is actively connected.
@@ -942,22 +1038,10 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
     }
 }
 
-fn confirmed_topics_for_reconnect(subscriptions: &SubscriptionState) -> Vec<String> {
-    let confirmed = subscriptions.confirmed();
-    let mut topics = Vec::new();
-
-    for entry in confirmed.iter() {
-        let (channel, symbols) = entry.pair();
-        for symbol in symbols {
-            if symbol.is_empty() {
-                topics.push(channel.to_string());
-            } else {
-                topics.push(format!("{channel}:{symbol}"));
-            }
-        }
-    }
-
+fn desired_topics_for_reconnect(subscriptions: &SubscriptionState) -> Vec<String> {
+    let mut topics = subscriptions.all_topics();
     topics.sort();
+    topics.dedup();
     topics
 }
 
@@ -1022,7 +1106,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_confirmed_topics_for_reconnect_excludes_pending_topics() {
+    fn test_desired_topics_for_reconnect_excludes_pending_unsubscribes() {
+        let client = HyperliquidWebSocketClient::new(Some("ws://test".to_string()), false, None);
+
+        client.subscriptions.mark_subscribe("trades:BTC");
+        client.subscriptions.confirm_subscribe("trades:BTC");
+
+        client.subscriptions.mark_subscribe("l2Book:SOL");
+        client.subscriptions.confirm_subscribe("l2Book:SOL");
+        client.subscriptions.mark_unsubscribe("l2Book:SOL");
+
+        let topics = desired_topics_for_reconnect(&client.subscriptions);
+
+        assert_eq!(topics, vec!["trades:BTC"]);
+    }
+
+    #[rstest]
+    fn test_desired_topics_for_reconnect_includes_pending_desired_topics() {
         let client = HyperliquidWebSocketClient::new(Some("ws://test".to_string()), false, None);
 
         client.subscriptions.mark_subscribe("trades:BTC");
@@ -1034,8 +1134,8 @@ mod tests {
         client.subscriptions.confirm_subscribe("l2Book:SOL");
         client.subscriptions.mark_unsubscribe("l2Book:SOL");
 
-        let topics = confirmed_topics_for_reconnect(&client.subscriptions);
+        let topics = desired_topics_for_reconnect(&client.subscriptions);
 
-        assert_eq!(topics, vec!["trades:BTC"]);
+        assert_eq!(topics, vec!["bbo:ETH", "trades:BTC"]);
     }
 }

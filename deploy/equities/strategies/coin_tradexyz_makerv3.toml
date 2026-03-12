@@ -21,7 +21,7 @@ reference_symbol = "COIN/USD"
 # is the only way to opt into live execution from the stack or systemd wrappers.
 enable_execution = false
 log_level = "INFO"
-timeout_connection = 20.0
+timeout_connection = 60.0
 timeout_reconciliation = 30.0
 timeout_portfolio = 10.0
 timeout_disconnection = 10.0
@@ -52,7 +52,7 @@ testnet = false
 [node.venues.IBKR]
 adapter = "interactive_brokers"
 instrument_id = "COIN.NASDAQ"
-ibg_client_id = 11
+ibg_client_id = 16
 execution = false
 use_regular_trading_hours = false
 

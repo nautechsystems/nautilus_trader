@@ -39,7 +39,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::HYPERLIQUID_VENUE,
+        consts::{HYPERLIQUID_VENUE, startup_connect_delay, startup_connect_identity},
         credential::{Secrets, credential_env_vars},
         parse::bar_type_to_interval,
     },
@@ -164,6 +164,17 @@ impl HyperliquidDataClient {
     async fn spawn_ws(&mut self) -> anyhow::Result<()> {
         // Clone client before connecting so the clone can have out_rx set
         let mut ws_client = self.ws_client.clone();
+        let connect_identity = startup_connect_identity("data", self.client_id);
+        let connect_delay = startup_connect_delay(&connect_identity, ws_client.url());
+
+        if !connect_delay.is_zero() {
+            log::info!(
+                "Applying Hyperliquid startup connect spread of {}ms for client {} (identity={connect_identity})",
+                connect_delay.as_millis(),
+                self.client_id
+            );
+            tokio::time::sleep(connect_delay).await;
+        }
 
         ws_client
             .connect()
@@ -243,9 +254,11 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send funding rate update: {e}");
                                     }
                                 }
+                                NautilusWsMessage::Reconnecting => {}
                                 NautilusWsMessage::Reconnected => {
                                     log::info!("WebSocket reconnected");
                                 }
+                                NautilusWsMessage::Pong => {}
                                 NautilusWsMessage::Error(e) => {
                                     log::error!("WebSocket error: {e}");
                                 }
