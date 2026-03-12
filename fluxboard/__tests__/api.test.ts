@@ -59,7 +59,13 @@ describe('API Client - Param Methods', () => {
     it('fetches parameter schema successfully', async () => {
       const mockSchema = {
         params: {
-          bot_on: { key: 'bot_on', type: 'select', default: '0' }
+          bot_on: { key: 'bot_on', type: 'select', default: '0' },
+          max_cancels_per_side_per_cycle: {
+            key: 'max_cancels_per_side_per_cycle',
+            type: 'integer',
+            default: 1,
+            advanced: true,
+          },
         },
         deprecated: {}
       };
@@ -92,6 +98,7 @@ describe('API Client - Param Methods', () => {
         ['0', 'Paused (0)'],
         ['1', 'Enabled (1)'],
       ]);
+      expect(result.params.max_cancels_per_side_per_cycle.advanced).toBe(true);
     });
 
     it('throws error on 500 response', async () => {

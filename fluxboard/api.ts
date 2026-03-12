@@ -437,6 +437,7 @@ function normalizeParamDef(
   const appliesTo = Array.isArray(source.applies_to)
     ? source.applies_to.map((value) => String(value ?? '').trim()).filter(Boolean)
     : undefined;
+  const advanced = Boolean(source.advanced);
   let defaultValue = source.default;
   if (defaultValue === undefined || defaultValue === null) {
     if (key === 'bot_on') {
@@ -462,6 +463,7 @@ function normalizeParamDef(
     deprecated: Boolean(source.deprecated ?? deprecated),
     replacement: source.replacement == null ? null : String(source.replacement),
     applies_to: appliesTo,
+    advanced,
   };
 }
 

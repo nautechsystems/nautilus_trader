@@ -2047,6 +2047,9 @@ export default function Params({
       .filter((def) => {
         const forcedVisibility = columnPrefs.visibility?.[def.key];
         if (forcedVisibility === false) return false;
+        if (viewMode === 'compact' && def.advanced === true && forcedVisibility !== true) {
+          return false;
+        }
         if (viewMode === 'compact' && COMPACT_HIDDEN_KEYS.has(def.key) && forcedVisibility !== true) {
           return false;
         }

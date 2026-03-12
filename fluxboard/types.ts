@@ -1042,6 +1042,7 @@ export type ParamDef = {
   deprecated?: boolean;
   replacement?: string | null;
   applies_to?: string[];
+  advanced?: boolean;
 };
 
 export type ParamSchema = {
