@@ -3429,7 +3429,7 @@ def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     assert all(component["stale"] is False for component in body["data"]["components"])
 
 
-def test_balances_profile_tokenmm_keeps_bitget_shared_account_cash_scoped_by_product_type(
+def test_balances_profile_tokenmm_canonicalizes_bitget_shared_account_cash(
     flux_config,
     redis_client,
     contract_catalog,
@@ -3503,17 +3503,16 @@ def test_balances_profile_tokenmm_keeps_bitget_shared_account_cash_scoped_by_pro
         ],
         key=lambda row: str(row["row_id"]),
     )
-    assert [row["row_id"] for row in bitget_rows] == [
-        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
-        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
-    ]
-    assert [row["total"] for row in bitget_rows] == ["0", "500"]
-    assert [row["product_type"] for row in bitget_rows] == ["perp", "spot"]
-    assert [row["display_name_short"] for row in bitget_rows] == ["USDT Perp", "USDT Spot"]
-    assert all(row.get("scope") == "shared_account" for row in bitget_rows)
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
+    assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row.get("scope") == "shared_account"
 
 
-def test_balances_profile_tokenmm_preserves_bitget_shared_account_scope_rows_for_readiness(
+def test_balances_profile_tokenmm_canonicalizes_bitget_shared_account_cash_alongside_non_stable_rows(
     flux_config,
     redis_client,
     contract_catalog,
@@ -3609,12 +3608,119 @@ def test_balances_profile_tokenmm_preserves_bitget_shared_account_scope_rows_for
 
     assert [row["row_id"] for row in bitget_rows] == [
         "tokenmm:cash:bitget:BITGET-001:PLUME",
-        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
-        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+        "tokenmm:cash:bitget:BITGET-001:USDT",
     ]
-    assert [row.get("product_type") for row in bitget_rows] == ["spot", "perp", "spot"]
-    assert [row["total"] for row in bitget_rows] == ["25000", "0", "500"]
-    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account", "shared_account"]
+    assert [row.get("product_type") for row in bitget_rows] == ["spot", "spot"]
+    assert [row["total"] for row in bitget_rows] == ["25000", "500"]
+    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account"]
+
+
+def test_balances_profile_tokenmm_portfolio_snapshot_canonicalizes_shared_stable_cash_without_changing_global_qty(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "PLUME",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty_base": "79577.70469832",
+                "global_qty": "79577.70469832",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "missing_required": [],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": False,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bitget",
+                        "account": "BITGET-001",
+                        "account_id": "BITGET-001",
+                        "asset": "USDT",
+                        "free": "440.735561",
+                        "total": "440.735561",
+                        "product_type": "spot",
+                        "scope": "shared_account",
+                        "mark_raw": 1.0,
+                        "mv_raw": 440.735561,
+                        "ts_ms": 122_000,
+                    },
+                    {
+                        "row_id": "tokenmm:cash:bitget:BITGET-001:perp:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bitget",
+                        "account": "BITGET-001",
+                        "account_id": "BITGET-001",
+                        "asset": "USDT",
+                        "free": "440.735561",
+                        "total": "440.735561",
+                        "product_type": "perp",
+                        "scope": "shared_account",
+                        "mark_raw": 1.0,
+                        "mv_raw": 440.735561,
+                        "ts_ms": 122_100,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 881.471122,
+                    "mv_display": "$881.47",
+                },
+            },
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["global_qty_base"] == "79577.70469832"
+    bitget_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    ]
+    assert len(bitget_rows) == 1
+    assert bitget_rows[0]["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert bitget_rows[0]["total"] == "440.735561"
+    risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
+    assert risk_groups["USD_CASH"]["net_mv"] == pytest.approx(440.735561)
+    assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(440.735561)
 
 
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(

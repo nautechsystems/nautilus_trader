@@ -572,7 +572,7 @@ def test_merge_portfolio_balances_rows_backfills_latest_cash_mark_even_when_spar
     assert cash["mv_raw"] == pytest.approx(68.170210246)
 
 
-def test_merge_portfolio_balances_rows_keeps_bitget_stable_cash_scoped_for_shared_account_readiness() -> None:
+def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stable_cash() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
             "plumeusdt_bitget_spot_makerv3": [
@@ -617,21 +617,17 @@ def test_merge_portfolio_balances_rows_keeps_bitget_stable_cash_scoped_for_share
         key=lambda row: str(row["row_id"]),
     )
 
-    assert [row["row_id"] for row in cash_rows] == [
-        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
-        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
-    ]
-    assert [row["total"] for row in cash_rows] == ["0", "500"]
-    assert [row["product_type"] for row in cash_rows] == ["perp", "spot"]
-    assert [row["display_name_short"] for row in cash_rows] == ["USDT Perp", "USDT Spot"]
-    assert [row["display_name_long"] for row in cash_rows] == [
-        "Bitget USDT Perp",
-        "Bitget USDT Spot",
-    ]
-    assert all(row.get("scope") == "shared_account" for row in cash_rows)
+    assert len(cash_rows) == 1
+    row = cash_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
+    assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"
+    assert row.get("scope") == "shared_account"
 
 
-def test_merge_portfolio_balances_rows_keeps_non_zero_bitget_spot_cash_visible_when_perp_scope_is_zero() -> None:
+def test_merge_portfolio_balances_rows_prefers_non_zero_bitget_shared_account_stable_cash() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
             "plumeusdt_bitget_spot_makerv3": [
@@ -676,11 +672,11 @@ def test_merge_portfolio_balances_rows_keeps_non_zero_bitget_spot_cash_visible_w
         key=lambda row: str(row["row_id"]),
     )
 
-    assert [row["row_id"] for row in cash_rows] == [
-        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
-        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
-    ]
-    assert [row["total"] for row in cash_rows] == ["0", "500"]
+    assert len(cash_rows) == 1
+    row = cash_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
+    assert row["product_type"] == "spot"
 
 
 def test_merge_portfolio_balances_rows_keeps_non_bitget_shared_stable_cash_labels_generic() -> None:
@@ -733,7 +729,7 @@ def test_merge_portfolio_balances_rows_keeps_non_bitget_shared_stable_cash_label
     assert row["display_name_long"] == "Bybit USDT"
 
 
-def test_merge_portfolio_balances_rows_preserves_bitget_shared_account_scope_rows_when_requested() -> None:
+def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stable_cash_alongside_non_stable_rows() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
             "plumeusdt_bitget_spot_makerv3": [
@@ -792,12 +788,11 @@ def test_merge_portfolio_balances_rows_preserves_bitget_shared_account_scope_row
 
     assert [row["row_id"] for row in bitget_rows] == [
         "tokenmm:cash:bitget:BITGET-001:PLUME",
-        "tokenmm:cash:bitget:BITGET-001:perp:USDT",
-        "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+        "tokenmm:cash:bitget:BITGET-001:USDT",
     ]
-    assert [row.get("product_type") for row in bitget_rows] == ["spot", "perp", "spot"]
-    assert [row["total"] for row in bitget_rows] == ["25000", "0", "500"]
-    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account", "shared_account"]
+    assert [row.get("product_type") for row in bitget_rows] == ["spot", "spot"]
+    assert [row["total"] for row in bitget_rows] == ["25000", "500"]
+    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account"]
 
 
 def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:

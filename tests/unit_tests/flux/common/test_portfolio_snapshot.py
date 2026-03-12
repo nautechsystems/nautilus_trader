@@ -279,6 +279,57 @@ def test_build_portfolio_snapshot_merges_same_account_stable_cash_across_product
     assert row["total"] == "500"
 
 
+def test_build_portfolio_snapshot_canonicalizes_identical_shared_account_stable_cash_across_product_scopes() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+        inventory_components={},
+        balance_rows_by_strategy={
+            "plumeusdt_bitget_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "440.735561",
+                    "locked": "0",
+                    "total": "440.735561",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_bitget_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_bitget_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "440.735561",
+                    "locked": "0",
+                    "total": "440.735561",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_bitget_perp_makerv3:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+        },
+        required_strategy_ids=set(),
+        now_ms_value=2_000,
+    )
+
+    bitget_rows = [
+        row
+        for row in snapshot["balances"]["rows"]
+        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    ]
+
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "440.735561"
+
+
 def test_build_portfolio_snapshot_deduplicates_identical_non_stable_cash_across_product_scopes() -> None:
     snapshot = build_portfolio_snapshot(
         portfolio_id="tokenmm",
