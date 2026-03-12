@@ -17,7 +17,8 @@
 
 use std::fmt::Debug;
 
-use nautilus_model::instruments::InstrumentAny;
+use nautilus_core::UnixNanos;
+use nautilus_model::instruments::{Instrument, InstrumentAny};
 
 use crate::http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams};
 
@@ -229,15 +230,15 @@ impl PredicateFilter {
         })
     }
 
-    /// Convenience: reject instruments past expiration (based on current UTC time).
+    /// Convenience: reject instruments past expiration.
     ///
+    /// The caller provides the current time as [`UnixNanos`] so the filter
+    /// works correctly with both real-time and simulated (backtest) clocks.
     /// Only [`BinaryOption`] instruments are checked; non-binary variants are accepted.
-    pub fn not_expired() -> Self {
-        use nautilus_model::instruments::Instrument;
-        Self::new("not_expired", |instrument| {
+    pub fn not_expired(now_ns: UnixNanos) -> Self {
+        Self::new("not_expired", move |instrument| {
             if let Some(expiration_ns) = Instrument::expiration_ns(instrument) {
-                let now_ns = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64;
-                expiration_ns.as_u64() > now_ns
+                expiration_ns > now_ns
             } else {
                 true // no expiration means not expired
             }
@@ -434,7 +435,10 @@ mod tests {
 
     use super::*;
 
-    fn stub_binary_option(outcome: Option<&str>) -> InstrumentAny {
+    fn stub_binary_option_with_expiration(
+        outcome: Option<&str>,
+        expiration: UnixNanos,
+    ) -> InstrumentAny {
         let raw_symbol = Symbol::new("test-token-id");
         InstrumentAny::BinaryOption(BinaryOption::new(
             InstrumentId::from("test-token-id.POLYMARKET"),
@@ -442,7 +446,7 @@ mod tests {
             AssetClass::Alternative,
             Currency::USDC(),
             UnixNanos::default(),
-            UnixNanos::from(u64::MAX), // far future expiration
+            expiration,
             3,
             2,
             Price::from("0.001"),
@@ -463,6 +467,48 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         ))
+    }
+
+    fn stub_binary_option(outcome: Option<&str>) -> InstrumentAny {
+        stub_binary_option_with_expiration(outcome, UnixNanos::from(u64::MAX))
+    }
+
+    #[rstest]
+    fn test_not_expired_accepts_future_expiration() {
+        let now = UnixNanos::from(1_000_000u64);
+        let instrument =
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(2_000_000u64));
+        let filter = PredicateFilter::not_expired(now);
+        assert!(filter.accept(&instrument));
+    }
+
+    #[rstest]
+    fn test_not_expired_rejects_past_expiration() {
+        let now = UnixNanos::from(2_000_000u64);
+        let instrument =
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000u64));
+        let filter = PredicateFilter::not_expired(now);
+        assert!(!filter.accept(&instrument));
+    }
+
+    #[rstest]
+    fn test_not_expired_rejects_equal_expiration() {
+        let now = UnixNanos::from(1_000_000u64);
+        let instrument =
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000u64));
+        let filter = PredicateFilter::not_expired(now);
+        assert!(!filter.accept(&instrument));
+    }
+
+    #[rstest]
+    fn test_not_expired_works_with_simulated_clock() {
+        // Simulates a backtest scenario: clock is set to a historical time,
+        // instrument expires in the "future" relative to the simulated clock
+        let simulated_now = UnixNanos::from(1_000_000_000_000_000_000u64); // ~2001
+        let expiration = UnixNanos::from(1_100_000_000_000_000_000u64); // ~2004
+        let instrument = stub_binary_option_with_expiration(Some("Yes"), expiration);
+        let filter = PredicateFilter::not_expired(simulated_now);
+        assert!(filter.accept(&instrument));
     }
 
     #[fixture]
