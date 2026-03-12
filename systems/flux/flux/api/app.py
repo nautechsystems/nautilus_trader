@@ -376,13 +376,10 @@ class FluxApiStore:
 
         summary: dict[str, Any] = {}
         state_name = decode_text(state.get("state")).strip()
-        ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
-        if (
-            state_name.lower() != "on_stop"
-            and ts_ms is not None
-            and now_ms() - ts_ms > PARAMS_RUNNING_STALE_AFTER_MS
-        ):
+        running = self._running_state_from_strategy_state(state)
+        if not state_name or (running is False and state_name.lower() != "on_stop"):
             return {}
+        ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
         if state_name:
             summary["state"] = state_name
         if ts_ms is not None:
