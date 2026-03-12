@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 import pytest
 
 from nautilus_trader.flux.common.account_projection import ProfileAccountProviderBinding
@@ -53,6 +54,54 @@ def test_profile_account_projection_publishes_ibkr_positions_without_strategy_sn
     assert snapshot["rows"][0]["source_scope"] == "shared_account"
     assert snapshot["rows"][0]["account_scope_id"] == "ibkr.reference.main"
     assert snapshot["rows"][0]["source_strategy_ids"] == ["aapl_tradexyz_makerv3"]
+
+
+def test_profile_account_projection_assigns_scope_stable_row_ids() -> None:
+    from nautilus_trader.flux.common.account_projection import build_profile_account_snapshot
+
+    snapshot = build_profile_account_snapshot(
+        profile_id="equities",
+        bindings=[
+            ProfileAccountProviderBinding(
+                account_scope_id="hyperliquid.xyz.main",
+                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                provider=_FakeAccountProjectionProvider(
+                    rows=[
+                        {
+                            "row_id": "shared_account:acc:0:evt:0:0",
+                            "exchange": "hyperliquid",
+                            "account": "HYPERLIQUID-master",
+                            "asset": "USDC",
+                            "total": "0",
+                        },
+                    ],
+                ),
+            ),
+            ProfileAccountProviderBinding(
+                account_scope_id="ibkr.reference.main",
+                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                provider=_FakeAccountProjectionProvider(
+                    rows=[
+                        {
+                            "row_id": "shared_account:acc:0:evt:0:0",
+                            "exchange": "ibkr",
+                            "account": "U1234567",
+                            "asset": "HKD",
+                            "total": "85671.33",
+                        },
+                    ],
+                ),
+            ),
+        ],
+        ts_ms=1_700_000_000_000,
+    )
+
+    row_ids = {row["row_id"] for row in snapshot["rows"]}
+
+    assert row_ids == {
+        "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+        "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:HKD",
+    }
 
 
 def test_profile_account_projection_round_trip_preserves_rows_and_scope_keys() -> None:

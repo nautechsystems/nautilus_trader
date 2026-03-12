@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib
-import nautilus_trader.flux.api.payloads as payloads
+
 import pytest
 
+import nautilus_trader.flux.api.payloads as payloads
+from nautilus_trader.flux.api._payloads_balances import combine_portfolio_snapshot_rows
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_alerts_rows
@@ -939,6 +941,57 @@ def test_filter_balance_rows_for_contract_scope_preserves_shared_account_rows_wh
         "pos-f",
         "pos-aapl",
     ]
+
+
+def test_combine_portfolio_snapshot_rows_uses_semantic_identity_for_shared_accounts() -> None:
+    rows = combine_portfolio_snapshot_rows(
+        balance_rows=[
+            {
+                "row_id": "equities:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDC",
+                "total": "0.00000000",
+                "scope": "shared_account",
+                "ts_ms": 200,
+            },
+        ],
+        account_rows=[
+            {
+                "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDC",
+                "total": "0.000000",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 100,
+            },
+            {
+                "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:HKD",
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "HKD",
+                "total": "85671.33",
+                "source_scope": "shared_account",
+                "account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    )
+
+    by_identity = {
+        (row["exchange"], row["asset"]): row
+        for row in rows
+    }
+
+    assert sorted(by_identity) == [("hyperliquid", "USDC"), ("ibkr", "HKD")]
+    assert by_identity[("hyperliquid", "USDC")]["source_scope"] == "shared_account"
+    assert by_identity[("hyperliquid", "USDC")]["account_scope_id"] == "hyperliquid.xyz.main"
+    assert (
+        by_identity[("hyperliquid", "USDC")]["row_id"]
+        == "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC"
+    )
+    assert by_identity[("ibkr", "HKD")]["account_scope_id"] == "ibkr.reference.main"
 
 
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:

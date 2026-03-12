@@ -241,8 +241,9 @@ class IbkrReferenceBalanceSnapshotProvider:
         ts_ms: int,
     ) -> dict[str, Any]:
         summary: dict[str, dict[str, Any]] = {}
-        loaded = asyncio.Event()
+        completed = asyncio.Event()
         subscription_name = f"accountSummary-{account_id}"
+        completion_name = "accountSummaryEnd"
 
         def _on_account_summary(tag: str, value: str, currency: str) -> None:
             if not currency:
@@ -252,16 +253,20 @@ class IbkrReferenceBalanceSnapshotProvider:
                 bucket[tag] = Decimal(str(value))
             except Exception:
                 bucket[tag] = value
-            if _ACCOUNT_SUMMARY_TAGS.issubset(bucket):
-                loaded.set()
+
+        def _on_account_summary_end(_req_id: int) -> None:
+            completed.set()
 
         client.subscribe_event(subscription_name, _on_account_summary)
+        client.subscribe_event(completion_name, _on_account_summary_end)
         try:
             client.subscribe_account_summary()
-            await asyncio.wait_for(loaded.wait(), timeout=self._config.request_timeout_secs)
+            await asyncio.wait_for(completed.wait(), timeout=self._config.request_timeout_secs)
         finally:
             with suppress(Exception):
                 client.unsubscribe_event(subscription_name)
+            with suppress(Exception):
+                client.unsubscribe_event(completion_name)
 
         balances: list[dict[str, str]] = []
         for currency in sorted(summary):

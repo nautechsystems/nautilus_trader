@@ -955,10 +955,6 @@ def _normalize_portfolio_snapshot_row(
 
 
 def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
-    row_id = decode_text(row.get("row_id")).strip()
-    if row_id:
-        return ("row_id", row_id)
-
     exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
     account = decode_text(row.get("account") or row.get("account_id")).strip().upper()
     if _is_position_row(dict(row)):
@@ -970,7 +966,8 @@ def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] 
             or row.get("base"),
         ).strip().upper()
         if not instrument:
-            return None
+            row_id = decode_text(row.get("row_id")).strip()
+            return ("row_id", row_id) if row_id else None
         return ("position", exchange, account, instrument)
 
     asset = decode_text(
@@ -980,21 +977,23 @@ def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] 
         or row.get("base"),
     ).strip().upper()
     if not asset:
-        return None
+        row_id = decode_text(row.get("row_id")).strip()
+        return ("row_id", row_id) if row_id else None
     kind = decode_text(row.get("kind")).strip().lower() or "cash"
     return (kind, exchange, account, asset)
 
 
-def _portfolio_snapshot_row_priority(row: Mapping[str, Any]) -> tuple[int, int, int]:
+def _portfolio_snapshot_row_priority(row: Mapping[str, Any]) -> tuple[int, int, int, int]:
     scope = decode_text(row.get("source_scope")).strip().lower()
     scope_rank = {
         "portfolio": 0,
         "strategy": 1,
         "shared_account": 2,
     }.get(scope, 0)
+    has_account_scope_id = 1 if decode_text(row.get("account_scope_id")).strip() else 0
     ts_ms = _row_ts_ms(row)
     has_mark = 1 if safe_float(row.get("mark_raw") or row.get("mark")) is not None else 0
-    return (scope_rank, ts_ms, has_mark)
+    return (scope_rank, has_account_scope_id, ts_ms, has_mark)
 
 
 def combine_portfolio_snapshot_rows(

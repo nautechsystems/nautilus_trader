@@ -19,6 +19,50 @@ class ProfileAccountProviderBinding:
     provider: AccountProjectionProvider | None
 
 
+def _profile_account_row_id(
+    *,
+    profile_id: str,
+    account_scope_id: str,
+    row: Mapping[str, Any],
+    row_index: int,
+) -> str:
+    exchange = str(row.get("exchange") or row.get("venue") or "").strip().lower()
+    account = str(row.get("account") or row.get("account_id") or "").strip()
+    kind = str(row.get("kind") or "").strip().lower()
+    if kind == "position":
+        instrument = str(
+            row.get("instrument_id")
+            or row.get("symbol")
+            or row.get("asset")
+            or row.get("coin")
+            or row.get("base")
+            or ""
+        ).strip().upper()
+        if exchange and instrument:
+            return (
+                f"{profile_id}:shared:{account_scope_id}:pos:"
+                f"{exchange}:{account}:{instrument}"
+            )
+
+    asset = str(
+        row.get("asset")
+        or row.get("currency")
+        or row.get("coin")
+        or row.get("base")
+        or ""
+    ).strip().upper()
+    if exchange and asset:
+        return (
+            f"{profile_id}:shared:{account_scope_id}:cash:"
+            f"{exchange}:{account}:{asset}"
+        )
+
+    raw_row_id = str(row.get("row_id") or "").strip()
+    if raw_row_id:
+        return f"{profile_id}:shared:{account_scope_id}:{raw_row_id}"
+    return f"{profile_id}:shared:{account_scope_id}:row:{row_index}"
+
+
 def build_profile_account_snapshot(
     *,
     profile_id: str,
@@ -49,7 +93,7 @@ def build_profile_account_snapshot(
         raw_rows = provider_snapshot.get("rows")
         if not isinstance(raw_rows, list):
             continue
-        for row in raw_rows:
+        for row_index, row in enumerate(raw_rows):
             if not isinstance(row, Mapping):
                 continue
             normalized = dict(row)
@@ -57,6 +101,12 @@ def build_profile_account_snapshot(
             normalized["source_scope"] = source_scope
             if account_scope_id:
                 normalized["account_scope_id"] = account_scope_id
+                normalized["row_id"] = _profile_account_row_id(
+                    profile_id=profile_id,
+                    account_scope_id=account_scope_id,
+                    row=normalized,
+                    row_index=row_index,
+                )
             if source_strategy_ids:
                 normalized["source_strategy_ids"] = list(source_strategy_ids)
             rows.append(normalized)

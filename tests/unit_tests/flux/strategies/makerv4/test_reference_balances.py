@@ -80,13 +80,13 @@ def test_ibkr_reference_balance_provider_refresh_reuses_standalone_loop(
 def test_ibkr_reference_balance_provider_keeps_total_cash_only_currency_rows() -> None:
     class _FakeClient:
         def __init__(self) -> None:
-            self._callback = None
+            self._callbacks = {}
 
-        def subscribe_event(self, _name: str, callback) -> None:
-            self._callback = callback
+        def subscribe_event(self, name: str, callback) -> None:
+            self._callbacks[name] = callback
 
         def subscribe_account_summary(self) -> None:
-            assert self._callback is not None
+            callback = self._callbacks["accountSummary-U1234567"]
             for tag, value, currency in (
                 ("NetLiquidation", "85671.33", "HKD"),
                 ("FullAvailableFunds", "85671.33", "HKD"),
@@ -95,10 +95,11 @@ def test_ibkr_reference_balance_provider_keeps_total_cash_only_currency_rows() -
                 ("TotalCashValue", "85671.33", "HKD"),
                 ("TotalCashValue", "1250.50", "USD"),
             ):
-                self._callback(tag, value, currency)
+                callback(tag, value, currency)
+            self._callbacks["accountSummaryEnd"](0)
 
-        def unsubscribe_event(self, _name: str) -> None:
-            return None
+        def unsubscribe_event(self, name: str) -> None:
+            self._callbacks.pop(name, None)
 
     provider = reference_balances.IbkrReferenceBalanceSnapshotProvider(
         reference_balances.IbkrReferenceBalanceSnapshotProviderConfig(
@@ -120,3 +121,47 @@ def test_ibkr_reference_balance_provider_keeps_total_cash_only_currency_rows() -
     assert Decimal(usd_balance["total"]) == Decimal("1250.50")
     assert Decimal(usd_balance["free"]) == Decimal("1250.50")
     assert Decimal(usd_balance["locked"]) == Decimal("0")
+
+
+def test_ibkr_reference_balance_provider_waits_for_account_summary_end() -> None:
+    class _FakeClient:
+        def __init__(self) -> None:
+            self._callbacks = {}
+
+        def subscribe_event(self, name: str, callback) -> None:
+            self._callbacks[name] = callback
+
+        def subscribe_account_summary(self) -> None:
+            callback = self._callbacks["accountSummary-U1234567"]
+            callback("NetLiquidation", "85671.33", "HKD")
+            callback("FullAvailableFunds", "85671.33", "HKD")
+            callback("FullInitMarginReq", "0", "HKD")
+            callback("FullMaintMarginReq", "0", "HKD")
+            callback("TotalCashValue", "85671.33", "HKD")
+            loop = asyncio.get_running_loop()
+            loop.call_soon(callback, "TotalCashValue", "1250.50", "USD")
+            loop.call_soon(self._callbacks["accountSummaryEnd"], 0)
+
+        def unsubscribe_event(self, name: str) -> None:
+            self._callbacks.pop(name, None)
+
+    provider = reference_balances.IbkrReferenceBalanceSnapshotProvider(
+        reference_balances.IbkrReferenceBalanceSnapshotProviderConfig(
+            request_timeout_secs=1,
+        ),
+    )
+
+    payload = asyncio.run(
+        provider._fetch_account_payload(
+            _FakeClient(),
+            account_id="U1234567",
+            ts_ms=1_700_000_000_000,
+        ),
+    )
+
+    balances = {
+        balance["currency"]: balance
+        for balance in payload["events"][0]["balances"]
+    }
+
+    assert set(balances) == {"HKD", "USD"}
