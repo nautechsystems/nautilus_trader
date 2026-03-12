@@ -204,8 +204,12 @@ def _attach_reference_balance_snapshot_provider(
     *,
     strategy: Any,
     config: dict[str, Any],
+    strategy_spec: FluxStrategySpec,
 ) -> None:
-    if _profile_owned_account_projections_enabled(config):
+    if (
+        _uses_profile_account_projection(strategy_spec)
+        and _profile_owned_account_projections_enabled(config)
+    ):
         return
 
     configure_provider = getattr(strategy, "configure_reference_balance_snapshot_provider", None)
@@ -305,13 +309,27 @@ def _runtime_params_module(strategy_spec: FluxStrategySpec):
     return makerv3_runtime_params_mod
 
 
+def _supports_immediate_hedge(strategy_spec: FluxStrategySpec) -> bool:
+    capabilities = getattr(strategy_spec, "capabilities", None)
+    if capabilities is not None and hasattr(capabilities, "supports_immediate_hedge"):
+        return bool(capabilities.supports_immediate_hedge)
+    return getattr(strategy_spec, "param_set", "") == "makerv4"
+
+
+def _uses_profile_account_projection(strategy_spec: FluxStrategySpec) -> bool:
+    capabilities = getattr(strategy_spec, "capabilities", None)
+    if capabilities is not None and hasattr(capabilities, "uses_profile_account_projection"):
+        return bool(capabilities.uses_profile_account_projection)
+    return True
+
+
 def _strategy_allowed_instrument_ids(
     *,
     strategy_spec: FluxStrategySpec,
     maker_instrument_id: InstrumentId,
     reference_instrument_id: InstrumentId,
 ) -> list[InstrumentId]:
-    if strategy_spec.param_set == "makerv4":
+    if _supports_immediate_hedge(strategy_spec):
         return [maker_instrument_id, reference_instrument_id]
     return [maker_instrument_id]
 
@@ -321,7 +339,7 @@ def _effective_venue_resolution_config(
     config: dict[str, Any],
     strategy_spec: FluxStrategySpec,
 ) -> dict[str, Any]:
-    if strategy_spec.param_set != "makerv4":
+    if not _supports_immediate_hedge(strategy_spec):
         return config
 
     node_cfg = config.get("node")
@@ -632,6 +650,7 @@ def build_node(
     _attach_reference_balance_snapshot_provider(
         strategy=strategy,
         config=venue_resolution_config,
+        strategy_spec=strategy_spec,
     )
 
     node = TradingNode(config=config_node)

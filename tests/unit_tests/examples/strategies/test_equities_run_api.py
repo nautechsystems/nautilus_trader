@@ -13,6 +13,7 @@ from flux.runners.equities.run_api import _equities_profile_summary
 from flux.runners.equities.run_api import _load_config
 from flux.runners.equities.run_api import _parse_args
 from flux.runners.equities.run_api import _resolve_strategy_name
+from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
 
@@ -74,6 +75,39 @@ def test_equities_run_api_uses_makerv4_metadata_when_strategy_spec_is_makerv4() 
     assert metadata.param_set == "makerv4"
     assert metadata.strategy_family == "maker_v4"
     assert metadata.strategy_version == "v4"
+
+
+def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
+    metadata = build_equities_strategy_metadata_map(
+        {
+            "strategy_groups": "equities",
+            "quote_asset": "USD",
+            "strategy_contracts": [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv3",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+                {
+                    "strategy_id": "aapl_tradexyz_makerv4",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+        strategy_ids=["aapl_tradexyz_makerv3", "aapl_tradexyz_makerv4"],
+    )
+
+    assert metadata["aapl_tradexyz_makerv3"].base_asset == "AAPL"
+    assert metadata["aapl_tradexyz_makerv3"].strategy_family == "maker_v3"
+    assert metadata["aapl_tradexyz_makerv4"].base_asset == "AAPL"
+    assert metadata["aapl_tradexyz_makerv4"].strategy_family == "maker_v4"
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

@@ -1213,6 +1213,8 @@ def create_flux_api_app(  # noqa: C901
         if strategy_metadata_resolver is not None:
             try:
                 metadata = strategy_metadata_resolver(strategy_id)
+            except LookupError:
+                metadata = strategy_metadata
             except Exception as e:
                 raise ApiEnvelopeError(
                     status=500,

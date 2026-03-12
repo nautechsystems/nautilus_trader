@@ -26,6 +26,7 @@ from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
+from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.pulse import PulseControlPlane
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
@@ -34,6 +35,8 @@ from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
 from flux.strategies import get_strategy_spec
+from flux.strategies.registry import FluxStrategySpec
+from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
 from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_DEFAULTS
 from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_SCHEMA
 
@@ -276,12 +279,16 @@ def _resolve_strategy_name(api_cfg: dict[str, Any]) -> str:
     return strategy_name
 
 
-def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> StrategyMetadata:
-    strategy_spec = get_strategy_spec(strategy_name)
+def _build_strategy_metadata(
+    api_cfg: dict[str, Any],
+    *,
+    strategy_spec: FluxStrategySpec,
+    base_asset: str | None = None,
+) -> StrategyMetadata:
     return StrategyMetadata(
         strategy_class=str(strategy_spec.profile_key),
         strategy_groups=str(api_cfg.get("strategy_groups", EQUITIES_DESCRIPTOR.profile)),
-        base_asset=str(api_cfg.get("base_asset", "BASE")),
+        base_asset=str(base_asset or api_cfg.get("base_asset", "BASE")),
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
         param_set=strategy_spec.param_set,
         strategy_family=strategy_spec.strategy_family,
@@ -289,8 +296,38 @@ def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> 
     )
 
 
+def build_equities_strategy_metadata_map(
+    api_cfg: dict[str, Any],
+    *,
+    strategy_ids: list[str],
+) -> dict[str, StrategyMetadata]:
+    configured_strategy_class = _optional_text(api_cfg.get("strategy_class"))
+    default_strategy_spec = (
+        get_strategy_spec(_resolve_strategy_name(api_cfg))
+        if configured_strategy_class
+        else DEFAULT_EQUITIES_STRATEGY_SPEC
+    )
+    contracts_by_strategy_id = {
+        contract.strategy_id: contract
+        for contract in decode_strategy_contracts(api_cfg.get("strategy_contracts") or [])
+    }
+    metadata_by_strategy_id: dict[str, StrategyMetadata] = {}
+    for strategy_id in strategy_ids:
+        contract = contracts_by_strategy_id.get(strategy_id)
+        strategy_spec = resolve_strategy_spec_for_strategy_id(
+            strategy_id,
+            default=default_strategy_spec,
+        )
+        metadata_by_strategy_id[strategy_id] = _build_strategy_metadata(
+            api_cfg,
+            strategy_spec=strategy_spec,
+            base_asset=(contract.portfolio_asset_id if contract is not None else None),
+        )
+    return metadata_by_strategy_id
+
+
 def build_strategy_metadata_for_test(strategy_name: str) -> StrategyMetadata:
-    return _build_strategy_metadata({}, strategy_name=strategy_name)
+    return _build_strategy_metadata({}, strategy_spec=get_strategy_spec(strategy_name))
 
 
 def _resolve_runtime_params_payloads(
@@ -493,9 +530,13 @@ def main() -> None:
 
     metadata = _build_strategy_metadata(
         api_cfg,
-        strategy_name=strategy_spec.strategy_id,
+        strategy_spec=strategy_spec,
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
+    strategy_metadata_map = build_equities_strategy_metadata_map(
+        api_cfg,
+        strategy_ids=profile_strategy_map.get(EQUITIES_DESCRIPTOR.profile, []),
+    )
     emit_startup_banner(
         prefix="equities-run-api",
         message=_equities_profile_summary(profile_strategy_map, profile_required_strategy_map),
@@ -518,6 +559,7 @@ def main() -> None:
         cast(RedisClientProtocol, redis_client),
         contract_catalog=contracts,
         strategy_metadata=metadata,
+        strategy_metadata_resolver=strategy_metadata_map.__getitem__,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
         params_schema=params_schema,

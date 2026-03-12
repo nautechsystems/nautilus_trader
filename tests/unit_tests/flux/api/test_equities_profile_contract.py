@@ -190,6 +190,46 @@ def test_signals_profile_equities_returns_only_allowlisted_strategies(
     ]
 
 
+def test_api_strategies_falls_back_to_default_metadata_when_resolver_has_no_entry(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=lambda strategy_id: {
+            "strategy_02": app_module.StrategyMetadata(
+                strategy_class="maker_v4",
+                strategy_groups="equities",
+                base_asset="AAPL",
+                quote_asset="USD",
+                param_set="makerv4",
+                strategy_family="maker_v4",
+                strategy_version="v4",
+            ),
+        }[strategy_id],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/strategies")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["meta"]["strategy_id"] == flux_config.identity.strategy_id
+    assert row["meta"]["class"] == "maker_v3"
+
+
 def test_signals_profile_equities_emits_makerv4_quote_snapshot(
     redis_client,
     params_schema,

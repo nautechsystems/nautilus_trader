@@ -348,6 +348,13 @@ def test_build_node_injects_makerv3_portfolio_asset_id_from_strategy_contracts(m
     assert strategy.config.portfolio_asset_id == "AAPL"
 
 
+def test_strategy_spec_capabilities_expose_shared_account_projection_support() -> None:
+    spec = run_node.get_strategy_spec("makerv4")
+
+    assert spec.capabilities.uses_profile_account_projection is True
+    assert spec.capabilities.supports_immediate_hedge is True
+
+
 def test_resolve_strategy_spec_uses_explicit_strategy_param_set(monkeypatch) -> None:
     registry_calls: list[str] = []
 
