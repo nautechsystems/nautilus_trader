@@ -805,8 +805,25 @@ impl BacktestEngine {
     }
 
     fn build_analyzer(&self, cache: &Cache, positions: &[&Position]) -> PortfolioAnalyzer {
+        // Position snapshots are stored as concatenated JSON objects in cache bytes.
+        // Decode them into Position entries and merge into analyzer inputs.
+        fn decode_position_snapshots(snapshot_bytes: &[u8]) -> Vec<Position> {
+            // Use serde_json streaming deserializer for back-to-back JSON values.
+            serde_json::de::Deserializer::from_slice(snapshot_bytes)
+                .into_iter::<Position>()
+                .filter_map(Result::ok)
+                .collect()
+        }
+
         let mut analyzer = PortfolioAnalyzer::default();
         let positions_owned: Vec<_> = positions.iter().map(|p| (*p).clone()).collect();
+        let mut snapshot_positions = Vec::new();
+
+        for position in positions {
+            if let Some(snapshot_bytes) = cache.position_snapshot_bytes(&position.id) {
+                snapshot_positions.extend(decode_position_snapshots(&snapshot_bytes));
+            }
+        }
 
         // Aggregate starting and current balances across all venue accounts
         for venue in self.venues.keys() {
@@ -833,6 +850,7 @@ impl BacktestEngine {
         }
 
         analyzer.add_positions(&positions_owned);
+        analyzer.add_positions(&snapshot_positions);
         analyzer
     }
 
