@@ -335,7 +335,10 @@ def _resolve_runtime_params_payloads(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     if strategy_name == "makerv4":
         return MAKERV4_RUNTIME_PARAM_SCHEMA, MAKERV4_RUNTIME_PARAM_DEFAULTS
-    return MAKERV3_RUNTIME_PARAM_SCHEMA, MAKERV3_RUNTIME_PARAM_DEFAULTS
+    defaults = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
+    # Equities canaries use 1-share order sizing by default; keep the API fallback aligned with node runtime.
+    defaults["qty"] = 1.0
+    return MAKERV3_RUNTIME_PARAM_SCHEMA, defaults
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:

@@ -21,7 +21,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - One stock uses one strategy file and one node process.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The active checked-in equities target is the MakerV3 trade[XYZ] US-stock universe: `aapl`, `amd`, `amzn`, `baba`, `coin`, `crcl`, `crwv`, `googl`, `hood`, `intc`, `meta`, `mstr`, `msft`, `mu`, `nflx`, `nvda`, `orcl`, `pltr`, `rivn`, `sndk`, `tsm`, `tsla`, and `usar`.
+- The checked-in MakerV3 surface is still broader than the first-wave prod target until pruning tasks land; use the frozen admission baskets below as the source of truth for what remains in scope for prod.
 - `aapl_tradexyz_makerv4.toml.disabled` is rollback/canary material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
@@ -33,12 +33,56 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 11, 2026 MakerV3 contract
 
-- MakerV3 is the user-confirmed equities deploy contract. The checked-in repo keeps `deploy/equities/equities.live.toml` on `api.strategy_class = "maker_v3"` / `param_set = "makerv3"` and allowlists the exact-qualified 24-stock universe.
+- MakerV3 is the user-confirmed equities deploy contract. The checked-in repo keeps `deploy/equities/equities.live.toml` on `api.strategy_class = "maker_v3"` / `param_set = "makerv3"`, and the March 13, 2026 admission freeze below defines which names stay in Tier 1, remain second-wave disabled, or are decommissioned out of scope as pruning tasks narrow the shared allowlist.
 - `deploy/equities/strategies/aapl_tradexyz_makerv4.toml.disabled` remains available as rollback/canary material, but it is not part of normal installer discovery.
 - The live host may still be temporarily drifted toward MakerV4 until the next reinstall/restart sequence. Treat any active `flux@equities-node-aapl_tradexyz_makerv4.service` state as live drift, not as the intended repo contract.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 - The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
+
+## March 13, 2026 Prod Hardening Universe Policy
+
+- The current checked-in live config still carries the broad 23-name MakerV3 basket while the prod-hardening prune is in progress.
+- Freeze the intended production universe in docs/tests first, then prune `deploy/equities/equities.live.toml`, service discovery, and runtime rollout in follow-on tasks.
+
+### Tier 1 Core Basket
+
+- `aapl_tradexyz_makerv3`
+- `amd_tradexyz_makerv3`
+- `amzn_tradexyz_makerv3`
+- `googl_tradexyz_makerv3`
+- `meta_tradexyz_makerv3`
+- `msft_tradexyz_makerv3`
+- `nvda_tradexyz_makerv3`
+- `orcl_tradexyz_makerv3`
+- `pltr_tradexyz_makerv3`
+- `tsla_tradexyz_makerv3`
+
+### Second-Wave Disabled Basket
+
+- `coin_tradexyz_makerv3`
+- `hood_tradexyz_makerv3`
+- `intc_tradexyz_makerv3`
+- `mu_tradexyz_makerv3`
+- `nflx_tradexyz_makerv3`
+- `rivn_tradexyz_makerv3`
+
+### Immediate Decommission / Out-of-Scope Basket
+
+- `baba_tradexyz_makerv3`
+- `crcl_tradexyz_makerv3`
+- `crwv_tradexyz_makerv3`
+- `mstr_tradexyz_makerv3`
+- `sndk_tradexyz_makerv3`
+- `tsm_tradexyz_makerv3`
+- `usar_tradexyz_makerv3`
+
+### Admission Policy for Any Future Re-Add
+
+1. US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.
+2. Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.
+3. The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.
+4. The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.
 
 ## MakerV3 deploy contract
 
@@ -151,7 +195,8 @@ Read-only live readiness gate:
 - Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected checkout before any live canary enablement.
 - The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
 - Safe defaults are fail-closed: `missing_required` must stay empty, balances must not be degraded, every configured strategy contract must have its canonical component key, the required IBKR shared projections must be present and fresh, and stale/unhealthy signal counts must stay at zero.
-- Override knobs are env-first for host use: `EQUITIES_READINESS_API_BASE_URL`, `EQUITIES_READY_MAX_STALE_SIGNAL_LEGS`, `EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES`, `EQUITIES_READY_PROJECTION_MAX_AGE_MS`, and `EQUITIES_READY_REQUIRED_BALANCE_SOURCE`.
+- The host wrapper is session-aware by default for IBKR reference freshness: outside the regular US session (`09:30-16:00 America/New_York`), `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION=1` suppresses off-session reference-age failures while keeping balances, component keys, shared-account projections, and maker-leg freshness fail-closed.
+- Override knobs are env-first for host use: `EQUITIES_READINESS_API_BASE_URL`, `EQUITIES_READY_MAX_STALE_SIGNAL_LEGS`, `EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES`, `EQUITIES_READY_PROJECTION_MAX_AGE_MS`, `EQUITIES_READY_REQUIRED_BALANCE_SOURCE`, and `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION`.
 
 ## Local smoke only
 

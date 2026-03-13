@@ -582,6 +582,91 @@ def test_build_node_warns_when_qty_unit_missing_and_defaults_to_venue(
     assert "defaulting to 'venue'" in caplog.text
 
 
+def test_build_node_defaults_missing_qty_and_order_qty_to_one(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "get_strategy_spec",
+        lambda _name: SimpleNamespace(
+            strategy_id="makerv3",
+            strategy_cls=_CapturedStrategy,
+            config_cls=_CapturedStrategyConfig,
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+            profile_key="maker_v3",
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv3",
+                "external_strategy_id": "aapl_tradexyz_makerv3",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {"strategy_id": "aapl_tradexyz_makerv3"},
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+
+    assert strategy.config.order_qty == Decimal("1")
+    assert strategy.config.qty == Decimal("1")
+
+
 def test_build_node_rejects_invalid_qty_unit(monkeypatch) -> None:
     class _CapturedNode:
         def __init__(self, config=None, **_kwargs) -> None:

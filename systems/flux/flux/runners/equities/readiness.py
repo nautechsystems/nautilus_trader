@@ -8,10 +8,18 @@ import sys
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from datetime import time as dt_time
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - stdlib on supported runtimes
+    ZoneInfo = None  # type: ignore[assignment]
 
 from flux.api.payloads import contract_id_for_leg
 from flux.common.account_projection import decode_profile_account_snapshot
@@ -36,6 +44,9 @@ DEFAULT_REQUIRED_BALANCE_SOURCE = "portfolio_snapshot_v2"
 DEFAULT_SIGNAL_MAX_AGE_MS = 10_000
 PROJECTION_PROVIDERS = frozenset({"ibkr"})
 UNSPECIFIED_BIND_HOSTS = frozenset({"0.0.0.0", "::"})  # noqa: S104
+US_EQUITIES_REGULAR_TZ = "America/New_York"
+US_EQUITIES_REGULAR_START = dt_time(hour=9, minute=30)
+US_EQUITIES_REGULAR_END = dt_time(hour=16, minute=0)
 EQUITIES_DESCRIPTOR = get_strategy_set_descriptor("equities")
 if EQUITIES_DESCRIPTOR is None:  # pragma: no cover - static descriptor contract
     raise RuntimeError("Equities strategy-set descriptor is not registered")
@@ -47,6 +58,7 @@ class EquitiesReadinessThresholds:
     max_unhealthy_strategies: int = 0
     projection_max_age_ms: int = DEFAULT_PROJECTION_MAX_AGE_MS
     required_balance_source: str | None = DEFAULT_REQUIRED_BALANCE_SOURCE
+    ignore_reference_freshness_outside_regular_session: bool = False
     expected_projection_scope_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -150,6 +162,14 @@ def _signal_stale_legs(payload: Mapping[str, Any]) -> list[str]:
     return _sorted_unique_texts(md_health.get("stale_legs"))
 
 
+def _signal_role_map(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    role_map = _mapping(payload.get("maker_role_map"))
+    if role_map:
+        return role_map
+    state = _mapping(payload.get("state"))
+    return _mapping(state.get("maker_role_map"))
+
+
 def _signal_state_stale(payload: Mapping[str, Any]) -> bool:
     debug = _mapping(payload.get("debug"))
     md_health = _mapping(debug.get("md_health"))
@@ -209,6 +229,18 @@ def _signal_max_age_ms(payload: Mapping[str, Any]) -> int:
     return _safe_int(params.get("max_age_ms")) or DEFAULT_SIGNAL_MAX_AGE_MS
 
 
+def _is_us_equities_regular_session(now_ms_value: int) -> bool:
+    if ZoneInfo is None:
+        return True
+    local_dt = datetime.fromtimestamp(now_ms_value / 1000, tz=timezone.utc).astimezone(
+        ZoneInfo(US_EQUITIES_REGULAR_TZ),
+    )
+    if local_dt.weekday() >= 5:
+        return False
+    local_time = local_dt.timetz().replace(tzinfo=None)
+    return US_EQUITIES_REGULAR_START <= local_time < US_EQUITIES_REGULAR_END
+
+
 def _candidate_leg_ids(*, exchange: str, instrument_id: str) -> tuple[str, ...]:
     exchange_text = _optional_text(exchange) or ""
     instrument_text = _optional_text(instrument_id) or ""
@@ -216,13 +248,13 @@ def _candidate_leg_ids(*, exchange: str, instrument_id: str) -> tuple[str, ...]:
         return ()
     candidates: list[str] = []
     for candidate in (
+        f"{exchange_text.lower()}:{instrument_text}",
+        f"{exchange_text.lower()}:{instrument_text.upper()}",
         contract_id_for_leg(
             exchange=exchange_text,
             symbol=instrument_text,
             instrument_id=instrument_text,
         ),
-        f"{exchange_text.lower()}:{instrument_text}",
-        f"{exchange_text.lower()}:{instrument_text.upper()}",
     ):
         if candidate and candidate not in candidates:
             candidates.append(candidate)
@@ -240,6 +272,35 @@ def _resolve_leg(
         if leg_id in legs:
             return leg_id, _mapping(legs.get(leg_id))
     return (candidate_leg_ids[0] if candidate_leg_ids else None), {}
+
+
+def _resolve_signal_leg(
+    *,
+    payload: Mapping[str, Any],
+    legs: Mapping[str, Any],
+    role: str,
+    fallback_exchange: str,
+    fallback_instrument_id: str | None,
+) -> tuple[str | None, Mapping[str, Any]]:
+    preferred_leg_id = _optional_text(_signal_role_map(payload).get(role))
+    if preferred_leg_id is not None:
+        preferred_leg = _mapping(legs.get(preferred_leg_id))
+        if preferred_leg:
+            return preferred_leg_id, preferred_leg
+
+    fallback_instrument_text = _optional_text(fallback_instrument_id)
+    if fallback_instrument_text is not None:
+        resolved_leg_id, resolved_leg = _resolve_leg(
+            legs=legs,
+            exchange=fallback_exchange,
+            instrument_id=fallback_instrument_text,
+        )
+        if resolved_leg:
+            return resolved_leg_id, resolved_leg
+        if preferred_leg_id is None:
+            return resolved_leg_id, resolved_leg
+
+    return preferred_leg_id, _mapping(legs.get(preferred_leg_id))
 
 
 def _build_projection_health_snapshot(
@@ -307,6 +368,8 @@ def _build_signal_health_snapshot(
     signals_payload: Mapping[str, Any] | None,
     max_stale_signal_legs: int,
     max_unhealthy_strategies: int,
+    now_ms_value: int,
+    ignore_reference_freshness_outside_regular_session: bool,
 ) -> SignalHealthSnapshot:
     signal_rows = signals_payload.get("strategies") if isinstance(signals_payload, Mapping) else None
     signal_map = {
@@ -324,6 +387,10 @@ def _build_signal_health_snapshot(
     unhealthy_strategy_ids: list[str] = []
     missing_signal_strategy_ids: list[str] = []
     reference_unhealthy_strategy_ids: list[str] = []
+    regular_session_active = _is_us_equities_regular_session(now_ms_value)
+    reference_freshness_enforced = (
+        not ignore_reference_freshness_outside_regular_session or regular_session_active
+    )
 
     for strategy_id in required_strategy_ids:
         signal_row = signal_map.get(strategy_id)
@@ -334,58 +401,87 @@ def _build_signal_health_snapshot(
             continue
 
         stale_legs = _signal_stale_legs(signal_row)
-        stale_signal_legs.update(stale_legs)
         state_name = _signal_state_name(signal_row)
         state_stale = _signal_state_stale(signal_row)
         contract = contracts_by_strategy_id.get(strategy_id)
         max_age_ms = _signal_max_age_ms(signal_row)
         legs = _mapping(signal_row.get("legs"))
+        maker_leg_id, maker_leg = _resolve_signal_leg(
+            payload=signal_row,
+            legs=legs,
+            role="maker_leg",
+            fallback_exchange="hyperliquid",
+            fallback_instrument_id=contract.maker_instrument_id if contract is not None else None,
+        )
+        reference_leg_id, reference_leg = _resolve_signal_leg(
+            payload=signal_row,
+            legs=legs,
+            role="ref_leg",
+            fallback_exchange="ibkr",
+            fallback_instrument_id=contract.reference_instrument_id if contract is not None else None,
+        )
+        candidate_stale_leg_ids = {maker_leg_id}
+        if reference_freshness_enforced:
+            candidate_stale_leg_ids.add(reference_leg_id)
+        relevant_stale_legs = sorted(
+            leg_id
+            for leg_id in candidate_stale_leg_ids
+            if leg_id is not None and leg_id in stale_legs
+        )
+        stale_signal_legs.update(relevant_stale_legs)
         over_age_legs_for_strategy: list[str] = []
-        if contract is not None:
-            for exchange, instrument_id in (
-                ("hyperliquid", contract.maker_instrument_id),
-                ("ibkr", contract.reference_instrument_id),
-            ):
-                resolved_leg_id, resolved_leg = _resolve_leg(
-                    legs=legs,
-                    exchange=exchange,
-                    instrument_id=instrument_id,
-                )
-                age_ms = _safe_int(resolved_leg.get("age_ms"))
-                if age_ms is None or age_ms >= max_age_ms:
-                    over_age_legs_for_strategy.append(
-                        resolved_leg_id
-                        or contract_id_for_leg(
-                            exchange=exchange,
-                            symbol=instrument_id,
-                            instrument_id=instrument_id,
-                        ),
+        for leg_role, resolved_leg_id, resolved_leg, exchange, instrument_id in (
+            (
+                "maker",
+                maker_leg_id,
+                maker_leg,
+                "hyperliquid",
+                contract.maker_instrument_id if contract is not None else None,
+            ),
+            (
+                "reference",
+                reference_leg_id,
+                reference_leg,
+                "ibkr",
+                contract.reference_instrument_id if contract is not None else None,
+            ),
+        ):
+            if leg_role == "reference" and not reference_freshness_enforced:
+                continue
+            age_ms = _safe_int(resolved_leg.get("age_ms"))
+            if age_ms is None or age_ms >= max_age_ms:
+                fallback_leg_id = resolved_leg_id
+                instrument_text = _optional_text(instrument_id)
+                if fallback_leg_id is None and instrument_text is not None:
+                    fallback_leg_id = contract_id_for_leg(
+                        exchange=exchange,
+                        symbol=instrument_text,
+                        instrument_id=instrument_text,
                     )
+                if fallback_leg_id is not None:
+                    over_age_legs_for_strategy.append(fallback_leg_id)
         over_age_signal_legs.update(over_age_legs_for_strategy)
         unhealthy = (
             state_stale
-            or bool(stale_legs)
+            or bool(relevant_stale_legs)
             or bool(over_age_legs_for_strategy)
             or state_name.startswith("blocked_")
         )
         if unhealthy:
             unhealthy_strategy_ids.append(strategy_id)
 
-        reference_leg_id: str | None = None
-        reference_leg: Mapping[str, Any] = {}
-        if contract is not None:
-            reference_leg_id, reference_leg = _resolve_leg(
-                legs=legs,
-                exchange="ibkr",
-                instrument_id=contract.reference_instrument_id,
-            )
         reference_unhealthy = (
-            reference_leg_id is None
-            or reference_leg_id in stale_legs
-            or reference_leg_id in over_age_legs_for_strategy
-            or not reference_leg
-            or _safe_int(reference_leg.get("age_ms")) is None
-            or state_name.startswith("blocked_reference")
+            state_name.startswith("blocked_reference")
+            or (
+                reference_freshness_enforced
+                and (
+                    reference_leg_id is None
+                    or reference_leg_id in relevant_stale_legs
+                    or reference_leg_id in over_age_legs_for_strategy
+                    or not reference_leg
+                    or _safe_int(reference_leg.get("age_ms")) is None
+                )
+            )
         )
         if reference_unhealthy:
             reference_unhealthy_strategy_ids.append(strategy_id)
@@ -416,6 +512,8 @@ def _build_signal_health_snapshot(
                 "healthy_strategy_count": healthy_strategy_count,
                 "max_stale_signal_legs": max_stale_signal_legs,
                 "max_unhealthy_strategies": max_unhealthy_strategies,
+                "regular_session_active": regular_session_active,
+                "reference_freshness_enforced": reference_freshness_enforced,
             },
         ),
         healthy_strategy_count=healthy_strategy_count,
@@ -507,6 +605,10 @@ def evaluate_equities_readiness(
         signals_payload=signals_payload,
         max_stale_signal_legs=active_thresholds.max_stale_signal_legs,
         max_unhealthy_strategies=active_thresholds.max_unhealthy_strategies,
+        now_ms_value=now_ms_value,
+        ignore_reference_freshness_outside_regular_session=(
+            active_thresholds.ignore_reference_freshness_outside_regular_session
+        ),
     )
     signals_check = signal_snapshot.check
 
@@ -527,6 +629,8 @@ def evaluate_equities_readiness(
             "empty_scope_ids": projection_snapshot.empty_scope_ids,
             "stale_scope_ids": projection_snapshot.stale_scope_ids,
             "unhealthy_strategy_ids": signal_snapshot.reference_unhealthy_strategy_ids,
+            "regular_session_active": signals_check.details["regular_session_active"],
+            "reference_freshness_enforced": signals_check.details["reference_freshness_enforced"],
         },
     )
 
@@ -665,6 +769,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--projection-max-age-ms", type=int, default=DEFAULT_PROJECTION_MAX_AGE_MS)
     parser.add_argument("--required-balance-source", default=DEFAULT_REQUIRED_BALANCE_SOURCE)
     parser.add_argument(
+        "--ignore-reference-freshness-outside-regular-session",
+        action="store_true",
+        help=(
+            "Ignore IBKR reference-leg freshness outside the regular US equities session "
+            "(09:30-16:00 America/New_York)."
+        ),
+    )
+    parser.add_argument(
         "--expected-projection-scope-id",
         action="append",
         dest="expected_projection_scope_ids",
@@ -704,6 +816,9 @@ def main(argv: list[str] | None = None) -> int:
             max_unhealthy_strategies=args.max_unhealthy_strategies,
             projection_max_age_ms=args.projection_max_age_ms,
             required_balance_source=_optional_text(args.required_balance_source),
+            ignore_reference_freshness_outside_regular_session=(
+                args.ignore_reference_freshness_outside_regular_session
+            ),
             expected_projection_scope_ids=tuple(
                 _optional_text(scope_id) or ""
                 for scope_id in (args.expected_projection_scope_ids or [])

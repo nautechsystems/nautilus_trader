@@ -15,6 +15,7 @@ def test_makerv3_registry_exposes_schema_defaults_and_hot_path_bounds() -> None:
     defaults = registry.defaults
 
     assert registry.param_set == "makerv3"
+    assert defaults["qty"] == 1.0
     assert defaults["n_orders1"] == 5
     assert defaults["distance1"] == 2.0
     assert defaults["max_age_ms"] == 10_000

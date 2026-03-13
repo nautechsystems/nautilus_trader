@@ -156,6 +156,53 @@ ACTIVE_IBKR_INSTRUMENT_IDS = {
     entry["ibkr_instrument_id"]
     for entry in ACTIVE_STRATEGIES
 }
+CORE_PROD_STRATEGY_IDS = (
+    "aapl_tradexyz_makerv3",
+    "amd_tradexyz_makerv3",
+    "amzn_tradexyz_makerv3",
+    "googl_tradexyz_makerv3",
+    "meta_tradexyz_makerv3",
+    "msft_tradexyz_makerv3",
+    "nvda_tradexyz_makerv3",
+    "orcl_tradexyz_makerv3",
+    "pltr_tradexyz_makerv3",
+    "tsla_tradexyz_makerv3",
+)
+SECOND_WAVE_DISABLED_STRATEGY_IDS = (
+    "coin_tradexyz_makerv3",
+    "hood_tradexyz_makerv3",
+    "intc_tradexyz_makerv3",
+    "mu_tradexyz_makerv3",
+    "nflx_tradexyz_makerv3",
+    "rivn_tradexyz_makerv3",
+)
+DECOMMISSIONED_STRATEGY_IDS = (
+    "baba_tradexyz_makerv3",
+    "crcl_tradexyz_makerv3",
+    "crwv_tradexyz_makerv3",
+    "mstr_tradexyz_makerv3",
+    "sndk_tradexyz_makerv3",
+    "tsm_tradexyz_makerv3",
+    "usar_tradexyz_makerv3",
+)
+NON_CORE_STRATEGY_IDS = SECOND_WAVE_DISABLED_STRATEGY_IDS + DECOMMISSIONED_STRATEGY_IDS
+ADMISSION_POLICY_LINES = (
+    "US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.",
+    "Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.",
+    "The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.",
+    "The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.",
+)
+CORE_PROD_STRATEGIES = tuple(
+    entry for entry in ACTIVE_STRATEGIES if entry["strategy_id"] in CORE_PROD_STRATEGY_IDS
+)
+CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS = {
+    entry["hyperliquid_instrument_id"]
+    for entry in CORE_PROD_STRATEGIES
+}
+CORE_PROD_IBKR_INSTRUMENT_IDS = {
+    entry["ibkr_instrument_id"]
+    for entry in CORE_PROD_STRATEGIES
+}
 
 
 def _repo_root() -> Path:
@@ -170,6 +217,48 @@ def _load_toml(path: Path) -> dict:
     return tomllib.load(path.open("rb"))
 
 
+def _extract_markdown_code_bullets(text: str, heading: str, *, level: int) -> tuple[str, ...]:
+    lines = text.splitlines()
+    heading_prefix = "#" * level
+
+    try:
+        start = lines.index(f"{heading_prefix} {heading}") + 1
+    except ValueError as exc:
+        raise AssertionError(f"Missing heading: {heading}") from exc
+
+    items: list[str] = []
+    for line in lines[start:]:
+        if line.startswith("#"):
+            break
+        match = re.fullmatch(r"- `([^`]+)`", line)
+        if match:
+            items.append(match.group(1))
+
+    assert items, f"Missing bullet list under heading: {heading}"
+    return tuple(items)
+
+
+def _extract_markdown_numbered_list(text: str, heading: str, *, level: int) -> tuple[str, ...]:
+    lines = text.splitlines()
+    heading_prefix = "#" * level
+
+    try:
+        start = lines.index(f"{heading_prefix} {heading}") + 1
+    except ValueError as exc:
+        raise AssertionError(f"Missing heading: {heading}") from exc
+
+    items: list[str] = []
+    for line in lines[start:]:
+        if line.startswith("#"):
+            break
+        match = re.fullmatch(r"\d+\. (.+)", line)
+        if match:
+            items.append(match.group(1))
+
+    assert items, f"Missing numbered list under heading: {heading}"
+    return tuple(items)
+
+
 def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
 
@@ -177,8 +266,8 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == ACTIVE_STRATEGY_IDS
-    assert config["api"]["equities_required_strategy_ids"] == ACTIVE_STRATEGY_IDS
+    assert config["api"]["equities_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
+    assert config["api"]["equities_required_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
 
 
 def test_equities_live_config_decommissions_hyundai() -> None:
@@ -274,11 +363,11 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     assert contracts == {
         *{
             ("hyperliquid", instrument_id)
-            for instrument_id in ACTIVE_HYPERLIQUID_INSTRUMENT_IDS
+            for instrument_id in CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS
         },
         *{
             ("ibkr", instrument_id)
-            for instrument_id in ACTIVE_IBKR_INSTRUMENT_IDS
+            for instrument_id in CORE_PROD_IBKR_INSTRUMENT_IDS
         },
     }
 
@@ -289,7 +378,7 @@ def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
 
     assert not (repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml").exists()
     assert disabled_rollback_path.exists()
-    for entry in ACTIVE_STRATEGIES:
+    for entry in CORE_PROD_STRATEGIES:
         active_path = repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml"
         assert active_path.exists()
         config = _load_toml(active_path)
@@ -312,6 +401,21 @@ def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
             == "TRADE_XYZ_VAULT_ADDRESS"
         )
         assert "twofa_timeout_action" not in config["node"]["venues"]["IBKR"]["dockerized_gateway"]
+
+
+def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> None:
+    repo_root = _repo_root()
+    strategies_dir = repo_root / "deploy/equities/strategies"
+    active_strategy_ids = sorted(
+        path.stem
+        for path in strategies_dir.glob("*.toml")
+        if path.name != "equities.strategy.template.toml"
+    )
+
+    assert active_strategy_ids == list(CORE_PROD_STRATEGY_IDS)
+    for strategy_id in NON_CORE_STRATEGY_IDS:
+        assert not (strategies_dir / f"{strategy_id}.toml").exists()
+        assert (strategies_dir / f"{strategy_id}.toml.disabled").exists()
 
 
 def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
@@ -348,14 +452,14 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
     assert "--enable-execution" in install_script
 
 
-def test_equities_shared_contract_catalog_matches_active_strategy_routes() -> None:
+def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
     shared_contracts = {
         (entry["exchange"], entry["instrument_id"])
         for entry in shared_config["contracts"]
     }
-    for entry in ACTIVE_STRATEGIES:
+    for entry in CORE_PROD_STRATEGIES:
         active_config = _load_toml(
             repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
         )
@@ -403,13 +507,13 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert "twofa_timeout_action" not in hedge_gateway
 
 
-def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() -> None:
+def test_equities_live_config_strategy_contracts_cover_core_prod_routes_only() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     rows = config["strategy_contracts"]
     strategy_ids = [entry["strategy_id"] for entry in rows]
     portfolio_asset_ids = [entry["portfolio_asset_id"] for entry in rows]
 
-    assert len(rows) == len(ACTIVE_STRATEGIES)
+    assert len(rows) == len(CORE_PROD_STRATEGIES)
     assert len(strategy_ids) == len(set(strategy_ids))
     assert len(portfolio_asset_ids) == len(set(portfolio_asset_ids))
 
@@ -422,8 +526,8 @@ def test_equities_live_config_strategy_contracts_cover_active_strategy_routes() 
         for entry in rows
     }
 
-    assert set(contracts) == set(ACTIVE_STRATEGY_IDS)
-    for entry in ACTIVE_STRATEGIES:
+    assert set(contracts) == set(CORE_PROD_STRATEGY_IDS)
+    for entry in CORE_PROD_STRATEGIES:
         assert contracts[entry["strategy_id"]] == (
             entry["symbol"],
             entry["hyperliquid_instrument_id"],
@@ -435,7 +539,7 @@ def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
     repo_root = _repo_root()
     client_ids: list[int] = []
 
-    for entry in ACTIVE_STRATEGIES:
+    for entry in CORE_PROD_STRATEGIES:
         active_config = _load_toml(
             repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
         )
@@ -454,7 +558,7 @@ def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_id
     }
     strategy_client_ids: set[int] = set()
 
-    for entry in ACTIVE_STRATEGIES:
+    for entry in CORE_PROD_STRATEGIES:
         active_config = _load_toml(
             repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
         )
@@ -527,7 +631,7 @@ def test_equities_stack_script_is_scoped_to_equities_services_and_paths() -> Non
     assert 'TOKENMM_' not in script
 
 
-def test_equities_systemd_assets_use_equities_service_names() -> None:
+def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
     target = _read(_repo_root() / "deploy/equities/systemd/flux-equities.target")
     install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
     common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")
@@ -538,8 +642,10 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
-    for strategy_id in ACTIVE_STRATEGY_IDS:
+    for strategy_id in CORE_PROD_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' in target
+    for strategy_id in NON_CORE_STRATEGY_IDS:
+        assert f'Wants=flux@equities-node-{strategy_id}.service' not in target
     assert 'deploy/equities/equities.live.toml' in install_script
     assert 'flux-equities.target' in install_script
     assert 'deploy/equities/systemd/common.env.example' in install_script
@@ -567,8 +673,10 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert 'TRADE_XYZ_VAULT_ADDRESS=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
-    for strategy_id in ACTIVE_STRATEGY_IDS:
+    for strategy_id in CORE_PROD_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
+    for strategy_id in NON_CORE_STRATEGY_IDS:
+        assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" not in sudoers
     assert "flux@*" not in sudoers
 
 
@@ -638,6 +746,62 @@ def test_equities_deploy_docs_keep_equities_routes_spa_only() -> None:
     assert (
         "The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`."
         in strategies_readme
+    )
+
+
+def test_equities_prod_admission_policy_baskets_are_exhaustive_and_disjoint() -> None:
+    tier1 = set(CORE_PROD_STRATEGY_IDS)
+    second_wave = set(SECOND_WAVE_DISABLED_STRATEGY_IDS)
+    decommissioned = set(DECOMMISSIONED_STRATEGY_IDS)
+
+    assert tier1.isdisjoint(second_wave)
+    assert tier1.isdisjoint(decommissioned)
+    assert second_wave.isdisjoint(decommissioned)
+    assert tier1 | second_wave | decommissioned == set(ACTIVE_STRATEGY_IDS)
+
+
+def test_equities_deploy_readme_freezes_prod_baskets_and_readd_policy() -> None:
+    readme = _read(_repo_root() / "deploy/equities/README.md")
+
+    assert "current checked-in live config still carries the broad 23-name MakerV3 basket" in readme
+    assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
+    assert (
+        _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
+        == SECOND_WAVE_DISABLED_STRATEGY_IDS
+    )
+    assert (
+        _extract_markdown_code_bullets(
+            readme,
+            "Immediate Decommission / Out-of-Scope Basket",
+            level=3,
+        )
+        == DECOMMISSIONED_STRATEGY_IDS
+    )
+    assert (
+        _extract_markdown_numbered_list(
+            readme,
+            "Admission Policy for Any Future Re-Add",
+            level=3,
+        )
+        == ADMISSION_POLICY_LINES
+    )
+
+
+def test_equities_strategy_readme_freezes_prod_baskets() -> None:
+    readme = _read(_repo_root() / "deploy/equities/strategies/README.md")
+
+    assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
+    assert (
+        _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
+        == SECOND_WAVE_DISABLED_STRATEGY_IDS
+    )
+    assert (
+        _extract_markdown_code_bullets(
+            readme,
+            "Immediate Decommission / Out-of-Scope Basket",
+            level=3,
+        )
+        == DECOMMISSIONED_STRATEGY_IDS
     )
 
 
@@ -781,8 +945,10 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert 'scope_id = "hyperliquid.xyz.main"' in live_config
     assert "equities_strategy_ids" in live_config
     assert f'strategy_class = "{ACTIVE_STRATEGY_CLASS}"' in live_config
-    for strategy_id in ACTIVE_STRATEGY_IDS:
+    for strategy_id in CORE_PROD_STRATEGY_IDS:
         assert strategy_id in live_config
+    for strategy_id in SECOND_WAVE_DISABLED_STRATEGY_IDS + DECOMMISSIONED_STRATEGY_IDS:
+        assert strategy_id not in live_config
 
     assert "/equities" in contract
     assert "/api/v1/signals?profile=equities" in contract

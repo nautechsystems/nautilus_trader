@@ -567,8 +567,8 @@ def build_node(
         timeout_post_stop=float(node_cfg.get("timeout_post_stop", 5.0)),
     )
 
-    order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
-    qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
+    order_qty = Decimal(str(strategy_cfg.get("order_qty", "1")))
+    qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
     qty_unit = resolve_runner_qty_unit(
         strategy_cfg,

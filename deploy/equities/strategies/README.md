@@ -7,15 +7,59 @@ This directory holds one TOML file per equities node process enrolled into the P
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
 - Recommended naming pattern: `<stock>_tradexyz_makerv3.toml`.
-- For the current intended target, the active file pattern is `<stock>_tradexyz_makerv3.toml`.
+- For the current intended target, the active file pattern is `<stock>_tradexyz_makerv3.toml` for Tier 1 core names only.
 - One stock uses one strategy file and one node process.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
-- The intended active target after the March 11, 2026 correction is MakerV3, and the checked-in active files are the exact-qualified trade[XYZ] stock universe under `*_tradexyz_makerv3.toml`.
+- The intended active target after the March 13, 2026 admission freeze is MakerV3 on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
 - The rollback file is `aapl_tradexyz_makerv4.toml.disabled`.
 - Treat MakerV4 as rollback material rather than the desired steady-state contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
+
+## March 13, 2026 Prod Hardening Universe Policy
+
+- The current active file set is still broader than the intended production basket while the prune plan is being executed.
+- Treat the categories below as the source of truth for which strategy files should remain active, disabled for second-wave validation, or decommissioned from the first-wave production set.
+
+### Tier 1 Core Basket
+
+- `aapl_tradexyz_makerv3`
+- `amd_tradexyz_makerv3`
+- `amzn_tradexyz_makerv3`
+- `googl_tradexyz_makerv3`
+- `meta_tradexyz_makerv3`
+- `msft_tradexyz_makerv3`
+- `nvda_tradexyz_makerv3`
+- `orcl_tradexyz_makerv3`
+- `pltr_tradexyz_makerv3`
+- `tsla_tradexyz_makerv3`
+
+### Second-Wave Disabled Basket
+
+- `coin_tradexyz_makerv3`
+- `hood_tradexyz_makerv3`
+- `intc_tradexyz_makerv3`
+- `mu_tradexyz_makerv3`
+- `nflx_tradexyz_makerv3`
+- `rivn_tradexyz_makerv3`
+
+### Immediate Decommission / Out-of-Scope Basket
+
+- `baba_tradexyz_makerv3`
+- `crcl_tradexyz_makerv3`
+- `crwv_tradexyz_makerv3`
+- `mstr_tradexyz_makerv3`
+- `sndk_tradexyz_makerv3`
+- `tsm_tradexyz_makerv3`
+- `usar_tradexyz_makerv3`
+
+### Admission Policy for Any Future Re-Add
+
+1. US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.
+2. Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.
+3. The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.
+4. The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.
 
 ## Required TOML keys per file
 

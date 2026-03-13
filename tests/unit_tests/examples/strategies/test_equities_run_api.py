@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
+import tomllib
 
 import pytest
 from flask import Flask
@@ -12,9 +13,31 @@ from flux.runners.equities.run_api import _build_profile_strategy_maps
 from flux.runners.equities.run_api import _equities_profile_summary
 from flux.runners.equities.run_api import _load_config
 from flux.runners.equities.run_api import _parse_args
+from flux.runners.equities.run_api import _resolve_runtime_params_payloads
 from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
+
+CORE_PROD_STRATEGY_IDS = (
+    "aapl_tradexyz_makerv3",
+    "amd_tradexyz_makerv3",
+    "amzn_tradexyz_makerv3",
+    "googl_tradexyz_makerv3",
+    "meta_tradexyz_makerv3",
+    "msft_tradexyz_makerv3",
+    "nvda_tradexyz_makerv3",
+    "orcl_tradexyz_makerv3",
+    "pltr_tradexyz_makerv3",
+    "tsla_tradexyz_makerv3",
+)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _load_toml(path: Path) -> dict:
+    return tomllib.load(path.open("rb"))
 
 
 def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subset() -> None:
@@ -29,6 +52,15 @@ def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subse
         "equities": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
     }
     assert required_map == {"equities": ["aapl_tradexyz_makerv3"]}
+
+
+def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+
+    strategy_map, required_map = _build_profile_strategy_maps(config["api"])
+
+    assert strategy_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
+    assert required_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:
@@ -108,6 +140,13 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
     assert metadata["aapl_tradexyz_makerv3"].strategy_family == "maker_v3"
     assert metadata["aapl_tradexyz_makerv4"].base_asset == "AAPL"
     assert metadata["aapl_tradexyz_makerv4"].strategy_family == "maker_v4"
+
+
+def test_equities_run_api_defaults_makerv3_qty_to_one() -> None:
+    schema, defaults = _resolve_runtime_params_payloads("makerv3")
+
+    assert schema["qty"]["type"] == "number"
+    assert defaults["qty"] == pytest.approx(1.0)
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:
