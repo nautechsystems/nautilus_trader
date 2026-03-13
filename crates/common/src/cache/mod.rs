@@ -52,9 +52,7 @@ use nautilus_model::{
         Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
         TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
-    enums::{
-        AggregationSource, OmsType, OrderSide, OrderStatus, PositionSide, PriceType, TriggerType,
-    },
+    enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -421,9 +419,9 @@ impl Cache {
             // 9: Build index.orders -> {ClientOrderId}
             self.index.orders.insert(*client_order_id);
 
-            // 10: Build index.orders_initialized -> {ClientOrderId}
-            if order.status() == OrderStatus::Initialized {
-                self.index.orders_initialized.insert(*client_order_id);
+            // 10: Build index.orders_active_local -> {ClientOrderId}
+            if order.is_active_local() {
+                self.index.orders_active_local.insert(*client_order_id);
             }
 
             // 11: Build index.orders_open -> {ClientOrderId}
@@ -611,11 +609,10 @@ impl Cache {
                 error_count += 1;
             }
 
-            if order.status() == OrderStatus::Initialized
-                && !self.index.orders_initialized.contains(client_order_id)
+            if order.is_active_local() && !self.index.orders_active_local.contains(client_order_id)
             {
                 log::error!(
-                    "{failure} in orders: {client_order_id} not found in `self.index.orders_initialized`",
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders_active_local`",
                 );
                 error_count += 1;
             }
@@ -819,10 +816,10 @@ impl Cache {
             }
         }
 
-        for client_order_id in &self.index.orders_initialized {
+        for client_order_id in &self.index.orders_active_local {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{failure} in `index.orders_initialized`: {client_order_id} not found in `self.orders`",
+                    "{failure} in `index.orders_active_local`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -1136,7 +1133,7 @@ impl Cache {
         self.index.exec_spawn_orders.remove(&client_order_id);
 
         self.index.orders.remove(&client_order_id);
-        self.index.orders_initialized.remove(&client_order_id);
+        self.index.orders_active_local.remove(&client_order_id);
         self.index.orders_open.remove(&client_order_id);
         self.index.orders_closed.remove(&client_order_id);
         self.index.orders_emulated.remove(&client_order_id);
@@ -1826,8 +1823,8 @@ impl Cache {
 
         self.index.orders.insert(client_order_id);
 
-        if order.status() == OrderStatus::Initialized {
-            self.index.orders_initialized.insert(client_order_id);
+        if order.is_active_local() {
+            self.index.orders_active_local.insert(client_order_id);
         }
         self.index
             .order_strategy
@@ -2067,10 +2064,10 @@ impl Cache {
     pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
-        if order.status() == OrderStatus::Initialized {
-            self.index.orders_initialized.insert(client_order_id);
+        if order.is_active_local() {
+            self.index.orders_active_local.insert(client_order_id);
         } else {
-            self.index.orders_initialized.remove(&client_order_id);
+            self.index.orders_active_local.remove(&client_order_id);
         }
 
         // Update venue order ID
@@ -2573,9 +2570,9 @@ impl Cache {
         }
     }
 
-    /// Returns the `ClientOrderId`s of all initialized orders.
+    /// Returns the `ClientOrderId`s of all locally active orders.
     #[must_use]
-    pub fn client_order_ids_initialized(
+    pub fn client_order_ids_active_local(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -2587,11 +2584,11 @@ impl Cache {
         match query {
             Some(query) => self
                 .index
-                .orders_initialized
+                .orders_active_local
                 .intersection(&query)
                 .copied()
                 .collect(),
-            None => self.index.orders_initialized.clone(),
+            None => self.index.orders_active_local.clone(),
         }
     }
 
@@ -2811,9 +2808,9 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
-    /// Returns references to all initialized orders matching the optional filter parameters.
+    /// Returns references to all locally active orders matching the optional filter parameters.
     #[must_use]
-    pub fn orders_initialized(
+    pub fn orders_active_local(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -2822,7 +2819,7 @@ impl Cache {
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids =
-            self.client_order_ids_initialized(venue, instrument_id, strategy_id, account_id);
+            self.client_order_ids_active_local(venue, instrument_id, strategy_id, account_id);
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
@@ -2886,10 +2883,10 @@ impl Cache {
         self.index.orders_closed.contains(client_order_id)
     }
 
-    /// Returns whether an order with the `client_order_id` is initialized.
+    /// Returns whether an order with the `client_order_id` is locally active.
     #[must_use]
-    pub fn is_order_initialized(&self, client_order_id: &ClientOrderId) -> bool {
-        self.index.orders_initialized.contains(client_order_id)
+    pub fn is_order_active_local(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_active_local.contains(client_order_id)
     }
 
     /// Returns whether an order with the `client_order_id` is emulated.
@@ -2938,9 +2935,9 @@ impl Cache {
             .len()
     }
 
-    /// Returns the count of all initialized orders.
+    /// Returns the count of all locally active orders.
     #[must_use]
-    pub fn orders_initialized_count(
+    pub fn orders_active_local_count(
         &self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
@@ -2948,7 +2945,7 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_initialized(venue, instrument_id, strategy_id, account_id, side)
+        self.orders_active_local(venue, instrument_id, strategy_id, account_id, side)
             .len()
     }
 
@@ -3798,7 +3795,7 @@ impl Cache {
         self.index.orders_pending_cancel.remove(client_order_id);
         self.index.orders_inflight.remove(client_order_id);
         self.index.orders_emulated.remove(client_order_id);
-        self.index.orders_initialized.remove(client_order_id);
+        self.index.orders_active_local.remove(client_order_id);
 
         if let Some(own_book) = self.own_books.get_mut(&order.instrument_id())
             && order.has_price()

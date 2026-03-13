@@ -132,7 +132,7 @@ fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert!(cache.orders_open(None, None, None, None, None).is_empty());
     assert!(cache.orders_closed(None, None, None, None, None).is_empty());
     assert_eq!(
-        cache.orders_initialized(None, None, None, None, None),
+        cache.orders_active_local(None, None, None, None, None),
         vec![order]
     );
     assert!(
@@ -148,14 +148,14 @@ fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert!(cache.order_exists(&order.client_order_id()));
     assert!(!cache.is_order_open(&order.client_order_id()));
     assert!(!cache.is_order_closed(&order.client_order_id()));
-    assert!(cache.is_order_initialized(&order.client_order_id()));
+    assert!(cache.is_order_active_local(&order.client_order_id()));
     assert!(!cache.is_order_emulated(&order.client_order_id()));
     assert!(!cache.is_order_inflight(&order.client_order_id()));
     assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
     assert_eq!(cache.orders_open_count(None, None, None, None, None), 0);
     assert_eq!(cache.orders_closed_count(None, None, None, None, None), 0);
     assert_eq!(
-        cache.orders_initialized_count(None, None, None, None, None),
+        cache.orders_active_local_count(None, None, None, None, None),
         1
     );
     assert_eq!(cache.orders_emulated_count(None, None, None, None, None), 0);
@@ -193,7 +193,7 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert!(cache.orders_closed(None, None, None, None, None).is_empty());
     assert!(
         cache
-            .orders_initialized(None, None, None, None, None)
+            .orders_active_local(None, None, None, None, None)
             .is_empty()
     );
     assert!(
@@ -209,14 +209,14 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert!(cache.order_exists(&order.client_order_id()));
     assert!(!cache.is_order_open(&order.client_order_id()));
     assert!(!cache.is_order_closed(&order.client_order_id()));
-    assert!(!cache.is_order_initialized(&order.client_order_id()));
+    assert!(!cache.is_order_active_local(&order.client_order_id()));
     assert!(!cache.is_order_emulated(&order.client_order_id()));
     assert!(cache.is_order_inflight(&order.client_order_id()));
     assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
     assert_eq!(cache.orders_open_count(None, None, None, None, None), 0);
     assert_eq!(cache.orders_closed_count(None, None, None, None, None), 0);
     assert_eq!(
-        cache.orders_initialized_count(None, None, None, None, None),
+        cache.orders_active_local_count(None, None, None, None, None),
         0
     );
     assert_eq!(cache.orders_emulated_count(None, None, None, None, None), 0);
@@ -3070,7 +3070,7 @@ fn test_add_non_emulated_order_not_in_orders_emulated(mut cache: Cache, audusd_s
 }
 
 #[rstest]
-fn test_initialized_order_indexes_in_orders_initialized(
+fn test_initialized_order_indexes_in_orders_active_local(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
 ) {
@@ -3086,12 +3086,12 @@ fn test_initialized_order_indexes_in_orders_initialized(
     assert!(
         cache
             .index
-            .orders_initialized
+            .orders_active_local
             .contains(&order.client_order_id()),
-        "Initialized order should be in orders_initialized index after add"
+        "Initialized order should be in orders_active_local index after add"
     );
     assert_eq!(
-        cache.orders_initialized_count(None, None, None, None, None),
+        cache.orders_active_local_count(None, None, None, None, None),
         1
     );
 
@@ -3102,13 +3102,53 @@ fn test_initialized_order_indexes_in_orders_initialized(
     assert!(
         !cache
             .index
-            .orders_initialized
+            .orders_active_local
             .contains(&order.client_order_id()),
-        "Submitted order should be removed from orders_initialized index"
+        "Submitted order should be removed from orders_active_local index"
     );
     assert_eq!(
-        cache.orders_initialized_count(None, None, None, None, None),
+        cache.orders_active_local_count(None, None, None, None, None),
         0
+    );
+}
+
+#[rstest]
+fn test_released_order_indexes_in_orders_active_local(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("1.00010"))
+        .emulation_trigger(TriggerType::LastPrice)
+        .build();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let released = OrderReleased::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Price::from("1.00010"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let mut order = order;
+    order.apply(OrderEventAny::Released(released)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    assert!(
+        cache
+            .index
+            .orders_active_local
+            .contains(&order.client_order_id()),
+        "Released order should remain in orders_active_local index"
+    );
+    assert!(cache.is_order_active_local(&order.client_order_id()));
+    assert_eq!(
+        cache.orders_active_local_count(None, None, None, None, None),
+        1
     );
 }
 

@@ -298,6 +298,7 @@ open_orders = self.cache.orders_open()          # Orders currently active at the
 closed_orders = self.cache.orders_closed()      # Orders that have completed their lifecycle
 emulated_orders = self.cache.orders_emulated()  # Orders being simulated locally by the system
 inflight_orders = self.cache.orders_inflight()  # Orders submitted (or modified) to venue, but not yet confirmed
+local_active_orders = self.cache.orders_active_local() # Orders that are locally active, but not yet submitted to venue
 
 # Check specific order states
 exists = self.cache.order_exists(client_order_id)            # Checks if an order with the given ID exists in the cache
@@ -305,6 +306,7 @@ is_open = self.cache.is_order_open(client_order_id)          # Checks if an orde
 is_closed = self.cache.is_order_closed(client_order_id)      # Checks if an order is closed
 is_emulated = self.cache.is_order_emulated(client_order_id)  # Checks if an order is being simulated locally
 is_inflight = self.cache.is_order_inflight(client_order_id)  # Checks if an order is submitted or modified, but not yet confirmed
+is_active_local = self.cache.is_order_active_local(client_order_id)  # Checks if an order is active, but not yet submitted to venue
 ```
 
 ##### Order statistics
@@ -315,6 +317,7 @@ open_count = self.cache.orders_open_count()          # Number of open orders
 closed_count = self.cache.orders_closed_count()      # Number of closed orders
 emulated_count = self.cache.orders_emulated_count()  # Number of emulated orders
 inflight_count = self.cache.orders_inflight_count()  # Number of inflight orders
+local_active_count = self.cache.orders_active_local()# Number of locally active orders not submitted to venue
 total_count = self.cache.orders_total_count()        # Total number of orders in the system
 
 # Get filtered order counts
