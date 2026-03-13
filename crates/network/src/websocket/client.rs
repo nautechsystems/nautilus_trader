@@ -1418,6 +1418,7 @@ impl WebSocketClient {
                                     log::warn!(
                                         "Reconnected socket did not survive stabilization window; retrying"
                                     );
+                                    reconnecting_notified = false;
                                     let _ = connection_mode.compare_exchange(
                                         ConnectionMode::Active.as_u8(),
                                         ConnectionMode::Reconnect.as_u8(),
@@ -1462,6 +1463,7 @@ impl WebSocketClient {
                             }
                         }
                         Err(e) => {
+                            reconnecting_notified = false;
                             let duration = inner.backoff.next_duration();
                             log::warn!(
                                 "Reconnect attempt {} failed: {e}",
@@ -2309,6 +2311,95 @@ mod rust_tests {
         assert!(
             delay >= Duration::from_millis(250),
             "stabilization failure should wait for reconnect backoff before retrying, saw only {delay:?}"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_reemits_reconnecting_after_stabilization_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: survive long enough for reconnect() to succeed,
+            // then die before the stabilization window completes.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                sleep(Duration::from_millis(80)).await;
+                drop(ws);
+            }
+
+            // Third connection: stable replacement.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let reconnecting_count = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut reconnecting_count = 0usize;
+            let mut saw_reconnected = false;
+
+            loop {
+                if let Some(msg) = rx.recv().await {
+                    match msg {
+                        Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTING => {
+                            reconnecting_count += 1;
+                        }
+                        Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED => {
+                            saw_reconnected = true;
+                        }
+                        _ => {}
+                    }
+
+                    if saw_reconnected && reconnecting_count >= 2 {
+                        break reconnecting_count;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for reconnecting/reconnected sequence");
+
+        assert_eq!(
+            reconnecting_count, 2,
+            "expected a second RECONNECTING sentinel after the stabilization failure"
         );
 
         client.disconnect().await;

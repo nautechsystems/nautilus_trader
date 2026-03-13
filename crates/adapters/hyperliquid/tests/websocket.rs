@@ -1302,6 +1302,56 @@ async fn test_reconnect_replays_subscriptions_before_late_subscribe_cutoff() {
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_replays_subscriptions_again_after_stabilization_failure() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe trades failed");
+
+    wait_for_subscription_events(&state, Duration::from_secs(2), |events| {
+        events.iter().any(|(t, ok)| t == "trades" && *ok)
+    })
+    .await;
+
+    state.clear_subscription_events().await;
+    state.drop_on_idle.store(true, Ordering::Relaxed);
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    let events = wait_for_subscription_events(&state, Duration::from_secs(5), |events| {
+        state.total_connection_count.load(Ordering::Relaxed) >= 3
+            && events.iter().filter(|(t, ok)| t == "trades" && *ok).count() >= 2
+    })
+    .await;
+
+    let successful_trade_replays = events
+        .iter()
+        .filter(|(t, ok)| t == "trades" && *ok)
+        .count();
+
+    assert!(
+        state.total_connection_count.load(Ordering::Relaxed) >= 3,
+        "expected reconnect retry after the first replayed connection died during stabilization"
+    );
+    assert!(
+        successful_trade_replays >= 2,
+        "expected trades subscription to be replayed again after stabilization failure, events={events:?}"
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_heartbeat_timeout_reconnection() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

@@ -259,17 +259,16 @@ impl HyperliquidWebSocketClient {
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnecting) => {
-                        if !awaiting_reconnect_validation.swap(true, Ordering::SeqCst) {
-                            log::info!(
-                                "Reconnect validation started; queueing Hyperliquid app ping"
+                        awaiting_reconnect_validation.store(true, Ordering::SeqCst);
+                        log::info!(
+                            "Reconnect validation started; queueing Hyperliquid app ping"
+                        );
+                        if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Ping) {
+                            log::error!(
+                                "Failed to send reconnect validation ping command: {e}"
                             );
-                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Ping) {
-                                log::error!(
-                                    "Failed to send reconnect validation ping command: {e}"
-                                );
-                            }
-                            restore_desired_subscriptions();
                         }
+                        restore_desired_subscriptions();
                     }
                     Some(NautilusWsMessage::Reconnected) => {
                         awaiting_reconnect_validation.store(false, Ordering::SeqCst);
