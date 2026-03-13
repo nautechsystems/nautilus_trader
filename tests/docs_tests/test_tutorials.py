@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,11 @@ EXECUTABLE_TUTORIALS = [
     GETTING_STARTED / "backtest_low_level.py",
     TUTORIALS / "backtest_fx_bars.py",
 ]
+
+CI_SKIPPED_EXECUTABLE_TUTORIALS = {
+    GETTING_STARTED / "backtest_low_level.py",
+    TUTORIALS / "backtest_fx_bars.py",
+}
 
 # Tutorials that need external data, API keys, or network access
 NON_EXECUTABLE_TUTORIALS = [
@@ -50,6 +56,11 @@ def _tutorial_id(path: Path) -> str:
 
 @pytest.mark.parametrize("tutorial", EXECUTABLE_TUTORIALS, ids=_tutorial_id)
 def test_tutorial_executes(tutorial: Path) -> None:
+    if os.getenv("CI") == "true" and tutorial in CI_SKIPPED_EXECUTABLE_TUTORIALS:
+        pytest.skip(
+            "Uses TestDataProvider fallback, which depends on the GitHub API when CI runs from an installed wheel.",
+        )
+
     result = subprocess.run(  # noqa: S603
         [sys.executable, str(tutorial)],
         capture_output=True,
