@@ -185,14 +185,23 @@ pub struct PolymarketWsAuth {
     pub nonce: String,
 }
 
-/// Market-channel subscribe request sent on connect.
+/// Initial market-channel subscribe request sent for a fresh WebSocket session.
 ///
 /// Wire format: `{"assets_ids": [...], "type": "market"}`
 #[derive(Debug, Serialize)]
-pub struct MarketSubscribeRequest {
+pub struct MarketInitialSubscribeRequest {
     pub assets_ids: Vec<String>,
     #[serde(rename = "type")]
     pub msg_type: &'static str,
+}
+
+/// Incremental market-channel subscribe request sent after the initial session subscribe.
+///
+/// Wire format: `{"assets_ids": [...], "operation": "subscribe"}`
+#[derive(Debug, Serialize)]
+pub struct MarketSubscribeRequest {
+    pub assets_ids: Vec<String>,
+    pub operation: &'static str,
 }
 
 /// Market-channel dynamic unsubscribe request sent during an active session.
