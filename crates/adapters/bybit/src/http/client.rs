@@ -17,6 +17,17 @@
 //!
 //! Bybit API reference <https://bybit-exchange.github.io/docs/>.
 
+use std::{
+    cmp::Reverse,
+    collections::HashMap,
+    fmt::Debug,
+    num::NonZeroU32,
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -40,16 +51,6 @@ use nautilus_network::{
 };
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
-use std::cmp::Reverse;
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    num::NonZeroU32,
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
-};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
