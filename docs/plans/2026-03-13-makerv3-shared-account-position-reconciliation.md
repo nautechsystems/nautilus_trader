@@ -15,11 +15,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Tasks 1-2 are complete and approved. Task 3 remains the last code slice before live verification, and there is still leftover scratch work in Makerv3 test files that must be normalized into a clean Task 3 review boundary. |
+| Overall | completed | main | Tasks 1-4 completed. Live Makerv3 equities nodes were restarted from the worktree, and matching shared Hyperliquid maker positions now flow into Signal truth for retained names without polluting unrelated strategies. |
 | Task 1: Wire Makerv3 Execution Scope Contract | completed | main | Spec review passed, quality review approved, and exact Task 1 tests passed locally: `4 passed in 0.28s`. |
 | Task 2: Add Shared-Account Projection Reader | completed | main | Spec review passed, quality review approved, and commit `75f54fbf65` verified the focused pytest slice: `2 passed in 0.27s`. |
 | Task 3: Reconcile Exact Maker Positions In Makerv3 | completed | main | Focused and broader Task 3 pytest slices are green after preserving projection-provided base/conversion metadata and adding precedence coverage for a fresh flat local snapshot over an older shared-account row. Local quality review found no remaining issues on the current diff. |
-| Task 4: Verify Live Signal Truth And Update Trackers | not_started | unassigned | Waiting for Task 1-3 acceptance and focused verification. |
+| Task 4: Verify Live Signal Truth And Update Trackers | completed | main | Restarted all 10 retained equities Makerv3 nodes with `sudo systemctl restart ...`. Live `/api/v1/signals?profile=equities` now shows `googl_tradexyz_makerv3 local_qty_base=-6`, `nvda_tradexyz_makerv3 local_qty_base=-9.111`, both with `local_inventory_source=shared_account_projection`, while `tsla_tradexyz_makerv3` stays flat at `0`. `/api/v1/balances?profile=equities` still serves the shared HL position rows for `NVDA`, `COIN`, and `GOOGL`, and no equities node units are failed. |
 
 ---
 
