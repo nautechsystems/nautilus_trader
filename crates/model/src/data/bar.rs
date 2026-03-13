@@ -615,17 +615,13 @@ impl BarType {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
+#[error(
+    "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}"
+)]
 pub struct BarTypeParseError {
     input: String,
     token: String,
     position: usize,
-}
-
-impl nautilus_core::ErrorCode for BarTypeParseError {
-    fn code(&self) -> &'static str {
-        "NT-0401"
-    }
 }
 
 impl FromStr for BarType {
@@ -1217,7 +1213,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0"
             )
         );
     }
@@ -1230,7 +1226,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
             )
         );
     }
@@ -1243,7 +1239,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
             )
         );
     }
@@ -1256,7 +1252,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
             )
         );
     }
@@ -1270,7 +1266,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
             )
         );
     }
@@ -1284,7 +1280,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 5"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 5"
             )
         );
     }
@@ -1298,7 +1294,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 6"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 6"
             )
         );
     }
@@ -1312,7 +1308,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 7"
+                "[NT-MD-00401] Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 7"
             )
         );
     }

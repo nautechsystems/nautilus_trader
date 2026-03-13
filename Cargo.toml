@@ -183,7 +183,6 @@ parquet = { version = "57.3.0", default-features = false, features = [
   "arrow",
   "async",
 ] }
-paste = "1.0.15"
 pem = "3.0.6"
 pyo3 = { version = "0.28.2", default-features = false, features = [
   "chrono",

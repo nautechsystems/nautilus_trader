@@ -5208,7 +5208,6 @@ dependencies = [
  "iai",
  "indexmap 2.13.0",
  "log",
- "paste",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",

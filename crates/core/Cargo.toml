@@ -38,7 +38,6 @@ chrono = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-paste = { workspace = true }
 rand = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
