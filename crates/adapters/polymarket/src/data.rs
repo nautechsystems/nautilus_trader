@@ -49,6 +49,7 @@ use ustr::Ustr;
 use crate::{
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
+    filters::InstrumentFilter,
     http::gamma::PolymarketGammaHttpClient,
     providers::PolymarketInstrumentProvider,
     websocket::{
@@ -143,6 +144,11 @@ impl PolymarketDataClient {
     #[must_use]
     pub fn provider(&self) -> &PolymarketInstrumentProvider {
         &self.provider
+    }
+
+    /// Adds an instrument filter on the underlying provider.
+    pub fn add_instrument_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+        self.provider.add_filter(filter);
     }
 
     /// Returns `true` when the client is connected.

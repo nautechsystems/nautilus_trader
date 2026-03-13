@@ -13,69 +13,75 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Demonstrates dynamic instrument loading with [`MarketSlugFilter`].
+//! Demonstrates market discovery with [`GammaQueryFilter`].
 //!
-//! Polymarket "Up/Down" markets follow a predictable slug pattern:
-//! `{asset}-updown-15m-{unix_timestamp}`, where the timestamp is aligned to
-//! 15-minute boundaries. This binary loads instruments for the current period
-//! and the next two upcoming periods across BTC, ETH, SOL, and XRP.
+//! Unlike slug-based filters, [`GammaQueryFilter`] uses Gamma API query
+//! parameters to discover markets by their characteristics — no prior
+//! knowledge of slugs is required.
 //!
-//! Because [`MarketSlugFilter`] accepts a closure, the slug list is
-//! re-evaluated on each `load_all()` call — so a long-running process can
-//! call `load_all()` periodically and always get the latest time window
-//! without rebuilding the filter.
+//! Key filterable fields on [`GetGammaMarketsParams`]:
+//!
+//! - `active` / `closed` / `archived` — market lifecycle state
+//! - `volume_num_min` / `volume_num_max` — traded volume range
+//! - `liquidity_num_min` / `liquidity_num_max` — order-book liquidity
+//! - `start_date_min` / `end_date_max` — date boundaries (ISO 8601)
+//! - `tag_id` / `related_tags` — categorical tags
+//! - `order` / `ascending` — sort field and direction
+//! - `limit` / `offset` — pagination
+//!
+//! Use this filter when you want to scan for markets matching certain
+//! criteria (e.g., trending high-volume markets) without knowing specific
+//! slugs upfront.
 //!
 //! # Usage
 //!
 //! ```sh
-//! cargo run -p nautilus-polymarket --bin updown_markets
+//! cargo run -p nautilus-polymarket --bin trending_markets
 //! ```
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
-    filters::MarketSlugFilter, http::gamma::PolymarketGammaHttpClient,
+    filters::GammaQueryFilter,
+    http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
     providers::PolymarketInstrumentProvider,
 };
-
-const PERIOD_SECS: u64 = 15 * 60; // 15 minutes
-const ASSETS: &[&str] = &["btc", "eth", "sol", "xrp"];
-const NUM_PERIODS: u64 = 3; // current + next 2
-
-/// Generates market slugs for the current and next [`NUM_PERIODS`] 15-minute
-/// Up/Down windows across all configured [`ASSETS`].
-fn build_updown_slugs() -> Vec<String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock before epoch")
-        .as_secs();
-
-    // Align to current 15-minute period start
-    let period_start = (now / PERIOD_SECS) * PERIOD_SECS;
-
-    let mut slugs = Vec::new();
-    for i in 0..NUM_PERIODS {
-        let timestamp = period_start + i * PERIOD_SECS;
-        for asset in ASSETS {
-            slugs.push(format!("{asset}-updown-15m-{timestamp}"));
-        }
-    }
-    slugs
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
+    let params = GetGammaMarketsParams {
+        active: Some(true),
+        closed: Some(false),
+        volume_num_min: Some(1_000_000.0),
+        order: Some("liquidity".into()),
+        ascending: Some(false),
+        max_markets: Some(20),
+        ..Default::default()
+    };
+    log::info!(
+        "Query params: active=true, closed=false, volume_min=1mil, order=liquidity desc, max_markets=20"
+    );
+
+    log::info!("Creating HTTP client");
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
-    let filter = MarketSlugFilter::new(build_updown_slugs);
+
+    log::info!("Building filter and provider");
+    let filter = GammaQueryFilter::new(params);
     let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    log::info!("Loading instruments from Gamma API...");
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();
-    println!("Loaded {} instruments:\n", instruments.len());
+    log::info!(
+        "Loaded {} trending instruments (by liquidity, descending)",
+        instruments.len()
+    );
+    println!();
 
-    for instrument in instruments {
+    for (i, instrument) in instruments.into_iter().enumerate() {
         let id = Instrument::id(instrument);
         let expiration = Instrument::expiration_ns(instrument).map_or("N/A".to_string(), |ns| {
             let secs = (ns.as_u64() / 1_000_000_000) as i64;
@@ -86,12 +92,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let InstrumentAny::BinaryOption(opt) = instrument {
             println!(
-                "  {id}\n    outcome:     {}\n    description: {}\n    expiration:  {expiration}\n",
+                "  {:>2}. {id}\n      outcome:     {}\n      description: {}\n      expiration:  {expiration}\n",
+                i + 1,
                 opt.outcome.unwrap_or_default(),
                 opt.description.unwrap_or_default(),
             );
         } else {
-            println!("  {id}\n    expiration: {expiration}\n");
+            println!("  {:>2}. {id}\n      expiration: {expiration}\n", i + 1);
         }
     }
 

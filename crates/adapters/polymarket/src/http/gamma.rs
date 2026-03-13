@@ -18,6 +18,7 @@
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
 use nautilus_core::{
+    UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -30,9 +31,9 @@ use crate::{
     common::urls::gamma_api_url,
     http::{
         error::{Error, Result},
-        models::GammaMarket,
+        models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
         parse::{create_instrument_from_def, parse_gamma_market},
-        query::GetGammaMarketsParams,
+        query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
         rate_limits::POLYMARKET_GAMMA_REST_QUOTA,
     },
 };
@@ -135,6 +136,53 @@ impl PolymarketGammaRawHttpClient {
         let path = format!("/markets/{market_id}");
         self.send_get::<(), _>(&path, None::<&()>).await
     }
+
+    /// Fetches events from the Gamma API `GET /events?slug=`.
+    pub async fn get_gamma_events_by_slug(&self, slug: &str) -> Result<Vec<GammaEvent>> {
+        #[derive(Serialize)]
+        struct EventSlugParams<'a> {
+            slug: &'a str,
+        }
+        let params = EventSlugParams { slug };
+        self.send_get("/events", Some(&params)).await
+    }
+
+    /// Fetches events from the Gamma API `GET /events` with full query params.
+    pub async fn get_gamma_events(&self, params: GetGammaEventsParams) -> Result<Vec<GammaEvent>> {
+        self.send_get("/events", Some(&params)).await
+    }
+
+    /// Fetches available tags from the Gamma API `GET /tags`.
+    pub async fn get_gamma_tags(&self) -> Result<Vec<GammaTag>> {
+        self.send_get::<(), _>("/tags", None::<&()>).await
+    }
+
+    /// Searches the Gamma API via `GET /public-search`.
+    pub async fn get_public_search(&self, params: GetSearchParams) -> Result<SearchResponse> {
+        self.send_get("/public-search", Some(&params)).await
+    }
+}
+
+/// Parses a slice of [`GammaMarket`]s into Nautilus instruments.
+///
+/// Failures are logged and skipped so that one bad market does not
+/// prevent the remaining markets from being returned.
+fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
+    let mut instruments = Vec::new();
+    for market in markets {
+        match parse_gamma_market(market) {
+            Ok(defs) => {
+                for def in defs {
+                    match create_instrument_from_def(&def, ts_init) {
+                        Ok(instrument) => instruments.push(instrument),
+                        Err(e) => log::warn!("Failed to create instrument: {e}"),
+                    }
+                }
+            }
+            Err(e) => log::warn!("Failed to parse gamma market: {e}"),
+        }
+    }
+    instruments
 }
 
 /// Provides a domain HTTP client for Polymarket instrument fetching.
@@ -167,32 +215,53 @@ impl PolymarketGammaHttpClient {
         })
     }
 
-    /// Fetches all active markets from the Gamma API, paginating automatically.
-    async fn fetch_all_gamma_markets(&self) -> anyhow::Result<Vec<GammaMarket>> {
+    /// Fetches markets from the Gamma API with the given base params, paginating automatically.
+    async fn fetch_gamma_markets_paginated(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<GammaMarket>> {
         const PAGE_LIMIT: u32 = 500;
+        let page_size = base_params.limit.unwrap_or(PAGE_LIMIT);
+        let max_markets = base_params.max_markets;
         let mut all_markets = Vec::new();
-        let mut offset: u32 = 0;
+        let mut offset: u32 = base_params.offset.unwrap_or(0);
 
         loop {
             let params = GetGammaMarketsParams {
-                active: Some(true),
-                closed: Some(false),
-                limit: Some(PAGE_LIMIT),
+                limit: Some(page_size),
                 offset: Some(offset),
-                ..Default::default()
+                ..base_params.clone()
             };
 
             let page = self.inner.get_gamma_markets(params).await?;
             let page_len = page.len() as u32;
             all_markets.extend(page);
 
-            if page_len < PAGE_LIMIT {
+            if let Some(cap) = max_markets
+                && all_markets.len() as u32 >= cap
+            {
+                all_markets.truncate(cap as usize);
                 break;
             }
-            offset += PAGE_LIMIT;
+
+            if page_len < page_size {
+                break;
+            }
+
+            offset += page_size;
         }
 
         Ok(all_markets)
+    }
+
+    /// Fetches all active markets from the Gamma API, paginating automatically.
+    async fn fetch_all_gamma_markets(&self) -> anyhow::Result<Vec<GammaMarket>> {
+        self.fetch_gamma_markets_paginated(GetGammaMarketsParams {
+            active: Some(true),
+            closed: Some(false),
+            ..Default::default()
+        })
+        .await
     }
 
     /// Fetches instruments from the Gamma API and returns Nautilus domain types.
@@ -203,22 +272,7 @@ impl PolymarketGammaHttpClient {
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let markets = self.fetch_all_gamma_markets().await?;
         let ts_init = self.clock.get_time_ns();
-
-        let mut instruments = Vec::new();
-        for market in &markets {
-            match parse_gamma_market(market) {
-                Ok(defs) => {
-                    for def in defs {
-                        match create_instrument_from_def(&def, ts_init) {
-                            Ok(instrument) => instruments.push(instrument),
-                            Err(e) => log::warn!("Failed to create instrument: {e}"),
-                        }
-                    }
-                }
-                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
-            }
-        }
-
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::info!("Parsed {} instruments from Gamma API", instruments.len());
         Ok(instruments)
     }
@@ -267,23 +321,7 @@ impl PolymarketGammaHttpClient {
                 log::warn!("No markets found for slug '{slug}'");
                 continue;
             }
-            for market in &markets {
-                match parse_gamma_market(market) {
-                    Ok(defs) => {
-                        for def in defs {
-                            match create_instrument_from_def(&def, ts_init) {
-                                Ok(instrument) => instruments.push(instrument),
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to create instrument for slug '{slug}': {e}"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => log::warn!("Failed to parse market for slug '{slug}': {e}"),
-                }
-            }
+            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
         }
 
         if succeeded == 0 && total_slugs > 0 {
@@ -292,6 +330,233 @@ impl PolymarketGammaHttpClient {
 
         log::info!("Parsed {} instruments from slug queries", instruments.len());
         Ok(instruments)
+    }
+
+    /// Fetches instruments from event slugs concurrently.
+    ///
+    /// Each slug queries `GET /events?slug=`, extracts the markets array from
+    /// the first matching event, and parses each market into instruments.
+    pub async fn request_instruments_by_event_slugs(
+        &self,
+        event_slugs: Vec<String>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let ts_init = self.clock.get_time_ns();
+
+        let futures = event_slugs.into_iter().map(|slug| {
+            let inner = Arc::clone(&self.inner);
+            async move {
+                match inner.get_gamma_events_by_slug(&slug).await {
+                    Ok(events) => Some((slug, events)),
+                    Err(e) => {
+                        log::warn!("Failed to fetch event slug '{slug}': {e}");
+                        None
+                    }
+                }
+            }
+        });
+
+        let results = futures_util::future::join_all(futures).await;
+
+        let total = results.len();
+        let succeeded = results.iter().filter(|r| r.is_some()).count();
+        let mut instruments = Vec::new();
+
+        for result in results.into_iter().flatten() {
+            let (slug, events) = result;
+            let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+            if markets.is_empty() {
+                log::warn!("No markets found in event slug '{slug}'");
+                continue;
+            }
+            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
+        }
+
+        if succeeded == 0 && total > 0 {
+            anyhow::bail!("All {total} event slug requests failed");
+        }
+
+        log::info!(
+            "Parsed {} instruments from event slug queries",
+            instruments.len()
+        );
+        Ok(instruments)
+    }
+
+    /// Fetches instruments using arbitrary Gamma API query params with auto-pagination.
+    pub async fn request_instruments_by_params(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        let ts_init = self.clock.get_time_ns();
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        log::debug!("Parsed {} instruments from params query", instruments.len());
+        Ok(instruments)
+    }
+
+    /// Fetches instruments from an event slug with client-side sorting and limiting.
+    ///
+    /// The `/events?slug=` response already includes the full markets array,
+    /// so no second API call is needed. Sorting and truncation are applied
+    /// client-side using fields from `GetGammaMarketsParams`:
+    /// - `order` — sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
+    /// - `ascending` — sort direction (default: descending)
+    /// - `max_markets` — truncate after sorting
+    pub async fn request_instruments_by_event_query(
+        &self,
+        event_slug: &str,
+        params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let events = self.inner.get_gamma_events_by_slug(event_slug).await?;
+        let mut markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+
+        if markets.is_empty() {
+            log::warn!("No markets found in event slug '{event_slug}'");
+            return Ok(Vec::new());
+        }
+
+        log::debug!("Event '{event_slug}' returned {} markets", markets.len());
+
+        // Client-side sort
+        if let Some(ref order_field) = params.order {
+            let ascending = params.ascending.unwrap_or(false);
+            markets.sort_by(|a, b| {
+                let cmp = match order_field.as_str() {
+                    "liquidity" => a
+                        .liquidity_num
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.liquidity_num.unwrap_or(0.0)),
+                    "volume" => a
+                        .volume_num
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.volume_num.unwrap_or(0.0)),
+                    "volume24hr" => a
+                        .volume_24hr
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.volume_24hr.unwrap_or(0.0)),
+                    "competitive" => a
+                        .competitive
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.competitive.unwrap_or(0.0)),
+                    "spread" => a
+                        .spread
+                        .unwrap_or(f64::MAX)
+                        .partial_cmp(&b.spread.unwrap_or(f64::MAX)),
+                    "best_bid" => a
+                        .best_bid
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.best_bid.unwrap_or(0.0)),
+                    "one_day_price_change" => a
+                        .one_day_price_change
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.one_day_price_change.unwrap_or(0.0)),
+                    "volume_1wk" => a
+                        .volume_1wk
+                        .unwrap_or(0.0)
+                        .partial_cmp(&b.volume_1wk.unwrap_or(0.0)),
+                    _ => None,
+                };
+                let cmp = cmp.unwrap_or(std::cmp::Ordering::Equal);
+                if ascending { cmp } else { cmp.reverse() }
+            });
+        }
+
+        // Client-side truncation
+        if let Some(cap) = params.max_markets {
+            markets.truncate(cap as usize);
+        }
+
+        let ts_init = self.clock.get_time_ns();
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        log::debug!(
+            "Parsed {} instruments from event query '{event_slug}'",
+            instruments.len()
+        );
+        Ok(instruments)
+    }
+
+    /// Fetches events from the Gamma API with the given base params, paginating automatically.
+    async fn fetch_gamma_events_paginated(
+        &self,
+        base_params: GetGammaEventsParams,
+    ) -> anyhow::Result<Vec<GammaEvent>> {
+        const PAGE_LIMIT: u32 = 100;
+        let page_size = base_params.limit.unwrap_or(PAGE_LIMIT);
+        let max_events = base_params.max_events;
+        let mut all_events = Vec::new();
+        let mut offset: u32 = base_params.offset.unwrap_or(0);
+
+        loop {
+            let params = GetGammaEventsParams {
+                limit: Some(page_size),
+                offset: Some(offset),
+                ..base_params.clone()
+            };
+
+            let page = self.inner.get_gamma_events(params).await?;
+            let page_len = page.len() as u32;
+            all_events.extend(page);
+
+            if let Some(cap) = max_events
+                && all_events.len() as u32 >= cap
+            {
+                all_events.truncate(cap as usize);
+                break;
+            }
+
+            if page_len < page_size {
+                break;
+            }
+
+            offset += page_size;
+        }
+
+        Ok(all_events)
+    }
+
+    /// Fetches instruments from events matching full query params (paginated).
+    pub async fn request_instruments_by_event_params(
+        &self,
+        params: GetGammaEventsParams,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let events = self.fetch_gamma_events_paginated(params).await?;
+        let ts_init = self.clock.get_time_ns();
+        let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        log::debug!(
+            "Parsed {} instruments from event params query",
+            instruments.len()
+        );
+        Ok(instruments)
+    }
+
+    /// Searches for instruments via the Gamma public search endpoint.
+    pub async fn request_instruments_by_search(
+        &self,
+        params: GetSearchParams,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let response = self.inner.get_public_search(params).await?;
+        let ts_init = self.clock.get_time_ns();
+
+        let mut instruments = Vec::new();
+
+        if let Some(markets) = &response.markets {
+            instruments.extend(parse_markets_to_instruments(markets, ts_init));
+        }
+
+        if let Some(events) = &response.events {
+            let event_markets: Vec<GammaMarket> =
+                events.iter().flat_map(|e| e.markets.clone()).collect();
+            instruments.extend(parse_markets_to_instruments(&event_markets, ts_init));
+        }
+
+        log::debug!("Parsed {} instruments from search query", instruments.len());
+        Ok(instruments)
+    }
+
+    /// Fetches available tags from the Gamma API.
+    pub async fn request_tags(&self) -> anyhow::Result<Vec<GammaTag>> {
+        Ok(self.inner.get_gamma_tags().await?)
     }
 
     /// Returns a reference to the underlying raw HTTP client.

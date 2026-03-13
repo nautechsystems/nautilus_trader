@@ -308,8 +308,8 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
 
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].outcome, PolymarketOutcome::yes());
-        assert_eq!(defs[1].outcome, PolymarketOutcome::no());
+        assert_eq!(defs[0].outcome, PolymarketOutcome::from("Up"));
+        assert_eq!(defs[1].outcome, PolymarketOutcome::from("Down"));
     }
 
     #[rstest]
@@ -318,10 +318,19 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
         let yes_def = &defs[0];
 
-        assert_eq!(yes_def.condition_id.as_str(), "0xabc123def456789");
-        assert_eq!(yes_def.market_id, "123456");
-        assert_eq!(yes_def.question_id.as_deref(), Some("0xquestion123"));
-        assert_eq!(yes_def.question, "Will BTC exceed $100k by end of 2025?");
+        assert_eq!(
+            yes_def.condition_id.as_str(),
+            "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b"
+        );
+        assert_eq!(yes_def.market_id, "1557558");
+        assert_eq!(
+            yes_def.question_id.as_deref(),
+            Some("0x15813764bba41cfb5f99e2e649cfbae7a121a9f8f91ed47ca261aab95e9729de")
+        );
+        assert_eq!(
+            yes_def.question,
+            "Bitcoin Up or Down - March 12, 5:20AM-5:25AM ET"
+        );
         assert_eq!(yes_def.tick_size, dec!(0.01));
         assert_eq!(yes_def.price_precision, 2);
         assert_eq!(yes_def.min_size, Some(dec!(5.0)));
@@ -330,7 +339,7 @@ mod tests {
         assert!(yes_def.active);
         assert_eq!(
             yes_def.market_slug.as_deref(),
-            Some("will-btc-exceed-100k-by-end-of-2025")
+            Some("btc-updown-5m-1773307200")
         );
     }
 
@@ -341,11 +350,11 @@ mod tests {
 
         assert_eq!(
             defs[0].symbol.as_str(),
-            "0xabc123def456789-71321045679252212594626385532706912750332728571942532289631379312455583992563"
+            "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-104239898038807136052399800151408521467737075933964991162589336683346093173875"
         );
         assert_eq!(
             defs[1].symbol.as_str(),
-            "0xabc123def456789-52114319501245678901234567890123456789012345678901234567890123456789"
+            "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-71183960810705820955071415844881728181970340514894896943812046065452395013351"
         );
     }
 
@@ -356,11 +365,11 @@ mod tests {
 
         assert_eq!(
             defs[0].token_id.as_str(),
-            "71321045679252212594626385532706912750332728571942532289631379312455583992563"
+            "104239898038807136052399800151408521467737075933964991162589336683346093173875"
         );
         assert_eq!(
             defs[1].token_id.as_str(),
-            "52114319501245678901234567890123456789012345678901234567890123456789"
+            "71183960810705820955071415844881728181970340514894896943812046065452395013351"
         );
     }
 
@@ -425,9 +434,9 @@ mod tests {
 
         assert_eq!(
             binary.id.to_string(),
-            "0xabc123def456789-71321045679252212594626385532706912750332728571942532289631379312455583992563.POLYMARKET"
+            "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-104239898038807136052399800151408521467737075933964991162589336683346093173875.POLYMARKET"
         );
-        assert_eq!(binary.outcome, Some(Ustr::from("Yes")));
+        assert_eq!(binary.outcome, Some(Ustr::from("Up")));
         assert_eq!(binary.asset_class, AssetClass::Alternative);
         assert_eq!(binary.currency.code.as_str(), "USDC");
         assert_eq!(binary.price_precision, 2);
@@ -452,14 +461,20 @@ mod tests {
         let info = binary.info.as_ref().expect("info should be Some");
         assert_eq!(
             info.get_str("token_id"),
-            Some("71321045679252212594626385532706912750332728571942532289631379312455583992563")
+            Some("104239898038807136052399800151408521467737075933964991162589336683346093173875")
         );
-        assert_eq!(info.get_str("condition_id"), Some("0xabc123def456789"));
-        assert_eq!(info.get_str("market_id"), Some("123456"));
-        assert_eq!(info.get_str("question_id"), Some("0xquestion123"));
+        assert_eq!(
+            info.get_str("condition_id"),
+            Some("0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b")
+        );
+        assert_eq!(info.get_str("market_id"), Some("1557558"));
+        assert_eq!(
+            info.get_str("question_id"),
+            Some("0x15813764bba41cfb5f99e2e649cfbae7a121a9f8f91ed47ca261aab95e9729de")
+        );
         assert_eq!(
             info.get_str("market_slug"),
-            Some("will-btc-exceed-100k-by-end-of-2025")
+            Some("btc-updown-5m-1773307200")
         );
     }
 

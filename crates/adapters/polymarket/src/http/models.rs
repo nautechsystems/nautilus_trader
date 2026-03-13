@@ -146,8 +146,10 @@ pub struct GammaMarket {
     #[serde(rename = "questionID")]
     pub question_id: Option<String>,
     /// JSON-encoded array of two CLOB token IDs (Yes, No).
+    #[serde(default)]
     pub clob_token_ids: String,
     /// JSON-encoded outcome labels (e.g. `["Yes", "No"]`).
+    #[serde(default)]
     pub outcomes: String,
     /// Market question/title.
     pub question: String,
@@ -179,6 +181,108 @@ pub struct GammaMarket {
     /// Whether the market uses neg-risk CTF exchange.
     #[serde(rename = "negRisk")]
     pub neg_risk: Option<bool>,
+    /// Numeric liquidity value for sorting.
+    pub liquidity_num: Option<f64>,
+    /// Numeric volume value for sorting.
+    pub volume_num: Option<f64>,
+    /// 24-hour trading volume.
+    #[serde(rename = "volume24hr")]
+    pub volume_24hr: Option<f64>,
+    /// JSON-encoded outcome prices (e.g. `["0.60", "0.40"]`).
+    pub outcome_prices: Option<String>,
+    /// Best bid price.
+    pub best_bid: Option<f64>,
+    /// Best ask price.
+    pub best_ask: Option<f64>,
+    /// Bid-ask spread.
+    pub spread: Option<f64>,
+    /// Last trade price.
+    pub last_trade_price: Option<f64>,
+    /// 1-day price change.
+    pub one_day_price_change: Option<f64>,
+    /// 1-week price change.
+    pub one_week_price_change: Option<f64>,
+    /// 1-week volume.
+    #[serde(rename = "volume1wk")]
+    pub volume_1wk: Option<f64>,
+    /// 1-month volume.
+    #[serde(rename = "volume1mo")]
+    pub volume_1mo: Option<f64>,
+    /// 1-year volume.
+    #[serde(rename = "volume1yr")]
+    pub volume_1yr: Option<f64>,
+    /// Minimum size for rewards eligibility.
+    pub rewards_min_size: Option<f64>,
+    /// Maximum spread for rewards eligibility.
+    pub rewards_max_spread: Option<f64>,
+    /// Competitiveness score.
+    pub competitive: Option<f64>,
+    /// Market category.
+    pub category: Option<String>,
+    /// Neg-risk market ID for CTF exchange interaction.
+    #[serde(rename = "negRiskMarketID")]
+    pub neg_risk_market_id: Option<String>,
+}
+
+/// An event response from the Gamma API `GET /events`.
+///
+/// Events are parent containers grouping related markets (e.g., an election
+/// event contains multiple outcome markets). Each event's `markets` array
+/// contains full [`GammaMarket`] objects.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GammaEvent {
+    pub id: String,
+    pub slug: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub active: Option<bool>,
+    pub closed: Option<bool>,
+    pub archived: Option<bool>,
+    #[serde(default)]
+    pub markets: Vec<GammaMarket>,
+    /// Event-level liquidity.
+    pub liquidity: Option<f64>,
+    /// Event-level volume.
+    pub volume: Option<f64>,
+    /// Event-level open interest.
+    pub open_interest: Option<f64>,
+    /// 24-hour event volume.
+    #[serde(rename = "volume24hr")]
+    pub volume_24hr: Option<f64>,
+    /// Event category.
+    pub category: Option<String>,
+    /// Whether event uses neg-risk.
+    pub neg_risk: Option<bool>,
+    /// Neg-risk market ID.
+    #[serde(rename = "negRiskMarketID")]
+    pub neg_risk_market_id: Option<String>,
+    /// Whether event is featured.
+    pub featured: Option<bool>,
+}
+
+/// A tag from the Gamma API `GET /tags`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GammaTag {
+    /// Tag identifier.
+    pub id: String,
+    /// Human-readable label.
+    pub label: Option<String>,
+    /// URL slug.
+    pub slug: Option<String>,
+}
+
+/// Response from the Gamma API `GET /public-search`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SearchResponse {
+    /// Matching markets.
+    #[serde(default)]
+    pub markets: Option<Vec<GammaMarket>>,
+    /// Matching events.
+    #[serde(default)]
+    pub events: Option<Vec<GammaEvent>>,
 }
 
 /// Tick size response from CLOB `GET /tick-size`.
@@ -323,5 +427,134 @@ mod tests {
         assert!(json.contains("\"takerAmount\""));
         assert!(json.contains("\"feeRateBps\""));
         assert!(json.contains("\"signatureType\""));
+    }
+
+    #[rstest]
+    fn test_gamma_event_deserialization() {
+        let events: Vec<GammaEvent> = load("gamma_event.json");
+
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.id, "30829");
+        assert_eq!(
+            event.slug.as_deref(),
+            Some("democratic-presidential-nominee-2028")
+        );
+        assert_eq!(
+            event.title.as_deref(),
+            Some("Democratic Presidential Nominee 2028")
+        );
+        assert_eq!(event.active, Some(true));
+        assert_eq!(event.closed, Some(false));
+        assert_eq!(event.archived, Some(false));
+        assert_eq!(event.markets.len(), 2);
+        assert_eq!(
+            event.markets[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+        assert_eq!(
+            event.markets[1].condition_id,
+            "0xe39adea057926dc197fe30a441f57a340b2a232d5a687010f78bba9b6e02620f"
+        );
+    }
+
+    #[rstest]
+    fn test_gamma_event_empty_markets() {
+        let json = r#"[{"id": "evt-002"}]"#;
+        let events: Vec<GammaEvent> = serde_json::from_str(json).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, "evt-002");
+        assert!(events[0].markets.is_empty());
+        assert!(events[0].slug.is_none());
+    }
+
+    #[rstest]
+    fn test_gamma_market_enriched_fields() {
+        let market: GammaMarket = load("gamma_market.json");
+
+        assert_eq!(market.best_bid, Some(0.5));
+        assert_eq!(market.best_ask, Some(0.51));
+        assert_eq!(market.spread, Some(0.009));
+        assert_eq!(market.last_trade_price, Some(0.51));
+        assert!(market.one_day_price_change.is_none());
+        assert!(market.one_week_price_change.is_none());
+        assert_eq!(market.volume_1wk, Some(9.999997));
+        assert_eq!(market.volume_1mo, Some(9.999997));
+        assert_eq!(market.volume_1yr, Some(9.999997));
+        assert_eq!(market.rewards_min_size, Some(50.0));
+        assert_eq!(market.rewards_max_spread, Some(4.5));
+        assert_eq!(market.competitive, Some(0.9999750006249843));
+        assert!(market.category.is_none());
+        assert!(market.neg_risk_market_id.is_none());
+        assert_eq!(
+            market.outcome_prices.as_deref(),
+            Some("[\"0.505\", \"0.495\"]")
+        );
+    }
+
+    #[rstest]
+    fn test_gamma_market_enriched_fields_default_to_none() {
+        // Minimal market JSON: only required fields
+        let json = r#"{"id": "m1", "conditionId": "0xcond", "clobTokenIds": "[]", "outcomes": "[]", "question": "Q?"}"#;
+        let market: GammaMarket = serde_json::from_str(json).unwrap();
+
+        assert!(market.best_bid.is_none());
+        assert!(market.spread.is_none());
+        assert!(market.volume_1wk.is_none());
+        assert!(market.rewards_min_size.is_none());
+        assert!(market.competitive.is_none());
+        assert!(market.category.is_none());
+        assert!(market.neg_risk_market_id.is_none());
+    }
+
+    #[rstest]
+    fn test_gamma_event_enriched_fields() {
+        let events: Vec<GammaEvent> = load("gamma_event.json");
+        let event = &events[0];
+
+        assert_eq!(event.liquidity, Some(43042905.16152));
+        assert_eq!(event.volume, Some(799823812.487094));
+        assert_eq!(event.open_interest, Some(0.0));
+        assert_eq!(event.volume_24hr, Some(5669354.219446001));
+        assert!(event.category.is_none());
+        assert_eq!(event.neg_risk, Some(true));
+        assert_eq!(
+            event.neg_risk_market_id.as_deref(),
+            Some("0x2c3d7e0eee6f058be3006baabf0d54a07da254ba47fe6e3e095e7990c7814700")
+        );
+        assert_eq!(event.featured, Some(false));
+    }
+
+    #[rstest]
+    fn test_gamma_tag_deserialization() {
+        let tags: Vec<GammaTag> = load("gamma_tags.json");
+
+        assert_eq!(tags.len(), 5);
+        assert_eq!(tags[0].id, "101259");
+        assert_eq!(tags[0].label.as_deref(), Some("Health and Human Services"));
+        assert_eq!(tags[0].slug.as_deref(), Some("health-and-human-services"));
+        assert_eq!(tags[2].slug.as_deref(), Some("attorney-general"));
+    }
+
+    #[rstest]
+    fn test_search_response_deserialization() {
+        let response: SearchResponse = load("search_response.json");
+
+        // Real API returns no top-level "markets" key
+        assert!(response.markets.is_none());
+
+        let events = response.events.as_ref().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].slug.as_deref(), Some("bitcoin-above-on-march-11"));
+        assert_eq!(events[0].markets.len(), 1);
+    }
+
+    #[rstest]
+    fn test_search_response_empty_fields() {
+        let json = "{}";
+        let response: SearchResponse = serde_json::from_str(json).unwrap();
+        assert!(response.markets.is_none());
+        assert!(response.events.is_none());
     }
 }

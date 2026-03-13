@@ -40,16 +40,20 @@ use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
+    filters::{
+        EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter, SearchFilter,
+        TagFilter,
+    },
     http::{
         clob::PolymarketClobHttpClient,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
         query::{
-            CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaMarketsParams,
-            GetOrdersParams, GetTradesParams,
+            CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaEventsParams,
+            GetGammaMarketsParams, GetOrdersParams, GetSearchParams, GetTradesParams,
         },
     },
-    providers::PolymarketInstrumentProvider,
+    providers::{PolymarketInstrumentProvider, build_gamma_params_from_hashmap},
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -68,6 +72,11 @@ struct TestServerState {
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
     gamma_force_error: Arc<std::sync::atomic::AtomicBool>,
+    gamma_event_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+    gamma_events_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_tags_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_search_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_clob_token_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
 }
 
 impl Default for TestServerState {
@@ -81,6 +90,11 @@ impl Default for TestServerState {
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             gamma_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            gamma_event_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            gamma_events_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_tags_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_search_response: Arc::new(tokio::sync::Mutex::new(None)),
+            gamma_clob_token_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
         }
     }
 }
@@ -285,10 +299,67 @@ async fn handle_gamma_markets(
         }
     }
 
+    // Check for clob_token_ids-based lookup
+    if let Some(resp) = handle_gamma_markets_with_clob_tokens(&state, &params).await {
+        return resp;
+    }
+
     let resp = state.gamma_response.lock().await;
     match resp.as_ref() {
         Some(v) => Json(v.clone()).into_response(),
         None => Json(json!([])).into_response(),
+    }
+}
+
+async fn handle_gamma_markets_with_clob_tokens(
+    state: &TestServerState,
+    params: &HashMap<String, String>,
+) -> Option<Response> {
+    if let Some(clob_ids) = params.get("clob_token_ids") {
+        let map = state.gamma_clob_token_responses.lock().await;
+        if let Some(v) = map.get(clob_ids) {
+            return Some(Json(v.clone()).into_response());
+        }
+        // If specific clob_token_ids are requested but not in the map,
+        // check all registered slug responses for matching token_ids
+        return None;
+    }
+    None
+}
+
+async fn handle_gamma_events(
+    State(state): State<TestServerState>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> Response {
+    if let Some(slug) = params.get("slug") {
+        let slug_map = state.gamma_event_slug_responses.lock().await;
+        if let Some(v) = slug_map.get(slug) {
+            return Json(v.clone()).into_response();
+        }
+    }
+
+    // Return generic events response if set
+    let resp = state.gamma_events_response.lock().await;
+    if let Some(v) = resp.as_ref() {
+        return Json(v.clone()).into_response();
+    }
+
+    Json(json!([])).into_response()
+}
+
+async fn handle_gamma_tags(State(state): State<TestServerState>) -> Response {
+    let resp = state.gamma_tags_response.lock().await;
+    match resp.as_ref() {
+        Some(v) => Json(v.clone()).into_response(),
+        None => Json(json!([])).into_response(),
+    }
+}
+
+async fn handle_public_search(State(state): State<TestServerState>) -> Response {
+    let resp = state.gamma_search_response.lock().await;
+    match resp.as_ref() {
+        Some(v) => Json(v.clone()).into_response(),
+        None => Json(json!({"markets": [], "events": []})).into_response(),
     }
 }
 
@@ -309,6 +380,9 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market))
         .route("/markets", get(handle_gamma_markets))
+        .route("/events", get(handle_gamma_events))
+        .route("/tags", get(handle_gamma_tags))
+        .route("/public-search", get(handle_public_search))
         .route("/health", get(handle_health))
         .with_state(state)
 }
@@ -637,7 +711,10 @@ async fn test_get_gamma_markets_bare_array_response() {
         .unwrap();
 
     assert_eq!(markets.len(), 1);
-    assert_eq!(markets[0].condition_id, "0xabc123def456789");
+    assert_eq!(
+        markets[0].condition_id,
+        "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b"
+    );
 }
 
 #[rstest]
@@ -656,7 +733,10 @@ async fn test_get_gamma_markets_wrapped_data_response() {
         .unwrap();
 
     assert_eq!(markets.len(), 1);
-    assert_eq!(markets[0].condition_id, "0xabc123def456789");
+    assert_eq!(
+        markets[0].condition_id,
+        "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b"
+    );
 }
 
 #[rstest]
@@ -786,4 +866,648 @@ async fn test_request_instruments_by_slugs_partial_failure_succeeds() {
         2,
         "good-slug produces 2 instruments (Yes/No)"
     );
+}
+
+fn gamma_event_with_markets(slug: &str, markets: &[Value]) -> Value {
+    json!({
+        "id": "evt-test-001",
+        "slug": slug,
+        "title": format!("Event for {slug}"),
+        "active": true,
+        "closed": false,
+        "markets": markets
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_slug_filter() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "filter-slug",
+        "0xcondition_filter",
+        ["10000000000000000001", "10000000000000000002"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("filter-slug".to_string(), json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let filter = MarketSlugFilter::from_slugs(vec!["filter-slug".to_string()]);
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_gamma_query_filter() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "query-market",
+        "0xcondition_query",
+        ["20000000000000000001", "20000000000000000002"],
+    );
+    // The gamma_response is returned for non-slug market queries
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let filter = GammaQueryFilter::new(GetGammaMarketsParams {
+        active: Some(true),
+        volume_num_min: Some(1000.0),
+        ..Default::default()
+    });
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_without_filter_loads_everything() {
+    let state = TestServerState::default();
+    let market = gamma_market_with_slug(
+        "bulk-market",
+        "0xcondition_bulk_all",
+        ["30000000000000000001", "30000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    // No filter — should use bulk loading
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_slug_filter_re_evaluated_each_cycle() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let state = TestServerState::default();
+    let market_a = gamma_market_with_slug(
+        "slug-cycle-a",
+        "0xcondition_cycle_a",
+        ["40000000000000000001", "40000000000000000002"],
+    );
+    let market_b = gamma_market_with_slug(
+        "slug-cycle-b",
+        "0xcondition_cycle_b",
+        ["40000000000000000003", "40000000000000000004"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("slug-cycle-a".to_string(), json!([market_a]));
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("slug-cycle-b".to_string(), json!([market_b]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let counter_clone = counter.clone();
+    let filter = MarketSlugFilter::new(move || {
+        let n = counter_clone.fetch_add(1, Ordering::Relaxed);
+        if n == 0 {
+            vec!["slug-cycle-a".to_string()]
+        } else {
+            vec!["slug-cycle-b".to_string()]
+        }
+    });
+
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    // First cycle: loads slug-cycle-a
+    provider.load_all(None).await.unwrap();
+    assert_eq!(provider.store().count(), 2);
+
+    // Second cycle: re-evaluates closure, loads slug-cycle-b instead
+    provider.load_all(None).await.unwrap();
+    assert_eq!(provider.store().count(), 2);
+    assert_eq!(counter.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_set_filter_then_clear_reverts() {
+    let state = TestServerState::default();
+    let slug_market = gamma_market_with_slug(
+        "filtered-slug",
+        "0xcondition_filtered",
+        ["50000000000000000001", "50000000000000000002"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("filtered-slug".to_string(), json!([slug_market]));
+
+    let bulk_market = gamma_market_with_slug(
+        "bulk-after-clear",
+        "0xcondition_bulk_clear",
+        ["50000000000000000003", "50000000000000000004"],
+    );
+    *state.gamma_response.lock().await = Some(json!([bulk_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    // Set a filter and load
+    let filter = MarketSlugFilter::from_slugs(vec!["filtered-slug".to_string()]);
+    provider.add_filter(Box::new(filter));
+    provider.load_all(None).await.unwrap();
+    assert_eq!(provider.store().count(), 2);
+
+    // Clear filters and load again — should use bulk loading
+    provider.clear_filters();
+    provider.load_all(None).await.unwrap();
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_event_slug_filter() {
+    let state = TestServerState::default();
+
+    let market1 = gamma_market_with_slug(
+        "event-market-1",
+        "0xcondition_evtm1",
+        ["60000000000000000001", "60000000000000000002"],
+    );
+    let market2 = gamma_market_with_slug(
+        "event-market-2",
+        "0xcondition_evtm2",
+        ["60000000000000000003", "60000000000000000004"],
+    );
+    let event = gamma_event_with_markets("test-event", &[market1, market2]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("test-event".to_string(), json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let filter = EventSlugFilter::from_slugs(vec!["test-event".to_string()]);
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    // 2 markets × 2 outcomes = 4 instruments
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_composite_filter_combines_market_and_event_slugs() {
+    let state = TestServerState::default();
+
+    // Market slug response
+    let market = gamma_market_with_slug(
+        "composite-market",
+        "0xcondition_composite_m",
+        ["70000000000000000001", "70000000000000000002"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("composite-market".to_string(), json!([market]));
+
+    // Event slug response with a different market
+    let event_market = gamma_market_with_slug(
+        "composite-event-market",
+        "0xcondition_composite_e",
+        ["70000000000000000003", "70000000000000000004"],
+    );
+    let event = gamma_event_with_markets("composite-event", &[event_market]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("composite-event".to_string(), json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let market_filter = MarketSlugFilter::from_slugs(vec!["composite-market".to_string()]);
+    let event_filter = EventSlugFilter::from_slugs(vec!["composite-event".to_string()]);
+    let mut provider = PolymarketInstrumentProvider::with_filters(
+        http_client,
+        vec![Box::new(market_filter), Box::new(event_filter)],
+    );
+
+    provider.load_all(None).await.unwrap();
+
+    // 1 market slug (2 outcomes) + 1 event market (2 outcomes) = 4 instruments
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_gamma_events_with_params() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "event-param-market",
+        "0xcondition_evt_param",
+        ["91000000000000000001", "91000000000000000002"],
+    );
+    let event = gamma_event_with_markets("event-from-params", &[market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_client(&addr);
+
+    let events = client
+        .get_gamma_events(GetGammaEventsParams {
+            active: Some(true),
+            featured: Some(true),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].slug.as_deref(), Some("event-from-params"));
+    assert_eq!(events[0].markets.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_gamma_tags() {
+    let state = TestServerState::default();
+    *state.gamma_tags_response.lock().await = Some(load_json("gamma_tags.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_client(&addr);
+
+    let tags = client.get_gamma_tags().await.unwrap();
+
+    assert_eq!(tags.len(), 5);
+    assert_eq!(tags[0].id, "101259");
+    assert_eq!(tags[0].label.as_deref(), Some("Health and Human Services"));
+    assert_eq!(tags[1].slug.as_deref(), Some("sweeden"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_public_search() {
+    let state = TestServerState::default();
+    *state.gamma_search_response.lock().await = Some(load_json("search_response.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_client(&addr);
+
+    let response = client
+        .get_public_search(GetSearchParams {
+            q: Some("bitcoin".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // Real API returns no top-level "markets" key
+    assert!(response.markets.is_none());
+
+    let events = response.events.as_ref().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].markets.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_by_event_params() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "evt-param-mkt",
+        "0xcondition_evt_param_inst",
+        ["92000000000000000001", "92000000000000000002"],
+    );
+    let event = gamma_event_with_markets("evt-param-test", &[market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let instruments = client
+        .request_instruments_by_event_params(GetGammaEventsParams {
+            active: Some(true),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(instruments.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_by_search() {
+    let state = TestServerState::default();
+    *state.gamma_search_response.lock().await = Some(load_json("search_response.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let instruments = client
+        .request_instruments_by_search(GetSearchParams {
+            q: Some("bitcoin".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // search_response.json: no top-level markets, 1 event with 1 market (2 outcomes) = 2
+    assert_eq!(instruments.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_tags() {
+    let state = TestServerState::default();
+    *state.gamma_tags_response.lock().await = Some(load_json("gamma_tags.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let tags = client.request_tags().await.unwrap();
+    assert_eq!(tags.len(), 5);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_ids_fetches_missing_instruments() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "ids-market",
+        "0xcondition_ids",
+        ["93000000000000000001", "93000000000000000002"],
+    );
+    // Use generic gamma response — condition_ids query hits /markets
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    // InstrumentId format: "{condition_id}-{token_id}.POLYMARKET"
+    let instrument_id = InstrumentId::from("0xcondition_ids-93000000000000000001.POLYMARKET");
+    provider.load_ids(&[instrument_id], None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_ids_skips_already_loaded() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "preloaded-market",
+        "0xcondition_preloaded",
+        ["94000000000000000001", "94000000000000000002"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("preloaded-market".to_string(), json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    // Pre-load
+    provider
+        .load_by_slugs(vec!["preloaded-market".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(provider.store().count(), 2);
+
+    // load_ids with already-loaded ID should be a no-op
+    let existing_id = InstrumentId::from("0xcondition_preloaded-94000000000000000001.POLYMARKET");
+    provider.load_ids(&[existing_id], None).await.unwrap();
+
+    // Count should still be 2 (no additional fetch)
+    assert_eq!(provider.store().count(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_single_instrument_direct_fetch() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "direct-load-market",
+        "0xcondition_direct",
+        ["95000000000000000001", "95000000000000000002"],
+    );
+    // Use generic gamma response — condition_ids query hits /markets
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    // InstrumentId format: "{condition_id}-{token_id}.POLYMARKET"
+    let instrument_id = InstrumentId::from("0xcondition_direct-95000000000000000001.POLYMARKET");
+    provider.load(&instrument_id, None).await.unwrap();
+
+    assert!(provider.store().contains(&instrument_id));
+    // Direct fetch succeeded, so load_all was NOT called — store not initialized
+    assert!(!provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_event_params_filter() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "evt-params-filter-market",
+        "0xcondition_epf",
+        ["96000000000000000001", "96000000000000000002"],
+    );
+    let event = gamma_event_with_markets("evt-params-filter", &[market]);
+    *state.gamma_events_response.lock().await = Some(json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let filter = EventParamsFilter::new(GetGammaEventsParams {
+        active: Some(true),
+        featured: Some(true),
+        ..Default::default()
+    });
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_search_filter() {
+    let state = TestServerState::default();
+    *state.gamma_search_response.lock().await = Some(load_json("search_response.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let filter = SearchFilter::from_query("bitcoin");
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    // No top-level markets, 1 event with 1 market (2 outcomes) = 2
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_tag_filter() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "tag-filter-market",
+        "0xcondition_tag",
+        ["97000000000000000001", "97000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let filter = TagFilter::from_tag_id("tag-001");
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_filtered_deduplicates_overlapping_results() {
+    let state = TestServerState::default();
+
+    // Same market appears in both slug and query responses
+    let market = gamma_market_with_slug(
+        "dedup-market",
+        "0xcondition_dedup",
+        ["98000000000000000001", "98000000000000000002"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("dedup-market".to_string(), json!([market.clone()]));
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    // Composite filter: market slug + query params both return the same market
+    let slug_filter = MarketSlugFilter::from_slugs(vec!["dedup-market".to_string()]);
+    let query_filter = GammaQueryFilter::new(GetGammaMarketsParams {
+        active: Some(true),
+        ..Default::default()
+    });
+    let mut provider = PolymarketInstrumentProvider::with_filters(
+        http_client,
+        vec![Box::new(slug_filter), Box::new(query_filter)],
+    );
+
+    provider.load_all(None).await.unwrap();
+
+    // Should be 2 (Yes/No), not 4 (deduplication should remove duplicates)
+    assert_eq!(provider.store().count(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_with_hashmap_filters() {
+    let state = TestServerState::default();
+
+    let market = gamma_market_with_slug(
+        "hashmap-market",
+        "0xcondition_hashmap",
+        ["99000000000000000001", "99000000000000000002"],
+    );
+    *state.gamma_response.lock().await = Some(json!([market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client);
+
+    let mut filters = HashMap::new();
+    filters.insert("active".to_string(), "true".to_string());
+    filters.insert("volume_num_min".to_string(), "1000".to_string());
+
+    provider.load_all(Some(&filters)).await.unwrap();
+
+    assert_eq!(provider.store().count(), 2);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+fn test_build_gamma_params_from_hashmap() {
+    let mut map = HashMap::new();
+    map.insert("active".to_string(), "true".to_string());
+    map.insert("closed".to_string(), "false".to_string());
+    map.insert("volume_num_min".to_string(), "1000.5".to_string());
+    map.insert("tag_id".to_string(), "politics".to_string());
+    map.insert("order".to_string(), "volume".to_string());
+    map.insert("max_markets".to_string(), "50".to_string());
+
+    let params = build_gamma_params_from_hashmap(&map);
+
+    assert_eq!(params.active, Some(true));
+    assert_eq!(params.closed, Some(false));
+    assert_eq!(params.volume_num_min, Some(1000.5));
+    assert_eq!(params.tag_id.as_deref(), Some("politics"));
+    assert_eq!(params.order.as_deref(), Some("volume"));
+    assert_eq!(params.max_markets, Some(50));
+}
+
+#[rstest]
+fn test_build_gamma_params_from_empty_hashmap() {
+    let map = HashMap::new();
+    let params = build_gamma_params_from_hashmap(&map);
+
+    assert!(params.active.is_none());
+    assert!(params.closed.is_none());
+    assert!(params.volume_num_min.is_none());
 }
