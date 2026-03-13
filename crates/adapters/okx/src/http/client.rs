@@ -55,7 +55,10 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
     },
-    enums::{AggregationSource, BarAggregation, BookType, OrderSide, OrderType, TriggerType},
+    enums::{
+        AggregationSource, BarAggregation, BookType, OrderSide, OrderType, PositionSide,
+        TimeInForce, TriggerType,
+    },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -76,11 +79,12 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXCancelAlgoOrderRequest,
-        OKXCancelAlgoOrderResponse, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker,
-        OKXMarkPrice, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
-        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory,
-        OKXPositionTier, OKXServerTime, OKXTransactionDetail,
+        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAttachAlgoOrdRequest,
+        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXFeeRate, OKXFundingRateHistory,
+        OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
+        OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
+        OKXTransactionDetail,
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
@@ -96,11 +100,15 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
+        consts::{
+            OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES,
+            OKX_SUPPORTED_TIME_IN_FORCE, should_retry_error_code,
+        },
         credential::Credential,
         enums::{
-            OKXContractType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus,
-            OKXPositionMode, OKXSide, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
+            OKXAlgoOrderType, OKXContractType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide,
+            OKXTargetCurrency, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
         },
         models::OKXInstrument,
         parse::{
@@ -122,7 +130,8 @@ const OKX_SUCCESS_CODE: &str = "0";
 
 fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> String {
     let message = top_level_msg.trim();
-    if !message.is_empty() {
+    let is_generic_top_level = message.eq_ignore_ascii_case("All operations failed");
+    if !message.is_empty() && !is_generic_top_level {
         return message.to_string();
     }
 
@@ -148,6 +157,32 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
     }
 
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::resolve_okx_error_message;
+
+    #[rstest]
+    fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
+        let body = br#"{
+            "code": "1",
+            "msg": "All operations failed",
+            "data": [
+                {
+                    "sCode": "51046",
+                    "sMsg": "Test detailed failure"
+                }
+            ]
+        }"#;
+
+        assert_eq!(
+            resolve_okx_error_message(body, "All operations failed"),
+            "Test detailed failure",
+        );
+    }
 }
 
 /// Default OKX REST API rate limit: 500 requests per 2 seconds.
@@ -964,7 +999,7 @@ impl OKXRawHttpClient {
     ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
         self.send_request(
             Method::GET,
-            "/api/v5/trade/order-algo-pending",
+            "/api/v5/trade/orders-algo-pending",
             Some(&params),
             None,
             true,
@@ -983,7 +1018,7 @@ impl OKXRawHttpClient {
     ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
         self.send_request(
             Method::GET,
-            "/api/v5/trade/order-algo-history",
+            "/api/v5/trade/orders-algo-history",
             Some(&params),
             None,
             true,
@@ -3141,6 +3176,32 @@ impl OKXHttpClient {
         Ok(reports)
     }
 
+    /// Places a regular order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order>
+    pub async fn place_order(
+        &self,
+        request: OKXPlaceOrderRequest,
+    ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
+        let body =
+            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXPlaceOrderResponse> = self
+            .inner
+            .send_request::<_, ()>(Method::POST, "/api/v5/trade/order", None, Some(body), true)
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
     /// Places an algo order via HTTP.
     ///
     /// # Errors
@@ -3347,6 +3408,138 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the request fails.
     #[allow(clippy::too_many_arguments)]
+    pub async fn place_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
+        position_side: Option<PositionSide>,
+        attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
+    ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
+        if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            return Err(OKXHttpError::ValidationError(format!(
+                "Unsupported order type: {order_type:?}",
+            )));
+        }
+
+        if matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+                | OrderType::TrailingStopMarket
+        ) {
+            return Err(OKXHttpError::ValidationError(
+                "Conditional order types must use OKX algo order placement".to_string(),
+            ));
+        }
+
+        if let Some(tif) = time_in_force
+            && !OKX_SUPPORTED_TIME_IN_FORCE.contains(&tif)
+        {
+            return Err(OKXHttpError::ValidationError(format!(
+                "Unsupported time in force: {tif:?}",
+            )));
+        }
+
+        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
+            return Err(OKXHttpError::ValidationError(
+                "Invalid order side".to_string(),
+            ));
+        }
+
+        let instrument = self
+            .instrument_from_cache(instrument_id.symbol.inner())
+            .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
+        let instrument_type = okx_instrument_type(&instrument)
+            .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
+
+        let side = OKXSide::from(order_side.as_specified());
+        let pos_side = position_side.map(Into::into).or({
+            if matches!(
+                instrument_type,
+                OKXInstrumentType::Swap | OKXInstrumentType::Futures | OKXInstrumentType::Option
+            ) {
+                Some(OKXPositionSide::Net)
+            } else {
+                None
+            }
+        });
+
+        let tgt_ccy = if instrument_type == OKXInstrumentType::Spot
+            && order_type == OrderType::Market
+            && td_mode == OKXTradeMode::Cash
+        {
+            match quote_quantity {
+                Some(true) => Some(OKXTargetCurrency::QuoteCcy),
+                Some(false) if order_side == OrderSide::Buy => Some(OKXTargetCurrency::BaseCcy),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let (ord_type, px) = if post_only.unwrap_or(false) {
+            (OKXOrderType::PostOnly, price)
+        } else if let Some(tif) = time_in_force {
+            match (order_type, tif) {
+                (OrderType::Market, TimeInForce::Fok) => {
+                    return Err(OKXHttpError::ValidationError(
+                        "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string(),
+                    ));
+                }
+                (OrderType::Market, TimeInForce::Ioc) => {
+                    if instrument_type == OKXInstrumentType::Spot {
+                        (OKXOrderType::Market, price)
+                    } else {
+                        (OKXOrderType::OptimalLimitIoc, price)
+                    }
+                }
+                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
+                _ => (OKXOrderType::from(order_type), price),
+            }
+        } else {
+            (OKXOrderType::from(order_type), price)
+        };
+
+        let request = OKXPlaceOrderRequest {
+            inst_id: instrument_id.symbol.as_str().to_string(),
+            td_mode,
+            ccy: None,
+            cl_ord_id: Some(client_order_id.as_str().to_string()),
+            tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
+            side,
+            pos_side,
+            ord_type,
+            sz: quantity.to_string(),
+            px: px.map(|p| p.to_string()),
+            reduce_only,
+            tgt_ccy,
+            attach_algo_ords,
+        };
+
+        self.place_order(request).await
+    }
+
+    /// Places an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_algo_order_with_domain_types(
         &self,
         instrument_id: InstrumentId,
@@ -3359,6 +3552,7 @@ impl OKXHttpClient {
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
+        close_fraction: Option<String>,
         callback_ratio: Option<String>,
         callback_spread: Option<String>,
         activation_price: Option<Price>,
@@ -3368,22 +3562,125 @@ impl OKXHttpClient {
                 "Invalid order side".to_string(),
             ));
         }
+
         let okx_side = OKXSide::from(order_side.as_specified());
-        let algo_type = conditional_order_to_algo_type(order_type)
-            .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
         // Map trigger type to OKX format
         let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
 
-        // Determine order price based on order type
-        let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
-            limit_price.map(|p| p.to_string())
-        } else if order_type == OrderType::TrailingStopMarket {
-            // Trailing stops always execute as market when triggered
-            None
+        let uses_close_fraction = close_fraction.is_some();
+        let (
+            algo_type,
+            sz,
+            trigger_px,
+            order_px,
+            trigger_px_type,
+            sl_trigger_px,
+            sl_ord_px,
+            sl_trigger_px_type,
+            tp_trigger_px,
+            tp_ord_px,
+            tp_trigger_px_type,
+            pos_side,
+            reduce_only,
+        ) = if uses_close_fraction {
+            if order_type == OrderType::TrailingStopMarket {
+                return Err(OKXHttpError::ValidationError(
+                    "OKX close_fraction does not support TrailingStopMarket".to_string(),
+                ));
+            }
+
+            let trigger_px = trigger_price.map(|p| p.to_string()).ok_or_else(|| {
+                OKXHttpError::ValidationError(
+                    "OKX close_fraction orders require trigger_price".to_string(),
+                )
+            })?;
+
+            let close_order_px =
+                if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
+                    limit_price.map(|p| p.to_string()).ok_or_else(|| {
+                        OKXHttpError::ValidationError(format!(
+                            "OKX {order_type:?} close_fraction orders require limit_price"
+                        ))
+                    })?
+                } else {
+                    "-1".to_string()
+                };
+
+            let (
+                sl_trigger_px,
+                sl_ord_px,
+                sl_trigger_px_type,
+                tp_trigger_px,
+                tp_ord_px,
+                tp_trigger_px_type,
+            ) = match order_type {
+                OrderType::StopMarket | OrderType::StopLimit => (
+                    Some(trigger_px),
+                    Some(close_order_px),
+                    Some(trigger_px_type_enum),
+                    None,
+                    None,
+                    None,
+                ),
+                OrderType::MarketIfTouched | OrderType::LimitIfTouched => (
+                    None,
+                    None,
+                    None,
+                    Some(trigger_px),
+                    Some(close_order_px),
+                    Some(trigger_px_type_enum),
+                ),
+                _ => {
+                    return Err(OKXHttpError::ValidationError(format!(
+                        "OKX close_fraction is only supported for stop/touched conditional orders, received {order_type:?}"
+                    )));
+                }
+            };
+
+            (
+                OKXAlgoOrderType::Conditional,
+                None,
+                None,
+                None,
+                None,
+                sl_trigger_px,
+                sl_ord_px,
+                sl_trigger_px_type,
+                tp_trigger_px,
+                tp_ord_px,
+                tp_trigger_px_type,
+                Some(OKXPositionSide::Net),
+                Some(true),
+            )
         } else {
-            // Market orders use -1 to indicate market execution
-            Some("-1".to_string())
+            let algo_type = conditional_order_to_algo_type(order_type)
+                .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
+
+            let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
+            {
+                limit_price.map(|p| p.to_string())
+            } else if order_type == OrderType::TrailingStopMarket {
+                None
+            } else {
+                Some("-1".to_string())
+            };
+
+            (
+                algo_type,
+                Some(quantity.to_string()),
+                trigger_price.map(|p| p.to_string()),
+                order_px,
+                Some(trigger_px_type_enum),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                reduce_only,
+            )
         };
 
         let request = OKXPlaceAlgoOrderRequest {
@@ -3392,16 +3689,23 @@ impl OKXHttpClient {
             td_mode,
             side: okx_side,
             ord_type: algo_type,
-            sz: quantity.to_string(),
+            sz,
             algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
-            trigger_px: trigger_price.map(|p| p.to_string()),
+            trigger_px,
             order_px,
-            trigger_px_type: Some(trigger_px_type_enum),
+            trigger_px_type,
+            sl_trigger_px,
+            sl_ord_px,
+            sl_trigger_px_type,
+            tp_trigger_px,
+            tp_ord_px,
+            tp_trigger_px_type,
             tgt_ccy: None,
-            pos_side: None,
+            pos_side,
             close_position: None,
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
             reduce_only,
+            close_fraction,
             callback_ratio,
             callback_spread,
             active_px: activation_price.map(|p| p.to_string()),
@@ -3450,6 +3754,7 @@ impl OKXHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        let has_specific_lookup = algo_id.is_some() || algo_client_order_id.is_some();
 
         let inst_type = if let Some(inst_type) = instrument_type {
             inst_type
@@ -3462,74 +3767,90 @@ impl OKXHttpClient {
             anyhow::bail!("instrument_type or instrument_id required for algo order query")
         };
 
-        let mut params_builder = GetAlgoOrdersParamsBuilder::default();
-        params_builder.inst_type(inst_type);
-
-        if let Some(inst_id) = instrument_id {
-            params_builder.inst_id(inst_id.symbol.inner().to_string());
-        }
-
-        if let Some(algo_id) = algo_id.as_ref() {
-            params_builder.algo_id(algo_id.clone());
-        }
-
-        if let Some(client_order_id) = algo_client_order_id.as_ref() {
-            params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
-        }
-
-        if let Some(state) = state {
-            params_builder.state(state);
-        }
-
-        if let Some(limit) = limit {
-            params_builder.limit(limit);
-        }
-
-        let params = params_builder
-            .build()
-            .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
-
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
         let mut seen: AHashSet<(String, String)> = AHashSet::new();
 
-        let pending = match self.inner.get_order_algo_pending(params.clone()).await {
-            Ok(result) => result,
-            Err(OKXHttpError::UnexpectedStatus { status, .. })
-                if status == StatusCode::NOT_FOUND =>
-            {
-                Vec::new()
-            }
-            Err(e) => return Err(e.into()),
-        };
-        self.collect_algo_reports(
-            account_id,
-            &pending,
-            &mut instruments_cache,
-            ts_init,
-            &mut seen,
-            &mut reports,
-        )
-        .await?;
+        for ord_type in [
+            OKXAlgoOrderType::Oco,
+            OKXAlgoOrderType::Conditional,
+            OKXAlgoOrderType::Trigger,
+            OKXAlgoOrderType::MoveOrderStop,
+        ] {
+            let mut params_builder = GetAlgoOrdersParamsBuilder::default();
+            params_builder.inst_type(inst_type);
+            params_builder.ord_type(ord_type);
 
-        let history = match self.inner.get_order_algo_history(params).await {
-            Ok(result) => result,
-            Err(OKXHttpError::UnexpectedStatus { status, .. })
-                if status == StatusCode::NOT_FOUND =>
-            {
-                Vec::new()
+            if let Some(inst_id) = instrument_id {
+                params_builder.inst_id(inst_id.symbol.inner().to_string());
             }
-            Err(e) => return Err(e.into()),
-        };
-        self.collect_algo_reports(
-            account_id,
-            &history,
-            &mut instruments_cache,
-            ts_init,
-            &mut seen,
-            &mut reports,
-        )
-        .await?;
+
+            if let Some(algo_id) = algo_id.as_ref() {
+                params_builder.algo_id(algo_id.clone());
+            }
+
+            if let Some(client_order_id) = algo_client_order_id.as_ref() {
+                params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
+            }
+
+            if let Some(state) = state {
+                params_builder.state(state);
+            }
+
+            if let Some(limit) = limit {
+                params_builder.limit(limit);
+            }
+
+            let params = params_builder
+                .build()
+                .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
+
+            let pending = match self.inner.get_order_algo_pending(params.clone()).await {
+                Ok(result) => result,
+                Err(OKXHttpError::UnexpectedStatus { status, .. })
+                    if status == StatusCode::NOT_FOUND =>
+                {
+                    Vec::new()
+                }
+                Err(e) => return Err(e.into()),
+            };
+            self.collect_algo_reports(
+                account_id,
+                &pending,
+                &mut instruments_cache,
+                ts_init,
+                &mut seen,
+                &mut reports,
+            )
+            .await?;
+
+            if has_specific_lookup && !reports.is_empty() {
+                return Ok(reports);
+            }
+
+            let history = match self.inner.get_order_algo_history(params).await {
+                Ok(result) => result,
+                Err(OKXHttpError::UnexpectedStatus { status, .. })
+                    if status == StatusCode::NOT_FOUND =>
+                {
+                    Vec::new()
+                }
+                Err(e) => return Err(e.into()),
+            };
+            self.collect_algo_reports(
+                account_id,
+                &history,
+                &mut instruments_cache,
+                ts_init,
+                &mut seen,
+                &mut reports,
+            )
+            .await?;
+
+            if has_specific_lookup && !reports.is_empty() {
+                return Ok(reports);
+            }
+        }
 
         Ok(reports)
     }
@@ -3638,10 +3959,17 @@ fn parse_http_algo_order(
         sz: order.sz.clone(),
         trigger_px: order.trigger_px.clone(),
         trigger_px_type: order.trigger_px_type.unwrap_or(OKXTriggerType::None),
+        sl_trigger_px: order.sl_trigger_px.clone(),
+        sl_ord_px: order.sl_ord_px.clone(),
+        sl_trigger_px_type: order.sl_trigger_px_type.unwrap_or(OKXTriggerType::None),
+        tp_trigger_px: order.tp_trigger_px.clone(),
+        tp_ord_px: order.tp_ord_px.clone(),
+        tp_trigger_px_type: order.tp_trigger_px_type.unwrap_or(OKXTriggerType::None),
         ord_px,
         td_mode: order.td_mode,
         lever: order.lever.clone(),
         reduce_only,
+        close_fraction: order.close_fraction.clone(),
         actual_px: order.actual_px.clone(),
         actual_sz: order.actual_sz.clone(),
         notional_usd: order.notional_usd.clone(),

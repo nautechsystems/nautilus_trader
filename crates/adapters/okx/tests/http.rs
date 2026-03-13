@@ -36,16 +36,22 @@ use axum::{
 use chrono::{Duration as ChronoDuration, Utc};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
-use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_model::{
+    enums::{OrderSide, OrderType, TriggerType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
+};
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode},
+        enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode, OKXTriggerType},
         models::OKXInstrument,
     },
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
+        models::OKXAttachAlgoOrdRequest,
         query::{
             GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOrderHistoryParams,
             GetOrderListParams, GetOrderParamsBuilder, GetPositionTiersParamsBuilder,
@@ -65,6 +71,10 @@ struct TestServerState {
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_history_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 /// Wait for the test server to be ready by polling a health endpoint.
@@ -128,7 +138,11 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let history_state = state.clone();
     let pending_state = state.clone();
     let order_history_state = state.clone();
-    let order_detail_state = state;
+    let order_detail_state = state.clone();
+    let order_place_state = state.clone();
+    let algo_pending_state = state.clone();
+    let algo_history_state = state.clone();
+    let algo_order_state = state;
     Router::new()
         .route(
             "/api/v5/public/instruments",
@@ -208,8 +222,15 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 .into_response();
                         }
 
+                        let fixture =
+                            if params.get("instId").map(String::as_str) == Some("ETH-USDT-SWAP") {
+                                "http_get_orders_pending_with_attached_tp_sl.json"
+                            } else {
+                                "http_get_orders_pending.json"
+                            };
+
                         *state.last_pending_orders_query.lock().await = Some(params);
-                        Json(load_test_data("http_get_orders_pending.json")).into_response()
+                        Json(load_test_data(fixture)).into_response()
                     }
                 },
             ),
@@ -260,60 +281,168 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         Json(load_test_data("http_get_orders_history.json")).into_response()
                     }
                 },
+            )
+            .post(move |headers: HeaderMap, Json(payload): Json<Value>| {
+                let state = order_place_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    *state.last_order_body.lock().await = Some(payload);
+                    Json(json!({
+                        "code": "0",
+                        "msg": "",
+                        "data": [
+                            {
+                                "ordId": "12345",
+                                "clOrdId": "O-bracket-entry",
+                                "sCode": "0",
+                                "sMsg": "Order placed",
+                            }
+                        ],
+                    }))
+                    .into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = algo_pending_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        state.algo_pending_queries.lock().await.push(params.clone());
+
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
+                            if params.get("ordType").map(String::as_str) != Some("oco") {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!({
+                                        "code": "51000",
+                                        "msg": "Parameter ordType error",
+                                        "data": [],
+                                    })),
+                                )
+                                    .into_response();
+                            }
+
+                            return Json(load_test_data(
+                                "http_get_orders_algo_pending_attached_oco.json",
+                            ))
+                            .into_response();
+                        }
+
+                        let fixture = if params.get("algoClOrdId").map(String::as_str)
+                            == Some("O-close-frac-status")
+                        {
+                            "http_get_orders_algo_pending_close_fraction.json"
+                        } else {
+                            "http_get_orders_algo_pending.json"
+                        };
+
+                        Json(load_test_data(fixture)).into_response()
+                    }
+                },
             ),
         )
         .route(
-            "/api/v5/trade/order-algo-pending",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            "/api/v5/trade/orders-algo-history",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = algo_history_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
 
-                Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
-            }),
-        )
-        .route(
-            "/api/v5/trade/order-algo-history",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+                        state.algo_history_queries.lock().await.push(params.clone());
 
-                Json(load_test_data("http_get_orders_algo_history.json")).into_response()
-            }),
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
+                            if params.get("ordType").map(String::as_str) != Some("oco") {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!({
+                                        "code": "51000",
+                                        "msg": "Parameter ordType error",
+                                        "data": [],
+                                    })),
+                                )
+                                    .into_response();
+                            }
+
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        if params.get("algoClOrdId").map(String::as_str)
+                            == Some("O-close-frac-status")
+                        {
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        Json(load_test_data("http_get_orders_algo_history.json")).into_response()
+                    }
+                },
+            ),
         )
         .route(
             "/api/v5/trade/order-algo",
-            post(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            post(move |headers: HeaderMap, Json(payload): Json<Value>| {
+                let state = algo_order_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
 
-                Json(load_test_data("http_place_algo_order_response.json")).into_response()
+                    *state.last_algo_order_body.lock().await = Some(payload);
+                    Json(load_test_data("http_place_algo_order_response.json")).into_response()
+                }
             }),
         )
         .route(
@@ -1820,6 +1949,299 @@ async fn test_http_get_order_algo_history_returns_data() {
     assert!(!orders.is_empty());
     assert_eq!(orders[0].algo_id, "987654321");
     assert_eq!(orders[0].state, OKXOrderStatus::Effective);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let swap_instruments = load_swap_instruments_any();
+    let size_precision = swap_instruments
+        .iter()
+        .find(|instrument| instrument.id() == InstrumentId::from("BTC-USDT-SWAP.OKX"))
+        .expect("expected BTC-USDT-SWAP instrument")
+        .size_precision();
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in swap_instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-close-frac-status"),
+        )
+        .await
+        .unwrap()
+        .expect("expected algo report");
+
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.trigger_price, Some(Price::from("50000")));
+    assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+    assert_eq!(report.price, None);
+    assert_eq!(report.quantity, Quantity::zero(size_precision));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_queries_attached_oco_with_ord_type() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-attached-oco"),
+        )
+        .await
+        .unwrap()
+        .expect("expected attached OCO algo report");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-attached-oco"))
+    );
+    assert!(report.trigger_price.is_some());
+
+    let pending_queries = state.algo_pending_queries.lock().await.clone();
+    assert!(
+        pending_queries
+            .iter()
+            .any(|query| query.get("ordType").map(String::as_str) == Some("oco")),
+        "expected at least one pending algo query with ordType=oco, found {pending_queries:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_ids() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            None,
+            None,
+            true,
+            Some(50),
+        )
+        .await
+        .unwrap();
+
+    let report = reports
+        .into_iter()
+        .find(|report| report.client_order_id == Some(ClientOrderId::from("O-attached-entry")))
+        .expect("expected attached entry report");
+
+    let linked_order_ids = report
+        .linked_order_ids
+        .expect("expected linked child order ids");
+    assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-sl")));
+    assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-tp")));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let response = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("O-close-frac"),
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            Quantity::from("0.01"),
+            Some(Price::from("50000")),
+            Some(TriggerType::Default),
+            None,
+            None,
+            Some("1".to_string()),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.algo_id, "12345");
+
+    let body = state
+        .last_algo_order_body
+        .lock()
+        .await
+        .clone()
+        .expect("expected algo order payload");
+
+    assert_eq!(body["ordType"], "conditional");
+    assert_eq!(body["closeFraction"], "1");
+    assert_eq!(body["reduceOnly"], true);
+    assert_eq!(body["posSide"], "net");
+    assert_eq!(body["slTriggerPx"], "50000");
+    assert_eq!(body["slOrdPx"], "-1");
+    assert_eq!(body["slTriggerPxType"], "last");
+    assert!(body.get("sz").is_none());
+    assert!(body.get("triggerPx").is_none());
+    assert!(body.get("orderPx").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let response = client
+        .place_order_with_domain_types(
+            InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("O-bracket-entry"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![OKXAttachAlgoOrdRequest {
+                attach_algo_cl_ord_id: Some("O-bracket-sl".to_string()),
+                sl_trigger_px: Some("39000.00".to_string()),
+                sl_ord_px: Some("-1".to_string()),
+                sl_trigger_px_type: Some(OKXTriggerType::Last),
+                tp_trigger_px: Some("41000.00".to_string()),
+                tp_ord_px: Some("-1".to_string()),
+                tp_trigger_px_type: Some(OKXTriggerType::Last),
+            }]),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.ord_id, Some(Ustr::from("12345")));
+
+    let body = state
+        .last_order_body
+        .lock()
+        .await
+        .clone()
+        .expect("expected order payload");
+
+    assert_eq!(body["instId"], "ETH-USDT-SWAP");
+    assert_eq!(body["tdMode"], "cross");
+    assert_eq!(body["clOrdId"], "O-bracket-entry");
+    assert_eq!(body["side"], "buy");
+    assert_eq!(body["ordType"], "market");
+    assert_eq!(body["sz"], "0.01");
+
+    let attach_algo_ords = body["attachAlgoOrds"]
+        .as_array()
+        .expect("expected attachAlgoOrds array");
+    assert_eq!(attach_algo_ords.len(), 1);
+    assert_eq!(attach_algo_ords[0]["attachAlgoClOrdId"], "O-bracket-sl");
+    assert_eq!(attach_algo_ords[0]["slTriggerPx"], "39000.00");
+    assert_eq!(attach_algo_ords[0]["slOrdPx"], "-1");
+    assert_eq!(attach_algo_ords[0]["tpTriggerPx"], "41000.00");
+    assert_eq!(attach_algo_ords[0]["tpOrdPx"], "-1");
 }
 
 // Note: place_algo_order and cancel_algo_order are on OKXHttpClient (not Raw),

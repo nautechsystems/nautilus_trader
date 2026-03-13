@@ -1,0 +1,82 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "accFillSz": "0",
+      "algoClOrdId": "",
+      "algoId": "",
+      "attachAlgoClOrdId": "",
+      "attachAlgoOrds": [
+        {
+          "attachAlgoId": "3373000000000000001",
+          "attachAlgoClOrdId": "O-attached-sl",
+          "slTriggerPx": "1500",
+          "slOrdPx": "-1",
+          "slTriggerPxType": "last",
+          "tpTriggerPx": "",
+          "tpOrdPx": "",
+          "tpTriggerPxType": ""
+        },
+        {
+          "attachAlgoId": "3373000000000000002",
+          "attachAlgoClOrdId": "O-attached-tp",
+          "slTriggerPx": "",
+          "slOrdPx": "",
+          "slTriggerPxType": "",
+          "tpTriggerPx": "2600",
+          "tpOrdPx": "-1",
+          "tpTriggerPxType": "last"
+        }
+      ],
+      "avgPx": "0",
+      "cTime": "1746947317000",
+      "cancelSource": "",
+      "cancelSourceReason": "",
+      "category": "normal",
+      "ccy": "USDT",
+      "clOrdId": "O-attached-entry",
+      "fee": "0",
+      "feeCcy": "USDT",
+      "fillPx": "0",
+      "fillSz": "0",
+      "fillTime": "0",
+      "instId": "ETH-USDT-SWAP",
+      "instType": "SWAP",
+      "isTpLimit": "false",
+      "lever": "3",
+      "linkedAlgoOrd": {
+        "algoId": ""
+      },
+      "ordId": "2234567890123456789",
+      "ordType": "limit",
+      "pnl": "0",
+      "posSide": "long",
+      "px": "2300",
+      "pxType": "",
+      "pxUsd": "",
+      "pxVol": "",
+      "quickMgnType": "",
+      "rebate": "0",
+      "rebateCcy": "USDT",
+      "reduceOnly": "false",
+      "side": "buy",
+      "slOrdPx": "",
+      "slTriggerPx": "",
+      "slTriggerPxType": "",
+      "source": "",
+      "state": "live",
+      "stpId": "",
+      "stpMode": "cancel_maker",
+      "sz": "0.01",
+      "tag": "",
+      "tdMode": "cross",
+      "tgtCcy": "",
+      "tpOrdPx": "",
+      "tpTriggerPx": "",
+      "tpTriggerPxType": "",
+      "tradeId": "0",
+      "uTime": "1746947317000"
+    }
+  ]
+}

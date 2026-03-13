@@ -69,8 +69,8 @@ use super::{
     handler::{HandlerCommand, OKXWsFeedHandler},
     messages::{
         OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
-        WsAmendOrderParamsBuilder, WsCancelOrderParamsBuilder, WsMassCancelParams,
-        WsPostAlgoOrderParamsBuilder, WsPostOrderParamsBuilder,
+        WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
+        WsMassCancelParams, WsPostAlgoOrderParamsBuilder, WsPostOrderParamsBuilder,
     },
     subscription::topic_from_subscription_arg,
 };
@@ -1898,6 +1898,7 @@ impl OKXWebSocketClient {
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
+        attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
     ) -> Result<(), OKXWsError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXWsError::ClientError(format!(
@@ -1974,6 +1975,10 @@ impl OKXWebSocketClient {
                     builder.reduce_only(ro);
                 }
             }
+        }
+
+        if let Some(attach_algo_ords) = attach_algo_ords {
+            builder.attach_algo_ords(attach_algo_ords);
         }
 
         // For SPOT market orders in Cash mode, handle tgtCcy parameter
@@ -2986,6 +2991,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: None,
             fee_ccy: Ustr::from("USDT"),
             fill_px: "0".to_string(),

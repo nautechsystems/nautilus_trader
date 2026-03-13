@@ -74,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None, // reduce_only
             None, // quote_quantity
             None, // position_side
+            None, // attach_algo_ords
         )
         .await;
 
