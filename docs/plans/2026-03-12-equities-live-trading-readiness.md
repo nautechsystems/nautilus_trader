@@ -218,6 +218,23 @@ git commit -m "design: add shared equities account scope contract"
 - Live `/api/v1/balances?profile=equities` still serves the shared Hyperliquid position rows for `NVDA`, `COIN`, and `GOOGL`, with account totals still present (`account_equity_display = "$8260.66"`, `withdrawable_display = "$0.00"` at the time of the check).
 - Result: the remaining gating step is the controlled live canary itself, not another known Makerv3 shared-account reconciliation gap.
 
+## 2026-03-13 20:00 UTC Update
+
+- A late quality review found two real edge cases in the new Makerv3 shared-account reconciliation path:
+  - borrowed shared inventory freshness was incorrectly tied to republish time
+  - older shared rows could override newer local maker activity
+- Follow-up fixes landed in the same worktree PR:
+  - shared-account fallback now uses projection `server_ts_ms` for freshness, not raw position-event age
+  - published portfolio components now carry the borrowed projection timestamp instead of `now`
+  - shared rows older than local maker activity are rejected
+- Fresh local verification after that follow-up is green: `10 passed` across the shared projection + Makerv3 reconciliation slice, and `git diff --check` is clean.
+- Restarted all 10 retained `flux@equities-node-*.service` Makerv3 nodes again from the worktree after the follow-up fix.
+- Final live verification after the second restart still shows the intended strategy truth:
+  - `googl_tradexyz_makerv3`: `local_qty_base = -6`, `local_inventory_source = "shared_account_projection"`
+  - `nvda_tradexyz_makerv3`: `local_qty_base = -9.111`, `local_inventory_source = "shared_account_projection"`
+  - `tsla_tradexyz_makerv3`: remains `0`
+- `/api/v1/balances?profile=equities` still serves the shared Hyperliquid `NVDA`, `COIN`, and `GOOGL` positions, with `account_equity_display = "$8274.88"` and `withdrawable_display = "$0.00"` at the time of the check.
+
 ## 2026-03-13 11:24 UTC Update
 
 - Hyperliquid `xyz` shared-account balances integration is locally green in the worktree:
