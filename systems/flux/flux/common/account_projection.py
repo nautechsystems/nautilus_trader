@@ -19,6 +19,35 @@ class ProfileAccountProviderBinding:
     provider: AccountProjectionProvider | None
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out == out and out not in (float("inf"), float("-inf")) else None
+
+
+def _format_money_display(value: float) -> str:
+    return f"{'-$' if value < 0 else '$'}{abs(value):.2f}"
+
+
+def _merge_projection_totals(
+    current: dict[str, Any],
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = dict(current)
+    for key in ("account_equity_raw", "withdrawable_raw"):
+        value = _safe_float(incoming.get(key))
+        if value is None:
+            continue
+        merged[key] = (_safe_float(merged.get(key)) or 0.0) + value
+    if "account_equity_raw" in merged:
+        merged["account_equity_display"] = _format_money_display(float(merged["account_equity_raw"]))
+    if "withdrawable_raw" in merged:
+        merged["withdrawable_display"] = _format_money_display(float(merged["withdrawable_raw"]))
+    return merged
+
+
 def _profile_account_row_id(
     *,
     profile_id: str,
@@ -71,6 +100,7 @@ def build_profile_account_snapshot(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     account_scope_ids: list[str] = []
+    totals: dict[str, Any] = {}
 
     for binding in bindings:
         provider = binding.provider
@@ -79,6 +109,9 @@ def build_profile_account_snapshot(
         provider_snapshot = provider.snapshot()
         if not isinstance(provider_snapshot, Mapping):
             continue
+        provider_totals = provider_snapshot.get("totals")
+        if isinstance(provider_totals, Mapping):
+            totals = _merge_projection_totals(totals, provider_totals)
 
         source_scope = str(provider_snapshot.get("source_scope") or "shared_account").strip() or "shared_account"
         account_scope_id = str(binding.account_scope_id).strip()
@@ -115,6 +148,7 @@ def build_profile_account_snapshot(
         "profile_id": profile_id,
         "account_scope_ids": account_scope_ids,
         "rows": rows,
+        "totals": totals,
         "server_ts_ms": int(ts_ms),
     }
 

@@ -52,6 +52,7 @@ struct TestServerState {
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_info_request: Arc<tokio::sync::Mutex<Option<Value>>>,
+    info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     rate_limit_after: Arc<AtomicUsize>,
 }
@@ -62,6 +63,7 @@ impl Default for TestServerState {
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
             last_info_request: Arc::new(tokio::sync::Mutex::new(None)),
+            info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
         }
@@ -103,6 +105,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
     };
 
     *state.last_info_request.lock().await = Some(request_body.clone());
+    state.info_requests.lock().await.push(request_body.clone());
 
     let request_type = request_body
         .get("type")
@@ -111,7 +114,32 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
 
     match request_type {
         "meta" => {
-            let meta = load_json("http_meta_perp_sample.json");
+            let meta = if request_body.get("dex").and_then(|v| v.as_str()) == Some("xyz") {
+                json!({
+                    "universe": [
+                        {
+                            "name": "xyz:NVDA",
+                            "szDecimals": 3,
+                            "maxLeverage": 5,
+                            "onlyIsolated": false
+                        },
+                        {
+                            "name": "xyz:COIN",
+                            "szDecimals": 3,
+                            "maxLeverage": 5,
+                            "onlyIsolated": false
+                        },
+                        {
+                            "name": "xyz:GOOGL",
+                            "szDecimals": 0,
+                            "maxLeverage": 5,
+                            "onlyIsolated": false
+                        }
+                    ]
+                })
+            } else {
+                load_json("http_meta_perp_sample.json")
+            };
             Json(meta).into_response()
         }
         "metaAndAssetCtxs" => {
@@ -132,24 +160,95 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             "userAddRate": "0.00015"
         }))
         .into_response(),
-        "clearinghouseState" => Json(json!({
-            "marginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMarginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMaintenanceMarginUsed": "0.0",
-            "withdrawable": "10000.0",
-            "assetPositions": []
-        }))
-        .into_response(),
+        "clearinghouseState" => {
+            let body = if request_body.get("dex").and_then(|v| v.as_str()) == Some("xyz") {
+                json!({
+                    "marginSummary": {
+                        "accountValue": "8314.466609",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "7906.28792",
+                        "totalRawUsd": "16331.079679"
+                    },
+                    "crossMarginSummary": {
+                        "accountValue": "8314.466609",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "7906.28792",
+                        "totalRawUsd": "16331.079679"
+                    },
+                    "crossMaintenanceMarginUsed": "0.0",
+                    "withdrawable": "0.0",
+                    "assetPositions": [
+                        {
+                            "position": {
+                                "coin": "xyz:NVDA",
+                                "entryPx": "183.22",
+                                "szi": "-9.111",
+                                "leverage": {"type": "cross", "value": 1},
+                                "positionValue": "1669.32042",
+                                "unrealizedPnl": "0.0",
+                                "returnOnEquity": "0.0",
+                                "marginUsed": "0.0",
+                                "maxLeverage": 5,
+                                "liquidationPx": null,
+                                "cumFunding": {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+                            },
+                            "type": "oneWay"
+                        },
+                        {
+                            "position": {
+                                "coin": "xyz:COIN",
+                                "entryPx": "194.5",
+                                "szi": "-22.715",
+                                "leverage": {"type": "cross", "value": 1},
+                                "positionValue": "4418.0675",
+                                "unrealizedPnl": "0.0",
+                                "returnOnEquity": "0.0",
+                                "marginUsed": "0.0",
+                                "maxLeverage": 5,
+                                "liquidationPx": null,
+                                "cumFunding": {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+                            },
+                            "type": "oneWay"
+                        },
+                        {
+                            "position": {
+                                "coin": "xyz:GOOGL",
+                                "entryPx": "303.15",
+                                "szi": "-6",
+                                "leverage": {"type": "cross", "value": 1},
+                                "positionValue": "1818.9",
+                                "unrealizedPnl": "0.0",
+                                "returnOnEquity": "0.0",
+                                "marginUsed": "0.0",
+                                "maxLeverage": 5,
+                                "liquidationPx": null,
+                                "cumFunding": {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"}
+                            },
+                            "type": "oneWay"
+                        }
+                    ]
+                })
+            } else {
+                json!({
+                    "marginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMarginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMaintenanceMarginUsed": "0.0",
+                    "withdrawable": "10000.0",
+                    "assetPositions": []
+                })
+            };
+            Json(body).into_response()
+        }
         _ => Json(json!({})).into_response(),
     }
 }
@@ -812,5 +911,82 @@ async fn test_http_client_request_account_state_with_explicit_dex() {
         request_body["user"],
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+    assert_eq!(request_body["dex"], "xyz");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_request_position_status_reports_with_explicit_dex_returns_builder_positions(
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+
+    let reports = client
+        .request_position_status_reports_with_dex(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            None,
+            Some("xyz"),
+        )
+        .await
+        .unwrap();
+
+    let instrument_ids: Vec<String> = reports
+        .iter()
+        .map(|report| report.instrument_id.to_string())
+        .collect();
+    assert_eq!(
+        instrument_ids,
+        vec![
+            "xyz:NVDA-USD-PERP.HYPERLIQUID".to_string(),
+            "xyz:COIN-USD-PERP.HYPERLIQUID".to_string(),
+            "xyz:GOOGL-USD-PERP.HYPERLIQUID".to_string(),
+        ]
+    );
+
+    let info_requests = state.info_requests.lock().await.clone();
+    assert!(info_requests.iter().any(|body| {
+        body["type"] == "clearinghouseState"
+            && body["user"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            && body["dex"] == "xyz"
+    }));
+    assert!(
+        info_requests
+            .iter()
+            .any(|body| body["type"] == "meta" && body["dex"] == "xyz")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_request_position_status_reports_with_dex_loads_builder_positions() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+
+    let reports = client
+        .request_position_status_reports_with_dex(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            None,
+            Some("xyz"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 3);
+    assert_eq!(reports[0].instrument_id, "xyz:NVDA-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[1].instrument_id, "xyz:COIN-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[2].instrument_id, "xyz:GOOGL-USD-PERP.HYPERLIQUID".into());
+
+    let request_body = state.last_info_request.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "meta");
     assert_eq!(request_body["dex"], "xyz");
 }

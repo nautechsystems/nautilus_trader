@@ -326,6 +326,10 @@ def _derive_contract_type(
     if venue_text.endswith("_LINEAR"):
         return "linear"
     if is_position:
+        if venue_text.split("_", maxsplit=1)[0] == "IBKR":
+            return "equity"
+        if raw_symbol:
+            return "spot"
         return "perp"
     if raw_symbol:
         return "spot"
@@ -414,6 +418,8 @@ def canonical_naming_fields(
         and not instrument_text
     ):
         display_name_short = display_asset
+    elif contract_type == "equity":
+        display_name_short = f"{display_asset} Stock".strip() if display_asset else "Stock"
     elif product_type == "perp":
         display_name_short = f"{display_asset} Perp".strip()
     else:

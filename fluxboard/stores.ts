@@ -1299,6 +1299,10 @@ function balancesTotalsEqual(prev: BalancesTotals | null, next: BalancesTotals |
     && (prev.stable_mv_display ?? null) === (next.stable_mv_display ?? null)
     && (prev.non_stable_mv_raw ?? null) === (next.non_stable_mv_raw ?? null)
     && (prev.non_stable_mv_display ?? null) === (next.non_stable_mv_display ?? null)
+    && (prev.account_equity_raw ?? null) === (next.account_equity_raw ?? null)
+    && (prev.account_equity_display ?? null) === (next.account_equity_display ?? null)
+    && (prev.withdrawable_raw ?? null) === (next.withdrawable_raw ?? null)
+    && (prev.withdrawable_display ?? null) === (next.withdrawable_display ?? null)
   );
 }
 

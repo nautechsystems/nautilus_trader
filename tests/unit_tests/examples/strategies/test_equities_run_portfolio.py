@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import time
+import tomllib
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -23,6 +25,39 @@ from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.core import nautilus_pyo3
+
+CORE_PROD_STRATEGY_IDS = (
+    "aapl_tradexyz_makerv3",
+    "amd_tradexyz_makerv3",
+    "amzn_tradexyz_makerv3",
+    "googl_tradexyz_makerv3",
+    "meta_tradexyz_makerv3",
+    "msft_tradexyz_makerv3",
+    "nvda_tradexyz_makerv3",
+    "orcl_tradexyz_makerv3",
+    "pltr_tradexyz_makerv3",
+    "tsla_tradexyz_makerv3",
+)
+CORE_PROD_STRATEGY_IDS_BY_ASSET = {
+    "AAPL": ("aapl_tradexyz_makerv3",),
+    "AMD": ("amd_tradexyz_makerv3",),
+    "AMZN": ("amzn_tradexyz_makerv3",),
+    "GOOGL": ("googl_tradexyz_makerv3",),
+    "META": ("meta_tradexyz_makerv3",),
+    "MSFT": ("msft_tradexyz_makerv3",),
+    "NVDA": ("nvda_tradexyz_makerv3",),
+    "ORCL": ("orcl_tradexyz_makerv3",),
+    "PLTR": ("pltr_tradexyz_makerv3",),
+    "TSLA": ("tsla_tradexyz_makerv3",),
+}
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _load_toml(path: Path) -> dict:
+    return tomllib.load(path.open("rb"))
 
 
 class _FakePipeline:
@@ -82,8 +117,10 @@ class _CountingAccountProjectionProvider:
         self,
         *,
         rows: list[dict[str, Any]],
+        totals: dict[str, Any] | None = None,
     ) -> None:
         self._rows = rows
+        self._totals = totals or {}
         self.refresh_calls = 0
 
     def refresh(self) -> None:
@@ -92,6 +129,7 @@ class _CountingAccountProjectionProvider:
     def snapshot(self) -> dict[str, Any] | None:
         return {
             "rows": list(self._rows),
+            "totals": dict(self._totals),
         }
 
 
@@ -169,6 +207,17 @@ def test_equities_portfolio_allowlist_uses_shared_parser() -> None:
         descriptor=descriptor,
         fallback=["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
     ) == ["aapl_tradexyz_makerv3"]
+
+
+def test_equities_live_config_prunes_shared_portfolio_contracts_to_core_prod_basket() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    allowlist = _equities_strategy_ids(config["api"])
+    required = _required_strategy_ids(config["api"], fallback=allowlist)
+
+    assert allowlist == list(CORE_PROD_STRATEGY_IDS)
+    assert required == list(CORE_PROD_STRATEGY_IDS)
+    assert _portfolio_base_assets(config) == list(CORE_PROD_STRATEGY_IDS_BY_ASSET)
+    assert _strategy_ids_by_asset(config, allowlist=allowlist) == CORE_PROD_STRATEGY_IDS_BY_ASSET
 
 
 def test_portfolio_base_assets_dedupes_contract_bases() -> None:
@@ -472,19 +521,13 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     captured_client_kwargs: list[dict[str, Any]] = []
     captured_account_ids: list[str] = []
     captured_account_addresses: list[str] = []
+    captured_info_payloads: list[dict[str, Any]] = []
 
     class _FakeHyperliquidAccountState:
         def to_dict(self) -> dict[str, Any]:
             return {
                 "account_id": "HYPERLIQUID-master",
-                "balances": [
-                    {
-                        "currency": "USDC",
-                        "free": "1234.50",
-                        "locked": "0.00",
-                        "total": "1234.50",
-                    },
-                ],
+                "balances": [],
             }
 
     class _FakeHyperliquidClient:
@@ -513,11 +556,35 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
                 nautilus_pyo3.PositionStatusReport(
                     account_id=nautilus_pyo3.AccountId("HYPERLIQUID-master"),
                     instrument_id=nautilus_pyo3.InstrumentId.from_str(
-                        "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "xyz:NVDA-USD-PERP.HYPERLIQUID",
                     ),
-                    position_side=nautilus_pyo3.PositionSide.LONG,
-                    quantity=nautilus_pyo3.Quantity.from_str("3"),
-                    avg_px_open=150.0,
+                    position_side=nautilus_pyo3.PositionSide.SHORT,
+                    quantity=nautilus_pyo3.Quantity.from_str("9.111"),
+                    avg_px_open=183.22,
+                    ts_last=1_700_000_000_010,
+                    ts_init=1_700_000_000_010,
+                    report_id=nautilus_pyo3.UUID4(),
+                ),
+                nautilus_pyo3.PositionStatusReport(
+                    account_id=nautilus_pyo3.AccountId("HYPERLIQUID-master"),
+                    instrument_id=nautilus_pyo3.InstrumentId.from_str(
+                        "xyz:COIN-USD-PERP.HYPERLIQUID",
+                    ),
+                    position_side=nautilus_pyo3.PositionSide.SHORT,
+                    quantity=nautilus_pyo3.Quantity.from_str("22.715"),
+                    avg_px_open=194.5,
+                    ts_last=1_700_000_000_020,
+                    ts_init=1_700_000_000_020,
+                    report_id=nautilus_pyo3.UUID4(),
+                ),
+                nautilus_pyo3.PositionStatusReport(
+                    account_id=nautilus_pyo3.AccountId("HYPERLIQUID-master"),
+                    instrument_id=nautilus_pyo3.InstrumentId.from_str(
+                        "xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                    ),
+                    position_side=nautilus_pyo3.PositionSide.SHORT,
+                    quantity=nautilus_pyo3.Quantity.from_str("6"),
+                    avg_px_open=303.15,
                     ts_last=1_700_000_000_000,
                     ts_init=1_700_000_000_000,
                     report_id=nautilus_pyo3.UUID4(),
@@ -540,6 +607,35 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
             fee_query_address=vault_account,
             ws_subscription_address=vault_account,
             source="vault_address",
+        ),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts._post_hyperliquid_info",
+        lambda **kwargs: (
+            captured_info_payloads.append(dict(kwargs["payload"]))
+            or (
+                {
+                    "marginSummary": {
+                        "accountValue": "7478.386872",
+                    },
+                    "withdrawable": "7478.386872",
+                }
+                if kwargs["payload"]["type"] == "clearinghouseState"
+                else {
+                    "balances": [
+                        {
+                            "coin": "USDC",
+                            "total": "0.002096",
+                            "hold": "0.0",
+                        },
+                        {
+                            "coin": "USDE",
+                            "total": "1075.27105006",
+                            "hold": "0.0",
+                        },
+                    ],
+                }
+            )
         ),
     )
     config: dict[str, Any] = {
@@ -584,13 +680,32 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     ]
     assert captured_account_ids == ["HYPERLIQUID-master"]
     assert captured_account_addresses == [vault_account]
+    assert captured_info_payloads == [
+        {"type": "clearinghouseState", "user": vault_account, "dex": "xyz"},
+        {"type": "spotClearinghouseState", "user": vault_account, "dex": "xyz"},
+    ]
     assert {
-        (row["exchange"], row["asset"], row.get("kind"))
+        (row["exchange"], row["asset"], row.get("kind"), row.get("contract_type"))
         for row in snapshot["rows"]
-    } == {
-        ("hyperliquid", "USDC", None),
-        ("hyperliquid", "AAPL", "position"),
+    } >= {
+        ("hyperliquid", "USDC", None, "cash"),
+        ("hyperliquid", "USDE", None, "cash"),
+        ("hyperliquid", "NVDA", "position", "perp"),
+        ("hyperliquid", "COIN", "position", "perp"),
+        ("hyperliquid", "GOOGL", "position", "perp"),
     }
+    hyperliquid_position_rows = [
+        row
+        for row in snapshot["rows"]
+        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
+    ]
+    assert {row["instrument_id"] for row in hyperliquid_position_rows} >= {
+        "XYZ:NVDA-USD-PERP.HYPERLIQUID",
+        "XYZ:COIN-USD-PERP.HYPERLIQUID",
+        "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+    }
+    assert snapshot["totals"]["account_equity_raw"] == pytest.approx(7478.386872)
+    assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(7478.386872)
 
 
 
@@ -760,6 +875,76 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     assert "inventory" not in snapshot
     assert snapshot["accounts"]["rows"][0]["account_scope_id"] == "ibkr.reference.main"
     assert snapshot["balances"]["rows"][0]["strategy_id"] == "equities"
+
+
+def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positions_and_totals() -> None:
+    now_ms_value = int(time.time() * 1000)
+    provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDE",
+                "total": "1075.37415731",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "source_scope": "shared_account",
+            },
+            {
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "NVDA",
+                "kind": "position",
+                "instrument_id": "XYZ:NVDA-USD-PERP.HYPERLIQUID",
+                "signed_qty": "-9.111",
+                "quantity": "9.111",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "source_scope": "shared_account",
+            },
+        ],
+        totals={
+            "account_equity_raw": 8314.466609,
+            "withdrawable_raw": 0.0,
+        },
+    )
+    fake_redis = _FakeRedis()
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv3"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["AAPL"]
+    aggregator._strategy_ids_by_asset = {
+        "AAPL": ("aapl_tradexyz_makerv3",),
+    }
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["hyperliquid.xyz.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="hyperliquid.xyz.main",
+            source_strategy_ids=("aapl_tradexyz_makerv3",),
+            provider=provider,
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert raw_snapshot is not None
+    snapshot = json.loads(raw_snapshot)
+
+    hyperliquid_rows = [
+        row for row in snapshot["accounts"]["rows"] if row["exchange"] == "hyperliquid"
+    ]
+    assert {row["asset"] for row in hyperliquid_rows} >= {"USDE", "NVDA"}
+    assert {row.get("kind") for row in hyperliquid_rows if row["asset"] == "NVDA"} == {"position"}
+    assert snapshot["accounts"]["totals"]["account_equity_raw"] == pytest.approx(8314.466609)
+    assert snapshot["accounts"]["totals"]["withdrawable_raw"] == pytest.approx(0.0)
 
 
 def test_equities_portfolio_aggregator_run_closes_redis_on_exit_with_legacy_disconnect(

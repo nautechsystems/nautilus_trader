@@ -116,6 +116,7 @@ def build_portfolio_snapshot_v2(
     inventory_by_asset: Mapping[str, Mapping[str, Any]],
     balance_rows: Sequence[Mapping[str, Any]],
     account_rows: Sequence[Mapping[str, Any]],
+    account_totals: Mapping[str, Any] | None = None,
     now_ms_value: int,
 ) -> dict[str, Any]:
     normalized_inventory = normalize_inventory_by_asset(inventory_by_asset)
@@ -133,6 +134,8 @@ def build_portfolio_snapshot_v2(
         },
         "server_ts_ms": int(now_ms_value),
     }
+    if isinstance(account_totals, Mapping) and account_totals:
+        payload["accounts"]["totals"] = dict(account_totals)
     _apply_single_asset_legacy_aliases(
         payload=payload,
         normalized_inventory=normalized_inventory,
@@ -170,6 +173,7 @@ def build_portfolio_snapshot(
         inventory_by_asset={base_currency.upper(): inventory},
         balance_rows=balance_rows,
         account_rows=[],
+        account_totals=None,
         now_ms_value=now_ms_value,
     )
 

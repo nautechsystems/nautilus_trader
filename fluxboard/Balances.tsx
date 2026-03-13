@@ -40,13 +40,16 @@ import {
   colors,
   STALE_THRESHOLDS,
 } from './lib/tokens';
+import { resolvePathnameProfile, type PathProfile } from './config/uiProfiles';
 
 import { cn } from './lib/utils';
 
 const REFRESH_MS = INTERVALS.BALANCES_POLL;
-const FILTER_STORAGE_KEY = 'balances:filters:v2';
-const LEGACY_FILTER_STORAGE_KEY = 'balances:filters:v1';
-const EXPANDED_STORAGE_KEY = 'balances:expanded:v1';
+const FILTER_STORAGE_KEY_PREFIX = 'balances:filters:v3';
+const LEGACY_FILTER_STORAGE_KEY = 'balances:filters:v2';
+const LEGACY_FILTER_STORAGE_KEY_V1 = 'balances:filters:v1';
+const EXPANDED_STORAGE_KEY_PREFIX = 'balances:expanded:v2';
+const LEGACY_EXPANDED_STORAGE_KEY = 'balances:expanded:v1';
 
 type SortKey = 'mv' | 'time' | 'coin' | 'qty' | 'mark';
 type SortDir = 'asc' | 'desc';
@@ -86,6 +89,13 @@ const DEFAULT_FILTERS: FilterState = {
   columnFilters: {},
 };
 
+const getStorageProfile = (): PathProfile => {
+  if (typeof window === 'undefined') return 'default';
+  return resolvePathnameProfile(window.location?.pathname);
+};
+
+const scopedStorageKey = (prefix: string, profile: PathProfile): string => `${prefix}:${profile}`;
+
 const getStoredFilters = (): FilterState => {
   if (typeof window === 'undefined') return DEFAULT_FILTERS;
   try {
@@ -95,7 +105,12 @@ const getStoredFilters = (): FilterState => {
       return JSON.parse(raw);
     };
 
-    const parsed = read(FILTER_STORAGE_KEY) ?? read(LEGACY_FILTER_STORAGE_KEY);
+    const profile = getStorageProfile();
+    const parsed =
+      read(scopedStorageKey(FILTER_STORAGE_KEY_PREFIX, profile))
+      ?? (profile === 'default'
+        ? read(LEGACY_FILTER_STORAGE_KEY) ?? read(LEGACY_FILTER_STORAGE_KEY_V1)
+        : null);
     if (!parsed) return DEFAULT_FILTERS;
 
     return {
@@ -119,7 +134,11 @@ type StoredExpandedState = {
 const getStoredExpanded = (): StoredExpandedState => {
   if (typeof window === 'undefined') return { ids: new Set(), hasStoredPreference: false };
   try {
-    const raw = window.localStorage.getItem(EXPANDED_STORAGE_KEY);
+    const profile = getStorageProfile();
+    const raw = (
+      window.localStorage.getItem(scopedStorageKey(EXPANDED_STORAGE_KEY_PREFIX, profile))
+      ?? (profile === 'default' ? window.localStorage.getItem(LEGACY_EXPANDED_STORAGE_KEY) : null)
+    );
     if (!raw) return { ids: new Set(), hasStoredPreference: false };
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
@@ -139,6 +158,9 @@ const buildChildTooltip = (child: BalanceChildRow): string => {
 };
 
 const ZERO_GUARD = (value: number | null | undefined) => Math.abs(value ?? 0) >= DUST_THRESHOLD;
+const HAS_VISIBLE_BALANCE_EXPOSURE = (
+  row: Pick<BalanceParentRow | BalanceChildRow, 'mv_raw' | 'qty_raw'>,
+) => ZERO_GUARD(row.mv_raw) || ZERO_GUARD(row.qty_raw);
 
 type SortMetrics = {
   canonical: string;
@@ -267,7 +289,10 @@ export default function Balances({
   const persistFilters = useCallback((state: FilterState) => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(
+        scopedStorageKey(FILTER_STORAGE_KEY_PREFIX, getStorageProfile()),
+        JSON.stringify(state),
+      );
     } catch {
       /* ignore persistence errors */
     }
@@ -276,7 +301,10 @@ export default function Balances({
   const persistExpanded = useCallback((ids: Set<string>) => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+      window.localStorage.setItem(
+        scopedStorageKey(EXPANDED_STORAGE_KEY_PREFIX, getStorageProfile()),
+        JSON.stringify(Array.from(ids)),
+      );
     } catch {
       /* ignore persistence errors */
     }
@@ -361,7 +389,7 @@ export default function Balances({
           if (selectedRiskKey && (child.risk_key ?? null) !== selectedRiskKey) {
             return false;
           }
-          return filters.hideZero ? ZERO_GUARD(child.mv_raw) : true;
+          return filters.hideZero ? HAS_VISIBLE_BALANCE_EXPOSURE(child) : true;
         });
         return { parent, children: filteredChildren };
       })
@@ -370,10 +398,7 @@ export default function Balances({
           return false;
         }
         if (!filters.hideZero) return true;
-        if (filters.logicalOnly) {
-          return ZERO_GUARD(parent.mv_raw);
-        }
-        return ZERO_GUARD(parent.mv_raw) || children.length > 0;
+        return HAS_VISIBLE_BALANCE_EXPOSURE(parent) || children.length > 0;
       });
   }, [rows, filters.hideZero, filters.logicalOnly, filters.stableOnly, selectedRiskKey]);
 
@@ -507,15 +532,27 @@ export default function Balances({
 
   const summaryTotals = useMemo(() => {
     if (!totals) return null;
-    const required = [
+    const available = [
       totals.net_mv_raw,
+      totals.net_mv_display,
+      totals.mv_raw,
+      totals.mv_display,
       totals.gross_mv_raw,
+      totals.gross_mv_display,
       totals.long_mv_raw,
+      totals.long_mv_display,
       totals.short_mv_raw,
+      totals.short_mv_display,
       totals.stable_mv_raw,
+      totals.stable_mv_display,
       totals.non_stable_mv_raw,
+      totals.non_stable_mv_display,
+      totals.account_equity_raw,
+      totals.account_equity_display,
+      totals.withdrawable_raw,
+      totals.withdrawable_display,
     ];
-    if (required.some((val) => val === undefined || val === null)) {
+    if (available.every((val) => val === undefined || val === null)) {
       return null;
     }
     return totals;
@@ -978,7 +1015,11 @@ export default function Balances({
             { label: 'Short', raw: summaryTotals.short_mv_raw, display: summaryTotals.short_mv_display },
             { label: 'Stables', raw: summaryTotals.stable_mv_raw, display: summaryTotals.stable_mv_display },
             { label: 'Non-stables (net)', raw: summaryTotals.non_stable_mv_raw, display: summaryTotals.non_stable_mv_display },
-          ].map((item) => (
+            { label: 'Account Equity', raw: summaryTotals.account_equity_raw, display: summaryTotals.account_equity_display },
+            { label: 'Withdrawable', raw: summaryTotals.withdrawable_raw, display: summaryTotals.withdrawable_display },
+          ]
+            .filter((item) => item.display != null || item.raw != null)
+            .map((item) => (
             <div key={item.label} className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-xs uppercase tracking-wide text-text-muted">{item.label}</span>
               <span className="font-semibold">{item.display ?? formatMoney(item.raw ?? 0)}</span>

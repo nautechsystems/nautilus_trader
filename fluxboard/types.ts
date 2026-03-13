@@ -492,6 +492,10 @@ export type BalancesTotals = {
   stable_mv_display?: string | null;
   non_stable_mv_raw?: number | null;
   non_stable_mv_display?: string | null;
+  account_equity_raw?: number | null;
+  account_equity_display?: string | null;
+  withdrawable_raw?: number | null;
+  withdrawable_display?: string | null;
 };
 
 export type RiskGroup = {

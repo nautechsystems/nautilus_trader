@@ -15,6 +15,7 @@ from flux.common.account_projection import ProfileAccountProviderBinding
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.runners.live.hyperliquid_account import _post_hyperliquid_info
 from flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
 from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
 from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
@@ -51,6 +52,77 @@ def _env_value(env_name: str | None) -> str | None:
     if not text:
         return None
     return _optional_text(os.environ.get(text))
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out == out and out not in (float("inf"), float("-inf")) else None
+
+
+def _money_display(value: float) -> str:
+    return f"{'-$' if value < 0 else '$'}{abs(value):.2f}"
+
+
+def _extract_hyperliquid_account_totals(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+
+    margin_summary = payload.get("marginSummary")
+    if not isinstance(margin_summary, Mapping):
+        margin_summary = payload.get("crossMarginSummary")
+    if not isinstance(margin_summary, Mapping):
+        margin_summary = {}
+
+    account_value = _safe_float(
+        margin_summary.get("accountValue") if isinstance(margin_summary, Mapping) else None,
+    )
+    if account_value is None:
+        account_value = _safe_float(payload.get("accountValue"))
+
+    withdrawable = _safe_float(payload.get("withdrawable"))
+
+    totals: dict[str, Any] = {}
+    if account_value is not None:
+        totals["account_equity_raw"] = account_value
+        totals["account_equity_display"] = _money_display(account_value)
+    if withdrawable is not None:
+        totals["withdrawable_raw"] = withdrawable
+        totals["withdrawable_display"] = _money_display(withdrawable)
+    return totals
+
+
+def _extract_hyperliquid_spot_balances(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Mapping):
+        return []
+    raw_balances = payload.get("balances")
+    if not isinstance(raw_balances, list):
+        return []
+
+    balances: list[dict[str, Any]] = []
+    for raw_balance in raw_balances:
+        if not isinstance(raw_balance, Mapping):
+            continue
+        asset = _optional_text(
+            raw_balance.get("coin")
+            or raw_balance.get("currency")
+            or raw_balance.get("asset"),
+        )
+        total = _optional_text(raw_balance.get("total") or raw_balance.get("free"))
+        locked = _optional_text(raw_balance.get("hold") or raw_balance.get("locked")) or "0"
+        if asset is None or total is None:
+            continue
+        balances.append(
+            {
+                "currency": asset,
+                "free": total,
+                "locked": locked,
+                "total": total,
+            },
+        )
+    return balances
 
 
 class HyperliquidAccountProjectionProvider:
@@ -125,23 +197,29 @@ class HyperliquidAccountProjectionProvider:
 
     async def _fetch_snapshot(self) -> dict[str, Any]:
         request_kwargs = self._request_kwargs()
-        account_state = await self._client.request_account_state(**request_kwargs)
         positions = await self._client.request_position_status_reports(**request_kwargs)
-
-        account_state_payload = (
-            dict(account_state.to_dict())
-            if hasattr(account_state, "to_dict")
-            else {}
+        account_id = "HYPERLIQUID-master"
+        account_query_address = _optional_text(request_kwargs.get("account_address"))
+        ts_ms = int(time.time() * 1000)
+        clearinghouse_payload = _post_hyperliquid_info(
+            payload={
+                "type": "clearinghouseState",
+                "user": account_query_address,
+                **({"dex": self._config.dex} if self._config.dex is not None else {}),
+            },
+            testnet=self._config.testnet,
+            timeout_secs=self._config.http_timeout_secs,
+            http_proxy_url=self._config.http_proxy_url,
         )
-        account_id = (
-            _optional_text(account_state_payload.get("account_id"))
-            or _optional_text(request_kwargs.get("account_address"))
-            or "HYPERLIQUID"
-        )
-        ts_ms = int(
-            account_state_payload.get("ts_event")
-            or account_state_payload.get("ts_init")
-            or time.time() * 1000
+        spot_payload = _post_hyperliquid_info(
+            payload={
+                "type": "spotClearinghouseState",
+                "user": account_query_address,
+                **({"dex": self._config.dex} if self._config.dex is not None else {}),
+            },
+            testnet=self._config.testnet,
+            timeout_secs=self._config.http_timeout_secs,
+            http_proxy_url=self._config.http_proxy_url,
         )
 
         raw_positions: list[dict[str, Any]] = []
@@ -168,7 +246,7 @@ class HyperliquidAccountProjectionProvider:
                         {
                             "account_id": account_id,
                             "venue": "hyperliquid",
-                            "balances": list(account_state_payload.get("balances") or []),
+                            "balances": _extract_hyperliquid_spot_balances(spot_payload),
                             "ts_ms": ts_ms,
                         },
                     ],
@@ -200,6 +278,7 @@ class HyperliquidAccountProjectionProvider:
         return {
             "source_scope": "shared_account",
             "rows": rows,
+            "totals": _extract_hyperliquid_account_totals(clearinghouse_payload),
         }
 
 

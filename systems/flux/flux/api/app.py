@@ -1858,6 +1858,11 @@ def create_flux_api_app(  # noqa: C901
                         base_currency = decode_text(portfolio_snapshot.get("base_currency")).strip().upper()
                         if not base_currency and len(inventory_summary["inventory_by_asset"]) == 1:
                             base_currency = next(iter(inventory_summary["inventory_by_asset"]))
+                        totals = _balances_totals(rows)
+                        if isinstance(snapshot_accounts, Mapping):
+                            account_totals = snapshot_accounts.get("totals")
+                            if isinstance(account_totals, Mapping):
+                                totals.update(dict(account_totals))
                         total_rows = len(rows)
                         return _ok(
                             data={
@@ -1866,7 +1871,7 @@ def create_flux_api_app(  # noqa: C901
                                 "count": total_rows,
                                 "total": total_rows,
                                 "limit": limit,
-                                "totals": _balances_totals(rows),
+                                "totals": totals,
                                 "risk_groups": risk_groups,
                                 "server_ts_ms": response_ts_ms,
                                 "portfolio_id": decode_text(

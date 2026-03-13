@@ -37,6 +37,31 @@ def _optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out == out and out not in (float("inf"), float("-inf")) else None
+
+
+def _merge_account_totals(
+    current: dict[str, Any],
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = dict(current)
+    for key in ("account_equity_raw", "withdrawable_raw"):
+        value = _safe_float(incoming.get(key))
+        if value is None:
+            continue
+        merged[key] = (_safe_float(merged.get(key)) or 0.0) + value
+    if "account_equity_raw" in merged:
+        merged["account_equity_display"] = f"${merged['account_equity_raw']:.2f}"
+    if "withdrawable_raw" in merged:
+        merged["withdrawable_display"] = f"${merged['withdrawable_raw']:.2f}"
+    return merged
+
+
 def parse_strategy_ids(api_cfg: dict[str, Any], *, descriptor: StrategySetDescriptor) -> list[str]:
     raw = api_cfg.get(descriptor.strategy_ids_field) or []
     if not isinstance(raw, list):
@@ -207,8 +232,13 @@ class StrategySetPortfolioAggregator:
             schema_version=self._schema_version,
         )
 
-    def _publish_profile_account_projections(self, *, now_ms_value: int) -> list[dict[str, Any]]:
+    def _publish_profile_account_projections(
+        self,
+        *,
+        now_ms_value: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         published_rows: list[dict[str, Any]] = []
+        published_totals: dict[str, Any] = {}
         for binding in getattr(self, "_profile_account_bindings", ()):
             provider = binding.provider
             if provider is None:
@@ -228,7 +258,10 @@ class StrategySetPortfolioAggregator:
                 bindings=[binding],
                 ts_ms=now_ms_value,
             )
-            if not snapshot["rows"]:
+            snapshot_totals = snapshot.get("totals")
+            if isinstance(snapshot_totals, Mapping):
+                published_totals = _merge_account_totals(published_totals, snapshot_totals)
+            if not snapshot["rows"] and not snapshot_totals:
                 continue
             published_rows.extend(
                 dict(row)
@@ -244,11 +277,13 @@ class StrategySetPortfolioAggregator:
                     self._profile_account_projection_channel(account_scope_id=binding.account_scope_id),
                     encoded,
                 )
-        return published_rows
+        return published_rows, published_totals
 
     def recompute_once(self) -> None:
         now_ms_value = int(time.time() * 1000)
-        account_rows = self._publish_profile_account_projections(now_ms_value=now_ms_value)
+        account_rows, account_totals = self._publish_profile_account_projections(
+            now_ms_value=now_ms_value,
+        )
         balances_pipeline = self._redis.pipeline(transaction=False)
         for strategy_id in self._strategy_ids:
             balances_pipeline.get(self._balances_snapshot_key(strategy_id=strategy_id))
@@ -306,6 +341,7 @@ class StrategySetPortfolioAggregator:
             inventory_by_asset=inventory_by_asset,
             balance_rows=merged_balance_rows,
             account_rows=account_rows,
+            account_totals=account_totals,
             now_ms_value=now_ms_value,
         )
         encoded_snapshot = encode_portfolio_snapshot(snapshot)

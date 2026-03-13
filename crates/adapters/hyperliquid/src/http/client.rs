@@ -1921,6 +1921,7 @@ impl HyperliquidHttpClient {
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
+        let mut refreshed_instruments = false;
 
         for position_value in asset_positions {
             // Extract coin from position data
@@ -1932,7 +1933,18 @@ impl HyperliquidHttpClient {
 
             // Get instrument from cache - convert &str to Ustr for lookup
             let coin_ustr = Ustr::from(coin);
-            let instrument = match self.get_or_create_instrument(&coin_ustr, None) {
+            let mut instrument =
+                self.get_or_create_instrument(&coin_ustr, Some(HyperliquidProductType::Perp));
+            if instrument.is_none() && !refreshed_instruments {
+                let instruments = self.request_instruments_with_dex(dex).await?;
+                for inst in instruments {
+                    self.cache_instrument(inst);
+                }
+                refreshed_instruments = true;
+                instrument =
+                    self.get_or_create_instrument(&coin_ustr, Some(HyperliquidProductType::Perp));
+            }
+            let instrument = match instrument {
                 Some(inst) => inst,
                 None => continue, // Skip if instrument not found
             };

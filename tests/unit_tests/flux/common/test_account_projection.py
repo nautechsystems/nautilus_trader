@@ -13,12 +13,15 @@ class _FakeAccountProjectionProvider:
         self,
         *,
         rows: list[dict[str, Any]],
+        totals: dict[str, Any] | None = None,
     ) -> None:
         self._rows = rows
+        self._totals = totals or {}
 
     def snapshot(self) -> dict[str, Any] | None:
         return {
             "rows": list(self._rows),
+            "totals": dict(self._totals),
         }
 
 
@@ -102,6 +105,52 @@ def test_profile_account_projection_assigns_scope_stable_row_ids() -> None:
         "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
         "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:HKD",
     }
+
+
+def test_profile_account_projection_assigns_scope_stable_row_ids_for_hyperliquid_positions_and_totals() -> None:
+    from nautilus_trader.flux.common.account_projection import build_profile_account_snapshot
+
+    snapshot = build_profile_account_snapshot(
+        profile_id="equities",
+        bindings=[
+            ProfileAccountProviderBinding(
+                account_scope_id="hyperliquid.xyz.main",
+                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                provider=_FakeAccountProjectionProvider(
+                    rows=[
+                        {
+                            "exchange": "hyperliquid",
+                            "account": "HYPERLIQUID-master",
+                            "asset": "NVDA",
+                            "kind": "position",
+                            "instrument_id": "XYZ:NVDA-USD-PERP.HYPERLIQUID",
+                            "signed_qty": "-9.111",
+                        },
+                        {
+                            "exchange": "hyperliquid",
+                            "account": "HYPERLIQUID-master",
+                            "asset": "USDE",
+                            "total": "1075.37415731",
+                        },
+                    ],
+                    totals={
+                        "account_equity_raw": 8314.466609,
+                        "withdrawable_raw": 0.0,
+                    },
+                ),
+            ),
+        ],
+        ts_ms=1_700_000_000_000,
+    )
+
+    row_ids = {row["row_id"] for row in snapshot["rows"]}
+
+    assert row_ids == {
+        "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:XYZ:NVDA-USD-PERP.HYPERLIQUID",
+        "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDE",
+    }
+    assert snapshot["totals"]["account_equity_raw"] == pytest.approx(8314.466609)
+    assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(0.0)
 
 
 def test_profile_account_projection_round_trip_preserves_rows_and_scope_keys() -> None:

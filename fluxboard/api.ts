@@ -140,6 +140,15 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function coerceTimestampMs(value: unknown): number | undefined {
+  const ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) return undefined;
+  if (ts < 1e12) return Math.trunc(ts * 1000);
+  if (ts >= 1e18) return Math.trunc(ts / 1e6);
+  if (ts >= 1e15) return Math.trunc(ts / 1e3);
+  return Math.trunc(ts);
+}
+
 function toUpperToken(value: unknown, fallback = 'UNKNOWN'): string {
   const text = String(value ?? '').trim().toUpperCase();
   return text || fallback;
@@ -183,11 +192,12 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
     const canonical = normalizeCoinHint(row);
     const parentId = `${canonical}_LOGICAL`;
     const venue = String(row.exchange ?? row.venue ?? 'unknown').trim().toLowerCase() || 'unknown';
+    const isPosition = String(row.kind ?? '').trim().toLowerCase() === 'position';
     const naming = deriveCanonicalNaming(row, {
       exchange: venue,
       symbol: String(row.symbol ?? '').trim(),
       asset: canonical,
-      isPosition: String(row.kind ?? '').trim().toLowerCase() === 'position',
+      isPosition,
     });
     const childCoin = (() => {
       const preferred = toUpperToken(
@@ -199,10 +209,10 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       }
       return preferred;
     })();
-    const qtyRaw = toFiniteNumber(
-      row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free,
-      0,
-    );
+    const qtyValue = isPosition
+      ? (row.signed_qty ?? row.total ?? row.quantity ?? row.qty ?? row.free)
+      : (row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free);
+    const qtyRaw = toFiniteNumber(qtyValue, 0);
     let mvRaw = toFiniteNumber(
       row.mv_raw ?? row.mv ?? row.notional ?? row.notional_quote ?? row.notional_usd,
       Number.NaN,
@@ -218,7 +228,7 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
         mvRaw = 0;
       }
     }
-    const tsMs = toFiniteNumber(row.ts_ms ?? row.ts ?? row.timestamp, 0);
+    const tsMs = coerceTimestampMs(row.ts_ms ?? row.ts ?? row.timestamp) ?? 0;
 
     const child: BalanceChildRow = {
       id: String(row.row_id ?? `${parentId}:${venue}:${childCoin}:${index}`),
@@ -229,7 +239,7 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       wallet: String(row.account ?? row.account_id ?? '').trim() || null,
       address: String(row.address ?? '').trim() || null,
       label: String(row.label ?? row.kind ?? '').trim() || null,
-      qty_display: String(row.total ?? row.quantity ?? row.signed_qty ?? row.free ?? qtyRaw),
+      qty_display: String(qtyValue ?? qtyRaw),
       qty_raw: qtyRaw,
       mv_display: formatMoneyDisplay(mvRaw),
       mv_raw: mvRaw,
@@ -641,6 +651,8 @@ export function deriveCanonicalNaming(
   if (!contractType) {
     if (venue.endsWith('_SPOT')) contractType = 'spot';
     else if (venue.endsWith('_PERP')) contractType = 'perp';
+    else if (isPosition && venueRoot === 'ibkr') contractType = 'equity';
+    else if (isPosition && rawSymbol) contractType = 'spot';
     else if (isPosition) contractType = 'perp';
     else if (rawSymbol) contractType = 'spot';
     else contractType = 'cash';
@@ -663,7 +675,15 @@ export function deriveCanonicalNaming(
   const displayAsset = inventoryAsset || baseAsset || rawSymbol;
   const displayNameShort = String(
     raw.display_name_short ??
-      (displayAsset ? `${displayAsset} ${productType === 'perp' ? 'Perp' : 'Spot'}` : ''),
+      (
+        displayAsset
+          ? `${displayAsset} ${
+              contractType === 'equity'
+                ? 'Stock'
+                : (productType === 'perp' ? 'Perp' : 'Spot')
+            }`
+          : ''
+      ),
   ).trim();
   const displayNameLong = String(
     raw.display_name_long ??
@@ -1747,7 +1767,9 @@ export const api = {
     const generatedAt =
       typeof payload.generated_at === 'string' && payload.generated_at
         ? payload.generated_at
-        : new Date(toFiniteNumber((payload as Record<string, unknown>).server_ts_ms, Date.now())).toISOString();
+        : new Date(
+            coerceTimestampMs((payload as Record<string, unknown>).server_ts_ms) ?? Date.now(),
+          ).toISOString();
     return {
       ...payload,
       rows,
