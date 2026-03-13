@@ -411,7 +411,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument).unwrap();
+    engine.add_instrument(&instrument).unwrap();
 
     let strategy = SnapshotNettingFlip::new(instrument_id, Quantity::from("1.000"));
     engine.add_strategy(strategy).unwrap();
