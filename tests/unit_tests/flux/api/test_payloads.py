@@ -171,6 +171,33 @@ def test_build_balances_rows_prefers_base_qty_and_preserves_venue_qty_fields() -
     )
 
 
+def test_build_balances_rows_keeps_spot_positions_without_suffix_labeled_spot() -> None:
+    rows = build_balances_rows(
+        raw_snapshot=[
+            {
+                "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                "exchange": "bitget",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT.BITGET",
+                "asset": "PLUME",
+                "signed_qty": "-500",
+                "quantity": "500",
+                "side": "SHORT",
+            },
+        ],
+        strategy_id="plumeusdt_bitget_spot_makerv3",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["product_type"] == "spot"
+    assert row["market_type"] == "spot"
+    assert row["contract_type"] == "spot"
+    assert row["display_name_short"] == "PLUME Spot"
+    assert row["display_name_long"] == "Bitget PLUME Spot"
+    assert row["instrument_uid"] == "bitget:spot:PLUMEUSDT.BITGET"
+
+
 def test_build_balances_rows_preserves_upstream_position_valuation_without_mark() -> None:
     rows = build_balances_rows(
         raw_snapshot=[

@@ -152,6 +152,8 @@ def _first_text(*values: Any) -> str | None:
 
 def _extract_signal_inventory(strategy: Mapping[str, Any]) -> SignalInventory:
     state = _as_mapping(strategy.get("state"))
+    pricing_debug = _as_mapping(state.get("pricing_debug"))
+    skew = _as_mapping(pricing_debug.get("skew"))
     adjustment: Mapping[str, Any] = {}
     pricing_adjustments = strategy.get("pricing_adjustments")
     if isinstance(pricing_adjustments, list):
@@ -198,9 +200,70 @@ def _extract_signal_inventory(strategy: Mapping[str, Any]) -> SignalInventory:
         aggregation_mode=_first_text(
             adjustment.get("aggregation_mode"),
             state.get("aggregation_mode"),
+            strategy.get("aggregation_mode"),
+            skew.get("global_inventory_aggregation_mode"),
+            skew.get("aggregation_mode"),
         ),
         state_name=_decode_text(state.get("state")).lower(),
     )
+
+
+def _row_ts_ms(row: Mapping[str, Any]) -> int:
+    raw = row.get("ts_ms")
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _position_qty_from_rows(rows: list[Mapping[str, Any]]) -> tuple[Decimal | None, str]:
+    position_rows = [
+        row for row in rows if _decode_text(row.get("kind")).lower() == "position"
+    ]
+    if not position_rows:
+        return None, "no_position_rows"
+
+    total = Decimal("0")
+    for row in position_rows:
+        qty = _first_decimal(
+            row.get("signed_qty_base"),
+            row.get("signed_qty"),
+            row.get("quantity_base"),
+            row.get("quantity"),
+        )
+        if qty is None:
+            return None, "position_row_missing_qty"
+        total += qty
+    return total, "position_rows"
+
+
+def _latest_base_asset_qty_from_rows(
+    *,
+    rows: list[Mapping[str, Any]],
+    base_asset: str,
+) -> tuple[Decimal | None, str]:
+    base_rows = [
+        row
+        for row in rows
+        if _decode_text(row.get("kind")).lower() != "position"
+        and _upper_text(row.get("asset")) == base_asset
+    ]
+    if not base_rows:
+        return None, "no_base_asset_rows"
+
+    latest_row = max(
+        base_rows,
+        key=lambda row: (_row_ts_ms(row), _decode_text(row.get("row_id"))),
+    )
+    qty = _first_decimal(
+        latest_row.get("total"),
+        latest_row.get("free"),
+        latest_row.get("quantity"),
+        latest_row.get("qty"),
+    )
+    if qty is None:
+        return None, "base_asset_row_missing_qty"
+    return qty, "latest_base_asset_row"
 
 
 def _strategy_local_qty_from_rows(
@@ -208,38 +271,32 @@ def _strategy_local_qty_from_rows(
     rows: list[Mapping[str, Any]],
     base_asset: str,
     expected_local_qty: Decimal | None,
+    component_local_position_qty: Decimal | None = None,
+    component_local_spot_qty: Decimal | None = None,
 ) -> tuple[Decimal | None, str]:
-    position_rows = [
-        row for row in rows if _decode_text(row.get("kind")).lower() == "position"
-    ]
-    if position_rows:
-        total = Decimal("0")
-        for row in position_rows:
-            qty = _first_decimal(
-                row.get("signed_qty_base"),
-                row.get("signed_qty"),
-                row.get("quantity_base"),
-                row.get("quantity"),
-            )
-            if qty is None:
-                return None, "position_row_missing_qty"
-            total += qty
-        return total, "position_rows"
+    position_total, position_source = _position_qty_from_rows(rows)
+    spot_total, spot_source = _latest_base_asset_qty_from_rows(rows=rows, base_asset=base_asset)
 
-    base_rows = [row for row in rows if _upper_text(row.get("asset")) == base_asset]
-    if base_rows:
+    if component_local_position_qty is not None or component_local_spot_qty is not None:
         total = Decimal("0")
-        for row in base_rows:
-            qty = _first_decimal(
-                row.get("total"),
-                row.get("free"),
-                row.get("quantity"),
-                row.get("qty"),
-            )
-            if qty is None:
-                return None, "base_asset_row_missing_qty"
-            total += qty
-        return total, "base_asset_rows"
+        sources: list[str] = []
+        if component_local_position_qty is not None:
+            if position_total is None:
+                return None, position_source
+            total += position_total
+            sources.append(position_source)
+        if component_local_spot_qty is not None:
+            if spot_total is None:
+                return None, spot_source
+            total += spot_total
+            sources.append(spot_source)
+        return total, "+".join(sources) or "component_rows"
+
+    if position_total is not None:
+        return position_total, position_source
+
+    if spot_total is not None:
+        return spot_total, spot_source
 
     if expected_local_qty == Decimal("0"):
         return Decimal("0"), "absent_true_zero"
@@ -402,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         component = components_by_id.get(strategy_id)
+        component_local_position_qty = None
+        component_local_spot_qty = None
         if component is None:
             _append_error(
                 errors,
@@ -412,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
                 component.get("local_qty_base"),
                 component.get("local_qty"),
             )
+            component_local_position_qty = _first_decimal(component.get("local_position_qty_base"))
+            component_local_spot_qty = _first_decimal(component.get("local_spot_qty"))
             if component_local_qty != signal_row.local_qty_base:
                 _append_error(
                     errors,
@@ -447,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
             rows=rows,
             base_asset=signal_row.base_asset,
             expected_local_qty=signal_row.local_qty_base,
+            component_local_position_qty=component_local_position_qty,
+            component_local_spot_qty=component_local_spot_qty,
         )
         if local_qty_from_rows is None:
             _append_error(

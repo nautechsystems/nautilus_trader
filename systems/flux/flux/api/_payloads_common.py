@@ -311,10 +311,10 @@ def _derive_contract_type(
         return "swap"
     if venue_text.endswith("_LINEAR"):
         return "linear"
-    if is_position:
-        return "perp"
     if raw_symbol:
         return "spot"
+    if is_position:
+        return "perp"
     return "cash"
 
 
