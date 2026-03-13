@@ -90,6 +90,9 @@ Throttle rollback when the strategy is alive but venue pressure is too high:
 - set `max_places_per_side_per_cycle = 1`
 - set `max_total_actions_per_cycle = 1`
 
+In this emergency throttle mode, bounded convergence alternates the first side
+each quote cycle so the ladder does not refill one side only.
+
 Deployment rollback:
 
 - redeploy the previous release

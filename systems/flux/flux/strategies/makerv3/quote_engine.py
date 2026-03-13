@@ -180,6 +180,31 @@ def _worst_backlog_mode(modes: list[str]) -> str:
     return worst_mode
 
 
+def _bounded_convergence_side_order(
+    strategy: MakerV3Strategy,
+) -> tuple[tuple[OrderSide, str], tuple[OrderSide, str]]:
+    start_side = getattr(strategy, "_bounded_convergence_next_start_side", OrderSide.BUY)
+    if start_side == OrderSide.SELL:
+        return (
+            (OrderSide.SELL, "sell"),
+            (OrderSide.BUY, "buy"),
+        )
+    return (
+        (OrderSide.BUY, "buy"),
+        (OrderSide.SELL, "sell"),
+    )
+
+
+def _advance_bounded_convergence_side_order(
+    strategy: MakerV3Strategy,
+    *,
+    current_start_side: OrderSide,
+) -> None:
+    strategy._bounded_convergence_next_start_side = (
+        OrderSide.SELL if current_start_side == OrderSide.BUY else OrderSide.BUY
+    )
+
+
 def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -> dict[str, Any]:
     cancel_reason_counts: dict[str, int] = {}
     for action in plan.cancel_actions:
@@ -829,10 +854,14 @@ def refresh_quotes(  # noqa: C901
         return
 
     if int(pending_backlog.get("unknown_side_count", 0)) > 0:
-        total_oldest_age_ms = pending_backlog["total_oldest_age_ms"]
+        shared_backlog_mode = _classify_pending_cancel_backlog_mode(
+            runtime_params=runtime_params,
+            pending_count=int(pending_backlog["total_count"]),
+            oldest_age_ms=pending_backlog["total_oldest_age_ms"],
+        )
         side_backlog_modes = {
-            OrderSide.BUY: "blocked" if total_oldest_age_ms is None else "soft_throttle",
-            OrderSide.SELL: "blocked" if total_oldest_age_ms is None else "soft_throttle",
+            OrderSide.BUY: shared_backlog_mode,
+            OrderSide.SELL: shared_backlog_mode,
         }
     else:
         side_backlog_modes = {
@@ -907,12 +936,18 @@ def refresh_quotes(  # noqa: C901
         0,
         int(runtime_params.get("max_places_per_side_per_cycle", 0) or 0),
     )
-    side_orders = (
-        (OrderSide.BUY, active_buys, desired_buys),
-        (OrderSide.SELL, active_sells, desired_sells),
+    side_order = _bounded_convergence_side_order(strategy)
+    side_orders = tuple(
+        (
+            side,
+            active_buys if side == OrderSide.BUY else active_sells,
+            desired_buys if side == OrderSide.BUY else desired_sells,
+            side_name,
+        )
+        for side, side_name in side_order
     )
     blocked_after_actions = False
-    for side, side_active_orders, desired_levels in side_orders:
+    for side, side_active_orders, desired_levels, side_name in side_orders:
         backlog_mode = side_backlog_modes[side]
         side_total_actions = remaining_total_actions
         desired_dec = [
@@ -935,7 +970,6 @@ def refresh_quotes(  # noqa: C901
             max_total_actions=side_total_actions,
             backlog_mode=backlog_mode,
         )
-        side_name = "buy" if side == OrderSide.BUY else "sell"
         bounded_convergence[side_name] = _bounded_convergence_summary(side_plan)
 
         side_cancel_count = strategy._rebalance_side(
@@ -1006,6 +1040,10 @@ def refresh_quotes(  # noqa: C901
 
     current_backlog_mode = _worst_backlog_mode(list(side_backlog_modes.values()))
     oldest_pending_cancel_age_ms = pending_backlog["total_oldest_age_ms"]
+    _advance_bounded_convergence_side_order(
+        strategy,
+        current_start_side=side_orders[0][0],
+    )
     if blocked_after_actions or current_backlog_mode == "blocked":
         from_state = getattr(strategy, "_last_state_name", None)
         strategy._last_requote_ns = now_ns

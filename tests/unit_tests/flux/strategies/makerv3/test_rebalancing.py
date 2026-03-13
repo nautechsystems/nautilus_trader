@@ -256,6 +256,30 @@ def test_bounded_side_planner_respects_cancel_place_and_total_budgets() -> None:
     assert len(cancel_actions) + len(place_level_indices) <= 2
 
 
+def test_bounded_side_planner_caps_places_to_available_slots_when_frontier_and_replacements_compete() -> None:
+    result = _bounded_side_plan(
+        side="sell",
+        active_prices=[
+            Decimal("97"),
+            Decimal("98"),
+            Decimal("99"),
+            Decimal("100"),
+            Decimal("101"),
+        ],
+        active_stale=[False, False, False, True, False],
+        desired_levels=_desired_levels("99", "100", "101", "102", "103"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=0,
+        max_place_actions=3,
+        max_total_actions=4,
+        backlog_mode="normal",
+    )
+
+    place_level_indices = list(_result_field(result, "place_level_indices"))
+
+    assert len(place_level_indices) == 1
+
+
 def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels_for_capacity_only() -> None:
     result = _bounded_side_plan(
         side="buy",

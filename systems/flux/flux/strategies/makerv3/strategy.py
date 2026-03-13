@@ -306,6 +306,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._portfolio_inventory_allow_partial_global_risk = False
             self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
             self._last_maker_position_activity_ns = 0
+            self._bounded_convergence_next_start_side = OrderSide.BUY
 
         def on_start(self) -> None:
             """
@@ -333,6 +334,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_actionable_alert_transition.clear()
             self._latest_maker_position_report_snapshot = None
             self._last_maker_position_activity_ns = 0
+            self._bounded_convergence_next_start_side = OrderSide.BUY
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"

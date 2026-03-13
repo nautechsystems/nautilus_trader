@@ -384,18 +384,26 @@ def plan_side_bounded_convergence(
         frontier_place_count = min(len(alignment.frontier_missing_levels), available_slots)
         frontier_place_levels = list(alignment.frontier_missing_levels[:frontier_place_count])
         replacement_place_levels = list(planned_room_replacements) + list(planned_stale_replacements)
-        place_candidates = sorted(
-            set(frontier_place_levels + replacement_place_levels),
-        )
+        place_candidates = replacement_place_levels + frontier_place_levels
 
         remaining_place_budget = place_budget
         remaining_total_budget = total_budget
+        remaining_slot_budget = available_slots
+        seen_level_indices: set[int] = set()
         for level_index in place_candidates:
-            if remaining_place_budget <= 0 or remaining_total_budget <= 0:
+            if (
+                remaining_place_budget <= 0
+                or remaining_total_budget <= 0
+                or remaining_slot_budget <= 0
+            ):
                 break
+            if level_index in seen_level_indices:
+                continue
+            seen_level_indices.add(level_index)
             place_level_indices.append(level_index)
             remaining_place_budget -= 1
             remaining_total_budget -= 1
+            remaining_slot_budget -= 1
     else:
         place_candidates = []
 
