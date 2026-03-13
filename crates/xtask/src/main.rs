@@ -111,7 +111,8 @@ fn section_name(code: &str) -> &str {
     // Extract the 5-digit number portion: NT-XX-YYYYY -> first 3 digits = domain
     let digits = &code[6..11]; // "YYYYY"
     match &digits[..3] {
-        "002" => "Order Book",
+        "001" => "Invalid Book Operations",
+        "002" => "Book Integrity",
         "003" => "Orders",
         "004" => "Data Parsing",
         _ => "Other",
