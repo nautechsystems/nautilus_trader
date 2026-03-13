@@ -769,17 +769,28 @@ def test_tokenmm_strategy_configs_explicitly_set_manage_stop_false() -> None:
         assert "manage_stop = false" in config
 
 
-def test_tokenmm_live_configs_explicitly_disable_generate_missing_orders() -> None:
+def test_tokenmm_live_configs_explicitly_set_generate_missing_orders_policy() -> None:
     repo_root = _repo_root()
-    config_paths = [
-        repo_root / "deploy/tokenmm/tokenmm.live.toml",
-        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
-        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
-    ]
+    expected_flags = {
+        repo_root / "deploy/tokenmm/tokenmm.live.toml": False,
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml": False,
+        _strategy_config_path("plumeusdt_bybit_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_okx_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_bitget_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_bybit_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_bitget_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_binance_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_binance_perp_makerv3"): False,
+    }
 
-    for path in config_paths:
+    for path, expected_enabled in expected_flags.items():
         config = _read(path)
-        assert "exec_generate_missing_orders = false" in config
+        expected_line = (
+            "exec_generate_missing_orders = true"
+            if expected_enabled
+            else "exec_generate_missing_orders = false"
+        )
+        assert expected_line in config
 
 
 def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
