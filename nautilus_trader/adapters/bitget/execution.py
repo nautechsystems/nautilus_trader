@@ -473,6 +473,17 @@ class BitgetExecutionClient(LiveExecutionClient):
         return symbol
 
     @staticmethod
+    def _raw_symbol_from_value(value: Any) -> str:
+        symbol = BitgetExecutionClient._string_value(value).split(".", 1)[0]
+        if not symbol:
+            return ""
+        if symbol.endswith("-PERP"):
+            return symbol[:-5]
+        if BitgetExecutionClient._is_delivery_symbol(symbol):
+            return symbol.rsplit("-", 1)[0]
+        return symbol
+
+    @staticmethod
     def _infer_product_type_from_symbol(symbol: str) -> Any:
         raw_symbol = symbol.split(".", 1)[0]
         if raw_symbol.endswith("-PERP"):
@@ -610,6 +621,64 @@ class BitgetExecutionClient(LiveExecutionClient):
                     return instrument
 
         return None
+
+    @staticmethod
+    def _instrument_id_to_str(instrument: Any) -> str:
+        instrument_id = getattr(instrument, "id", instrument)
+        symbol = getattr(getattr(instrument_id, "symbol", None), "value", None)
+        if symbol is not None:
+            return str(symbol)
+        return str(instrument_id)
+
+    def _resolve_private_position_instrument(
+        self,
+        arg_inst_type: Any,
+        payload: Any,
+    ) -> tuple[Any | None, Any | None, str | None]:
+        raw_symbol = BitgetExecutionClient._raw_symbol_from_value(
+            BitgetExecutionClient._field(payload, "symbol")
+            or BitgetExecutionClient._field(payload, "instId"),
+        )
+        if not raw_symbol:
+            return None, None, None
+
+        inst_type_key = BitgetExecutionClient._product_type_key(arg_inst_type)
+        if inst_type_key != "UTA":
+            instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
+                self,
+                arg_inst_type,
+                raw_symbol,
+            )
+            if instrument is None:
+                return None, None, None
+            return instrument, arg_inst_type, None
+
+        matches: list[tuple[Any, Any]] = []
+        instrument_ids = getattr(self._cache, "instrument_ids", None)
+        cache_get = getattr(self._cache, "instrument", None)
+        if callable(instrument_ids) and callable(cache_get):
+            for instrument_id in instrument_ids(venue=BITGET_VENUE):
+                instrument = cache_get(instrument_id)
+                instrument_raw_symbol = getattr(getattr(instrument, "raw_symbol", None), "value", None)
+                if instrument is None or instrument_raw_symbol != raw_symbol:
+                    continue
+
+                product_type = BitgetExecutionClient._product_type_for_instrument(self, instrument)
+                if BitgetExecutionClient._product_type_key(product_type) == "SPOT":
+                    continue
+                matches.append((instrument, product_type))
+
+        if not matches:
+            return None, None, None
+
+        if len(matches) > 1:
+            candidates = ", ".join(
+                BitgetExecutionClient._instrument_id_to_str(instrument) for instrument, _ in matches
+            )
+            return None, None, f"ambiguous non-spot instrument match for symbol={raw_symbol} candidates={candidates}"
+
+        instrument, product_type = matches[0]
+        return instrument, product_type, None
 
     @staticmethod
     def _order_side_to_api_str(side: OrderSide) -> str:
@@ -962,22 +1031,25 @@ class BitgetExecutionClient(LiveExecutionClient):
         payload: Any,
         product_type: Any,
         fallback_instrument_id: Any | None = None,
+        instrument: Any | None = None,
         ts_init: int | None = None,
     ) -> PositionStatusReport | None:
-        raw_symbol = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "symbol"),
-        ) or (
-            BitgetExecutionClient._raw_symbol_from_instrument_id(fallback_instrument_id)
-            if fallback_instrument_id is not None
-            else ""
-        )
-        instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
-            self,
-            product_type,
-            raw_symbol,
-            fallback_instrument_id=fallback_instrument_id,
-        )
-        if instrument is None:
+        resolved_instrument = instrument
+        if resolved_instrument is None:
+            raw_symbol = BitgetExecutionClient._string_value(
+                BitgetExecutionClient._field(payload, "symbol"),
+            ) or (
+                BitgetExecutionClient._raw_symbol_from_instrument_id(fallback_instrument_id)
+                if fallback_instrument_id is not None
+                else ""
+            )
+            resolved_instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
+                self,
+                product_type,
+                raw_symbol,
+                fallback_instrument_id=fallback_instrument_id,
+            )
+        if resolved_instrument is None:
             return None
 
         if (
@@ -986,7 +1058,7 @@ class BitgetExecutionClient(LiveExecutionClient):
         ):
             self._log.info(
                 "Bitget UTA startup position payload "
-                f"instrument={instrument.id} "
+                f"instrument={resolved_instrument.id} "
                 f"{BitgetExecutionClient._position_payload_debug_summary(payload)}",
             )
 
@@ -1014,9 +1086,9 @@ class BitgetExecutionClient(LiveExecutionClient):
         if total == 0:
             return PositionStatusReport(
                 account_id=self.account_id,
-                instrument_id=instrument.id,
+                instrument_id=resolved_instrument.id,
                 position_side=PositionSide.FLAT,
-                quantity=Quantity.zero(instrument.size_precision),
+                quantity=Quantity.zero(resolved_instrument.size_precision),
                 venue_position_id=venue_position_id,
                 avg_px_open=None,
                 report_id=UUID4(),
@@ -1030,15 +1102,15 @@ class BitgetExecutionClient(LiveExecutionClient):
         ).lower()
         position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
         try:
-            quantity = instrument.make_qty(str(abs(total)), round_down=True)
+            quantity = resolved_instrument.make_qty(str(abs(total)), round_down=True)
         except TypeError:
-            quantity = instrument.make_qty(str(abs(total)))
+            quantity = resolved_instrument.make_qty(str(abs(total)))
         except ValueError:
             quantity = Quantity.from_str(str(abs(total)))
 
         return PositionStatusReport(
             account_id=self.account_id,
-            instrument_id=instrument.id,
+            instrument_id=resolved_instrument.id,
             position_side=position_side,
             quantity=quantity,
             venue_position_id=venue_position_id,
@@ -1236,24 +1308,25 @@ class BitgetExecutionClient(LiveExecutionClient):
             return
 
         arg = payload.get("arg") or {}
-        inst_type = BitgetExecutionClient._product_type_key(arg.get("instType"))
-        instruments_by_key: dict[tuple[str, str], Any] = {}
-        for instrument_id in self._cache.instrument_ids(venue=BITGET_VENUE):
-            instrument = self._cache.instrument(instrument_id)
-            raw_symbol = getattr(getattr(instrument, "raw_symbol", None), "value", None)
-            if instrument is not None and raw_symbol:
-                key = (
-                    BitgetExecutionClient._product_type_key(
-                        BitgetExecutionClient._product_type_for_instrument(self, instrument),
-                    ),
-                    str(raw_symbol),
-                )
-                instruments_by_key[key] = instrument
+        arg_inst_type = arg.get("instType")
+        inst_type = BitgetExecutionClient._product_type_key(arg_inst_type)
 
         for entry in data:
-            inst_id = str(entry.get("instId") or "").strip()
-            instrument = instruments_by_key.get((inst_type, inst_id))
-            if instrument is None:
+            instrument, product_type, resolution_error = BitgetExecutionClient._resolve_private_position_instrument(
+                self,
+                arg_inst_type,
+                entry,
+            )
+            if resolution_error:
+                self._log.warning(
+                    "Bitget private position update ignored: "
+                    f"{resolution_error} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
+                )
+                continue
+
+            inst_id = BitgetExecutionClient._string_value(entry.get("instId"))
+            if instrument is None or product_type is None:
                 self._log.warning(
                     "Bitget private position update ignored: "
                     f"instrument not found for instType={inst_type} instId={inst_id} "
@@ -1261,46 +1334,23 @@ class BitgetExecutionClient(LiveExecutionClient):
                 )
                 continue
 
-            total = Decimal(str(entry.get("total") or "0"))
-            ts_event = millis_to_nanos(int(entry.get("uTime") or payload.get("ts") or 0))
-            venue_position_id = PositionId(str(entry["posId"])) if entry.get("posId") else None
-            avg_px_raw = str(entry.get("openPriceAvg") or "").strip()
-            avg_px_open = Decimal(avg_px_raw) if avg_px_raw and avg_px_raw != "0" else None
-
-            if total == 0:
-                report = PositionStatusReport(
-                    account_id=self.account_id,
-                    instrument_id=instrument.id,
-                    position_side=PositionSide.FLAT,
-                    quantity=Quantity.zero(instrument.size_precision),
-                    venue_position_id=venue_position_id,
-                    avg_px_open=None,
-                    report_id=UUID4(),
-                    ts_last=ts_event,
-                    ts_init=ts_event,
+            report = BitgetExecutionClient._build_position_status_report(
+                self,
+                entry,
+                product_type,
+                fallback_instrument_id=getattr(instrument, "id", None),
+                instrument=instrument,
+                ts_init=BitgetExecutionClient._timestamp_ns_from_value(
+                    entry.get("uTime") or payload.get("ts"),
+                ),
+            )
+            if report is None:
+                self._log.warning(
+                    "Bitget private position update ignored: "
+                    f"instrument not found for instType={inst_type} instId={inst_id} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
                 )
-            else:
-                hold_side = str(entry.get("holdSide") or "").strip().lower()
-                position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
-                try:
-                    quantity = instrument.make_qty(str(abs(total)), round_down=True)
-                except TypeError:
-                    quantity = instrument.make_qty(str(abs(total)))
-                except ValueError:
-                    quantity = Quantity.from_str(str(abs(total)))
-
-                report = PositionStatusReport(
-                    account_id=self.account_id,
-                    instrument_id=instrument.id,
-                    position_side=position_side,
-                    quantity=quantity,
-                    venue_position_id=venue_position_id,
-                    avg_px_open=avg_px_open,
-                    report_id=UUID4(),
-                    ts_last=ts_event,
-                    ts_init=ts_event,
-                )
-
+                continue
             self._send_position_status_report(report)
 
     async def _authenticate_ws(self) -> None:
