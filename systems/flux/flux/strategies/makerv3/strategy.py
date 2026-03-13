@@ -120,6 +120,16 @@ def _quote_cycle_seq_from_id(value: str | None) -> int:
         return 0
 
 
+def _normalized_timestamp_ms(value: Any) -> int:
+    try:
+        ts_value = int(value or 0)
+    except Exception:
+        return 0
+    while ts_value > 10_000_000_000_000:
+        ts_value //= 1_000
+    return max(0, ts_value)
+
+
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, Decimal):
         return _decimal_to_json_str(value)
@@ -1859,19 +1869,30 @@ if _NAUTILUS_IMPORT_ERROR is None:
             signed_qty = _to_decimal_or_none(row.get("signed_qty_venue") or row.get("signed_qty"))
             if signed_qty is None:
                 return None
+            row_ts_ms = _normalized_timestamp_ms(
+                row.get("ts_ms") or row.get("ts_last") or row.get("ts_init"),
+            )
+            if row_ts_ms <= 0:
+                return None
+            now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
+            if now_ms_value - row_ts_ms > max(1, self._portfolio_inventory_stale_after_ms):
+                return None
+            local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
+            if row_ts_ms * 1_000_000 < local_activity_ns:
+                return None
             avg_px_open = _to_decimal_or_none(row.get("avg_px_open"))
             if avg_px_open is None:
                 avg_px_open = _to_decimal_or_none(row.get("mark_px") or row.get("mark"))
             position_id = str(
                 row.get("venue_position_id") or row.get("position_id") or "",
             ).strip() or None
-            ts_ms = _to_int_or_default(row.get("ts_ms"), 0)
             snapshot = self._build_maker_position_report_snapshot(
                 signed_qty=signed_qty,
                 avg_px_open=avg_px_open,
                 position_id=position_id,
-                ts_ns=max(0, ts_ms) * 1_000_000,
+                ts_ns=row_ts_ms * 1_000_000,
             )
+            snapshot["ts_ms"] = row_ts_ms
             snapshot_base_qty_raw = row.get("signed_qty_base")
             if snapshot_base_qty_raw is None:
                 snapshot_base_qty_raw = row.get("base_qty")
@@ -1903,33 +1924,43 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _maker_local_position_context(
             self,
             currency_code: str | None,
-        ) -> tuple[inventory_mod.PositionExposureSummary, str | None]:
+        ) -> tuple[inventory_mod.PositionExposureSummary, str | None, int | None]:
             if not currency_code or self._maker_instrument_is_spot():
-                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None), None
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None), None, None
             fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
             if fresh_report_snapshot is not None:
-                return self._position_summary_from_snapshot(fresh_report_snapshot), "positions"
+                return (
+                    self._position_summary_from_snapshot(fresh_report_snapshot),
+                    "positions",
+                    _normalized_timestamp_ms(
+                        fresh_report_snapshot.get("ts_ms")
+                        or (
+                            int(fresh_report_snapshot.get("ts_ns") or 0) // 1_000_000
+                        ),
+                    ),
+                )
             position_summary = self._position_exposure_summary(
                 currency_code,
                 instrument_id=self.config.maker_instrument_id,
             )
             if self._position_summary_has_nonzero_inventory(position_summary):
-                return position_summary, "positions"
+                return position_summary, "positions", None
             shared_snapshot = self._shared_account_maker_position_report_snapshot()
             if shared_snapshot is not None:
                 return (
                     self._position_summary_from_snapshot(shared_snapshot),
                     "shared_account_projection",
+                    _normalized_timestamp_ms(shared_snapshot.get("ts_ms")),
                 )
             if position_summary.venue_qty is not None or position_summary.base_qty is not None:
-                return position_summary, "positions"
-            return position_summary, None
+                return position_summary, "positions", None
+            return position_summary, None, None
 
         def _maker_local_position_summary(
             self,
             currency_code: str | None,
         ) -> inventory_mod.PositionExposureSummary:
-            summary, _source = self._maker_local_position_context(currency_code)
+            summary, _source, _source_ts_ms = self._maker_local_position_context(currency_code)
             return summary
 
         def _maker_local_spot_qty(self, currency_code: str | None) -> Decimal | None:
@@ -2016,7 +2047,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 if now_ms_value is None
                 else int(now_ms_value)
             )
-            local_position_summary = self._maker_local_position_summary(maker_base_currency)
+            local_position_summary, local_position_source, local_position_source_ts_ms = (
+                self._maker_local_position_context(maker_base_currency)
+            )
+            if (
+                local_position_source == "shared_account_projection"
+                and local_position_source_ts_ms is not None
+            ):
+                ts_ms = local_position_source_ts_ms
             local_spot_qty = self._maker_local_spot_qty(maker_base_currency)
             local_qty_base = inventory_mod.local_inventory_total(
                 local_position_qty=local_position_summary.base_qty,
@@ -2086,7 +2124,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     if portfolio_global_qty_base is not None
                     else "portfolio_unavailable"
                 )
-            local_position_summary, local_position_source = self._maker_local_position_context(
+            local_position_summary, local_position_source, _local_position_source_ts_ms = self._maker_local_position_context(
                 base_currency,
             )
             local_spot_qty = self._maker_local_spot_qty(base_currency)
