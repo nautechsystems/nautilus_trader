@@ -25,7 +25,7 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_generate_missing_orders = false
+exec_generate_missing_orders = true
 # Extended startup history for prolonged-downtime recovery; startup reconciliation
 # remains scoped to the configured instrument set for this single-client node.
 exec_reconciliation_lookback_mins = 1440
