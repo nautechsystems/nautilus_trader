@@ -643,7 +643,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
             return await self._await_request(request, timeout, default_value=[])
         else:
-            self._log.info(f"Request already exist for {request}")
+            self._log.info(f"Request already exist for {request}, awaiting shared result")
+            await request.future
             return []
 
     async def get_historical_ticks(
