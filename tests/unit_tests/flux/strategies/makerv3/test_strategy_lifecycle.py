@@ -1826,13 +1826,13 @@ def test_maker_local_position_summary_prefers_fresh_flat_local_snapshot_over_old
     assert summary.base_qty == Decimal("0")
 
 
-def test_maker_local_position_summary_ignores_stale_shared_account_projection_row(
+def test_maker_local_position_summary_ignores_stale_shared_account_projection_snapshot(
     clocked_strategy_factory,
 ) -> None:
     maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
     reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
     strategy = clocked_strategy_factory(
-        [1_700_000_010_000_000_000],
+        [1_700_000_010_500_000_000],
         maker_instrument_id=maker_instrument_id,
         reference_instrument_id=reference_instrument_id,
         portfolio_asset_id="GOOGL",
@@ -1865,11 +1865,11 @@ def test_maker_local_position_summary_ignores_stale_shared_account_projection_ro
                         "account_scope_id": "hyperliquid.xyz.main",
                         "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
                         "signed_qty_venue": "-6",
-                        "ts_ms": 1_700_000_000_000,
+                        "ts_ms": 1_700_000_009_900_000_000,
                     },
                 ],
                 "totals": {},
-                "server_ts_ms": 1_700_000_010_000,
+                "server_ts_ms": 1_700_000_000_000,
             },
         ),
     )
@@ -2046,13 +2046,13 @@ def test_publish_portfolio_inventory_component_uses_shared_account_projection_wh
     assert component.local_position_qty_base == Decimal("-6")
 
 
-def test_publish_portfolio_inventory_component_uses_shared_projection_timestamp(
+def test_publish_portfolio_inventory_component_uses_projection_snapshot_timestamp(
     clocked_strategy_factory,
 ) -> None:
     maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
     reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
     strategy = clocked_strategy_factory(
-        [1_700_000_010_000_000_000],
+        [1_700_000_010_500_000_000],
         maker_instrument_id=maker_instrument_id,
         reference_instrument_id=reference_instrument_id,
         portfolio_asset_id="GOOGL",
@@ -2127,7 +2127,7 @@ def test_publish_portfolio_inventory_component_uses_shared_projection_timestamp(
 
     assert component is not None
     assert component.local_qty_base == Decimal("-6")
-    assert component.ts_ms == 1_700_000_009_900
+    assert component.ts_ms == 1_700_000_010_000
 
 
 def test_compute_inventory_skew_uses_partial_shared_portfolio_global_qty_when_enabled(

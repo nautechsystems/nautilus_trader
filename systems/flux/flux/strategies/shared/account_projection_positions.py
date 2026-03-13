@@ -46,6 +46,7 @@ def read_matching_shared_account_position_row(
     snapshot = decode_profile_account_snapshot(redis_client.get(key))
     if not isinstance(snapshot, Mapping):
         return None
+    server_ts_ms = _row_ts_ms({"ts_ms": snapshot.get("server_ts_ms")})
 
     target_instrument_id = _normalized_instrument_id(instrument_id)
     if target_instrument_id is None:
@@ -63,6 +64,8 @@ def read_matching_shared_account_position_row(
         row_ts_ms = _row_ts_ms(row)
         if freshest_match is None or row_ts_ms >= freshest_ts_ms:
             freshest_match = dict(row)
+            if server_ts_ms > 0:
+                freshest_match["server_ts_ms"] = server_ts_ms
             freshest_ts_ms = row_ts_ms
     return freshest_match
 

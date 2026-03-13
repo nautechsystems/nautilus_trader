@@ -1869,16 +1869,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
             signed_qty = _to_decimal_or_none(row.get("signed_qty_venue") or row.get("signed_qty"))
             if signed_qty is None:
                 return None
+            projection_ts_ms = _normalized_timestamp_ms(row.get("server_ts_ms"))
+            if projection_ts_ms <= 0:
+                return None
+            now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
+            if now_ms_value - projection_ts_ms > max(1, self._portfolio_inventory_stale_after_ms):
+                return None
             row_ts_ms = _normalized_timestamp_ms(
                 row.get("ts_ms") or row.get("ts_last") or row.get("ts_init"),
             )
-            if row_ts_ms <= 0:
-                return None
-            now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
-            if now_ms_value - row_ts_ms > max(1, self._portfolio_inventory_stale_after_ms):
-                return None
+            position_state_ts_ms = row_ts_ms if row_ts_ms > 0 else projection_ts_ms
             local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
-            if row_ts_ms * 1_000_000 < local_activity_ns:
+            if position_state_ts_ms * 1_000_000 < local_activity_ns:
                 return None
             avg_px_open = _to_decimal_or_none(row.get("avg_px_open"))
             if avg_px_open is None:
@@ -1890,9 +1892,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 signed_qty=signed_qty,
                 avg_px_open=avg_px_open,
                 position_id=position_id,
-                ts_ns=row_ts_ms * 1_000_000,
+                ts_ns=projection_ts_ms * 1_000_000,
             )
-            snapshot["ts_ms"] = row_ts_ms
+            snapshot["ts_ms"] = projection_ts_ms
+            snapshot["position_ts_ms"] = position_state_ts_ms
             snapshot_base_qty_raw = row.get("signed_qty_base")
             if snapshot_base_qty_raw is None:
                 snapshot_base_qty_raw = row.get("base_qty")
