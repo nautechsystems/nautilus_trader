@@ -179,6 +179,8 @@ def test_build_balances_rows_keeps_spot_positions_without_suffix_labeled_spot() 
                 "exchange": "bitget",
                 "kind": "position",
                 "instrument_id": "PLUMEUSDT.BITGET",
+                "product_type": "perp",
+                "market_type": "perp",
                 "asset": "PLUME",
                 "signed_qty": "-500",
                 "quantity": "500",
