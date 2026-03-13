@@ -651,7 +651,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    #[should_panic(
+        expected = "Condition failed: [NT-MD-00308] `expire_time` is required for `GTD` order"
+    )]
     fn test_correct_expiration_with_time_in_force_gtd(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(audusd_sim.id)
@@ -694,7 +696,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    #[should_panic(
+        expected = "Condition failed: [NT-MD-00308] `expire_time` is required for `GTD` order"
+    )]
     fn test_limit_order_missing_expire_time() {
         let _ = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))

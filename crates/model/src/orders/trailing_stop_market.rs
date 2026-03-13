@@ -668,7 +668,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
+    #[should_panic(
+        expected = "Condition failed: [NT-MD-00308] `display_qty` may not exceed `quantity`"
+    )]
     fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id(audusd_sim.id)
@@ -699,7 +701,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    #[should_panic(
+        expected = "Condition failed: [NT-MD-00308] `expire_time` is required for `GTD` order"
+    )]
     fn test_gtd_without_expire_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id(audusd_sim.id)

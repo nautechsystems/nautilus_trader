@@ -672,7 +672,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    #[should_panic(
+        expected = "Condition failed: [NT-MD-00308] `expire_time` is required for `GTD` order"
+    )]
     fn test_gtd_without_expire(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
