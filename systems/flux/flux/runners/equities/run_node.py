@@ -200,6 +200,29 @@ def _attach_portfolio_inventory_feed(
     )
 
 
+def _attach_profile_account_projection_feed(
+    *,
+    strategy: Any,
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    configure_projection_feed = getattr(strategy, "configure_profile_account_projection_feed", None)
+    if not callable(configure_projection_feed):
+        return
+    account_scope_id = _optional_text(getattr(strategy.config, "execution_account_scope_id", None))
+    if account_scope_id is None:
+        return
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    configure_projection_feed(
+        redis_client=redis_client,
+        profile_id=EQUITIES_DESCRIPTOR.profile,
+        account_scope_id=account_scope_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+
+
 def _attach_reference_balance_snapshot_provider(
     *,
     strategy: Any,
@@ -420,6 +443,7 @@ def _optional_strategy_config_kwargs(
         if contract.strategy_id != external_strategy_id:
             continue
         candidates["portfolio_asset_id"] = contract.portfolio_asset_id
+        candidates["execution_account_scope_id"] = contract.execution_account_scope_id
         break
     return {
         field_name: value
@@ -646,6 +670,12 @@ def build_node(
     _attach_portfolio_inventory_feed(
         strategy=strategy,
         config=config,
+        redis_cfg=redis_cfg,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    _attach_profile_account_projection_feed(
+        strategy=strategy,
         redis_cfg=redis_cfg,
         namespace=namespace,
         schema_version=schema_version,

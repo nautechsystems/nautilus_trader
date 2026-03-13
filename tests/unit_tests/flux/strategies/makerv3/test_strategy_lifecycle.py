@@ -144,6 +144,12 @@ def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility
     assert strategy._managed_client_order_ids == {"RESTING-1"}
 
 
+def test_strategy_factory_accepts_execution_account_scope_id(strategy_factory) -> None:
+    strategy = strategy_factory(execution_account_scope_id="hyperliquid.xyz.main")
+
+    assert strategy.config.execution_account_scope_id == "hyperliquid.xyz.main"
+
+
 def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(
     strategy_factory,
 ) -> None:

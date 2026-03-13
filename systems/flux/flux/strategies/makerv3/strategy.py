@@ -65,9 +65,6 @@ if TYPE_CHECKING:
 
 _to_decimal = pricing_mod.to_decimal
 _to_decimal_or_none = pricing_mod.to_decimal_or_none
-_to_int_or_default = pricing_mod.to_int_or_default
-
-
 _decimal_to_json_str = publisher_mod.decimal_to_json_str
 
 
@@ -168,6 +165,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         reference_instrument_id: InstrumentId
         order_qty: Decimal
         portfolio_asset_id: str | None = None
+        execution_account_scope_id: str | None = None
         qty_unit: OrderQtyUnit = "venue"
         external_strategy_id: str = "makerv3"
         bot_on: bool | None = None
@@ -294,6 +292,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
             )
             self._portfolio_inventory_allow_partial_global_risk = False
+            self._profile_account_projection_client: Any | None = None
+            self._profile_account_projection_profile_id: str | None = None
+            self._profile_account_projection_account_scope_id = (
+                self.config.execution_account_scope_id.strip()
+                if self.config.execution_account_scope_id
+                else None
+            )
+            self._profile_account_projection_namespace = "flux"
+            self._profile_account_projection_schema_version = "v1"
             self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
             self._last_maker_position_activity_ns = 0
 
@@ -1741,6 +1748,21 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._portfolio_inventory_schema_version = schema_version
             self._portfolio_inventory_stale_after_ms = max(1, int(stale_after_ms))
             self._portfolio_inventory_allow_partial_global_risk = bool(allow_partial_global_risk)
+
+        def configure_profile_account_projection_feed(
+            self,
+            *,
+            redis_client: Any,
+            profile_id: str,
+            account_scope_id: str,
+            namespace: str,
+            schema_version: str,
+        ) -> None:
+            self._profile_account_projection_client = redis_client
+            self._profile_account_projection_profile_id = profile_id.strip() or None
+            self._profile_account_projection_account_scope_id = account_scope_id.strip() or None
+            self._profile_account_projection_namespace = namespace
+            self._profile_account_projection_schema_version = schema_version
 
         def _maker_instrument_is_spot(self) -> bool:
             instrument_id_text = str(self.config.maker_instrument_id).upper()
