@@ -334,9 +334,11 @@ async def test_get_historical_bars(ib_client):
 
 @pytest.mark.asyncio
 async def test_get_historical_bars_shared_request_awaits_future(ib_client):
-    """When a duplicate historical bars request is made, the second caller
-    should await the first request's future before returning empty, ensuring
-    bars have been processed by the DataEngine before the second caller returns."""
+    """
+    Test that a duplicate historical bars request awaits the first request's future
+    before returning empty, ensuring bars have been processed by the DataEngine before
+    the second caller returns.
+    """
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
@@ -359,7 +361,6 @@ async def test_get_historical_bars_shared_request_awaits_future(ib_client):
     )
 
     async def second_caller():
-        """Simulates a second strategy requesting the same bars."""
         result = await ib_client.get_historical_bars(
             bar_type,
             contract,
