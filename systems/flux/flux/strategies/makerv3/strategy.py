@@ -50,6 +50,9 @@ from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
+from flux.strategies.shared.account_projection_positions import (
+    read_matching_shared_account_position_row,
+)
 from flux.strategies.makerv3.wire import QuoteCycleContext
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
@@ -65,6 +68,7 @@ if TYPE_CHECKING:
 
 _to_decimal = pricing_mod.to_decimal
 _to_decimal_or_none = pricing_mod.to_decimal_or_none
+_to_int_or_default = pricing_mod.to_int_or_default
 _decimal_to_json_str = publisher_mod.decimal_to_json_str
 
 
@@ -1789,59 +1793,144 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return side == OrderSide.SELL
             return False
 
+        def _position_summary_from_snapshot(
+            self,
+            snapshot: Mapping[str, Any],
+        ) -> inventory_mod.PositionExposureSummary:
+            signed_qty = _to_decimal_or_none(snapshot.get("signed_qty"))
+            if signed_qty is None:
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
+            snapshot_base_qty_raw = snapshot.get("signed_qty_base")
+            if snapshot_base_qty_raw is None:
+                snapshot_base_qty_raw = snapshot.get("base_qty")
+            snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
+            snapshot_conversion_status = str(
+                snapshot.get("qty_conversion_status") or "",
+            ).strip() or None
+            snapshot_conversion_source = str(
+                snapshot.get("qty_conversion_source") or "",
+            ).strip() or None
+            if snapshot_base_qty is not None or snapshot_conversion_status is not None:
+                return inventory_mod.PositionExposureSummary(
+                    venue_qty=signed_qty,
+                    base_qty=snapshot_base_qty,
+                    qty_complete=snapshot_base_qty is not None,
+                    qty_conversion_status=snapshot_conversion_status,
+                    qty_conversion_source=snapshot_conversion_source,
+                )
+            instrument = self._resolve_instrument(self.config.maker_instrument_id)
+            if instrument is None:
+                return inventory_mod.PositionExposureSummary(
+                    venue_qty=signed_qty,
+                    base_qty=None,
+                    qty_complete=False,
+                    qty_conversion_status="missing_metadata",
+                    qty_conversion_source="maker instrument unavailable",
+                )
+            exposure = inventory_mod.base_exposure_from_venue_qty(
+                instrument,
+                signed_qty,
+                last_px=self._inventory_base_exposure_last_px(),
+            )
+            return inventory_mod.PositionExposureSummary(
+                venue_qty=signed_qty,
+                base_qty=exposure.base_qty,
+                qty_complete=exposure.base_qty is not None,
+                qty_conversion_status=exposure.qty_conversion_status,
+                qty_conversion_source=exposure.qty_conversion_source,
+            )
+
+        def _shared_account_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            client = self._profile_account_projection_client
+            profile_id = self._profile_account_projection_profile_id
+            account_scope_id = self._profile_account_projection_account_scope_id
+            if client is None or profile_id is None or account_scope_id is None:
+                return None
+            row = read_matching_shared_account_position_row(
+                redis_client=client,
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                instrument_id=str(self.config.maker_instrument_id),
+                namespace=self._profile_account_projection_namespace,
+                schema_version=self._profile_account_projection_schema_version,
+            )
+            if not isinstance(row, Mapping):
+                return None
+            signed_qty = _to_decimal_or_none(row.get("signed_qty_venue") or row.get("signed_qty"))
+            if signed_qty is None:
+                return None
+            avg_px_open = _to_decimal_or_none(row.get("avg_px_open"))
+            if avg_px_open is None:
+                avg_px_open = _to_decimal_or_none(row.get("mark_px") or row.get("mark"))
+            position_id = str(
+                row.get("venue_position_id") or row.get("position_id") or "",
+            ).strip() or None
+            ts_ms = _to_int_or_default(row.get("ts_ms"), 0)
+            snapshot = self._build_maker_position_report_snapshot(
+                signed_qty=signed_qty,
+                avg_px_open=avg_px_open,
+                position_id=position_id,
+                ts_ns=max(0, ts_ms) * 1_000_000,
+            )
+            snapshot_base_qty_raw = row.get("signed_qty_base")
+            if snapshot_base_qty_raw is None:
+                snapshot_base_qty_raw = row.get("base_qty")
+            snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
+            if snapshot_base_qty is not None:
+                snapshot["signed_qty_base"] = snapshot_base_qty
+                snapshot["quantity_base"] = abs(snapshot_base_qty)
+            snapshot_conversion_status = str(
+                row.get("qty_conversion_status") or "",
+            ).strip() or None
+            if snapshot_conversion_status is not None:
+                snapshot["qty_conversion_status"] = snapshot_conversion_status
+            snapshot_conversion_source = str(
+                row.get("qty_conversion_source") or "",
+            ).strip() or None
+            if snapshot_conversion_source is not None:
+                snapshot["qty_conversion_source"] = snapshot_conversion_source
+            return snapshot
+
+        @staticmethod
+        def _position_summary_has_nonzero_inventory(
+            summary: inventory_mod.PositionExposureSummary,
+        ) -> bool:
+            return any(
+                qty is not None and qty != 0
+                for qty in (summary.venue_qty, summary.base_qty)
+            )
+
+        def _maker_local_position_context(
+            self,
+            currency_code: str | None,
+        ) -> tuple[inventory_mod.PositionExposureSummary, str | None]:
+            if not currency_code or self._maker_instrument_is_spot():
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None), None
+            fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
+            if fresh_report_snapshot is not None:
+                return self._position_summary_from_snapshot(fresh_report_snapshot), "positions"
+            position_summary = self._position_exposure_summary(
+                currency_code,
+                instrument_id=self.config.maker_instrument_id,
+            )
+            if self._position_summary_has_nonzero_inventory(position_summary):
+                return position_summary, "positions"
+            shared_snapshot = self._shared_account_maker_position_report_snapshot()
+            if shared_snapshot is not None:
+                return (
+                    self._position_summary_from_snapshot(shared_snapshot),
+                    "shared_account_projection",
+                )
+            if position_summary.venue_qty is not None or position_summary.base_qty is not None:
+                return position_summary, "positions"
+            return position_summary, None
+
         def _maker_local_position_summary(
             self,
             currency_code: str | None,
         ) -> inventory_mod.PositionExposureSummary:
-            if not currency_code or self._maker_instrument_is_spot():
-                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
-            fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
-            if fresh_report_snapshot is not None:
-                signed_qty = _to_decimal_or_none(fresh_report_snapshot.get("signed_qty"))
-                if signed_qty is not None:
-                    snapshot_base_qty_raw = fresh_report_snapshot.get("signed_qty_base")
-                    if snapshot_base_qty_raw is None:
-                        snapshot_base_qty_raw = fresh_report_snapshot.get("base_qty")
-                    snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
-                    snapshot_conversion_status = str(
-                        fresh_report_snapshot.get("qty_conversion_status") or "",
-                    ).strip() or None
-                    snapshot_conversion_source = str(
-                        fresh_report_snapshot.get("qty_conversion_source") or "",
-                    ).strip() or None
-                    if snapshot_base_qty is not None or snapshot_conversion_status is not None:
-                        return inventory_mod.PositionExposureSummary(
-                            venue_qty=signed_qty,
-                            base_qty=snapshot_base_qty,
-                            qty_complete=snapshot_base_qty is not None,
-                            qty_conversion_status=snapshot_conversion_status,
-                            qty_conversion_source=snapshot_conversion_source,
-                        )
-                    instrument = self._resolve_instrument(self.config.maker_instrument_id)
-                    if instrument is None:
-                        return inventory_mod.PositionExposureSummary(
-                            venue_qty=signed_qty,
-                            base_qty=None,
-                            qty_complete=False,
-                            qty_conversion_status="missing_metadata",
-                            qty_conversion_source="maker instrument unavailable",
-                        )
-                    exposure = inventory_mod.base_exposure_from_venue_qty(
-                        instrument,
-                        signed_qty,
-                        last_px=self._inventory_base_exposure_last_px(),
-                    )
-                    return inventory_mod.PositionExposureSummary(
-                        venue_qty=signed_qty,
-                        base_qty=exposure.base_qty,
-                        qty_complete=exposure.base_qty is not None,
-                        qty_conversion_status=exposure.qty_conversion_status,
-                        qty_conversion_source=exposure.qty_conversion_source,
-                    )
-            return self._position_exposure_summary(
-                currency_code,
-                instrument_id=self.config.maker_instrument_id,
-            )
+            summary, _source = self._maker_local_position_context(currency_code)
+            return summary
 
         def _maker_local_spot_qty(self, currency_code: str | None) -> Decimal | None:
             if not currency_code or not self._maker_instrument_is_spot():
@@ -1997,7 +2086,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     if portfolio_global_qty_base is not None
                     else "portfolio_unavailable"
                 )
-            local_position_summary = self._maker_local_position_summary(base_currency)
+            local_position_summary, local_position_source = self._maker_local_position_context(
+                base_currency,
+            )
             local_spot_qty = self._maker_local_spot_qty(base_currency)
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
@@ -2015,6 +2106,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 base_currency=base_currency,
                 runtime_params=runtime_params,
             )
+            if (
+                local_position_source == "shared_account_projection"
+                and local_position_summary.base_qty is not None
+                and local_spot_qty is None
+            ):
+                skew["local_inventory_source"] = "shared_account_projection"
             if global_position_summary.qty_conversion_status is not None:
                 skew["global_position_qty_conversion_status"] = global_position_summary.qty_conversion_status
                 skew["global_position_qty_conversion_source"] = global_position_summary.qty_conversion_source
