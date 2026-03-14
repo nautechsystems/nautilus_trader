@@ -431,6 +431,7 @@ pub fn parse_futures_ws_funding_rate(
     Some(FundingRateUpdate::new(
         instrument.id(),
         rate,
+        None,
         next_funding_ns,
         ts_event,
         ts_init,

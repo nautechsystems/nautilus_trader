@@ -137,6 +137,7 @@ pub fn parse_funding_rate(
     Ok(FundingRateUpdate::new(
         instrument_id,
         ax_rate.funding_rate,
+        None,
         None, // AX doesn't provide next funding time
         ax_timestamp_ns_to_unix_nanos(ax_rate.timestamp_ns)?,
         ts_init,

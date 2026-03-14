@@ -596,13 +596,18 @@ pub fn parse_trade_tick(
 pub fn parse_funding_rate(
     funding: &BybitFunding,
     instrument: &InstrumentAny,
+    interval_millis: Option<i64>,
 ) -> anyhow::Result<FundingRateUpdate> {
     let rate = parse_decimal(&funding.funding_rate, "funding.rate")?;
     let ts_event = parse_millis_timestamp(&funding.funding_rate_timestamp, "funding.timestamp")?;
+    let interval = interval_millis
+        .map(|ms| u16::try_from(ms / 60_000).context("interval milliseconds out of bounds"))
+        .transpose()?;
 
     Ok(FundingRateUpdate::new(
         instrument.id(),
         rate,
+        interval,
         None, // next_funding_ns not provided with historical funding rates
         ts_event,
         ts_event,

@@ -1372,6 +1372,7 @@ impl DydxHttpClient {
             rates.push(FundingRateUpdate::new(
                 instrument_id,
                 entry.rate,
+                Some(60),
                 None,
                 ts_event,
                 ts_init,

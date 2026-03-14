@@ -6044,6 +6044,8 @@ cdef class FundingRateUpdate(Data):
         The instrument ID for the funding rate.
     rate : Decimal
         The current funding rate.
+    interval : int
+        Time interval (minutes) between funding payments.
     next_funding_ns : int, optional
         UNIX timestamp (nanoseconds) of the next funding payment (if available).
     ts_event : int
@@ -6059,10 +6061,12 @@ cdef class FundingRateUpdate(Data):
         rate not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        interval = None,
         next_funding_ns = None,
     ) -> None:
         self.instrument_id = instrument_id
         self.rate = rate
+        self.interval = interval
         self.next_funding_ns = next_funding_ns
         self._ts_event = ts_event
         self._ts_init = ts_init
@@ -6073,6 +6077,7 @@ cdef class FundingRateUpdate(Data):
         return (
             self.instrument_id == other.instrument_id
             and self.rate == other.rate
+            and self.interval == other.interval
             and self.next_funding_ns == other.next_funding_ns
         )
 
@@ -6080,6 +6085,7 @@ cdef class FundingRateUpdate(Data):
         return hash((
             self.instrument_id,
             self.rate,
+            self.interval,
             self.next_funding_ns,
         ))
 
@@ -6088,6 +6094,7 @@ cdef class FundingRateUpdate(Data):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"rate={self.rate}, "
+            f"interval={self.interval}, "
             f"next_funding_ns={self.next_funding_ns}, "
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
@@ -6125,6 +6132,7 @@ cdef class FundingRateUpdate(Data):
             rate=values["rate"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            interval=values.get("interval"),
             next_funding_ns=values.get("next_funding_ns"),
         )
 
@@ -6138,6 +6146,8 @@ cdef class FundingRateUpdate(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+        if obj.interval is not None:
+            result["interval"] = obj.interval
         if obj.next_funding_ns is not None:
             result["next_funding_ns"] = obj.next_funding_ns
         return result
@@ -6211,6 +6221,7 @@ cdef class FundingRateUpdate(Data):
         return FundingRateUpdate(
             instrument_id=InstrumentId.from_str(pyo3_funding_rate.instrument_id.value),
             rate=pyo3_funding_rate.rate,
+            interval=pyo3_funding_rate.interval,
             next_funding_ns=pyo3_funding_rate.next_funding_ns,
             ts_event=pyo3_funding_rate.ts_event,
             ts_init=pyo3_funding_rate.ts_init,

@@ -580,6 +580,8 @@ pub struct BybitWsTickerLinear {
     pub ask1_price: Option<String>,
     #[serde(default)]
     pub ask1_size: Option<String>,
+    #[serde(default)]
+    pub funding_interval_hour: Option<String>,
 }
 
 /// Envelope for linear ticker updates.

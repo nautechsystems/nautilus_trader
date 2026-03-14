@@ -1286,6 +1286,7 @@ fn test_add_funding_rate(mut cache: Cache, audusd_sim: CurrencyPair) {
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(5),
         UnixNanos::from(10),
     );
@@ -1302,6 +1303,7 @@ fn test_add_funding_rate_updates_existing(mut cache: Cache, audusd_sim: Currency
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(5),
         UnixNanos::from(10),
     );
@@ -1309,6 +1311,7 @@ fn test_add_funding_rate_updates_existing(mut cache: Cache, audusd_sim: Currency
     let funding_rate2 = FundingRateUpdate::new(
         audusd_sim.id,
         "0.0002".parse().unwrap(),
+        None,
         None,
         UnixNanos::from(15),
         UnixNanos::from(20),

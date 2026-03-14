@@ -45,6 +45,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
@@ -113,7 +114,7 @@ use crate::{
         models::OKXInstrument,
         parse::{
             okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
-            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report,
+            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report, parse_funding_rate,
             parse_index_price_update, parse_instrument_any, parse_mark_price_update,
             parse_order_status_report, parse_position_status_report, parse_price, parse_quantity,
             parse_spot_margin_position_from_balance, parse_trade_tick,
@@ -1755,19 +1756,22 @@ impl OKXHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = self.generate_ts_init();
         let mut rates = Vec::with_capacity(resp.len());
 
-        for raw in &resp {
-            let rate = Decimal::from_str(&raw.funding_rate)?;
-            let ts_event = UnixNanos::from(raw.funding_time * NANOSECONDS_IN_MILLISECOND);
-            rates.push(FundingRateUpdate::new(
-                instrument_id,
-                rate,
-                None,
-                ts_event,
-                ts_init,
-            ));
+        for window in resp.windows(2) {
+            let raw = &window[0];
+            let interval_millis = raw
+                .funding_time
+                .checked_sub(window[1].funding_time)
+                .context("funding interval negative, funding rates out of order")?;
+            let rate = parse_funding_rate(raw, instrument_id, Some(interval_millis))?;
+            rates.push(rate);
+        }
+
+        if let Some(last_raw) = resp.last() {
+            // oldest funding update has no previous one to compute interval
+            let rate = parse_funding_rate(last_raw, instrument_id, None)?;
+            rates.push(rate);
         }
 
         // OKX returns newest-first; reverse to chronological order so that

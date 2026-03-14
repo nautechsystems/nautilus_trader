@@ -314,6 +314,7 @@ pub fn parse_mark_price(
     let funding_update = FundingRateUpdate::new(
         instrument_id,
         Decimal::from_f64(funding_rate).unwrap_or_default(),
+        None, // Binance does not provide the funding interval through WebSocket API
         next_funding_ns,
         ts_event,
         ts_init,

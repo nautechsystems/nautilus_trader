@@ -95,9 +95,10 @@ struct InstrumentStatus {
 struct FundingRateUpdate {
     instrumentId @0 :Identifiers.InstrumentId;
     rate @1 :Types.Decimal;  # Decimal as binary (optimized)
-    nextFundingTime @2 :Base.UnixNanos;  # Optional - 0 means None
-    tsEvent @3 :Base.UnixNanos;
-    tsInit @4 :Base.UnixNanos;
+    interval @2 :UInt16;  # Optional - 0 means None
+    nextFundingTime @3 :Base.UnixNanos;  # Optional - 0 means None
+    tsEvent @4 :Base.UnixNanos;
+    tsInit @5 :Base.UnixNanos;
 }
 
 # Market data enum union
