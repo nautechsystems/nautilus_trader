@@ -1560,7 +1560,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
 
-        nautilus_order = self._cache.order(ClientOrderId(order_ref))
+        nautilus_order = None
+        if order_ref:
+            nautilus_order = self._cache.order(ClientOrderId(order_ref))
+
+        if nautilus_order is None and venue_order_id is not None:
+            mapped_client_order_id = self._cache.client_order_id(venue_order_id)
+            if mapped_client_order_id is not None:
+                nautilus_order = self._cache.order(mapped_client_order_id)
 
         if nautilus_order:
             # Update order with average fill price if provided and order is filled/partially filled
@@ -1598,7 +1605,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ):
                 self._order_filled_qty.pop(venue_order_id, None)
         else:
-            self._log.warning(f"ClientOrderId {order_ref} not found in Cache")
+            if venue_order_id is not None:
+                self._log.warning(
+                    f"Order callback not found in cache for order_ref={order_ref!r}, "
+                    f"venue_order_id={venue_order_id}",
+                )
+            else:
+                self._log.warning(f"ClientOrderId {order_ref} not found in Cache")
 
     def _on_exec_details(
         self,
@@ -1607,12 +1620,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         commission_report: CommissionAndFeesReport,
         contract: IBContract,
     ) -> None:
-        if not execution.orderRef:
-            self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
-            return
-
-        client_order_id = ClientOrderId(order_ref)
         venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+        client_order_id = ClientOrderId(order_ref) if order_ref else None
 
         # Find order by client_order_id or venue_order_id
         nautilus_order = self._find_order_for_execution(client_order_id, venue_order_id)
@@ -1685,13 +1694,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _find_order_for_execution(
         self,
-        client_order_id: ClientOrderId,
+        client_order_id: ClientOrderId | None,
         venue_order_id: VenueOrderId | None,
     ) -> Order | None:
         # Try client_order_id first
-        order = self._cache.order(client_order_id)
-        if order:
-            return order
+        if client_order_id is not None:
+            order = self._cache.order(client_order_id)
+            if order:
+                return order
 
         # Fallback to venue_order_id lookup
         if venue_order_id:
@@ -1983,17 +1993,60 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             contract_id = ib_position.contract.conId
             new_quantity = ib_position.quantity
 
-            # Skip zero positions (IB may send these for closed positions)
-            if new_quantity == 0:
-                # Remove from tracking if position is closed
-                self._known_positions.pop(contract_id, None)
-                return
-
-            # Check if this is an external position change
+            # Check if this is a known position
             known_quantity = self._known_positions.get(contract_id, Decimal(0))
 
             # If quantities match, this is likely from normal trading - skip
             if known_quantity == new_quantity:
+                return
+
+            # Handle position going to zero (option expiration, exercise closure, etc.)
+            if new_quantity == 0:
+                if known_quantity == 0:
+                    # Position was never tracked or already flat - noise, skip
+                    return
+
+                # Position went from non-zero to zero externally (e.g. option expired)
+                self._log.info(
+                    f"External position closure detected (likely option expiration): "
+                    f"Contract {contract_id} ({ib_position.contract.secType}), "
+                    f"quantity change: {known_quantity} -> 0",
+                    LogColor.YELLOW,
+                )
+
+                instrument = await self.instrument_provider.get_instrument(
+                    ib_position.contract,
+                )
+
+                if instrument is None:
+                    self._log.warning(
+                        f"Cannot process position closure: "
+                        f"instrument not found for contract ID {contract_id}",
+                    )
+                    # Keep the position tracked so the next IB position update can retry
+                    # the FLAT report once instrument lookup succeeds.
+                    return
+
+                if not self._cache.instrument(instrument.id):
+                    self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
+
+                position_report = PositionStatusReport(
+                    account_id=self.account_id,
+                    instrument_id=instrument.id,
+                    position_side=PositionSide.FLAT,
+                    quantity=instrument.make_qty(0),
+                    report_id=UUID4(),
+                    ts_last=self._clock.timestamp_ns(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+
+                self._log.info(
+                    f"Position closed externally: {instrument.id} FLAT (was {known_quantity})",
+                    LogColor.CYAN,
+                )
+
+                self._send_position_status_report(position_report)
+                self._known_positions.pop(contract_id, None)
                 return
 
             # This is an external position change (likely option exercise)

@@ -1379,9 +1379,10 @@ cdef class ExecutionEngine(Component):
         cdef OmsType oms_type = self._determine_oms_type(fill)
 
         # Determine position ID for leg fill without requiring an order in cache
-        cdef PositionId position_id
+        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if oms_type == OmsType.HEDGING:
-            position_id = self._determine_hedging_position_id(fill)
+            if position_id is None:
+                position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             position_id = self._determine_netting_position_id(fill)
@@ -1486,6 +1487,7 @@ cdef class ExecutionEngine(Component):
             self._log.debug(f"Assigned primary order {position_id!r}", LogColor.MAGENTA)
 
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=None):
+        cdef PositionId position_id
         if fill.position_id is not None:
             if self.debug:
                 self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
@@ -1496,6 +1498,17 @@ cdef class ExecutionEngine(Component):
         if order is None:
             order = self._cache.order(fill.client_order_id)
             if order is None:
+                if self._is_leg_fill(fill):
+                    position_id = self._pos_id_generator.generate(fill.strategy_id)
+
+                    if self.debug:
+                        self._log.debug(
+                            f"Generated synthetic leg {position_id!r} for {fill}",
+                            LogColor.MAGENTA,
+                        )
+
+                    return position_id
+
                 raise RuntimeError(
                     f"Order for {fill.client_order_id!r} not found to determine position ID",
                 )
