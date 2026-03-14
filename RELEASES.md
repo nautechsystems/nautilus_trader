@@ -35,6 +35,8 @@ Released on TBD (UTC).
 - Fixed Databento price precision truncation for fractional tick sizes (#3696), thanks @pandashark
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Interactive Brokers docs `request_ticks` API and add contract example (#3699), thanks @faysou
+- Fixed Interactive Brokers live-session synchronization and reconciliation (#3715), thanks @faysou
+- Fixed Interactive Brokers shared historical request dedup for concurrent warmup (#3719), thanks @Johnkhk
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 - Fixed Polymarket WebSocket initial vs incremental subscribe (#3717), thanks @Javdu10
 
