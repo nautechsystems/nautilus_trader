@@ -333,6 +333,63 @@ async def test_get_historical_bars(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_get_historical_bars_shared_request_awaits_future(ib_client):
+    """
+    Test that a duplicate historical bars request awaits the first request's future
+    before returning empty, ensuring bars have been processed by the DataEngine before
+    the second caller returns.
+    """
+    # Arrange
+    ib_client._request_id_seq = 999
+    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
+    use_rth = True
+    end_date_time = pd.Timestamp("20240101-010000+0000")
+    duration = "5 S"
+    ib_client._eclient.reqHistoricalData = Mock()
+
+    events = []
+
+    # First caller: register a real request
+    name = (str(bar_type), end_date_time.strftime("%Y%m%d %H:%M:%S %Z"))
+    req_id = ib_client._next_req_id()
+    request = ib_client._requests.add(
+        req_id=req_id,
+        name=name,
+        handle=MagicMock(),
+        cancel=MagicMock(),
+    )
+
+    async def second_caller():
+        result = await ib_client.get_historical_bars(
+            bar_type,
+            contract,
+            use_rth,
+            end_date_time,
+            duration,
+        )
+        events.append("second_returned")
+        return result
+
+    # Act
+    task = asyncio.create_task(second_caller())
+    await asyncio.sleep(0)  # Let second_caller start and hit await
+
+    # Second caller should be waiting (not yet returned)
+    assert "second_returned" not in events
+
+    # Simulate first request completing
+    events.append("first_completed")
+    request.future.set_result([])
+
+    result = await task
+
+    # Assert
+    assert result == []
+    assert events.index("first_completed") < events.index("second_returned")
+
+
+@pytest.mark.asyncio
 async def test_get_historical_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
