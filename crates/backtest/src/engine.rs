@@ -808,10 +808,15 @@ impl BacktestEngine {
         // Position snapshots are stored as concatenated JSON objects in cache bytes.
         // Decode them into Position entries and merge into analyzer inputs.
         fn decode_position_snapshots(snapshot_bytes: &[u8]) -> Vec<Position> {
-            // Use serde_json streaming deserializer for back-to-back JSON values.
             serde_json::de::Deserializer::from_slice(snapshot_bytes)
                 .into_iter::<Position>()
-                .filter_map(Result::ok)
+                .filter_map(|result| match result {
+                    Ok(position) => Some(position),
+                    Err(e) => {
+                        log::warn!("Failed to decode position snapshot: {e}");
+                        None
+                    }
+                })
                 .collect()
         }
 
