@@ -349,6 +349,51 @@ impl Cache {
         self.is_order_closed(&client_order_id)
     }
 
+    #[pyo3(name = "is_order_active_local")]
+    fn py_is_order_active_local(&self, client_order_id: ClientOrderId) -> bool {
+        self.is_order_active_local(&client_order_id)
+    }
+
+    #[pyo3(name = "orders_active_local")]
+    fn py_orders_active_local(
+        &self,
+        py: Python,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
+        side: Option<OrderSide>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        self.orders_active_local(
+            venue.as_ref(),
+            instrument_id.as_ref(),
+            strategy_id.as_ref(),
+            account_id.as_ref(),
+            side,
+        )
+        .into_iter()
+        .map(|order| order_any_to_pyobject(py, order.clone()))
+        .collect()
+    }
+
+    #[pyo3(name = "orders_active_local_count")]
+    fn py_orders_active_local_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_active_local_count(
+            venue.as_ref(),
+            instrument_id.as_ref(),
+            strategy_id.as_ref(),
+            account_id.as_ref(),
+            side,
+        )
+    }
+
     #[pyo3(name = "orders_open_count")]
     fn py_orders_open_count(
         &self,
