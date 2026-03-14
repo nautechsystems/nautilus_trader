@@ -302,6 +302,12 @@ This provides several advantages:
 | Bracket orders      | -         | *Not supported*.                   |
 | Conditional orders  | ✓         | Stop market and stop limit orders. |
 
+## Funding rates
+
+Deribit exchanges funding continuously (every few seconds) rather than at fixed intervals
+like most other exchanges. The `interval` field on `FundingRateUpdate` is `None` for
+Deribit because this continuous model does not map to a discrete period.
+
 ## Rate limiting
 
 Deribit uses a credit-based rate limiting system. Each API request consumes credits, which are replenished

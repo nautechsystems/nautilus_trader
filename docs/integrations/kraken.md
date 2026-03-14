@@ -330,6 +330,17 @@ a strategy that expects to close positions may attempt to sell your wallet
 holdings.
 :::
 
+## Funding rates
+
+The adapter receives funding rate data from the
+[Ticker](https://docs.kraken.com/api/docs/futures-api/websocket/ticker)
+WebSocket feed, which provides `relative_funding_rate` and `next_funding_rate_time` for
+perpetual futures.
+
+The `interval` field on `FundingRateUpdate` is `None` for Kraken because the ticker feed
+does not include a funding interval field and the Kraken API documentation does not
+specify a fixed funding period.
+
 ## Rate limiting
 
 The adapter implements automatic rate limiting to comply with Kraken's API requirements.

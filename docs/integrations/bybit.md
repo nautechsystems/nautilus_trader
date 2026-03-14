@@ -405,6 +405,19 @@ Consider the following points when using trailing stops on Bybit:
 - You cannot query trailing stop orders that are not already open (the `venue_order_id` is unknown until then).
 - You can manually adjust the trigger price in the GUI, which will update the Nautilus order.
 
+## Funding rates
+
+The adapter receives funding rate data from the
+[Linear Ticker](https://bybit-exchange.github.io/docs/v5/websocket/public/ticker#linear-inverse-perpetual-response)
+WebSocket stream. Bybit provides the `fundingIntervalHour` field in ticker updates,
+which the adapter uses to populate the `interval` field on `FundingRateUpdate`.
+
+The adapter caches the last known `fundingIntervalHour` per symbol so that partial
+ticker updates (which may omit the field) still carry the correct interval.
+
+For historical funding rate requests, the adapter computes the interval from consecutive
+funding timestamps.
+
 ## Rate limiting
 
 Every HTTP call consumes the global token bucket as well as any keyed quota(s). When usage exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.

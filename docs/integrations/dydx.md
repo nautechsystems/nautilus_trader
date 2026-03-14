@@ -407,6 +407,12 @@ When cancelling multiple orders, the adapter partitions them by lifetime:
 
 This ensures each group uses the appropriate broadcast strategy.
 
+## Funding rates
+
+dYdX perpetual futures use a fixed 1-hour funding interval. The adapter sets `interval`
+to `60` (minutes) on all `FundingRateUpdate` objects for both WebSocket and historical
+funding data.
+
 ## Rate limiting
 
 ### gRPC rate limiting

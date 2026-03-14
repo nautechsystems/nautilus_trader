@@ -371,6 +371,17 @@ def on_data(self, data: Data):
         # Do something with the data
 ```
 
+## Funding rates
+
+The adapter subscribes to funding rate data through the
+[Mark Price Stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream)
+WebSocket endpoint, which provides the current funding rate and next funding time.
+
+The `interval` field on `FundingRateUpdate` is `None` for Binance because the Mark Price Stream
+does not include a funding interval field. Binance exposes `fundingIntervalHours` through the
+[Get Funding Rate Info](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-Info)
+REST endpoint, but this is not currently consumed by the adapter.
+
 ## Rate limiting
 
 Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (every minute, resetting at :00 seconds). Each API endpoint has an assigned weight cost, and your total weight usage is tracked per IP address.

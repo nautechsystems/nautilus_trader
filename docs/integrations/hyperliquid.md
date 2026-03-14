@@ -395,6 +395,11 @@ use the vault address instead of the wallet address. This is required to receive
 order and fill events.
 :::
 
+## Funding rates
+
+Hyperliquid perpetual futures use a fixed 1-hour funding interval. The adapter sets
+`interval` to `60` (minutes) on all `FundingRateUpdate` objects.
+
 ## Rate limiting
 
 The adapter implements a token bucket rate limiter for Hyperliquid's REST API with a capacity
