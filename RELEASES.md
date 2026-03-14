@@ -6,8 +6,11 @@ Released on TBD (UTC).
 - Added option chains and greeks in Rust (#3637), thanks @filipmacek
 - Added option chains and greeks in Python (#3677), thanks @filipmacek
 - Added custom data registration, persistence, and routing in Rust (#3542), thanks @faysou
+- Added `interval` field to `FundingRateUpdate` (#3694), thanks @dxwil
 - Added Databento Arrow serialization for imbalance and statistics (#3689), thanks for reporting @GianC0
 - Added Hyperliquid agent wallet support (#3668), thanks @oh92
+- Added OKX support for bracket order submission with attached TP/SL (#3701), thanks @Nickonomic
+- Added Polymarket instrument provider and filters in Rust (#3708), thanks @filipmacek
 
 ### Breaking Changes
 - Renamed `OrderEvent.kind()` to `type_name()` in Rust
@@ -24,6 +27,7 @@ Released on TBD (UTC).
 - Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
 - Fixed time bar historical event deferral (#3698), thanks @faysou
 - Fixed `SimulatedExchange` account balance adjustment mutation (#3704), thanks for reporting @thaning0
+- Fixed backtest analyzer to include position snapshots in Rust (#3710), thanks @necofx
 - Fixed Sandbox reconciliation missing `account_id` (#3705), thanks for reporting @eliotOrderson
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
@@ -32,6 +36,7 @@ Released on TBD (UTC).
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Interactive Brokers docs `request_ticks` API and add contract example (#3699), thanks @faysou
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
+- Fixed Polymarket WebSocket initial vs incremental subscribe (#3717), thanks @Javdu10
 
 ### Internal Improvements
 - Added `SpreadQuoteAggregator` (#3698), thanks @faysou
@@ -42,6 +47,7 @@ Released on TBD (UTC).
 - Improved socket clients reconnect and shutdown reliability
 - Improved Databento live price precision handling with maps populated from instrument definitions
 - Refined `AtomicTime` mode switching and datetime panics
+- Refined base catalog interface (#3703), thanks @faysou
 - Standardized `type_name()` across order events and instruments
 - Optimized network client performance and add benchmarks
 - Upgraded Rust (MSRV) to 1.94.0

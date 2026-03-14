@@ -2,24 +2,12 @@
 # cargo-vet imports lock
 
 [[unpublished.nautilus-analysis]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-analysis]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-architect-ax]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-architect-ax]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-backtest]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-backtest]]
 version = "0.55.0"
@@ -30,80 +18,40 @@ version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-bitmex]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-bitmex]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-blockchain]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-blockchain]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-bybit]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-bybit]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-cli]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-cli]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-common]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-common]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-core]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-core]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-cryptography]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-cryptography]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-data]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-data]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-databento]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-databento]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-deribit]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-deribit]]
 version = "0.55.0"
@@ -114,144 +62,72 @@ version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-execution]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-execution]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-hyperliquid]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-hyperliquid]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-indicators]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-indicators]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-infrastructure]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-infrastructure]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-kraken]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-kraken]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-live]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-live]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-model]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-model]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-network]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-network]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-okx]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-okx]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-persistence]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-persistence]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-portfolio]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-portfolio]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-risk]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-risk]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-sandbox]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-sandbox]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-serialization]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-serialization]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-system]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-system]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-tardis]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-tardis]]
 version = "0.55.0"
 audited_as = "0.54.0"
 
 [[unpublished.nautilus-testkit]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
-[[unpublished.nautilus-testkit]]
 version = "0.55.0"
 audited_as = "0.54.0"
-
-[[unpublished.nautilus-trading]]
-version = "0.54.0"
-audited_as = "0.53.0"
 
 [[unpublished.nautilus-trading]]
 version = "0.55.0"
@@ -666,6 +542,12 @@ who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 delta = "0.8.5 -> 0.8.9"
 notes = "No new unsafe code, just refactorings."
+
+[[audits.bytecode-alliance.audits.parking]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
+version = "2.2.1"
+notes = "forbid-unsafe crate with straightforward imports."
 
 [[audits.bytecode-alliance.audits.pem-rfc7468]]
 who = "Chris Fallin <chris@cfallin.org>"
@@ -1789,6 +1671,16 @@ who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "1.0.3 -> 1.0.4"
 
+[[audits.isrg.audits.chacha20]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+version = "0.10.0"
+
+[[audits.isrg.audits.cpufeatures]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "0.2.17 -> 0.3.0"
+
 [[audits.isrg.audits.digest]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1889,6 +1781,12 @@ who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.1.44 -> 0.1.45"
 
+[[audits.isrg.audits.once_cell]]
+who = "J.C. Jones <jc@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "1.21.3 -> 1.21.4"
+notes = "The addition is a safe while loop around prior behavior. I don't see any way for that to become malicious."
+
 [[audits.isrg.audits.opaque-debug]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1904,6 +1802,11 @@ who = "Tim Geoghegan <timg@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.9.1 -> 0.9.2"
 
+[[audits.isrg.audits.rand]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "0.9.2 -> 0.10.0"
+
 [[audits.isrg.audits.rand_chacha]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1918,6 +1821,11 @@ delta = "0.6.4 -> 0.9.3"
 who = "J.C. Jones <jc@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.9.3 -> 0.9.5"
+
+[[audits.isrg.audits.rand_core]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "0.9.5 -> 0.10.0"
 
 [[audits.isrg.audits.rand_distr]]
 who = "David Cook <dcook@divviup.org>"
