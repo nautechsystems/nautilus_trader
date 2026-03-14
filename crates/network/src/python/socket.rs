@@ -25,6 +25,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -77,6 +78,7 @@ impl SocketConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SocketClient {
     /// Create a socket client.
     ///

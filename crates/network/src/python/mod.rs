@@ -39,6 +39,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Quota {
     /// Construct a quota for a number of requests per second.
     ///

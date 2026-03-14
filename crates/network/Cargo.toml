@@ -27,7 +27,12 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
+python = [
+  "nautilus-core/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
 turmoil = ["dep:turmoil"]
 
 [package.metadata.docs.rs]
@@ -65,6 +70,7 @@ webpki-roots = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]

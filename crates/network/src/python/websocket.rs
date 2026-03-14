@@ -46,6 +46,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl WebSocketConfig {
     /// Create a new WebSocket configuration.
     #[new]
@@ -93,6 +94,7 @@ impl WebSocketConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl WebSocketClient {
     /// Create a websocket client.
     ///

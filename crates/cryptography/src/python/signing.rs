@@ -23,6 +23,7 @@ use crate::signing::{ed25519_signature, hmac_signature, rsa_signature};
 /// # Errors
 ///
 /// Returns an error if signature generation fails due to key or cryptographic errors.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 #[pyfunction(name = "hmac_signature")]
 pub fn py_hmac_signature(secret: &str, data: &str) -> PyResult<String> {
     hmac_signature(secret, data).map_err(to_pyvalue_err)
@@ -33,6 +34,7 @@ pub fn py_hmac_signature(secret: &str, data: &str) -> PyResult<String> {
 /// # Errors
 ///
 /// Returns an error if signature generation fails, e.g., due to empty data or invalid key PEM.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 #[pyfunction(name = "rsa_signature")]
 pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
     rsa_signature(private_key_pem, data).map_err(to_pyvalue_err)
@@ -43,7 +45,11 @@ pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
 /// # Errors
 ///
 /// Returns an error if the private key seed is invalid or signature creation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 #[pyfunction(name = "ed25519_signature")]
-pub fn py_ed25519_signature(private_key: &[u8], data: &str) -> PyResult<String> {
+pub fn py_ed25519_signature(
+    #[gen_stub(override_type(type_repr = "bytes"))] private_key: &[u8],
+    data: &str,
+) -> PyResult<String> {
     ed25519_signature(private_key, data).map_err(to_pyvalue_err)
 }

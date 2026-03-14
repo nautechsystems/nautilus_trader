@@ -60,6 +60,7 @@ impl HttpClientError {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpMethod {
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
@@ -69,6 +70,7 @@ impl HttpMethod {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpResponse {
     /// Creates a new [`HttpResponse`] instance.
     ///
@@ -98,12 +100,14 @@ impl HttpResponse {
 
     #[getter]
     #[pyo3(name = "body")]
+    #[gen_stub(override_return_type(type_repr = "bytes"))]
     pub fn py_body(&self) -> &[u8] {
         self.body.as_ref()
     }
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpClient {
     /// Creates a new `HttpClient`.
     ///
@@ -328,6 +332,7 @@ fn params_to_hashmap(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_get(
@@ -374,6 +379,7 @@ pub fn http_get(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_post(
@@ -421,6 +427,7 @@ pub fn http_post(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_patch(
@@ -468,6 +475,7 @@ pub fn http_patch(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_delete(
@@ -513,6 +521,7 @@ pub fn http_delete(
 /// - The server returns a non-success status code.
 /// - The file cannot be created or written to.
 /// - The params argument is not a dict.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
 #[pyo3(signature = (url, filepath, params=None, headers=None, timeout_secs=None))]
 pub fn http_download(
