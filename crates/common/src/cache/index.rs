@@ -41,6 +41,7 @@ pub struct CacheIndex {
     pub(crate) exec_algorithm_orders: AHashMap<ExecAlgorithmId, AHashSet<ClientOrderId>>,
     pub(crate) exec_spawn_orders: AHashMap<ClientOrderId, AHashSet<ClientOrderId>>,
     pub(crate) orders: AHashSet<ClientOrderId>,
+    pub(crate) orders_active_local: AHashSet<ClientOrderId>,
     pub(crate) orders_open: AHashSet<ClientOrderId>,
     pub(crate) orders_closed: AHashSet<ClientOrderId>,
     pub(crate) orders_emulated: AHashSet<ClientOrderId>,
@@ -77,6 +78,7 @@ impl Default for CacheIndex {
             exec_algorithm_orders: AHashMap::new(),
             exec_spawn_orders: AHashMap::new(),
             orders: AHashSet::new(),
+            orders_active_local: AHashSet::new(),
             orders_open: AHashSet::new(),
             orders_closed: AHashSet::new(),
             orders_emulated: AHashSet::new(),
@@ -114,6 +116,7 @@ impl CacheIndex {
         self.exec_algorithm_orders.clear();
         self.exec_spawn_orders.clear();
         self.orders.clear();
+        self.orders_active_local.clear();
         self.orders_open.clear();
         self.orders_closed.clear();
         self.orders_emulated.clear();

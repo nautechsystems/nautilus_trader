@@ -419,17 +419,22 @@ impl Cache {
             // 9: Build index.orders -> {ClientOrderId}
             self.index.orders.insert(*client_order_id);
 
-            // 10: Build index.orders_open -> {ClientOrderId}
+            // 10: Build index.orders_active_local -> {ClientOrderId}
+            if order.is_active_local() {
+                self.index.orders_active_local.insert(*client_order_id);
+            }
+
+            // 11: Build index.orders_open -> {ClientOrderId}
             if order.is_open() {
                 self.index.orders_open.insert(*client_order_id);
             }
 
-            // 11: Build index.orders_closed -> {ClientOrderId}
+            // 12: Build index.orders_closed -> {ClientOrderId}
             if order.is_closed() {
                 self.index.orders_closed.insert(*client_order_id);
             }
 
-            // 12: Build index.orders_emulated -> {ClientOrderId}
+            // 13: Build index.orders_emulated -> {ClientOrderId}
             if let Some(emulation_trigger) = order.emulation_trigger()
                 && emulation_trigger != TriggerType::NoTrigger
                 && !order.is_closed()
@@ -437,15 +442,15 @@ impl Cache {
                 self.index.orders_emulated.insert(*client_order_id);
             }
 
-            // 13: Build index.orders_inflight -> {ClientOrderId}
+            // 14: Build index.orders_inflight -> {ClientOrderId}
             if order.is_inflight() {
                 self.index.orders_inflight.insert(*client_order_id);
             }
 
-            // 14: Build index.strategies -> {StrategyId}
+            // 15: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
 
-            // 15: Build index.strategies -> {ExecAlgorithmId}
+            // 16: Build index.strategies -> {ExecAlgorithmId}
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.index.exec_algorithms.insert(exec_algorithm_id);
             }
@@ -600,6 +605,14 @@ impl Cache {
             if order.is_inflight() && !self.index.orders_inflight.contains(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.orders_inflight`",
+                );
+                error_count += 1;
+            }
+
+            if order.is_active_local() && !self.index.orders_active_local.contains(client_order_id)
+            {
+                log::error!(
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders_active_local`",
                 );
                 error_count += 1;
             }
@@ -798,6 +811,15 @@ impl Cache {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
                     "{failure} in `index.orders_emulated`: {client_order_id} not found in `self.orders`",
+                );
+                error_count += 1;
+            }
+        }
+
+        for client_order_id in &self.index.orders_active_local {
+            if !self.orders.contains_key(client_order_id) {
+                log::error!(
+                    "{failure} in `index.orders_active_local`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -1111,6 +1133,7 @@ impl Cache {
         self.index.exec_spawn_orders.remove(&client_order_id);
 
         self.index.orders.remove(&client_order_id);
+        self.index.orders_active_local.remove(&client_order_id);
         self.index.orders_open.remove(&client_order_id);
         self.index.orders_closed.remove(&client_order_id);
         self.index.orders_emulated.remove(&client_order_id);
@@ -1799,6 +1822,10 @@ impl Cache {
         log::debug!("Adding {order:?}");
 
         self.index.orders.insert(client_order_id);
+
+        if order.is_active_local() {
+            self.index.orders_active_local.insert(client_order_id);
+        }
         self.index
             .order_strategy
             .insert(client_order_id, strategy_id);
@@ -2036,6 +2063,12 @@ impl Cache {
     /// Returns an error if updating the order in the database fails.
     pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
+
+        if order.is_active_local() {
+            self.index.orders_active_local.insert(client_order_id);
+        } else {
+            self.index.orders_active_local.remove(&client_order_id);
+        }
 
         // Update venue order ID
         if let Some(venue_order_id) = order.venue_order_id() {
@@ -2537,6 +2570,28 @@ impl Cache {
         }
     }
 
+    /// Returns the `ClientOrderId`s of all locally active orders.
+    #[must_use]
+    pub fn client_order_ids_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        let query =
+            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
+        match query {
+            Some(query) => self
+                .index
+                .orders_active_local
+                .intersection(&query)
+                .copied()
+                .collect(),
+            None => self.index.orders_active_local.clone(),
+        }
+    }
+
     /// Returns the `ClientOrderId`s of all emulated orders.
     #[must_use]
     pub fn client_order_ids_emulated(
@@ -2753,6 +2808,21 @@ impl Cache {
         self.get_orders_for_ids(&client_order_ids, side)
     }
 
+    /// Returns references to all locally active orders matching the optional filter parameters.
+    #[must_use]
+    pub fn orders_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&OrderAny> {
+        let client_order_ids =
+            self.client_order_ids_active_local(venue, instrument_id, strategy_id, account_id);
+        self.get_orders_for_ids(&client_order_ids, side)
+    }
+
     /// Returns references to all emulated orders matching the optional filter parameters.
     #[must_use]
     pub fn orders_emulated(
@@ -2813,6 +2883,12 @@ impl Cache {
         self.index.orders_closed.contains(client_order_id)
     }
 
+    /// Returns whether an order with the `client_order_id` is locally active.
+    #[must_use]
+    pub fn is_order_active_local(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_active_local.contains(client_order_id)
+    }
+
     /// Returns whether an order with the `client_order_id` is emulated.
     #[must_use]
     pub fn is_order_emulated(&self, client_order_id: &ClientOrderId) -> bool {
@@ -2856,6 +2932,20 @@ impl Cache {
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_closed(venue, instrument_id, strategy_id, account_id, side)
+            .len()
+    }
+
+    /// Returns the count of all locally active orders.
+    #[must_use]
+    pub fn orders_active_local_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_active_local(venue, instrument_id, strategy_id, account_id, side)
             .len()
     }
 
@@ -3705,6 +3795,7 @@ impl Cache {
         self.index.orders_pending_cancel.remove(client_order_id);
         self.index.orders_inflight.remove(client_order_id);
         self.index.orders_emulated.remove(client_order_id);
+        self.index.orders_active_local.remove(client_order_id);
 
         if let Some(own_book) = self.own_books.get_mut(&order.instrument_id())
             && order.has_price()
