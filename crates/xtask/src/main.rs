@@ -284,7 +284,6 @@ fn extract_doc_comment(content: &str, byte_offset: usize) -> String {
             doc_lines.push(stripped.trim());
         } else if trimmed.is_empty() {
             // Allow blank lines between doc comments (though unusual)
-            continue;
         } else {
             break;
         }
@@ -500,6 +499,7 @@ fn find_workspace_root() -> PathBuf {
         {
             return dir;
         }
+
         if !dir.pop() {
             eprintln!("Error: could not find workspace root (no Cargo.toml with [workspace])");
             process::exit(1);

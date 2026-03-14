@@ -79,7 +79,6 @@ pub enum BookViewError {
     OppositeInstrumentMatch(InstrumentId, InstrumentId),
 }
 
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

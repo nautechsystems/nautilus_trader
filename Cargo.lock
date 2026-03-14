@@ -6073,7 +6073,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-xtask"
-version = "0.53.0"
+version = "0.55.0"
 dependencies = [
  "regex",
  "walkdir",
