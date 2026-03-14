@@ -28,6 +28,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.order import OrderFilled
@@ -242,6 +243,48 @@ class TestExecutionEngineLegFills:
         position = positions[0]
         assert position.instrument_id == self.put_option.id
         assert position.quantity == Quantity.from_int(9)  # 6 + 3
+
+    def test_handle_leg_fill_without_order_in_hedging_reuses_leg_position_id(self):
+        """
+        Test that hedging leg fills create and reuse a synthetic leg position ID.
+        """
+        self.exec_engine._oms_overrides[self.strategy_id] = OmsType.HEDGING
+
+        first_fill = self.create_leg_fill(
+            instrument_id=self.call_option.id,
+            client_order_id=ClientOrderId("O-20260312-083715-000-000-1-LEG-E1AQ5 C6400"),
+            venue_order_id=VenueOrderId("213-LEG-0"),
+            trade_id=TradeId("0000e1a7.6882c67b.03.01-0"),
+            side=OrderSide.BUY,
+            quantity=3,
+            price=52.75,
+        )
+
+        self.exec_engine._handle_leg_fill_without_order(first_fill)
+
+        first_position = self.cache.positions()[0]
+        assert first_fill.position_id == first_position.id
+        assert self.cache.position_id(first_fill.client_order_id) == first_position.id
+
+        second_fill = self.create_leg_fill(
+            instrument_id=self.call_option.id,
+            client_order_id=first_fill.client_order_id,
+            venue_order_id=VenueOrderId("214-LEG-0"),
+            trade_id=TradeId("0000e1a7.6882c67b.04.01-0"),
+            side=OrderSide.BUY,
+            quantity=2,
+            price=53.25,
+        )
+
+        self.exec_engine._handle_leg_fill_without_order(second_fill)
+
+        positions = self.cache.positions()
+        assert len(positions) == 1
+        position = positions[0]
+        assert second_fill.position_id == first_position.id
+        assert position.id == first_position.id
+        assert position.quantity == Quantity.from_int(5)
+        assert str(position.avg_px_open) == "52.95"
 
     def test_handle_leg_fill_without_order_missing_instrument(self):
         """
