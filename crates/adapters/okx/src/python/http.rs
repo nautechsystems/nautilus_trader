@@ -15,8 +15,6 @@
 
 //! Python bindings exposing OKX HTTP helper functions and data conversions.
 
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
@@ -32,35 +30,15 @@ use pyo3::{
     types::{PyDict, PyList, PyTuple},
 };
 
+use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
-    common::enums::{
-        OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode, OKXTriggerType,
-    },
+    common::enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
     http::{
         client::OKXHttpClient,
         error::OKXHttpError,
         models::{OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest},
     },
 };
-
-fn extract_optional_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
-    dict.get_item(key)?
-        .map(|value| value.extract::<String>())
-        .transpose()
-}
-
-fn extract_optional_trigger_type(
-    dict: &Bound<'_, PyDict>,
-    key: &str,
-) -> PyResult<Option<OKXTriggerType>> {
-    extract_optional_string(dict, key)?
-        .map(|value| {
-            OKXTriggerType::from_str(&value).map_err(|_| {
-                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
-            })
-        })
-        .transpose()
-}
 
 fn parse_attach_algo_ords(
     py: Python<'_>,

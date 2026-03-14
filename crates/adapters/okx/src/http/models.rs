@@ -545,35 +545,7 @@ pub struct OKXPlaceOrderRequest {
     pub attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
 }
 
-/// Represents a single historical order record from `GET /api/v5/trade/orders-history`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OKXAttachedAlgoOrd {
-    /// Attached algo order ID, if assigned by OKX.
-    #[serde(default)]
-    pub attach_algo_id: String,
-    /// Attached child client order ID.
-    #[serde(default)]
-    pub attach_algo_cl_ord_id: String,
-    /// Stop-loss trigger price.
-    #[serde(default)]
-    pub sl_trigger_px: String,
-    /// Stop-loss order price.
-    #[serde(default)]
-    pub sl_ord_px: String,
-    /// Stop-loss trigger price type.
-    #[serde(default)]
-    pub sl_trigger_px_type: Option<OKXTriggerType>,
-    /// Take-profit trigger price.
-    #[serde(default)]
-    pub tp_trigger_px: String,
-    /// Take-profit order price.
-    #[serde(default)]
-    pub tp_ord_px: String,
-    /// Take-profit trigger price type.
-    #[serde(default)]
-    pub tp_trigger_px_type: Option<OKXTriggerType>,
-}
+pub use crate::common::models::OKXAttachedAlgoOrd;
 
 /// Represents a single historical order record from `GET /api/v5/trade/orders-history`.
 #[derive(Clone, Debug, Serialize, Deserialize)]

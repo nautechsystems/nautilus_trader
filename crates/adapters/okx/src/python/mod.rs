@@ -23,17 +23,42 @@ pub mod models;
 pub mod urls;
 pub mod websocket;
 
+use std::str::FromStr;
+
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     get_global_pyo3_registry,
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
+    common::enums::OKXTriggerType,
     config::{OKXDataClientConfig, OKXExecClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
+
+pub(super) fn extract_optional_string(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<String>> {
+    dict.get_item(key)?
+        .map(|value| value.extract::<String>())
+        .transpose()
+}
+
+pub(super) fn extract_optional_trigger_type(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<OKXTriggerType>> {
+    extract_optional_string(dict, key)?
+        .map(|value| {
+            OKXTriggerType::from_str(&value).map_err(|_| {
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
+            })
+        })
+        .transpose()
+}
 
 #[allow(clippy::needless_pass_by_value)]
 fn extract_okx_data_factory(
