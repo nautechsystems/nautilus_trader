@@ -128,21 +128,21 @@ pub fn cancellable_order_statuses_set() -> &'static AHashSet<OrderStatus> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum OrderError {
-    #[error("Order not found: {0}")]
+    #[error("[NT-MD-00301] Order not found: {0}")]
     NotFound(ClientOrderId),
-    #[error("Order invariant failed: must have a side for this operation")]
+    #[error("[NT-MD-00302] Order invariant failed: must have a side for this operation")]
     NoOrderSide,
-    #[error("Invalid event for order type")]
+    #[error("[NT-MD-00303] Invalid event for order type")]
     InvalidOrderEvent,
-    #[error("Invalid order state transition")]
+    #[error("[NT-MD-00304] Invalid order state transition")]
     InvalidStateTransition,
-    #[error("Order was already initialized")]
+    #[error("[NT-MD-00305] Order was already initialized")]
     AlreadyInitialized,
-    #[error("Order had no previous state")]
+    #[error("[NT-MD-00306] Order had no previous state")]
     NoPreviousState,
-    #[error("Duplicate fill: trade_id {0} already applied to order")]
+    #[error("[NT-MD-00307] Duplicate fill: trade_id {0} already applied to order")]
     DuplicateFill(TradeId),
-    #[error("{0}")]
+    #[error("[NT-MD-00308] {0}")]
     Invariant(#[from] anyhow::Error),
 }
 
@@ -1583,5 +1583,58 @@ mod tests {
 
         assert_eq!(order.status(), OrderStatus::Triggered);
         assert_eq!(order.quantity(), Quantity::from(80_000));
+    }
+
+    #[rstest]
+    fn test_order_error_codes() {
+        assert!(
+            OrderError::NotFound(ClientOrderId::from("O-001"))
+                .to_string()
+                .starts_with("[NT-MD-00301]")
+        );
+        assert!(
+            OrderError::NoOrderSide
+                .to_string()
+                .starts_with("[NT-MD-00302]")
+        );
+        assert!(
+            OrderError::InvalidOrderEvent
+                .to_string()
+                .starts_with("[NT-MD-00303]")
+        );
+        assert!(
+            OrderError::InvalidStateTransition
+                .to_string()
+                .starts_with("[NT-MD-00304]")
+        );
+        assert!(
+            OrderError::AlreadyInitialized
+                .to_string()
+                .starts_with("[NT-MD-00305]")
+        );
+        assert!(
+            OrderError::NoPreviousState
+                .to_string()
+                .starts_with("[NT-MD-00306]")
+        );
+        assert!(
+            OrderError::DuplicateFill(TradeId::from("T-001"))
+                .to_string()
+                .starts_with("[NT-MD-00307]")
+        );
+        assert!(
+            OrderError::Invariant(anyhow::anyhow!("test"))
+                .to_string()
+                .starts_with("[NT-MD-00308]")
+        );
+    }
+
+    #[rstest]
+    fn test_order_error_message_format() {
+        let err = OrderError::NoOrderSide;
+        assert_eq!(
+            err.to_string(),
+            "[NT-MD-00302] Order invariant failed: must have a side for this operation"
+        );
     }
 }

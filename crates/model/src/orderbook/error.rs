@@ -25,29 +25,48 @@ use crate::{
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum InvalidBookOperation {
-    #[error("Invalid book operation: cannot pre-process order for {0} book")]
+    #[error("[NT-MD-00101] Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
-    #[error("Invalid book operation: cannot add order for {0} book")]
+    #[error("[NT-MD-00102] Invalid book operation: cannot add order for {0} book")]
     Add(BookType),
-    #[error("Invalid book operation: cannot update with tick for {0} book")]
+    #[error("[NT-MD-00103] Invalid book operation: cannot update with tick for {0} book")]
     Update(BookType),
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum BookIntegrityError {
-    #[error("Integrity error: order not found: order_id={0}, sequence={1}, ts_event={2}")]
+    /// A delta referenced an order ID that does not exist in the book.
+    /// This typically indicates a gap in the market data feed or
+    /// that the book was not properly initialized from a snapshot.
+    #[error(
+        "[NT-MD-00201] Integrity error: order not found: order_id={0}, sequence={1}, ts_event={2}"
+    )]
     OrderNotFound(u64, u64, UnixNanos),
-    #[error("Integrity error: invalid `NoOrderSide` in book")]
+    /// An order in the book has `NoOrderSide`, which should never occur
+    /// and indicates internal corruption of the book state.
+    #[error("[NT-MD-00202] Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
-    #[error("Integrity error: order_id={0} not found in book for side resolution")]
+    /// Could not determine the side (bid/ask) for an order during
+    /// a delete or update operation.
+    #[error("[NT-MD-00203] Integrity error: order_id={0} not found in book for side resolution")]
     OrderNotFoundForSideResolution(u64),
-    #[error("Integrity error: orders in cross [{0} {1}]")]
+    /// The best bid price is greater than or equal to the best ask price,
+    /// violating the fundamental order book invariant.
+    #[error("[NT-MD-00204] Integrity error: orders in cross [{0} {1}]")]
     OrdersCrossed(BookPrice, BookPrice),
-    #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
+    /// An L2_MBP book has more than one order at a single price level,
+    /// which violates the L2 aggregated-level constraint.
+    #[error(
+        "[NT-MD-00205] Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}"
+    )]
     TooManyOrders(OrderSide, usize),
-    #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
+    /// An L1_MBP book has more than one price level per side,
+    /// which violates the L1 top-of-book constraint.
+    #[error("[NT-MD-00206] Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
     TooManyLevels(OrderSide, usize),
-    #[error("Integrity error: instrument ID mismatch: book={0}, delta={1}")]
+    /// A delta's instrument ID does not match the book's instrument ID,
+    /// indicating the delta was routed to the wrong book.
+    #[error("[NT-MD-00207] Integrity error: instrument ID mismatch: book={0}, delta={1}")]
     InstrumentMismatch(InstrumentId, InstrumentId),
 }
 
@@ -58,4 +77,63 @@ pub enum BookViewError {
 
     #[error("Opposite own book must have different instrument ID: book={0}, opposite={1}")]
     OppositeInstrumentMatch(InstrumentId, InstrumentId),
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_invalid_book_operation_codes() {
+        assert!(
+            InvalidBookOperation::PreProcessOrder(BookType::L1_MBP)
+                .to_string()
+                .starts_with("[NT-MD-00101]")
+        );
+        assert!(
+            InvalidBookOperation::Add(BookType::L2_MBP)
+                .to_string()
+                .starts_with("[NT-MD-00102]")
+        );
+        assert!(
+            InvalidBookOperation::Update(BookType::L3_MBO)
+                .to_string()
+                .starts_with("[NT-MD-00103]")
+        );
+    }
+
+    #[rstest]
+    fn test_book_integrity_error_codes() {
+        assert!(
+            BookIntegrityError::NoOrderSide
+                .to_string()
+                .starts_with("[NT-MD-00202]")
+        );
+        assert!(
+            BookIntegrityError::OrderNotFoundForSideResolution(42)
+                .to_string()
+                .starts_with("[NT-MD-00203]")
+        );
+        assert!(
+            BookIntegrityError::TooManyOrders(OrderSide::Buy, 5)
+                .to_string()
+                .starts_with("[NT-MD-00205]")
+        );
+        assert!(
+            BookIntegrityError::TooManyLevels(OrderSide::Sell, 3)
+                .to_string()
+                .starts_with("[NT-MD-00206]")
+        );
+    }
+
+    #[rstest]
+    fn test_error_message_format() {
+        let err = InvalidBookOperation::Add(BookType::L2_MBP);
+        assert_eq!(
+            err.to_string(),
+            "[NT-MD-00102] Invalid book operation: cannot add order for L2_MBP book"
+        );
+    }
 }

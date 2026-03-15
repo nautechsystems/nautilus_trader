@@ -6082,6 +6082,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-xtask"
+version = "0.55.0"
+dependencies = [
+ "regex",
+ "walkdir",
+]
+
+[[package]]
 name = "ndarray"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
