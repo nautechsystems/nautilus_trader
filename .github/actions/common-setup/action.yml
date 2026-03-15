@@ -106,9 +106,9 @@ runs:
         tool: nextest
 
     # > --------------------------------------------------
-    # > sccache
+    # > sccache (disabled on macOS: causes filesystem corruption on GH runners)
     - name: Set sccache env vars (common)
-      if: inputs.build-type != 'pre-commit'
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
@@ -121,8 +121,8 @@ runs:
 
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
-    - name: Set sccache env vars (non-Windows)
-      if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
+    - name: Set sccache env vars (Linux)
+      if: runner.os == 'Linux' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.cache/sccache" >> $GITHUB_ENV
@@ -138,7 +138,7 @@ runs:
         echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
     - name: Run sccache
-      if: inputs.build-type != 'pre-commit'
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       continue-on-error: true # Build continues without cache if sccache setup fails
