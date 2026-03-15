@@ -29,6 +29,8 @@
 //! cargo run -p nautilus-polymarket --bin polymarket-composite-filter
 //! ```
 
+use std::sync::Arc;
+
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
@@ -55,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
-        vec![Box::new(event_query), Box::new(predicate)],
+        vec![Arc::new(event_query), Arc::new(predicate)],
     );
 
     log::info!("Loading top-20 presidential election markets by liquidity (outcome='Yes')...");

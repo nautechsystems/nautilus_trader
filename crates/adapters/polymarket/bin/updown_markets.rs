@@ -31,6 +31,8 @@
 //! cargo run -p nautilus-polymarket --bin updown_markets
 //! ```
 
+use std::sync::Arc;
+
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
@@ -69,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
     let filter = MarketSlugFilter::new(build_updown_slugs);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();

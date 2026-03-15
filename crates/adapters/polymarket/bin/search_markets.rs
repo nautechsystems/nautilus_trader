@@ -26,6 +26,8 @@
 //! cargo run -p nautilus-polymarket --bin polymarket-search-markets -- "world cup"
 //! ```
 
+use std::sync::Arc;
+
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
@@ -44,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = PolymarketGammaHttpClient::new(None, None)?;
 
     let filter = SearchFilter::from_query(&query);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();

@@ -39,6 +39,8 @@
 //! cargo run -p nautilus-polymarket --bin trending_markets
 //! ```
 
+use std::sync::Arc;
+
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_polymarket::{
@@ -69,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Building filter and provider");
     let filter = GammaQueryFilter::new(params);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     log::info!("Loading instruments from Gamma API...");
     provider.load_all(None).await?;

@@ -86,6 +86,8 @@ dependencies = [
  "alloy-network",
  "alloy-provider",
  "alloy-rpc-client",
+ "alloy-signer",
+ "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
 ]
@@ -378,6 +380,7 @@ dependencies = [
  "alloy-signer",
  "alloy-sol-types",
  "alloy-transport",
+ "alloy-transport-http",
  "async-stream",
  "async-trait",
  "auto_impl",
@@ -388,11 +391,13 @@ dependencies = [
  "lru",
  "parking_lot",
  "pin-project",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
  "wasmtimer",
 ]
 
@@ -427,14 +432,17 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
  "alloy-transport",
+ "alloy-transport-http",
  "futures",
  "pin-project",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
  "tower",
  "tracing",
+ "url",
  "wasmtimer",
 ]
 
@@ -617,8 +625,13 @@ version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa501ad58dd20acddbfebc65b52e60f05ebf97c52fa40d1b35e91f5e2da0ad0e"
 dependencies = [
+ "alloy-json-rpc",
  "alloy-transport",
  "itertools 0.14.0",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tower",
+ "tracing",
  "url",
 ]
 
@@ -5790,6 +5803,7 @@ name = "nautilus-polymarket"
 version = "0.55.0"
 dependencies = [
  "ahash 0.8.12",
+ "alloy",
  "alloy-primitives",
  "alloy-signer",
  "alloy-signer-local",
@@ -5803,6 +5817,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "derive_builder",
+ "dotenvy",
  "futures-util",
  "hex",
  "log",
