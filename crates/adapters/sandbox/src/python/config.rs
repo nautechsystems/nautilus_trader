@@ -26,7 +26,9 @@ use rust_decimal::Decimal;
 use crate::config::SandboxExecutionClientConfig;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SandboxExecutionClientConfig {
+    /// Configuration for `SandboxExecutionClient` instances.
     #[new]
     #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true))]
     #[allow(clippy::too_many_arguments)]

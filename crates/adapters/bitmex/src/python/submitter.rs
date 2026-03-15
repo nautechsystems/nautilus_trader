@@ -30,7 +30,13 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SubmitBroadcaster {
+    /// Broadcasts submit requests to multiple HTTP clients for redundancy.
+    ///
+    /// This broadcaster fans out submit requests to multiple pre-warmed HTTP clients
+    /// in parallel, short-circuits when the first successful acknowledgement is received,
+    /// and handles expected rejection patterns (duplicate clOrdID) with appropriate log levels.
     #[new]
     #[pyo3(signature = (
         pool_size,
@@ -90,6 +96,11 @@ impl SubmitBroadcaster {
         Self::new(config).map_err(to_pyvalue_err)
     }
 
+    /// Starts the broadcaster and health check loop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the broadcaster is already running.
     #[pyo3(name = "start")]
     fn py_start<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
@@ -98,6 +109,7 @@ impl SubmitBroadcaster {
         })
     }
 
+    /// Stops the broadcaster and health check loop.
     #[pyo3(name = "stop")]
     fn py_stop<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
@@ -107,6 +119,12 @@ impl SubmitBroadcaster {
         })
     }
 
+    /// Broadcasts a submit request to all healthy clients in parallel.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(report)` if successfully submitted with a report.
+    /// - `Err` if all requests failed.
     #[pyo3(name = "broadcast_submit")]
     #[pyo3(signature = (
         instrument_id,
@@ -192,6 +210,7 @@ impl SubmitBroadcaster {
         })
     }
 
+    /// Gets broadcaster metrics.
     #[pyo3(name = "get_metrics")]
     fn py_get_metrics(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let metrics = self.get_metrics();
@@ -205,6 +224,7 @@ impl SubmitBroadcaster {
         Ok(dict.into())
     }
 
+    /// Gets per-client statistics.
     #[pyo3(name = "get_client_stats")]
     fn py_get_client_stats(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let stats = self.get_client_stats();
@@ -220,6 +240,7 @@ impl SubmitBroadcaster {
         Ok(list.into())
     }
 
+    /// Caches an instrument in all HTTP clients in the pool.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;

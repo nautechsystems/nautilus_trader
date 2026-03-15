@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXDataClientConfig {
+    /// Configuration for the OKX data client.
     #[new]
     #[pyo3(signature = (
         instrument_types = None,
@@ -91,7 +93,9 @@ impl OKXDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXExecClientConfig {
+    /// Configuration for the OKX execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,

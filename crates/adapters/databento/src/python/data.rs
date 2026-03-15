@@ -26,12 +26,13 @@ use crate::data::{DatabentoDataClient, DatabentoDataClientConfig};
 
 #[cfg(feature = "python")]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoDataClient {
-    /// Creates a new [`DatabentoDataClient`] instance.
+    /// A Databento data client that combines live streaming and historical data functionality.
     ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if client creation fails.
+    /// This client uses the existing `DatabentoFeedHandler` for live data subscriptions
+    /// and `DatabentoHistoricalClient` for historical data requests. It supports multiple
+    /// datasets simultaneously, with separate feed handlers per dataset.
     #[new]
     #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true))]
     pub fn py_new(

@@ -20,7 +20,9 @@ use pyo3::prelude::*;
 use crate::config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidDataClientConfig {
+    /// Configuration for the Hyperliquid data client.
     #[new]
     #[pyo3(signature = (
         is_testnet = None,
@@ -64,7 +66,9 @@ impl HyperliquidDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidExecClientConfig {
+    /// Configuration for the Hyperliquid execution client.
     #[new]
     #[pyo3(signature = (
         private_key = None,

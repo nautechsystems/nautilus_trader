@@ -122,6 +122,10 @@ pub enum DydxTimeInForce {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
+)]
 pub enum DydxOrderSide {
     /// Buy order.
     Buy,
@@ -186,6 +190,10 @@ impl From<DydxOrderSide> for OrderSide {
         eq_int,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxOrderType {
     /// Limit order with specified price.
@@ -608,6 +616,10 @@ pub enum DydxTradeType {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
+)]
 pub enum DydxTransferType {
     /// Transfer into the account.
     TransferIn,
@@ -645,6 +657,10 @@ pub enum DydxTransferType {
         eq_int,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
@@ -912,6 +928,10 @@ mod tests {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.dydx")
 )]
 pub enum DydxNetwork {
     /// dYdX mainnet (dydx-mainnet-1).

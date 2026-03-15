@@ -23,7 +23,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BinanceDataClientFactory {
+    /// Factory for creating Binance data clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -36,7 +38,9 @@ impl BinanceDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BinanceExecutionClientFactory {
+    /// Factory for creating Binance Spot execution clients.
     #[new]
     fn py_new() -> Self {
         Self

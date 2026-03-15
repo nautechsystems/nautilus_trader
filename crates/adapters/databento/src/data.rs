@@ -133,6 +133,10 @@ impl DatabentoDataClientConfig {
 /// and `DatabentoHistoricalClient` for historical data requests. It supports multiple
 /// datasets simultaneously, with separate feed handlers per dataset.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
 #[derive(Debug)]
 pub struct DatabentoDataClient {
     /// Client identifier.

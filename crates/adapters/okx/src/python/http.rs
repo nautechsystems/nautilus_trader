@@ -75,7 +75,12 @@ fn parse_attach_algo_ords(
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXHttpClient {
+    /// Provides a higher-level HTTP client for the [OKX](https://okx.com) REST API.
+    ///
+    /// This client wraps the underlying `OKXHttpInnerClient` to handle conversions
+    /// into the Nautilus domain model.
     #[new]
     #[pyo3(signature = (
         api_key=None,
@@ -117,12 +122,19 @@ impl OKXHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Creates a new authenticated `OKXHttpClient` using environment variables and
+    /// the default OKX HTTP base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
     #[staticmethod]
     #[pyo3(name = "from_env")]
     fn py_from_env() -> PyResult<Self> {
         Self::from_env().map_err(to_pyvalue_err)
     }
 
+    /// Returns the base url being used by the client.
     #[getter]
     #[pyo3(name = "base_url")]
     #[must_use]
@@ -130,6 +142,7 @@ impl OKXHttpClient {
         self.base_url()
     }
 
+    /// Returns the public API key being used by the client.
     #[getter]
     #[pyo3(name = "api_key")]
     #[must_use]
@@ -137,6 +150,7 @@ impl OKXHttpClient {
         self.api_key()
     }
 
+    /// Returns a masked version of the API key for logging purposes.
     #[getter]
     #[pyo3(name = "api_key_masked")]
     #[must_use]
@@ -144,26 +158,32 @@ impl OKXHttpClient {
         self.api_key_masked()
     }
 
+    /// Checks if the client is initialized.
+    ///
+    /// The client is considered initialized if any instruments have been cached from the venue.
     #[pyo3(name = "is_initialized")]
     #[must_use]
     pub fn py_is_initialized(&self) -> bool {
         self.is_initialized()
     }
 
+    /// Returns a snapshot of all instrument symbols currently held in the
+    /// internal cache.
     #[pyo3(name = "get_cached_symbols")]
     #[must_use]
     pub fn py_get_cached_symbols(&self) -> Vec<String> {
         self.get_cached_symbols()
     }
 
+    /// Cancel all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     pub fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
-    /// # Errors
+    /// Caches multiple instruments.
     ///
-    /// Returns a Python exception if adding the instruments to the cache fails.
+    /// Any existing instruments with the same symbols will be replaced.
     #[pyo3(name = "cache_instruments")]
     pub fn py_cache_instruments(
         &self,
@@ -178,9 +198,9 @@ impl OKXHttpClient {
         Ok(())
     }
 
-    /// # Errors
+    /// Caches a single instrument.
     ///
-    /// Returns a Python exception if adding the instrument to the cache fails.
+    /// Any existing instrument with the same symbol will be replaced.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
@@ -188,6 +208,13 @@ impl OKXHttpClient {
     }
 
     /// Sets the position mode for the account.
+    ///
+    /// Defaults to NetMode if no position mode is provided.
+    ///
+    /// # Note
+    ///
+    /// This endpoint only works for accounts with derivatives trading enabled.
+    /// If the account only has spot trading, this will return an error.
     #[pyo3(name = "set_position_mode")]
     fn py_set_position_mode<'py>(
         &self,
@@ -206,6 +233,13 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests all instruments for the `instrument_type` from OKX.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - `Vec<InstrumentAny>`: The parsed instruments
+    /// - `Vec<(Ustr, u64)>`: Mappings of inst_id to inst_id_code for WebSocket order operations
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (instrument_type, instrument_family=None))]
     fn py_request_instruments<'py>(
@@ -245,6 +279,9 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests a single instrument by `instrument_id` from OKX.
+    ///
+    /// Fetches the instrument from the API, caches it, and returns it.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -263,6 +300,7 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests the account state for the `account_id` from OKX.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -332,6 +370,7 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests the latest mark price for the `instrument_type` from OKX.
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -350,6 +389,7 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests the latest index price for the `instrument_id` from OKX.
     #[pyo3(name = "request_index_price")]
     fn py_request_index_price<'py>(
         &self,
@@ -368,6 +408,12 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests historical order status reports for the given parameters.
+    ///
+    /// # References
+    ///
+    /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-7-days>.
+    /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-3-months>.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, start=None, end=None, open_only=false, limit=None))]
     #[allow(clippy::too_many_arguments)]
@@ -406,6 +452,7 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests algo order status reports.
     #[pyo3(name = "request_algo_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, algo_id=None, algo_client_order_id=None, state=None, limit=None))]
     #[allow(clippy::too_many_arguments)]
@@ -444,6 +491,7 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests an algo order status report by client order identifier.
     #[pyo3(name = "request_algo_order_status_report")]
     fn py_request_algo_order_status_report<'py>(
         &self,
@@ -467,6 +515,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests fill reports (transaction details) for the given parameters.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-transaction-details-last-3-days>.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, start=None, end=None, limit=None))]
     #[allow(clippy::too_many_arguments)]
@@ -502,6 +555,28 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests current position status reports for the given parameters.
+    ///
+    /// # Position Modes
+    ///
+    /// OKX supports two position modes, which affects how position data is returned:
+    ///
+    /// ## Net Mode (One-way)
+    /// - `posSide` field will be `"net"`
+    /// - `pos` field uses **signed quantities**:
+    ///   - Positive value = Long position
+    ///   - Negative value = Short position
+    ///   - Zero = Flat/no position
+    ///
+    /// ## Long/Short Mode (Hedge/Dual-side)
+    /// - `posSide` field will be `"long"` or `"short"`
+    /// - `pos` field is **always positive** (use `posSide` to determine actual side)
+    /// - Allows holding simultaneous long and short positions on the same instrument
+    /// - Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -527,6 +602,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Places a regular order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order>
     #[pyo3(name = "place_order")]
     #[pyo3(signature = (
         trader_id,
@@ -614,6 +694,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Places an algo order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
     #[pyo3(name = "place_algo_order")]
     #[pyo3(signature = (
         trader_id,
@@ -703,6 +788,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Cancels an algo order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
     #[pyo3(name = "cancel_algo_order")]
     fn py_cancel_algo_order<'py>(
         &self,
@@ -733,6 +823,11 @@ impl OKXHttpClient {
         })
     }
 
+    /// Amends an algo order via HTTP.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-amend-algo-order>
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "amend_algo_order")]
     #[pyo3(signature = (
@@ -789,12 +884,11 @@ impl OKXHttpClient {
         })
     }
 
-    /// Cancels multiple algo orders in a single request.
+    /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Parameters
-    /// ----------
-    /// orders : list[tuple[InstrumentId, str]]
-    ///     List of (instrument_id, algo_id) tuples to cancel.
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
     #[pyo3(name = "cancel_algo_orders")]
     fn py_cancel_algo_orders<'py>(
         &self,
@@ -883,6 +977,13 @@ impl OKXHttpClient {
         })
     }
 
+    /// Requests the current server time from OKX.
+    ///
+    /// Returns the OKX system time as a Unix timestamp in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response cannot be parsed.
     #[pyo3(name = "get_server_time")]
     fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

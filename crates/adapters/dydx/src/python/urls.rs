@@ -23,6 +23,7 @@ use crate::common::consts::{
 };
 
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.dydx")]
 #[pyo3(name = "get_dydx_grpc_urls")]
 #[must_use]
 pub fn py_get_dydx_grpc_urls(is_testnet: bool) -> Vec<String> {
@@ -37,6 +38,7 @@ pub fn py_get_dydx_grpc_urls(is_testnet: bool) -> Vec<String> {
 }
 
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.dydx")]
 #[pyo3(name = "get_dydx_grpc_url")]
 #[must_use]
 pub fn py_get_dydx_grpc_url(is_testnet: bool) -> String {
@@ -48,6 +50,7 @@ pub fn py_get_dydx_grpc_url(is_testnet: bool) -> String {
 }
 
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.dydx")]
 #[pyo3(name = "get_dydx_http_url")]
 #[must_use]
 pub fn py_get_dydx_http_url(is_testnet: bool) -> String {
@@ -59,6 +62,7 @@ pub fn py_get_dydx_http_url(is_testnet: bool) -> String {
 }
 
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.dydx")]
 #[pyo3(name = "get_dydx_ws_url")]
 #[must_use]
 pub fn py_get_dydx_ws_url(is_testnet: bool) -> String {

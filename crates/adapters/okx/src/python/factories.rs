@@ -23,7 +23,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXDataClientFactory {
+    /// Factory for creating OKX data clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -36,7 +38,9 @@ impl OKXDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXExecutionClientFactory {
+    /// Factory for creating OKX execution clients.
     #[new]
     fn py_new() -> Self {
         Self

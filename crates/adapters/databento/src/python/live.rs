@@ -44,6 +44,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
 #[derive(Debug)]
 pub struct DatabentoLiveClient {
     #[pyo3(get)]
@@ -138,6 +142,7 @@ fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoLiveClient {
     /// # Errors
     ///

@@ -90,6 +90,7 @@ fn validate_bar_type(bar_type: &BarType) -> anyhow::Result<()> {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitWebSocketError {
     fn __repr__(&self) -> String {
         format!(
@@ -125,7 +126,9 @@ impl BybitWebSocketError {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitWebSocketClient {
+    /// Creates a new Bybit public WebSocket client.
     #[staticmethod]
     #[pyo3(name = "new_public")]
     #[pyo3(signature = (product_type, environment, url=None, heartbeat=None))]
@@ -138,6 +141,13 @@ impl BybitWebSocketClient {
         Self::new_public_with(product_type, environment, url, heartbeat)
     }
 
+    /// Creates a new Bybit private WebSocket client.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_private")]
     #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
@@ -151,6 +161,13 @@ impl BybitWebSocketClient {
         Self::new_private(environment, api_key, api_secret, url, heartbeat)
     }
 
+    /// Creates a new Bybit trade WebSocket client for order operations.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_trade")]
     #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
@@ -171,52 +188,62 @@ impl BybitWebSocketClient {
         self.credential().map(|c| c.api_key_masked())
     }
 
+    /// Returns a value indicating whether the client is active.
     #[pyo3(name = "is_active")]
     fn py_is_active(&self) -> bool {
         self.is_active()
     }
 
+    /// Returns a value indicating whether the client is closed.
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Returns the number of currently registered subscriptions.
     #[pyo3(name = "subscription_count")]
     fn py_subscription_count(&self) -> usize {
         self.subscription_count()
     }
 
+    /// Adds an instrument to the shared instruments cache.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 
+    /// Sets the account ID for account message parsing.
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
+    /// Sets the account market maker level.
     #[pyo3(name = "set_mm_level")]
     fn py_set_mm_level(&self, mm_level: u8) {
         self.set_mm_level(mm_level);
     }
 
+    /// Sets whether bar timestamps use the close time.
     #[pyo3(name = "set_bars_timestamp_on_close")]
     fn py_set_bars_timestamp_on_close(&self, value: bool) {
         self.set_bars_timestamp_on_close(value);
     }
 
+    /// Adds an instrument ID to the option greeks subscription set.
     #[pyo3(name = "add_option_greeks_sub")]
     fn py_add_option_greeks_sub(&self, instrument_id: InstrumentId) {
         self.add_option_greeks_sub(instrument_id);
     }
 
+    /// Removes an instrument ID from the option greeks subscription set.
     #[pyo3(name = "remove_option_greeks_sub")]
     fn py_remove_option_greeks_sub(&self, instrument_id: InstrumentId) {
         self.remove_option_greeks_sub(&instrument_id);
     }
 
+    /// Disconnects the WebSocket client and stops the background task.
     #[pyo3(name = "connect")]
     #[allow(clippy::needless_pass_by_value)] // PyO3 extracted parameter
     fn py_connect<'py>(
@@ -388,6 +415,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribe to the provided topic strings.
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
         &self,
@@ -402,6 +430,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribe from the provided topics.
     #[pyo3(name = "unsubscribe")]
     fn py_unsubscribe<'py>(
         &self,
@@ -416,6 +445,11 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to orderbook updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>
     #[pyo3(name = "subscribe_orderbook")]
     fn py_subscribe_orderbook<'py>(
         &self,
@@ -434,6 +468,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from orderbook updates for a specific instrument.
     #[pyo3(name = "unsubscribe_orderbook")]
     fn py_unsubscribe_orderbook<'py>(
         &self,
@@ -452,6 +487,11 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to public trade updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/trade>
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
         &self,
@@ -469,6 +509,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from public trade updates for a specific instrument.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -486,6 +527,11 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to ticker updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/ticker>
     #[pyo3(name = "subscribe_ticker")]
     fn py_subscribe_ticker<'py>(
         &self,
@@ -539,6 +585,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from ticker updates for a specific instrument.
     #[pyo3(name = "unsubscribe_ticker")]
     fn py_unsubscribe_ticker<'py>(
         &self,
@@ -556,6 +603,11 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to kline/candlestick updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/kline>
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -574,6 +626,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from kline/candlestick updates for a specific instrument.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,
@@ -592,6 +645,15 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/order>
     #[pyo3(name = "subscribe_orders")]
     fn py_subscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -602,6 +664,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from order updates.
     #[pyo3(name = "unsubscribe_orders")]
     fn py_unsubscribe_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -615,6 +678,15 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to execution/fill updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/execution>
     #[pyo3(name = "subscribe_executions")]
     fn py_subscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -628,6 +700,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from execution/fill updates.
     #[pyo3(name = "unsubscribe_executions")]
     fn py_unsubscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -641,6 +714,15 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to position updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/position>
     #[pyo3(name = "subscribe_positions")]
     fn py_subscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -654,6 +736,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from position updates.
     #[pyo3(name = "unsubscribe_positions")]
     fn py_unsubscribe_positions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -667,6 +750,15 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Subscribes to wallet/balance updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/wallet>
     #[pyo3(name = "subscribe_wallet")]
     fn py_subscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -677,6 +769,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from wallet/balance updates.
     #[pyo3(name = "unsubscribe_wallet")]
     fn py_unsubscribe_wallet<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -690,6 +783,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Waits until the WebSocket client becomes active or times out.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -707,6 +801,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Submits an order using Nautilus domain objects.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         product_type,
@@ -782,6 +877,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Modifies an existing order using Nautilus domain objects.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         product_type,
@@ -836,6 +932,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Cancels an order via WebSocket, returning the request ID for correlation.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (
         product_type,
@@ -879,6 +976,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Builds order params for placing an order.
     #[pyo3(name = "build_place_order_params")]
     #[pyo3(signature = (
         product_type,
@@ -938,6 +1036,7 @@ impl BybitWebSocketClient {
         Ok(params.into())
     }
 
+    /// Batch cancels multiple orders via WebSocket, returning the request ID for correlation.
     #[pyo3(name = "batch_cancel_orders")]
     fn py_batch_cancel_orders<'py>(
         &self,
@@ -973,6 +1072,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Builds order params for amending an order.
     #[pyo3(name = "build_amend_order_params")]
     #[allow(clippy::too_many_arguments)]
     fn py_build_amend_order_params(
@@ -997,6 +1097,7 @@ impl BybitWebSocketClient {
         Ok(params.into())
     }
 
+    /// Builds order params for canceling an order via WebSocket.
     #[pyo3(name = "build_cancel_order_params")]
     fn py_build_cancel_order_params(
         &self,
@@ -1046,6 +1147,7 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Batch creates multiple orders via WebSocket, returning the request ID for correlation.
     #[pyo3(name = "batch_place_orders")]
     fn py_batch_place_orders<'py>(
         &self,

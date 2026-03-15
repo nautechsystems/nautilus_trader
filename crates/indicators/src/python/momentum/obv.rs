@@ -19,7 +19,9 @@ use pyo3::prelude::*;
 use crate::{indicator::Indicator, momentum::obv::OnBalanceVolume};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OnBalanceVolume {
+    /// Creates a new `OnBalanceVolume` instance.
     #[new]
     #[must_use]
     pub fn py_new(period: usize) -> Self {

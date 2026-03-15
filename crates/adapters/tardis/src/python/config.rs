@@ -26,7 +26,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TardisInstrumentMiniInfo {
+    /// Instrument definition information necessary for stream parsing.
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
@@ -78,18 +80,21 @@ impl TardisInstrumentMiniInfo {
     }
 }
 
-/// Converts a bar specification to a Tardis trade bar string.
+/// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
 ///
 /// # Errors
 ///
-/// Returns an error if the bar specification cannot be converted to a Tardis format.
+/// Returns an error if the bar aggregation kind is unsupported.
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
     bar_spec_to_tardis_trade_bar_string(bar_spec).map_err(to_pyvalue_err)
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TardisDataClientConfig {
+    /// Configuration for the Tardis data client.
     #[new]
     #[pyo3(signature = (
         api_key = None,

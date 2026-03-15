@@ -34,6 +34,10 @@ type SignalBuf = ArrayDeque<f64, { MAX_SIGNAL + 1 }, Wrapping>;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct ArcherMovingAveragesTrends {
     pub fast_period: usize,
     pub slow_period: usize,

@@ -19,7 +19,9 @@ use pyo3::pymethods;
 use crate::config::{AxDataClientConfig, AxExecClientConfig};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxDataClientConfig {
+    /// Configuration for the AX Exchange live data client.
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (api_key=None, api_secret=None, is_sandbox=None, base_url_http=None, base_url_ws_public=None, base_url_ws_private=None, http_proxy_url=None, ws_proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, update_instruments_interval_mins=None, funding_rate_poll_interval_mins=None))]
@@ -74,7 +76,9 @@ impl AxDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxExecClientConfig {
+    /// Configuration for the AX Exchange live execution client.
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (trader_id=None, account_id=None, api_key=None, api_secret=None, is_sandbox=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, http_proxy_url=None, ws_proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None))]

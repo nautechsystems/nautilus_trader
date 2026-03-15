@@ -43,19 +43,53 @@ use crate::{
 
 #[allow(clippy::needless_pass_by_value)]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoDataLoader {
+    /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
+    ///
+    /// # Supported Schemas
+    ///  - `MBO` -> `OrderBookDelta`
+    ///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
+    ///  - `MBP_10` -> `OrderBookDepth10`
+    ///  - `BBO_1S` -> `QuoteTick`
+    ///  - `BBO_1M` -> `QuoteTick`
+    ///  - `CMBP_1` -> `(QuoteTick, Option<TradeTick>)`
+    ///  - `CBBO_1S` -> `QuoteTick`
+    ///  - `CBBO_1M` -> `QuoteTick`
+    ///  - `TCBBO` -> `(QuoteTick, TradeTick)`
+    ///  - `TBBO` -> `(QuoteTick, TradeTick)`
+    ///  - `TRADES` -> `TradeTick`
+    ///  - `OHLCV_1S` -> `Bar`
+    ///  - `OHLCV_1M` -> `Bar`
+    ///  - `OHLCV_1H` -> `Bar`
+    ///  - `OHLCV_1D` -> `Bar`
+    ///  - `OHLCV_EOD` -> `Bar`
+    ///  - `DEFINITION` -> `Instrument`
+    ///  - `IMBALANCE` -> `DatabentoImbalance`
+    ///  - `STATISTICS` -> `DatabentoStatistics`
+    ///  - `STATUS` -> `InstrumentStatus`
+    ///
+    /// # References
+    ///
+    /// <https://databento.com/docs/schemas-and-data-formats>
     #[new]
     #[pyo3(signature = (publishers_filepath=None))]
     fn py_new(publishers_filepath: Option<PathBuf>) -> PyResult<Self> {
         Self::new(publishers_filepath).map_err(to_pyvalue_err)
     }
 
+    /// Load the publishers data from the file at the given `filepath`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed as JSON.
     #[pyo3(name = "load_publishers")]
     fn py_load_publishers(&mut self, publishers_filepath: PathBuf) -> PyResult<()> {
         self.load_publishers(publishers_filepath)
             .map_err(to_pyvalue_err)
     }
 
+    /// Returns the internal Databento publishers currently held by the loader.
     #[must_use]
     #[pyo3(name = "get_publishers")]
     fn py_get_publishers(&self) -> HashMap<u16, DatabentoPublisher> {
@@ -65,17 +99,20 @@ impl DatabentoDataLoader {
             .collect::<HashMap<u16, DatabentoPublisher>>()
     }
 
+    /// Sets the `venue` to map to the given `dataset`.
     #[pyo3(name = "set_dataset_for_venue")]
     fn py_set_dataset_for_venue(&mut self, dataset: String, venue: Venue) {
         self.set_dataset_for_venue(Ustr::from(&dataset), venue);
     }
 
+    /// Returns the dataset which matches the given `venue` (if found).
     #[must_use]
     #[pyo3(name = "get_dataset_for_venue")]
     fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
         self.get_dataset_for_venue(venue).map(ToString::to_string)
     }
 
+    /// Returns the venue which matches the given `publisher_id` (if found).
     #[must_use]
     #[pyo3(name = "get_venue_for_publisher")]
     fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
@@ -88,6 +125,10 @@ impl DatabentoDataLoader {
         self.schema_from_file(&filepath).map_err(to_pyvalue_err)
     }
 
+    /// Loads all instrument definitions from a DBN file.
+    ///
+    /// When `skip_on_error` is true, instruments that fail to decode are logged
+    /// as warnings and skipped. When false (default), any decode error is propagated.
     #[pyo3(name = "load_instruments")]
     #[pyo3(signature = (filepath, use_exchange_as_venue, skip_on_error=false))]
     fn py_load_instruments(
@@ -113,6 +154,9 @@ impl DatabentoDataLoader {
     }
 
     // Cannot include trades
+    /// Loads order book delta messages from a DBN MBO schema file.
+    ///
+    /// Cannot include trades.
     #[pyo3(name = "load_order_book_deltas")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_deltas(
@@ -148,6 +192,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
     #[pyo3(name = "load_order_book_depth10")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_depth10(
@@ -176,6 +221,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads quote tick messages from a DBN MBP-1 or TBBO schema file.
     #[pyo3(name = "load_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_quotes(
@@ -211,6 +257,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads best bid/offer quote messages from a DBN BBO schema file.
     #[pyo3(name = "load_bbo_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bbo_quotes(
@@ -239,6 +286,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads consolidated MBP-1 quote messages from a DBN CMBP-1 schema file.
     #[pyo3(name = "load_cmbp_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_cmbp_quotes(
@@ -274,6 +322,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads consolidated best bid/offer quote messages from a DBN CBBO schema file.
     #[pyo3(name = "load_cbbo_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_cbbo_quotes(
@@ -302,6 +351,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads trade messages from a DBN TBBO schema file.
     #[pyo3(name = "load_tbbo_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tbbo_trades(
@@ -330,6 +380,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads trade messages from a DBN TCBBO schema file.
     #[pyo3(name = "load_tcbbo_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tcbbo_trades(
@@ -358,6 +409,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads trade messages from a DBN TRADES schema file.
     #[pyo3(name = "load_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_trades(
@@ -386,6 +438,7 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    /// Loads OHLCV bar messages from a DBN OHLCV schema file.
     #[pyo3(name = "load_bars")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, timestamp_on_close=true))]
     fn py_load_bars(

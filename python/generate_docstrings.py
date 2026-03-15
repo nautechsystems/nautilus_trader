@@ -53,6 +53,7 @@ ANNOTATED_CRATES = [
     "infrastructure",
     "cryptography",
     "network",
+    "indicators",
     "data",
     "trading",
     "testkit",
@@ -61,7 +62,21 @@ ANNOTATED_CRATES = [
 ]
 
 ANNOTATED_ADAPTER_CRATES = [
+    "architect_ax",
+    "betfair",
+    "binance",
+    "bitmex",
     "blockchain",
+    "bybit",
+    "databento",
+    "deribit",
+    "dydx",
+    "hyperliquid",
+    "kraken",
+    "okx",
+    "polymarket",
+    "sandbox",
+    "tardis",
 ]
 
 DROPPED_SECTIONS = {"Panics"}

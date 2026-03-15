@@ -36,6 +36,10 @@ use crate::indicator::Indicator;
         from_py_object,
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.indicators")
+)]
 pub enum CandleBodySize {
     None = 0,
     Small = 1,
@@ -59,6 +63,10 @@ pub enum CandleBodySize {
         from_py_object,
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.indicators")
+)]
 pub enum CandleDirection {
     Bull = 1,
     None = 0,
@@ -79,6 +87,10 @@ pub enum CandleDirection {
         module = "nautilus_trader.core.nautilus_pyo3.indicators",
         from_py_object,
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.indicators")
 )]
 pub enum CandleSize {
     None = 0,
@@ -105,6 +117,10 @@ pub enum CandleSize {
         from_py_object,
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.indicators")
+)]
 pub enum CandleWickSize {
     None = 0,
     Small = 1,
@@ -120,6 +136,10 @@ pub enum CandleWickSize {
         module = "nautilus_trader.core.nautilus_pyo3.indicators",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct FuzzyCandle {
     pub direction: CandleDirection,
@@ -165,6 +185,10 @@ const MAX_CAPACITY: usize = 1024;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct FuzzyCandlesticks {
     pub period: usize,

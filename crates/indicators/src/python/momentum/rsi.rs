@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl RelativeStrengthIndex {
+    /// An indicator which calculates a relative strength index (RSI) across a rolling window.
     #[new]
     #[pyo3(signature = (period, ma_type=None))]
     #[must_use]

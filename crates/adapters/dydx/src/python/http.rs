@@ -36,7 +36,23 @@ use rust_decimal::Decimal;
 use crate::http::client::DydxHttpClient;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxHttpClient {
+    /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.exchange) Indexer REST API.
+    ///
+    /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
+    /// into the Nautilus domain model, following the two-layer pattern established
+    /// in OKX, Bybit, and BitMEX adapters.
+    ///
+    /// **Architecture:**
+    /// - **Raw client** (`DydxRawHttpClient`): Low-level HTTP methods matching dYdX Indexer API endpoints.
+    /// - **Domain client** (`DydxHttpClient`): High-level methods using Nautilus domain types.
+    ///
+    /// The domain client:
+    /// - Wraps the raw client in an `Arc` for efficient cloning (required for Python bindings).
+    /// - Maintains an instrument cache using `DashMap` for thread-safe concurrent access.
+    /// - Provides standard cache methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
+    /// - Tracks cache initialization state for optimizations.
     #[new]
     #[pyo3(signature = (base_url=None, is_testnet=false))]
     fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
@@ -49,16 +65,22 @@ impl DydxHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Returns `true` if this client is configured for testnet.
     #[pyo3(name = "is_testnet")]
     fn py_is_testnet(&self) -> bool {
         self.is_testnet()
     }
 
+    /// Returns the base URL used by this client.
     #[pyo3(name = "base_url")]
     fn py_base_url(&self) -> String {
         self.base_url().to_string()
     }
 
+    /// Requests instruments from the dYdX Indexer API and returns Nautilus domain types.
+    ///
+    /// This method does NOT automatically cache results. Use `fetch_and_cache_instruments()`
+    /// for automatic caching, or call `cache_instruments()` manually with the results.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -94,6 +116,17 @@ impl DydxHttpClient {
         })
     }
 
+    /// Fetches instruments from the API and caches them.
+    ///
+    /// This is a convenience method that fetches instruments and populates both
+    /// the symbol-based and CLOB pair ID-based caches.
+    ///
+    /// On success, existing caches are cleared and repopulated atomically.
+    /// On failure, existing caches are preserved (no partial updates).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
     #[pyo3(name = "fetch_and_cache_instruments")]
     fn py_fetch_and_cache_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -130,6 +163,7 @@ impl DydxHttpClient {
         })
     }
 
+    /// Gets an instrument from the cache by InstrumentId.
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
         use nautilus_model::identifiers::{Symbol, Venue};
@@ -154,6 +188,10 @@ impl DydxHttpClient {
             .collect()
     }
 
+    /// Caches multiple instruments (symbol lookup only).
+    ///
+    /// Use `fetch_and_cache_instruments()` for full caching with market params.
+    /// Any existing instruments with the same symbols will be replaced.
     #[pyo3(name = "cache_instruments")]
     fn py_cache_instruments(
         &self,
@@ -233,6 +271,10 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests order status reports for a subaccount.
+    ///
+    /// Fetches orders from the dYdX Indexer API and converts them to Nautilus
+    /// `OrderStatusReport` objects.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_order_status_reports<'py>(
@@ -263,6 +305,10 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests fill reports for a subaccount.
+    ///
+    /// Fetches fills from the dYdX Indexer API and converts them to Nautilus
+    /// `FillReport` objects.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_fill_reports<'py>(
@@ -288,6 +334,10 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests position status reports for a subaccount.
+    ///
+    /// Fetches positions from the dYdX Indexer API and converts them to Nautilus
+    /// `PositionStatusReport` objects.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -318,6 +368,10 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests account state for a subaccount.
+    ///
+    /// Fetches the subaccount from the dYdX Indexer API and converts it to a Nautilus
+    /// `AccountState` with balances and margin calculations.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -337,6 +391,16 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests historical bars for an instrument with optional pagination.
+    ///
+    /// Fetches candle data from the dYdX Indexer API and converts to Nautilus
+    /// `Bar` objects. Supports time-chunked pagination for large date ranges.
+    ///
+    /// The resolution is derived internally from `bar_type` (no need to pass
+    /// `DydxCandleResolution`). Incomplete bars (where `ts_event >= now`) are
+    /// filtered out.
+    ///
+    /// Results are returned in chronological order (oldest first).
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(
@@ -363,6 +427,13 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests historical trade ticks for an instrument with optional pagination.
+    ///
+    /// Fetches trade data from the dYdX Indexer API and converts them to Nautilus
+    /// `TradeTick` objects. Supports cursor-based pagination using block height
+    /// and client-side time filtering (the dYdX API has no timestamp filter).
+    ///
+    /// Results are returned in chronological order (oldest first).
     #[pyo3(name = "request_trade_ticks")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
@@ -388,6 +459,11 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests an order book snapshot for a symbol.
+    ///
+    /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus
+    /// `OrderBookDeltas`. The snapshot is represented as a sequence of deltas starting
+    /// with a CLEAR action followed by ADD actions for each level.
     #[pyo3(name = "request_orderbook_snapshot")]
     fn py_request_orderbook_snapshot<'py>(
         &self,

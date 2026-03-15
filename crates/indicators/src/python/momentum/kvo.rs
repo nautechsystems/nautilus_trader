@@ -21,7 +21,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KlingerVolumeOscillator {
+    /// Creates a new `KlingerVolumeOscillator` instance.
     #[new]
     #[pyo3(signature = (fast_period, slow_period, signal_period, ma_type=None))]
     #[must_use]

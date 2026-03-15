@@ -68,13 +68,22 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxWebSocketClient {
+    /// Creates a new public WebSocket client for market data.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use `Self.new_public_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_public")]
     fn py_new_public(url: String, heartbeat: Option<u64>) -> Self {
         Self::new_public(url, heartbeat)
     }
 
+    /// Creates a new private WebSocket client for account updates.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use `Self.new_private_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_private")]
     fn py_new_private(
@@ -89,16 +98,19 @@ impl DydxWebSocketClient {
         Ok(Self::new_private(url, credential, account_id, heartbeat))
     }
 
+    /// Returns `true` when the client is connected.
     #[pyo3(name = "is_connected")]
     fn py_is_connected(&self) -> bool {
         self.is_connected()
     }
 
+    /// Sets the account ID for account message parsing.
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
+    /// Sets whether bar timestamps use the close time.
     #[pyo3(name = "set_bars_timestamp_on_close")]
     fn py_set_bars_timestamp_on_close(&self, value: bool) {
         self.set_bars_timestamp_on_close(value);
@@ -141,22 +153,28 @@ impl DydxWebSocketClient {
             .remove(&client_order_id);
     }
 
+    /// Returns the account ID if set.
     #[pyo3(name = "account_id")]
     fn py_account_id(&self) -> Option<AccountId> {
         self.account_id()
     }
 
-    /// Returns the shared client order ID encoder.
+    /// Returns a reference to the shared client order ID encoder.
     #[pyo3(name = "encoder")]
     fn py_encoder(&self) -> PyDydxClientOrderIdEncoder {
         PyDydxClientOrderIdEncoder::from_arc(self.encoder().clone())
     }
 
+    /// Returns the URL of this WebSocket client.
     #[getter]
     fn py_url(&self) -> String {
         self.url().to_string()
     }
 
+    /// Connects the websocket client in handler mode with automatic reconnection.
+    ///
+    /// Spawns a background handler task that owns the WebSocketClient and processes
+    /// raw messages into venue-specific `DydxWsOutputMessage` values.
     #[pyo3(name = "connect")]
     #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
     #[allow(clippy::needless_pass_by_value)]
@@ -773,6 +791,14 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Disconnects the websocket client gracefully.
+    ///
+    /// Sends a disconnect command to the handler, sets the stop signal, then
+    /// awaits the handler task with a timeout before aborting.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client cannot be accessed.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -819,6 +845,9 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Caches a single instrument.
+    ///
+    /// Any existing instrument with the same ID will be replaced.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, instrument: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
@@ -826,6 +855,9 @@ impl DydxWebSocketClient {
         Ok(())
     }
 
+    /// Caches multiple instruments.
+    ///
+    /// Any existing instruments with the same IDs will be replaced.
     #[pyo3(name = "cache_instruments")]
     fn py_cache_instruments(&self, instruments: Vec<Py<PyAny>>, py: Python<'_>) -> PyResult<()> {
         let mut instruments_any = Vec::new();
@@ -842,6 +874,11 @@ impl DydxWebSocketClient {
         !self.is_connected()
     }
 
+    /// Subscribes to public trade updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://docs.dydx.trade/developers/indexer/websockets#trades-channel>
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
         &self,
@@ -858,6 +895,7 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Unsubscribes from public trade updates for a specific instrument.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -874,6 +912,11 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Subscribes to orderbook updates for a specific instrument.
+    ///
+    /// # References
+    ///
+    /// <https://docs.dydx.trade/developers/indexer/websockets#orderbook-channel>
     #[pyo3(name = "subscribe_orderbook")]
     fn py_subscribe_orderbook<'py>(
         &self,
@@ -890,6 +933,7 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Unsubscribes from orderbook updates for a specific instrument.
     #[pyo3(name = "unsubscribe_orderbook")]
     fn py_unsubscribe_orderbook<'py>(
         &self,
@@ -965,6 +1009,15 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Subscribes to market updates for all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://docs.dydx.trade/developers/indexer/websockets#markets-channel>
     #[pyo3(name = "subscribe_markets")]
     fn py_subscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -974,6 +1027,11 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Unsubscribes from market updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_markets")]
     fn py_unsubscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -983,6 +1041,14 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Subscribes to subaccount updates (orders, fills, positions, balances).
+    ///
+    /// This requires authentication and will only work for private WebSocket clients
+    /// created with `Self.new_private`.
+    ///
+    /// # References
+    ///
+    /// <https://docs.dydx.trade/developers/indexer/websockets#subaccounts-channel>
     #[pyo3(name = "subscribe_subaccount")]
     fn py_subscribe_subaccount<'py>(
         &self,
@@ -1000,6 +1066,7 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Unsubscribes from subaccount updates.
     #[pyo3(name = "unsubscribe_subaccount")]
     fn py_unsubscribe_subaccount<'py>(
         &self,
@@ -1017,6 +1084,15 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Subscribes to block height updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://docs.dydx.trade/developers/indexer/websockets#block-height-channel>
     #[pyo3(name = "subscribe_block_height")]
     fn py_subscribe_block_height<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -1029,6 +1105,11 @@ impl DydxWebSocketClient {
         })
     }
 
+    /// Unsubscribes from block height updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_block_height")]
     fn py_unsubscribe_block_height<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

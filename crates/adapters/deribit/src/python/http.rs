@@ -39,7 +39,12 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitHttpClient {
+    /// High-level Deribit HTTP client with domain-level abstractions.
+    ///
+    /// This client wraps the raw HTTP client and provides methods that use Nautilus
+    /// domain types. It maintains an instrument cache for efficient lookups.
     #[new]
     #[pyo3(signature = (
         api_key=None,
@@ -79,6 +84,7 @@ impl DeribitHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Returns whether this client is connected to testnet.
     #[getter]
     #[pyo3(name = "is_testnet")]
     #[must_use]
@@ -92,9 +98,7 @@ impl DeribitHttpClient {
         self.is_cache_initialized()
     }
 
-    /// # Errors
-    ///
-    /// Returns a Python exception if adding the instruments to the cache fails.
+    /// Caches instruments for later retrieval.
     #[pyo3(name = "cache_instruments")]
     pub fn py_cache_instruments(
         &self,
@@ -119,6 +123,7 @@ impl DeribitHttpClient {
         Ok(())
     }
 
+    /// Requests instruments for a specific currency.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (currency, product_type=None))]
     fn py_request_instruments<'py>(
@@ -149,6 +154,10 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests a specific instrument by its Nautilus instrument ID.
+    ///
+    /// This is a high-level method that fetches the raw instrument data from Deribit
+    /// and converts it to a Nautilus `InstrumentAny` type.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -167,6 +176,10 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests account state for all currencies.
+    ///
+    /// Fetches account balance and margin information for all currencies from Deribit
+    /// and converts it to Nautilus `AccountState` event.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -185,6 +198,22 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests historical trades for an instrument within a time range.
+    ///
+    /// Fetches trade ticks from Deribit and converts them to Nautilus `TradeTick` objects.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to fetch trades for
+    /// * `start` - Optional start time filter
+    /// * `end` - Optional end time filter
+    /// * `limit` - Optional limit on number of trades (max 1000)
+    ///
+    /// # Pagination
+    ///
+    /// When `limit` is `None`, this function automatically paginates through all available
+    /// trades in the time range using the `has_more` field from the API response.
+    /// When `limit` is specified, pagination stops once that many trades are collected.
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trades<'py>(
@@ -213,6 +242,13 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests historical bars (OHLCV) for an instrument.
+    ///
+    /// Uses the `public/get_tradingview_chart_data` endpoint to fetch candlestick data.
+    ///
+    /// # Supported Resolutions
+    ///
+    /// Deribit supports: 1, 3, 5, 10, 15, 30, 60, 120, 180, 360, 720 minutes, and 1D (daily)
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
@@ -239,6 +275,14 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests a snapshot of the order book for an instrument.
+    ///
+    /// Fetches the order book from Deribit and converts it to a Nautilus `OrderBook`.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to fetch the order book for
+    /// * `depth` - Optional depth limit (valid values: 1, 5, 10, 20, 50, 100, 1000, 10000)
     #[pyo3(name = "request_book_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_book_snapshot<'py>(
@@ -259,6 +303,14 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests order status reports for reconciliation.
+    ///
+    /// Fetches order statuses from Deribit and converts them to Nautilus `OrderStatusReport`.
+    ///
+    /// # Strategy
+    /// - Uses `/private/get_open_orders` for all open orders (single efficient API call)
+    /// - Uses `/private/get_open_orders_by_instrument` when specific instrument is provided
+    /// - For historical orders (when `open_only=false`), iterates over currencies
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=true))]
     fn py_request_order_status_reports<'py>(
@@ -295,6 +347,14 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests fill reports for reconciliation.
+    ///
+    /// Fetches user trades from Deribit and converts them to Nautilus `FillReport`.
+    /// Automatically paginates through all results using time-cursor advancement.
+    ///
+    /// # Strategy
+    /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
+    /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
     fn py_request_fill_reports<'py>(
@@ -329,6 +389,13 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests position status reports for reconciliation.
+    ///
+    /// Fetches positions from Deribit and converts them to Nautilus `PositionStatusReport`.
+    ///
+    /// # Strategy
+    /// - Uses `currency=any` to fetch all positions in one call
+    /// - Filters by instrument_id if provided
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(

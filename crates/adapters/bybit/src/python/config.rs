@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitDataClientConfig {
+    /// Configuration for the Bybit live data client.
     #[new]
     #[pyo3(signature = (
         product_types = None,
@@ -89,7 +91,9 @@ impl BybitDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitExecClientConfig {
+    /// Configuration for the Bybit live execution client.
     #[new]
     #[pyo3(signature = (
         product_types = None,

@@ -28,6 +28,7 @@ python = [
   "nautilus-model/python",
   "nautilus-system/python",
   "pyo3",
+  "pyo3-stub-gen",
 ]
 
 [package.metadata.docs.rs]
@@ -64,6 +65,7 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-execution = { workspace = true }

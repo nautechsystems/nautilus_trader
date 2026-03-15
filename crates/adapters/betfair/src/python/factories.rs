@@ -23,7 +23,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetfairDataClientFactory {
+    /// Factory for creating Betfair data clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -36,7 +38,9 @@ impl BetfairDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetfairExecutionClientFactory {
+    /// Factory for creating Betfair execution clients.
     #[new]
     fn py_new() -> Self {
         Self

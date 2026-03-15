@@ -27,6 +27,7 @@ use pyo3::{prelude::*, types::PyDict};
 use crate::types::DydxOraclePrice;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxOraclePrice {
     fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {

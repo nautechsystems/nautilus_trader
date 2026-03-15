@@ -36,6 +36,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxEnvironment {
     fn __repr__(&self) -> String {
         format!(
@@ -72,6 +73,7 @@ impl AxEnvironment {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxMarketDataLevel {
     fn __repr__(&self) -> String {
         format!(

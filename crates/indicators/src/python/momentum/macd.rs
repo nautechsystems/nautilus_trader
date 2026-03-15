@@ -26,7 +26,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MovingAverageConvergenceDivergence {
+    /// Creates a new `MovingAverageConvergenceDivergence` instance.
     #[new]
     #[pyo3(signature = (fast_period, slow_period, ma_type=None, price_type=None))]
     #[must_use]

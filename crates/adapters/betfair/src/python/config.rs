@@ -25,7 +25,9 @@ fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetfairDataConfig {
+    /// Configuration for the Betfair live data client.
     #[new]
     #[pyo3(signature = (
         account_currency = None,
@@ -117,7 +119,9 @@ impl BetfairDataConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetfairExecConfig {
+    /// Configuration for the Betfair live execution client.
     #[new]
     #[pyo3(signature = (
         trader_id = None,

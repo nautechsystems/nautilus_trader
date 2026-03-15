@@ -19,7 +19,9 @@ use pyo3::prelude::*;
 use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VolumeWeightedAveragePrice {
+    /// Creates a new `VolumeWeightedAveragePrice` instance.
     #[new]
     #[must_use]
     pub const fn py_new() -> Self {

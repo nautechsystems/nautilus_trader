@@ -28,6 +28,10 @@ const MAX_PERIOD: usize = 16_384;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct LinearRegression {
     pub period: usize,
     pub slope: f64,

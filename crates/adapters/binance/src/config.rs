@@ -30,6 +30,10 @@ use crate::common::enums::{BinanceEnvironment, BinanceProductType};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+)]
 pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
     pub product_types: Vec<BinanceProductType>,
@@ -73,6 +77,10 @@ impl ClientConfig for BinanceDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
 pub struct BinanceExecClientConfig {
     /// Trader ID for the client.

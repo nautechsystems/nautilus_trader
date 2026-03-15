@@ -36,7 +36,12 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxHttpClient {
+    /// High-level HTTP client for the Ax REST API.
+    ///
+    /// This client wraps the underlying `AxRawHttpClient` to provide a convenient
+    /// interface for Python bindings and instrument caching.
     #[new]
     #[pyo3(signature = (
         base_url=None,
@@ -69,6 +74,7 @@ impl AxHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Creates a new `AxHttpClient` configured with credentials.
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
     #[pyo3(signature = (
@@ -108,6 +114,7 @@ impl AxHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Returns the base URL for this client.
     #[getter]
     #[pyo3(name = "base_url")]
     #[must_use]
@@ -115,6 +122,7 @@ impl AxHttpClient {
         self.base_url()
     }
 
+    /// Returns a masked version of the API key for logging purposes.
     #[getter]
     #[pyo3(name = "api_key_masked")]
     #[must_use]
@@ -122,20 +130,24 @@ impl AxHttpClient {
         self.api_key_masked()
     }
 
+    /// Cancel all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     pub fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
-    /// # Errors
+    /// Caches a single instrument.
     ///
-    /// Returns a `PyErr` if the instrument cannot be converted from Python.
+    /// Any existing instrument with the same symbol will be replaced.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 
+    /// Authenticates with Ax using API credentials.
+    ///
+    /// On success, the session token is automatically stored for subsequent authenticated requests.
     #[pyo3(name = "authenticate")]
     #[pyo3(signature = (api_key, api_secret, expiration_seconds=86400))]
     fn py_authenticate<'py>(
@@ -155,6 +167,15 @@ impl AxHttpClient {
         })
     }
 
+    /// Authenticates using stored credentials or environment variables.
+    ///
+    /// # Credential Resolution
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Stored credentials (from `with_credentials` constructor)
+    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
+    ///
+    /// On success, the session token is automatically stored for subsequent authenticated requests.
     #[pyo3(name = "authenticate_auto")]
     #[pyo3(signature = (expiration_seconds=86400))]
     fn py_authenticate_auto<'py>(
@@ -172,6 +193,7 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests all instruments from Ax.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (maker_fee=None, taker_fee=None))]
     fn py_request_instruments<'py>(
@@ -199,6 +221,12 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests recent trades from Ax and parses them to Nautilus `TradeTick`.
+    ///
+    /// The AX trades endpoint does not accept time range parameters, so
+    /// `start` and `end` are applied as client-side filters after fetching.
+    ///
+    /// Requires the instrument to be cached.
     #[pyo3(name = "request_trade_ticks")]
     #[pyo3(signature = (instrument_id, limit=None, start=None, end=None))]
     fn py_request_trade_ticks<'py>(
@@ -231,6 +259,9 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests historical bars from Ax and parses them to Nautilus Bar types.
+    ///
+    /// Requires the instrument to be cached (call `request_instruments` first).
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None))]
     fn py_request_bars<'py>(
@@ -259,6 +290,7 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests funding rates from Ax and parses them to Nautilus types.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None))]
     fn py_request_funding_rates<'py>(
@@ -287,6 +319,7 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests account state from Ax and parses to a Nautilus `AccountState`.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -305,6 +338,11 @@ impl AxHttpClient {
         })
     }
 
+    /// Queries a single order by venue order ID or client order ID using the
+    /// dedicated `/order-status` endpoint, which works for any order state.
+    ///
+    /// The caller must supply `order_side`, `order_type`, and `time_in_force`
+    /// because the endpoint does not return these fields.
     #[pyo3(name = "request_order_status")]
     #[pyo3(signature = (
         account_id,
@@ -347,6 +385,12 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests open orders from Ax and parses them to Nautilus `OrderStatusReport`.
+    ///
+    /// Requires instruments to be cached for parsing order details.
+    ///
+    /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+    /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,
@@ -372,6 +416,9 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests fills from Ax and parses them to Nautilus `FillReport`.
+    ///
+    /// Requires instruments to be cached for parsing fill details.
     #[pyo3(name = "request_fill_reports")]
     fn py_request_fill_reports<'py>(
         &self,
@@ -397,6 +444,9 @@ impl AxHttpClient {
         })
     }
 
+    /// Requests positions from Ax and parses them to Nautilus `PositionStatusReport`.
+    ///
+    /// Requires instruments to be cached for parsing position details.
     #[pyo3(name = "request_position_reports")]
     fn py_request_position_reports<'py>(
         &self,

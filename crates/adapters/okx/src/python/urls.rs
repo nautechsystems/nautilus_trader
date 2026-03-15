@@ -21,30 +21,35 @@ use crate::common::urls;
 
 /// Returns the OKX HTTP base URL.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
 pub fn get_okx_http_base_url() -> String {
     urls::get_http_base_url().to_string()
 }
 
 /// Returns the OKX WebSocket URL for public data (market data).
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
 pub fn get_okx_ws_url_public(is_demo: bool) -> String {
     urls::get_ws_base_url_public(is_demo).to_string()
 }
 
 /// Returns the OKX WebSocket URL for private data (account/order management).
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
 pub fn get_okx_ws_url_private(is_demo: bool) -> String {
     urls::get_ws_base_url_private(is_demo).to_string()
 }
 
 /// Returns the OKX WebSocket URL for business data (bars/candlesticks).
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
 pub fn get_okx_ws_url_business(is_demo: bool) -> String {
     urls::get_ws_base_url_business(is_demo).to_string()
 }
 
 /// Checks if OKX endpoint requires authentication.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
 pub fn okx_requires_authentication(endpoint_type: urls::OKXEndpointType) -> bool {
     urls::requires_authentication(endpoint_type)
 }

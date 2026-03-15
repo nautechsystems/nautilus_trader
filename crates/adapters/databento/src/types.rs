@@ -53,6 +53,10 @@ pub type Dataset = Ustr;
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoPublisher {
     /// The publisher ID assigned by Databento, which denotes the dataset and venue.
@@ -75,6 +79,10 @@ pub struct DatabentoPublisher {
         module = "nautilus_trader.core.nautilus_pyo3.databento",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DatabentoImbalance {
@@ -209,6 +217,10 @@ impl CustomDataTrait for DatabentoImbalance {
         module = "nautilus_trader.core.nautilus_pyo3.databento",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DatabentoStatistics {

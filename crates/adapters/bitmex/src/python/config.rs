@@ -21,7 +21,9 @@ use pyo3::prelude::*;
 use crate::config::{BitmexDataClientConfig, BitmexExecClientConfig};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BitmexDataClientConfig {
+    /// Configuration for the BitMEX live data client.
     #[new]
     #[pyo3(signature = (
         api_key = None,
@@ -88,7 +90,9 @@ impl BitmexDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BitmexExecClientConfig {
+    /// Configuration for the BitMEX live execution client.
     #[new]
     #[pyo3(signature = (
         api_key = None,

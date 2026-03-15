@@ -83,7 +83,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenSpotWebSocketClient {
+    /// WebSocket client for the Kraken Spot v2 streaming API.
     #[new]
     #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
     fn py_new(
@@ -126,6 +128,7 @@ impl KrakenSpotWebSocketClient {
         Self::new(config, token)
     }
 
+    /// Returns the WebSocket URL.
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
@@ -133,31 +136,37 @@ impl KrakenSpotWebSocketClient {
         self.url()
     }
 
+    /// Returns true if connected (not closed).
     #[pyo3(name = "is_connected")]
     fn py_is_connected(&self) -> bool {
         self.is_connected()
     }
 
+    /// Returns true if the connection is active.
     #[pyo3(name = "is_active")]
     fn py_is_active(&self) -> bool {
         self.is_active()
     }
 
+    /// Returns true if the connection is closed.
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Returns all active subscriptions.
     #[pyo3(name = "get_subscriptions")]
     fn py_get_subscriptions(&self) -> Vec<String> {
         self.get_subscriptions()
     }
 
+    /// Cancels all pending requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
+    /// Connects to the WebSocket server.
     #[pyo3(name = "connect")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -424,6 +433,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Waits until the connection is active or timeout.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -441,6 +451,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Authenticates with the Kraken API to enable private subscriptions.
     #[pyo3(name = "authenticate")]
     fn py_authenticate<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -451,6 +462,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Disconnects from the WebSocket server.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -461,6 +473,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Sends a ping message to keep the connection alive.
     #[pyo3(name = "send_ping")]
     fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -471,6 +484,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Closes the WebSocket connection.
     #[pyo3(name = "close")]
     fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -481,11 +495,13 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Sets the account ID for execution report parsing.
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
+    /// Caches an instrument for execution report parsing.
     #[pyo3(name = "cache_instrument")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
@@ -494,6 +510,7 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
+    /// Caches a client order for truncated ID resolution.
     #[pyo3(name = "cache_client_order")]
     fn py_cache_client_order(
         &self,
@@ -512,6 +529,7 @@ impl KrakenSpotWebSocketClient {
         );
     }
 
+    /// Subscribes to order book updates for the given instrument.
     #[pyo3(name = "subscribe_book")]
     fn py_subscribe_book<'py>(
         &self,
@@ -530,6 +548,10 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Subscribes to quote updates for the given instrument.
+    ///
+    /// Uses the Ticker channel with `event_trigger: "bbo"` for updates only on
+    /// best bid/offer changes.
     #[pyo3(name = "subscribe_quotes")]
     fn py_subscribe_quotes<'py>(
         &self,
@@ -547,6 +569,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Subscribes to trade updates for the given instrument.
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
         &self,
@@ -564,6 +587,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Subscribes to bar/OHLC updates for the given bar type.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -581,6 +605,9 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Subscribes to execution updates (order and fill events).
+    ///
+    /// Requires authentication - call `authenticate()` first.
     #[pyo3(name = "subscribe_executions")]
     #[pyo3(signature = (snap_orders=true, snap_trades=true))]
     fn py_subscribe_executions<'py>(
@@ -600,6 +627,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Unsubscribes from order book updates for the given instrument.
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -617,6 +645,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Unsubscribes from quote updates for the given instrument.
     #[pyo3(name = "unsubscribe_quotes")]
     fn py_unsubscribe_quotes<'py>(
         &self,
@@ -634,6 +663,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Unsubscribes from trade updates for the given instrument.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -651,6 +681,7 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Unsubscribes from bar/OHLC updates for the given bar type.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,

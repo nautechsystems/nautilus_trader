@@ -386,6 +386,10 @@ impl TransportClient {
 /// in parallel, short-circuits when the first successful acknowledgement is received,
 /// and handles expected rejection patterns (duplicate clOrdID) with appropriate log levels.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+)]
 #[derive(Debug)]
 pub struct SubmitBroadcaster {
     config: SubmitBroadcasterConfig,
