@@ -20,7 +20,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use nautilus_core::{AtomicTime, time::get_atomic_clock_realtime};
 use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
@@ -58,7 +57,6 @@ pub enum HandlerCommand {
 }
 
 pub(super) struct FeedHandler {
-    clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     channel: WsChannel,
     client: Option<WebSocketClient>,
@@ -90,7 +88,6 @@ impl FeedHandler {
         user_subscribed: bool,
     ) -> Self {
         Self {
-            clock: get_atomic_clock_realtime(),
             signal,
             channel,
             client: None,
@@ -114,10 +111,6 @@ impl FeedHandler {
 
     pub(super) fn is_stopped(&self) -> bool {
         self.signal.load(Ordering::Relaxed)
-    }
-
-    fn timestamp_secs(&self) -> String {
-        (self.clock.get_time_ns().as_u64() / 1_000_000_000).to_string()
     }
 
     async fn send_subscribe_market(&mut self, asset_ids: &[String]) {
@@ -196,16 +189,11 @@ impl FeedHandler {
             return;
         };
 
-        let timestamp = self.timestamp_secs();
-        let secret = cred.sign(&timestamp, "GET", "/ws/user", "");
-
         let req = UserSubscribeRequest {
             auth: PolymarketWsAuth {
                 api_key: cred.api_key().to_string(),
-                secret,
+                secret: cred.api_secret(),
                 passphrase: cred.passphrase().to_string(),
-                timestamp,
-                nonce: String::new(),
             },
             markets: vec![],
             assets_ids: vec![],

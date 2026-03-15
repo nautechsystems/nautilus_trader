@@ -462,20 +462,25 @@ async fn test_subscribe_user_sends_auth_payload() {
         auth.get("passphrase").is_some(),
         "auth must contain 'passphrase'"
     );
-    assert!(
-        auth.get("timestamp").is_some(),
-        "auth must contain 'timestamp'"
-    );
     assert_eq!(
         auth.get("apiKey").unwrap().as_str().unwrap(),
         "test_api_key"
+    );
+    // WebSocket auth sends the raw API secret, not an HMAC signature
+    assert_eq!(
+        auth.get("secret").unwrap().as_str().unwrap(),
+        TEST_API_SECRET_B64
     );
     assert_eq!(
         auth.get("passphrase").unwrap().as_str().unwrap(),
         "test_pass"
     );
-    // nonce is always empty string
-    assert_eq!(auth.get("nonce").unwrap().as_str().unwrap(), "");
+    // No timestamp or nonce fields in WebSocket auth
+    assert!(
+        auth.get("timestamp").is_none(),
+        "auth must NOT contain 'timestamp'"
+    );
+    assert!(auth.get("nonce").is_none(), "auth must NOT contain 'nonce'");
 
     client.disconnect().await.expect("disconnect failed");
 }

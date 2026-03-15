@@ -172,17 +172,13 @@ pub enum PolymarketWsMessage {
     Reconnected,
 }
 
-/// L2 auth payload embedded in user-channel subscribe messages.
+/// Auth payload embedded in user-channel subscribe messages.
 #[derive(Debug, Serialize)]
 pub struct PolymarketWsAuth {
     #[serde(rename = "apiKey")]
     pub api_key: String,
-    /// Base64-encoded HMAC-SHA256 signature.
     pub secret: String,
     pub passphrase: String,
-    pub timestamp: String,
-    /// Always empty string per the Polymarket WS protocol.
-    pub nonce: String,
 }
 
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
