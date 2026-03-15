@@ -21,14 +21,116 @@
 )]
 
 pub mod config;
+pub mod factories;
 
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
+
+use crate::{
+    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+};
+
+#[allow(clippy::needless_pass_by_value)]
+fn extract_polymarket_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<PolymarketDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract PolymarketDataClientFactory: {e}"
+        ))),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn extract_polymarket_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<PolymarketExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract PolymarketExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn extract_polymarket_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<PolymarketDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract PolymarketDataClientConfig: {e}"
+        ))),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn extract_polymarket_exec_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<PolymarketExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract PolymarketExecClientConfig: {e}"
+        ))),
+    }
+}
 
 /// Loaded as `nautilus_pyo3.polymarket`.
 #[pymodule]
 pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::SignatureType>()?;
-    m.add_class::<crate::config::PolymarketDataClientConfig>()?;
-    m.add_class::<crate::config::PolymarketExecClientConfig>()?;
+    m.add_class::<PolymarketDataClientConfig>()?;
+    m.add_class::<PolymarketExecClientConfig>()?;
+    m.add_class::<PolymarketDataClientFactory>()?;
+    m.add_class::<PolymarketExecutionClientFactory>()?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) = registry
+        .register_factory_extractor("POLYMARKET".to_string(), extract_polymarket_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Polymarket data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_exec_factory_extractor("POLYMARKET".to_string(), extract_polymarket_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Polymarket exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "PolymarketDataClientConfig".to_string(),
+        extract_polymarket_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Polymarket data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "PolymarketExecClientConfig".to_string(),
+        extract_polymarket_exec_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Polymarket exec config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }

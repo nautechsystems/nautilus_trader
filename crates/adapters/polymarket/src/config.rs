@@ -15,10 +15,14 @@
 
 //! Configuration structures for the Polymarket adapter.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
-use crate::common::{enums::SignatureType, urls};
-use crate::filters::InstrumentFilter;
+use nautilus_model::identifiers::{AccountId, TraderId};
+
+use crate::{
+    common::{enums::SignatureType, urls},
+    filters::InstrumentFilter,
+};
 
 /// Configuration for the Polymarket data client.
 #[cfg_attr(
@@ -59,9 +63,9 @@ impl Clone for PolymarketDataClientConfig {
     }
 }
 
-impl std::fmt::Debug for PolymarketDataClientConfig {
+impl Debug for PolymarketDataClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PolymarketDataClientConfig")
+        f.debug_struct(stringify!(PolymarketDataClientConfig))
             .field("base_url_http", &self.base_url_http)
             .field("base_url_ws", &self.base_url_ws)
             .field("base_url_gamma", &self.base_url_gamma)
@@ -72,7 +76,7 @@ impl std::fmt::Debug for PolymarketDataClientConfig {
                 "update_instruments_interval_mins",
                 &self.update_instruments_interval_mins,
             )
-            .field("filters_count", &self.filters.len())
+            .field("filters", &self.filters)
             .finish()
     }
 }
@@ -133,6 +137,8 @@ impl PolymarketDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 pub struct PolymarketExecClientConfig {
+    pub trader_id: TraderId,
+    pub account_id: AccountId,
     /// Falls back to `POLYMARKET_PK` env var.
     pub private_key: Option<String>,
     /// Falls back to `POLYMARKET_API_KEY` env var.
@@ -159,6 +165,8 @@ pub struct PolymarketExecClientConfig {
 impl Clone for PolymarketExecClientConfig {
     fn clone(&self) -> Self {
         Self {
+            trader_id: self.trader_id,
+            account_id: self.account_id,
             private_key: self.private_key.clone(),
             api_key: self.api_key.clone(),
             api_secret: self.api_secret.clone(),
@@ -178,13 +186,15 @@ impl Clone for PolymarketExecClientConfig {
     }
 }
 
-impl std::fmt::Debug for PolymarketExecClientConfig {
+impl Debug for PolymarketExecClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PolymarketExecClientConfig")
-            .field("private_key", &self.private_key.as_ref().map(|_| "***"))
-            .field("api_key", &self.api_key.as_ref().map(|_| "***"))
-            .field("api_secret", &self.api_secret.as_ref().map(|_| "***"))
-            .field("passphrase", &self.passphrase.as_ref().map(|_| "***"))
+        f.debug_struct(stringify!(PolymarketExecClientConfig))
+            .field("trader_id", &self.trader_id)
+            .field("account_id", &self.account_id)
+            .field("private_key", &"***")
+            .field("api_key", &"***")
+            .field("api_secret", &"***")
+            .field("passphrase", &"***")
             .field("funder", &self.funder)
             .field("signature_type", &self.signature_type)
             .field("base_url_http", &self.base_url_http)
@@ -195,7 +205,7 @@ impl std::fmt::Debug for PolymarketExecClientConfig {
             .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
             .field("retry_delay_max_ms", &self.retry_delay_max_ms)
             .field("ack_timeout_secs", &self.ack_timeout_secs)
-            .field("filters_count", &self.filters.len())
+            .field("filters", &self.filters)
             .finish()
     }
 }
@@ -203,6 +213,8 @@ impl std::fmt::Debug for PolymarketExecClientConfig {
 impl Default for PolymarketExecClientConfig {
     fn default() -> Self {
         Self {
+            trader_id: TraderId::default(),
+            account_id: AccountId::from("POLYMARKET-001"),
             private_key: None,
             api_key: None,
             api_secret: None,
