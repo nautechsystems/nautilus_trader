@@ -790,7 +790,8 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.spawn_task("cancel_order", async move {
             match http_client.cancel_order(&order_id_str).await {
                 Ok(response) => {
-                    if let Some(reason) = response.not_canceled {
+                    if let Some(reason_opt) = response.not_canceled.get(&order_id_str) {
+                        let reason = reason_opt.as_deref().unwrap_or("unknown reason");
                         if reason.contains(CANCEL_ALREADY_DONE) {
                             log::info!(
                                 "Cancel rejected for {}: {reason} - awaiting WS for terminal state",
@@ -801,7 +802,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                             emitter.emit_order_cancel_rejected(
                                 &order_clone,
                                 Some(venue_order_id),
-                                &reason,
+                                reason,
                                 ts,
                             );
                         }
@@ -952,8 +953,52 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
-        log::warn!("query_order not yet implemented for Polymarket");
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+        log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
+
+        let venue_order_id = match &cmd.venue_order_id {
+            Some(id) => id.to_string(),
+            None => {
+                log::warn!("query_order requires venue_order_id for Polymarket");
+                return Ok(());
+            }
+        };
+
+        let instrument_id = cmd.instrument_id;
+        let client_order_id = cmd.client_order_id;
+        let account_id = self.core.account_id;
+        let cache = self.core.cache();
+
+        let (price_prec, size_prec) = match cache.instrument(&instrument_id) {
+            Some(i) => (i.price_precision(), i.size_precision()),
+            None => (4, 6),
+        };
+
+        let runtime = get_runtime();
+        let http_client = &self.http_client;
+        let emitter = &self.emitter;
+        let clock = self.clock;
+
+        runtime.block_on(async {
+            match http_client.get_order(&venue_order_id).await {
+                Ok(order) => {
+                    let report = parse_order_status_report(
+                        &order,
+                        instrument_id,
+                        account_id,
+                        Some(client_order_id),
+                        price_prec,
+                        size_prec,
+                        clock.get_time_ns(),
+                    );
+                    emitter.send_order_status_report(report);
+                }
+                Err(e) => {
+                    log::warn!("Failed to query order {venue_order_id}: {e}");
+                }
+            }
+        });
+
         Ok(())
     }
 
@@ -1235,10 +1280,172 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     async fn generate_mass_status(
         &self,
-        _lookback_mins: Option<u64>,
+        lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::warn!("generate_mass_status not yet implemented for Polymarket");
-        Ok(None)
+        let ts_init = UnixNanos::default();
+
+        // Fetch orders
+        let orders = self
+            .http_client
+            .get_orders(GetOrdersParams::default())
+            .await
+            .context("failed to fetch orders for mass status")?;
+
+        // Parse order reports
+        let mut order_reports = Vec::new();
+        let mut orders_filtered = 0usize;
+        for order in &orders {
+            let token_id = Ustr::from(order.asset_id.as_str());
+            let instrument = self.provider.get_by_token_id(&token_id);
+            let (instrument_id, price_prec, size_prec) = match instrument {
+                Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+                None => {
+                    orders_filtered += 1;
+                    continue;
+                }
+            };
+
+            let report = parse_order_status_report(
+                order,
+                instrument_id,
+                self.core.account_id,
+                None,
+                price_prec,
+                size_prec,
+                ts_init,
+            );
+            order_reports.push(report);
+        }
+
+        // Fetch and parse fill reports
+        let trades = self
+            .http_client
+            .get_trades(GetTradesParams::default())
+            .await
+            .context("failed to fetch trades for mass status")?;
+
+        let usdc = get_usdc_currency();
+        let user_addr = self
+            .secrets
+            .funder
+            .clone()
+            .unwrap_or_else(|| self.secrets.address.clone());
+        let api_key = self.secrets.credential.api_key().to_string();
+        let mut fill_reports = Vec::new();
+        let mut fills_filtered = 0usize;
+
+        for trade in &trades {
+            let is_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
+
+            if is_maker {
+                for mo in &trade.maker_orders {
+                    if mo.maker_address != user_addr && mo.owner != api_key {
+                        continue;
+                    }
+                    let token_id = Ustr::from(mo.asset_id.as_str());
+                    let instrument = self.provider.get_by_token_id(&token_id);
+                    let (instrument_id, price_prec, size_prec) = match instrument {
+                        Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+                        None => {
+                            fills_filtered += 1;
+                            continue;
+                        }
+                    };
+
+                    let ts_event =
+                        parse_timestamp(&trade.match_time).unwrap_or(self.clock.get_time_ns());
+                    let report = build_maker_fill_report(
+                        mo,
+                        &trade.id,
+                        trade.trader_side,
+                        trade.side,
+                        trade.asset_id.as_str(),
+                        self.core.account_id,
+                        instrument_id,
+                        price_prec,
+                        size_prec,
+                        usdc,
+                        LiquiditySide::Maker,
+                        ts_event,
+                        ts_init,
+                    );
+                    fill_reports.push(report);
+                }
+            } else {
+                let token_id = Ustr::from(trade.asset_id.as_str());
+                let instrument = self.provider.get_by_token_id(&token_id);
+                let (instrument_id, price_prec, size_prec) = match instrument {
+                    Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+                    None => {
+                        fills_filtered += 1;
+                        continue;
+                    }
+                };
+
+                let report = parse_fill_report(
+                    trade,
+                    instrument_id,
+                    self.core.account_id,
+                    None,
+                    price_prec,
+                    size_prec,
+                    usdc,
+                    ts_init,
+                );
+                fill_reports.push(report);
+            }
+        }
+
+        // Position reports: empty for cash/prediction markets
+        let position_reports: Vec<PositionStatusReport> = vec![];
+
+        // Apply lookback filter
+        if let Some(mins) = lookback_mins {
+            let now_ns = self.clock.get_time_ns();
+            let cutoff_ns = now_ns.as_u64().saturating_sub(mins * 60 * 1_000_000_000);
+            let cutoff = UnixNanos::from(cutoff_ns);
+
+            let orders_before = order_reports.len();
+            order_reports.retain(|r| r.ts_last >= cutoff);
+            let orders_removed = orders_before - order_reports.len();
+
+            let fills_before = fill_reports.len();
+            fill_reports.retain(|r| r.ts_event >= cutoff);
+            let fills_removed = fills_before - fill_reports.len();
+
+            log::info!(
+                "Lookback filter ({}min): orders {}->{} (removed {}), fills {}->{} (removed {})",
+                mins,
+                orders_before,
+                order_reports.len(),
+                orders_removed,
+                fills_before,
+                fill_reports.len(),
+                fills_removed,
+            );
+        } else {
+            log::debug!(
+                "Generated mass status: {} orders ({} filtered), {} fills ({} filtered)",
+                order_reports.len(),
+                orders_filtered,
+                fill_reports.len(),
+                fills_filtered,
+            );
+        }
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+            ts_init,
+            None,
+        );
+
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_position_reports(position_reports);
+        mass_status.add_fill_reports(fill_reports);
+
+        Ok(Some(mass_status))
     }
 }
 
@@ -1405,17 +1612,14 @@ async fn fetch_and_emit_account_state(
         .context("failed to fetch balance allowance")?;
 
     let usdc = get_usdc_currency();
-    let balance_value: f64 = balance_allowance.balance.to_string().parse().unwrap_or(0.0);
-
-    let balances = vec![AccountBalance::new(
-        Money::new(balance_value, usdc),
-        Money::new(0.0, usdc),
-        Money::new(balance_value, usdc),
-    )];
+    let account_balance = parse::parse_balance_allowance(balance_allowance.balance, usdc)
+        .context("failed to parse balance allowance")?;
 
     let ts_event = clock.get_time_ns();
-    emitter.emit_account_state(balances, vec![], true, ts_event);
-
-    log::info!("Account state updated: balance={balance_value} USDC");
+    log::info!(
+        "Account state updated: balance={} USDC",
+        account_balance.total
+    );
+    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event);
     Ok(())
 }
