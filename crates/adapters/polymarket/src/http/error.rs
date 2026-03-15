@@ -157,6 +157,15 @@ impl Error {
     pub fn is_auth_error(&self) -> bool {
         matches!(self, Self::Auth(_))
     }
+
+    /// Returns `true` if this error originated from an HTTP status code response
+    /// (as opposed to transport, timeout, or local errors).
+    pub fn is_http_status_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Auth(_) | Self::BadRequest(_) | Self::RateLimit { .. } | Self::Http { .. }
+        )
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

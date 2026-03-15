@@ -39,6 +39,11 @@ use crate::{
     },
 };
 
+// L1 ClobAuth constants
+const CLOB_AUTH_DOMAIN_NAME: &str = "ClobAuthDomain";
+const CLOB_AUTH_DOMAIN_VERSION: &str = "1";
+const CLOB_AUTH_MESSAGE: &str = "This message attests that I control the given wallet";
+
 /// CTF Exchange contract address on Polygon mainnet.
 pub const CTF_EXCHANGE: Address = address!("0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E");
 
@@ -48,6 +53,18 @@ pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xC5d563A36AE78145C45a50134
 const DOMAIN_NAME: &str = "Polymarket CTF Exchange";
 const DOMAIN_VERSION: &str = "1";
 const POLYGON_CHAIN_ID: u64 = 137;
+
+// EIP-712 ClobAuth struct for L1 API authentication.
+//
+// Reference: <https://docs.polymarket.com/api-reference/authentication#l1-authentication>
+alloy_sol_types::sol! {
+    struct ClobAuth {
+        address address;
+        string timestamp;
+        uint256 nonce;
+        string message;
+    }
+}
 
 // EIP-712 Order struct matching the CTFExchange contract.
 //
@@ -142,6 +159,54 @@ impl OrderSigner {
 
         Ok(format!("0x{r:064x}{s:064x}{v:02x}"))
     }
+}
+
+/// Signs a ClobAuth EIP-712 message for L1 API authentication.
+///
+/// Used to create or derive API credentials via the CLOB `/auth/api-key`
+/// and `/auth/derive-api-key` endpoints.
+///
+/// Returns `(signer_address_hex, signature_hex)`.
+pub fn sign_clob_auth(
+    private_key: &EvmPrivateKey,
+    timestamp: &str,
+    nonce: u64,
+) -> Result<(String, String)> {
+    let key_hex = private_key
+        .as_hex()
+        .strip_prefix("0x")
+        .unwrap_or(private_key.as_hex());
+    let signer = PrivateKeySigner::from_str(key_hex)
+        .map_err(|e| Error::bad_request(format!("Failed to create signer: {e}")))?;
+
+    let address = signer.address();
+
+    let auth = ClobAuth {
+        address,
+        timestamp: timestamp.to_string(),
+        nonce: U256::from(nonce),
+        message: CLOB_AUTH_MESSAGE.to_string(),
+    };
+
+    let domain = eip712_domain! {
+        name: CLOB_AUTH_DOMAIN_NAME,
+        version: CLOB_AUTH_DOMAIN_VERSION,
+        chain_id: POLYGON_CHAIN_ID,
+    };
+
+    let signing_hash = auth.eip712_signing_hash(&domain);
+    let signature = signer
+        .sign_hash_sync(&signing_hash)
+        .map_err(|e| Error::bad_request(format!("Failed to sign ClobAuth: {e}")))?;
+
+    let r = signature.r();
+    let s = signature.s();
+    let v = if signature.v() { 28u8 } else { 27u8 };
+
+    Ok((
+        format!("{address:#x}"),
+        format!("0x{r:064x}{s:064x}{v:02x}"),
+    ))
 }
 
 // Converts a PolymarketOrder to the EIP-712 Order struct
