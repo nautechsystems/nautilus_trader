@@ -97,7 +97,7 @@ MAP_ORDER_STATUS = {
     "ApiCancelled": OrderStatus.CANCELED,
     "Cancelled": OrderStatus.CANCELED,
     "Filled": OrderStatus.FILLED,
-    "Inactive": OrderStatus.DENIED,
+    "Inactive": OrderStatus.REJECTED,
 }
 
 

@@ -1527,6 +1527,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         remaining: Decimal = Decimal(0),
         reason: str = "",
         venue_order_id: VenueOrderId | None = None,
+        why_held: str = "",
     ) -> None:
         # Cache filled quantity for use in OrderStatusReport generation during reconciliation.
         # IB's openOrder callback doesn't include accurate filledQuantity, but orderStatus does.
@@ -1545,10 +1546,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         elif order_status == "Filled":
             status = OrderStatus.FILLED
         elif order_status == "Inactive":
-            self._log.warning(
-                f"Order status is 'Inactive' because it is invalid or triggered an error for {order_ref=}",
-            )
-            return
+            if why_held == "locate":
+                self._log.warning(
+                    f"Order {order_ref} held for short-sell locate, order remains active",
+                )
+                return
+            status = OrderStatus.REJECTED
+            if not reason:
+                reason = "Order inactive (IB)"
         elif order_status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
             self._log.debug(
                 f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
