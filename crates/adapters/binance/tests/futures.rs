@@ -15,5 +15,11 @@
 
 //! Integration tests for Binance Futures adapter.
 
-#[path = "futures/websocket.rs"]
-mod websocket;
+#[path = "futures/http.rs"]
+mod http;
+
+#[path = "futures/websocket_streams.rs"]
+mod websocket_streams;
+
+#[path = "futures/websocket_trading.rs"]
+mod websocket_trading;

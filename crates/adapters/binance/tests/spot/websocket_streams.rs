@@ -42,9 +42,11 @@ use serde_json::json;
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    total_connections: Arc<AtomicUsize>,
     subscribed_streams: Arc<tokio::sync::Mutex<Vec<String>>>,
     received_messages: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     disconnect_trigger: Arc<AtomicBool>,
+    drop_next_connection: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
 }
 
@@ -52,9 +54,11 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
+            total_connections: Arc::new(AtomicUsize::new(0)),
             subscribed_streams: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_messages: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
+            drop_next_connection: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -68,6 +72,10 @@ impl TestServerState {
     async fn received_messages(&self) -> Vec<serde_json::Value> {
         self.received_messages.lock().await.clone()
     }
+
+    fn total_connections(&self) -> usize {
+        self.total_connections.load(Ordering::Relaxed)
+    }
 }
 
 // WebSocket handler
@@ -80,6 +88,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         let mut count = state.connection_count.lock().await;
         *count += 1;
     }
+    state.total_connections.fetch_add(1, Ordering::Relaxed);
 
     loop {
         if state.disconnect_trigger.load(Ordering::Relaxed) {
@@ -142,6 +151,10 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             .await
                             .is_err()
                         {
+                            break;
+                        }
+
+                        if state.drop_next_connection.swap(false, Ordering::Relaxed) {
                             break;
                         }
                     }
@@ -583,4 +596,134 @@ async fn test_default_client_creation() {
     let client = BinanceSpotWebSocketClient::default();
     assert!(!client.is_active());
     assert!(client.is_closed());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnection_after_server_drop() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .subscribe(vec!["btcusdt@trade".to_string()])
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { !state.subscribed_streams().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let initial_total = state.total_connections();
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    let _ = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
+
+    wait_until_async(
+        || async { state.total_connections() > initial_total },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    assert!(
+        state.total_connections() > initial_total,
+        "Expected at least one reconnection"
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_is_active_lifecycle() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    assert!(!client.is_active(), "Should not be active before connect");
+    assert!(client.is_closed(), "Should be closed before connect");
+
+    client.connect().await.unwrap();
+
+    wait_until_async(|| async { client.is_active() }, Duration::from_secs(5)).await;
+
+    assert!(client.is_active(), "Should be active after connect");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_is_active_false_during_reconnection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(|| async { client.is_active() }, Duration::from_secs(5)).await;
+
+    client
+        .subscribe(vec!["btcusdt@trade".to_string()])
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { !state.subscribed_streams().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    let _ = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
+
+    wait_until_async(|| async { !client.is_active() }, Duration::from_secs(5)).await;
+
+    wait_until_async(|| async { client.is_active() }, Duration::from_secs(10)).await;
+
+    assert!(client.is_active(), "Should be active after reconnection");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rapid_consecutive_reconnections() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    client.connect().await.unwrap();
+
+    wait_until_async(|| async { client.is_active() }, Duration::from_secs(5)).await;
+
+    let initial_total = state.total_connections();
+
+    for i in 0..3 {
+        state.drop_next_connection.store(true, Ordering::Relaxed);
+        let _ = client.subscribe(vec![format!("stream{i}@trade")]).await;
+
+        let expected = initial_total + i + 1;
+        wait_until_async(
+            || async { state.total_connections() >= expected },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        wait_until_async(|| async { client.is_active() }, Duration::from_secs(10)).await;
+    }
+
+    assert!(
+        state.total_connections() >= initial_total + 3,
+        "Expected at least 3 reconnections, total={}",
+        state.total_connections()
+    );
+
+    client.close().await.unwrap();
 }

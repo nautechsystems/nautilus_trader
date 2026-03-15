@@ -196,24 +196,6 @@ pub struct BinanceSpotBalanceUpdateMsg {
     pub clear_time: i64,
 }
 
-/// Output message from the Spot user data stream handler.
-///
-/// These are the processed messages sent from the handler to the execution
-/// client for further conversion to Nautilus types.
-#[derive(Debug, Clone)]
-pub enum BinanceSpotUdsMessage {
-    /// Order execution report.
-    ExecutionReport(Box<BinanceSpotExecutionReport>),
-    /// Account position (balance) update.
-    AccountPosition(BinanceSpotAccountPositionMsg),
-    /// Balance update (deposit/withdrawal).
-    BalanceUpdate(BinanceSpotBalanceUpdateMsg),
-    /// Listen key expired (reconnection needed).
-    ListenKeyExpired,
-    /// WebSocket reconnected.
-    Reconnected,
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

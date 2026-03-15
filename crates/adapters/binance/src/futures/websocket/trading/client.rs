@@ -13,15 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Binance Spot WebSocket API client for SBE trading.
+//! Binance Futures WebSocket Trading API client.
 //!
-//! ## Connection Details
+//! ## Connection details
 //!
-//! - Endpoint: `ws-api.binance.com:443/ws-api/v3`
-//! - Authentication: Ed25519 signature per request
-//! - SBE responses: Enabled via `responseFormat=sbe` query parameter
+//! - Endpoint: `ws-fapi.binance.com/ws-fapi/v1` (USD-M only)
+//! - Authentication: HMAC-SHA256 signature per request
+//! - JSON request/response pattern
 //! - Connection validity: 24 hours
-//! - Ping/pong: Every 20 seconds
+//! - Ping/pong: every 20 seconds
 
 use std::{
     fmt::Debug,
@@ -44,59 +44,56 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::{BinanceWsApiError, BinanceWsApiResult},
-    handler::BinanceSpotWsTradingHandler,
-    messages::{BinanceSpotWsTradingCommand, BinanceSpotWsTradingMessage},
+    error::{BinanceFuturesWsApiError, BinanceFuturesWsApiResult},
+    handler::BinanceFuturesWsTradingHandler,
+    messages::{BinanceFuturesWsTradingCommand, BinanceFuturesWsTradingMessage},
 };
 use crate::{
-    common::{consts::BINANCE_SPOT_SBE_WS_API_URL, credential::SigningCredential},
-    spot::http::query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
+    common::{consts::BINANCE_FUTURES_USD_WS_API_URL, credential::SigningCredential},
+    futures::http::query::{
+        BinanceCancelOrderParams, BinanceModifyOrderParams, BinanceNewOrderParams,
+    },
 };
 
-/// Environment variable key for Binance API key.
-pub const BINANCE_API_KEY: &str = "BINANCE_API_KEY";
-
-/// Environment variable key for Binance API secret.
-pub const BINANCE_API_SECRET: &str = "BINANCE_API_SECRET";
-
-/// Pre-interned rate limit key for order operations (place/cancel/replace).
+/// Pre-interned rate limit key for futures order operations (place/cancel/modify).
 ///
-/// Binance WebSocket API: 1200 requests per minute per IP (20/sec).
-pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
-    LazyLock::new(|| [Ustr::from("order")]);
+/// Binance Futures WebSocket API: 1200 requests per minute per IP (20/sec).
+pub static BINANCE_FUTURES_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("futures_order")]);
 
-/// Binance WebSocket API order rate limit: 1200 per minute (20/sec).
-///
-/// Based on Binance documentation for WebSocket API rate limits.
+/// Returns the Binance Futures WebSocket API order rate limit quota (1200 per minute).
 // Constant values are provably valid
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
-pub fn binance_ws_order_quota() -> Quota {
+pub fn binance_futures_ws_order_quota() -> Quota {
     Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
 }
 
-/// Binance Spot WebSocket API client for SBE trading.
+/// Binance Futures WebSocket Trading API client.
 ///
-/// This client provides order management via WebSocket with SBE-encoded responses,
+/// Provides order management via WebSocket with JSON responses,
 /// complementing the HTTP client with lower-latency order submission.
+/// Only available for USD-M Futures.
 #[derive(Clone)]
-pub struct BinanceSpotWsTradingClient {
+pub struct BinanceFuturesWsTradingClient {
     url: String,
     credential: Arc<SigningCredential>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    cmd_tx:
-        Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingCommand>>>,
-    out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingMessage>>>>,
+    cmd_tx: Arc<
+        tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsTradingCommand>>,
+    >,
+    out_rx:
+        Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsTradingMessage>>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
 }
 
-impl Debug for BinanceSpotWsTradingClient {
+impl Debug for BinanceFuturesWsTradingClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BinanceSpotWsTradingClient))
+        f.debug_struct(stringify!(BinanceFuturesWsTradingClient))
             .field("url", &self.url)
             .field("credential", &REDACTED)
             .field("heartbeat", &self.heartbeat)
@@ -104,8 +101,8 @@ impl Debug for BinanceSpotWsTradingClient {
     }
 }
 
-impl BinanceSpotWsTradingClient {
-    /// Creates a new [`BinanceSpotWsTradingClient`] instance.
+impl BinanceFuturesWsTradingClient {
+    /// Creates a new [`BinanceFuturesWsTradingClient`] instance.
     #[must_use]
     pub fn new(
         url: Option<String>,
@@ -113,7 +110,7 @@ impl BinanceSpotWsTradingClient {
         api_secret: String,
         heartbeat: Option<u64>,
     ) -> Self {
-        let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
+        let url = url.unwrap_or_else(|| BINANCE_FUTURES_USD_WS_API_URL.to_string());
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
 
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -134,39 +131,6 @@ impl BinanceSpotWsTradingClient {
         }
     }
 
-    /// Creates a new client with credentials sourced from environment variables.
-    ///
-    /// Falls back to env vars if `api_key` or `api_secret` are `None`:
-    /// - `BINANCE_API_KEY` for the API key
-    /// - `BINANCE_API_SECRET` for the API secret
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing from environment.
-    pub fn with_env(
-        url: Option<String>,
-        api_key: Option<String>,
-        api_secret: Option<String>,
-        heartbeat: Option<u64>,
-    ) -> anyhow::Result<Self> {
-        let api_key = nautilus_core::env::get_or_env_var(api_key, BINANCE_API_KEY)?;
-        let api_secret = nautilus_core::env::get_or_env_var(api_secret, BINANCE_API_SECRET)?;
-        Ok(Self::new(url, api_key, api_secret, heartbeat))
-    }
-
-    /// Creates a new client with credentials loaded entirely from environment variables.
-    ///
-    /// Reads:
-    /// - `BINANCE_API_KEY` for the API key
-    /// - `BINANCE_API_SECRET` for the API secret
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if environment variables are missing.
-    pub fn from_env(url: Option<String>, heartbeat: Option<u64>) -> anyhow::Result<Self> {
-        Self::with_env(url, None, None, heartbeat)
-    }
-
     /// Returns whether the client is actively connected.
     #[must_use]
     pub fn is_active(&self) -> bool {
@@ -181,20 +145,19 @@ impl BinanceSpotWsTradingClient {
         mode_u8 == ConnectionMode::Closed as u8
     }
 
-    /// Generates the next request ID.
     fn next_request_id(&self) -> String {
         let id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
         format!("req-{id}")
     }
 
-    /// Connects to the WebSocket API server.
+    /// Connects to the WebSocket Trading API server.
     ///
     /// # Errors
     ///
     /// Returns an error if connection fails.
     // Mutex poisoning is not documented individually
     #[allow(clippy::missing_panics_doc)]
-    pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
+    pub async fn connect(&mut self) -> BinanceFuturesWsApiResult<()> {
         self.signal.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
 
@@ -220,10 +183,11 @@ impl BinanceSpotWsTradingClient {
             idle_timeout_ms: None,
         };
 
-        // Configure rate limits for order operations
         let keyed_quotas = vec![(
-            BINANCE_WS_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
-            binance_ws_order_quota(),
+            BINANCE_FUTURES_WS_RATE_LIMIT_KEY_ORDER[0]
+                .as_str()
+                .to_string(),
+            binance_futures_ws_order_quota(),
         )];
 
         let client = WebSocketClient::connect(
@@ -232,10 +196,10 @@ impl BinanceSpotWsTradingClient {
             Some(ping_handler),
             None,
             keyed_quotas,
-            Some(binance_ws_order_quota()), // Default quota for all operations
+            Some(binance_futures_ws_order_quota()),
         )
         .await
-        .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
+        .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
 
         self.connection_mode.store(client.connection_mode_atomic());
 
@@ -255,13 +219,13 @@ impl BinanceSpotWsTradingClient {
         let signal = self.signal.clone();
         let credential = self.credential.clone();
         let mut handler =
-            BinanceSpotWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential);
+            BinanceFuturesWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential);
 
         self.cmd_tx
             .read()
             .await
-            .send(BinanceSpotWsTradingCommand::SetClient(client))
-            .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))?;
+            .send(BinanceFuturesWsTradingCommand::SetClient(client))
+            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
 
         let cancellation_token = self.cancellation_token.clone();
         let handle = get_runtime().spawn(async move {
@@ -280,7 +244,7 @@ impl BinanceSpotWsTradingClient {
         Ok(())
     }
 
-    /// Disconnects from the WebSocket API server.
+    /// Disconnects from the WebSocket Trading API server.
     pub async fn disconnect(&mut self) {
         self.signal.store(true, Ordering::Relaxed);
 
@@ -288,7 +252,7 @@ impl BinanceSpotWsTradingClient {
             .cmd_tx
             .read()
             .await
-            .send(BinanceSpotWsTradingCommand::Disconnect)
+            .send(BinanceFuturesWsTradingCommand::Disconnect)
         {
             log::warn!("Failed to send disconnect command: {e}");
         }
@@ -302,47 +266,17 @@ impl BinanceSpotWsTradingClient {
         }
     }
 
-    /// Places a new order via WebSocket API.
+    /// Places a new order via the WebSocket Trading API.
     ///
     /// # Errors
     ///
     /// Returns an error if the handler is unavailable.
-    pub async fn place_order(&self, params: NewOrderParams) -> BinanceWsApiResult<String> {
-        let id = self.next_request_id();
-        let cmd = BinanceSpotWsTradingCommand::PlaceOrder {
-            id: id.clone(),
-            params,
-        };
-        self.send_cmd(cmd).await?;
-        Ok(id)
-    }
-
-    /// Cancels an order via WebSocket API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn cancel_order(&self, params: CancelOrderParams) -> BinanceWsApiResult<String> {
-        let id = self.next_request_id();
-        let cmd = BinanceSpotWsTradingCommand::CancelOrder {
-            id: id.clone(),
-            params,
-        };
-        self.send_cmd(cmd).await?;
-        Ok(id)
-    }
-
-    /// Cancel and replace an order atomically via WebSocket API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn cancel_replace_order(
+    pub async fn place_order(
         &self,
-        params: CancelReplaceOrderParams,
-    ) -> BinanceWsApiResult<String> {
+        params: BinanceNewOrderParams,
+    ) -> BinanceFuturesWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = BinanceSpotWsTradingCommand::CancelReplaceOrder {
+        let cmd = BinanceFuturesWsTradingCommand::PlaceOrder {
             id: id.clone(),
             params,
         };
@@ -350,14 +284,53 @@ impl BinanceSpotWsTradingClient {
         Ok(id)
     }
 
-    /// Cancels all open orders for a symbol via WebSocket API.
+    /// Cancels an order via the WebSocket Trading API.
     ///
     /// # Errors
     ///
     /// Returns an error if the handler is unavailable.
-    pub async fn cancel_all_orders(&self, symbol: impl Into<String>) -> BinanceWsApiResult<String> {
+    pub async fn cancel_order(
+        &self,
+        params: BinanceCancelOrderParams,
+    ) -> BinanceFuturesWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = BinanceSpotWsTradingCommand::CancelAllOrders {
+        let cmd = BinanceFuturesWsTradingCommand::CancelOrder {
+            id: id.clone(),
+            params,
+        };
+        self.send_cmd(cmd).await?;
+        Ok(id)
+    }
+
+    /// Modifies an order via the WebSocket Trading API (in-place amendment).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler is unavailable.
+    pub async fn modify_order(
+        &self,
+        params: BinanceModifyOrderParams,
+    ) -> BinanceFuturesWsApiResult<String> {
+        let id = self.next_request_id();
+        let cmd = BinanceFuturesWsTradingCommand::ModifyOrder {
+            id: id.clone(),
+            params,
+        };
+        self.send_cmd(cmd).await?;
+        Ok(id)
+    }
+
+    /// Cancels all open orders for a symbol via the WebSocket Trading API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler is unavailable.
+    pub async fn cancel_all_orders(
+        &self,
+        symbol: impl Into<String>,
+    ) -> BinanceFuturesWsApiResult<String> {
+        let id = self.next_request_id();
+        let cmd = BinanceFuturesWsTradingCommand::CancelAllOrders {
             id: id.clone(),
             symbol: symbol.into(),
         };
@@ -372,8 +345,7 @@ impl BinanceSpotWsTradingClient {
     /// # Panics
     ///
     /// Panics if the internal output receiver mutex is poisoned.
-    pub async fn recv(&self) -> Option<BinanceSpotWsTradingMessage> {
-        // Take the receiver out of the mutex to avoid holding it across await
+    pub async fn recv(&self) -> Option<BinanceFuturesWsTradingMessage> {
         let rx_opt = {
             let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
             rx_guard.take()
@@ -390,31 +362,11 @@ impl BinanceSpotWsTradingClient {
         }
     }
 
-    /// Authenticates the WebSocket session via `session.logon`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn session_logon(&self) -> BinanceWsApiResult<()> {
-        self.send_cmd(BinanceSpotWsTradingCommand::SessionLogon)
-            .await
-    }
-
-    /// Subscribes to the user data stream via `userDataStream.subscribe`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn subscribe_user_data(&self) -> BinanceWsApiResult<()> {
-        self.send_cmd(BinanceSpotWsTradingCommand::SubscribeUserData)
-            .await
-    }
-
-    async fn send_cmd(&self, cmd: BinanceSpotWsTradingCommand) -> BinanceWsApiResult<()> {
+    async fn send_cmd(&self, cmd: BinanceFuturesWsTradingCommand) -> BinanceFuturesWsApiResult<()> {
         self.cmd_tx
             .read()
             .await
             .send(cmd)
-            .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))
+            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))
     }
 }

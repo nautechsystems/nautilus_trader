@@ -276,6 +276,92 @@ impl Display for Ed25519CredentialError {
 
 impl std::error::Error for Ed25519CredentialError {}
 
+/// Unified signing credential that auto-detects Ed25519 vs HMAC key type.
+///
+/// Binance supports two signing methods:
+/// - HMAC SHA256 (hex-encoded signature) for REST API and standard WebSocket
+/// - Ed25519 (base64-encoded signature) for WebSocket API and SBE streams
+///
+/// The key type is detected from the secret format: if the secret decodes as
+/// valid base64 with 32+ bytes (raw seed or PKCS#8), Ed25519 is used.
+/// Otherwise HMAC is used.
+#[derive(Clone)]
+pub enum SigningCredential {
+    /// HMAC SHA256 signing.
+    Hmac(Credential),
+    /// Ed25519 signing.
+    Ed25519(Box<Ed25519Credential>),
+}
+
+impl Debug for SigningCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hmac(c) => f.debug_tuple("Hmac").field(c).finish(),
+            Self::Ed25519(c) => f.debug_tuple("Ed25519").field(c).finish(),
+        }
+    }
+}
+
+impl SigningCredential {
+    /// Creates a new signing credential, auto-detecting Ed25519 vs HMAC.
+    ///
+    /// Tries Ed25519 first (base64-decoded secret must be a valid Ed25519 key).
+    /// Falls back to HMAC if Ed25519 parsing fails.
+    #[must_use]
+    pub fn new(api_key: String, api_secret: String) -> Self {
+        match Ed25519Credential::new(api_key.clone(), &api_secret) {
+            Ok(ed25519) => {
+                log::info!("Auto-detected Ed25519 API key");
+                Self::Ed25519(Box::new(ed25519))
+            }
+            Err(_) => {
+                log::info!("Using HMAC SHA256 API key");
+                Self::Hmac(Credential::new(api_key, api_secret))
+            }
+        }
+    }
+
+    /// Returns the API key.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        match self {
+            Self::Hmac(c) => c.api_key(),
+            Self::Ed25519(c) => c.api_key(),
+        }
+    }
+
+    /// Signs a message string and returns the signature.
+    ///
+    /// For HMAC: returns lowercase hex digest.
+    /// For Ed25519: returns base64-encoded signature.
+    #[must_use]
+    pub fn sign(&self, message: &str) -> String {
+        match self {
+            Self::Hmac(c) => c.sign(message),
+            Self::Ed25519(c) => c.sign(message.as_bytes()),
+        }
+    }
+
+    /// Returns whether this credential uses Ed25519 signing.
+    #[must_use]
+    pub fn is_ed25519(&self) -> bool {
+        matches!(self, Self::Ed25519(_))
+    }
+}
+
+// Ed25519Credential does not implement Clone because SigningKey doesn't.
+// Provide a manual Clone for SigningCredential by re-deriving keys.
+impl Clone for Ed25519Credential {
+    fn clone(&self) -> Self {
+        // SigningKey is 32 bytes; extract and reconstruct
+        let key_bytes = self.signing_key.to_bytes();
+        Self {
+            api_key: self.api_key.clone(),
+            signing_key: SigningKey::from_bytes(&key_bytes),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

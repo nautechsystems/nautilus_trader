@@ -371,7 +371,7 @@ mod tests {
             consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID, encoder::encode_broker_id,
             testing::load_fixture_string,
         },
-        futures::websocket::messages::{
+        futures::websocket::streams::messages::{
             BinanceFuturesAccountUpdateMsg, BinanceFuturesAlgoUpdateMsg,
             BinanceFuturesOrderUpdateMsg,
         },

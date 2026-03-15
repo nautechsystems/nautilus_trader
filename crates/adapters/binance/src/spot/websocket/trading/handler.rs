@@ -21,10 +21,10 @@
 //!
 //! ## Responsibilities
 //!
-//! - Command processing: Receives `HandlerCommand` from client, serializes to JSON requests.
+//! - Command processing: Receives `BinanceSpotWsTradingCommand` from client, serializes to JSON requests.
 //! - Response decoding: Parses SBE binary responses using schema 3 decoders.
 //! - Request correlation: Matches responses to pending requests by ID.
-//! - Message transformation: Emits `NautilusWsApiMessage` events to client via channel.
+//! - Message transformation: Emits `BinanceSpotWsTradingMessage` events to client via channel.
 
 use std::{
     fmt::Debug,
@@ -39,11 +39,15 @@ use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
+    client::BINANCE_WS_RATE_LIMIT_KEY_ORDER,
     error::{BinanceWsApiError, BinanceWsApiResult},
-    messages::{HandlerCommand, NautilusWsApiMessage, RequestMeta, WsApiRequest, method},
+    messages::{
+        BinanceSpotWsTradingCommand, BinanceSpotWsTradingMessage, BinanceSpotWsTradingRequest,
+        BinanceSpotWsTradingRequestMeta, method,
+    },
 };
 use crate::{
-    common::credential::Credential,
+    common::credential::SigningCredential,
     spot::{
         http::{models::BinanceCancelOrderResponse, parse},
         sbe::spot::{
@@ -58,19 +62,19 @@ use crate::{
 /// Runs in a dedicated Tokio task, processing commands from the client
 /// and transforming raw WebSocket messages into Nautilus domain events.
 /// Messages are sent to the client via the output channel.
-pub struct BinanceSpotWsApiHandler {
+pub struct BinanceSpotWsTradingHandler {
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
-    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsApiMessage>,
-    credential: Arc<Credential>,
-    pending_requests: AHashMap<String, RequestMeta>,
+    out_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingMessage>,
+    credential: Arc<SigningCredential>,
+    pending_requests: AHashMap<String, BinanceSpotWsTradingRequestMeta>,
 }
 
-impl Debug for BinanceSpotWsApiHandler {
+impl Debug for BinanceSpotWsTradingHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BinanceSpotWsApiHandler))
+        f.debug_struct(stringify!(BinanceSpotWsTradingHandler))
             .field("inner", &self.inner.as_ref().map(|_| "<client>"))
             .field(
                 "pending_requests",
@@ -80,15 +84,15 @@ impl Debug for BinanceSpotWsApiHandler {
     }
 }
 
-impl BinanceSpotWsApiHandler {
+impl BinanceSpotWsTradingHandler {
     /// Creates a new handler instance.
     #[must_use]
     pub fn new(
         signal: Arc<AtomicBool>,
-        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-        out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsApiMessage>,
-        credential: Arc<Credential>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingMessage>,
+        credential: Arc<SigningCredential>,
     ) -> Self {
         Self {
             signal,
@@ -101,7 +105,7 @@ impl BinanceSpotWsApiHandler {
         }
     }
 
-    /// Main event loop - processes commands and raw messages.
+    /// Runs the main event loop for commands and raw messages.
     ///
     /// Sends output messages via `out_tx` channel. Returns `false` when disconnected
     /// or the signal is set, indicating the handler should exit.
@@ -114,54 +118,70 @@ impl BinanceSpotWsApiHandler {
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        BinanceSpotWsTradingCommand::SetClient(client) => {
                             log::debug!("Handler received WebSocket client");
                             self.inner = Some(client);
-                            self.emit(NautilusWsApiMessage::Connected);
+                            self.emit(BinanceSpotWsTradingMessage::Connected);
                         }
-                        HandlerCommand::Disconnect => {
+                        BinanceSpotWsTradingCommand::Disconnect => {
                             log::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
                             return false;
                         }
-                        HandlerCommand::PlaceOrder { id, params } => {
+                        BinanceSpotWsTradingCommand::PlaceOrder { id, params } => {
                             if let Err(e) = self.handle_place_order(id.clone(), params).await {
                                 log::error!("Failed to handle place order command: {e}");
-                                self.emit(NautilusWsApiMessage::OrderRejected {
+                                self.emit(BinanceSpotWsTradingMessage::OrderRejected {
                                     request_id: id,
                                     code: -1,
                                     msg: e.to_string(),
                                 });
                             }
                         }
-                        HandlerCommand::CancelOrder { id, params } => {
+                        BinanceSpotWsTradingCommand::CancelOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_order(id.clone(), params).await {
                                 log::error!("Failed to handle cancel order command: {e}");
-                                self.emit(NautilusWsApiMessage::CancelRejected {
+                                self.emit(BinanceSpotWsTradingMessage::CancelRejected {
                                     request_id: id,
                                     code: -1,
                                     msg: e.to_string(),
                                 });
                             }
                         }
-                        HandlerCommand::CancelReplaceOrder { id, params } => {
+                        BinanceSpotWsTradingCommand::CancelReplaceOrder { id, params } => {
                             if let Err(e) = self.handle_cancel_replace_order(id.clone(), params).await {
                                 log::error!("Failed to handle cancel replace command: {e}");
-                                self.emit(NautilusWsApiMessage::CancelReplaceRejected {
+                                self.emit(BinanceSpotWsTradingMessage::CancelReplaceRejected {
                                     request_id: id,
                                     code: -1,
                                     msg: e.to_string(),
                                 });
                             }
                         }
-                        HandlerCommand::CancelAllOrders { id, symbol } => {
+                        BinanceSpotWsTradingCommand::CancelAllOrders { id, symbol } => {
                             if let Err(e) = self.handle_cancel_all_orders(id.clone(), symbol).await {
                                 log::error!("Failed to handle cancel all command: {e}");
-                                self.emit(NautilusWsApiMessage::CancelRejected {
+                                self.emit(BinanceSpotWsTradingMessage::CancelRejected {
                                     request_id: id,
                                     code: -1,
                                     msg: e.to_string(),
                                 });
+                            }
+                        }
+                        BinanceSpotWsTradingCommand::SessionLogon => {
+                            if let Err(e) = self.handle_session_logon().await {
+                                log::error!("Session logon failed: {e}");
+                                self.emit(BinanceSpotWsTradingMessage::Error(
+                                    format!("Session logon failed: {e}"),
+                                ));
+                            }
+                        }
+                        BinanceSpotWsTradingCommand::SubscribeUserData => {
+                            if let Err(e) = self.handle_subscribe_user_data().await {
+                                log::error!("User data subscribe failed: {e}");
+                                self.emit(BinanceSpotWsTradingMessage::Error(
+                                    format!("User data subscribe failed: {e}"),
+                                ));
                             }
                         }
                     }
@@ -175,7 +195,7 @@ impl BinanceSpotWsApiHandler {
                         // Fail any pending requests - they won't get responses on new connection
                         self.fail_pending_requests();
 
-                        self.emit(NautilusWsApiMessage::Reconnected);
+                        self.emit(BinanceSpotWsTradingMessage::Reconnected);
                         continue;
                     }
 
@@ -190,7 +210,7 @@ impl BinanceSpotWsApiHandler {
     }
 
     /// Sends a message to the output channel.
-    fn emit(&self, msg: NautilusWsApiMessage) {
+    fn emit(&self, msg: BinanceSpotWsTradingMessage) {
         if let Err(e) = self.out_tx.send(msg) {
             log::error!("Failed to send message to output channel: {e}");
         }
@@ -226,9 +246,9 @@ impl BinanceSpotWsApiHandler {
             .map_err(|e| BinanceWsApiError::ClientError(e.to_string()))?;
         let signed_params = self.sign_params(params_json)?;
 
-        let request = WsApiRequest::new(&id, method::ORDER_PLACE, signed_params);
+        let request = BinanceSpotWsTradingRequest::new(&id, method::ORDER_PLACE, signed_params);
         self.pending_requests
-            .insert(id.clone(), RequestMeta::PlaceOrder);
+            .insert(id.clone(), BinanceSpotWsTradingRequestMeta::PlaceOrder);
         self.send_request(request).await
     }
 
@@ -241,9 +261,9 @@ impl BinanceSpotWsApiHandler {
             .map_err(|e| BinanceWsApiError::ClientError(e.to_string()))?;
         let signed_params = self.sign_params(params_json)?;
 
-        let request = WsApiRequest::new(&id, method::ORDER_CANCEL, signed_params);
+        let request = BinanceSpotWsTradingRequest::new(&id, method::ORDER_CANCEL, signed_params);
         self.pending_requests
-            .insert(id.clone(), RequestMeta::CancelOrder);
+            .insert(id.clone(), BinanceSpotWsTradingRequestMeta::CancelOrder);
         self.send_request(request).await
     }
 
@@ -256,9 +276,12 @@ impl BinanceSpotWsApiHandler {
             .map_err(|e| BinanceWsApiError::ClientError(e.to_string()))?;
         let signed_params = self.sign_params(params_json)?;
 
-        let request = WsApiRequest::new(&id, method::ORDER_CANCEL_REPLACE, signed_params);
-        self.pending_requests
-            .insert(id.clone(), RequestMeta::CancelReplaceOrder);
+        let request =
+            BinanceSpotWsTradingRequest::new(&id, method::ORDER_CANCEL_REPLACE, signed_params);
+        self.pending_requests.insert(
+            id.clone(),
+            BinanceSpotWsTradingRequestMeta::CancelReplaceOrder,
+        );
         self.send_request(request).await
     }
 
@@ -270,10 +293,40 @@ impl BinanceSpotWsApiHandler {
         let params_json = serde_json::json!({ "symbol": symbol });
         let signed_params = self.sign_params(params_json)?;
 
-        let request = WsApiRequest::new(&id, method::OPEN_ORDERS_CANCEL_ALL, signed_params);
+        let request =
+            BinanceSpotWsTradingRequest::new(&id, method::OPEN_ORDERS_CANCEL_ALL, signed_params);
         self.pending_requests
-            .insert(id.clone(), RequestMeta::CancelAllOrders);
+            .insert(id.clone(), BinanceSpotWsTradingRequestMeta::CancelAllOrders);
         self.send_request(request).await
+    }
+
+    async fn handle_session_logon(&mut self) -> BinanceWsApiResult<()> {
+        let id = self.next_request_id();
+        let params_json = serde_json::json!({});
+        let signed_params = self.sign_params(params_json)?;
+
+        let request = BinanceSpotWsTradingRequest::new(&id, "session.logon", signed_params);
+        self.pending_requests
+            .insert(id, BinanceSpotWsTradingRequestMeta::SessionLogon);
+        self.send_request(request).await
+    }
+
+    async fn handle_subscribe_user_data(&mut self) -> BinanceWsApiResult<()> {
+        let id = self.next_request_id();
+        let request = BinanceSpotWsTradingRequest::new(
+            &id,
+            "userDataStream.subscribe",
+            serde_json::json!({}),
+        );
+        self.pending_requests
+            .insert(id, BinanceSpotWsTradingRequestMeta::SubscribeUserData);
+        self.send_request(request).await
+    }
+
+    fn next_request_id(&self) -> String {
+        // Use the same counter pattern as the outer client
+        let id = self.pending_requests.len().wrapping_add(1000).to_string();
+        format!("ws-{id}")
     }
 
     fn sign_params(&self, mut params: serde_json::Value) -> BinanceWsApiResult<serde_json::Value> {
@@ -301,9 +354,10 @@ impl BinanceSpotWsApiHandler {
         Ok(params)
     }
 
-    async fn send_request(&mut self, request: WsApiRequest) -> BinanceWsApiResult<()> {
-        use super::client::BINANCE_WS_RATE_LIMIT_KEY_ORDER;
-
+    async fn send_request(
+        &mut self,
+        request: BinanceSpotWsTradingRequest,
+    ) -> BinanceWsApiResult<()> {
         let client = self.inner.as_mut().ok_or_else(|| {
             BinanceWsApiError::ConnectionError("WebSocket not connected".to_string())
         })?;
@@ -345,37 +399,160 @@ impl BinanceSpotWsApiHandler {
             Ok(response) => self.emit(response),
             Err(e) => {
                 log::error!("Failed to decode WebSocket API response: {e}");
-                self.emit(NautilusWsApiMessage::Error(e.to_string()));
+                self.emit(BinanceSpotWsTradingMessage::Error(e.to_string()));
             }
         }
     }
 
     fn handle_text_response(&mut self, text: &str) {
-        // Text responses are typically JSON errors
-        match serde_json::from_str::<serde_json::Value>(text) {
-            Ok(json) => {
-                if let Some(code) = json.get("code").and_then(|v| v.as_i64()) {
-                    let msg = json
-                        .get("msg")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown error");
-                    let id = json.get("id").and_then(|v| v.as_str()).map(String::from);
-
-                    if let Some(request_id) = id
-                        && let Some(meta) = self.pending_requests.remove(&request_id)
-                    {
-                        let rejection =
-                            self.create_rejection(request_id, code as i32, msg.to_string(), meta);
-                        self.emit(rejection);
-                        return;
-                    }
-                    log::warn!(
-                        "Received error response without matching request ID: code={code} msg={msg}"
-                    );
-                }
-            }
+        let json: serde_json::Value = match serde_json::from_str(text) {
+            Ok(j) => j,
             Err(e) => {
                 log::warn!("Failed to parse text response as JSON: {e}");
+                return;
+            }
+        };
+
+        // User data events arrive wrapped: {"subscriptionId": N, "event": {...}}
+        if let Some(event) = json.get("event") {
+            self.handle_user_data_event(event);
+            return;
+        }
+
+        // WS API responses have an "id" field for request correlation
+        if let Some(id) = json.get("id") {
+            let id_str = match id {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => return,
+            };
+
+            if let Some(meta) = self.pending_requests.remove(&id_str) {
+                // Check for error: nested {"error": {"code": N, "msg": "..."}}
+                // or top-level {"code": N, "msg": "..."}
+                let error_info = json
+                    .get("error")
+                    .map(|e| {
+                        (
+                            e.get("code").and_then(|v| v.as_i64()).unwrap_or(-1),
+                            e.get("msg")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string(),
+                        )
+                    })
+                    .or_else(|| {
+                        json.get("code").and_then(|c| c.as_i64()).map(|code| {
+                            let msg = json
+                                .get("msg")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string();
+                            (code, msg)
+                        })
+                    });
+
+                if let Some((code, msg)) = error_info {
+                    let rejection = self.create_rejection(id_str, code as i32, msg, meta);
+                    self.emit(rejection);
+                    return;
+                }
+
+                // Success response
+                match meta {
+                    BinanceSpotWsTradingRequestMeta::SessionLogon => {
+                        log::info!("Session authenticated");
+                        self.emit(BinanceSpotWsTradingMessage::Authenticated);
+                    }
+                    BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
+                        let subscription_id = json
+                            .get("result")
+                            .and_then(|r| r.get("subscriptionId"))
+                            .map(|v| v.to_string())
+                            .unwrap_or_default();
+                        log::info!("User data stream subscribed: id={subscription_id}");
+                        self.emit(BinanceSpotWsTradingMessage::UserDataSubscribed {
+                            subscription_id,
+                        });
+                    }
+                    _ => {
+                        // Order operation responses come as SBE binary, not JSON text.
+                        // If we get a JSON success for an order operation, log it.
+                        log::debug!("Unexpected JSON success for request {id_str}: {json}");
+                    }
+                }
+                return;
+            }
+
+            // Error response without matching pending request
+            if let Some(code) = json.get("code").and_then(|v| v.as_i64()) {
+                let msg = json
+                    .get("msg")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error");
+                log::warn!(
+                    "Received error response without matching request ID: code={code} msg={msg}"
+                );
+            }
+            return;
+        }
+
+        // Stream termination event
+        if json.get("eventStreamTerminated").is_some() {
+            log::warn!("User data stream terminated, resubscribe needed");
+            return;
+        }
+
+        log::debug!("Unhandled text message: {text}");
+    }
+
+    fn handle_user_data_event(&self, event: &serde_json::Value) {
+        let event_type = event.get("e").and_then(|v| v.as_str()).unwrap_or("");
+
+        match event_type {
+            "executionReport" => {
+                match serde_json::from_value::<super::user_data::BinanceSpotExecutionReport>(
+                    event.clone(),
+                ) {
+                    Ok(report) => {
+                        log::debug!(
+                            "Execution report: symbol={}, order_id={}, exec={:?}, status={:?}",
+                            report.symbol,
+                            report.order_id,
+                            report.execution_type,
+                            report.order_status
+                        );
+                        self.emit(BinanceSpotWsTradingMessage::ExecutionReport(Box::new(
+                            report,
+                        )));
+                    }
+                    Err(e) => log::warn!("Failed to parse execution report: {e}"),
+                }
+            }
+            "outboundAccountPosition" => {
+                match serde_json::from_value::<super::user_data::BinanceSpotAccountPositionMsg>(
+                    event.clone(),
+                ) {
+                    Ok(msg) => {
+                        log::debug!("Account position update: {} balance(s)", msg.balances.len());
+                        self.emit(BinanceSpotWsTradingMessage::AccountPosition(msg));
+                    }
+                    Err(e) => log::warn!("Failed to parse account position: {e}"),
+                }
+            }
+            "balanceUpdate" => {
+                match serde_json::from_value::<super::user_data::BinanceSpotBalanceUpdateMsg>(
+                    event.clone(),
+                ) {
+                    Ok(msg) => {
+                        log::debug!("Balance update: asset={}, delta={}", msg.asset, msg.delta);
+                        self.emit(BinanceSpotWsTradingMessage::BalanceUpdate(msg));
+                    }
+                    Err(e) => log::warn!("Failed to parse balance update: {e}"),
+                }
+            }
+            _ => {
+                log::debug!("Unhandled user data event type: {event_type}");
             }
         }
     }
@@ -383,8 +560,37 @@ impl BinanceSpotWsApiHandler {
     fn decode_ws_api_response(
         &mut self,
         data: &[u8],
-    ) -> Result<NautilusWsApiMessage, BinanceWsApiError> {
-        // Parse SBE envelope to extract request ID and inner payload
+    ) -> Result<BinanceSpotWsTradingMessage, BinanceWsApiError> {
+        // Check template ID before parsing
+        if data.len() >= message_header_codec::ENCODED_LENGTH {
+            let buf = ReadBuf::new(data);
+            let template_id = buf.get_u16_at(2);
+
+            // User data stream events arrive as SBE with their own template IDs
+            // (not wrapped in WebSocketResponse template 50).
+            // TODO: Decode SBE templates 603 (ExecutionReportEvent) and
+            //       607 (OutboundAccountPositionEvent) using generated codecs
+            match template_id {
+                603 => {
+                    log::debug!("Received SBE ExecutionReportEvent ({} bytes)", data.len());
+                    return Ok(BinanceSpotWsTradingMessage::Error(
+                        "SBE ExecutionReportEvent decoding not yet implemented".to_string(),
+                    ));
+                }
+                607 => {
+                    log::debug!(
+                        "Received SBE OutboundAccountPositionEvent ({} bytes)",
+                        data.len()
+                    );
+                    return Ok(BinanceSpotWsTradingMessage::Error(
+                        "SBE OutboundAccountPositionEvent decoding not yet implemented".to_string(),
+                    ));
+                }
+                _ => {} // Fall through to WebSocketResponse parsing
+            }
+        }
+
+        // Standard WebSocketResponse envelope (template 50)
         let (request_id, status, result_data) = self.parse_envelope(data)?;
 
         // Look up the pending request by ID
@@ -404,21 +610,21 @@ impl BinanceSpotWsApiHandler {
 
         // Decode the inner payload based on request type
         match meta {
-            RequestMeta::PlaceOrder => {
+            BinanceSpotWsTradingRequestMeta::PlaceOrder => {
                 let response = parse::decode_new_order_full(&result_data)?;
-                Ok(NautilusWsApiMessage::OrderAccepted {
+                Ok(BinanceSpotWsTradingMessage::OrderAccepted {
                     request_id,
                     response,
                 })
             }
-            RequestMeta::CancelOrder => {
+            BinanceSpotWsTradingRequestMeta::CancelOrder => {
                 let response = parse::decode_cancel_order(&result_data)?;
-                Ok(NautilusWsApiMessage::OrderCanceled {
+                Ok(BinanceSpotWsTradingMessage::OrderCanceled {
                     request_id,
                     response,
                 })
             }
-            RequestMeta::CancelReplaceOrder => {
+            BinanceSpotWsTradingRequestMeta::CancelReplaceOrder => {
                 // Cancel-replace returns both cancel and new order info
                 let new_order_response = parse::decode_new_order_full(&result_data)?;
                 let cancel_response = BinanceCancelOrderResponse {
@@ -440,18 +646,25 @@ impl BinanceSpotWsApiHandler {
                     orig_client_order_id: String::new(),
                     symbol: new_order_response.symbol.clone(),
                 };
-                Ok(NautilusWsApiMessage::CancelReplaceAccepted {
+                Ok(BinanceSpotWsTradingMessage::CancelReplaceAccepted {
                     request_id,
                     cancel_response,
                     new_order_response,
                 })
             }
-            RequestMeta::CancelAllOrders => {
+            BinanceSpotWsTradingRequestMeta::CancelAllOrders => {
                 let responses = parse::decode_cancel_open_orders(&result_data)?;
-                Ok(NautilusWsApiMessage::AllOrdersCanceled {
+                Ok(BinanceSpotWsTradingMessage::AllOrdersCanceled {
                     request_id,
                     responses,
                 })
+            }
+            BinanceSpotWsTradingRequestMeta::SessionLogon
+            | BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
+                // These responses arrive as JSON text, not SBE binary
+                Ok(BinanceSpotWsTradingMessage::Error(format!(
+                    "Unexpected SBE response for request {request_id}"
+                )))
             }
         }
     }
@@ -518,29 +731,41 @@ impl BinanceSpotWsApiHandler {
         request_id: String,
         code: i32,
         msg: String,
-        meta: RequestMeta,
-    ) -> NautilusWsApiMessage {
+        meta: BinanceSpotWsTradingRequestMeta,
+    ) -> BinanceSpotWsTradingMessage {
         match meta {
-            RequestMeta::PlaceOrder => NautilusWsApiMessage::OrderRejected {
-                request_id,
-                code,
-                msg,
-            },
-            RequestMeta::CancelOrder => NautilusWsApiMessage::CancelRejected {
-                request_id,
-                code,
-                msg,
-            },
-            RequestMeta::CancelReplaceOrder => NautilusWsApiMessage::CancelReplaceRejected {
-                request_id,
-                code,
-                msg,
-            },
-            RequestMeta::CancelAllOrders => NautilusWsApiMessage::CancelRejected {
-                request_id,
-                code,
-                msg,
-            },
+            BinanceSpotWsTradingRequestMeta::PlaceOrder => {
+                BinanceSpotWsTradingMessage::OrderRejected {
+                    request_id,
+                    code,
+                    msg,
+                }
+            }
+            BinanceSpotWsTradingRequestMeta::CancelOrder => {
+                BinanceSpotWsTradingMessage::CancelRejected {
+                    request_id,
+                    code,
+                    msg,
+                }
+            }
+            BinanceSpotWsTradingRequestMeta::CancelReplaceOrder => {
+                BinanceSpotWsTradingMessage::CancelReplaceRejected {
+                    request_id,
+                    code,
+                    msg,
+                }
+            }
+            BinanceSpotWsTradingRequestMeta::CancelAllOrders => {
+                BinanceSpotWsTradingMessage::CancelRejected {
+                    request_id,
+                    code,
+                    msg,
+                }
+            }
+            BinanceSpotWsTradingRequestMeta::SessionLogon
+            | BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
+                BinanceSpotWsTradingMessage::Error(format!("code={code}: {msg}"))
+            }
         }
     }
 }

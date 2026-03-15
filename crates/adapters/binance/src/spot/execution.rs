@@ -58,16 +58,14 @@ use nautilus_model::{
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
-use super::websocket::{
-    execution::{
-        BinanceSpotUdsClient, BinanceSpotUdsMessage,
-        messages::{BinanceSpotExecutionReport, BinanceSpotExecutionType},
-        parse::{
-            parse_spot_account_position, parse_spot_exec_report_to_fill,
-            parse_spot_exec_report_to_order_status,
-        },
+use super::websocket::trading::{
+    client::BinanceSpotWsTradingClient,
+    messages::BinanceSpotWsTradingMessage,
+    parse::{
+        parse_spot_account_position, parse_spot_exec_report_to_fill,
+        parse_spot_exec_report_to_order_status,
     },
-    trading::{client::BinanceSpotWsTradingClient, messages::NautilusWsApiMessage},
+    user_data::{BinanceSpotExecutionReport, BinanceSpotExecutionType},
 };
 use crate::{
     common::{
@@ -79,7 +77,6 @@ use crate::{
         },
         encoder::{decode_broker_id, encode_broker_id},
         enums::{BinanceProductType, BinanceSide},
-        urls::get_ws_base_url,
     },
     config::BinanceExecClientConfig,
     spot::{
@@ -155,8 +152,6 @@ pub struct BinanceSpotExecutionClient {
     dispatch_state: Arc<WsDispatchState>,
     http_client: BinanceSpotHttpClient,
     ws_trading_client: Option<BinanceSpotWsTradingClient>,
-    uds_client: Option<BinanceSpotUdsClient>,
-    ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
     ws_trading_handle: Mutex<Option<JoinHandle<()>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
@@ -221,8 +216,6 @@ impl BinanceSpotExecutionClient {
             dispatch_state: Arc::new(WsDispatchState::default()),
             http_client,
             ws_trading_client,
-            uds_client: None,
-            ws_stream_handle: Mutex::new(None),
             ws_trading_handle: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
         })
@@ -632,7 +625,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     let emitter = self.emitter.clone();
                     let account_id = self.core.account_id;
                     let clock = self.clock;
+                    let http_client = self.http_client.clone();
                     let dispatch_state = self.dispatch_state.clone();
+                    let seen_trade_ids =
+                        std::sync::Arc::new(Mutex::new(BoundedDedup::<(Ustr, i64)>::new(10_000)));
 
                     let handle = get_runtime().spawn(async move {
                         loop {
@@ -641,9 +637,11 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                     dispatch_ws_trading_message(
                                         msg,
                                         &emitter,
+                                        &http_client,
                                         account_id,
                                         clock,
                                         &dispatch_state,
+                                        &seen_trade_ids,
                                     );
                                 }
                                 None => {
@@ -655,79 +653,19 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     });
 
                     *self.ws_trading_handle.lock().expect(MUTEX_POISONED) = Some(handle);
+
+                    // Authenticate session and subscribe to user data stream
+                    if let Err(e) = ws_trading.session_logon().await {
+                        log::error!("WS session logon failed: {e}");
+                    } else if let Err(e) = ws_trading.subscribe_user_data().await {
+                        log::error!("WS user data subscribe failed: {e}");
+                    }
                 }
                 Err(e) => {
                     log::error!(
                         "Failed to connect WS trading API: {e}. \
                          Order operations will use HTTP fallback"
                     );
-                }
-            }
-        }
-
-        // Connect User Data Stream WebSocket
-        let product_type = self
-            .config
-            .product_types
-            .first()
-            .copied()
-            .unwrap_or(BinanceProductType::Spot);
-        let base_ws_url =
-            self.config.base_url_ws.clone().unwrap_or_else(|| {
-                get_ws_base_url(product_type, self.config.environment).to_string()
-            });
-
-        let mut uds_client = BinanceSpotUdsClient::new(base_ws_url, self.http_client.clone());
-
-        match uds_client.connect().await {
-            Ok(()) => {
-                if let Some(mut rx) = uds_client.take_receiver() {
-                    let emitter = self.emitter.clone();
-                    let account_id = self.core.account_id;
-                    let clock = self.clock;
-                    let http_client = self.http_client.clone();
-                    let dispatch_state = self.dispatch_state.clone();
-                    let seen_trade_ids =
-                        std::sync::Arc::new(Mutex::new(BoundedDedup::<(Ustr, i64)>::new(10_000)));
-
-                    let handle = get_runtime().spawn(async move {
-                        while let Some(msg) = rx.recv().await {
-                            let ts_init = clock.get_time_ns();
-                            let should_continue = dispatch_ws_message(
-                                msg,
-                                &emitter,
-                                &http_client,
-                                account_id,
-                                &dispatch_state,
-                                &seen_trade_ids,
-                                ts_init,
-                            );
-
-                            if !should_continue {
-                                break;
-                            }
-                        }
-                        log::warn!("UDS dispatch loop ended");
-                    });
-
-                    *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
-                }
-
-                self.uds_client = Some(uds_client);
-            }
-            Err(e) => {
-                log::error!(
-                    "Failed to connect Spot user data stream: {e}. \
-                     Real-time execution events will not be available"
-                );
-                // WS trading relies on UDS for order lifecycle events.
-                // Without UDS, disable WS trading so orders fall back to HTTP.
-                if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
-                    handle.abort();
-                }
-
-                if let Some(ref mut ws_trading) = self.ws_trading_client {
-                    ws_trading.disconnect().await;
                 }
             }
         }
@@ -750,17 +688,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         if let Some(ref mut ws_trading) = self.ws_trading_client {
             ws_trading.disconnect().await;
         }
-
-        // Abort WS stream task
-        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
-            handle.abort();
-        }
-
-        // Disconnect UDS client
-        if let Some(ref mut uds_client) = self.uds_client {
-            uds_client.disconnect().await;
-        }
-        self.uds_client = None;
 
         self.abort_pending_tasks();
 
@@ -861,11 +788,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
         // Abort WS trading task
         if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
-            handle.abort();
-        }
-
-        // Abort WS stream task
-        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
         }
 
@@ -1399,69 +1321,18 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 }
 
-/// Returns `true` to continue processing, `false` to stop the dispatch loop.
 #[allow(clippy::too_many_arguments)]
-fn dispatch_ws_message(
-    msg: BinanceSpotUdsMessage,
+fn dispatch_ws_trading_message(
+    msg: BinanceSpotWsTradingMessage,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
-    dispatch_state: &WsDispatchState,
-    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
-    ts_init: UnixNanos,
-) -> bool {
-    match msg {
-        BinanceSpotUdsMessage::ExecutionReport(report) => {
-            dispatch_execution_report(
-                &report,
-                emitter,
-                http_client,
-                account_id,
-                dispatch_state,
-                seen_trade_ids,
-                ts_init,
-            );
-        }
-        BinanceSpotUdsMessage::AccountPosition(position) => {
-            let state = parse_spot_account_position(&position, account_id, ts_init);
-            emitter.send_account_state(state);
-        }
-        BinanceSpotUdsMessage::BalanceUpdate(update) => {
-            log::info!(
-                "Balance update: asset={}, delta={}",
-                update.asset,
-                update.delta,
-            );
-            let http_client = http_client.clone();
-            let emitter = emitter.clone();
-            get_runtime().spawn(async move {
-                match http_client.request_account_state(account_id).await {
-                    Ok(state) => emitter.send_account_state(state),
-                    Err(e) => {
-                        log::error!("Failed to refresh account state after balance update: {e}");
-                    }
-                }
-            });
-        }
-        BinanceSpotUdsMessage::ListenKeyExpired => {
-            log::warn!("Spot user data stream listen key expired, awaiting reconnection");
-        }
-        BinanceSpotUdsMessage::Reconnected => {
-            log::info!("Spot user data stream reconnected");
-        }
-    }
-    true
-}
-
-fn dispatch_ws_trading_message(
-    msg: NautilusWsApiMessage,
-    emitter: &ExecutionEventEmitter,
-    account_id: AccountId,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
+    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
 ) {
     match msg {
-        NautilusWsApiMessage::OrderAccepted {
+        BinanceSpotWsTradingMessage::OrderAccepted {
             request_id,
             response,
         } => {
@@ -1472,7 +1343,7 @@ fn dispatch_ws_trading_message(
             );
             // OrderAccepted event is synthesized from UDS executionReport (New)
         }
-        NautilusWsApiMessage::OrderRejected {
+        BinanceSpotWsTradingMessage::OrderRejected {
             request_id,
             code,
             msg,
@@ -1501,7 +1372,7 @@ fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::Rejected(rejected));
             }
         }
-        NautilusWsApiMessage::OrderCanceled {
+        BinanceSpotWsTradingMessage::OrderCanceled {
             request_id,
             response,
         } => {
@@ -1512,7 +1383,7 @@ fn dispatch_ws_trading_message(
             );
             // OrderCanceled event is synthesized from UDS executionReport (Canceled)
         }
-        NautilusWsApiMessage::CancelRejected {
+        BinanceSpotWsTradingMessage::CancelRejected {
             request_id,
             code,
             msg,
@@ -1540,7 +1411,7 @@ fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
             }
         }
-        NautilusWsApiMessage::CancelReplaceAccepted {
+        BinanceSpotWsTradingMessage::CancelReplaceAccepted {
             request_id,
             cancel_response,
             new_order_response,
@@ -1554,7 +1425,7 @@ fn dispatch_ws_trading_message(
             );
             // OrderUpdated event is synthesized from UDS executionReport (Replaced)
         }
-        NautilusWsApiMessage::CancelReplaceRejected {
+        BinanceSpotWsTradingMessage::CancelReplaceRejected {
             request_id,
             code,
             msg,
@@ -1585,7 +1456,7 @@ fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
             }
         }
-        NautilusWsApiMessage::AllOrdersCanceled {
+        BinanceSpotWsTradingMessage::AllOrdersCanceled {
             request_id,
             responses,
         } => {
@@ -1596,16 +1467,53 @@ fn dispatch_ws_trading_message(
             );
             // Individual OrderCanceled events arrive via UDS executionReport
         }
-        NautilusWsApiMessage::Connected => {
+        BinanceSpotWsTradingMessage::UserDataSubscribed { subscription_id } => {
+            log::info!("User data stream subscribed: id={subscription_id}");
+        }
+        BinanceSpotWsTradingMessage::ExecutionReport(report) => {
+            let ts_init = clock.get_time_ns();
+            dispatch_execution_report(
+                &report,
+                emitter,
+                http_client,
+                account_id,
+                dispatch_state,
+                seen_trade_ids,
+                ts_init,
+            );
+        }
+        BinanceSpotWsTradingMessage::AccountPosition(position) => {
+            let ts_init = clock.get_time_ns();
+            let state = parse_spot_account_position(&position, account_id, ts_init);
+            emitter.send_account_state(state);
+        }
+        BinanceSpotWsTradingMessage::BalanceUpdate(update) => {
+            log::info!(
+                "Balance update: asset={}, delta={}",
+                update.asset,
+                update.delta,
+            );
+            let http_client = http_client.clone();
+            let emitter = emitter.clone();
+            get_runtime().spawn(async move {
+                match http_client.request_account_state(account_id).await {
+                    Ok(state) => emitter.send_account_state(state),
+                    Err(e) => {
+                        log::error!("Failed to refresh account state after balance update: {e}");
+                    }
+                }
+            });
+        }
+        BinanceSpotWsTradingMessage::Connected => {
             log::info!("WS trading API connected");
         }
-        NautilusWsApiMessage::Authenticated => {
+        BinanceSpotWsTradingMessage::Authenticated => {
             log::info!("WS trading API authenticated");
         }
-        NautilusWsApiMessage::Reconnected => {
+        BinanceSpotWsTradingMessage::Reconnected => {
             log::info!("WS trading API reconnected");
         }
-        NautilusWsApiMessage::Error(err) => {
+        BinanceSpotWsTradingMessage::Error(err) => {
             log::error!("WS trading API error: {err}");
         }
     }

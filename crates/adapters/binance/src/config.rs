@@ -87,9 +87,9 @@ pub struct BinanceExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket user data stream.
     pub base_url_ws: Option<String>,
-    /// Optional base URL override for WebSocket trading API (Spot only).
+    /// Optional base URL override for WebSocket trading API (Spot and USD-M Futures).
     pub base_url_ws_trading: Option<String>,
-    /// Whether to use the WebSocket trading API for order operations (Spot only).
+    /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
     pub use_ws_trading: bool,
     /// API key (Ed25519 required, uses env var if not provided).
     pub api_key: Option<String>,

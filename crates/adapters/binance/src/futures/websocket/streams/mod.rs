@@ -13,16 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Binance Spot User Data Stream (UDS) execution WebSocket support.
+//! Binance Futures WebSocket market data and user data streams.
 //!
-//! Provides real-time order and account events via the Binance Spot user data
-//! stream. The handler emits raw venue types; the execution client performs all
-//! Nautilus conversion.
+//! Handles both public market data and private user data (execution events)
+//! via a single JSON WebSocket connection.
 
 pub mod client;
+pub mod error;
 pub mod handler;
 pub mod messages;
-pub mod parse;
+pub mod parse_data;
+pub mod parse_exec;
 
-pub use client::BinanceSpotUdsClient;
-pub use messages::BinanceSpotUdsMessage;
+pub use client::BinanceFuturesWebSocketClient;

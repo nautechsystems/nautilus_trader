@@ -13,34 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Binance Spot WebSocket API message types.
+//! Binance Futures WebSocket Trading API message types.
 //!
 //! This module defines:
-//! - [`BinanceSpotWsTradingCommand`]: Commands sent from the client to the handler.
-//! - [`BinanceSpotWsTradingMessage`]: Output messages emitted by the handler to the client.
-//! - Request/response structures for the Binance Spot WebSocket Trading API.
+//! - [`BinanceFuturesWsTradingCommand`]: Commands sent from the client to the handler.
+//! - [`BinanceFuturesWsTradingMessage`]: Output messages emitted by the handler to the client.
+//! - Request/response structures for the Binance Futures WebSocket Trading API.
 
 use nautilus_network::websocket::WebSocketClient;
 use serde::{Deserialize, Serialize};
 
-use super::user_data::{
-    BinanceSpotAccountPositionMsg, BinanceSpotBalanceUpdateMsg, BinanceSpotExecutionReport,
-};
-use crate::spot::http::{
-    models::{BinanceCancelOrderResponse, BinanceNewOrderResponse},
-    query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
+use crate::futures::http::{
+    models::BinanceFuturesOrder,
+    query::{BinanceCancelOrderParams, BinanceModifyOrderParams, BinanceNewOrderParams},
 };
 
 /// Commands sent from the outer client to the inner handler.
 ///
 /// The handler runs in a dedicated Tokio task and processes these commands
-/// to perform WebSocket API operations (request/response pattern).
+/// to perform WebSocket Trading API operations (JSON request/response pattern).
 #[allow(
     missing_debug_implementations,
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
-pub enum BinanceSpotWsTradingCommand {
+pub enum BinanceFuturesWsTradingCommand {
     /// Sets the WebSocket client after connection.
     SetClient(WebSocketClient),
     /// Disconnects and cleans up.
@@ -50,21 +47,21 @@ pub enum BinanceSpotWsTradingCommand {
         /// Request ID for correlation.
         id: String,
         /// Order parameters.
-        params: NewOrderParams,
+        params: BinanceNewOrderParams,
     },
     /// Cancels an order.
     CancelOrder {
         /// Request ID for correlation.
         id: String,
         /// Cancel parameters.
-        params: CancelOrderParams,
+        params: BinanceCancelOrderParams,
     },
-    /// Cancels and replaces an order atomically.
-    CancelReplaceOrder {
+    /// Modifies an order (in-place price/quantity amendment).
+    ModifyOrder {
         /// Request ID for correlation.
         id: String,
-        /// Cancel-replace parameters.
-        params: CancelReplaceOrderParams,
+        /// Modify parameters.
+        params: BinanceModifyOrderParams,
     },
     /// Cancels all open orders for a symbol.
     CancelAllOrders {
@@ -73,22 +70,16 @@ pub enum BinanceSpotWsTradingCommand {
         /// Symbol to cancel all orders for.
         symbol: String,
     },
-    /// Authenticates the WebSocket session via `session.logon`.
-    SessionLogon,
-    /// Subscribes to the user data stream via `userDataStream.subscribe`.
-    SubscribeUserData,
 }
 
-/// Normalized output message from the WebSocket API handler.
+/// Normalized output message from the Futures WebSocket Trading API handler.
 ///
 /// These messages are emitted by the handler and consumed by the client
 /// for routing to callers or the execution engine.
 #[derive(Debug, Clone)]
-pub enum BinanceSpotWsTradingMessage {
+pub enum BinanceFuturesWsTradingMessage {
     /// Connection established.
     Connected,
-    /// Session authenticated successfully.
-    Authenticated,
     /// Connection was re-established after disconnect.
     Reconnected,
     /// Order accepted by venue.
@@ -96,7 +87,7 @@ pub enum BinanceSpotWsTradingMessage {
         /// Request ID for correlation.
         request_id: String,
         /// Order response from venue.
-        response: BinanceNewOrderResponse,
+        response: Box<BinanceFuturesOrder>,
     },
     /// Order rejected by venue.
     OrderRejected {
@@ -112,7 +103,7 @@ pub enum BinanceSpotWsTradingMessage {
         /// Request ID for correlation.
         request_id: String,
         /// Cancel response from venue.
-        response: BinanceCancelOrderResponse,
+        response: Box<BinanceFuturesOrder>,
     },
     /// Cancel rejected by venue.
     CancelRejected {
@@ -123,17 +114,15 @@ pub enum BinanceSpotWsTradingMessage {
         /// Error message from venue.
         msg: String,
     },
-    /// Cancel-replace response (new order after cancel).
-    CancelReplaceAccepted {
+    /// Order modified successfully.
+    OrderModified {
         /// Request ID for correlation.
         request_id: String,
-        /// Cancel response.
-        cancel_response: BinanceCancelOrderResponse,
-        /// New order response.
-        new_order_response: BinanceNewOrderResponse,
+        /// Modified order response from venue.
+        response: Box<BinanceFuturesOrder>,
     },
-    /// Cancel-replace rejected.
-    CancelReplaceRejected {
+    /// Modify rejected by venue.
+    ModifyRejected {
         /// Request ID for correlation.
         request_id: String,
         /// Error code from venue.
@@ -141,24 +130,11 @@ pub enum BinanceSpotWsTradingMessage {
         /// Error message from venue.
         msg: String,
     },
-    /// All orders canceled for a symbol.
+    /// All open orders canceled for a symbol.
     AllOrdersCanceled {
         /// Request ID for correlation.
         request_id: String,
-        /// Canceled order responses.
-        responses: Vec<BinanceCancelOrderResponse>,
     },
-    /// User data stream subscribed.
-    UserDataSubscribed {
-        /// Subscription ID from Binance.
-        subscription_id: String,
-    },
-    /// Order execution report from user data stream.
-    ExecutionReport(Box<BinanceSpotExecutionReport>),
-    /// Account position update from user data stream.
-    AccountPosition(BinanceSpotAccountPositionMsg),
-    /// Balance update from user data stream.
-    BalanceUpdate(BinanceSpotBalanceUpdateMsg),
     /// Error from venue or network.
     Error(String),
 }
@@ -167,26 +143,22 @@ pub enum BinanceSpotWsTradingMessage {
 ///
 /// Stored in the handler to match responses to their originating requests.
 #[derive(Debug, Clone, Copy)]
-pub enum BinanceSpotWsTradingRequestMeta {
+pub enum BinanceFuturesWsTradingRequestMeta {
     /// Pending order placement.
     PlaceOrder,
     /// Pending order cancellation.
     CancelOrder,
-    /// Pending cancel-replace.
-    CancelReplaceOrder,
+    /// Pending order modification.
+    ModifyOrder,
     /// Pending cancel-all.
     CancelAllOrders,
-    /// Pending session logon.
-    SessionLogon,
-    /// Pending user data subscription.
-    SubscribeUserData,
 }
 
-/// WebSocket API request wrapper.
+/// WebSocket Trading API request wrapper.
 ///
-/// Requests are sent as JSON text frames, responses come back as SBE binary.
+/// Requests are sent as JSON text frames, responses come back as JSON text.
 #[derive(Debug, Clone, Serialize)]
-pub struct BinanceSpotWsTradingRequest {
+pub struct BinanceFuturesWsTradingRequest {
     /// Unique request ID for correlation.
     pub id: String,
     /// API method name (e.g., "order.place").
@@ -195,8 +167,8 @@ pub struct BinanceSpotWsTradingRequest {
     pub params: serde_json::Value,
 }
 
-impl BinanceSpotWsTradingRequest {
-    /// Creates a new WebSocket API request.
+impl BinanceFuturesWsTradingRequest {
+    /// Creates a new WebSocket Trading API request.
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -211,31 +183,41 @@ impl BinanceSpotWsTradingRequest {
     }
 }
 
-/// WebSocket API error response (JSON).
+/// WebSocket Trading API response envelope.
+///
+/// Binance Futures WS API returns responses in this format.
 #[derive(Debug, Clone, Deserialize)]
-pub struct BinanceSpotWsTradingResponseError {
+pub struct BinanceFuturesWsTradingResponse {
+    /// Request ID for correlation.
+    pub id: String,
+    /// HTTP-like status code (200 for success).
+    pub status: u16,
+    /// Result payload (present on success).
+    pub result: Option<serde_json::Value>,
+    /// Rate limit information.
+    #[serde(default, rename = "rateLimits")]
+    pub rate_limits: Vec<serde_json::Value>,
+    /// Error details (present on failure).
+    pub error: Option<BinanceFuturesWsTradingResponseError>,
+}
+
+/// Error details within a WebSocket Trading API response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceFuturesWsTradingResponseError {
     /// Error code from venue.
     pub code: i32,
     /// Error message from venue.
     pub msg: String,
-    /// Request ID if available.
-    pub id: Option<String>,
 }
 
-/// WebSocket API method names.
+/// WebSocket Trading API method names for Binance Futures.
 pub mod method {
     /// Places a new order.
     pub const ORDER_PLACE: &str = "order.place";
     /// Cancels an order.
     pub const ORDER_CANCEL: &str = "order.cancel";
-    /// Cancels and replaces an order.
-    pub const ORDER_CANCEL_REPLACE: &str = "order.cancelReplace";
+    /// Modifies an order (in-place amendment).
+    pub const ORDER_MODIFY: &str = "order.modify";
     /// Cancels all open orders for a symbol.
     pub const OPEN_ORDERS_CANCEL_ALL: &str = "openOrders.cancelAll";
-    /// Initiates session logon.
-    pub const SESSION_LOGON: &str = "session.logon";
-    /// Queries session status.
-    pub const SESSION_STATUS: &str = "session.status";
-    /// Initiates session logout.
-    pub const SESSION_LOGOUT: &str = "session.logout";
 }

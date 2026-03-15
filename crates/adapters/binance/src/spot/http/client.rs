@@ -73,7 +73,7 @@ use crate::{
         consts::{
             BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_SPOT_RATE_LIMITS, BinanceRateLimitQuota,
         },
-        credential::Credential,
+        credential::SigningCredential,
         encoder::{decode_broker_id, encode_broker_id},
         enums::{
             BinanceEnvironment, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
@@ -132,7 +132,7 @@ struct RateLimitConfig {
 pub struct BinanceRawSpotHttpClient {
     client: HttpClient,
     base_url: String,
-    credential: Option<Credential>,
+    credential: Option<SigningCredential>,
     recv_window: Option<u64>,
     order_rate_keys: Vec<String>,
 }
@@ -159,7 +159,7 @@ impl BinanceRawSpotHttpClient {
         } = Self::rate_limit_config();
 
         let credential = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
+            (Some(key), Some(secret)) => Some(SigningCredential::new(key, secret)),
             (None, None) => None,
             _ => return Err(BinanceSpotHttpError::MissingCredentials),
         };
@@ -408,7 +408,7 @@ impl BinanceRawSpotHttpClient {
         Some((code, message))
     }
 
-    fn default_headers(credential: &Option<Credential>) -> HashMap<String, String> {
+    fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
         headers.insert("Accept".to_string(), "application/sbe".to_string());

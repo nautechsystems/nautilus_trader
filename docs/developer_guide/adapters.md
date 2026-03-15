@@ -1289,6 +1289,70 @@ similarly-named types from other crates. Never import `mpsc` directly at module 
 let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<MyMessage>();
 ```
 
+### Split WebSocket architectures
+
+Some venues expose multiple WebSocket endpoints with distinct protocols or encodings.
+When a venue requires separate connections for market data and order management, split
+the `websocket/` module into submodules that mirror the connection boundaries:
+
+```
+src/
+├── websocket/
+│   ├── mod.rs              # Re-exports from submodules
+│   ├── streams/            # Market data pub/sub connection
+│   │   ├── client.rs       # Streams client
+│   │   ├── handler.rs      # Streams feed handler
+│   │   ├── messages.rs     # Streams message types
+│   │   └── mod.rs
+│   └── trading/            # Order management + user data (authenticated WS API)
+│       ├── client.rs       # Trading client
+│       ├── handler.rs      # Trading handler
+│       ├── messages.rs     # Trading message types
+│       ├── user_data.rs    # User data stream venue types (execution reports, etc.)
+│       ├── parse.rs        # Parse functions for user data -> Nautilus types
+│       ├── error.rs        # Trading error types
+│       └── mod.rs
+```
+
+Each submodule follows the same two-layer client/handler pattern described above. The
+parent `websocket/mod.rs` re-exports the public client types.
+
+The `trading/` module handles both order operations (place, cancel, modify) and the
+user data stream (execution reports, account updates). When the venue's authenticated
+WebSocket API supports `session.logon` and inline user data subscriptions, both
+concerns share a single authenticated connection. This avoids a separate `execution/`
+module and the deprecated REST listenKey lifecycle.
+
+For venues where user data events arrive on a separate stream connection (e.g.,
+futures APIs that return a listenKey for a dedicated stream URL), the `streams/`
+handler dispatches both market data and user data events from the combined connection.
+
+#### Naming conventions for split architectures
+
+Type names include the submodule qualifier to avoid ambiguity:
+
+| Submodule    | Command type                         | Message type                        |
+|--------------|--------------------------------------|-------------------------------------|
+| `streams/`   | `{Venue}WsStreamsCommand`            | `{Venue}WsMessage` (venue types)    |
+| `trading/`   | `{Venue}WsTradingCommand`            | `{Venue}WsTradingMessage`           |
+
+The `{Venue}Ws` prefix follows the standard type naming convention. The qualifier
+(`Streams`, `Trading`) distinguishes types that would otherwise collide across
+submodules.
+
+#### When to split
+
+Split the WebSocket module when the venue has:
+
+- Different endpoints with different protocols (e.g., SBE binary for market data, JSON
+  for trading)
+- A dedicated order management WebSocket API (`ws-api` style) alongside pub/sub streams
+- User data delivered inline on the authenticated trading connection rather than via a
+  separate listenKey stream
+
+Do not split when a single connection handles all message types through channel-based
+multiplexing (the common pattern for OKX, Bybit, and similar venues).
+
 ## Modeling venue payloads
 
 Use the following conventions when mirroring upstream schemas in Rust.

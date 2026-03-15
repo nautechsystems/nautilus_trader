@@ -65,7 +65,7 @@ use crate::common::{
         BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH, BINANCE_FAPI_RATE_LIMITS,
         BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
     },
-    credential::Credential,
+    credential::SigningCredential,
     encoder::encode_broker_id,
     enums::{
         BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
@@ -87,7 +87,7 @@ pub struct BinanceRawFuturesHttpClient {
     client: HttpClient,
     base_url: String,
     api_path: &'static str,
-    credential: Option<Credential>,
+    credential: Option<SigningCredential>,
     recv_window: Option<u64>,
     order_rate_keys: Vec<String>,
 }
@@ -122,7 +122,7 @@ impl BinanceRawFuturesHttpClient {
         } = Self::rate_limit_config(product_type);
 
         let credential = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
+            (Some(key), Some(secret)) => Some(SigningCredential::new(key, secret)),
             (None, None) => None,
             _ => return Err(BinanceFuturesHttpError::MissingCredentials),
         };
@@ -460,7 +460,7 @@ impl BinanceRawFuturesHttpClient {
         Err(BinanceFuturesHttpError::UnexpectedStatus { status, body })
     }
 
-    fn default_headers(credential: &Option<Credential>) -> HashMap<String, String> {
+    fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
 
@@ -2257,7 +2257,9 @@ pub fn is_algo_order_type(order_type: OrderType) -> bool {
 }
 
 /// Converts a Nautilus order type to a Binance Futures order type.
-fn order_type_to_binance_futures(order_type: OrderType) -> anyhow::Result<BinanceFuturesOrderType> {
+pub(crate) fn order_type_to_binance_futures(
+    order_type: OrderType,
+) -> anyhow::Result<BinanceFuturesOrderType> {
     match order_type {
         OrderType::Market => Ok(BinanceFuturesOrderType::Market),
         OrderType::Limit => Ok(BinanceFuturesOrderType::Limit),

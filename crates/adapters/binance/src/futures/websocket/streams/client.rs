@@ -35,10 +35,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{
-    string::REDACTED,
-    time::{AtomicTime, get_atomic_clock_realtime},
-};
+use nautilus_core::string::REDACTED;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -53,14 +50,14 @@ use ustr::Ustr;
 use super::{
     error::{BinanceWsError, BinanceWsResult},
     handler::BinanceFuturesDataWsFeedHandler,
-    messages::{DataHandlerCommand, NautilusWsMessage},
+    messages::{BinanceFuturesWsStreamsCommand, BinanceFuturesWsStreamsMessage},
 };
 use crate::common::{
     consts::{
         BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION, BINANCE_WS_CONNECTION_QUOTA,
         BINANCE_WS_SUBSCRIPTION_QUOTA,
     },
-    credential::Credential,
+    credential::SigningCredential,
     enums::{BinanceEnvironment, BinanceProductType},
     urls::get_ws_base_url,
 };
@@ -71,15 +68,20 @@ pub const MAX_STREAMS_PER_CONNECTION: usize = 200;
 /// Binance Futures WebSocket client for JSON market data streams.
 #[derive(Clone)]
 pub struct BinanceFuturesWebSocketClient {
-    clock: &'static AtomicTime,
     url: String,
     product_type: BinanceProductType,
-    credential: Option<Arc<Credential>>,
+    credential: Option<Arc<SigningCredential>>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<DataHandlerCommand>>>,
-    out_rx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>>,
+    cmd_tx: Arc<
+        tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsCommand>>,
+    >,
+    out_rx: Arc<
+        std::sync::Mutex<
+            Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsMessage>>,
+        >,
+    >,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
@@ -127,14 +129,13 @@ impl BinanceFuturesWebSocketClient {
             url_override.unwrap_or_else(|| get_ws_base_url(product_type, environment).to_string());
 
         let credential = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => Some(Arc::new(Credential::new(key, secret))),
+            (Some(key), Some(secret)) => Some(Arc::new(SigningCredential::new(key, secret))),
             _ => None,
         };
 
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
         Ok(Self {
-            clock: get_atomic_clock_realtime(),
             url,
             product_type,
             credential,
@@ -257,7 +258,6 @@ impl BinanceFuturesWebSocketClient {
         });
 
         let mut handler = BinanceFuturesDataWsFeedHandler::new(
-            self.clock,
             self.signal.clone(),
             cmd_rx,
             bytes_rx,
@@ -269,24 +269,8 @@ impl BinanceFuturesWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(DataHandlerCommand::SetClient(client))
+            .send(BinanceFuturesWsStreamsCommand::SetClient(client))
             .map_err(|e| BinanceWsError::ClientError(format!("Failed to set client: {e}")))?;
-
-        let instruments: Vec<InstrumentAny> = self
-            .instruments_cache
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
-
-        if !instruments.is_empty() {
-            self.cmd_tx
-                .read()
-                .await
-                .send(DataHandlerCommand::InitializeInstruments(instruments))
-                .map_err(|e| {
-                    BinanceWsError::ClientError(format!("Failed to initialize instruments: {e}"))
-                })?;
-        }
 
         let signal = self.signal.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -302,7 +286,7 @@ impl BinanceFuturesWebSocketClient {
                     }
                     result = handler.next() => {
                         match result {
-                            Some(NautilusWsMessage::Reconnected) => {
+                            Some(BinanceFuturesWsStreamsMessage::Reconnected) => {
                                 log::info!("WebSocket reconnected, restoring subscriptions");
                                 // Mark all confirmed subscriptions as pending
                                 let all_topics = subscriptions_state.all_topics();
@@ -313,11 +297,11 @@ impl BinanceFuturesWebSocketClient {
                                 // Resubscribe using tracked subscription state
                                 let streams = subscriptions_state.all_topics();
                                 if !streams.is_empty()
-                                    && let Err(e) = cmd_tx.read().await.send(DataHandlerCommand::Subscribe { streams }) {
+                                    && let Err(e) = cmd_tx.read().await.send(BinanceFuturesWsStreamsCommand::Subscribe { streams }) {
                                         log::error!("Failed to resubscribe after reconnect: {e}");
                                     }
 
-                                if out_tx.send(NautilusWsMessage::Reconnected).is_err() {
+                                if out_tx.send(BinanceFuturesWsStreamsMessage::Reconnected).is_err() {
                                     log::debug!("Output channel closed");
                                     break;
                                 }
@@ -370,7 +354,7 @@ impl BinanceFuturesWebSocketClient {
             .cmd_tx
             .read()
             .await
-            .send(DataHandlerCommand::Disconnect);
+            .send(BinanceFuturesWsStreamsCommand::Disconnect);
 
         if let Some(handle) = self.task_handle.take()
             && let Ok(handle) = Arc::try_unwrap(handle)
@@ -403,7 +387,7 @@ impl BinanceFuturesWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(DataHandlerCommand::Subscribe { streams })
+            .send(BinanceFuturesWsStreamsCommand::Subscribe { streams })
             .map_err(|e| BinanceWsError::ClientError(format!("Handler not available: {e}")))?;
 
         Ok(())
@@ -418,7 +402,7 @@ impl BinanceFuturesWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(DataHandlerCommand::Unsubscribe { streams })
+            .send(BinanceFuturesWsStreamsCommand::Unsubscribe { streams })
             .map_err(|e| BinanceWsError::ClientError(format!("Handler not available: {e}")))?;
 
         Ok(())
@@ -433,7 +417,7 @@ impl BinanceFuturesWebSocketClient {
     /// # Panics
     ///
     /// Panics if the internal output receiver mutex is poisoned.
-    pub fn stream(&self) -> impl Stream<Item = NautilusWsMessage> + 'static {
+    pub fn stream(&self) -> impl Stream<Item = BinanceFuturesWsStreamsMessage> + 'static {
         let out_rx = self.out_rx.lock().expect("out_rx lock poisoned").take();
         async_stream::stream! {
             if let Some(mut rx) = out_rx {
@@ -448,21 +432,10 @@ impl BinanceFuturesWebSocketClient {
     ///
     /// Instruments are cached by their raw symbol (e.g., "BTCUSDT") to match
     /// the symbol format sent in WebSocket messages.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in &instruments {
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        for inst in instruments {
             self.instruments_cache
                 .insert(inst.raw_symbol().inner(), inst.clone());
-        }
-
-        if self.is_active() {
-            let cmd_tx = self.cmd_tx.clone();
-            let instruments_clone = instruments;
-            get_runtime().spawn(async move {
-                let _ = cmd_tx
-                    .read()
-                    .await
-                    .send(DataHandlerCommand::InitializeInstruments(instruments_clone));
-            });
         }
     }
 
@@ -472,20 +445,16 @@ impl BinanceFuturesWebSocketClient {
     /// the symbol format sent in WebSocket messages.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         self.instruments_cache
-            .insert(instrument.raw_symbol().inner(), instrument.clone());
-
-        if self.is_active() {
-            let cmd_tx = self.cmd_tx.clone();
-            get_runtime().spawn(async move {
-                let _ = cmd_tx
-                    .read()
-                    .await
-                    .send(DataHandlerCommand::UpdateInstrument(instrument));
-            });
-        }
+            .insert(instrument.raw_symbol().inner(), instrument);
     }
 
-    /// Get an instrument from the cache.
+    /// Returns a shared reference to the instruments cache.
+    #[must_use]
+    pub fn instruments_cache(&self) -> Arc<DashMap<Ustr, InstrumentAny>> {
+        self.instruments_cache.clone()
+    }
+
+    /// Returns an instrument from the cache by raw symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &str) -> Option<InstrumentAny> {
         self.instruments_cache

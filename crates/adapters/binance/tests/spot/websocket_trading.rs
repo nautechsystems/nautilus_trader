@@ -38,7 +38,9 @@ use nautilus_binance::{
     spot::{
         enums::BinanceSpotOrderType,
         http::query::NewOrderParams,
-        websocket::trading::{client::BinanceSpotWsTradingClient, messages::NautilusWsApiMessage},
+        websocket::trading::{
+            client::BinanceSpotWsTradingClient, messages::BinanceSpotWsTradingMessage,
+        },
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -535,11 +537,11 @@ async fn test_order_rejection_via_json_error() {
     // Receive the rejection message
     if let Some(msg) = client.recv().await {
         match msg {
-            NautilusWsApiMessage::Connected => {
+            BinanceSpotWsTradingMessage::Connected => {
                 // First message is Connected, get the next one
                 if let Some(rejection) = client.recv().await {
                     match rejection {
-                        NautilusWsApiMessage::OrderRejected { code, msg, .. } => {
+                        BinanceSpotWsTradingMessage::OrderRejected { code, msg, .. } => {
                             assert_eq!(code, -2010);
                             assert!(msg.contains("insufficient balance"));
                         }
@@ -547,7 +549,7 @@ async fn test_order_rejection_via_json_error() {
                     }
                 }
             }
-            NautilusWsApiMessage::OrderRejected { code, msg, .. } => {
+            BinanceSpotWsTradingMessage::OrderRejected { code, msg, .. } => {
                 assert_eq!(code, -2010);
                 assert!(msg.contains("insufficient balance"));
             }

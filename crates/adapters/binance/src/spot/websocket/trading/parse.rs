@@ -27,7 +27,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
-use super::messages::{BinanceSpotAccountPositionMsg, BinanceSpotExecutionReport};
+use super::user_data::{BinanceSpotAccountPositionMsg, BinanceSpotExecutionReport};
 use crate::common::{
     consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
     encoder::decode_broker_id,
@@ -243,7 +243,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::spot::websocket::execution::messages::BinanceSpotExecutionReport;
+    use crate::spot::websocket::trading::user_data::BinanceSpotExecutionReport;
 
     const PRICE_PRECISION: u8 = 2;
     const SIZE_PRECISION: u8 = 5;
