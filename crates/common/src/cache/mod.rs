@@ -1263,6 +1263,8 @@ impl Cache {
     ///
     /// If closing the database connection fails, an error is logged.
     pub fn dispose(&mut self) {
+        self.reset();
+
         if let Some(database) = &mut self.database
             && let Err(e) = database.close()
         {

@@ -1200,6 +1200,8 @@ cdef class Cache(CacheFacade):
         Dispose of the cache which will close any underlying database adapter.
 
         """
+        self.reset()
+
         if self._database is not None:
             self._database.close()
 

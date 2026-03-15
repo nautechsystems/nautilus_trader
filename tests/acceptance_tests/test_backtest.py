@@ -2245,6 +2245,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             start=backtest_start_time,
             end=end_time,
             raise_exception=True,
+            dispose_on_completion=False,
         ),
     ]
 

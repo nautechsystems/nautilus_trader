@@ -31,6 +31,11 @@ struct TimeEventAccumulator_API time_event_accumulator_new(void);
 void time_event_accumulator_drop(struct TimeEventAccumulator_API accumulator);
 
 /**
+ * Clears all events from the accumulator heap without deallocating the accumulator itself.
+ */
+void time_event_accumulator_clear(struct TimeEventAccumulator_API *accumulator);
+
+/**
  * Advance the clock and push events to the heap.
  */
 void time_event_accumulator_advance_clock(struct TimeEventAccumulator_API *accumulator,

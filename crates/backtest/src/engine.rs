@@ -752,6 +752,7 @@ impl BacktestEngine {
     /// Dispose of the backtest engine, releasing all resources.
     pub fn dispose(&mut self) {
         self.clear_data();
+        self.accumulator.clear();
         self.kernel.dispose();
     }
 
