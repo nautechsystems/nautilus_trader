@@ -15,9 +15,12 @@ jobs:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -47,9 +50,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -72,9 +78,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -134,9 +143,12 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -237,9 +249,12 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -309,9 +324,12 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -369,9 +387,12 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -425,11 +446,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -485,11 +507,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -545,11 +568,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443
@@ -660,11 +684,12 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -719,11 +744,12 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443

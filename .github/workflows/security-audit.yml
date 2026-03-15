@@ -19,10 +19,21 @@ jobs:
   cargo-audit:
     name: cargo-audit
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,10 +51,21 @@ jobs:
   cargo-deny:
     name: cargo-deny
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -61,10 +83,21 @@ jobs:
   cargo-vet:
     name: cargo-vet
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -82,10 +115,21 @@ jobs:
   pip-audit:
     name: pip-audit
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -107,10 +151,21 @@ jobs:
   osv-scanner:
     name: osv-scanner
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

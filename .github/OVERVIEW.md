@@ -57,7 +57,13 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ### Runtime hardening
 
-- **Hardened runners**: Most workflows employ `step-security/harden-runner` with `egress-policy: audit` to reduce attack surface and monitor outbound traffic.
+- **Hardened runners**: All workflows employ `step-security/harden-runner` to reduce attack surface and
+  monitor outbound traffic. All workflows default `egress-policy` to `block`. Set
+  `STEP_SECURITY_EGRESS_POLICY=audit` only as a temporary rollback while expanding an allow list. Jobs that
+  declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
+  publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. The
+  `security-audit.yml` workflow also reads its allow list from GitHub Environments so it can validate
+  branch changes before promoting the same settings to scheduled runs on the default branch.
 
 ### Allowed network endpoints
 
@@ -83,7 +89,28 @@ azure.archive.ubuntu.com:443                 # Azure Ubuntu mirrors
 astral.sh:443                                # UV/Ruff tooling
 ```
 
-Job-specific endpoints (e.g., `pypi.org:443` for publishing jobs) are added inline within each workflow.
+Shared CI and test endpoints are maintained in `CI_ALLOWED_ENDPOINTS`. Job-specific endpoints
+(e.g., `pypi.org:443` for publishing jobs) are added inline within each workflow.
+
+All workflows read these GitHub variables:
+
+- `STEP_SECURITY_EGRESS_POLICY`: StepSecurity egress mode for the job. Workflows default to `block`. Set
+  `audit` only as a temporary override while extending an allow list.
+- `CI_ALLOWED_ENDPOINTS`: Extra endpoints shared by the main CI, nightly, docs, and release workflows.
+- `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints needed by the security audit jobs.
+
+Use the `security-audit` environment for the default branch and `master`. Use `security-audit-test` for
+branch tests such as `test-security`.
+
+Store `COMMON_ALLOWED_ENDPOINTS`, `CI_ALLOWED_ENDPOINTS`, and `SECURITY_AUDIT_ALLOWED_ENDPOINTS` in GitHub
+as single-line, space-delimited values. The pinned `step-security/harden-runner` version does not enforce
+newline-delimited values correctly in `block` mode.
+
+Recommended `SECURITY_AUDIT_ALLOWED_ENDPOINTS` value:
+
+```text
+static.rust-lang.org:443 crates.io:443 index.crates.io:443 static.crates.io:443 pypi.org:443 files.pythonhosted.org:443 api.osv.dev:443 release-assets.githubusercontent.com:443
+```
 
 **Action Update Policy**: When updating GitHub Actions, only use versions that have been released for at least 2 weeks.
 This allows time for the community to identify potential issues while maintaining security through timely updates.
