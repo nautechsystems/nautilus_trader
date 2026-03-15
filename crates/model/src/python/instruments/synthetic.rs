@@ -27,6 +27,10 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SyntheticInstrument {
+    /// Represents a synthetic instrument with prices derived from component instruments using a
+    /// formula.
+    ///
+    /// The `id` for the synthetic will become `{symbol}.{SYNTH}`.
     #[new]
     #[pyo3(signature = (symbol, price_precision, components, formula, ts_event, ts_init))]
     fn py_new(
@@ -103,17 +107,31 @@ impl SyntheticInstrument {
         self.is_valid_formula(formula)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if parsing the new formula fails.
     #[pyo3(name = "change_formula")]
     fn py_change_formula(&mut self, formula: &str) -> PyResult<()> {
         self.change_formula(formula).map_err(to_pyvalue_err)
     }
 
+    /// Calculates the price of the synthetic instrument based on the given component input prices
+    /// provided as an array of `f64` values.
+    /// # Errors
+    ///
+    /// Returns an error if the input length does not match or formula evaluation fails.
     #[pyo3(name = "calculate")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_calculate(&mut self, inputs: Vec<f64>) -> PyResult<Price> {
         self.calculate(&inputs).map_err(to_pyvalue_err)
     }
 
+    /// Calculates the price of the synthetic instrument based on component input prices provided as a map.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if formula evaluation fails, a required component price is missing
+    /// from the input map, or if setting the value in the evaluation context fails.
     #[pyo3(name = "calculate_from_map")]
     fn py_calculate_from_map(
         &mut self,

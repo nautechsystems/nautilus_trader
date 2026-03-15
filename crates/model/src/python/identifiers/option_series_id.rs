@@ -28,6 +28,7 @@ use crate::identifiers::{OptionSeriesId, Venue};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionSeriesId {
+    /// Identifies a unique option series: a specific venue + underlying + settlement currency + expiration.
     #[new]
     fn py_new(
         venue: &str,
@@ -43,7 +44,14 @@ impl OptionSeriesId {
         }
     }
 
-    /// Creates an `OptionSeriesId` from venue, underlying, settlement currency, and date string.
+    /// Creates an `OptionSeriesId` from venue name, underlying symbol, settlement currency, and date string.
+    ///
+    /// The `date_str` is parsed via `UnixNanos::FromStr`, which accepts `"YYYY-MM-DD"`,
+    /// RFC 3339 timestamps, integer nanoseconds, or floating-point seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `date_str` cannot be parsed as a valid date or timestamp.
     #[staticmethod]
     #[pyo3(name = "from_expiry")]
     fn py_from_expiry(

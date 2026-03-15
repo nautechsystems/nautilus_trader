@@ -36,6 +36,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FuturesSpread {
+    /// Represents a generic deliverable futures spread instrument.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, strategy_type, activation_ns, expiration_ns, currency, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None, info=None))]

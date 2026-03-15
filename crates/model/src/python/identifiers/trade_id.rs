@@ -31,6 +31,14 @@ use crate::identifiers::TradeId;
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TradeId {
+    /// Represents a valid trade match ID (assigned by a trading venue).
+    ///
+    /// The unique ID assigned to the trade entity once it is received or matched by
+    /// the venue or central counterparty.
+    ///
+    /// Can correspond to the `TradeID <1003> field` of the FIX protocol.
+    ///
+    /// Maximum length is 36 characters.
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {
         Self::new_checked(value).map_err(to_pyvalue_err)

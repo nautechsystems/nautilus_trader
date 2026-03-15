@@ -35,11 +35,18 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LoggerConfig {
-    /// Creates a [`LoggerConfig`] from a spec string.
+    /// Parses a configuration from a spec string.
+    ///
+    /// # Format
+    ///
+    /// Semicolon-separated key-value pairs or bare flags:
+    /// ```text
+    /// stdout=Info;fileout=Debug;RiskEngine=Error;my_crate::module=Debug;is_colored
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns a Python exception if the spec string is invalid.
+    /// Returns an error if the spec string contains invalid syntax or log levels.
     #[staticmethod]
     #[pyo3(name = "from_spec")]
     pub fn py_from_spec(spec: &str) -> PyResult<Self> {
@@ -50,6 +57,7 @@ impl LoggerConfig {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FileWriterConfig {
+    /// Creates a new `FileWriterConfig` instance.
     #[new]
     #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
     #[must_use]
@@ -75,7 +83,7 @@ impl FileWriterConfig {
 ///
 /// # Errors
 ///
-/// Returns a Python exception if logger initialization fails.
+/// Returns an error if the logging subsystem fails to initialize.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "init_logging")]
@@ -168,6 +176,7 @@ pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
 }
 
+/// Sets the global logging clock to static mode.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_static_mode")]
@@ -175,6 +184,7 @@ pub fn py_logging_clock_set_static_mode() {
     logging_clock_set_static_mode();
 }
 
+/// Sets the global logging clock to real-time mode.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_realtime_mode")]
@@ -182,6 +192,7 @@ pub fn py_logging_clock_set_realtime_mode() {
     logging_clock_set_realtime_mode();
 }
 
+/// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
 #[pyo3(name = "logging_clock_set_static_time")]
@@ -199,19 +210,21 @@ pub fn py_tracing_is_initialized() -> bool {
     crate::logging::bridge::tracing_is_initialized()
 }
 
-/// Initialize a tracing subscriber for external Rust crate logging.
+/// Initializes a tracing subscriber for external Rust crate logging.
 ///
-/// This sets up a tracing subscriber that outputs directly to stdout, allowing
-/// external Rust libraries that use the `tracing` crate to display their logs.
-/// Output is separate from Nautilus logging and uses real-time timestamps.
+/// This sets up a standard tracing subscriber that outputs to stdout with
+/// the format controlled by `RUST_LOG` environment variable. The output
+/// format uses nanosecond timestamps to align with Nautilus logging.
 ///
-/// The `RUST_LOG` environment variable controls filtering:
-/// - Example: `RUST_LOG=hyper_util=debug,tokio=warn`.
-/// - Default: `warn` (if not set).
+/// # Environment Variables
+///
+/// - `RUST_LOG`: Controls which modules emit tracing events and at what level.
+///   - Example: `RUST_LOG=hyper=debug,tokio=warn`.
+///   - Default: `warn` (if not set).
 ///
 /// # Errors
 ///
-/// Returns a Python exception if initialization fails or if already initialized.
+/// Returns an error if the tracing subscriber has already been initialized.
 #[cfg(feature = "tracing-bridge")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]

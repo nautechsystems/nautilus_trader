@@ -36,6 +36,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BettingInstrument {
+    /// Represents a betting instrument with complete market and selection details.
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, event_type_id, event_type_name, competition_id, competition_name, event_id, event_name, event_country_code, event_open_date, betting_type, market_id, market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]

@@ -57,6 +57,7 @@ const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the
 #[pymethods]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
 impl DataType {
+    /// Represents a data type including metadata.
     #[new]
     #[pyo3(signature = (type_name, metadata=None, identifier=None))]
     fn py_new(
@@ -72,12 +73,14 @@ impl DataType {
         Ok(Self::new(type_name, params, identifier))
     }
 
+    /// Returns the type name for the data type.
     #[getter]
     #[pyo3(name = "type_name")]
     fn py_type_name(&self) -> &str {
         self.type_name()
     }
 
+    /// Returns the metadata for the data type.
     #[getter]
     #[pyo3(name = "metadata")]
     fn py_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -91,12 +94,14 @@ impl DataType {
         }
     }
 
+    /// Returns the messaging topic for the data type.
     #[getter]
     #[pyo3(name = "topic")]
     fn py_topic(&self) -> &str {
         self.topic()
     }
 
+    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
     #[getter]
     #[pyo3(name = "identifier")]
     fn py_identifier(&self) -> Option<&str> {

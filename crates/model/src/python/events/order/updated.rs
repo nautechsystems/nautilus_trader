@@ -28,6 +28,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderUpdated {
+    /// Creates a new `OrderUpdated` instance.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, quantity, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None, price=None, trigger_price=None, protection_price=None))]

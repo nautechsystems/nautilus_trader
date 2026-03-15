@@ -32,6 +32,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Blockchain {
+    /// Represents different blockchain networks.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -75,6 +76,7 @@ impl Blockchain {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AmmType {
+    /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -125,6 +127,7 @@ impl DexType {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolLiquidityUpdateType {
+    /// Represents the type of liquidity update operation in a DEX pool.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

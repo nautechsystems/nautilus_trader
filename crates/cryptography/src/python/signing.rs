@@ -18,7 +18,11 @@ use pyo3::prelude::*;
 
 use crate::signing::{ed25519_signature, hmac_signature, rsa_signature};
 
-/// HMAC-SHA256 signature of `data` using the provided `secret`.
+/// Generates an HMAC-SHA256 signature for the given data using the provided secret.
+///
+/// This function creates a cryptographic hash-based message authentication code (HMAC)
+/// using SHA-256 as the underlying hash function. The resulting signature is returned
+/// as a lowercase hexadecimal string.
 ///
 /// # Errors
 ///
@@ -29,22 +33,25 @@ pub fn py_hmac_signature(secret: &str, data: &str) -> PyResult<String> {
     hmac_signature(secret, data).map_err(to_pyvalue_err)
 }
 
-/// RSA PKCS#1 SHA-256 signature of `data` using the provided private key in PEM format.
+/// Signs `data` using RSA PKCS#1 v1.5 SHA-256 with the provided private key in PEM format.
 ///
 /// # Errors
 ///
-/// Returns an error if signature generation fails, e.g., due to empty data or invalid key PEM.
+/// Returns an error if:
+/// - `data` is empty.
+/// - `private_key_pem` is not a valid PEM-encoded PKCS#8 RSA private key or cannot be parsed.
+/// - Signature generation fails due to key or cryptographic errors.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 #[pyfunction(name = "rsa_signature")]
 pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
     rsa_signature(private_key_pem, data).map_err(to_pyvalue_err)
 }
 
-/// Ed25519 signature of `data` using the provided private key seed.
+/// Signs `data` using Ed25519 with the provided private key seed.
 ///
 /// # Errors
 ///
-/// Returns an error if the private key seed is invalid or signature creation fails.
+/// Returns an error if the provided private key seed is invalid or signature creation fails.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.cryptography")]
 #[pyfunction(name = "ed25519_signature")]
 pub fn py_ed25519_signature(

@@ -1427,8 +1427,15 @@ def main() -> int:
     print(f"Starting nautilus-trader v2 {args.action}...")
 
     try:
-        if args.action in ["stubs", "all"] and not generate_stubs():
-            return 1
+        if args.action in ["stubs", "all"]:
+            print("Generating PyO3 docstrings...")
+            subprocess.run(
+                [sys.executable, str(Path(__file__).parent / "generate_docstrings.py")],
+                check=True,
+            )
+
+            if not generate_stubs():
+                return 1
 
         if args.action in ["build", "all"] and not build_extension():
             return 1

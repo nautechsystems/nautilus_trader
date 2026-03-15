@@ -15,6 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod config;
 
 use pyo3::prelude::*;

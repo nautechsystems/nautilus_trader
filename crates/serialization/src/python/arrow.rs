@@ -92,15 +92,13 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
     result_map.into_py_any(py)
 }
 
-/// Returns Python `bytes` from the given list of legacy data objects, which can be passed
-/// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
+/// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
 ///
 /// # Errors
 ///
 /// Returns an error if:
-/// - The input list is empty: `PyErr`.
-/// - An unsupported data type is encountered or conversion fails: `PyErr`.
-
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[pyfunction]
 #[allow(clippy::missing_panics_doc)] // Guarded by empty check

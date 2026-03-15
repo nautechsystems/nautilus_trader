@@ -34,6 +34,10 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OwnBookOrder {
+    /// Represents an own/user order for a book.
+    ///
+    /// This struct models an order that may be in-flight to the trading venue or actively working,
+    /// depending on the value of the `status` field.
     #[pyo3(signature = (trader_id, client_order_id, side, price, size, order_type, time_in_force, status, ts_last, ts_accepted, ts_submitted, ts_init, venue_order_id=None))]
     #[new]
     #[allow(clippy::too_many_arguments)]
@@ -145,11 +149,13 @@ impl OwnBookOrder {
         self.ts_init.into()
     }
 
+    /// Returns the order exposure as an `f64`.
     #[pyo3(name = "exposure")]
     fn py_exposure(&self) -> f64 {
         self.exposure()
     }
 
+    /// Returns the signed order exposure as an `f64`.
     #[pyo3(name = "signed_size")]
     fn py_signed_size(&self) -> f64 {
         self.signed_size()
@@ -159,6 +165,7 @@ impl OwnBookOrder {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OwnOrderBook {
+    /// Creates a new `OwnOrderBook` instance.
     #[new]
     fn py_new(instrument_id: InstrumentId) -> Self {
         Self::new(instrument_id)
@@ -190,41 +197,57 @@ impl OwnOrderBook {
         self.update_count
     }
 
+    /// Resets the order book to its initial empty state.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
 
+    /// Adds an own order to the book.
     #[pyo3(name = "add")]
     fn py_add(&mut self, order: OwnBookOrder) {
         self.add(order);
     }
 
+    /// Updates an existing own order in the book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     #[pyo3(name = "update")]
     fn py_update(&mut self, order: OwnBookOrder) -> PyResult<()> {
         self.update(order).map_err(to_pyruntime_err)
     }
 
+    /// Deletes an own order from the book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     #[pyo3(name = "delete")]
     fn py_delete(&mut self, order: OwnBookOrder) -> PyResult<()> {
         self.delete(order).map_err(to_pyruntime_err)
     }
 
+    /// Clears all orders from both sides of the book.
     #[pyo3(name = "clear")]
     fn py_clear(&mut self) {
         self.clear();
     }
 
+    /// Returns the client order IDs currently on the bid side.
     #[pyo3(name = "bid_client_order_ids")]
     pub fn py_bid_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.bid_client_order_ids()
     }
 
+    /// Returns the client order IDs currently on the ask side.
     #[pyo3(name = "ask_client_order_ids")]
     pub fn py_ask_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.ask_client_order_ids()
     }
 
+    /// Return whether the given client order ID is in the own book.
     #[pyo3(name = "is_order_in_book")]
     pub fn py_is_order_in_book(&self, client_order_id: &ClientOrderId) -> bool {
         self.is_order_in_book(client_order_id)
@@ -282,6 +305,13 @@ impl OwnOrderBook {
         self.asks_as_map(status_set.as_ref(), accepted_buffer_ns, ts_now)
     }
 
+    /// Aggregates own bid quantities per price level, omitting zero-quantity levels.
+    ///
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     #[pyo3(name = "bid_quantity")]
     #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bid_quantity(
@@ -302,6 +332,13 @@ impl OwnOrderBook {
         )
     }
 
+    /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
+    ///
+    /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
+    /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     #[pyo3(name = "ask_quantity")]
     #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_ask_quantity(
@@ -322,6 +359,15 @@ impl OwnOrderBook {
         )
     }
 
+    /// Returns a new own book containing this books orders plus parity-transformed opposite orders.
+    ///
+    /// Opposite asks are transformed into bids with price `1 - price`.
+    /// Opposite bids are transformed into asks with price `1 - price`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BookViewError.OppositeInstrumentMatch` if `self` and `opposite` have the
+    /// same instrument ID.
     #[pyo3(name = "combined_with_opposite")]
     fn py_combined_with_opposite(&self, opposite: &Self) -> PyResult<Self> {
         self.combined_with_opposite(opposite)
@@ -333,6 +379,7 @@ impl OwnOrderBook {
         self.audit_open_orders(&open_order_ids.into_iter().collect());
     }
 
+    /// Return a formatted string representation of the order book.
     #[pyo3(name = "pprint")]
     #[pyo3(signature = (num_levels=3, group_size=None))]
     fn py_pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {

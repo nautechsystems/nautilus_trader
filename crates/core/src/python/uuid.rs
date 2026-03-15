@@ -35,10 +35,8 @@ use crate::uuid::{UUID4, UUID4_LEN};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl UUID4 {
-    /// Creates a new [`UUID4`] instance.
-    ///
-    /// If a string value is provided, it attempts to parse it into a UUID.
-    /// If no value is provided, a new random UUID is generated.
+    /// Represents a Universally Unique Identifier (UUID)
+    /// version 4 based on a 128-bit label as specified in RFC 4122.
     #[new]
     fn py_new() -> Self {
         Self::new()

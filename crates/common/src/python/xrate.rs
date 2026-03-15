@@ -23,6 +23,11 @@ use crate::xrate::get_exchange_rate;
 
 /// Calculates the exchange rate between two currencies using provided bid and ask quotes.
 ///
+/// This function builds a graph of direct conversion rates from the quotes and uses a DFS to
+/// accumulate the conversion rate along a valid conversion path. While a full Floyd–Warshall
+/// algorithm could compute all-pairs conversion rates, the DFS approach here provides a quick
+/// solution for a single conversion query.
+///
 /// # Errors
 ///
 /// Returns an error if:

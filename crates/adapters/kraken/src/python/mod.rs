@@ -15,6 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},

@@ -82,11 +82,16 @@ impl SizeForImpactResult {
         self.final_high.to_string()
     }
 
+    /// Check if the result is within the specified tolerance.
     #[pyo3(name = "within_tolerance")]
     fn py_within_tolerance(&self, tolerance_bps: u32) -> bool {
         self.within_tolerance(tolerance_bps)
     }
 
+    /// Get the convergence quality as a percentage.
+    ///
+    /// # Returns
+    /// Accuracy percentage (100.0 = perfect match, lower = less accurate)
     #[pyo3(name = "accuracy_percent")]
     fn py_accuracy_percent(&self) -> f64 {
         self.accuracy_percent()

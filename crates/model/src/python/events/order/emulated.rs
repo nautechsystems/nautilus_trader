@@ -27,6 +27,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderEmulated {
+    /// Represents an event where an order has become emulated by the Nautilus system.
     #[allow(clippy::too_many_arguments)]
     #[new]
     fn py_new(

@@ -15,6 +15,11 @@
 
 //! Nautilus core test kit from [PyO3](https://pyo3.rs).
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod files;
 
 use pyo3::{prelude::*, wrap_pyfunction};

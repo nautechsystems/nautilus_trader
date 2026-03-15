@@ -665,12 +665,12 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 .PHONY: build-debug-v2
 build-debug-v2:  #-- Build the v2 Python package in debug mode (fast incremental builds)
 	$(info $(M) Building v2 extension in debug mode...)
-	$Q cd python && uv run maturin develop
+	$Q cd python && CARGO_TARGET_DIR=../target-v2 uv run maturin develop
 
 .PHONY: py-stubs-v2
 py-stubs-v2:  #-- Regenerate v2 Python type stubs from Rust bindings
 	$(info $(M) Generating v2 Python type stubs...)
-	$Q python python/generate_stubs.py
+	$Q CARGO_TARGET_DIR=target-v2 python python/generate_stubs.py
 
 .PHONY: update-v2
 update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)

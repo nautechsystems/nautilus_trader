@@ -86,21 +86,30 @@ impl SwapQuote {
         self.crossed_ticks.len()
     }
 
+    /// Determines swap direction from amount signs.
+    ///
+    /// Returns `true` if swapping token0 for token1 (zero_for_one).
     #[pyo3(name = "zero_for_one")]
     fn py_zero_for_one(&self) -> bool {
         self.zero_for_one()
     }
 
+    /// Returns the total fees paid in input token(LP fees + protocol fees).
     #[pyo3(name = "total_fee")]
     fn py_total_fee(&self) -> String {
         self.total_fee().to_string()
     }
 
+    /// Returns the number of tick boundaries crossed during this swap.
+    ///
+    /// This equals the length of the `crossed_ticks` vector and indicates
+    /// how much liquidity the swap traversed.
     #[pyo3(name = "total_crossed_ticks")]
     fn py_total_crossed_ticks(&self) -> u32 {
         self.total_crossed_ticks()
     }
 
+    /// Gets the output amount for the given swap direction.
     #[pyo3(name = "get_output_amount")]
     fn py_get_output_amount(&self) -> String {
         self.get_output_amount().to_string()

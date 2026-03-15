@@ -41,6 +41,7 @@ use crate::{data::FundingRateUpdate, identifiers::InstrumentId, python::common::
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FundingRateUpdate {
+    /// Represents a funding rate update for perpetual swap instruments.
     #[new]
     #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, interval=None, next_funding_ns=None))]
     fn py_new(
@@ -129,12 +130,14 @@ impl FundingRateUpdate {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(FundingRateUpdate))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(instrument_id: &InstrumentId) -> HashMap<String, String> {
         Self::get_metadata(instrument_id)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields() -> HashMap<String, String> {

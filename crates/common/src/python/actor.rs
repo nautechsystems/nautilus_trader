@@ -65,6 +65,7 @@ use crate::{
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataActorConfig {
+    /// Common configuration for `DataActor` based components.
     #[new]
     #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true))]
     fn py_new(actor_id: Option<ActorId>, log_events: bool, log_commands: bool) -> Self {
@@ -79,6 +80,7 @@ impl DataActorConfig {
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ImportableActorConfig {
+    /// Configuration for creating actors from importable paths.
     #[new]
     #[allow(clippy::needless_pass_by_value)]
     fn py_new(actor_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {

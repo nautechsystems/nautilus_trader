@@ -28,6 +28,16 @@ use crate::types::{Quantity, quantity::QuantityRaw};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Quantity {
+    /// Represents a quantity with a non-negative value and specified precision.
+    ///
+    /// Capable of storing either a whole number (no decimal places) of 'contracts'
+    /// or 'shares' (instruments denominated in whole units) or a decimal value
+    /// containing decimal places for instruments denominated in fractional units.
+    ///
+    /// Handles up to `FIXED_PRECISION` decimals of precision.
+    ///
+    /// - `QUANTITY_MAX` - Maximum representable quantity value.
+    /// - `QUANTITY_MIN` - 0 (non-negative values only).
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
         Self::new_checked(value, precision).map_err(to_pyvalue_err)
@@ -326,12 +336,14 @@ impl Quantity {
         self.precision
     }
 
+    /// Creates a new `Quantity` instance from the given `raw` fixed-point value and `precision`.
     #[staticmethod]
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: QuantityRaw, precision: u8) -> Self {
         Self::from_raw(raw, precision)
     }
 
+    /// Creates a new `Quantity` instance with a value of zero with the given `precision`.
     #[staticmethod]
     #[pyo3(name = "zero")]
     #[pyo3(signature = (precision = 0))]
@@ -351,34 +363,64 @@ impl Quantity {
         Self::from(value)
     }
 
+    /// Creates a new `Quantity` from a `Decimal` value with precision inferred from the decimal's scale.
+    ///
+    /// The precision is determined by the scale of the decimal (number of decimal places).
+    /// The value is rounded to the inferred precision using banker's rounding (round half to even).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The inferred precision exceeds `FIXED_PRECISION`.
+    /// - The decimal value cannot be converted to the raw representation.
+    /// - Overflow occurs during scaling.
     #[staticmethod]
     #[pyo3(name = "from_decimal")]
     fn py_from_decimal(decimal: Decimal) -> PyResult<Self> {
         Self::from_decimal(decimal).map_err(to_pyvalue_err)
     }
 
+    /// Creates a new `Quantity` from a `Decimal` value with specified precision.
+    ///
+    /// Uses pure integer arithmetic on the Decimal's mantissa and scale for fast conversion.
+    /// The value is rounded to the specified precision using banker's rounding (round half to even).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `precision` exceeds `FIXED_PRECISION`.
+    /// - The decimal value is negative.
+    /// - The decimal value cannot be converted to the raw representation.
+    /// - Overflow occurs during scaling.
     #[staticmethod]
     #[pyo3(name = "from_decimal_dp")]
     fn py_from_decimal_dp(decimal: Decimal, precision: u8) -> PyResult<Self> {
         Self::from_decimal_dp(decimal, precision).map_err(to_pyvalue_err)
     }
 
+    /// Creates a new `Quantity` from a mantissa/exponent pair using pure integer arithmetic.
+    ///
+    /// The value is `mantissa * 10^exponent`. This avoids all floating-point and Decimal
+    /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
     #[staticmethod]
     #[pyo3(name = "from_mantissa_exponent")]
     fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> Self {
         Self::from_mantissa_exponent(mantissa, exponent, precision)
     }
 
+    /// Returns `true` if the value of this instance is zero.
     #[pyo3(name = "is_zero")]
     fn py_is_zero(&self) -> bool {
         self.is_zero()
     }
 
+    /// Returns `true` if the value of this instance is position (> 0).
     #[pyo3(name = "is_positive")]
     fn py_is_positive(&self) -> bool {
         self.is_positive()
     }
 
+    /// Returns the value of this instance as a `Decimal`.
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
@@ -394,6 +436,10 @@ impl Quantity {
         self.to_formatted_string()
     }
 
+    /// Computes a saturating subtraction between two quantities, logging when clamped.
+    ///
+    /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
+    /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "saturating_sub")]
     fn py_saturating_sub(&self, other: Self) -> Self {
         self.saturating_sub(other)

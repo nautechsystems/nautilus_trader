@@ -21,6 +21,10 @@
     deprecated,
     reason = "pyo3-stub-gen currently relies on PyO3 initialization helpers marked as deprecated"
 )]
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
 //!
 //! This sub-module groups together the Rust code that is *only* required when compiling the
 //! `python` feature flag. It provides thin adapters so that NautilusTrader functionality can be
@@ -166,8 +170,8 @@ pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
 /// obj : Any
 ///     The object to check.
 ///
-/// Returns
-/// -------
+/// # Returns
+///
 /// bool
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "is_pycapsule")]

@@ -135,7 +135,6 @@ impl OrderTestBuilder {
         self
     }
 
-    /// ----------- TraderId ----------
     pub fn trader_id(&mut self, trader_id: TraderId) -> &mut Self {
         self.trader_id = Some(trader_id);
         self

@@ -41,6 +41,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BookOrder {
+    /// Represents an order in a book.
     #[new]
     fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
         Self::new(side, price, size, order_id)
@@ -98,11 +99,13 @@ impl BookOrder {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BookOrder))
     }
 
+    /// Returns the order exposure as an `f64`.
     #[pyo3(name = "exposure")]
     fn py_exposure(&self) -> f64 {
         self.exposure()
     }
 
+    /// Returns the signed order size as `f64`, positive for buys, negative for sells.
     #[pyo3(name = "signed_size")]
     fn py_signed_size(&self) -> f64 {
         self.signed_size()

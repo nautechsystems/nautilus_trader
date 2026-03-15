@@ -30,6 +30,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Bet {
+    /// A bet in a betting market.
     #[new]
     fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> Self {
         Self::new(price, stake, side)
@@ -57,23 +58,24 @@ impl Bet {
         self.to_string()
     }
 
-    /// Create a bet from a stake or liability, depending on the bet side.
+    /// Creates a bet from a stake or liability depending on the bet side.
+    ///
+    /// For `BetSide::Back` this calls [Self::from_stake] and for
+    /// `BetSide::Lay` it calls [Self::from_liability].
     #[staticmethod]
     #[pyo3(name = "from_stake_or_liability")]
     fn py_from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
         Self::from_stake_or_liability(price, volume, side)
     }
 
-    /// Create a bet from a given stake.
+    /// Creates a bet from a given stake.
     #[staticmethod]
     #[pyo3(name = "from_stake")]
     fn py_from_stake(price: Decimal, stake: Decimal, side: BetSide) -> Self {
         Self::from_stake(price, stake, side)
     }
 
-    /// Create a bet from a given liability.
-    ///
-    /// Raises a ValueError if the bet side is not Lay.
+    /// Creates a bet from a given liability.
     #[staticmethod]
     #[pyo3(name = "from_liability")]
     fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
@@ -101,43 +103,54 @@ impl Bet {
         self.side()
     }
 
-    /// Returns the exposure of the bet.
+    /// Returns the bet's exposure.
+    ///
+    /// For BACK bets, exposure is positive; for LAY bets, it is negative.
     #[pyo3(name = "exposure")]
     fn py_exposure(&self) -> Decimal {
         self.exposure()
     }
 
-    /// Returns the liability of the bet.
+    /// Returns the bet's liability.
+    ///
+    /// For BACK bets, liability equals the stake; for LAY bets, it is
+    /// stake multiplied by (price - 1).
     #[pyo3(name = "liability")]
     fn py_liability(&self) -> Decimal {
         self.liability()
     }
 
-    /// Returns the profit of the bet.
+    /// Returns the bet's profit.
+    ///
+    /// For BACK bets, profit is stake * (price - 1); for LAY bets it equals the stake.
     #[pyo3(name = "profit")]
     fn py_profit(&self) -> Decimal {
         self.profit()
     }
 
     /// Returns the outcome win payoff.
+    ///
+    /// For BACK bets this is the profit; for LAY bets it is the negative liability.
     #[pyo3(name = "outcome_win_payoff")]
     fn py_outcome_win_payoff(&self) -> Decimal {
         self.outcome_win_payoff()
     }
 
     /// Returns the outcome lose payoff.
+    ///
+    /// For BACK bets this is the negative liability; for LAY bets it is the profit.
     #[pyo3(name = "outcome_lose_payoff")]
     fn py_outcome_lose_payoff(&self) -> Decimal {
         self.outcome_lose_payoff()
     }
 
-    /// Returns the hedging stake for a given new price.
+    /// Returns the hedging stake given a new price.
     #[pyo3(name = "hedging_stake")]
     fn py_hedging_stake(&self, price: Decimal) -> Decimal {
         self.hedging_stake(price)
     }
 
-    /// Returns a hedging bet for a given new price.
+    /// Creates a hedging bet for a given price.
     #[pyo3(name = "hedging_bet")]
     fn py_hedging_bet(&self, price: Decimal) -> Self {
         self.hedging_bet(price)
@@ -147,6 +160,7 @@ impl Bet {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BetPosition {
+    /// A position comprising one or more bets.
     #[new]
     fn py_new() -> Self {
         Self::default()
@@ -160,76 +174,74 @@ impl BetPosition {
         self.to_string()
     }
 
-    /// Returns the aggregated price.
+    /// Returns the position's price.
     #[getter]
     #[pyo3(name = "price")]
     fn py_price(&self) -> Decimal {
         self.price()
     }
 
-    /// Returns the side of the position.
+    /// Returns the overall side of the position.
+    ///
+    /// If exposure is positive the side is BACK; if negative, LAY; if zero, None.
     #[getter]
     #[pyo3(name = "side")]
     fn py_side(&self) -> Option<BetSide> {
         self.side()
     }
 
-    /// Returns the aggregated exposure.
+    /// Returns the position's exposure.
     #[getter]
     #[pyo3(name = "exposure")]
     fn py_exposure(&self) -> Decimal {
         self.exposure()
     }
 
-    /// Returns the realized PnL.
+    /// Returns the position's realized profit and loss.
     #[getter]
     #[pyo3(name = "realized_pnl")]
     fn py_realized_pnl(&self) -> Decimal {
         self.realized_pnl()
     }
 
-    /// Adds a bet to the position.
+    /// Adds a bet to the position, adjusting exposure and realized PnL.
     #[pyo3(name = "add_bet")]
     fn py_add_bet(&mut self, bet: &Bet) {
         self.add_bet(bet.clone());
     }
 
-    /// Converts the position into a single Bet, if possible.
+    /// Converts the current position into a single bet, if possible.
     #[pyo3(name = "as_bet")]
     fn py_as_bet(&self) -> Option<Bet> {
         self.as_bet()
     }
 
-    /// Calculates the unrealized PnL given a current price.
+    /// Calculates the unrealized profit and loss given a current price.
     #[pyo3(name = "unrealized_pnl")]
     fn py_unrealized_pnl(&self, price: Decimal) -> Decimal {
         self.unrealized_pnl(price)
     }
 
-    /// Calculates the total PnL (realized + unrealized) given a current price.
+    /// Returns the total profit and loss (realized plus unrealized) given a current price.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(&self, price: Decimal) -> Decimal {
         self.total_pnl(price)
     }
 
-    /// Returns a bet that would flatten (neutralize) the position.
+    /// Creates a bet that would flatten (neutralize) the current position.
     #[pyo3(name = "flattening_bet")]
     fn py_flattening_bet(&self, price: Decimal) -> Option<Bet> {
         self.flattening_bet(price)
     }
 
-    /// Resets the position.
+    /// Resets the bet position to its initial state.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
 }
 
-/// Calculates the total PnL (realized + unrealized) for a list of `Bet` instances.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the PnL calculation fails.
+/// Calculates the combined profit and loss for a slice of bets.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "calc_bets_pnl")]
@@ -238,11 +250,13 @@ pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
     Ok(calc_bets_pnl(&bets))
 }
 
-/// Creates a `Bet` from a probability, volume, and side.
+/// Converts a probability and volume into a Bet.
+///
+/// For a BUY side, this creates a BACK bet; for SELL, a LAY bet.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the input parameters are invalid.
+/// Returns an error if `probability` is zero.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "probability_to_bet")]
@@ -254,11 +268,13 @@ pub fn py_probability_to_bet(
     probability_to_bet(probability, volume, side.as_specified()).map_err(to_pyvalue_err)
 }
 
-/// Creates an inverse `Bet` from a probability, volume, and side.
+/// Converts a probability and volume into a Bet using the inverse probability.
+///
+/// The side is also inverted (BUY becomes SELL and vice versa).
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the input parameters are invalid.
+/// Returns an error if `probability` is 1.0 or its inverse is zero.
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
 #[pyo3(name = "inverse_probability_to_bet")]

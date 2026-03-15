@@ -34,6 +34,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AccountState {
+    /// Represents an event which includes information on the state of the account.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (account_id, account_type, balances, margins, is_reported, event_id, ts_event, ts_init, base_currency=None))]

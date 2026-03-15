@@ -135,6 +135,7 @@ impl PyCache {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CacheConfig {
+    /// Configuration for `Cache` instances.
     #[new]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -232,6 +233,7 @@ impl CacheConfig {
 
 #[pymethods]
 impl Cache {
+    /// A common in-memory `Cache` for market and execution related data.
     #[new]
     fn py_new(config: Option<CacheConfig>) -> Self {
         Self::new(config, None)
@@ -241,27 +243,44 @@ impl Cache {
         format!("{self:?}")
     }
 
+    /// Resets the cache.
+    ///
+    /// All stateful fields are reset to their initial value.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
 
+    /// Dispose of the cache which will close any underlying database adapter.
+    ///
+    /// If closing the database connection fails, an error is logged.
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();
     }
 
+    /// Adds the `currency` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the currency to the backing database fails.
     #[pyo3(name = "add_currency")]
     fn py_add_currency(&mut self, currency: Currency) -> PyResult<()> {
         self.add_currency(currency).map_err(to_pyvalue_err)
     }
 
+    /// Adds the `instrument` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the instrument to the backing database fails.
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(instrument_any).map_err(to_pyvalue_err)
     }
 
+    /// Returns a reference to the instrument for the `instrument_id` (if found).
     #[pyo3(name = "instrument")]
     fn py_instrument(
         &self,
@@ -274,6 +293,7 @@ impl Cache {
         }
     }
 
+    /// Returns references to all instrument IDs for the `venue`.
     #[pyo3(name = "instrument_ids")]
     fn py_instrument_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
         self.instrument_ids(venue.as_ref())
@@ -282,6 +302,7 @@ impl Cache {
             .collect()
     }
 
+    /// Returns references to all instruments for the `venue`.
     #[pyo3(name = "instruments")]
     fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let mut py_instruments = Vec::new();
@@ -307,6 +328,17 @@ impl Cache {
         Ok(py_instruments)
     }
 
+    /// Adds the `order` to the cache indexed with any given identifiers.
+    ///
+    /// # Parameters
+    ///
+    /// `override_existing`: If the added order should 'override' any existing order and replace
+    /// it in the cache. This is currently used for emulated orders which are
+    /// being released and transformed into another type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -326,6 +358,7 @@ impl Cache {
         .map_err(to_pyvalue_err)
     }
 
+    /// Gets a reference to the order with the `client_order_id` (if found).
     #[pyo3(name = "order")]
     fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
@@ -334,21 +367,25 @@ impl Cache {
         }
     }
 
+    /// Returns whether an order with the `client_order_id` exists.
     #[pyo3(name = "order_exists")]
     fn py_order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.order_exists(&client_order_id)
     }
 
+    /// Returns whether an order with the `client_order_id` is open.
     #[pyo3(name = "is_order_open")]
     fn py_is_order_open(&self, client_order_id: ClientOrderId) -> bool {
         self.is_order_open(&client_order_id)
     }
 
+    /// Returns whether an order with the `client_order_id` is closed.
     #[pyo3(name = "is_order_closed")]
     fn py_is_order_closed(&self, client_order_id: ClientOrderId) -> bool {
         self.is_order_closed(&client_order_id)
     }
 
+    /// Returns the count of all open orders.
     #[pyo3(name = "orders_open_count")]
     fn py_orders_open_count(
         &self,
@@ -367,6 +404,7 @@ impl Cache {
         )
     }
 
+    /// Returns the count of all closed orders.
     #[pyo3(name = "orders_closed_count")]
     fn py_orders_closed_count(
         &self,
@@ -385,6 +423,7 @@ impl Cache {
         )
     }
 
+    /// Returns the count of all orders.
     #[pyo3(name = "orders_total_count")]
     fn py_orders_total_count(
         &self,
@@ -403,6 +442,11 @@ impl Cache {
         )
     }
 
+    /// Adds the `position` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the position to the backing database fails.
     #[pyo3(name = "add_position")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_add_position(
@@ -416,6 +460,7 @@ impl Cache {
             .map_err(to_pyvalue_err)
     }
 
+    /// Returns a reference to the position with the `position_id` (if found).
     #[pyo3(name = "position")]
     fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
@@ -424,21 +469,25 @@ impl Cache {
         }
     }
 
+    /// Returns whether a position with the `position_id` exists.
     #[pyo3(name = "position_exists")]
     fn py_position_exists(&self, position_id: PositionId) -> bool {
         self.position_exists(&position_id)
     }
 
+    /// Returns whether a position with the `position_id` is open.
     #[pyo3(name = "is_position_open")]
     fn py_is_position_open(&self, position_id: PositionId) -> bool {
         self.is_position_open(&position_id)
     }
 
+    /// Returns whether a position with the `position_id` is closed.
     #[pyo3(name = "is_position_closed")]
     fn py_is_position_closed(&self, position_id: PositionId) -> bool {
         self.is_position_closed(&position_id)
     }
 
+    /// Returns the count of all open positions.
     #[pyo3(name = "positions_open_count")]
     fn py_positions_open_count(
         &self,
@@ -457,6 +506,7 @@ impl Cache {
         )
     }
 
+    /// Returns the count of all closed positions.
     #[pyo3(name = "positions_closed_count")]
     fn py_positions_closed_count(
         &self,
@@ -475,6 +525,7 @@ impl Cache {
         )
     }
 
+    /// Returns the count of all positions.
     #[pyo3(name = "positions_total_count")]
     fn py_positions_total_count(
         &self,
@@ -493,126 +544,163 @@ impl Cache {
         )
     }
 
+    /// Adds the `quote` tick to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the quote tick to the backing database fails.
     #[pyo3(name = "add_quote")]
     fn py_add_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         self.add_quote(quote).map_err(to_pyvalue_err)
     }
 
+    /// Adds the `trade` tick to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the trade tick to the backing database fails.
     #[pyo3(name = "add_trade")]
     fn py_add_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         self.add_trade(trade).map_err(to_pyvalue_err)
     }
 
+    /// Adds the `bar` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the bar to the backing database fails.
     #[pyo3(name = "add_bar")]
     fn py_add_bar(&mut self, bar: Bar) -> PyResult<()> {
         self.add_bar(bar).map_err(to_pyvalue_err)
     }
 
+    /// Gets a reference to the latest quote for the `instrument_id`.
     #[pyo3(name = "quote")]
     fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
         self.quote(&instrument_id).copied()
     }
 
+    /// Gets a reference to the latest trade for the `instrument_id`.
     #[pyo3(name = "trade")]
     fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
         self.trade(&instrument_id).copied()
     }
 
+    /// Gets a reference to the latest bar for the `bar_type`.
     #[pyo3(name = "bar")]
     fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
         self.bar(&bar_type).copied()
     }
 
+    /// Gets all quotes for the `instrument_id`.
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes(&instrument_id)
     }
 
+    /// Gets all trades for the `instrument_id`.
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades(&instrument_id)
     }
 
+    /// Gets all bars for the `bar_type`.
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
         self.bars(&bar_type)
     }
 
+    /// Returns whether the cache contains quotes for the `instrument_id`.
     #[pyo3(name = "has_quote_ticks")]
     fn py_has_quote_ticks(&self, instrument_id: InstrumentId) -> bool {
         self.has_quote_ticks(&instrument_id)
     }
 
+    /// Returns whether the cache contains trades for the `instrument_id`.
     #[pyo3(name = "has_trade_ticks")]
     fn py_has_trade_ticks(&self, instrument_id: InstrumentId) -> bool {
         self.has_trade_ticks(&instrument_id)
     }
 
+    /// Returns whether the cache contains bars for the `bar_type`.
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
         self.has_bars(&bar_type)
     }
 
+    /// Gets the quote tick count for the `instrument_id`.
     #[pyo3(name = "quote_count")]
     fn py_quote_count(&self, instrument_id: InstrumentId) -> usize {
         self.quote_count(&instrument_id)
     }
 
+    /// Gets the trade tick count for the `instrument_id`.
     #[pyo3(name = "trade_count")]
     fn py_trade_count(&self, instrument_id: InstrumentId) -> usize {
         self.trade_count(&instrument_id)
     }
 
+    /// Gets the bar count for the `instrument_id`.
     #[pyo3(name = "bar_count")]
     fn py_bar_count(&self, bar_type: BarType) -> usize {
         self.bar_count(&bar_type)
     }
 
+    /// Gets a reference to the latest mark price update for the `instrument_id`.
     #[pyo3(name = "mark_price")]
     fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
         self.mark_price(&instrument_id).copied()
     }
 
+    /// Gets all mark price updates for the `instrument_id`.
     #[pyo3(name = "mark_prices")]
     fn py_mark_prices(&self, instrument_id: InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.mark_prices(&instrument_id)
     }
 
+    /// Gets a reference to the latest index price update for the `instrument_id`.
     #[pyo3(name = "index_price")]
     fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
         self.index_price(&instrument_id).copied()
     }
 
+    /// Gets all index price updates for the `instrument_id`.
     #[pyo3(name = "index_prices")]
     fn py_index_prices(&self, instrument_id: InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices(&instrument_id)
     }
 
+    /// Gets a reference to the latest funding rate update for the `instrument_id`.
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
     }
 
+    /// Gets a reference to the order book for the `instrument_id`.
     #[pyo3(name = "order_book")]
     fn py_order_book(&self, instrument_id: InstrumentId) -> Option<OrderBook> {
         self.order_book(&instrument_id).cloned()
     }
 
+    /// Returns whether the cache contains an order book for the `instrument_id`.
     #[pyo3(name = "has_order_book")]
     fn py_has_order_book(&self, instrument_id: InstrumentId) -> bool {
         self.has_order_book(&instrument_id)
     }
 
+    /// Gets the order book update count for the `instrument_id`.
     #[pyo3(name = "book_update_count")]
     fn py_book_update_count(&self, instrument_id: InstrumentId) -> usize {
         self.book_update_count(&instrument_id)
     }
 
+    /// Returns a reference to the synthetic instrument for the `instrument_id` (if found).
     #[pyo3(name = "synthetic")]
     fn py_synthetic(&self, instrument_id: InstrumentId) -> Option<SyntheticInstrument> {
         self.synthetic(&instrument_id).cloned()
     }
 
+    /// Returns references to instrument IDs for all synthetic instruments contained in the cache.
     #[pyo3(name = "synthetic_ids")]
     fn py_synthetic_ids(&self) -> Vec<InstrumentId> {
         self.synthetic_ids().into_iter().copied().collect()
@@ -622,42 +710,58 @@ impl Cache {
 #[cfg(feature = "defi")]
 #[pymethods]
 impl Cache {
+    /// Adds a `Pool` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
     #[pyo3(name = "add_pool")]
     fn py_add_pool(&mut self, pool: Pool) -> PyResult<()> {
         self.add_pool(pool).map_err(to_pyvalue_err)
     }
 
+    /// Gets a reference to the pool for the `instrument_id`.
     #[pyo3(name = "pool")]
     fn py_pool(&self, instrument_id: InstrumentId) -> Option<Pool> {
         self.pool(&instrument_id).cloned()
     }
 
+    /// Returns the instrument IDs of all pools in the cache, optionally filtered by `venue`.
     #[pyo3(name = "pool_ids")]
     fn py_pool_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
         self.pool_ids(venue.as_ref())
     }
 
+    /// Returns references to all pools in the cache, optionally filtered by `venue`.
     #[pyo3(name = "pools")]
     fn py_pools(&self, venue: Option<Venue>) -> Vec<Pool> {
         self.pools(venue.as_ref()).into_iter().cloned().collect()
     }
 
+    /// Adds a `PoolProfiler` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
     #[pyo3(name = "add_pool_profiler")]
     fn py_add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> PyResult<()> {
         self.add_pool_profiler(pool_profiler)
             .map_err(to_pyvalue_err)
     }
 
+    /// Gets a reference to the pool profiler for the `instrument_id`.
     #[pyo3(name = "pool_profiler")]
     fn py_pool_profiler(&self, instrument_id: InstrumentId) -> Option<PoolProfiler> {
         self.pool_profiler(&instrument_id).cloned()
     }
 
+    /// Returns the instrument IDs of all pool profilers in the cache, optionally filtered by `venue`.
     #[pyo3(name = "pool_profiler_ids")]
     fn py_pool_profiler_ids(&self, venue: Option<Venue>) -> Vec<InstrumentId> {
         self.pool_profiler_ids(venue.as_ref())
     }
 
+    /// Returns references to all pool profilers in the cache, optionally filtered by `venue`.
     #[pyo3(name = "pool_profilers")]
     fn py_pool_profilers(&self, venue: Option<Venue>) -> Vec<PoolProfiler> {
         self.pool_profilers(venue.as_ref())

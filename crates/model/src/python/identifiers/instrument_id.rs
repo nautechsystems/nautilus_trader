@@ -32,6 +32,9 @@ use crate::identifiers::{InstrumentId, Symbol, Venue};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentId {
+    /// Represents a valid instrument ID.
+    ///
+    /// The symbol and venue combination should uniquely identify the instrument.
     #[new]
     fn py_new(symbol: Symbol, venue: Venue) -> Self {
         Self::new(symbol, venue)

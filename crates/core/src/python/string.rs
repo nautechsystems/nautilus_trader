@@ -22,22 +22,14 @@ use pyo3_stub_gen::derive::gen_stub_pyfunction;
 ///
 /// For keys 8 characters or shorter, returns asterisks only.
 ///
-/// Parameters
-/// ----------
-/// api_key : str
-///     The API key to mask.
+/// # Examples
 ///
-/// Returns
-/// -------
-/// str
+/// ```
+/// use nautilus_core::string::mask_api_key;
 ///
-/// Examples
-/// --------
-/// >>> mask_api_key("abcdefghijklmnop")
-/// 'abcd...mnop'
-/// >>> mask_api_key("short")
-/// '*****'
-///
+/// assert_eq!(mask_api_key("abcdefghijklmnop"), "abcd...mnop");
+/// assert_eq!(mask_api_key("short"), "*****");
+/// ```
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "mask_api_key")]
 #[allow(

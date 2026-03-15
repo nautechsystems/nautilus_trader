@@ -117,6 +117,7 @@ impl OrderBookDelta {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBookDelta {
+    /// Represents a single change/delta in an order book.
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
@@ -209,6 +210,7 @@ impl OrderBookDelta {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDelta))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -219,6 +221,7 @@ impl OrderBookDelta {
         Self::get_metadata(instrument_id, price_precision, size_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {

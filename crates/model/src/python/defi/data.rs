@@ -39,6 +39,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Block {
+    /// Returns the blockchain for this block.
     #[getter]
     #[pyo3(name = "chain")]
     fn py_chain(&self) -> Option<Blockchain> {
@@ -141,6 +142,11 @@ impl Block {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolSwap {
+    /// Represents a token swap transaction on a decentralized exchange (DEX).
+    ///
+    /// This structure captures both the raw blockchain data from a swap event and
+    /// optionally includes computed market-oriented trade information. It serves as
+    /// the primary data structure for tracking and analyzing DEX swap activity.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -281,6 +287,7 @@ impl PoolSwap {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolLiquidityUpdate {
+    /// Represents a liquidity update event in a decentralized exchange (DEX) pool.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -468,6 +475,7 @@ impl PoolLiquidityUpdate {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFeeCollect {
+    /// Represents a fee collection event in a decentralized exchange (DEX) pool.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -626,6 +634,11 @@ impl PoolFeeCollect {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PoolFlash {
+    /// Represents a flash loan event from a Uniswap V3 pool.
+    ///
+    /// Flash loans allow users to borrow tokens without collateral as long as they are returned
+    /// within the same transaction. Fees are paid on the borrowed amount, which are added to
+    /// the pool's fee growth accumulators.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -789,6 +802,7 @@ impl PoolFlash {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Transaction {
+    /// Represents a transaction on an EVM based blockchain.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(

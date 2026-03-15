@@ -26,6 +26,7 @@ use crate::live::listener::MessageBusListener;
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MessageBusListener {
+    /// Creates a new `MessageBusListener` instance.
     #[new]
     fn py_new() -> Self {
         Self::new()
@@ -36,21 +37,25 @@ impl MessageBusListener {
         !self.is_closed()
     }
 
+    /// Returns whether the listener is closed.
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Closes the listener.
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
         self.close();
     }
 
+    /// Publishes a message with the given `topic` and `payload`.
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: &str, payload: Vec<u8>) {
         self.publish(Ustr::from(topic), Bytes::from(payload));
     }
 
+    /// Streams messages arriving on the receiver channel.
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &mut self,

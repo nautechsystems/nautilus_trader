@@ -21,7 +21,10 @@ use crate::factories::{BlockchainDataClientFactory, BlockchainExecutionClientFac
 
 #[pymethods]
 impl BlockchainDataClientFactory {
-    /// Creates a new `BlockchainDataClientFactory` instance.
+    /// Factory for creating blockchain data clients.
+    ///
+    /// This factory creates `BlockchainDataClient` instances configured for different blockchain networks
+    /// (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
     #[new]
     const fn py_new() -> Self {
         Self::new()
@@ -45,7 +48,7 @@ impl BlockchainDataClientFactory {
 
 #[pymethods]
 impl BlockchainExecutionClientFactory {
-    /// Creates a new `BlockchainExecutionClientFactory` instance.
+    /// Factory for creating blockchain execution clients.
     #[new]
     const fn py_new() -> Self {
         Self::new()
