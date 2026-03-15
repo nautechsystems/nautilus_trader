@@ -897,7 +897,7 @@ async fn test_load_all_with_slug_filter() {
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
     let filter = MarketSlugFilter::from_slugs(vec!["filter-slug".to_string()]);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -924,7 +924,7 @@ async fn test_load_all_with_gamma_query_filter() {
         volume_num_min: Some(1000.0),
         ..Default::default()
     });
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -995,7 +995,7 @@ async fn test_slug_filter_re_evaluated_each_cycle() {
         }
     });
 
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     // First cycle: loads slug-cycle-a
     provider.load_all(None).await.unwrap();
@@ -1035,7 +1035,7 @@ async fn test_set_filter_then_clear_reverts() {
 
     // Set a filter and load
     let filter = MarketSlugFilter::from_slugs(vec!["filtered-slug".to_string()]);
-    provider.add_filter(Box::new(filter));
+    provider.add_filter(Arc::new(filter));
     provider.load_all(None).await.unwrap();
     assert_eq!(provider.store().count(), 2);
 
@@ -1072,7 +1072,7 @@ async fn test_load_all_with_event_slug_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = EventSlugFilter::from_slugs(vec!["test-event".to_string()]);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1118,7 +1118,7 @@ async fn test_composite_filter_combines_market_and_event_slugs() {
     let event_filter = EventSlugFilter::from_slugs(vec!["composite-event".to_string()]);
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
-        vec![Box::new(market_filter), Box::new(event_filter)],
+        vec![Arc::new(market_filter), Arc::new(event_filter)],
     );
 
     provider.load_all(None).await.unwrap();
@@ -1367,7 +1367,7 @@ async fn test_load_all_with_event_params_filter() {
         featured: Some(true),
         ..Default::default()
     });
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1385,7 +1385,7 @@ async fn test_load_all_with_search_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = SearchFilter::from_query("bitcoin");
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1410,7 +1410,7 @@ async fn test_load_all_with_tag_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = TagFilter::from_tag_id("tag-001");
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Box::new(filter));
+    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1447,7 +1447,7 @@ async fn test_load_filtered_deduplicates_overlapping_results() {
     });
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
-        vec![Box::new(slug_filter), Box::new(query_filter)],
+        vec![Arc::new(slug_filter), Arc::new(query_filter)],
     );
 
     provider.load_all(None).await.unwrap();

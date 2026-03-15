@@ -27,7 +27,7 @@ use crate::http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchP
 /// All three methods default to `None`. At least one must return `Some` for
 /// the filter to be useful. Methods are called on each `load_all()` cycle,
 /// enabling dynamic re-evaluation (e.g., time-based slug generation).
-pub trait InstrumentFilter: Debug {
+pub trait InstrumentFilter: Debug + Send + Sync {
     /// Market slugs for concurrent per-slug fetching via `GET /markets?slug=`.
     fn market_slugs(&self) -> Option<Vec<String>> {
         None
@@ -71,7 +71,7 @@ pub trait InstrumentFilter: Debug {
 
 /// Filter that provides market slugs, optionally via a dynamic closure.
 pub struct MarketSlugFilter {
-    slug_fn: Box<dyn Fn() -> Vec<String>>,
+    slug_fn: Box<dyn Fn() -> Vec<String> + Send + Sync>,
 }
 
 impl MarketSlugFilter {
@@ -79,7 +79,7 @@ impl MarketSlugFilter {
     ///
     /// The closure is re-evaluated on each `load_all()` call, enabling
     /// time-based or stateful slug generation.
-    pub fn new<F: Fn() -> Vec<String> + 'static>(slug_fn: F) -> Self {
+    pub fn new<F: Fn() -> Vec<String> + Send + Sync + 'static>(slug_fn: F) -> Self {
         Self {
             slug_fn: Box::new(slug_fn),
         }
@@ -109,7 +109,7 @@ impl InstrumentFilter for MarketSlugFilter {
 
 /// Filter that provides event slugs, optionally via a dynamic closure.
 pub struct EventSlugFilter {
-    slug_fn: Box<dyn Fn() -> Vec<String>>,
+    slug_fn: Box<dyn Fn() -> Vec<String> + Send + Sync>,
 }
 
 impl EventSlugFilter {
@@ -117,7 +117,7 @@ impl EventSlugFilter {
     ///
     /// The closure is re-evaluated on each `load_all()` call, enabling
     /// time-based or stateful slug generation.
-    pub fn new<F: Fn() -> Vec<String> + 'static>(slug_fn: F) -> Self {
+    pub fn new<F: Fn() -> Vec<String> + Send + Sync + 'static>(slug_fn: F) -> Self {
         Self {
             slug_fn: Box::new(slug_fn),
         }
@@ -199,13 +199,13 @@ impl InstrumentFilter for EventQueryFilter {
 /// Does not provide any slugs or query params — combine with source filters
 /// via the provider's `with_filters()` or `add_filter()` methods.
 pub struct PredicateFilter {
-    predicate: Box<dyn Fn(&InstrumentAny) -> bool>,
+    predicate: Box<dyn Fn(&InstrumentAny) -> bool + Send + Sync>,
     label: String,
 }
 
 impl PredicateFilter {
     /// Creates a new [`PredicateFilter`] with a label and closure predicate.
-    pub fn new<F: Fn(&InstrumentAny) -> bool + 'static>(
+    pub fn new<F: Fn(&InstrumentAny) -> bool + Send + Sync + 'static>(
         label: impl Into<String>,
         predicate: F,
     ) -> Self {

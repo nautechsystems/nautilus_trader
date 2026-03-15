@@ -15,7 +15,7 @@
 
 //! Instrument provider for the Polymarket adapter.
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
@@ -42,7 +42,7 @@ pub struct PolymarketInstrumentProvider {
     store: InstrumentStore,
     http_client: PolymarketGammaHttpClient,
     token_index: AHashMap<Ustr, InstrumentId>,
-    filters: Vec<Box<dyn InstrumentFilter>>,
+    filters: Vec<Arc<dyn InstrumentFilter>>,
 }
 
 impl Debug for PolymarketInstrumentProvider {
@@ -72,7 +72,7 @@ impl PolymarketInstrumentProvider {
     #[must_use]
     pub fn with_filters(
         http_client: PolymarketGammaHttpClient,
-        filters: Vec<Box<dyn InstrumentFilter>>,
+        filters: Vec<Arc<dyn InstrumentFilter>>,
     ) -> Self {
         Self {
             store: InstrumentStore::new(),
@@ -86,7 +86,7 @@ impl PolymarketInstrumentProvider {
     #[must_use]
     pub fn with_filter(
         http_client: PolymarketGammaHttpClient,
-        filter: Box<dyn InstrumentFilter>,
+        filter: Arc<dyn InstrumentFilter>,
     ) -> Self {
         Self {
             store: InstrumentStore::new(),
@@ -97,7 +97,7 @@ impl PolymarketInstrumentProvider {
     }
 
     /// Adds an instrument filter for subsequent `load_all()` calls.
-    pub fn add_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+    pub fn add_filter(&mut self, filter: Arc<dyn InstrumentFilter>) {
         self.filters.push(filter);
     }
 

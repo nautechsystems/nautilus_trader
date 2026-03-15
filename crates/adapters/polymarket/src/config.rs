@@ -15,7 +15,10 @@
 
 //! Configuration structures for the Polymarket adapter.
 
+use std::sync::Arc;
+
 use crate::common::{enums::SignatureType, urls};
+use crate::filters::InstrumentFilter;
 
 /// Configuration for the Polymarket data client.
 #[cfg_attr(
@@ -29,7 +32,6 @@ use crate::common::{enums::SignatureType, urls};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
-#[derive(Clone, Debug)]
 pub struct PolymarketDataClientConfig {
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
@@ -39,6 +41,40 @@ pub struct PolymarketDataClientConfig {
     pub ws_max_subscriptions: usize,
     /// Instrument reload interval in minutes.
     pub update_instruments_interval_mins: Option<u64>,
+    pub filters: Vec<Arc<dyn InstrumentFilter>>,
+}
+
+impl Clone for PolymarketDataClientConfig {
+    fn clone(&self) -> Self {
+        Self {
+            base_url_http: self.base_url_http.clone(),
+            base_url_ws: self.base_url_ws.clone(),
+            base_url_gamma: self.base_url_gamma.clone(),
+            http_timeout_secs: self.http_timeout_secs,
+            ws_timeout_secs: self.ws_timeout_secs,
+            ws_max_subscriptions: self.ws_max_subscriptions,
+            update_instruments_interval_mins: self.update_instruments_interval_mins,
+            filters: self.filters.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for PolymarketDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PolymarketDataClientConfig")
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws", &self.base_url_ws)
+            .field("base_url_gamma", &self.base_url_gamma)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("ws_timeout_secs", &self.ws_timeout_secs)
+            .field("ws_max_subscriptions", &self.ws_max_subscriptions)
+            .field(
+                "update_instruments_interval_mins",
+                &self.update_instruments_interval_mins,
+            )
+            .field("filters_count", &self.filters.len())
+            .finish()
+    }
 }
 
 impl Default for PolymarketDataClientConfig {
@@ -51,6 +87,7 @@ impl Default for PolymarketDataClientConfig {
             ws_timeout_secs: Some(30),
             ws_max_subscriptions: crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS,
             update_instruments_interval_mins: Some(60),
+            filters: Vec::new(),
         }
     }
 }
@@ -95,7 +132,6 @@ impl PolymarketDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
-#[derive(Clone, Debug)]
 pub struct PolymarketExecClientConfig {
     /// Falls back to `POLYMARKET_PK` env var.
     pub private_key: Option<String>,
@@ -117,6 +153,51 @@ pub struct PolymarketExecClientConfig {
     pub retry_delay_max_ms: u64,
     /// Timeout waiting for WS order acknowledgment (seconds).
     pub ack_timeout_secs: u64,
+    pub filters: Vec<Arc<dyn InstrumentFilter>>,
+}
+
+impl Clone for PolymarketExecClientConfig {
+    fn clone(&self) -> Self {
+        Self {
+            private_key: self.private_key.clone(),
+            api_key: self.api_key.clone(),
+            api_secret: self.api_secret.clone(),
+            passphrase: self.passphrase.clone(),
+            funder: self.funder.clone(),
+            signature_type: self.signature_type,
+            base_url_http: self.base_url_http.clone(),
+            base_url_ws: self.base_url_ws.clone(),
+            base_url_gamma: self.base_url_gamma.clone(),
+            http_timeout_secs: self.http_timeout_secs,
+            max_retries: self.max_retries,
+            retry_delay_initial_ms: self.retry_delay_initial_ms,
+            retry_delay_max_ms: self.retry_delay_max_ms,
+            ack_timeout_secs: self.ack_timeout_secs,
+            filters: self.filters.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for PolymarketExecClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PolymarketExecClientConfig")
+            .field("private_key", &self.private_key.as_ref().map(|_| "***"))
+            .field("api_key", &self.api_key.as_ref().map(|_| "***"))
+            .field("api_secret", &self.api_secret.as_ref().map(|_| "***"))
+            .field("passphrase", &self.passphrase.as_ref().map(|_| "***"))
+            .field("funder", &self.funder)
+            .field("signature_type", &self.signature_type)
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws", &self.base_url_ws)
+            .field("base_url_gamma", &self.base_url_gamma)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field("ack_timeout_secs", &self.ack_timeout_secs)
+            .field("filters_count", &self.filters.len())
+            .finish()
+    }
 }
 
 impl Default for PolymarketExecClientConfig {
@@ -136,6 +217,7 @@ impl Default for PolymarketExecClientConfig {
             retry_delay_initial_ms: 1000,
             retry_delay_max_ms: 10000,
             ack_timeout_secs: 5,
+            filters: Vec::new(),
         }
     }
 }

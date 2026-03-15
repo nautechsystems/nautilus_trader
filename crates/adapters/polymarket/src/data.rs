@@ -147,7 +147,7 @@ impl PolymarketDataClient {
     }
 
     /// Adds an instrument filter on the underlying provider.
-    pub fn add_instrument_filter(&mut self, filter: Box<dyn InstrumentFilter>) {
+    pub fn add_instrument_filter(&mut self, filter: Arc<dyn InstrumentFilter>) {
         self.provider.add_filter(filter);
     }
 
