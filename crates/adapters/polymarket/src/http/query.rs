@@ -111,22 +111,21 @@ pub struct OrderResponse {
     pub error_msg: Option<String>,
 }
 
-/// Single cancel response from `DELETE /order`.
+/// Cancel response from all cancel endpoints (`DELETE /order`, `/orders`,
+/// `/cancel-all`, `/cancel-market-orders`).
+///
+/// All endpoints return the same format:
+/// `{ "canceled": ["0x..."], "not_canceled": {"0x...": "reason"} }`
 #[derive(Clone, Debug, Deserialize)]
 pub struct CancelResponse {
-    #[serde(default)]
-    pub not_canceled: Option<String>,
-}
-
-/// Batch cancel response from `DELETE /orders`, `DELETE /cancel-all`, and
-/// `DELETE /cancel-market-orders`.
-#[derive(Clone, Debug, Deserialize)]
-pub struct BatchCancelResponse {
     #[serde(default)]
     pub canceled: Vec<String>,
     #[serde(default)]
     pub not_canceled: AHashMap<String, Option<String>>,
 }
+
+/// Type alias for backwards compatibility.
+pub type BatchCancelResponse = CancelResponse;
 
 /// Parameters for `POST /order`.
 #[derive(Clone, Debug, Serialize)]
@@ -384,17 +383,18 @@ mod tests {
     fn test_cancel_response_ok() {
         let resp: CancelResponse = load("http_cancel_response_ok.json");
 
-        assert!(resp.not_canceled.is_none());
+        assert_eq!(resp.canceled.len(), 1);
+        assert!(resp.not_canceled.is_empty());
     }
 
     #[rstest]
     fn test_cancel_response_failed() {
         let resp: CancelResponse = load("http_cancel_response_failed.json");
 
-        assert_eq!(
-            resp.not_canceled.as_deref(),
-            Some("already canceled or matched")
-        );
+        assert!(resp.canceled.is_empty());
+        assert_eq!(resp.not_canceled.len(), 1);
+        let reason = resp.not_canceled.values().next().and_then(|v| v.as_deref());
+        assert_eq!(reason, Some("already canceled or matched"));
     }
 
     #[rstest]

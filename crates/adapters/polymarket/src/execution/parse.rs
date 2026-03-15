@@ -20,7 +20,7 @@ use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -258,6 +258,26 @@ pub fn compute_commission(fee_rate_bps: Decimal, size: Decimal, price: Decimal) 
     commission.to_string().parse().unwrap_or(0.0)
 }
 
+/// USDC scale factor: the Polymarket API returns balances in micro-USDC (10^6 units).
+const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
+
+/// Converts a raw micro-USDC balance from the Polymarket API into an [`AccountBalance`].
+///
+/// The API returns balances as integer micro-USDC (e.g. `20000000` = 20 USDC).
+/// This divides by 10^6 and constructs Money via `Money::from_decimal`, matching
+/// the pattern used by dYdX, Deribit, OKX, and other adapters.
+pub fn parse_balance_allowance(
+    balance_raw: Decimal,
+    currency: Currency,
+) -> anyhow::Result<AccountBalance> {
+    let balance_usdc = balance_raw / USDC_SCALE;
+    let total = Money::from_decimal(balance_usdc, currency)
+        .map_err(|e| anyhow::anyhow!("Failed to convert balance: {e}"))?;
+    let locked = Money::new(0.0, currency);
+    let free = total;
+    Ok(AccountBalance::new(total, locked, free))
+}
+
 /// Builds the maker/taker amounts for a Polymarket CLOB order.
 ///
 /// Returns `(maker_amount, taker_amount)` in on-chain base units (USDC 10^6 / CTF shares 10^6).
@@ -277,13 +297,13 @@ pub fn compute_maker_taker_amounts(
     let scale = Decimal::new(1_000_000, 0);
     match side {
         PolymarketOrderSide::Buy => {
-            let maker_amount = quantity * price * scale;
-            let taker_amount = quantity * scale;
+            let maker_amount = (quantity * price * scale).trunc();
+            let taker_amount = (quantity * scale).trunc();
             (maker_amount, taker_amount)
         }
         PolymarketOrderSide::Sell => {
-            let maker_amount = quantity * scale;
-            let taker_amount = quantity * price * scale;
+            let maker_amount = (quantity * scale).trunc();
+            let taker_amount = (quantity * price * scale).trunc();
             (maker_amount, taker_amount)
         }
     }
@@ -313,6 +333,23 @@ mod tests {
 
     use super::*;
     use crate::common::enums::PolymarketOrderSide;
+
+    #[rstest]
+    #[case(dec!(20_000_000), 20.0)] // 20 USDC
+    #[case(dec!(1_000_000), 1.0)] // 1 USDC
+    #[case(dec!(500_000), 0.5)] // 0.5 USDC
+    #[case(dec!(0), 0.0)] // zero
+    #[case(dec!(123_456_789), 123.456789)] // fractional
+    fn test_parse_balance_allowance(#[case] raw: Decimal, #[case] expected: f64) {
+        let currency = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let balance = parse_balance_allowance(raw, currency).unwrap();
+        let total_f64: f64 = balance.total.as_decimal().to_string().parse().unwrap();
+        assert!(
+            (total_f64 - expected).abs() < 1e-8,
+            "expected {expected}, was {total_f64}"
+        );
+        assert_eq!(balance.free, balance.total);
+    }
 
     #[rstest]
     #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Buy, dec!(50_000_000), dec!(100_000_000))]

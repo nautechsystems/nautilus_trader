@@ -282,8 +282,22 @@ impl PolymarketClobHttpClient {
         &self,
         params: GetBalanceAllowanceParams,
     ) -> Result<BalanceAllowance> {
-        self.send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)
+        let headers = Some(self.auth_headers("GET", PATH_BALANCE_ALLOWANCE, ""));
+        let url = self.url(PATH_BALANCE_ALLOWANCE);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), headers, None, None, None)
             .await
+            .map_err(Error::from_http_client)?;
+
+        if response.status.is_success() {
+            serde_json::from_slice(&response.body).map_err(Error::Serde)
+        } else {
+            Err(Error::from_status_code(
+                response.status.as_u16(),
+                &response.body,
+            ))
+        }
     }
 
     /// Submits a single signed order to the exchange.
