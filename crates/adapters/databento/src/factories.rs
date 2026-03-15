@@ -335,7 +335,7 @@ mod tests {
 
     #[rstest]
     fn test_historical_client_factory() {
-        let api_key = "db-test0000000000000000000000000".to_string();
+        let api_key = "test-000000000000000000000000000".to_string();
         let publishers_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
         let clock = get_atomic_clock_realtime();
 
