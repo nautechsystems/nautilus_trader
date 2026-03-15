@@ -1153,45 +1153,39 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_config() {
-        let config = SubmitBroadcasterConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..3)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config);
-        assert!(broadcaster.is_ok());
-
-        let broadcaster = broadcaster.unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
-        // Default pool_size is 3
         assert_eq!(metrics.total_clients, 3);
     }
 
     #[tokio::test]
     async fn test_broadcaster_lifecycle() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 1,
-            expected_reject_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
 
         // Should not be running initially
         assert!(!broadcaster.running.load(Ordering::Relaxed));
@@ -1260,18 +1254,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcaster_creation_with_pool() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 4,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..4)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config);
-        assert!(broadcaster.is_ok());
-
-        let broadcaster = broadcaster.unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
         assert_eq!(metrics.total_clients, 4);
     }
@@ -1341,16 +1336,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_clone_for_async() {
+    async fn test_constructor_honors_default_pool_size() {
         let config = SubmitBroadcasterConfig {
-            pool_size: 1,
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
+            base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };
 
+        let expected_pool = config.pool_size;
         let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let metrics = broadcaster.get_metrics_async().await;
+
+        assert_eq!(metrics.total_clients, expected_pool);
+    }
+
+    #[tokio::test]
+    async fn test_clone_for_async() {
+        let report = create_test_report("ORDER-1");
+        let transports = vec![create_stub_transport("client-0", move || {
+            let r = report.clone();
+            async move { Ok(r) }
+        })];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let cloned = broadcaster.clone_for_async();
 
         // Verify they share the same atomics
@@ -1427,15 +1437,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_initialization_and_health() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         assert_eq!(metrics.total_submits, 0);
@@ -1448,16 +1462,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check_task_lifecycle() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            health_check_interval_secs: 1,
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
 
         // Start should spawn health check task
         broadcaster.start().await.unwrap();
