@@ -562,7 +562,7 @@ impl DataClient for PolymarketDataClient {
             self.subscribe_ws_market(token_id);
         }
 
-        log::info!("Subscribed to book deltas for {instrument_id}");
+        log::debug!("Subscribed to book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -577,7 +577,7 @@ impl DataClient for PolymarketDataClient {
             self.subscribe_ws_market(token_id);
         }
 
-        log::info!("Subscribed to quotes for {instrument_id}");
+        log::debug!("Subscribed to quotes for {instrument_id}");
         Ok(())
     }
 
@@ -592,7 +592,7 @@ impl DataClient for PolymarketDataClient {
             self.subscribe_ws_market(token_id);
         }
 
-        log::info!("Subscribed to trades for {instrument_id}");
+        log::debug!("Subscribed to trades for {instrument_id}");
         Ok(())
     }
 
@@ -606,7 +606,7 @@ impl DataClient for PolymarketDataClient {
             self.unsubscribe_ws_market(token_id);
         }
 
-        log::info!("Unsubscribed from book deltas for {instrument_id}");
+        log::debug!("Unsubscribed from book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -620,7 +620,7 @@ impl DataClient for PolymarketDataClient {
             self.unsubscribe_ws_market(token_id);
         }
 
-        log::info!("Unsubscribed from quotes for {instrument_id}");
+        log::debug!("Unsubscribed from quotes for {instrument_id}");
         Ok(())
     }
 
@@ -634,7 +634,7 @@ impl DataClient for PolymarketDataClient {
             self.unsubscribe_ws_market(token_id);
         }
 
-        log::info!("Unsubscribed from trades for {instrument_id}");
+        log::debug!("Unsubscribed from trades for {instrument_id}");
         Ok(())
     }
 }
