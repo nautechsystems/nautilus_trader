@@ -36,7 +36,13 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PortfolioAnalyzer {
+    /// Analyzes portfolio performance and calculates various statistics.
+    ///
+    /// The `PortfolioAnalyzer` tracks account balances, positions, and realized PnLs
+    /// to provide portfolio analysis including returns, PnL calculations,
+    /// and customizable statistics.
     #[new]
     #[must_use]
     pub fn py_new() -> Self {
@@ -47,11 +53,13 @@ impl PortfolioAnalyzer {
         format!("PortfolioAnalyzer(currencies={})", self.currencies().len())
     }
 
+    /// Returns all tracked currencies.
     #[pyo3(name = "currencies")]
     fn py_currencies(&self) -> Vec<Currency> {
         self.currencies().into_iter().copied().collect()
     }
 
+    /// Calculates total PnL including unrealized PnL if provided.
     #[pyo3(name = "get_performance_stats_returns")]
     fn py_get_performance_stats_returns(&self) -> HashMap<String, f64> {
         self.get_performance_stats_returns().into_iter().collect()
@@ -68,21 +76,25 @@ impl PortfolioAnalyzer {
             .map_err(to_pyvalue_err)
     }
 
+    /// Gets general portfolio statistics.
     #[pyo3(name = "get_performance_stats_general")]
     fn py_get_performance_stats_general(&self) -> HashMap<String, f64> {
         self.get_performance_stats_general().into_iter().collect()
     }
 
+    /// Records a return at a specific timestamp.
     #[pyo3(name = "add_return")]
     fn py_add_return(&mut self, timestamp: u64, value: f64) {
         self.add_return(UnixNanos::from(timestamp), value);
     }
 
+    /// Resets all analysis data to initial state.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
 
+    /// Registers a new portfolio statistic for calculation.
     #[pyo3(name = "register_statistic")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_register_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
@@ -170,6 +182,7 @@ impl PortfolioAnalyzer {
         Ok(())
     }
 
+    /// Removes a specific statistic from calculation.
     #[pyo3(name = "deregister_statistic")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_deregister_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
@@ -257,11 +270,13 @@ impl PortfolioAnalyzer {
         Ok(())
     }
 
+    /// Removes all registered statistics.
     #[pyo3(name = "deregister_statistics")]
     fn py_deregister_statistics(&mut self) {
         self.deregister_statistics();
     }
 
+    /// Adds new positions for analysis.
     #[pyo3(name = "add_positions")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_add_positions(&mut self, py: Python, positions: Vec<Py<PyAny>>) -> PyResult<()> {
@@ -281,6 +296,7 @@ impl PortfolioAnalyzer {
         Ok(())
     }
 
+    /// Records a trade's PnL.
     #[pyo3(name = "add_trade")]
     fn py_add_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
         self.add_trade(position_id, realized_pnl);
@@ -289,11 +305,13 @@ impl PortfolioAnalyzer {
     // Note: calculate_statistics is not exposed to Python because it requires
     // complex conversions of Account and dict types. Use the Python analyzer.py wrapper instead.
 
+    /// Retrieves a specific statistic by name.
     #[pyo3(name = "statistic")]
     fn py_statistic(&self, name: &str) -> Option<String> {
         self.statistic(name).map(|s| s.name())
     }
 
+    /// Returns all calculated returns.
     #[pyo3(name = "returns")]
     fn py_returns(&self, py: Python) -> PyResult<Py<PyAny>> {
         // Convert BTreeMap<UnixNanos, f64> to Python dict
@@ -304,6 +322,10 @@ impl PortfolioAnalyzer {
         Ok(dict.into())
     }
 
+    /// Retrieves realized PnLs for a specific currency.
+    ///
+    /// Returns `None` if no PnLs exist, or if multiple currencies exist
+    /// without an explicit currency specified.
     #[pyo3(name = "realized_pnls")]
     fn py_realized_pnls(&self, py: Python, currency: Option<&Currency>) -> PyResult<Py<PyAny>> {
         match self.realized_pnls(currency) {
@@ -339,6 +361,11 @@ impl PortfolioAnalyzer {
             .map_err(to_pyvalue_err)
     }
 
+    /// Gets formatted PnL statistics as strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL statistics calculation fails.
     #[pyo3(name = "get_stats_pnls_formatted")]
     fn py_get_stats_pnls_formatted(
         &self,
@@ -349,11 +376,13 @@ impl PortfolioAnalyzer {
             .map_err(to_pyvalue_err)
     }
 
+    /// Gets formatted return statistics as strings.
     #[pyo3(name = "get_stats_returns_formatted")]
     fn py_get_stats_returns_formatted(&self) -> Vec<String> {
         self.get_stats_returns_formatted()
     }
 
+    /// Gets formatted general statistics as strings.
     #[pyo3(name = "get_stats_general_formatted")]
     fn py_get_stats_general_formatted(&self) -> Vec<String> {
         self.get_stats_general_formatted()

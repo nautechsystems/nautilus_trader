@@ -61,6 +61,10 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")
+)]
 pub struct DataBackendSession {
     pub chunk_size: usize,
     pub runtime: Arc<tokio::runtime::Runtime>,
@@ -295,6 +299,10 @@ pub fn build_query(
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")
 )]
 pub struct DataQueryResult {
     pub chunk: Option<CVec>,

@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::win_rate::WinRate};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl WinRate {
     #[new]
     fn py_new() -> Self {

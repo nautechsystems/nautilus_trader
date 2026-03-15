@@ -22,7 +22,13 @@ use pyo3::prelude::*;
 use crate::models::fee::{FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FixedFeeModel {
+    /// Creates a new `FixedFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
     #[new]
     #[pyo3(signature = (commission, change_commission_once=None))]
     fn py_new(commission: Money, change_commission_once: Option<bool>) -> PyResult<Self> {
@@ -35,6 +41,7 @@ impl FixedFeeModel {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MakerTakerFeeModel {
     #[new]
     fn py_new() -> Self {
@@ -47,7 +54,13 @@ impl MakerTakerFeeModel {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PerContractFeeModel {
+    /// Creates a new `PerContractFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
     #[new]
     fn py_new(commission: Money) -> PyResult<Self> {
         Self::new(commission).map_err(to_pyruntime_err)

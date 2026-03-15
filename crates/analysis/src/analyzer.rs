@@ -51,6 +51,10 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.analysis")
+)]
 pub struct PortfolioAnalyzer {
     pub statistics: AHashMap<String, Statistic>,
     pub account_balances_starting: AHashMap<Currency, Money>,

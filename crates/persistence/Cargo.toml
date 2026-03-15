@@ -44,6 +44,7 @@ python = [
   "nautilus-model/python",
   "nautilus-serialization/python",
   "pyo3",
+  "pyo3-stub-gen",
   "cloud",
 ]
 high-precision = [
@@ -84,6 +85,7 @@ url = { workspace = true }
 urlencoding = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

@@ -22,6 +22,7 @@ use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use pyo3::prelude::*;
 
 #[pyclass]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct QuoteTickDataWrangler {
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -30,6 +31,7 @@ pub struct QuoteTickDataWrangler {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl QuoteTickDataWrangler {
     #[new]
     fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
@@ -59,7 +61,10 @@ impl QuoteTickDataWrangler {
         self.size_precision
     }
 
-    fn process_record_batch_bytes(&self, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
+    fn process_record_batch_bytes(
+        &self,
+        #[gen_stub(override_type(type_repr = "bytes"))] data: &[u8],
+    ) -> PyResult<Vec<QuoteTick>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {

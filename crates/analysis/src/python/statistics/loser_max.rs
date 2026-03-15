@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::loser_max::MaxLoser};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxLoser {
     #[new]
     fn py_new() -> Self {

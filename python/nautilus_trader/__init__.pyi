@@ -3,21 +3,27 @@
 
 from . import _libnautilus
 from . import adapters
+from . import analysis
 from . import common
 from . import core
 from . import cryptography
+from . import execution
 from . import infrastructure
 from . import model
 from . import network
+from . import persistence
 from . import serialization
 
 __all__ = [
     "adapters",
+    "analysis",
     "common",
     "core",
     "cryptography",
+    "execution",
     "infrastructure",
     "model",
     "network",
+    "persistence",
     "serialization",
 ]

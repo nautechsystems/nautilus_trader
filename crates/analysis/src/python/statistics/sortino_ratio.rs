@@ -21,7 +21,25 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::sortino_ratio::SortinoRatio};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SortinoRatio {
+    /// Calculates the Sortino ratio for portfolio returns.
+    ///
+    /// The Sortino ratio is a variation of the Sharpe ratio that only penalizes downside
+    /// volatility, making it more appropriate for strategies with asymmetric return distributions.
+    ///
+    /// Formula: `Mean Return / Downside Deviation * sqrt(period)`
+    ///
+    /// Where downside deviation is calculated as:
+    /// `sqrt(sum(negative_returns^2) / total_observations)`
+    ///
+    /// Note: Uses total observations count (not just negative returns) as per Sortino's methodology.
+    ///
+    /// # References
+    ///
+    /// - Sortino, F. A., & van der Meer, R. (1991). "Downside Risk". *Journal of Portfolio Management*, 17(4), 27-31.
+    /// - Sortino, F. A., & Price, L. N. (1994). "Performance Measurement in a Downside Risk Framework".
+    ///   *Journal of Investing*, 3(3), 59-64.
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

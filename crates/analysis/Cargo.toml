@@ -28,7 +28,12 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -43,6 +48,7 @@ anyhow = { workspace = true }
 rust_decimal = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

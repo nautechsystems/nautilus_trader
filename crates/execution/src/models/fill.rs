@@ -152,6 +152,10 @@ fn add_order(book: &mut OrderBook, side: OrderSide, price: Price, size: Quantity
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct DefaultFillModel {
     state: ProbabilisticFillState,
 }
@@ -226,6 +230,10 @@ impl FillModel for DefaultFillModel {
         unsendable,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 pub struct BestPriceFillModel {
     state: ProbabilisticFillState,
@@ -312,6 +320,10 @@ impl FillModel for BestPriceFillModel {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct OneTickSlippageFillModel {
     state: ProbabilisticFillState,
 }
@@ -394,6 +406,10 @@ impl FillModel for OneTickSlippageFillModel {
         unsendable,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 pub struct ProbabilisticFillModel {
     state: ProbabilisticFillState,
@@ -495,6 +511,10 @@ impl FillModel for ProbabilisticFillModel {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct TwoTierFillModel {
     state: ProbabilisticFillState,
 }
@@ -591,6 +611,10 @@ impl FillModel for TwoTierFillModel {
         unsendable,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 pub struct ThreeTierFillModel {
     state: ProbabilisticFillState,
@@ -704,6 +728,10 @@ impl FillModel for ThreeTierFillModel {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct LimitOrderPartialFillModel {
     state: ProbabilisticFillState,
 }
@@ -802,6 +830,10 @@ impl FillModel for LimitOrderPartialFillModel {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct SizeAwareFillModel {
     state: ProbabilisticFillState,
 }
@@ -896,6 +928,10 @@ impl FillModel for SizeAwareFillModel {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct CompetitionAwareFillModel {
     state: ProbabilisticFillState,
     liquidity_factor: f64,
@@ -988,6 +1024,10 @@ impl FillModel for CompetitionAwareFillModel {
         unsendable,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 pub struct VolumeSensitiveFillModel {
     state: ProbabilisticFillState,
@@ -1096,6 +1136,10 @@ impl FillModel for VolumeSensitiveFillModel {
         unsendable,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
 pub struct MarketHoursFillModel {
     state: ProbabilisticFillState,
