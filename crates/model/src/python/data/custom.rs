@@ -115,8 +115,8 @@ impl CustomData {
     }
 }
 
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn custom_data_backend_kind(custom: &CustomData) -> &'static str {
     if custom
         .data

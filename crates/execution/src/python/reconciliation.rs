@@ -42,8 +42,8 @@ use crate::reconciliation::{
 /// # Errors
 ///
 /// Returns an error if instrument conversion or reconciliation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyfunction(name = "adjust_fills_for_partial_window")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
 pub fn py_adjust_fills_for_partial_window(
     py: Python<'_>,
@@ -96,8 +96,8 @@ pub fn py_adjust_fills_for_partial_window(
 /// 2. Flat to position: reconciliation_px = target_avg_px
 /// 3. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
 /// 4. Accumulation/reduction: weighted average formula
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyfunction(name = "calculate_reconciliation_price")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (current_position_qty, current_position_avg_px, target_position_qty, target_position_avg_px))]
 pub fn py_calculate_reconciliation_price(
     current_position_qty: Decimal,

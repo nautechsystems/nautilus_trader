@@ -54,6 +54,10 @@ const LOCATION_CURRENCY_MAP: &[(&str, &str)] = &[
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
+)]
 pub struct InterestRateRecord {
     /// OECD location code (e.g., "AUS", "USA").
     pub location: String,
@@ -163,6 +167,10 @@ impl RolloverInterestCalculator {
         unsendable,
         skip_from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
 )]
 pub struct FXRolloverInterestModule {
     calculator: RolloverInterestCalculator,

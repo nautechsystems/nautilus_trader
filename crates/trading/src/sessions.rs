@@ -42,6 +42,10 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
         rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.trading")
+)]
 pub enum ForexSession {
     Sydney,
     Tokyo,

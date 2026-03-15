@@ -19,8 +19,10 @@ use pyo3::prelude::*;
 
 use crate::modules::fx_rollover::{FXRolloverInterestModule, InterestRateRecord};
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl InterestRateRecord {
+    /// A single interest rate data entry.
     #[new]
     fn py_new(location: String, time: String, value: f64) -> Self {
         Self {
@@ -35,8 +37,14 @@ impl InterestRateRecord {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl FXRolloverInterestModule {
+    /// Simulates FX rollover (swap) interest applied at 5 PM US/Eastern daily.
+    ///
+    /// When holding FX positions overnight, the interest rate differential
+    /// between the two currencies is credited or debited. Wednesday and Friday
+    /// rollovers are tripled (Wednesday for T+2 settlement, Friday for the weekend).
     #[new]
     fn py_new(records: Vec<InterestRateRecord>) -> Self {
         Self::new(records)

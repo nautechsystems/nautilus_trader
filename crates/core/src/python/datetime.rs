@@ -29,15 +29,15 @@ use crate::{
 };
 
 /// Converts seconds to nanoseconds (ns).
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "secs_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_nanos(secs: f64) -> PyResult<u64> {
     secs_to_nanos(secs).map_err(to_pyvalue_err)
 }
 
 /// Converts seconds to milliseconds (ms).
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "secs_to_millis")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
     secs_to_millis(secs).map_err(to_pyvalue_err)
 }
@@ -46,8 +46,8 @@ pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "millis_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
     millis_to_nanos(millis).map_err(to_pyvalue_err)
 }
@@ -56,8 +56,8 @@ pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "micros_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_micros_to_nanos(micros: f64) -> PyResult<u64> {
     micros_to_nanos(micros).map_err(to_pyvalue_err)
 }
@@ -67,24 +67,24 @@ pub fn py_micros_to_nanos(micros: f64) -> PyResult<u64> {
 /// Casting u64 to f64 may lose precision for large values,
 /// but is acceptable when computing fractional seconds.
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_secs")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_nanos_to_secs(nanos: u64) -> f64 {
     nanos_to_secs(nanos)
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_millis")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub const fn py_nanos_to_millis(nanos: u64) -> u64 {
     nanos_to_millis(nanos)
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_micros")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)
 }
@@ -93,11 +93,11 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 ///
 /// Returns the raw nanosecond value as a string if it exceeds the representable
 /// datetime range (`i64::MAX`, approximately year 2262).
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(
     name = "unix_nanos_to_iso8601",
     signature = (timestamp_ns, nanos_precision=Some(true))
 )]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_unix_nanos_to_iso8601(
     timestamp_ns: u64,
     nanos_precision: Option<bool>,
@@ -123,8 +123,8 @@ pub fn py_unix_nanos_to_iso8601(
 /// # Errors
 ///
 /// Returns an error if the date is invalid.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "last_weekday_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
     Ok(last_weekday_nanos(year, month, day)
         .map_err(to_pyvalue_err)?
@@ -136,8 +136,8 @@ pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
 /// # Errors
 ///
 /// Returns an error if the timestamp is invalid.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "is_within_last_24_hours")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
     is_within_last_24_hours(UnixNanos::from(timestamp_ns)).map_err(to_pyvalue_err)
 }

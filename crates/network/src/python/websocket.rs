@@ -129,12 +129,6 @@ impl WebSocketClient {
     /// bindings, or callback-based message handling.
     ///
     /// See `WebSocketConfig` documentation for comparison with stream mode.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The connection cannot be established.
-    /// - `message_handler` is `None` (use `connect_stream` instead).
     #[staticmethod]
     #[pyo3(name = "connect", signature = (loop_, config, handler, ping_handler = None, post_reconnection = None, keyed_quotas = Vec::new(), default_quota = None))]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -345,10 +339,6 @@ impl WebSocketClient {
     /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
-    ///
-    /// # Errors
-    ///
-    /// Returns a websocket error if unable to send.
     #[pyo3(name = "send_text")]
     #[pyo3(signature = (data, keys=None))]
     #[allow(clippy::needless_pass_by_value)]
@@ -394,10 +384,6 @@ impl WebSocketClient {
     }
 
     /// Sends a pong frame back to the server.
-    ///
-    /// # Errors
-    ///
-    /// Returns a websocket error if unable to send.
     #[pyo3(name = "send_pong")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_send_pong<'py>(

@@ -21,6 +21,7 @@ use nautilus_core::UUID4;
 
 use crate::result::BacktestResult;
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl BacktestResult {
     #[getter]

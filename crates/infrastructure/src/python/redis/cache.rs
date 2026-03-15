@@ -278,10 +278,6 @@ impl RedisCacheDatabase {
     /// Spawns the async query on the global Nautilus runtime and blocks until
     /// the result arrives via a channel. Safe from any thread context (Python,
     /// test runtimes, plain threads).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query fails or the reply channel is closed.
     #[pyo3(name = "load_custom_data")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_load_custom_data(

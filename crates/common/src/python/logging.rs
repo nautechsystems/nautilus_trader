@@ -80,12 +80,8 @@ impl FileWriterConfig {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-///
-/// # Errors
-///
-/// Returns an error if the logging subsystem fails to initialize.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None, log_components_only=None))]
@@ -128,8 +124,8 @@ pub fn py_init_logging(
     logging::init_logging(trader_id, instance_id, config, file_config).map_err(to_pyvalue_err)
 }
 
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction()]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logger_flush")]
 pub fn py_logger_flush() {
     log::logger().flush();
@@ -153,48 +149,48 @@ fn parse_component_levels(
 }
 
 /// Create a new log event.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logger_log")]
 pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message: &str) {
     logger::log(level, color, Ustr::from(component), message);
 }
 
 /// Logs the standard Nautilus system header.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_header")]
 pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: &str) {
     headers::log_header(trader_id, machine_id, instance_id, Ustr::from(component));
 }
 
 /// Logs system information.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
 }
 
 /// Sets the global logging clock to static mode.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_static_mode")]
 pub fn py_logging_clock_set_static_mode() {
     logging_clock_set_static_mode();
 }
 
 /// Sets the global logging clock to real-time mode.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_realtime_mode")]
 pub fn py_logging_clock_set_realtime_mode() {
     logging_clock_set_realtime_mode();
 }
 
 /// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_static_time")]
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
     logging_clock_set_static_time(time_ns);
@@ -202,8 +198,8 @@ pub fn py_logging_clock_set_static_time(time_ns: u64) {
 
 /// Returns whether the tracing subscriber has been initialized.
 #[cfg(feature = "tracing-bridge")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "tracing_is_initialized")]
 #[must_use]
 pub fn py_tracing_is_initialized() -> bool {
@@ -226,8 +222,8 @@ pub fn py_tracing_is_initialized() -> bool {
 ///
 /// Returns an error if the tracing subscriber has already been initialized.
 #[cfg(feature = "tracing-bridge")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_tracing")]
 pub fn py_init_tracing() -> PyResult<()> {
     crate::logging::bridge::init_tracing().map_err(to_pyvalue_err)

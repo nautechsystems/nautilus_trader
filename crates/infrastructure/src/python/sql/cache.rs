@@ -35,10 +35,6 @@ use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 #[pymethods]
 impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if establishing the database connection fails.
     #[staticmethod]
     #[pyo3(name = "connect")]
     #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]

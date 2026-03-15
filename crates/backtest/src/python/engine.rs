@@ -68,9 +68,11 @@ use crate::{
     name = "BacktestEngine",
     unsendable
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")]
 #[derive(Debug)]
 pub struct PyBacktestEngine(BacktestEngine);
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyBacktestEngine {
     #[new]

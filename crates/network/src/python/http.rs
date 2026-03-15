@@ -140,10 +140,6 @@ impl HttpClient {
 
     /// Sends an HTTP request.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
-    ///
     /// # Examples
     ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
@@ -183,10 +179,6 @@ impl HttpClient {
     }
 
     /// Sends an HTTP GET request.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
     #[pyo3(name = "get")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_get<'py>(
@@ -209,10 +201,6 @@ impl HttpClient {
     }
 
     /// Sends an HTTP POST request.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "post")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -237,10 +225,6 @@ impl HttpClient {
     }
 
     /// Sends an HTTP PATCH request.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "patch")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -265,10 +249,6 @@ impl HttpClient {
     }
 
     /// Sends an HTTP DELETE request.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
     #[pyo3(name = "delete")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_delete<'py>(
@@ -348,8 +328,8 @@ fn params_to_hashmap(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_get(
     _py: Python<'_>,
@@ -395,8 +375,8 @@ pub fn http_get(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_post(
     _py: Python<'_>,
@@ -443,8 +423,8 @@ pub fn http_post(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_patch(
     _py: Python<'_>,
@@ -491,8 +471,8 @@ pub fn http_patch(
 /// # Panics
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_delete(
     _py: Python<'_>,
@@ -537,8 +517,8 @@ pub fn http_delete(
 /// - The server returns a non-success status code.
 /// - The file cannot be created or written to.
 /// - The params argument is not a dict.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, filepath, params=None, headers=None, timeout_secs=None))]
 pub fn http_download(
     _py: Python<'_>,

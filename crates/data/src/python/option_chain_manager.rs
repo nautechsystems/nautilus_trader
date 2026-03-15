@@ -61,6 +61,7 @@ fn parse_option_kind(value: u8) -> PyResult<OptionKind> {
     name = "OptionChainManager",
     module = "nautilus_trader.core.nautilus_pyo3.data"
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.data")]
 #[derive(Debug)]
 pub struct PyOptionChainManager {
     aggregator: OptionChainAggregator,
@@ -70,6 +71,7 @@ pub struct PyOptionChainManager {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyOptionChainManager {
     /// Creates a new option chain manager.
     #[new]

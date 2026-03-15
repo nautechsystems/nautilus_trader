@@ -27,16 +27,8 @@ use crate::xrate::get_exchange_rate;
 /// accumulate the conversion rate along a valid conversion path. While a full Floyd–Warshall
 /// algorithm could compute all-pairs conversion rates, the DFS approach here provides a quick
 /// solution for a single conversion query.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
-/// - `quotes_bid` or `quotes_ask` is empty.
-/// - `quotes_bid` and `quotes_ask` lengths are not equal.
-/// - The bid or ask side of a pair is missing.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "get_exchange_rate")]
 #[pyo3(signature = (from_currency, to_currency, price_type, quotes_bid, quotes_ask))]
 pub fn py_get_exchange_rate(

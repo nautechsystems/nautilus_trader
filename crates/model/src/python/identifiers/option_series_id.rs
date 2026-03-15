@@ -48,10 +48,6 @@ impl OptionSeriesId {
     ///
     /// The `date_str` is parsed via `UnixNanos::FromStr`, which accepts `"YYYY-MM-DD"`,
     /// RFC 3339 timestamps, integer nanoseconds, or floating-point seconds.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `date_str` cannot be parsed as a valid date or timestamp.
     #[staticmethod]
     #[pyo3(name = "from_expiry")]
     fn py_from_expiry(

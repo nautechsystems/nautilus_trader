@@ -127,11 +127,6 @@ impl SyntheticInstrument {
     }
 
     /// Calculates the price of the synthetic instrument based on component input prices provided as a map.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if formula evaluation fails, a required component price is missing
-    /// from the input map, or if setting the value in the evaluation context fails.
     #[pyo3(name = "calculate_from_map")]
     fn py_calculate_from_map(
         &mut self,

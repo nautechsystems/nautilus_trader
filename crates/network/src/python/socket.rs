@@ -82,10 +82,6 @@ impl SocketConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SocketClient {
     /// Connect to the server.
-    ///
-    /// # Errors
-    ///
-    /// Returns any error connecting to the server.
     #[staticmethod]
     #[pyo3(name = "connect")]
     #[pyo3(signature = (config, post_connection=None, post_reconnection=None, post_disconnection=None))]

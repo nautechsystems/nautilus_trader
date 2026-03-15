@@ -53,6 +53,11 @@ ANNOTATED_CRATES = [
     "infrastructure",
     "cryptography",
     "network",
+    "data",
+    "trading",
+    "testkit",
+    "backtest",
+    "live",
 ]
 
 ANNOTATED_ADAPTER_CRATES = [
@@ -181,6 +186,7 @@ def transform_doc(
     doc_lines: list[str],
     source_file: str = "",
     fn_name: str = "",
+    strip_errors: bool = False,
 ) -> list[str]:
     """
     Copy doc lines, dropping ``# Panics`` sections.
@@ -201,7 +207,8 @@ def transform_doc(
         if m:
             section = m.group(1)
 
-            if section in DROPPED_SECTIONS:
+            dropped = DROPPED_SECTIONS | ({"Errors"} if strip_errors else set())
+            if section in dropped:
                 print(
                     f"  WARNING: # {section} in {fn_name} ({source_file})",
                     file=sys.stderr,
@@ -309,6 +316,7 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
                     "fn_line": i,
                     "impl_type": impl_type,
                     "is_constructor": has_new,
+                    "in_pymethods": in_pymethods,
                     "doc_start": doc_start,
                     "doc_end": doc_end,
                     "insert_line": insert,
@@ -369,16 +377,25 @@ def process_crate(  # noqa: C901
                 )
             elif impl_type:
                 source_doc = source_docs.get((impl_type, target))
+            elif item["in_pymethods"]:
+                # Method lost its impl_type (parser brace tracking); skip
+                source_doc = None
             else:
+                # Standalone pyfunction (no impl block)
                 source_doc = source_docs.get((None, target))
 
             if not source_doc:
                 continue
 
+            # Check if function returns Result/PyResult
+            fn_line_str = file_lines[item["fn_line"]]
+            returns_result = "Result" in fn_line_str
+
             transformed = transform_doc(
                 source_doc,
                 source_file=str(rs_file.relative_to(ROOT)),
                 fn_name=fn_name,
+                strip_errors=not returns_result,
             )
 
             if not transformed:

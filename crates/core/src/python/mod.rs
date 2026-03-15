@@ -173,8 +173,8 @@ pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
 /// # Returns
 ///
 /// bool
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "is_pycapsule")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[allow(
     clippy::needless_pass_by_value,
     reason = "Python FFI requires owned types"

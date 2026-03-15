@@ -33,8 +33,8 @@ use pyo3_stub_gen::derive::gen_stub_pyfunction;
 /// -------
 /// str
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "convert_to_snake_case")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_convert_to_snake_case(input: &str) -> String {
     input.to_snake_case()
 }

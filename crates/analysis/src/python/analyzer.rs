@@ -362,10 +362,6 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets formatted PnL statistics as strings.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if PnL statistics calculation fails.
     #[pyo3(name = "get_stats_pnls_formatted")]
     fn py_get_stats_pnls_formatted(
         &self,

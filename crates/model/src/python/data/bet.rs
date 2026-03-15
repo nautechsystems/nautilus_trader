@@ -242,8 +242,8 @@ impl BetPosition {
 }
 
 /// Calculates the combined profit and loss for a slice of bets.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "calc_bets_pnl")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
@@ -253,12 +253,8 @@ pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
 /// Converts a probability and volume into a Bet.
 ///
 /// For a BUY side, this creates a BACK bet; for SELL, a LAY bet.
-///
-/// # Errors
-///
-/// Returns an error if `probability` is zero.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "probability_to_bet")]
 pub fn py_probability_to_bet(
     probability: Decimal,
@@ -271,12 +267,8 @@ pub fn py_probability_to_bet(
 /// Converts a probability and volume into a Bet using the inverse probability.
 ///
 /// The side is also inverted (BUY becomes SELL and vice versa).
-///
-/// # Errors
-///
-/// Returns an error if `probability` is 1.0 or its inverse is zero.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "inverse_probability_to_bet")]
 pub fn py_inverse_probability_to_bet(
     probability: Decimal,
