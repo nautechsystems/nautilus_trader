@@ -40,6 +40,7 @@ pub struct PolymarketDataClientConfig {
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_gamma: Option<String>,
+    pub base_url_data_api: Option<String>,
     pub http_timeout_secs: Option<u64>,
     pub ws_timeout_secs: Option<u64>,
     pub ws_max_subscriptions: usize,
@@ -54,6 +55,7 @@ impl Clone for PolymarketDataClientConfig {
             base_url_http: self.base_url_http.clone(),
             base_url_ws: self.base_url_ws.clone(),
             base_url_gamma: self.base_url_gamma.clone(),
+            base_url_data_api: self.base_url_data_api.clone(),
             http_timeout_secs: self.http_timeout_secs,
             ws_timeout_secs: self.ws_timeout_secs,
             ws_max_subscriptions: self.ws_max_subscriptions,
@@ -69,6 +71,7 @@ impl Debug for PolymarketDataClientConfig {
             .field("base_url_http", &self.base_url_http)
             .field("base_url_ws", &self.base_url_ws)
             .field("base_url_gamma", &self.base_url_gamma)
+            .field("base_url_data_api", &self.base_url_data_api)
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("ws_timeout_secs", &self.ws_timeout_secs)
             .field("ws_max_subscriptions", &self.ws_max_subscriptions)
@@ -87,6 +90,7 @@ impl Default for PolymarketDataClientConfig {
             base_url_http: None,
             base_url_ws: None,
             base_url_gamma: None,
+            base_url_data_api: None,
             http_timeout_secs: Some(60),
             ws_timeout_secs: Some(30),
             ws_max_subscriptions: crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS,
@@ -121,6 +125,13 @@ impl PolymarketDataClientConfig {
         self.base_url_gamma
             .clone()
             .unwrap_or_else(|| urls::gamma_api_url().to_string())
+    }
+
+    #[must_use]
+    pub fn data_api_url(&self) -> String {
+        self.base_url_data_api
+            .clone()
+            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
     }
 }
 

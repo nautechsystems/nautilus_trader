@@ -310,6 +310,19 @@ pub struct ClobBookResponse {
     pub asks: Vec<ClobBookLevel>,
 }
 
+/// A trade from the Polymarket Data API `GET /trades` endpoint.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataApiTrade {
+    pub asset: String,
+    pub condition_id: String,
+    pub side: PolymarketOrderSide,
+    pub price: f64,
+    pub size: f64,
+    pub timestamp: i64,
+    pub transaction_hash: String,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -599,5 +612,37 @@ mod tests {
         let response: ClobBookResponse = serde_json::from_str(json).unwrap();
         assert!(response.bids.is_empty());
         assert!(response.asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_data_api_trade_deserialization() {
+        let trades: Vec<DataApiTrade> = load("data_api_trades_response.json");
+
+        assert_eq!(trades.len(), 3);
+        assert_eq!(
+            trades[0].asset,
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+        );
+        assert_eq!(
+            trades[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+        assert_eq!(trades[0].side, PolymarketOrderSide::Buy);
+        assert_eq!(trades[0].price, 0.55);
+        assert_eq!(trades[0].size, 100.0);
+        assert_eq!(trades[0].timestamp, 1710000000);
+        assert_eq!(
+            trades[0].transaction_hash,
+            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+        );
+
+        assert_eq!(trades[1].side, PolymarketOrderSide::Sell);
+        assert_eq!(trades[1].price, 0.53);
+
+        // Third trade has different asset (other outcome token)
+        assert_eq!(
+            trades[2].asset,
+            "99999999999999999999999999999999999999999999999999999999999999999999999999999"
+        );
     }
 }

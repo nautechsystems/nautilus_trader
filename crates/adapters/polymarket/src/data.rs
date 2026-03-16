@@ -30,8 +30,9 @@ use nautilus_common::{
         DataEvent, DataResponse,
         data::{
             BookResponse, InstrumentResponse, InstrumentsResponse, RequestBookSnapshot,
-            RequestInstrument, RequestInstruments, SubscribeBookDeltas, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeQuotes, UnsubscribeTrades,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
+            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBookDeltas,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     providers::InstrumentProvider,
@@ -56,8 +57,8 @@ use crate::{
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
-        clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient,
-        query::GetGammaMarketsParams,
+        clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+        gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams,
     },
     providers::{PolymarketInstrumentProvider, extract_condition_id},
     websocket::{
@@ -95,6 +96,7 @@ pub struct PolymarketDataClient {
     config: PolymarketDataClientConfig,
     provider: PolymarketInstrumentProvider,
     clob_public_client: PolymarketClobPublicClient,
+    data_api_client: PolymarketDataApiHttpClient,
     ws_client: PolymarketWebSocketClient,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
@@ -114,6 +116,7 @@ impl PolymarketDataClient {
         config: PolymarketDataClientConfig,
         gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
+        data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketWebSocketClient,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
@@ -126,6 +129,7 @@ impl PolymarketDataClient {
             config,
             provider,
             clob_public_client,
+            data_api_client,
             ws_client,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
@@ -712,6 +716,65 @@ impl DataClient for PolymarketDataClient {
                     }
                 }
                 Err(e) => log::error!("Book snapshot request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let instrument_id = request.instrument_id;
+        let instrument = self
+            .provider
+            .store()
+            .find(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+
+        let condition_id = extract_condition_id(&instrument_id)?;
+        let token_id = instrument.raw_symbol().as_str().to_string();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let limit = request.limit.map(|n| n.get() as u32);
+
+        let data_api_client = self.data_api_client.clone();
+        let sender = self.data_sender.clone();
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let request_id = request.request_id;
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+
+        get_runtime().spawn(async move {
+            match data_api_client
+                .request_trade_ticks(
+                    instrument_id,
+                    &condition_id,
+                    &token_id,
+                    price_precision,
+                    size_precision,
+                    limit,
+                )
+                .await
+                .context("failed to request trades from Polymarket Data API")
+            {
+                Ok(trades) => {
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        trades,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send trades response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Trade request failed for {instrument_id}: {e:?}"),
             }
         });
 

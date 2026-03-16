@@ -26,11 +26,13 @@ use crate::{
 impl PolymarketDataClientConfig {
     /// Configuration for the Polymarket data client.
     #[new]
-    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None))]
+    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
         base_url_gamma: Option<String>,
+        base_url_data_api: Option<String>,
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
         ws_max_subscriptions: Option<usize>,
@@ -41,6 +43,7 @@ impl PolymarketDataClientConfig {
             base_url_http,
             base_url_ws,
             base_url_gamma,
+            base_url_data_api,
             http_timeout_secs: http_timeout_secs.or(default.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.or(default.ws_timeout_secs),
             ws_max_subscriptions: ws_max_subscriptions.unwrap_or(default.ws_max_subscriptions),

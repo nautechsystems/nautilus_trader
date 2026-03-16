@@ -1,0 +1,299 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Provides the HTTP client for the Polymarket Data API.
+
+use std::{collections::HashMap, result::Result as StdResult};
+
+use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_model::{
+    data::TradeTick,
+    enums::AggressorSide,
+    identifiers::{InstrumentId, TradeId},
+    types::{Price, Quantity},
+};
+use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
+use ustr::Ustr;
+
+use crate::http::{
+    error::{Error, Result},
+    models::DataApiTrade,
+};
+
+const POLYMARKET_DATA_API_URL: &str = "https://data-api.polymarket.com";
+
+/// Provides an unauthenticated HTTP client for the Polymarket Data API.
+///
+/// Used for fetching historical trade data from `GET /trades`.
+#[derive(Debug, Clone)]
+pub struct PolymarketDataApiHttpClient {
+    client: HttpClient,
+    base_url: String,
+}
+
+impl PolymarketDataApiHttpClient {
+    /// Creates a new [`PolymarketDataApiHttpClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> StdResult<Self, HttpClientError> {
+        Ok(Self {
+            client: HttpClient::new(
+                HashMap::from([
+                    (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
+                    ("Content-Type".to_string(), "application/json".to_string()),
+                ]),
+                vec![],
+                vec![],
+                None,
+                timeout_secs,
+                None,
+            )?,
+            base_url: base_url
+                .unwrap_or_else(|| POLYMARKET_DATA_API_URL.to_string())
+                .trim_end_matches('/')
+                .to_string(),
+        })
+    }
+
+    /// Fetches trades from the Data API for the given condition ID.
+    pub async fn get_trades(
+        &self,
+        condition_id: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<DataApiTrade>> {
+        let mut params = vec![("market".to_string(), condition_id.to_string())];
+
+        if let Some(l) = limit {
+            params.push(("limit".to_string(), l.to_string()));
+        }
+
+        if let Some(o) = offset {
+            params.push(("offset".to_string(), o.to_string()));
+        }
+
+        let url = format!("{}/trades", self.base_url);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        if response.status.is_success() {
+            serde_json::from_slice(&response.body).map_err(Error::Serde)
+        } else {
+            Err(Error::from_status_code(
+                response.status.as_u16(),
+                &response.body,
+            ))
+        }
+    }
+
+    /// Fetches trades and converts them to [`TradeTick`] for the given instrument.
+    ///
+    /// Filters by `token_id` (since the API returns trades for all outcomes
+    /// of the condition) and returns results in chronological order.
+    pub async fn request_trade_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        condition_id: &str,
+        token_id: &str,
+        price_precision: u8,
+        size_precision: u8,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let trades = self
+            .get_trades(condition_id, limit, None)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let mut ticks: Vec<TradeTick> = trades
+            .into_iter()
+            .filter(|t| t.asset == token_id)
+            .map(|t| {
+                let price = Price::new(t.price, price_precision);
+                let size = Quantity::new(t.size, size_precision);
+                let aggressor_side = AggressorSide::from(t.side);
+                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                let hash = &t.transaction_hash;
+                let trade_id_str = if hash.len() > 36 {
+                    &hash[hash.len() - 36..]
+                } else {
+                    hash.as_str()
+                };
+                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                // Data API timestamp is in epoch seconds
+                let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
+
+                TradeTick::new(
+                    instrument_id,
+                    price,
+                    size,
+                    aggressor_side,
+                    trade_id,
+                    ts_event,
+                    ts_event,
+                )
+            })
+            .collect();
+
+        // API returns newest-first; reverse for chronological order
+        ticks.reverse();
+
+        Ok(ticks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{enums::AggressorSide, identifiers::InstrumentId};
+    use rstest::rstest;
+
+    use super::*;
+    use crate::http::models::DataApiTrade;
+
+    fn load_trades() -> Vec<DataApiTrade> {
+        let path = "test_data/data_api_trades_response.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    fn test_data_api_trade_deserialization() {
+        let trades = load_trades();
+
+        assert_eq!(trades.len(), 3);
+
+        assert_eq!(
+            trades[0].asset,
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+        );
+        assert_eq!(
+            trades[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+        assert_eq!(trades[0].price, 0.55);
+        assert_eq!(trades[0].size, 100.0);
+        assert_eq!(trades[0].timestamp, 1710000000);
+        assert_eq!(
+            trades[0].transaction_hash,
+            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+        );
+    }
+
+    #[rstest]
+    fn test_data_api_trade_ignores_extra_fields() {
+        let trades = load_trades();
+        // proxyWallet, title, slug should be silently ignored
+        assert_eq!(trades.len(), 3);
+    }
+
+    #[rstest]
+    fn test_build_trade_ticks_filters_by_token_id() {
+        let trades = load_trades();
+        let instrument_id = InstrumentId::from(
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47-71321045863084981365469005770620412523470745398083994982746259498689308907982.POLYMARKET",
+        );
+        let token_id =
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982";
+        let price_precision = 2u8;
+        let size_precision = 2u8;
+
+        let ticks: Vec<TradeTick> = trades
+            .into_iter()
+            .filter(|t| t.asset == token_id)
+            .map(|t| {
+                let price = Price::new(t.price, price_precision);
+                let size = Quantity::new(t.size, size_precision);
+                let aggressor_side = AggressorSide::from(t.side);
+                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                let hash = &t.transaction_hash;
+                let trade_id_str = if hash.len() > 36 {
+                    &hash[hash.len() - 36..]
+                } else {
+                    hash.as_str()
+                };
+                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
+
+                TradeTick::new(
+                    instrument_id,
+                    price,
+                    size,
+                    aggressor_side,
+                    trade_id,
+                    ts_event,
+                    ts_event,
+                )
+            })
+            .collect();
+
+        // Should filter out the third trade (different asset)
+        assert_eq!(ticks.len(), 2);
+        assert_eq!(ticks[0].aggressor_side, AggressorSide::Buyer);
+        assert_eq!(ticks[1].aggressor_side, AggressorSide::Seller);
+    }
+
+    #[rstest]
+    fn test_build_trade_ticks_chronological_order() {
+        let trades = load_trades();
+        let instrument_id = InstrumentId::from(
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47-71321045863084981365469005770620412523470745398083994982746259498689308907982.POLYMARKET",
+        );
+        let token_id =
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982";
+
+        let mut ticks: Vec<TradeTick> = trades
+            .into_iter()
+            .filter(|t| t.asset == token_id)
+            .map(|t| {
+                let price = Price::new(t.price, 2);
+                let size = Quantity::new(t.size, 2);
+                let aggressor_side = AggressorSide::from(t.side);
+                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                let hash = &t.transaction_hash;
+                let trade_id_str = if hash.len() > 36 {
+                    &hash[hash.len() - 36..]
+                } else {
+                    hash.as_str()
+                };
+                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
+
+                TradeTick::new(
+                    instrument_id,
+                    price,
+                    size,
+                    aggressor_side,
+                    trade_id,
+                    ts_event,
+                    ts_event,
+                )
+            })
+            .collect();
+
+        // Reverse to get chronological order (API returns newest-first)
+        ticks.reverse();
+
+        assert_eq!(ticks.len(), 2);
+        // First tick should be the older one (lower timestamp)
+        assert!(ticks[0].ts_event < ticks[1].ts_event);
+    }
+}

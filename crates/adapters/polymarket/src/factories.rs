@@ -34,7 +34,10 @@ use crate::{
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
     data::PolymarketDataClient,
     execution::PolymarketExecutionClient,
-    http::{clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient},
+    http::{
+        clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+        gamma::PolymarketGammaHttpClient,
+    },
     websocket::client::PolymarketWebSocketClient,
 };
 
@@ -85,6 +88,11 @@ impl DataClientFactory for PolymarketDataClientFactory {
             polymarket_config.http_timeout_secs,
         )?;
 
+        let data_api_client = PolymarketDataApiHttpClient::new(
+            Some(polymarket_config.data_api_url()),
+            polymarket_config.http_timeout_secs,
+        )?;
+
         let ws_client = PolymarketWebSocketClient::new_market(None);
 
         let mut client = PolymarketDataClient::new(
@@ -92,6 +100,7 @@ impl DataClientFactory for PolymarketDataClientFactory {
             polymarket_config.clone(),
             gamma_client,
             clob_public_client,
+            data_api_client,
             ws_client,
         );
 
