@@ -1112,8 +1112,7 @@ def test_publish_balances_cache_fallback_ignores_stale_external_reconciliation_a
 
     rows = build_balances_rows(raw_snapshot=balances_payload, strategy_id=strategy._external_strategy_id)
     position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
-    assert len(position_rows) == 1
-    assert position_rows[0]["signed_qty"] == "-250030"
+    assert position_rows == []
 
 
 def test_publish_balances_cache_fallback_keeps_partial_external_reconciliation_fragment_when_owned_qty_does_not_match_snapshot(
