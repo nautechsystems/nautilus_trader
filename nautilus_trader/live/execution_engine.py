@@ -1087,6 +1087,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
         for instrument_id, cached_positions in positions_by_instrument.items():
             venue_report = venue_positions.get(instrument_id)
+            venue_qty = venue_report.signed_decimal_qty if venue_report is not None else None
+            _, artifact_positions, effective_qty, raw_qty = self._effective_netting_positions_for_venue_qty(
+                positions_open=cached_positions,
+                instrument_id=instrument_id,
+                venue_qty=venue_qty,
+            )
 
             has_discrepancy = self._check_position_discrepancy(
                 cached_positions,
@@ -1094,7 +1100,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 instrument_id,
             )
 
-            if not has_discrepancy:
+            if not has_discrepancy and not artifact_positions:
                 self._position_recon_retries.pop(instrument_id, None)
                 continue
 
@@ -1112,8 +1118,33 @@ class LiveExecutionEngine(ExecutionEngine):
             if retries >= self.position_check_retries:
                 continue
 
+            if artifact_positions and venue_report is not None:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is not None and self._cleanup_stale_external_reconciliation_positions(
+                    report=venue_report,
+                    instrument=instrument,
+                    artifact_positions=artifact_positions,
+                    raw_qty=raw_qty,
+                    effective_qty=effective_qty,
+                ):
+                    self._position_recon_retries.pop(instrument_id, None)
+                    continue
+
+                self._position_recon_retries[instrument_id] = retries + 1
+                if retries + 1 >= self.position_check_retries:
+                    self._log.error(
+                        f"Failed to clean stale EXTERNAL reconciliation artifacts for "
+                        f"{instrument_id} after {self.position_check_retries} attempts "
+                        f"(raw_qty={raw_qty}, effective_qty={effective_qty}, venue_qty={venue_qty})",
+                    )
+                continue
+
+            if not has_discrepancy:
+                self._position_recon_retries.pop(instrument_id, None)
+                continue
+
             cached_qty = sum(p.signed_decimal_qty() for p in cached_positions)
-            venue_qty = venue_report.signed_decimal_qty if venue_report else Decimal(0)
+            venue_qty = venue_qty if venue_qty is not None else Decimal(0)
 
             self._log.warning(
                 f"Position discrepancy detected for {instrument_id}: "
