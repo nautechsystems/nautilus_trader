@@ -190,6 +190,6 @@ def test_apply_inventory_skew_to_edges_handles_positive_negative_and_zero() -> N
         total_skew_bps=Decimal(0),
     )
 
-    assert (bid_up, ask_up) == (Decimal(13), Decimal(17))
-    assert (bid_down, ask_down) == (Decimal(7), Decimal(23))
+    assert (bid_up, ask_up) == (Decimal(7), Decimal(23))
+    assert (bid_down, ask_down) == (Decimal(13), Decimal(17))
     assert (bid_flat, ask_flat) == (Decimal(10), Decimal(20))

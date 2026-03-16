@@ -75,3 +75,26 @@ def test_strategy_local_qty_from_rows_prefers_latest_base_row_for_spot_component
 
     assert qty == module.Decimal("1045.24669092")
     assert source == "latest_base_asset_row"
+
+
+def test_strategy_local_qty_from_rows_falls_back_to_component_snapshot_when_rows_missing() -> None:
+    module = _load_module()
+
+    qty, source = module._strategy_local_qty_from_rows(
+        rows=[],
+        base_asset="PLUME",
+        expected_local_qty=None,
+        component_local_position_qty=module.Decimal("-250030"),
+        component_local_spot_qty=None,
+    )
+
+    assert qty == module.Decimal("-250030")
+    assert source == "component_local_position_qty"
+
+
+def test_component_is_missing_optional_only_for_nonrequired_missing_components() -> None:
+    module = _load_module()
+
+    assert module._component_is_missing_optional({"missing": True, "required": False}) is True
+    assert module._component_is_missing_optional({"missing": True, "required": True}) is False
+    assert module._component_is_missing_optional({"missing": False, "required": False}) is False

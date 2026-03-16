@@ -1126,6 +1126,67 @@ def test_refresh_quotes_exposes_l1_quote_targets_in_pricing_debug(
     assert pricing["cancel_ask"] == "101.11"
 
 
+def test_refresh_quotes_caches_coherent_quote_snapshot_for_operator_export(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_001])
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    pricing = strategy._last_pricing_debug["pricing"]
+    snapshot = strategy._last_quote_snapshot
+    assert snapshot["ts_ms"] == 1_000
+    assert snapshot["maker_top_bid"] == pricing["maker_top_bid"]
+    assert snapshot["maker_top_ask"] == pricing["maker_top_ask"]
+    assert snapshot["ref_bid"] == pricing["ref_bid"]
+    assert snapshot["ref_ask"] == pricing["ref_ask"]
+    assert snapshot["place_bid"] == pricing["place_bid"]
+    assert snapshot["place_ask"] == pricing["place_ask"]
+    assert snapshot["cancel_bid"] == pricing["cancel_bid"]
+    assert snapshot["cancel_ask"] == pricing["cancel_ask"]
+    assert snapshot["eff_bid_edge_bps"] == pricing["bid_edge1_eff_bps"]
+    assert snapshot["eff_ask_edge_bps"] == pricing["ask_edge1_eff_bps"]
+    assert snapshot["skew_bps_signed"] == pricing["total_skew_bps"]
+    assert snapshot["place_edge_bps"] == pricing["place_edge_bps"]
+
+
+def test_refresh_quotes_stamps_pricing_debug_with_quote_cycle_timestamp(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_001])
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    pricing = strategy._last_pricing_debug["pricing"]
+    assert pricing["ts_ms"] == 1000
+
+
 def test_refresh_quotes_calls_managed_orders_once_per_quote_cycle(clocked_strategy_factory) -> None:
     strategy = clocked_strategy_factory([1_000_000_001, 1_000_000_002, 1_000_000_003])
 

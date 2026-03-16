@@ -867,6 +867,8 @@ const HEADER_HINTS: Record<string, string> = {
     'MakerV3 local inventory cap (base units). <= 0 disables local component.',
   max_skew_bps_local:
     'MakerV3 local skew cap (bps). Added to global skew for maker-leg total skew.',
+  linear_offset_bps:
+    'MakerV3 signed quote shift in bps. Positive moves maker quotes up; negative moves maker quotes down.',
   des_qty:
     'Legacy alias for des_qty_global.',
   max_qty:

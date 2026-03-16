@@ -171,6 +171,41 @@ def test_build_balances_rows_prefers_base_qty_and_preserves_venue_qty_fields() -
     )
 
 
+def test_build_balances_rows_ignores_nested_external_positions_when_building_strategy_view() -> None:
+    rows = build_balances_rows(
+        raw_snapshot=[
+            {
+                "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                "positions": [
+                    {
+                        "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                        "exchange": "bitget",
+                        "kind": "position",
+                        "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                        "signed_qty": "-62890",
+                        "signed_qty_base": "-62890",
+                    },
+                    {
+                        "strategy_id": "EXTERNAL",
+                        "exchange": "bitget",
+                        "kind": "position",
+                        "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                        "signed_qty": "-187140",
+                        "signed_qty_base": "-187140",
+                    },
+                ],
+            },
+        ],
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "plumeusdt_bitget_perp_makerv3"
+    assert position_rows[0]["signed_qty"] == "-62890"
+    assert position_rows[0]["signed_qty_base"] == "-62890"
+
+
 def test_build_balances_rows_keeps_spot_positions_without_suffix_labeled_spot() -> None:
     rows = build_balances_rows(
         raw_snapshot=[
@@ -305,6 +340,28 @@ def test_build_balances_rows_preserves_account_id_and_formats_stable_cash_withou
     assert row["market_type"] == "perp"
     assert row["display_name_short"] == "USDT"
     assert row["display_name_long"] == "Bitget USDT"
+
+
+def test_build_balances_rows_excludes_embedded_external_positions_from_requested_strategy_snapshot() -> None:
+    rows = build_balances_rows(
+        raw_snapshot={
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "positions": [
+                {
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                    "signed_qty": "-250030",
+                    "quantity": "250030",
+                    "side": "SHORT",
+                    "strategy_id": "EXTERNAL",
+                    "position_id": "P-EXTERNAL",
+                },
+            ],
+        },
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    assert rows == []
 
 
 def test_enrich_balances_rows_formats_instrumentless_stable_spot_rows_without_suffix() -> None:
@@ -1109,6 +1166,8 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 101.0
     assert payload["maker_v3"]["quote_snapshot"]["ref_bid"] == 99.0
     assert payload["maker_v3"]["quote_snapshot"]["ref_ask"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"].get("place_bid") is None
+    assert payload["maker_v3"]["quote_snapshot"].get("place_ask") is None
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
 
 
@@ -1304,8 +1363,10 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
         legs=legs,
     )
 
-    assert payload["maker_v3"]["quote_snapshot"]["place_bid"] == 100.0
-    assert payload["maker_v3"]["quote_snapshot"]["place_ask"] == 101.0
+    assert payload["maker_v3"]["quote_snapshot"].get("place_bid") is None
+    assert payload["maker_v3"]["quote_snapshot"].get("place_ask") is None
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_bid"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 101.0
     assert payload["maker_v3"]["quote_snapshot"]["eff_bid_edge_bps"] == 8.0
     assert payload["maker_v3"]["quote_snapshot"]["eff_ask_edge_bps"] == 12.0
     assert payload["maker_v3"]["quote_snapshot"]["place_edge_bps"] == 2.0

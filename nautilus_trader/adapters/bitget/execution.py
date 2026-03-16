@@ -1101,12 +1101,13 @@ class BitgetExecutionClient(LiveExecutionClient):
             or BitgetExecutionClient._field(payload, "posSide"),
         ).lower()
         position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
+        quantity_text = str(abs(total))
         try:
-            quantity = resolved_instrument.make_qty(str(abs(total)), round_down=True)
+            quantity = resolved_instrument.make_qty(quantity_text, round_down=True)
         except TypeError:
-            quantity = resolved_instrument.make_qty(str(abs(total)))
+            quantity = resolved_instrument.make_qty(quantity_text)
         except ValueError:
-            quantity = Quantity.from_str(str(abs(total)))
+            quantity = Quantity.from_str(quantity_text)
 
         return PositionStatusReport(
             account_id=self.account_id,

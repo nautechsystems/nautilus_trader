@@ -7,6 +7,7 @@ ENV_DIR="/etc/flux"
 COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 DEPLOY_ROOT_OVERRIDE="${TOKENMM_DEPLOY_ROOT:-}"
+TOKENMM_API_HOST="${TOKENMM_API_HOST:-}"
 
 read_env_value() {
   local env_path="$1"
@@ -69,6 +70,18 @@ resolve_deploy_root() {
   fi
 
   printf '%s\n' "${deploy_root}"
+}
+
+read_existing_api_host() {
+  local env_path="${ENV_DIR}/tokenmm-api.env"
+  local cmd=""
+
+  [[ -f "${env_path}" ]] || return 0
+
+  cmd="$(read_env_value "${env_path}" "CMD" || true)"
+  if [[ -n "${cmd}" && "${cmd}" =~ --host[[:space:]]+([^[:space:]]+) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  fi
 }
 
 DEPLOY_ROOT="$(resolve_deploy_root)"
@@ -152,13 +165,17 @@ append_deploy_root_env_overrides() {
 }
 
 render_api_env() {
+  local api_host=""
+  api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"
+  api_host="${api_host:-0.0.0.0}"
+
   strategy_stack_write_env \
     "${ENV_DIR}/tokenmm-api.env" \
     "TokenMM API + Fluxboard + Pulse" \
     "tokenmm" \
     "TokenMM" \
     "10" \
-    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5022 --serve-fluxboard --serve-pulse" \
+    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host ${api_host} --port 5022 --serve-fluxboard --serve-pulse" \
     "5022" \
     "tokenmm-api"
   append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-api.env"

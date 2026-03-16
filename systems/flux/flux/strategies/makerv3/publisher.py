@@ -12,10 +12,12 @@ from decimal import Decimal
 from typing import Any
 
 from flux.api.payloads import contract_id_for_leg
+from flux.api.payloads import decode_text
 from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.shared.publisher_common import build_role_map_payload
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import BLOCKED_STATE_PREFIX
 from flux.strategies.makerv3.constants import TOPIC_ALERT
@@ -146,6 +148,36 @@ def _matching_base_positions(
         ):
             filtered.append(position)
     return filtered
+
+
+def _maker_position_report_snapshot(strategy: Any) -> dict[str, Any] | None:
+    snapshot_lookup = getattr(strategy, "_maker_position_report_snapshot", None)
+    if callable(snapshot_lookup):
+        with suppress(Exception):
+            snapshot = snapshot_lookup()
+            if isinstance(snapshot, Mapping):
+                return dict(snapshot)
+
+    snapshot = getattr(strategy, "_latest_maker_position_report_snapshot", None)
+    if isinstance(snapshot, Mapping):
+        return dict(snapshot)
+    return None
+
+
+def _effective_inventory_positions(strategy: Any, positions: Sequence[Any]) -> list[Any]:
+    cache = _strategy_cache(strategy)
+    orders_for_position = getattr(cache, "orders_for_position", None)
+    snapshot = _maker_position_report_snapshot(strategy)
+    expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+        snapshot,
+        instrument_id=strategy.config.maker_instrument_id,
+    )
+    return maker_reconciliation_mod.effective_maker_positions(
+        positions,
+        maker_instrument_id=strategy.config.maker_instrument_id,
+        expected_venue_qty=expected_qty,
+        order_lookup=orders_for_position if callable(orders_for_position) else None,
+    )
 
 
 def _account_balances_rows(account: Any) -> list[dict[str, str]]:
@@ -715,6 +747,14 @@ def publish_state(
     if pricing_debug:
         strategy._last_pricing_debug = pricing_debug
         payload["pricing_debug"] = pricing_debug
+    last_quote_snapshot = getattr(strategy, "_last_quote_snapshot", None)
+    if isinstance(last_quote_snapshot, Mapping):
+        quote_snapshot = dict(last_quote_snapshot)
+        quote_snapshot["mode"] = decode_text(quote_snapshot.get("mode")).strip() or (
+            "ON" if effective_bot_on else "OFF"
+        )
+        quote_snapshot["reason"] = decode_text(quote_snapshot.get("reason")).strip() or effective_state
+        payload["maker_v3"] = {"quote_snapshot": quote_snapshot}
     strategy._publish_json(
         TOPIC_STATE,
         payload,
@@ -872,6 +912,7 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                         instrument_id=strategy.config.maker_instrument_id,
                     ),
                 )
+        positions = _effective_inventory_positions(strategy, positions)
         if not positions and callable(positions_open):
             maker_instrument = getattr(strategy, "_maker_instrument", None)
             instruments = getattr(strategy, "_instruments", {})
@@ -882,10 +923,11 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                 instrument_id=strategy.config.maker_instrument_id,
             )
             with suppress(Exception):
+                all_positions = _effective_inventory_positions(strategy, list(positions_open()))
                 positions.extend(
                     _matching_base_positions(
                         strategy,
-                        list(positions_open()),
+                        all_positions,
                         base_currency=maker_base_currency,
                     ),
                 )

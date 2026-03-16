@@ -6368,6 +6368,93 @@ class TestHedgeModeReconciliation:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_process_cached_position_discrepancies_closes_stale_external_position_when_effective_qty_matches_venue(
+        self,
+    ):
+        """
+        Background position checks should still purge stale EXTERNAL artifacts once the
+        owned cached position already matches venue truth.
+        """
+        self.exec_engine.generate_missing_orders = False
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-OWNED-BACKGROUND"),
+            last_qty=Quantity.from_int(2_566),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("OWNED-BACKGROUND-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        stale_external_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("EXTERNAL"),
+            client_order_id=ClientOrderId("EXTERNAL-BACKGROUND-001"),
+        )
+        stale_external_fill = TestEventStubs.order_filled(
+            stale_external_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL"),
+            last_qty=Quantity.from_int(2_666),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("EXTERNAL-BACKGROUND-1"),
+        )
+        stale_external_position = Position(instrument=AUDUSD_SIM, fill=stale_external_fill)
+        self.cache.add_position(stale_external_position, OmsType.NETTING)
+
+        report = PositionStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_566),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        query_calls: list[InstrumentId] = []
+
+        async def _query_and_find_missing_fills(instrument_id, _clients):
+            query_calls.append(instrument_id)
+            return []
+
+        async def _reconcile_missing_fills(_missing_fills, _instrument_id):
+            raise AssertionError("should not attempt missing-fill reconciliation for stale artifacts")
+
+        self.exec_engine._query_and_find_missing_fills = _query_and_find_missing_fills
+        self.exec_engine._reconcile_missing_fills = _reconcile_missing_fills
+
+        await self.exec_engine._process_cached_position_discrepancies(
+            positions_by_instrument={
+                AUDUSD_SIM.id: self.cache.positions_open(instrument_id=AUDUSD_SIM.id),
+            },
+            venue_positions={AUDUSD_SIM.id: report},
+        )
+
+        assert query_calls == []
+        assert self.cache.is_position_open(stale_external_position.id) is False
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(2_666)
+        ]
+        assert cleanup_orders
+
+    @pytest.mark.asyncio
     async def test_hedge_reconciliation_with_matching_quantities_succeeds(self):
         """
         Test that hedge mode reconciliation succeeds when quantities match.

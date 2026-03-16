@@ -24,6 +24,7 @@ from flux.strategies.makerv3 import managed_orders as managed_orders_mod
 from flux.strategies.makerv3 import market_data as market_data_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
 from flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
@@ -54,6 +55,7 @@ from flux.strategies.makerv3.constants import TOPIC_TRADE
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
 from flux.strategies.makerv3.wire import QuoteCycleContext
+from nautilus_trader.live.reconciliation import collapse_duplicate_netting_position_reports
 
 
 if TYPE_CHECKING:
@@ -183,7 +185,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         des_qty_local: NonNegativeFloat | None = None
         max_qty_local: NonNegativeFloat | None = None
         max_skew_bps_local: NonNegativeFloat | None = None
-        linear_offset_bps: NonNegativeFloat | None = None
+        linear_offset_bps: float | None = None
         max_age_ms: PositiveInt | None = None
         bid_edge1: float | None = None
         ask_edge1: float | None = None
@@ -1517,6 +1519,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             fallback_ts_ns: int = 0,
         ) -> dict[str, Any] | None:
+            relevant_reports: list[Any] = [
+                report
+                for report in list(reports or ())
+                if getattr(report, "instrument_id", None) == self.config.maker_instrument_id
+            ]
+            if not relevant_reports:
+                return None
+
+            relevant_reports, _collapse_events = collapse_duplicate_netting_position_reports(
+                relevant_reports,
+            )
+
             total = Decimal(0)
             avg_px_num = Decimal(0)
             avg_px_den = Decimal(0)
@@ -1524,9 +1538,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             position_id: str | None = None
             found = False
 
-            for report in list(reports or ()):
-                if getattr(report, "instrument_id", None) != self.config.maker_instrument_id:
-                    continue
+            for report in relevant_reports:
                 signed_qty = _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
                 if signed_qty is None:
                     signed_qty = _to_decimal_or_none(getattr(report, "signed_qty", None))
@@ -1599,14 +1611,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "ts_ns": max(0, int(ts_ns)),
             }
 
-        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+        def _maker_position_report_snapshot(self) -> dict[str, Any] | None:
             snapshot = getattr(self, "_latest_maker_position_report_snapshot", None)
             if not isinstance(snapshot, Mapping):
+                return None
+            return dict(snapshot)
+
+        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            snapshot = self._maker_position_report_snapshot()
+            if snapshot is None:
                 return None
             report_ts_ns = int(snapshot.get("ts_ns") or 0)
             local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
             if report_ts_ns > 0 and report_ts_ns >= local_activity_ns:
-                return dict(snapshot)
+                return snapshot
             return None
 
         def _handle_execution_report_message(self, message: Any) -> None:
@@ -1682,6 +1700,24 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return list(positions_open())
             return None
 
+        def _inventory_positions(self) -> list[Position] | None:
+            positions = self._open_positions()
+            if positions is None:
+                return None
+            cache = self._inventory_cache()
+            orders_for_position = getattr(cache, "orders_for_position", None)
+            snapshot = self._maker_position_report_snapshot()
+            expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+                snapshot,
+                instrument_id=self.config.maker_instrument_id,
+            )
+            return maker_reconciliation_mod.effective_maker_positions(
+                positions,
+                maker_instrument_id=self.config.maker_instrument_id,
+                expected_venue_qty=expected_qty,
+                order_lookup=orders_for_position if callable(orders_for_position) else None,
+            )
+
         def _inventory_base_exposure_last_px(self) -> Decimal | None:
             if self._last_fv is not None:
                 return self._last_fv
@@ -1701,7 +1737,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> inventory_mod.PositionExposureSummary:
             if not currency_code:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
-            positions = self._open_positions()
+            positions = self._inventory_positions()
             if positions is None:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
             cache = self._inventory_cache()

@@ -2,7 +2,12 @@
 Reconciliation functions for live trading.
 """
 
+from collections.abc import Callable
+from collections.abc import Iterable
+from collections.abc import Sequence
+from contextlib import suppress
 from decimal import Decimal
+from typing import Any
 
 from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
 from nautilus_trader.common.component import Logger
@@ -32,6 +37,198 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+
+
+def _stringify_identifier(value: Any) -> str:
+    if value is None:
+        return ""
+    to_str = getattr(value, "to_str", None)
+    if callable(to_str):
+        with suppress(Exception):
+            return str(to_str())
+    code = getattr(value, "code", None)
+    if code is not None:
+        return str(code)
+    return str(value)
+
+
+def _position_identifier(position: Any) -> Any:
+    position_id = getattr(position, "id", None)
+    if position_id is not None:
+        return position_id
+    return getattr(position, "position_id", None)
+
+
+def _report_signed_decimal_qty(report: Any) -> Decimal | None:
+    value = getattr(report, "signed_decimal_qty", None)
+    if value is None:
+        value = getattr(report, "signed_qty", None)
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    as_decimal = getattr(value, "as_decimal", None)
+    if callable(as_decimal):
+        with suppress(Exception):
+            value = as_decimal()
+    with suppress(Exception):
+        return Decimal(str(value))
+    return None
+
+
+def order_has_reconciliation_tag(order: Any) -> bool:
+    """
+    Return whether the order is explicitly tagged as reconciliation lineage.
+    """
+    tags = getattr(order, "tags", None)
+    if isinstance(tags, str):
+        return "RECONCILIATION" in tags.upper()
+    if isinstance(tags, Sequence):
+        return any(_stringify_identifier(tag).strip().upper() == "RECONCILIATION" for tag in tags)
+    return False
+
+
+def is_external_reconciliation_artifact_position(
+    position: Any,
+    *,
+    order_lookup: Callable[[Any], list[Any]] | None = None,
+) -> bool:
+    """
+    Return whether the position looks like a stale EXTERNAL reconciliation artifact.
+    """
+    strategy_id = _stringify_identifier(getattr(position, "strategy_id", None)).strip().upper()
+    if strategy_id != "EXTERNAL":
+        return False
+
+    if not callable(order_lookup):
+        return True
+
+    position_id = _position_identifier(position)
+    if position_id is None:
+        return True
+
+    with suppress(Exception):
+        orders = list(order_lookup(position_id) or [])
+        if not orders:
+            return True
+        return all(order_has_reconciliation_tag(order) for order in orders)
+
+    return True
+
+
+def filter_external_reconciliation_artifacts(
+    positions: Iterable[Any],
+    *,
+    group_key: Callable[[Any], Any] | None = None,
+    order_lookup: Callable[[Any], list[Any]] | None = None,
+) -> list[Any]:
+    """
+    Drop stale EXTERNAL reconciliation artifacts when a non-artifact position exists in
+    the same logical position group.
+    """
+    positions_list = list(positions)
+    if not positions_list:
+        return positions_list
+
+    if group_key is None:
+        group_key = lambda position: getattr(position, "instrument_id", None)
+
+    grouped_positions: dict[Any, list[Any]] = {}
+    ordered_group_keys: list[Any] = []
+    for position in positions_list:
+        key = group_key(position)
+        if key not in grouped_positions:
+            grouped_positions[key] = []
+            ordered_group_keys.append(key)
+        grouped_positions[key].append(position)
+
+    filtered: list[Any] = []
+    for key in ordered_group_keys:
+        group_positions = grouped_positions[key]
+        artifact_positions = [
+            position
+            for position in group_positions
+            if is_external_reconciliation_artifact_position(
+                position,
+                order_lookup=order_lookup,
+            )
+        ]
+        if not artifact_positions:
+            filtered.extend(group_positions)
+            continue
+
+        artifact_object_ids = {id(position) for position in artifact_positions}
+        non_artifact_positions = [
+            position for position in group_positions if id(position) not in artifact_object_ids
+        ]
+        if non_artifact_positions:
+            filtered.extend(non_artifact_positions)
+            continue
+
+        filtered.extend(group_positions)
+
+    return filtered
+
+
+def collapse_duplicate_netting_position_reports(
+    reports: Sequence[Any],
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    """
+    Collapse duplicate netting position reports when the venue omits position IDs.
+    """
+    reports_list = list(reports)
+    if len(reports_list) <= 1:
+        return reports_list, []
+
+    grouped_reports: dict[Any, list[Any]] = {}
+    ordered_instrument_ids: list[Any] = []
+    for report in reports_list:
+        instrument_id = getattr(report, "instrument_id", None)
+        if instrument_id not in grouped_reports:
+            grouped_reports[instrument_id] = []
+            ordered_instrument_ids.append(instrument_id)
+        grouped_reports[instrument_id].append(report)
+
+    collapsed_reports: list[Any] = []
+    collapse_events: list[dict[str, Any]] = []
+    for instrument_id in ordered_instrument_ids:
+        instrument_reports = grouped_reports[instrument_id]
+        if len(instrument_reports) == 1 or any(
+            getattr(report, "venue_position_id", None) is not None
+            or getattr(report, "position_id", None) is not None
+            for report in instrument_reports
+        ):
+            collapsed_reports.extend(instrument_reports)
+            continue
+
+        candidate_reports = [
+            report
+            for report in instrument_reports
+            if (_report_signed_decimal_qty(report) or Decimal(0)) != 0
+        ]
+        if not candidate_reports:
+            candidate_reports = instrument_reports
+
+        selected = max(
+            candidate_reports,
+            key=lambda report: (
+                int(getattr(report, "ts_last", 0) or 0),
+                int(getattr(report, "ts_init", 0) or 0),
+                abs(_report_signed_decimal_qty(report) or Decimal(0)),
+            ),
+        )
+        collapsed_reports.append(selected)
+        collapse_events.append(
+            {
+                "instrument_id": instrument_id,
+                "report_count": len(instrument_reports),
+                "selected_ts_last": int(getattr(selected, "ts_last", 0) or 0),
+                "selected_signed_qty": _report_signed_decimal_qty(selected) or Decimal(0),
+                "discarded_flat_duplicates": len(candidate_reports) != len(instrument_reports),
+            },
+        )
+
+    return collapsed_reports, collapse_events
 
 
 def is_within_single_unit_tolerance(

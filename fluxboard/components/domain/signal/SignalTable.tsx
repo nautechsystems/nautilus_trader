@@ -666,7 +666,9 @@ function formatRatio(value?: number | null): string {
 function computeInventorySkewBps(adj?: InventorySkewAdjustment): number | undefined {
   if (!adj) return undefined;
 
-  // Canonical signed skew from backend (preferred).
+  // Canonical signed skew from backend (preferred). Signal should mirror the
+  // strategy-exported signed quote shift instead of re-deriving direction when
+  // this field is present.
   const signedSkew = coerceFiniteNumber(adj.skew_bps_signed);
   if (signedSkew !== undefined) return signedSkew;
 
@@ -695,9 +697,10 @@ function computeInventorySkewBps(adj?: InventorySkewAdjustment): number | undefi
   //   skew_bps < 0 => quotes shift down (buy lower, sell lower)
   //   skew_bps > 0 => quotes shift up (buy higher, sell higher)
   //
-  // We care about directional shift (translation), not widening/narrowing.
-  // Translation is the midpoint move across both legs, i.e. average delta.
-  return (deltaAsk + deltaBid) / 2;
+  // Edge deltas are not price deltas: moving quotes up reduces bid edge and
+  // increases ask edge by the same amount. Recover the signed translation from
+  // the edge-space change instead of averaging the deltas.
+  return (deltaAsk - deltaBid) / 2;
 }
 
 function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null {
@@ -1258,32 +1261,40 @@ function resolveDisplayedLegMid(leg: SignalLeg | null | undefined): number | nul
 }
 
 function resolveVisibleStrategyMarketMid(row: SignalStrategy): number | null {
-  const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'A'));
-  if (displayedMid != null) return displayedMid;
-
   const quoteSnapshot = resolveQuoteSnapshot(row) as any;
-  if (!quoteSnapshot) return null;
+  if (quoteSnapshot) {
+    const quotedMid = midpointFromValues(
+      quoteSnapshot.place_bid,
+      quoteSnapshot.place_ask,
+    );
+    if (quotedMid != null) return quotedMid;
 
-  return midpointFromValues(
-    quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid ?? quoteSnapshot.place_bid,
-    quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask ?? quoteSnapshot.place_ask
-  );
+    const snapshotMid = midpointFromValues(
+      quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid,
+      quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask,
+    );
+    if (snapshotMid != null) return snapshotMid;
+  }
+
+  return resolveDisplayedLegMid(resolveDisplayedLeg(row, 'A'));
 }
 
 function resolveVisibleStrategyFvMid(row: SignalStrategy): number | null {
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  if (quoteSnapshot) {
+    const snapshotMid = midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask);
+    if (snapshotMid != null) return snapshotMid;
+  }
+
   const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'B'));
   if (displayedMid != null) return displayedMid;
-
-  const quoteSnapshot = resolveQuoteSnapshot(row);
-  const snapshotMid = quoteSnapshot
-    ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
-    : null;
-  if (snapshotMid != null) return snapshotMid;
 
   return coerceFiniteNumber((row as any).fv_row?.fv) ?? null;
 }
 
 function spreadMarketVsFvBps(row: SignalStrategy): number | null {
+  // Operator-facing spread should use the same maker quote snapshot truth that
+  // powers the visible "Our" / "Ref" rows, not a mixed live-leg view.
   const marketMid = resolveVisibleStrategyMarketMid(row);
   const fvMid = resolveVisibleStrategyFvMid(row);
   if (marketMid == null || fvMid == null || !Number.isFinite(fvMid) || fvMid === 0) return null;
@@ -2631,27 +2642,37 @@ export default function SignalTable({
         enableSorting: true,
         cell: ({ row }) => {
           const spreadBps = row.original._spreadNet;
+          const quoteSnapshot = resolveQuoteSnapshot(row.original);
           const marketMid = resolveVisibleStrategyMarketMid(row.original);
           const fvMid = resolveVisibleStrategyFvMid(row.original);
+          const snapshotMarketMid = quoteSnapshot
+            ? midpointFromValues(quoteSnapshot.place_bid, quoteSnapshot.place_ask)
+            : null;
           const displayedFvMid = resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'B'));
-          const quoteSnapshot = resolveQuoteSnapshot(row.original);
           const snapshotFvMid = quoteSnapshot
             ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
             : null;
+          const marketSource = snapshotMarketMid != null
+            ? 'quote snapshot place'
+            : resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'A')) != null
+              ? 'visible maker market'
+              : '—';
           const explicitFv = coerceFiniteNumber((row.original as any).fv_row?.fv);
-          const fvSource = displayedFvMid != null
-            ? 'visible ref market'
-            : snapshotFvMid != null
-              ? 'quote snapshot ref'
+          const fvSource = snapshotFvMid != null
+            ? 'quote snapshot ref'
+            : displayedFvMid != null
+              ? 'visible ref market'
               : explicitFv != null
                 ? 'fv_row.fv'
                 : '—';
+          const resolvedMarketMid = snapshotMarketMid ?? marketMid;
+          const resolvedFvMid = snapshotFvMid ?? fvMid;
           const requiredEdge = coerceFiniteNumber(row.original.required_edge_bps);
           const spreadText = spreadBps != null && Number.isFinite(spreadBps) ? `${formatBps(spreadBps)} bps` : '—';
           const tooltip = [
             'Market vs FV midpoint spread',
-            `Strategy mid: ${marketMid != null ? fmtPriceTooltip(marketMid) : '—'}`,
-            `FV mid: ${fvMid != null ? fmtPriceTooltip(fvMid) : '—'} (${fvSource})`,
+            `Strategy mid: ${resolvedMarketMid != null ? fmtPriceTooltip(resolvedMarketMid) : '—'} (${marketSource})`,
+            `FV mid: ${resolvedFvMid != null ? fmtPriceTooltip(resolvedFvMid) : '—'} (${fvSource})`,
             `Spread: ${spreadText}`,
             '',
             `Required edge: ${requiredEdge != null ? `${requiredEdge.toFixed(1)} bps` : '—'}`,

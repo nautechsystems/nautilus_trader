@@ -411,8 +411,8 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         name="linear_offset_bps",
         schema_type="number",
         default=0.0,
-        description="Linear inventory offset in bps.",
-        minimum=0.0,
+        description="Signed maker quote shift in bps (+ moves quotes up, - moves quotes down).",
+        minimum=-5_000.0,
         maximum=5_000.0,
     ),
     RuntimeParamSpec(

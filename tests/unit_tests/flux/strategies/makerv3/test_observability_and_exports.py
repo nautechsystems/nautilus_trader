@@ -1027,6 +1027,262 @@ def test_publish_balances_does_not_fallback_to_cache_when_fresh_flat_position_re
     assert balances_payload["positions"] == []
 
 
+def test_publish_balances_cache_fallback_ignores_stale_external_reconciliation_artifact(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BITGET")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+        quote_currency=SimpleNamespace(code="USDT"),
+        settlement_currency=SimpleNamespace(code="USDT"),
+        is_inverse=False,
+        multiplier=Quantity.from_str("1"),
+        info={"base_exposure_mode": "identity"},
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        make_price=lambda value: value,
+        calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal(),
+    )
+    owned_position = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-250030"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        position_id="P-OWNED",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-250030",
+            "quantity": "250030",
+            "side": "SHORT",
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "position_id": "P-OWNED",
+        },
+    )
+    stale_external_position = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-250030"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="EXTERNAL",
+        position_id="P-EXTERNAL",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-250030",
+            "quantity": "250030",
+            "side": "SHORT",
+            "strategy_id": "EXTERNAL",
+            "position_id": "P-EXTERNAL",
+        },
+    )
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            [owned_position, stale_external_position]
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        orders_for_position=lambda _position_id: [],
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._latest_maker_position_report_snapshot = {
+        "instrument_id": maker_instrument_id,
+        "signed_qty": Decimal("-250030"),
+        "ts_ns": 200,
+    }
+    strategy._last_maker_position_activity_ns = 300
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert len(balances_payload["positions"]) == 1
+    assert balances_payload["positions"][0]["position_id"] == "P-OWNED"
+    assert balances_payload["positions"][0]["signed_qty"] == "-250030"
+
+    rows = build_balances_rows(raw_snapshot=balances_payload, strategy_id=strategy._external_strategy_id)
+    position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
+    assert position_rows == []
+
+
+def test_publish_balances_cache_fallback_keeps_partial_external_reconciliation_fragment_when_owned_qty_does_not_match_snapshot(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BITGET")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+        quote_currency=SimpleNamespace(code="USDT"),
+        settlement_currency=SimpleNamespace(code="USDT"),
+        is_inverse=False,
+        multiplier=Quantity.from_str("1"),
+        info={"base_exposure_mode": "identity"},
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        make_price=lambda value: value,
+        calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal(),
+    )
+    owned_position = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-100"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        position_id="P-OWNED",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-100",
+            "quantity": "100",
+            "side": "SHORT",
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "position_id": "P-OWNED",
+        },
+    )
+    external_fragment = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-50"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="EXTERNAL",
+        position_id="P-EXTERNAL",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-50",
+            "quantity": "50",
+            "side": "SHORT",
+            "strategy_id": "EXTERNAL",
+            "position_id": "P-EXTERNAL",
+        },
+    )
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            [owned_position, external_fragment]
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        orders_for_position=lambda _position_id: [],
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._latest_maker_position_report_snapshot = {
+        "instrument_id": maker_instrument_id,
+        "signed_qty": Decimal("-150"),
+        "ts_ns": 200,
+    }
+    strategy._last_maker_position_activity_ns = 300
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert len(balances_payload["positions"]) == 2
+    signed_qtys = sorted(position["signed_qty"] for position in balances_payload["positions"])
+    assert signed_qtys == ["-100", "-50"]
+
+
+def test_publish_balances_cache_fallback_keeps_external_position_with_non_reconciliation_lineage(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BITGET")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+        quote_currency=SimpleNamespace(code="USDT"),
+        settlement_currency=SimpleNamespace(code="USDT"),
+        is_inverse=False,
+        multiplier=Quantity.from_str("1"),
+        info={"base_exposure_mode": "identity"},
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        make_price=lambda value: value,
+        calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal(),
+    )
+    owned_position = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-250030"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        position_id="P-OWNED",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-250030",
+            "quantity": "250030",
+            "side": "SHORT",
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "position_id": "P-OWNED",
+        },
+    )
+    external_position = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_qty=Decimal("-250030"),
+        avg_px_open=Decimal("0.0109378"),
+        strategy_id="EXTERNAL",
+        position_id="P-EXTERNAL",
+        to_dict=lambda: {
+            "kind": "position",
+            "instrument_id": str(maker_instrument_id),
+            "signed_qty": "-250030",
+            "quantity": "250030",
+            "side": "SHORT",
+            "strategy_id": "EXTERNAL",
+            "position_id": "P-EXTERNAL",
+        },
+    )
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            [owned_position, external_position]
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        orders_for_position=lambda position_id: (
+            [SimpleNamespace(tags=["VENUE"])] if position_id == "P-EXTERNAL" else []
+        ),
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._latest_maker_position_report_snapshot = {
+        "instrument_id": maker_instrument_id,
+        "signed_qty": Decimal("-250030"),
+        "ts_ns": 200,
+    }
+    strategy._last_maker_position_activity_ns = 300
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert len(balances_payload["positions"]) == 2
+
+
 def test_publish_balances_converts_okx_venue_report_to_base_once(
     clocked_strategy_factory,
 ) -> None:

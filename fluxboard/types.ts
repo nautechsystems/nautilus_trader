@@ -618,6 +618,7 @@ export type SignalTrade = {
 
 export type PricingAdjustment = {
   type: 'inventory_skew' | string;
+  skew_bps_signed?: number;
   inv_ratio?: number;
   inv_skew?: number;
   inv_ratio_global?: number;

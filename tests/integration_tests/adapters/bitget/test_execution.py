@@ -1255,6 +1255,128 @@ def test_handle_positions_channel_uta_resolves_symbol_to_futures_instrument() ->
     assert report.ts_last == millis_to_nanos(1708883200123)
 
 
+def test_handle_positions_channel_uta_preserves_base_coin_position_quantity() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+
+    def _make_qty(value, round_down=True):
+        del round_down
+        return Quantity.from_str(str(value))
+
+    futures_instrument = SimpleNamespace(
+        id="PLUMEUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
+        size_precision=4,
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
+        base_currency="PLUME",
+        quote_currency="USDT",
+        settlement_currency="USDT",
+        is_inverse=False,
+        make_qty=_make_qty,
+    )
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: ["PLUMEUSDT-PERP.BITGET"],
+            instrument=lambda _instrument_id: futures_instrument,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda _instrument_id: futures_instrument),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "PLUMEUSDT",
+                    "instId": "",
+                    "posId": "p-uta-plume-1",
+                    "posSide": "short",
+                    "total": "250030",
+                    "avgPrice": "0.01192",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.SHORT
+    assert report.quantity == Quantity.from_str("250030")
+    assert report.avg_px_open == Decimal("0.01192")
+    assert report.venue_position_id == PositionId("p-uta-plume-1")
+
+
+def test_build_position_status_report_uta_preserves_base_coin_position_quantity() -> None:
+    def _make_qty(value, round_down=True):
+        del round_down
+        return Quantity.from_str(str(value))
+
+    futures_instrument = SimpleNamespace(
+        id="PLUMEUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
+        size_precision=4,
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
+        base_currency="PLUME",
+        quote_currency="USDT",
+        settlement_currency="USDT",
+        is_inverse=False,
+        make_qty=_make_qty,
+    )
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: ["PLUMEUSDT-PERP.BITGET"],
+            instrument=lambda _instrument_id: futures_instrument,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda _instrument_id: futures_instrument),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    report = BitgetExecutionClient._build_position_status_report(  # type: ignore[arg-type]
+        dummy,
+        {
+            "symbol": "PLUMEUSDT",
+            "posId": "p-uta-plume-1",
+            "posSide": "short",
+            "total": "250030",
+            "avgPrice": "0.01192",
+            "uTime": "1708883200123",
+        },
+        "USDT-FUTURES",
+        instrument=futures_instrument,
+    )
+
+    assert report is not None
+    assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.SHORT
+    assert report.quantity == Quantity.from_str("250030")
+    assert report.avg_px_open == Decimal("0.01192")
+    assert report.venue_position_id == PositionId("p-uta-plume-1")
+    assert report.ts_last == millis_to_nanos(1708883200123)
+
+
 def test_handle_positions_channel_uta_sends_flat_position_status_report() -> None:
     reports: list[object] = []
     warnings: list[str] = []

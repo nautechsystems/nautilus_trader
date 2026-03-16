@@ -57,7 +57,9 @@ from nautilus_trader.live.reconciliation import create_order_filled_event
 from nautilus_trader.live.reconciliation import create_order_rejected_event
 from nautilus_trader.live.reconciliation import create_order_triggered_event
 from nautilus_trader.live.reconciliation import create_order_updated_event
+from nautilus_trader.live.reconciliation import collapse_duplicate_netting_position_reports
 from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
+from nautilus_trader.live.reconciliation import is_external_reconciliation_artifact_position
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import OrderSide
@@ -1087,6 +1089,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
         for instrument_id, cached_positions in positions_by_instrument.items():
             venue_report = venue_positions.get(instrument_id)
+            venue_qty = venue_report.signed_decimal_qty if venue_report is not None else None
+            _, artifact_positions, effective_qty, raw_qty = self._effective_netting_positions_for_venue_qty(
+                positions_open=cached_positions,
+                instrument_id=instrument_id,
+                venue_qty=venue_qty,
+            )
 
             has_discrepancy = self._check_position_discrepancy(
                 cached_positions,
@@ -1094,7 +1102,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 instrument_id,
             )
 
-            if not has_discrepancy:
+            if not has_discrepancy and not artifact_positions:
                 self._position_recon_retries.pop(instrument_id, None)
                 continue
 
@@ -1112,8 +1120,33 @@ class LiveExecutionEngine(ExecutionEngine):
             if retries >= self.position_check_retries:
                 continue
 
+            if artifact_positions and venue_report is not None:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is not None and self._cleanup_stale_external_reconciliation_positions(
+                    report=venue_report,
+                    instrument=instrument,
+                    artifact_positions=artifact_positions,
+                    raw_qty=raw_qty,
+                    effective_qty=effective_qty,
+                ):
+                    self._position_recon_retries.pop(instrument_id, None)
+                    continue
+
+                self._position_recon_retries[instrument_id] = retries + 1
+                if retries + 1 >= self.position_check_retries:
+                    self._log.error(
+                        f"Failed to clean stale EXTERNAL reconciliation artifacts for "
+                        f"{instrument_id} after {self.position_check_retries} attempts "
+                        f"(raw_qty={raw_qty}, effective_qty={effective_qty}, venue_qty={venue_qty})",
+                    )
+                continue
+
+            if not has_discrepancy:
+                self._position_recon_retries.pop(instrument_id, None)
+                continue
+
             cached_qty = sum(p.signed_decimal_qty() for p in cached_positions)
-            venue_qty = venue_report.signed_decimal_qty if venue_report else Decimal(0)
+            venue_qty = venue_qty if venue_qty is not None else Decimal(0)
 
             self._log.warning(
                 f"Position discrepancy detected for {instrument_id}: "
@@ -2009,49 +2042,15 @@ class LiveExecutionEngine(ExecutionEngine):
         reports: list[PositionStatusReport],
         log_prefix: str,
     ) -> list[PositionStatusReport]:
-        if len(reports) <= 1:
-            return reports
-
-        grouped_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
-        ordered_instrument_ids: list[InstrumentId] = []
-        for report in reports:
-            if report.instrument_id not in grouped_reports:
-                grouped_reports[report.instrument_id] = []
-                ordered_instrument_ids.append(report.instrument_id)
-            grouped_reports[report.instrument_id].append(report)
-
-        collapsed_reports: list[PositionStatusReport] = []
-        for instrument_id in ordered_instrument_ids:
-            instrument_reports = grouped_reports[instrument_id]
-            if len(instrument_reports) == 1 or any(
-                report.venue_position_id is not None for report in instrument_reports
-            ):
-                collapsed_reports.extend(instrument_reports)
-                continue
-
-            candidate_reports = [
-                report for report in instrument_reports if report.signed_decimal_qty != 0
-            ]
-            if not candidate_reports:
-                candidate_reports = instrument_reports
-
-            selected = max(
-                candidate_reports,
-                key=lambda report: (
-                    report.ts_last,
-                    report.ts_init,
-                    abs(report.signed_decimal_qty),
-                ),
-            )
+        collapsed_reports, collapse_events = collapse_duplicate_netting_position_reports(reports)
+        for collapse_event in collapse_events:
             self._log.info(
-                f"{log_prefix}: collapsed {len(instrument_reports)} netting PositionStatusReports for "
-                f"{instrument_id} to ts_last={selected.ts_last}, "
-                f"signed_qty={selected.signed_decimal_qty}, "
-                f"discarded_flat_duplicates={len(candidate_reports) != len(instrument_reports)}",
+                f"{log_prefix}: collapsed {collapse_event['report_count']} netting PositionStatusReports for "
+                f"{collapse_event['instrument_id']} to ts_last={collapse_event['selected_ts_last']}, "
+                f"signed_qty={collapse_event['selected_signed_qty']}, "
+                f"discarded_flat_duplicates={collapse_event['discarded_flat_duplicates']}",
                 LogColor.BLUE,
             )
-            collapsed_reports.append(selected)
-
         return collapsed_reports
 
     async def reconcile_execution_state(
@@ -2941,16 +2940,6 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return total_value / total_qty
 
-    def _is_external_reconciliation_artifact_position(self, position: Position) -> bool:
-        if position.strategy_id.value != "EXTERNAL":
-            return False
-
-        orders = self._cache.orders_for_position(position.id)
-        if not orders:
-            return True
-
-        return all(order.tags is not None and "RECONCILIATION" in order.tags for order in orders)
-
     def _effective_netting_positions_for_venue_qty(
         self,
         positions_open: list[Position],
@@ -2965,7 +2954,10 @@ class LiveExecutionEngine(ExecutionEngine):
         effective_positions: list[Position] = []
         artifact_positions: list[Position] = []
         for position in positions_open:
-            if self._is_external_reconciliation_artifact_position(position):
+            if is_external_reconciliation_artifact_position(
+                position,
+                order_lookup=self._cache.orders_for_position,
+            ):
                 artifact_positions.append(position)
             else:
                 effective_positions.append(position)
@@ -4525,14 +4517,13 @@ class LiveExecutionEngine(ExecutionEngine):
             if event.due_post_only:
                 return
             if self._is_financial_reject_reason(reason):
-                self._publish_execution_alert(
-                    self._build_execution_alert_payload(
-                        event=event,
-                        strategy_id=strategy_id,
-                        alert_key="exchange_order_rejected_insufficient_margin",
-                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
-                        reason=event.reason,
-                    ),
+                self._publish_execution_alert_with_cooldown(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_rejected_insufficient_margin",
+                    message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                    cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
                 )
             elif self._is_terminal_reject_reason(reason):
                 self._publish_execution_alert_with_cooldown(
@@ -4572,14 +4563,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
         if isinstance(event, OrderModifyRejected):
             if self._is_financial_reject_reason(reason):
-                self._publish_execution_alert(
-                    self._build_execution_alert_payload(
-                        event=event,
-                        strategy_id=strategy_id,
-                        alert_key="exchange_order_modify_rejected_insufficient_margin",
-                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
-                        reason=event.reason,
-                    ),
+                self._publish_execution_alert_with_cooldown(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_modify_rejected_insufficient_margin",
+                    message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                    cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
                 )
             else:
                 self._publish_execution_alert(

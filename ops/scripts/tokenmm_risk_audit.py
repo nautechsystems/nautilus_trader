@@ -282,14 +282,18 @@ def _strategy_local_qty_from_rows(
         sources: list[str] = []
         if component_local_position_qty is not None:
             if position_total is None:
-                return None, position_source
-            total += position_total
-            sources.append(position_source)
+                total += component_local_position_qty
+                sources.append("component_local_position_qty")
+            else:
+                total += position_total
+                sources.append(position_source)
         if component_local_spot_qty is not None:
             if spot_total is None:
-                return None, spot_source
-            total += spot_total
-            sources.append(spot_source)
+                total += component_local_spot_qty
+                sources.append("component_local_spot_qty")
+            else:
+                total += spot_total
+                sources.append(spot_source)
         return total, "+".join(sources) or "component_rows"
 
     if position_total is not None:
@@ -335,7 +339,13 @@ def _profile_components_by_strategy(
 
 
 def _strategy_balances_path(strategy_id: str) -> str:
-    return f"{STRATEGY_BALANCES_PATH_PREFIX}{quote(strategy_id, safe='')}"
+    return f"{STRATEGY_BALANCES_PATH_PREFIX}{quote(strategy_id, safe='')}&limit=5000"
+
+
+def _component_is_missing_optional(component: Mapping[str, Any] | None) -> bool:
+    if not isinstance(component, Mapping):
+        return False
+    return bool(component.get("missing")) and not bool(component.get("required"))
 
 
 def _append_error(errors: list[str], message: str) -> None:
@@ -478,6 +488,11 @@ def main(argv: list[str] | None = None) -> int:
                     errors,
                     f"{strategy_id}: profile component local_qty_base={component_local_qty} does not match signal local_qty_base={signal_row.local_qty_base}",
                 )
+            if _component_is_missing_optional(component) and signal_row.local_qty_base is None:
+                strategy_summaries.append(
+                    f"{strategy_id}: local_qty=<missing_optional_component> global_qty={signal_row.global_qty_base} aggregation={signal_row.aggregation_mode or '<missing>'}",
+                )
+                continue
 
         if signal_row.global_qty_base != profile_global_qty:
             _append_error(

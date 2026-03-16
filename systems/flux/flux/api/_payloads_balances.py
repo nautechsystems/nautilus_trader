@@ -393,9 +393,10 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
             for index, position in enumerate(positions):
                 if not isinstance(position, dict):
                     continue
+                position_sid = strategy_id_from_row(position, sid)
                 flattened_row = {
                     **position,
-                    "strategy_id": sid,
+                    "strategy_id": position_sid,
                     "row_id": f"{sid}:posraw:{index}",
                 }
                 flattened_row.setdefault("kind", "position")
