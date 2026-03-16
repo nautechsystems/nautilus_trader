@@ -77,11 +77,30 @@ pub fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 #[derive(Clone, Default)]
 pub struct MockState {
     pub login_count: Arc<AtomicUsize>,
+    pub keep_alive_count: Arc<AtomicUsize>,
+    pub betting_request_count: Arc<AtomicUsize>,
     pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub betting_methods: Arc<Mutex<Vec<String>>>,
+    pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub login_response_override: Arc<Mutex<Option<String>>>,
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     state.login_count.fetch_add(1, Ordering::Relaxed);
+    let body = state
+        .login_response_override
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| load_fixture("rest/login_success.json"));
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+}
+
+async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse {
+    state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
     let body = load_fixture("rest/login_success.json");
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -98,9 +117,18 @@ async fn handle_navigation() -> impl IntoResponse {
 }
 
 async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
+    state.betting_request_count.fetch_add(1, Ordering::Relaxed);
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
+
+    if !method.is_empty() {
+        state
+            .betting_methods
+            .lock()
+            .unwrap()
+            .push(method.to_string());
+    }
 
     let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
 
@@ -117,6 +145,16 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl Int
                 let v: Value = serde_json::from_str(&fixture).unwrap();
                 v["result"].clone()
             }
+            "SportsAPING/v1.0/cancelOrders" => {
+                let fixture = load_fixture("rest/betting_cancel_orders_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
+            "SportsAPING/v1.0/replaceOrders" => {
+                let fixture = load_fixture("rest/betting_replace_orders_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
             _ => serde_json::json!(null),
         }
     };
@@ -129,13 +167,25 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl Int
     axum::Json(response)
 }
 
-async fn handle_accounts(body: Bytes) -> impl IntoResponse {
+async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
+    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let fixture = load_fixture("rest/account_funds_no_exposure.json");
-    let v: Value = serde_json::from_str(&fixture).unwrap();
-    let result = v["result"].clone();
+    let override_result = state
+        .accounts_overrides
+        .lock()
+        .unwrap()
+        .get(method)
+        .cloned();
+
+    let result = if let Some(value) = override_result {
+        value
+    } else {
+        let fixture = load_fixture("rest/account_funds_no_exposure.json");
+        let v: Value = serde_json::from_str(&fixture).unwrap();
+        v["result"].clone()
+    };
 
     let response = serde_json::json!({
         "jsonrpc": "2.0",
@@ -150,6 +200,7 @@ pub async fn start_mock_http() -> (SocketAddr, MockState) {
 
     let router = Router::new()
         .route("/login", post(handle_login))
+        .route("/keepAlive", post(handle_keep_alive))
         .route("/betting", post(handle_betting))
         .route("/accounts", post(handle_accounts))
         .route("/navigation", get(handle_navigation))
