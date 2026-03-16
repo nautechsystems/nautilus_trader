@@ -1326,6 +1326,121 @@ def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows
     assert float(secondary["pricing_adjustments"][0]["local_qty_base"]) == pytest.approx(1234.0)
 
 
+def test_signals_profile_tokenmm_backfills_missing_local_qty_from_stale_component_inventory(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "global_qty_base": "999",
+                },
+            ],
+        },
+    )
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(primary_keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        primary_keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "-317104.54289229",
+                "global_qty": "-317104.54289229",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": [],
+                "stale_required": [flux_config.identity.strategy_id],
+                "null_qty_required": [],
+                "degraded": True,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "87589",
+                        "local_qty": "87589",
+                        "local_position_qty_base": "87589",
+                        "local_position_qty_venue": "87589",
+                        "qty_conversion_status": "identity",
+                        "qty_conversion_source": "generic:multiplier=1",
+                        "ts_ms": 119_500,
+                        "state": "bot_off",
+                        "stale": True,
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "87589",
+                    "local_qty": "87589",
+                    "local_position_qty_base": "87589",
+                    "local_position_qty_venue": "87589",
+                    "qty_conversion_status": "identity",
+                    "qty_conversion_source": "generic:multiplier=1",
+                    "ts_ms": 119_500,
+                    "state": "bot_off",
+                    "stale": True,
+                },
+            ],
+            "balances": {"rows": [], "totals": {"mv_raw": 0.0, "mv_display": "$0.00"}},
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["local_qty_base"] == pytest.approx(87589.0)
+    assert row["position_qty_base"] == pytest.approx(87589.0)
+    assert row["position_qty_venue"] == pytest.approx(87589.0)
+    assert row["qty_conversion_status"] == "identity"
+    assert row["qty_conversion_source"] == "generic:multiplier=1"
+    assert row["pricing_adjustments"][0]["local_qty_base"] == pytest.approx(87589.0)
+
+
 def test_trades_profile_tokenmm_fans_out_allowlisted_strategies_in_global_time_order(
     flux_config,
     redis_client,

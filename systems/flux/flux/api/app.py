@@ -720,7 +720,7 @@ class FluxApiStore:
             if aggregation_mode is not None:
                 inventory_adjustment["aggregation_mode"] = aggregation_mode
 
-            if component_inventory_fresh and isinstance(component_payload, Mapping):
+            if isinstance(component_payload, Mapping):
                 local_qty_base = safe_float(
                     component_payload.get("local_qty_base") or component_payload.get("local_qty"),
                 )
@@ -734,16 +734,39 @@ class FluxApiStore:
                 qty_conversion_source = (
                     decode_text(component_payload.get("qty_conversion_source")).strip() or None
                 )
-                if local_qty_base is not None:
+                existing_local_qty_base = safe_float(
+                    inventory_adjustment.get("local_qty_base") or inventory_adjustment.get("local_qty"),
+                )
+                existing_position_qty_base = safe_float(inventory_adjustment.get("position_qty_base"))
+                existing_position_qty_venue = safe_float(
+                    inventory_adjustment.get("position_qty_venue"),
+                )
+                existing_qty_conversion_status = (
+                    decode_text(inventory_adjustment.get("qty_conversion_status")).strip() or None
+                )
+                existing_qty_conversion_source = (
+                    decode_text(inventory_adjustment.get("qty_conversion_source")).strip() or None
+                )
+                if local_qty_base is not None and (
+                    component_inventory_fresh or existing_local_qty_base is None
+                ):
                     inventory_adjustment["local_qty_base"] = local_qty_base
                     inventory_adjustment["local_qty"] = local_qty_base
-                if local_position_qty_base is not None:
+                if local_position_qty_base is not None and (
+                    component_inventory_fresh or existing_position_qty_base is None
+                ):
                     inventory_adjustment["position_qty_base"] = local_position_qty_base
-                if local_position_qty_venue is not None:
+                if local_position_qty_venue is not None and (
+                    component_inventory_fresh or existing_position_qty_venue is None
+                ):
                     inventory_adjustment["position_qty_venue"] = local_position_qty_venue
-                if qty_conversion_status is not None:
+                if qty_conversion_status is not None and (
+                    component_inventory_fresh or existing_qty_conversion_status is None
+                ):
                     inventory_adjustment["qty_conversion_status"] = qty_conversion_status
-                if qty_conversion_source is not None:
+                if qty_conversion_source is not None and (
+                    component_inventory_fresh or existing_qty_conversion_source is None
+                ):
                     inventory_adjustment["qty_conversion_source"] = qty_conversion_source
 
             pricing_adjustments[inventory_adjustment_index] = inventory_adjustment
@@ -757,7 +780,7 @@ class FluxApiStore:
         if aggregation_mode is not None:
             payload["aggregation_mode"] = aggregation_mode
 
-        if component_inventory_fresh and isinstance(component_payload, Mapping):
+        if isinstance(component_payload, Mapping):
             local_qty_base = safe_float(
                 component_payload.get("local_qty_base") or component_payload.get("local_qty"),
             )
@@ -769,16 +792,35 @@ class FluxApiStore:
             qty_conversion_source = (
                 decode_text(component_payload.get("qty_conversion_source")).strip() or None
             )
-            if local_qty_base is not None:
+            existing_local_qty_base = safe_float(payload.get("local_qty_base") or payload.get("local_qty"))
+            existing_position_qty_base = safe_float(payload.get("position_qty_base"))
+            existing_position_qty_venue = safe_float(payload.get("position_qty_venue"))
+            existing_qty_conversion_status = (
+                decode_text(payload.get("qty_conversion_status")).strip() or None
+            )
+            existing_qty_conversion_source = (
+                decode_text(payload.get("qty_conversion_source")).strip() or None
+            )
+            if local_qty_base is not None and (
+                component_inventory_fresh or existing_local_qty_base is None
+            ):
                 payload["local_qty_base"] = local_qty_base
                 payload["local_qty"] = local_qty_base
-            if local_position_qty_base is not None:
+            if local_position_qty_base is not None and (
+                component_inventory_fresh or existing_position_qty_base is None
+            ):
                 payload["position_qty_base"] = local_position_qty_base
-            if local_position_qty_venue is not None:
+            if local_position_qty_venue is not None and (
+                component_inventory_fresh or existing_position_qty_venue is None
+            ):
                 payload["position_qty_venue"] = local_position_qty_venue
-            if qty_conversion_status is not None:
+            if qty_conversion_status is not None and (
+                component_inventory_fresh or existing_qty_conversion_status is None
+            ):
                 payload["qty_conversion_status"] = qty_conversion_status
-            if qty_conversion_source is not None:
+            if qty_conversion_source is not None and (
+                component_inventory_fresh or existing_qty_conversion_source is None
+            ):
                 payload["qty_conversion_source"] = qty_conversion_source
 
     def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:

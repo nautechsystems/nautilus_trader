@@ -6,6 +6,7 @@ from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
+from typing import cast
 
 from ._payloads_common import ContractCatalogEntry
 from ._payloads_common import StrategyMetadata
@@ -1105,6 +1106,11 @@ def build_signals_payload_impl(
         tradeable = False
         blocked = True
 
+    top_level_ts_ms = _top_level_signal_ts_ms(
+        state=state,
+        quote_snapshot=quote_snapshot,
+        fallback_ts_ms=ts_ms,
+    )
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
         "stale_legs": sorted(
@@ -1112,41 +1118,75 @@ def build_signals_payload_impl(
         ),
     }
     if ts_ms is not None:
-        state_age_ms = max(0, now_ms_fn() - ts_ms)
-        md_health["strategy_state_age_ms"] = state_age_ms
-        live_legs = any(safe_int(row.get("age_ms")) is not None for row in legs.values())
-        state_stale = state_age_ms >= 30_000 and not live_legs
-        if state_stale:
-            managed = 0
-            tradeable = False
-            blocked = True
-            maker_quote_status = {
-                "bid_open": 0,
-                "ask_open": 0,
-                "bid_depth": 0,
-                "ask_depth": 0,
-                "bid_blocked": 0,
-                "ask_blocked": 0,
-            }
-        md_health["state_stale"] = state_stale
+        md_health["strategy_state_age_ms"] = max(0, now_ms_fn() - ts_ms)
 
-    top_level_ts_ms = _top_level_signal_ts_ms(
-        state=state,
-        quote_snapshot=quote_snapshot,
-        fallback_ts_ms=ts_ms,
+    explicit_quote_snapshot = isinstance(state.get("maker_v3"), Mapping) and isinstance(
+        cast(Mapping[str, Any], state.get("maker_v3")).get("quote_snapshot"),
+        Mapping,
     )
-    top_level_mode = _top_level_signal_mode(
-        quote_snapshot=quote_snapshot,
-        bot_on=bot_on,
+    explicit_quote_snapshot = explicit_quote_snapshot or (
+        isinstance(state.get("maker_v4"), Mapping)
+        and isinstance(cast(Mapping[str, Any], state.get("maker_v4")).get("quote_snapshot"), Mapping)
     )
-    top_level_reason = _top_level_signal_reason(
-        state=state,
-        quote_snapshot=quote_snapshot,
+    has_partial_strategy_state = bool(
+        pricing_adjustments
+        or explicit_quote_snapshot
+        or state_name
+        or managed
+        or parsed_bot_on is not None
     )
-    top_level_skew_bps = _top_level_signal_signed_skew_bps(
-        pricing_adjustments=pricing_adjustments,
-        quote_snapshot=quote_snapshot,
+
+    state_stale = False
+    leg_clock_ts_ms = max(
+        (
+            leg_ts_ms
+            for row in legs.values()
+            if (leg_ts_ms := coerce_ts_ms(row.get("ts_ms"))) is not None
+        ),
+        default=None,
     )
+    if top_level_ts_ms is not None and leg_clock_ts_ms is not None:
+        top_level_age_ms = max(0, leg_clock_ts_ms - top_level_ts_ms)
+        md_health["signal_state_age_ms"] = top_level_age_ms
+        state_stale = top_level_age_ms >= 30_000
+    elif top_level_ts_ms is not None and not explicit_quote_snapshot:
+        top_level_age_ms = max(0, now_ms_fn() - top_level_ts_ms)
+        md_health["signal_state_age_ms"] = top_level_age_ms
+        state_stale = top_level_age_ms >= 30_000
+    elif top_level_ts_ms is None and has_partial_strategy_state:
+        state_stale = True
+
+    if state_stale:
+        managed = 0
+        tradeable = False
+        blocked = True
+        maker_quote_status = {
+            "bid_open": 0,
+            "ask_open": 0,
+            "bid_depth": 0,
+            "ask_depth": 0,
+            "bid_blocked": 0,
+            "ask_blocked": 0,
+        }
+    md_health["state_stale"] = state_stale
+
+    if state_stale:
+        top_level_mode = "STALE"
+        top_level_reason = "stale_state"
+        top_level_skew_bps = None
+    else:
+        top_level_mode = _top_level_signal_mode(
+            quote_snapshot=quote_snapshot,
+            bot_on=bot_on,
+        )
+        top_level_reason = _top_level_signal_reason(
+            state=state,
+            quote_snapshot=quote_snapshot,
+        )
+        top_level_skew_bps = _top_level_signal_signed_skew_bps(
+            pricing_adjustments=pricing_adjustments,
+            quote_snapshot=quote_snapshot,
+        )
 
     return {
         "id": strategy_id,

@@ -313,6 +313,94 @@ def test_build_signals_payload_preserves_explicit_makerv3_quote_snapshot_epoch(
     assert quote_snapshot["skew_bps_signed"] == -12.5
 
 
+def test_build_signals_payload_marks_stale_strategy_state_at_top_level(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 103.0, "ask": 105.0, "ts_ms": 1_700_000_039_000},
+            "venue_b:ABC/USDT": {"bid": 103.0, "ask": 105.0, "ts_ms": 1_700_000_039_000},
+        },
+        now_ms_value=1_700_000_040_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 2,
+            "state": "bot_off",
+            "ts_ms": 1_700_000_000_000,
+            "pricing_adjustments": [{"type": "inventory_skew", "skew_bps_signed": -12.5}],
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_000_000,
+                    "mode": "OFF",
+                    "reason": "bot_off",
+                    "place_bid": 98.5,
+                    "place_ask": 100.5,
+                    "ref_bid": 101.0,
+                    "ref_ask": 102.0,
+                    "skew_bps_signed": -12.5,
+                },
+            },
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["debug"]["md_health"]["state_stale"] is True
+    assert payload["mode"] == "STALE"
+    assert payload["reason"] == "stale_state"
+    assert payload["skew_bps_signed"] is None
+
+
+def test_build_signals_payload_marks_timestamp_less_pricing_state_stale(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "pricing_adjustments": [{"type": "inventory_skew", "skew_bps_signed": 7.25}],
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0},
+        balances=[],
+        legs=build_legs_payload(
+            contracts=contract_catalog,
+            market_rows={},
+            now_ms_value=1_700_000_040_000,
+        ),
+    )
+
+    assert payload["ts_ms"] is None
+    assert payload["debug"]["md_health"]["state_stale"] is True
+    assert payload["mode"] == "STALE"
+    assert payload["reason"] == "stale_state"
+    assert payload["skew_bps_signed"] is None
+
+
 def test_build_signals_payload_promotes_operator_quote_fields_to_top_level(
     contract_catalog,
 ) -> None:
