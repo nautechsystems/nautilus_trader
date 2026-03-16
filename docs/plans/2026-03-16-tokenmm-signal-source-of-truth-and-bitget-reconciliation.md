@@ -15,11 +15,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | codex | Tasks 1-2 complete; Task 3 started on Signal render alignment |
+| Overall | in_progress | codex | Tasks 1-3 complete; Task 4 started on Bitget startup reconciliation |
 | Task 1: Freeze Signal source-of-truth contract | completed | codex | Commit `0b5d820d3d`; red-state verified: pytest has 1 failing spread contract, vitest has 1 failing maker-truth spread render |
 | Task 2: Publish coherent MakerV3 quote snapshot | completed | codex | Commit `bb691a6b03`; focused backend suite green: `35 passed` for quote_engine + signal contract tests |
-| Task 3: Make Signal render from one pricing truth | in_progress | codex | Investigating remaining UI mismatch where spread still uses visible leg mids instead of maker quote snapshot |
-| Task 4: Fix Bitget perp startup position parsing/reconciliation | not_started | unassigned | Plan created |
+| Task 3: Make Signal render from one pricing truth | completed | codex | Focused Vitest green: `7 passed`; spread now follows maker quote snapshot used by operator-facing Our/Ref rows |
+| Task 4: Fix Bitget perp startup position parsing/reconciliation | in_progress | codex | Investigating stale EXTERNAL + strategy-owned Bitget perp positions and startup quantity handling |
 | Task 5: Eliminate duplicate position inflation in balances/inventory | not_started | unassigned | Plan created |
 | Task 6: Verify live behavior, docs, and PR hygiene | not_started | unassigned | Plan created |
 
