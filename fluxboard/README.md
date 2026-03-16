@@ -82,7 +82,8 @@ FLUXBOARD_E2E=1 pnpm test:e2e --debug
 Available test suites:
 
 - **Unit tests (stable)**: Layouts, shared components, hooks, utilities
-- **Quarantined suites**: Trades, Params, Scanners, Alerts, PnL integrations (`pnpm test:full`)
+- **Quarantined suites**: Trades, most Params component/integration suites, Scanners, Alerts, PnL integrations (`pnpm test:full`)
+- **Stable Params regression**: `pnpm test:run __tests__/ParamsBulkApplyAllRow.test.tsx`
 - **E2E tests**: `pnl.spec.ts`, `params.spec.ts`, `alerts.spec.ts`, `sound.spec.ts`, `dashboard.spec.ts`, `smoke.spec.ts`
 
 ## Project Structure
