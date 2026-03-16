@@ -17,6 +17,7 @@ from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.shared.publisher_common import build_role_map_payload
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import BLOCKED_STATE_PREFIX
 from flux.strategies.makerv3.constants import TOPIC_ALERT
@@ -149,11 +150,32 @@ def _matching_base_positions(
     return filtered
 
 
+def _maker_position_report_snapshot(strategy: Any) -> dict[str, Any] | None:
+    snapshot_lookup = getattr(strategy, "_maker_position_report_snapshot", None)
+    if callable(snapshot_lookup):
+        with suppress(Exception):
+            snapshot = snapshot_lookup()
+            if isinstance(snapshot, Mapping):
+                return dict(snapshot)
+
+    snapshot = getattr(strategy, "_latest_maker_position_report_snapshot", None)
+    if isinstance(snapshot, Mapping):
+        return dict(snapshot)
+    return None
+
+
 def _effective_inventory_positions(strategy: Any, positions: Sequence[Any]) -> list[Any]:
     cache = _strategy_cache(strategy)
     orders_for_position = getattr(cache, "orders_for_position", None)
-    return inventory_mod.effective_inventory_positions(
+    snapshot = _maker_position_report_snapshot(strategy)
+    expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+        snapshot,
+        instrument_id=strategy.config.maker_instrument_id,
+    )
+    return maker_reconciliation_mod.effective_maker_positions(
         positions,
+        maker_instrument_id=strategy.config.maker_instrument_id,
+        expected_venue_qty=expected_qty,
         order_lookup=orders_for_position if callable(orders_for_position) else None,
     )
 

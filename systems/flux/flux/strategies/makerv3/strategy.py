@@ -24,6 +24,7 @@ from flux.strategies.makerv3 import managed_orders as managed_orders_mod
 from flux.strategies.makerv3 import market_data as market_data_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
 from flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
@@ -54,6 +55,7 @@ from flux.strategies.makerv3.constants import TOPIC_TRADE
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
 from flux.strategies.makerv3.wire import QuoteCycleContext
+from nautilus_trader.live.reconciliation import collapse_duplicate_netting_position_reports
 
 
 if TYPE_CHECKING:
@@ -1525,36 +1527,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if not relevant_reports:
                 return None
 
-            if len(relevant_reports) > 1 and not any(
-                getattr(report, "venue_position_id", None) is not None
-                or getattr(report, "position_id", None) is not None
-                for report in relevant_reports
-            ):
-                candidate_reports = [
-                    report
-                    for report in relevant_reports
-                    if (
-                        _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
-                        or _to_decimal_or_none(getattr(report, "signed_qty", None))
-                        or Decimal(0)
-                    )
-                    != 0
-                ]
-                if not candidate_reports:
-                    candidate_reports = relevant_reports
-                relevant_reports = [
-                    max(
-                        candidate_reports,
-                        key=lambda report: (
-                            self._execution_report_ts_ns(report),
-                            abs(
-                                _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
-                                or _to_decimal_or_none(getattr(report, "signed_qty", None))
-                                or Decimal(0)
-                            ),
-                        ),
-                    ),
-                ]
+            relevant_reports, _collapse_events = collapse_duplicate_netting_position_reports(
+                relevant_reports,
+            )
 
             total = Decimal(0)
             avg_px_num = Decimal(0)
@@ -1636,14 +1611,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "ts_ns": max(0, int(ts_ns)),
             }
 
-        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+        def _maker_position_report_snapshot(self) -> dict[str, Any] | None:
             snapshot = getattr(self, "_latest_maker_position_report_snapshot", None)
             if not isinstance(snapshot, Mapping):
+                return None
+            return dict(snapshot)
+
+        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            snapshot = self._maker_position_report_snapshot()
+            if snapshot is None:
                 return None
             report_ts_ns = int(snapshot.get("ts_ns") or 0)
             local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
             if report_ts_ns > 0 and report_ts_ns >= local_activity_ns:
-                return dict(snapshot)
+                return snapshot
             return None
 
         def _handle_execution_report_message(self, message: Any) -> None:
@@ -1725,8 +1706,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return None
             cache = self._inventory_cache()
             orders_for_position = getattr(cache, "orders_for_position", None)
-            return inventory_mod.effective_inventory_positions(
+            snapshot = self._maker_position_report_snapshot()
+            expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+                snapshot,
+                instrument_id=self.config.maker_instrument_id,
+            )
+            return maker_reconciliation_mod.effective_maker_positions(
                 positions,
+                maker_instrument_id=self.config.maker_instrument_id,
+                expected_venue_qty=expected_qty,
                 order_lookup=orders_for_position if callable(orders_for_position) else None,
             )
 

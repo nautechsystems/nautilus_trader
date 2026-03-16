@@ -162,104 +162,6 @@ def _position_signed_qty_value(position: Position) -> Decimal | None:
     return signed_qty
 
 
-def _position_strategy_id_value(position: Position) -> str:
-    strategy_id = getattr(position, "strategy_id", None)
-    return _stringify_identifier(strategy_id).strip().upper()
-
-
-def _position_identifier(position: Position) -> Any:
-    position_id = getattr(position, "id", None)
-    if position_id is not None:
-        return position_id
-    return getattr(position, "position_id", None)
-
-
-def _order_has_reconciliation_tag(order: Any) -> bool:
-    tags = getattr(order, "tags", None)
-    if isinstance(tags, str):
-        return "RECONCILIATION" in tags.upper()
-    if isinstance(tags, Sequence):
-        return any(_stringify_identifier(tag).strip().upper() == "RECONCILIATION" for tag in tags)
-    return False
-
-
-def is_external_reconciliation_artifact_position(
-    position: Position,
-    *,
-    order_lookup: Callable[[Any], list[Any]] | None = None,
-) -> bool:
-    """
-    Return whether a cached position looks like a stale EXTERNAL reconciliation artifact.
-    """
-    if _position_strategy_id_value(position) != "EXTERNAL":
-        return False
-
-    if not callable(order_lookup):
-        return True
-
-    position_id = _position_identifier(position)
-    if position_id is None:
-        return True
-
-    with suppress(Exception):
-        orders = list(order_lookup(position_id) or [])
-        if not orders:
-            return True
-        return all(_order_has_reconciliation_tag(order) for order in orders)
-
-    return True
-
-
-def effective_inventory_positions(
-    positions: Iterable[Position],
-    *,
-    order_lookup: Callable[[Any], list[Any]] | None = None,
-) -> list[Position]:
-    """
-    Drop stale EXTERNAL reconciliation artifacts when a non-EXTERNAL position for the
-    same instrument already exists in the current cached view.
-    """
-    positions_list = list(positions)
-    if not positions_list:
-        return positions_list
-
-    grouped_positions: dict[Any, list[Position]] = {}
-    ordered_instrument_ids: list[Any] = []
-    for position in positions_list:
-        instrument_id = getattr(position, "instrument_id", None)
-        if instrument_id not in grouped_positions:
-            grouped_positions[instrument_id] = []
-            ordered_instrument_ids.append(instrument_id)
-        grouped_positions[instrument_id].append(position)
-
-    filtered: list[Position] = []
-    for instrument_id in ordered_instrument_ids:
-        instrument_positions = grouped_positions[instrument_id]
-        artifact_positions = [
-            position
-            for position in instrument_positions
-            if is_external_reconciliation_artifact_position(
-                position,
-                order_lookup=order_lookup,
-            )
-        ]
-        if not artifact_positions:
-            filtered.extend(instrument_positions)
-            continue
-
-        artifact_object_ids = {id(position) for position in artifact_positions}
-        non_artifact_positions = [
-            position for position in instrument_positions if id(position) not in artifact_object_ids
-        ]
-        if non_artifact_positions:
-            filtered.extend(non_artifact_positions)
-            continue
-
-        filtered.extend(instrument_positions)
-
-    return filtered
-
-
 def position_signed_qty(positions: Iterable[Position]) -> Decimal | None:
     """
     Aggregate signed position quantity across open positions.
@@ -676,9 +578,7 @@ __all__ = [
     "InventorySkewCache",
     "account_venue_code",
     "compute_inventory_skew",
-    "effective_inventory_positions",
     "instrument_base_currency_code",
-    "is_external_reconciliation_artifact_position",
     "position_exposure_summary",
     "position_inventory_total",
     "position_matches_base_currency",
