@@ -65,6 +65,22 @@ impl PortfolioAnalyzer {
         self.get_performance_stats_returns().into_iter().collect()
     }
 
+    /// Calculates performance statistics from position returns.
+    #[pyo3(name = "get_performance_stats_position_returns")]
+    fn py_get_performance_stats_position_returns(&self) -> HashMap<String, f64> {
+        self.get_performance_stats_position_returns()
+            .into_iter()
+            .collect()
+    }
+
+    /// Calculates performance statistics from portfolio returns.
+    #[pyo3(name = "get_performance_stats_portfolio_returns")]
+    fn py_get_performance_stats_portfolio_returns(&self) -> HashMap<String, f64> {
+        self.get_performance_stats_portfolio_returns()
+            .into_iter()
+            .collect()
+    }
+
     #[pyo3(name = "get_performance_stats_pnls")]
     fn py_get_performance_stats_pnls(
         &self,
@@ -80,6 +96,12 @@ impl PortfolioAnalyzer {
     #[pyo3(name = "get_performance_stats_general")]
     fn py_get_performance_stats_general(&self) -> HashMap<String, f64> {
         self.get_performance_stats_general().into_iter().collect()
+    }
+
+    /// Records a return at a specific timestamp.
+    #[pyo3(name = "add_position_return")]
+    fn py_add_position_return(&mut self, timestamp: u64, value: f64) {
+        self.add_position_return(UnixNanos::from(timestamp), value);
     }
 
     /// Records a return at a specific timestamp.
@@ -322,6 +344,26 @@ impl PortfolioAnalyzer {
         Ok(dict.into())
     }
 
+    /// Returns all calculated position returns.
+    #[pyo3(name = "position_returns")]
+    fn py_position_returns(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let dict = pyo3::types::PyDict::new(py);
+        for (timestamp, value) in self.position_returns() {
+            dict.set_item(timestamp.as_u64(), value)?;
+        }
+        Ok(dict.into())
+    }
+
+    /// Returns all calculated portfolio returns.
+    #[pyo3(name = "portfolio_returns")]
+    fn py_portfolio_returns(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let dict = pyo3::types::PyDict::new(py);
+        for (timestamp, value) in self.portfolio_returns() {
+            dict.set_item(timestamp.as_u64(), value)?;
+        }
+        Ok(dict.into())
+    }
+
     /// Retrieves realized PnLs for a specific currency.
     ///
     /// Returns `None` if no PnLs exist, or if multiple currencies exist
@@ -376,6 +418,18 @@ impl PortfolioAnalyzer {
     #[pyo3(name = "get_stats_returns_formatted")]
     fn py_get_stats_returns_formatted(&self) -> Vec<String> {
         self.get_stats_returns_formatted()
+    }
+
+    /// Gets formatted position-return statistics as strings.
+    #[pyo3(name = "get_stats_position_returns_formatted")]
+    fn py_get_stats_position_returns_formatted(&self) -> Vec<String> {
+        self.get_stats_position_returns_formatted()
+    }
+
+    /// Gets formatted portfolio-return statistics as strings.
+    #[pyo3(name = "get_stats_portfolio_returns_formatted")]
+    fn py_get_stats_portfolio_returns_formatted(&self) -> Vec<String> {
+        self.get_stats_portfolio_returns_formatted()
     }
 
     /// Gets formatted general statistics as strings.

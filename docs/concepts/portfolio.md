@@ -153,6 +153,42 @@ Your statistic should handle degenerate inputs such as `None`, empty series, or 
 Return `None` for unknown/incalculable values, or a reasonable default like `0.0` when semantically appropriate (e.g., win rate with no trades).
 :::
 
+## Returns: position vs portfolio
+
+The analyzer tracks two distinct return series:
+
+- **Position returns** (`analyzer.position_returns()`) measure realized return per position
+  as a side-aware price return relative to the average open price. This reflects the
+  instrument's price movement between entry and exit, independent of account size or
+  leverage.
+- **Portfolio returns** (`analyzer.portfolio_returns()`) measure daily percentage change in
+  total account balance. A $900 gain on a $100,000 account reports roughly 0.9% for that day.
+
+When the analyzer has account state history spanning at least two distinct calendar days,
+it computes portfolio returns automatically and uses them as the primary series for
+statistics, tearsheets, and the monthly returns heatmap. Multiple snapshots on the same
+day count as one day, so intra-day trading alone does not produce portfolio returns. When
+portfolio returns are unavailable, it falls back to position returns.
+
+The convenience accessor `analyzer.returns()` resolves this preference: portfolio returns
+when present, position returns otherwise.
+
+### Multi-currency accounts
+
+Portfolio returns require a single-currency balance history. When the account carries
+balances in multiple currencies, the analyzer cannot produce a single return series and
+falls back to position returns silently. Statistics and tearsheet charts use whichever
+series `returns()` resolves to.
+
+If you need portfolio-level returns for a multi-currency account, compute them externally
+by converting balances to a common currency before calculating percentage changes.
+
+### Per-venue calculation
+
+In the backtest engine, the analyzer runs per venue (`engine.pyx`). Each venue's account
+produces its own portfolio return series. The tearsheet aggregates across all cached
+accounts to produce a combined return series for multi-venue backtests.
+
 ## Backtest analysis
 
 Following a backtest run, the engine passes realized PnLs, returns, positions, and orders data to each registered

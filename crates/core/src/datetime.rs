@@ -35,6 +35,9 @@ pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 /// Number of nanoseconds in one minute.
 pub const NANOSECONDS_IN_MINUTE: u64 = 60 * NANOSECONDS_IN_SECOND;
 
+/// Number of nanoseconds in one day.
+pub const NANOSECONDS_IN_DAY: u64 = 24 * 60 * NANOSECONDS_IN_MINUTE;
+
 /// Number of seconds in one minute.
 pub const SECONDS_IN_MINUTE: u64 = 60;
 
@@ -59,6 +62,7 @@ const _: () = {
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND == 1_000_000);
     assert!(SECONDS_IN_MINUTE == 60);
     assert!(NANOSECONDS_IN_MINUTE == 60 * NANOSECONDS_IN_SECOND);
+    assert!(NANOSECONDS_IN_DAY == 24 * 60 * NANOSECONDS_IN_MINUTE);
 };
 
 #[inline]

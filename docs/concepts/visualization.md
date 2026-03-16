@@ -112,7 +112,7 @@ The tearsheet can include any combination of the following built-in charts:
 | `stats_table`      | Table        | Performance statistics (PnL, returns, general metrics).  |
 | `equity`           | Line         | Cumulative returns over time with optional benchmark.    |
 | `drawdown`         | Area         | Drawdown percentage from peak equity.                    |
-| `monthly_returns`  | Heatmap      | Monthly return percentages organized by year.            |
+| `monthly_returns`  | Heatmap      | Monthly portfolio return percentages organized by year.  |
 | `distribution`     | Histogram    | Distribution of individual return values.                |
 | `rolling_sharpe`   | Line         | 60-day rolling Sharpe ratio.                             |
 | `yearly_returns`   | Bar          | Annual return percentages.                               |

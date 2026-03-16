@@ -19,6 +19,9 @@ cdef extern from "../includes/core.h":
     # Number of nanoseconds in one minute.
     const uint64_t NANOSECONDS_IN_MINUTE # = (60 * NANOSECONDS_IN_SECOND)
 
+    # Number of nanoseconds in one day.
+    const uint64_t NANOSECONDS_IN_DAY # = ((24 * 60) * NANOSECONDS_IN_MINUTE)
+
     # Number of seconds in one minute.
     const uint64_t SECONDS_IN_MINUTE # = 60
 

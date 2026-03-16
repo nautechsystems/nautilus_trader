@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -27,9 +29,11 @@ from nautilus_trader.analysis.config import TearsheetMonthlyReturnsChart
 from nautilus_trader.analysis.config import TearsheetRunInfoChart
 from nautilus_trader.analysis.config import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import PLOTLY_AVAILABLE
+from nautilus_trader.analysis.tearsheet import _calculate_account_returns
 from nautilus_trader.analysis.tearsheet import _create_stats_table
 from nautilus_trader.analysis.tearsheet import _create_tearsheet_figure
 from nautilus_trader.analysis.tearsheet import _normalize_theme_config
+from nautilus_trader.analysis.tearsheet import _resolve_tearsheet_returns
 from nautilus_trader.analysis.tearsheet import create_drawdown_chart
 from nautilus_trader.analysis.tearsheet import create_equity_curve
 from nautilus_trader.analysis.tearsheet import create_monthly_returns_heatmap
@@ -210,6 +214,178 @@ def test_create_monthly_returns_heatmap_with_empty_returns():
 
     # Assert
     assert fig is not None
+
+
+def test_calculate_account_returns_uses_account_balance_changes(monkeypatch):
+    # Arrange
+    account_report = pd.DataFrame(
+        {
+            "currency": ["USD", "USD", "USD"],
+            "total": ["100000.00", "100899.00", "105000.00"],
+        },
+        index=pd.to_datetime(["2024-01-01", "2024-01-10", "2024-01-31"]),
+    )
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.reporter.ReportProvider.generate_account_report",
+        lambda account: account_report,
+    )
+
+    mock_engine = SimpleNamespace(
+        kernel=SimpleNamespace(
+            cache=SimpleNamespace(accounts=lambda: [object()]),
+        ),
+    )
+
+    # Act
+    result = _calculate_account_returns(engine=mock_engine, currency=USD)
+
+    # Assert
+    assert result is not None
+    assert result.loc[pd.Timestamp("2024-01-10")] == pytest.approx(0.00899)
+    assert result.loc[pd.Timestamp("2024-01-11")] == pytest.approx(0.0)
+    assert ((1 + result).prod() - 1) == pytest.approx(0.05)
+
+
+def test_calculate_account_returns_filters_non_finite_values(monkeypatch):
+    # Arrange
+    account_report = pd.DataFrame(
+        {
+            "currency": ["USD", "USD", "USD"],
+            "total": ["0.00", "100000.00", "105000.00"],
+        },
+        index=pd.to_datetime(["2024-01-01", "2024-01-10", "2024-01-31"]),
+    )
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.reporter.ReportProvider.generate_account_report",
+        lambda account: account_report,
+    )
+
+    mock_engine = SimpleNamespace(
+        kernel=SimpleNamespace(
+            cache=SimpleNamespace(accounts=lambda: [object()]),
+        ),
+    )
+
+    # Act
+    result = _calculate_account_returns(engine=mock_engine, currency=USD)
+
+    # Assert
+    assert result is not None
+    assert np.isfinite(result.to_numpy()).all()
+    assert result.loc[pd.Timestamp("2024-01-31")] == pytest.approx(0.05)
+
+
+def test_create_tearsheet_uses_account_returns_instead_of_analyzer_returns(monkeypatch):
+    # Arrange
+    analyzer_returns = pd.Series([0.001], index=pd.to_datetime(["2024-01-31"]))
+    account_returns = pd.Series([0.02], index=pd.to_datetime(["2024-01-31"]))
+    captured = {}
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.tearsheet._calculate_account_returns",
+        lambda engine, currency=None: account_returns,
+    )
+
+    def fake_create_tearsheet_from_stats(*, returns, **kwargs):
+        captured["returns"] = returns
+        return "html"
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.tearsheet.create_tearsheet_from_stats",
+        fake_create_tearsheet_from_stats,
+    )
+
+    class MockAnalyzer:
+        currencies = [USD]
+        _account_balances_starting = {}
+        _account_balances = {}
+
+        def get_performance_stats_returns(self):
+            return {}
+
+        def get_performance_stats_general(self):
+            return {}
+
+        def get_performance_stats_pnls(self, currency=None):
+            return {}
+
+        def returns(self):
+            return analyzer_returns
+
+        def portfolio_returns(self):
+            return pd.Series(dtype=float)
+
+    mock_engine = SimpleNamespace(
+        portfolio=SimpleNamespace(analyzer=MockAnalyzer()),
+        trader=SimpleNamespace(strategy_ids=list),
+        kernel=SimpleNamespace(
+            exec_engine=SimpleNamespace(event_count=0),
+            cache=SimpleNamespace(
+                orders_total_count=lambda: 0,
+                positions=list,
+                position_snapshots=list,
+            ),
+        ),
+        run_started=None,
+        run_finished=None,
+        backtest_start=None,
+        backtest_end=None,
+        run_id="BACKTEST-001",
+        iteration=0,
+    )
+
+    # Act
+    result = create_tearsheet(mock_engine, output_path=None, title="Test Tearsheet")
+
+    # Assert
+    assert result == "html"
+    pd.testing.assert_series_equal(captured["returns"], account_returns)
+
+
+def test_resolve_tearsheet_returns_falls_back_to_analyzer_returns(monkeypatch):
+    # Arrange
+    analyzer_returns = pd.Series([0.01], index=pd.to_datetime(["2024-01-31"]))
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.tearsheet._calculate_account_returns",
+        lambda engine, currency=None: None,
+    )
+
+    # Act
+    result = _resolve_tearsheet_returns(
+        analyzer=SimpleNamespace(
+            returns=lambda: analyzer_returns,
+            portfolio_returns=lambda: pd.Series(dtype=float),
+        ),
+        engine=SimpleNamespace(),
+    )
+
+    # Assert
+    pd.testing.assert_series_equal(result, analyzer_returns)
+
+
+def test_resolve_tearsheet_returns_prefers_analyzer_portfolio_returns(monkeypatch):
+    # Arrange
+    portfolio_returns = pd.Series([0.02], index=pd.to_datetime(["2024-01-31"]))
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.tearsheet._calculate_account_returns",
+        lambda engine, currency=None: pd.Series([0.01], index=pd.to_datetime(["2024-01-31"])),
+    )
+
+    # Act
+    result = _resolve_tearsheet_returns(
+        analyzer=SimpleNamespace(
+            returns=lambda: pd.Series([0.03], index=pd.to_datetime(["2024-01-31"])),
+            portfolio_returns=lambda: portfolio_returns,
+        ),
+        engine=SimpleNamespace(),
+    )
+
+    # Assert
+    pd.testing.assert_series_equal(result, portfolio_returns)
 
 
 def test_create_returns_distribution_with_valid_data(sample_returns, tmp_path):
