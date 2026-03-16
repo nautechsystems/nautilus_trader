@@ -75,6 +75,7 @@ struct TestServerState {
     order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     batch_cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -88,6 +89,18 @@ impl Default for TestServerState {
             order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
             batch_cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
+            book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
+                "bids": [
+                    {"price": "0.48", "size": "100.00"},
+                    {"price": "0.49", "size": "200.00"},
+                    {"price": "0.50", "size": "150.00"}
+                ],
+                "asks": [
+                    {"price": "0.51", "size": "120.00"},
+                    {"price": "0.52", "size": "80.00"},
+                    {"price": "0.53", "size": "90.00"}
+                ]
+            })))),
         }
     }
 }
@@ -113,6 +126,7 @@ fn create_test_exec_config(addr: SocketAddr) -> PolymarketExecClientConfig {
         base_url_ws: Some(format!("ws://{addr}/ws")),
         base_url_gamma: Some(format!("http://{addr}")),
         http_timeout_secs: 5,
+        max_retries: 0,
         ..PolymarketExecClientConfig::default()
     }
 }
@@ -256,6 +270,15 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
     }
 }
 
+async fn handle_get_book(State(state): State<TestServerState>) -> Response {
+    *state.last_path.lock().await = "/book".to_string();
+    let resp = state.book_response.lock().await;
+    match resp.as_ref() {
+        Some(v) => Json(v.clone()).into_response(),
+        None => (StatusCode::OK, Json(json!({"bids": [], "asks": []}))).into_response(),
+    }
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -273,6 +296,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/orders", delete(handle_delete_orders))
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/markets", get(handle_gamma_markets))
+        .route("/book", get(handle_get_book))
         .route("/health", get(handle_health))
         .with_state(state)
 }
@@ -588,7 +612,7 @@ async fn test_modify_order_emits_rejection() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_denied_for_market_order() {
+async fn test_submit_market_order_denied_buy_without_quote_quantity() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -608,7 +632,7 @@ async fn test_submit_order_denied_for_market_order() {
         UUID4::new(),
         UnixNanos::default(),
         false, // reduce_only
-        false, // quote_quantity
+        false, // quote_quantity — BUY requires true
         None,  // contingency_type
         None,  // order_list_id
         None,  // linked_order_ids
@@ -642,15 +666,160 @@ async fn test_submit_order_denied_for_market_order() {
     client.submit_order(&cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
-    match event {
-        ExecutionEvent::Order(order_event) => {
-            assert!(
-                matches!(order_event, OrderEventAny::Denied(_)),
-                "Expected Denied for market order, was {order_event:?}"
-            );
-        }
-        other => panic!("Expected Order event, was {other:?}"),
-    }
+    assert_order_event(event, "Denied");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_denied_sell_with_quote_quantity() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let client_order_id = ClientOrderId::from("O-MKT-SELL-QQ");
+    let order = OrderAny::Market(MarketOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        instrument_id,
+        client_order_id,
+        OrderSide::Sell,
+        Quantity::from("100"),
+        TimeInForce::Ioc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false, // reduce_only
+        true,  // quote_quantity — SELL requires false
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+
+    let init_event = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+
+    let cmd = SubmitOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("POLYMARKET")),
+        StrategyId::from("S-001"),
+        instrument_id,
+        client_order_id,
+        init_event,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(&cmd).unwrap();
+
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Denied");
+}
+
+fn make_market_order(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quote_quantity: bool,
+) -> OrderAny {
+    OrderAny::Market(MarketOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        instrument_id,
+        ClientOrderId::from(client_order_id),
+        side,
+        Quantity::new(10.0, 0),
+        TimeInForce::Ioc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false, // reduce_only
+        quote_quantity,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_buy_accepted() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order("O-MKT-BUY", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(&cmd).unwrap();
+
+    // Market orders: Submitted comes from the async task (after book fetch)
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Submitted");
+
+    // Accepted (async, after HTTP post)
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Accepted");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_rejected_empty_book() {
+    let state = TestServerState::default();
+    // Override book response with empty asks
+    *state.book_response.lock().await = Some(json!({"bids": [], "asks": []}));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order("O-MKT-EMPTY", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(&cmd).unwrap();
+
+    // Empty book should cause rejection
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Rejected");
 }
 
 fn make_limit_order(
