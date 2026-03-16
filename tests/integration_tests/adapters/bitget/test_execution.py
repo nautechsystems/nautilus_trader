@@ -1255,7 +1255,7 @@ def test_handle_positions_channel_uta_resolves_symbol_to_futures_instrument() ->
     assert report.ts_last == millis_to_nanos(1708883200123)
 
 
-def test_handle_positions_channel_uta_converts_non_spot_total_from_base_units() -> None:
+def test_handle_positions_channel_uta_preserves_base_coin_position_quantity() -> None:
     reports: list[object] = []
     warnings: list[str] = []
 
@@ -1263,21 +1263,17 @@ def test_handle_positions_channel_uta_converts_non_spot_total_from_base_units() 
         del round_down
         return Quantity.from_str(str(value))
 
-    def _calculate_base_exposure_qty(qty, price=None):
-        del price
-        return Quantity.from_str(str(qty.as_decimal() * Decimal("100")))
-
     futures_instrument = SimpleNamespace(
         id="PLUMEUSDT-PERP.BITGET",
         raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
         size_precision=4,
-        multiplier=Decimal("100"),
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
         base_currency="PLUME",
         quote_currency="USDT",
         settlement_currency="USDT",
         is_inverse=False,
         make_qty=_make_qty,
-        calculate_base_exposure_qty=_calculate_base_exposure_qty,
     )
     dummy = SimpleNamespace(
         account_id="ACC-001",
@@ -1320,31 +1316,27 @@ def test_handle_positions_channel_uta_converts_non_spot_total_from_base_units() 
     report = reports[0]
     assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
     assert report.position_side == PositionSide.SHORT
-    assert report.quantity == Quantity.from_str("2500.3")
+    assert report.quantity == Quantity.from_str("250030")
     assert report.avg_px_open == Decimal("0.01192")
     assert report.venue_position_id == PositionId("p-uta-plume-1")
 
 
-def test_build_position_status_report_uta_converts_startup_total_from_base_units() -> None:
+def test_build_position_status_report_uta_preserves_base_coin_position_quantity() -> None:
     def _make_qty(value, round_down=True):
         del round_down
         return Quantity.from_str(str(value))
-
-    def _calculate_base_exposure_qty(qty, price=None):
-        del price
-        return Quantity.from_str(str(qty.as_decimal() * Decimal("100")))
 
     futures_instrument = SimpleNamespace(
         id="PLUMEUSDT-PERP.BITGET",
         raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
         size_precision=4,
-        multiplier=Decimal("100"),
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
         base_currency="PLUME",
         quote_currency="USDT",
         settlement_currency="USDT",
         is_inverse=False,
         make_qty=_make_qty,
-        calculate_base_exposure_qty=_calculate_base_exposure_qty,
     )
     dummy = SimpleNamespace(
         account_id="ACC-001",
@@ -1379,7 +1371,7 @@ def test_build_position_status_report_uta_converts_startup_total_from_base_units
     assert report is not None
     assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
     assert report.position_side == PositionSide.SHORT
-    assert report.quantity == Quantity.from_str("2500.3")
+    assert report.quantity == Quantity.from_str("250030")
     assert report.avg_px_open == Decimal("0.01192")
     assert report.venue_position_id == PositionId("p-uta-plume-1")
     assert report.ts_last == millis_to_nanos(1708883200123)

@@ -56,7 +56,6 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.flux.common.quantity_units import venue_qty_from_base_qty
 
 
 class BitgetExecutionClient(LiveExecutionClient):
@@ -1103,13 +1102,6 @@ class BitgetExecutionClient(LiveExecutionClient):
         ).lower()
         position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
         quantity_text = str(abs(total))
-        if (
-            BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA"
-            and BitgetExecutionClient._product_type_key(product_type) != "SPOT"
-        ):
-            converted = venue_qty_from_base_qty(resolved_instrument, total)
-            if converted.venue_qty is not None:
-                quantity_text = str(abs(converted.venue_qty))
         try:
             quantity = resolved_instrument.make_qty(quantity_text, round_down=True)
         except TypeError:

@@ -111,7 +111,7 @@ fn test_build_instruments_from_fixture_responses() {
                 assert!(!perp.quote_currency.code.as_str().is_empty());
                 assert!(!perp.settlement_currency.code.as_str().is_empty());
                 assert_eq!(perp.size_increment(), Quantity::from("0.001"));
-                assert_eq!(perp.multiplier(), Quantity::from("0.001"));
+                assert_eq!(perp.multiplier(), Quantity::from(1));
                 assert_eq!(perp.lot_size(), Some(Quantity::from(1)));
             }
             InstrumentAny::CryptoFuture(future) => {
