@@ -342,6 +342,31 @@ def test_build_balances_rows_preserves_account_id_and_formats_stable_cash_withou
     assert row["display_name_long"] == "Bitget USDT"
 
 
+def test_build_balances_rows_overrides_embedded_external_position_strategy_for_requested_snapshot() -> None:
+    rows = build_balances_rows(
+        raw_snapshot={
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "positions": [
+                {
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                    "signed_qty": "-250030",
+                    "quantity": "250030",
+                    "side": "SHORT",
+                    "strategy_id": "EXTERNAL",
+                    "position_id": "P-EXTERNAL",
+                },
+            ],
+        },
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["strategy_id"] == "plumeusdt_bitget_perp_makerv3"
+    assert rows[0]["position_id"] == "P-EXTERNAL"
+    assert rows[0]["signed_qty"] == "-250030"
+
+
 def test_enrich_balances_rows_formats_instrumentless_stable_spot_rows_without_suffix() -> None:
     rows = [
         {

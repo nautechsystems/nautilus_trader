@@ -149,6 +149,15 @@ def _matching_base_positions(
     return filtered
 
 
+def _effective_inventory_positions(strategy: Any, positions: Sequence[Any]) -> list[Any]:
+    cache = _strategy_cache(strategy)
+    orders_for_position = getattr(cache, "orders_for_position", None)
+    return inventory_mod.effective_inventory_positions(
+        positions,
+        order_lookup=orders_for_position if callable(orders_for_position) else None,
+    )
+
+
 def _account_balances_rows(account: Any) -> list[dict[str, str]]:
     balances_total_fn = getattr(account, "balances_total", None)
     balances_free_fn = getattr(account, "balances_free", None)
@@ -881,6 +890,7 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                         instrument_id=strategy.config.maker_instrument_id,
                     ),
                 )
+        positions = _effective_inventory_positions(strategy, positions)
         if not positions and callable(positions_open):
             maker_instrument = getattr(strategy, "_maker_instrument", None)
             instruments = getattr(strategy, "_instruments", {})
@@ -891,10 +901,11 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                 instrument_id=strategy.config.maker_instrument_id,
             )
             with suppress(Exception):
+                all_positions = _effective_inventory_positions(strategy, list(positions_open()))
                 positions.extend(
                     _matching_base_positions(
                         strategy,
-                        list(positions_open()),
+                        all_positions,
                         base_currency=maker_base_currency,
                     ),
                 )

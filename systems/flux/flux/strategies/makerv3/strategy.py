@@ -1517,6 +1517,45 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             fallback_ts_ns: int = 0,
         ) -> dict[str, Any] | None:
+            relevant_reports: list[Any] = [
+                report
+                for report in list(reports or ())
+                if getattr(report, "instrument_id", None) == self.config.maker_instrument_id
+            ]
+            if not relevant_reports:
+                return None
+
+            if len(relevant_reports) > 1 and not any(
+                getattr(report, "venue_position_id", None) is not None
+                or getattr(report, "position_id", None) is not None
+                for report in relevant_reports
+            ):
+                candidate_reports = [
+                    report
+                    for report in relevant_reports
+                    if (
+                        _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
+                        or _to_decimal_or_none(getattr(report, "signed_qty", None))
+                        or Decimal(0)
+                    )
+                    != 0
+                ]
+                if not candidate_reports:
+                    candidate_reports = relevant_reports
+                relevant_reports = [
+                    max(
+                        candidate_reports,
+                        key=lambda report: (
+                            self._execution_report_ts_ns(report),
+                            abs(
+                                _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
+                                or _to_decimal_or_none(getattr(report, "signed_qty", None))
+                                or Decimal(0)
+                            ),
+                        ),
+                    ),
+                ]
+
             total = Decimal(0)
             avg_px_num = Decimal(0)
             avg_px_den = Decimal(0)
@@ -1524,9 +1563,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             position_id: str | None = None
             found = False
 
-            for report in list(reports or ()):
-                if getattr(report, "instrument_id", None) != self.config.maker_instrument_id:
-                    continue
+            for report in relevant_reports:
                 signed_qty = _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
                 if signed_qty is None:
                     signed_qty = _to_decimal_or_none(getattr(report, "signed_qty", None))
@@ -1682,6 +1719,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return list(positions_open())
             return None
 
+        def _inventory_positions(self) -> list[Position] | None:
+            positions = self._open_positions()
+            if positions is None:
+                return None
+            cache = self._inventory_cache()
+            orders_for_position = getattr(cache, "orders_for_position", None)
+            return inventory_mod.effective_inventory_positions(
+                positions,
+                order_lookup=orders_for_position if callable(orders_for_position) else None,
+            )
+
         def _inventory_base_exposure_last_px(self) -> Decimal | None:
             if self._last_fv is not None:
                 return self._last_fv
@@ -1701,7 +1749,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> inventory_mod.PositionExposureSummary:
             if not currency_code:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
-            positions = self._open_positions()
+            positions = self._inventory_positions()
             if positions is None:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
             cache = self._inventory_cache()

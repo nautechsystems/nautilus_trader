@@ -848,6 +848,7 @@ async def test_generate_position_status_reports_maps_futures_payload() -> None:
     report = reports[0]
     assert isinstance(report, PositionStatusReport)
     assert report.position_side == PositionSide.LONG
+    assert report.quantity == Quantity.from_str("0.500")
     assert report.venue_position_id == PositionId("POS-001")
 
 
@@ -905,6 +906,7 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
     report = reports[0]
     assert isinstance(report, PositionStatusReport)
     assert report.position_side == PositionSide.LONG
+    assert report.quantity == Quantity.from_str("0.500")
     assert report.venue_position_id is None
 
 
