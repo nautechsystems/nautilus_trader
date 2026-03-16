@@ -208,6 +208,111 @@ type BulkChangeOp = {
   undoable: boolean;
 };
 
+type BulkCommitSnapshot = {
+  paramValues: Map<string, Record<string, string>>;
+  dirtyParams: Map<string, Set<string>>;
+  errorParams: Map<string, ValidationErrors>;
+  remoteUpdatedRows: Set<string>;
+};
+
+type PendingBulkCommit = {
+  paramKey: string;
+  committedValue: string;
+  targetIds: string[];
+};
+
+function collectPendingBulkCommits(
+  bulkDrafts: Record<string, string>,
+  pendingBulkDraftKeys: Set<string>,
+  targetIds: string[],
+  paramValues: Map<string, Record<string, string>>
+): PendingBulkCommit[] {
+  if (pendingBulkDraftKeys.size === 0 || targetIds.length === 0) return [];
+
+  return Object.entries(bulkDrafts).flatMap(([paramKey, committedValue]) => {
+    if (!pendingBulkDraftKeys.has(paramKey) || paramKey === 'bot_on') return [];
+    const isPending = targetIds.some((id) => (paramValues.get(id)?.[paramKey] ?? '') !== committedValue);
+    if (!isPending) return [];
+    return [{ paramKey, committedValue, targetIds: [...targetIds] }];
+  });
+}
+
+function reduceBulkCommitState(
+  snapshot: BulkCommitSnapshot,
+  {
+    paramKey,
+    committedValue,
+    targetIds,
+    paramDef,
+    originalValues,
+  }: {
+    paramKey: string;
+    committedValue: string;
+    targetIds: string[];
+    paramDef: ParamDef;
+    originalValues: Map<string, Record<string, string>>;
+  }
+): { nextSnapshot: BulkCommitSnapshot; operation: BulkChangeOp } {
+  const previousValues: Record<string, string | undefined> = {};
+  const nextParamValues = new Map(snapshot.paramValues);
+  const nextDirtyParams = new Map(snapshot.dirtyParams);
+  const nextErrorParams = new Map(snapshot.errorParams);
+  const nextRemoteUpdatedRows = new Set(snapshot.remoteUpdatedRows);
+
+  targetIds.forEach((id) => {
+    const currentValue = snapshot.paramValues.get(id)?.[paramKey];
+    previousValues[id] = currentValue;
+
+    const currentParams = { ...(nextParamValues.get(id) || {}) };
+    currentParams[paramKey] = committedValue;
+    nextParamValues.set(id, currentParams);
+
+    const stratDirty = new Set(nextDirtyParams.get(id) || []);
+    const originalValue = originalValues.get(id)?.[paramKey] ?? '';
+    if (committedValue !== originalValue) {
+      stratDirty.add(paramKey);
+    } else {
+      stratDirty.delete(paramKey);
+    }
+    if (stratDirty.size > 0) {
+      nextDirtyParams.set(id, stratDirty);
+    } else {
+      nextDirtyParams.delete(id);
+    }
+
+    const result = validateParam(paramKey, committedValue, paramDef);
+    const stratErrors = { ...(nextErrorParams.get(id) || {}) };
+    if (!result.valid && result.error) {
+      stratErrors[paramKey] = result.error;
+    } else {
+      delete stratErrors[paramKey];
+    }
+    if (Object.keys(stratErrors).length > 0) {
+      nextErrorParams.set(id, stratErrors);
+    } else {
+      nextErrorParams.delete(id);
+    }
+
+    nextRemoteUpdatedRows.delete(id);
+  });
+
+  return {
+    nextSnapshot: {
+      paramValues: nextParamValues,
+      dirtyParams: nextDirtyParams,
+      errorParams: nextErrorParams,
+      remoteUpdatedRows: nextRemoteUpdatedRows,
+    },
+    operation: {
+      columnKey: paramKey,
+      affectedIds: [...targetIds],
+      previousValues,
+      newValue: committedValue,
+      undoable: true,
+    },
+  };
+}
+
 // Stable empty values to prevent unnecessary re-renders
 const STATIC_COLUMN_COUNT = 3;
 const EMPTY_PARAMS: Record<string, string> = {};
@@ -893,6 +998,7 @@ export default function Params({
   const [dirtyParams, setDirtyParams] = useState<Map<string, Set<string>>>(new Map());
   const [errorParams, setErrorParams] = useState<Map<string, ValidationErrors>>(new Map());
   const [bulkDrafts, setBulkDrafts] = useState<Record<string, string>>({});
+  const [pendingBulkDraftKeys, setPendingBulkDraftKeys] = useState<Set<string>>(new Set());
   const [bulkActiveParam, setBulkActiveParam] = useState<string | null>(null);
   const [lastBulkChangeOp, setLastBulkChangeOp] = useState<BulkChangeOp | null>(null);
   const [undoInFlight, setUndoInFlight] = useState(false);
@@ -971,8 +1077,15 @@ export default function Params({
   const remoteUpdateTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const originalValuesRef = useRef<Map<string, Record<string, string>>>(new Map());
   const paramValuesRef = useRef(paramValues);
+  const errorParamsRef = useRef(errorParams);
+  const remoteUpdatedRowsRef = useRef(remoteUpdatedRows);
+  const bulkDraftsRef = useRef(bulkDrafts);
+  const pendingBulkDraftKeysRef = useRef(pendingBulkDraftKeys);
+  const bulkTargetIdsRef = useRef<string[]>([]);
+  const pendingBulkTargetIdsRef = useRef<string[]>([]);
   const schemaCacheRef = useRef<Partial<Record<SchemaCacheKey, ParamSchema>>>({});
   const conflictRowsRef = useRef(conflictRows);
+  const triggerUndoBulkChangeRef = useRef<() => Promise<void>>();
 
   // Sync CSS variable with actual header height to keep bulk row flush under the header.
   useLayoutEffect(() => {
@@ -1032,8 +1145,24 @@ export default function Params({
   }, [paramValues]);
 
   useEffect(() => {
+    errorParamsRef.current = errorParams;
+  }, [errorParams]);
+
+  useEffect(() => {
+    remoteUpdatedRowsRef.current = remoteUpdatedRows;
+  }, [remoteUpdatedRows]);
+
+  useEffect(() => {
     originalValuesRef.current = originalValues;
   }, [originalValues]);
+
+  useEffect(() => {
+    bulkDraftsRef.current = bulkDrafts;
+  }, [bulkDrafts]);
+
+  useEffect(() => {
+    pendingBulkDraftKeysRef.current = pendingBulkDraftKeys;
+  }, [pendingBulkDraftKeys]);
 
   useEffect(() => {
     conflictRowsRef.current = conflictRows;
@@ -1351,10 +1480,119 @@ export default function Params({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = run once on mount
 
+  const familyScopedStrategies = useMemo(
+    () => strategies.filter((strategy) => deriveStrategyProfile(strategy) === activeProfile),
+    [strategies, activeProfile]
+  );
+
+  const preDirtyFilteredStrategies = useMemo(() => {
+    let filtered = familyScopedStrategies;
+
+    const strategyQuery = filterValues.strategy?.trim();
+    if (strategyQuery) {
+      const query = strategyQuery.toLowerCase();
+      filtered = filtered.filter((strategy) => {
+        if (strategy.strategy_id.toLowerCase().includes(query)) return true;
+
+        const params = paramValues.get(strategy.strategy_id);
+        if (params) {
+          for (const [key, value] of Object.entries(params)) {
+            if (String(value ?? '').toLowerCase().includes(query)) return true;
+
+            if (schema) {
+              const paramDef = schema.params[key];
+              if (paramDef && paramDef.label.toLowerCase().includes(query)) return true;
+            }
+          }
+        }
+
+        return false;
+      });
+    }
+
+    const statusValue = filterValues.status;
+    if (statusValue === 'Running') {
+      filtered = filtered.filter((strategy) => strategy.running === true);
+    } else if (statusValue === 'Stopped') {
+      filtered = filtered.filter(
+        (strategy) =>
+          strategy.running === false || strategy.running === null || strategy.running === undefined
+      );
+    }
+
+    const classFilter = filterValues.class;
+    if (classFilter) {
+      const needle = classFilter.toLowerCase();
+      filtered = filtered.filter((strategy) => (strategy.meta?.class || '').toLowerCase() === needle);
+    }
+
+    const venueFilter = filterValues.venue_prefix;
+    if (venueFilter) {
+      const needle = venueFilter.toLowerCase();
+      filtered = filtered.filter(
+        (strategy) => (strategy.meta?.venue_prefix || '').toLowerCase() === needle
+      );
+    }
+
+    const chainFilter = filterValues.chain;
+    if (chainFilter) {
+      const needle = chainFilter.toLowerCase();
+      filtered = filtered.filter((strategy) => (strategy.meta?.chain || '').toLowerCase() === needle);
+    }
+
+    return filtered;
+  }, [familyScopedStrategies, filterValues, paramValues, schema]);
+
+  const pendingBulkTargetIds = useMemo(
+    () => preDirtyFilteredStrategies.map((strategy) => strategy.strategy_id),
+    [preDirtyFilteredStrategies]
+  );
+  pendingBulkTargetIdsRef.current = pendingBulkTargetIds;
+
+  const pendingBulkCommits = useMemo(
+    () => collectPendingBulkCommits(bulkDrafts, pendingBulkDraftKeys, pendingBulkTargetIds, paramValues),
+    [bulkDrafts, pendingBulkDraftKeys, pendingBulkTargetIds, paramValues]
+  );
+
+  const effectiveBulkState = useMemo<BulkCommitSnapshot>(() => {
+    if (!schema || pendingBulkCommits.length === 0) {
+      return {
+        paramValues,
+        dirtyParams,
+        errorParams,
+        remoteUpdatedRows,
+      };
+    }
+
+    return pendingBulkCommits.reduce<BulkCommitSnapshot>((snapshot, commit) => {
+      const paramDef = schema.params[commit.paramKey];
+      if (!paramDef) return snapshot;
+      return reduceBulkCommitState(snapshot, {
+        paramKey: commit.paramKey,
+        committedValue: commit.committedValue,
+        targetIds: commit.targetIds,
+        paramDef,
+        originalValues,
+      }).nextSnapshot;
+    }, {
+      paramValues,
+      dirtyParams,
+      errorParams,
+      remoteUpdatedRows,
+    });
+  }, [schema, pendingBulkCommits, paramValues, dirtyParams, errorParams, remoteUpdatedRows, originalValues]);
+
+  const dirtyCount = countDirtyCells(effectiveBulkState.dirtyParams);
+  const hasDirtyParams = dirtyCount > 0;
+  const selectedDirtyCount = countDirtyInSelection(effectiveBulkState.dirtyParams, selectedStrategies);
+  const hasErrors = Array.from(effectiveBulkState.errorParams.values()).some(
+    (errors) => Object.keys(errors).length > 0
+  );
+
   // Auto-refresh with usePolling hook
   // CRITICAL: Only enable autorefresh after initial load succeeds
   // Pauses when: user is editing, has unsaved changes, or initial load hasn't succeeded
-  const pollingEnabled = auto && initialLoadSuccess && !hasInputFocus && dirtyParams.size === 0;
+  const pollingEnabled = auto && initialLoadSuccess && !hasInputFocus && !hasDirtyParams;
   usePolling(loadData, INTERVALS.PARAMS_POLL, pollingEnabled);
 
   // Timeout safety: prevent infinite spinner on silent failures
@@ -1480,6 +1718,106 @@ export default function Params({
     setLastFocusedCell(null);
   }, [setLastFocusedCell]);
 
+  const markBulkDraftPending = useCallback((paramKey: string) => {
+    if (paramKey === 'bot_on') return;
+    setPendingBulkDraftKeys((prev) => {
+      if (prev.has(paramKey)) return prev;
+      const next = new Set(prev);
+      next.add(paramKey);
+      pendingBulkDraftKeysRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const clearPendingBulkDraft = useCallback((paramKey: string) => {
+    setPendingBulkDraftKeys((prev) => {
+      if (!prev.has(paramKey)) return prev;
+      const next = new Set(prev);
+      next.delete(paramKey);
+      pendingBulkDraftKeysRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const clearPendingBulkDrafts = useCallback(() => {
+    if (pendingBulkDraftKeysRef.current.size === 0) return;
+    pendingBulkDraftKeysRef.current = new Set();
+    setPendingBulkDraftKeys(new Set());
+  }, []);
+
+  const commitBulkValue = useCallback(
+    (
+      paramKey: string,
+      committedValue: string,
+      targetIds: string[],
+      createUndoFeedback: boolean
+    ): BulkChangeOp | null => {
+      if (!schema) return null;
+      const paramDef = schema.params[paramKey];
+      if (!paramDef || targetIds.length === 0) return null;
+
+      const { nextSnapshot, operation } = reduceBulkCommitState(
+        {
+          paramValues: paramValuesRef.current,
+          dirtyParams: dirtyRef.current,
+          errorParams: errorParamsRef.current,
+          remoteUpdatedRows: remoteUpdatedRowsRef.current,
+        },
+        {
+          paramKey,
+          committedValue,
+          targetIds,
+          paramDef,
+          originalValues: originalValuesRef.current,
+        }
+      );
+
+      paramValuesRef.current = nextSnapshot.paramValues;
+      dirtyRef.current = nextSnapshot.dirtyParams;
+      errorParamsRef.current = nextSnapshot.errorParams;
+      remoteUpdatedRowsRef.current = nextSnapshot.remoteUpdatedRows;
+
+      setParamValues(nextSnapshot.paramValues);
+      setDirtyParams(nextSnapshot.dirtyParams);
+      setErrorParams(nextSnapshot.errorParams);
+      setRemoteUpdatedRows(nextSnapshot.remoteUpdatedRows);
+      setBulkActiveParam(null);
+      clearPendingBulkDraft(paramKey);
+
+      if (!createUndoFeedback) {
+        return operation;
+      }
+
+      setLastBulkChangeOp(operation);
+      toast.success('Bulk change applied', {
+        description: `Updated "${paramDef.label}" for ${targetIds.length} strategies.`,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            setLastBulkChangeOp((prev) => prev ?? operation);
+            void triggerUndoBulkChangeRef.current?.();
+          }
+        }
+      });
+
+      return operation;
+    },
+    [schema, clearPendingBulkDraft]
+  );
+
+  const flushPendingBulkDrafts = useCallback(() => {
+    const pendingCommits = collectPendingBulkCommits(
+      bulkDraftsRef.current,
+      pendingBulkDraftKeysRef.current,
+      pendingBulkTargetIdsRef.current,
+      paramValuesRef.current
+    );
+
+    pendingCommits.forEach(({ paramKey, committedValue, targetIds }) => {
+      commitBulkValue(paramKey, committedValue, targetIds, false);
+    });
+  }, [commitBulkValue]);
+
   const handleTradingFocus = useCallback((strategyId: string, rowIndex: number) => {
     const currentSelection = selectionRef.current;
     if (currentSelection.length === 0 || !currentSelection.includes(strategyId)) {
@@ -1574,9 +1912,15 @@ export default function Params({
   }, [revertStrategies]);
 
   const handleRevertAll = useCallback(() => {
-    const dirtyIds = Array.from(dirtyParams.keys());
+    const dirtyIds = Array.from(dirtyRef.current.keys());
+    if (bulkDraftsRef.current && Object.keys(bulkDraftsRef.current).length > 0) {
+      bulkDraftsRef.current = {};
+      setBulkDrafts({});
+    }
+    clearPendingBulkDrafts();
+    setBulkActiveParam(null);
     revertStrategies(dirtyIds);
-  }, [dirtyParams, revertStrategies]);
+  }, [clearPendingBulkDrafts, revertStrategies]);
 
   const handleKeepMine = useCallback((strategyId: string) => {
     setConflictRows(prev => {
@@ -1774,12 +2118,14 @@ export default function Params({
       setDirtyParams(prev => {
         const newMap = new Map(prev);
         newMap.delete(strategyId);
+        dirtyRef.current = newMap;
         return newMap;
       });
 
       setErrorParams(prev => {
         const newMap = new Map(prev);
         newMap.delete(strategyId);
+        errorParamsRef.current = newMap;
         return newMap;
       });
 
@@ -1787,6 +2133,7 @@ export default function Params({
       setOriginalValues(prev => {
         const newMap = new Map(prev);
         newMap.set(strategyId, { ...params });
+        originalValuesRef.current = newMap;
         return newMap;
       });
 
@@ -1818,9 +2165,9 @@ export default function Params({
     (strategyIds: string[]): BulkUpdate[] => {
       const updates: BulkUpdate[] = [];
       strategyIds.forEach((strategyId) => {
-        const stratParams = paramValues.get(strategyId);
+        const stratParams = paramValuesRef.current.get(strategyId);
         if (!stratParams) return;
-        const dirtyKeys = Array.from(dirtyParams.get(strategyId) || []);
+        const dirtyKeys = Array.from(dirtyRef.current.get(strategyId) || []);
         if (dirtyKeys.length === 0) return;
 
         const paramsToSave: Record<string, string> = {};
@@ -1836,13 +2183,13 @@ export default function Params({
       });
       return updates;
     },
-    [dirtyParams, paramValues]
+    []
   );
 
   const ensureNoValidationErrors = useCallback(
     (strategyIds: string[]) => {
       for (const strategyId of strategyIds) {
-        const errors = errorParams.get(strategyId);
+        const errors = errorParamsRef.current.get(strategyId);
         if (errors && Object.keys(errors).length > 0) {
           const firstErrorKey = Object.keys(errors)[0];
           if (firstErrorKey) {
@@ -1854,7 +2201,7 @@ export default function Params({
       }
       return true;
     },
-    [errorParams, focusParamCell]
+    [focusParamCell]
   );
 
   const performBulkSave = useCallback(
@@ -1888,23 +2235,26 @@ export default function Params({
           setDirtyParams((prev) => {
             const next = new Map(prev);
             successIds.forEach((id) => next.delete(id));
+            dirtyRef.current = next;
             return next;
           });
 
           setErrorParams((prev) => {
             const next = new Map(prev);
             successIds.forEach((id) => next.delete(id));
+            errorParamsRef.current = next;
             return next;
           });
 
           setOriginalValues((prev) => {
             const next = new Map(prev);
             successfulUpdates.forEach(({ strategy_id }) => {
-              const current = paramValues.get(strategy_id);
+              const current = paramValuesRef.current.get(strategy_id);
               if (current) {
                 next.set(strategy_id, { ...current });
               }
             });
+            originalValuesRef.current = next;
             return next;
           });
 
@@ -1945,12 +2295,13 @@ export default function Params({
         });
       }
     },
-    [paramValues, scheduleFlashClear]
+    [scheduleFlashClear]
   );
 
   // Save All with bounded concurrency
   const handleSaveAll = useCallback(async () => {
-    const dirtyIds = Array.from(dirtyParams.keys());
+    flushPendingBulkDrafts();
+    const dirtyIds = Array.from(dirtyRef.current.keys());
     if (dirtyIds.length === 0) return;
 
     if (!ensureNoValidationErrors(dirtyIds)) {
@@ -1959,10 +2310,11 @@ export default function Params({
 
     const updates = collectBulkUpdates(dirtyIds);
     await performBulkSave(updates);
-  }, [dirtyParams, ensureNoValidationErrors, collectBulkUpdates, performBulkSave]);
+  }, [flushPendingBulkDrafts, ensureNoValidationErrors, collectBulkUpdates, performBulkSave]);
 
   const saveAllSelected = useCallback(async () => {
-    const targetIds = selectedStrategies.filter((id) => dirtyParams.has(id));
+    flushPendingBulkDrafts();
+    const targetIds = selectedStrategies.filter((id) => dirtyRef.current.has(id));
     if (targetIds.length === 0) {
       toast.error('No dirty params in selection');
       return;
@@ -1980,7 +2332,7 @@ export default function Params({
     if (result.allSuccessful) {
       clearSelection();
     }
-  }, [selectedStrategies, dirtyParams, ensureNoValidationErrors, collectBulkUpdates, performBulkSave, clearSelection]);
+  }, [selectedStrategies, flushPendingBulkDrafts, ensureNoValidationErrors, collectBulkUpdates, performBulkSave, clearSelection]);
 
   const handleSurfaceKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
@@ -2009,15 +2361,14 @@ export default function Params({
   // Navigation warning
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirtyParams.size > 0) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+      if (!hasDirtyParams) return;
+      e.preventDefault();
+      e.returnValue = '';
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [dirtyParams]);
+  }, [hasDirtyParams]);
 
   // Get ordered param defs
   const orderedParamDefs = useMemo(() => {
@@ -2066,76 +2417,15 @@ export default function Params({
     viewMode,
     activeProfile,
   ]);
-  const familyScopedStrategies = useMemo(
-    () => strategies.filter((strategy) => deriveStrategyProfile(strategy) === activeProfile),
-    [strategies, activeProfile]
-  );
-
   // Sorted strategies list (applies when a sort key is active)
   const visibleStrategies = useMemo(() => {
-    // Apply interactive filters on top of family-scoped rows.
-    let filtered = familyScopedStrategies;
+    let filtered = preDirtyFilteredStrategies;
 
-    // Strategy search filter (searches strategy ID and parameter values)
-    const strategyQuery = filterValues.strategy?.trim();
-    if (strategyQuery) {
-      const query = strategyQuery.toLowerCase();
-      filtered = filtered.filter(s => {
-        // Search strategy ID
-        if (s.strategy_id.toLowerCase().includes(query)) return true;
-
-        // Search parameter values
-        const params = paramValues.get(s.strategy_id);
-          if (params) {
-            // Search through all parameter values
-            for (const [key, value] of Object.entries(params)) {
-              if (String(value ?? '').toLowerCase().includes(query)) return true;
-
-              // Also search parameter labels (user-friendly names)
-              if (schema) {
-                const paramDef = schema.params[key];
-              if (paramDef && paramDef.label.toLowerCase().includes(query)) return true;
-            }
-          }
-        }
-
-        return false;
-      });
-    }
-
-    // Status filter
-    const statusValue = filterValues.status;
-    if (statusValue === 'Running') {
-      filtered = filtered.filter((s) => s.running === true);
-    } else if (statusValue === 'Stopped') {
-      filtered = filtered.filter((s) => s.running === false || s.running === null || s.running === undefined);
-    }
-
-    // Dirty params filter
     if (filterValues.dirty === 'Yes') {
-      filtered = filtered.filter(s => {
-        const dirty = dirtyParams.get(s.strategy_id);
+      filtered = filtered.filter((s) => {
+        const dirty = effectiveBulkState.dirtyParams.get(s.strategy_id);
         return dirty && dirty.size > 0;
       });
-    }
-
-    // Classification filters (static metadata from configs/strategies.ini)
-    const classFilter = filterValues.class;
-    if (classFilter) {
-      const needle = classFilter.toLowerCase();
-      filtered = filtered.filter((s) => (s.meta?.class || '').toLowerCase() === needle);
-    }
-
-    const venueFilter = filterValues.venue_prefix;
-    if (venueFilter) {
-      const needle = venueFilter.toLowerCase();
-      filtered = filtered.filter((s) => (s.meta?.venue_prefix || '').toLowerCase() === needle);
-    }
-
-    const chainFilter = filterValues.chain;
-    if (chainFilter) {
-      const needle = chainFilter.toLowerCase();
-      filtered = filtered.filter((s) => (s.meta?.chain || '').toLowerCase() === needle);
     }
 
     // Apply sorting
@@ -2224,9 +2514,11 @@ export default function Params({
     });
 
     return copy;
-  }, [familyScopedStrategies, sortState, schema, paramValues, filterValues, dirtyParams, originalValues]);
+  }, [preDirtyFilteredStrategies, sortState, schema, paramValues, filterValues.dirty, dirtyParams, originalValues, effectiveBulkState.dirtyParams]);
 
   const bulkTargetIds = useMemo(() => visibleStrategies.map((s) => s.strategy_id), [visibleStrategies]);
+  bulkTargetIdsRef.current = bulkTargetIds;
+
   const bulkFocusOn = useCallback((paramKey?: string) => {
     setHasInputFocus(true);
     if (paramKey) setBulkActiveParam(paramKey);
@@ -2238,169 +2530,86 @@ export default function Params({
   }, []);
 
   const setBulkDraft = useCallback((paramKey: string, value: string) => {
-    setBulkDrafts((prev) => ({ ...prev, [paramKey]: value }));
+    const nextDrafts = { ...bulkDraftsRef.current, [paramKey]: value };
+    bulkDraftsRef.current = nextDrafts;
+    setBulkDrafts(nextDrafts);
+    markBulkDraftPending(paramKey);
     setBulkActiveParam(paramKey);
-  }, []);
+  }, [markBulkDraftPending]);
 
   const applyBulkDraft = useCallback((paramKey: string, overrideValue?: string) => {
-    if (!schema) return;
-    const paramDef = schema.params[paramKey];
-    if (!paramDef) return;
-    if (bulkTargetIds.length === 0) return;
-
-    const draftValue = overrideValue ?? bulkDrafts[paramKey] ?? '';
-    const prevValues: Record<string, string | undefined> = {};
-
-    bulkTargetIds.forEach((id) => {
-      const currentVal = paramValues.get(id)?.[paramKey];
-      prevValues[id] = currentVal;
-    });
-
-    setParamValues((prev) => {
-      const next = new Map(prev);
-      bulkTargetIds.forEach((id) => {
-        const current = { ...(next.get(id) || {}) };
-        current[paramKey] = draftValue;
-        next.set(id, current);
-      });
-      return next;
-    });
-
-    setDirtyParams((prev) => {
-      const next = new Map(prev);
-      bulkTargetIds.forEach((id) => {
-        const stratDirty = new Set(next.get(id) || []);
-        const original = originalValues.get(id)?.[paramKey] ?? '';
-        if (draftValue !== original) {
-          stratDirty.add(paramKey);
-        } else {
-          stratDirty.delete(paramKey);
-        }
-        if (stratDirty.size > 0) {
-          next.set(id, stratDirty);
-        } else {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-
-    setErrorParams((prev) => {
-      const next = new Map(prev);
-      bulkTargetIds.forEach((id) => {
-        const value = draftValue;
-        const result = validateParam(paramKey, value, paramDef);
-        const stratErrors = { ...(next.get(id) || {}) };
-        if (!result.valid && result.error) {
-          stratErrors[paramKey] = result.error;
-        } else {
-          delete stratErrors[paramKey];
-        }
-        if (Object.keys(stratErrors).length > 0) {
-          next.set(id, stratErrors);
-        } else {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-
-    setRemoteUpdatedRows((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Set(prev);
-      bulkTargetIds.forEach((id) => next.delete(id));
-      return next;
-    });
-
-    const op: BulkChangeOp = {
-      columnKey: paramKey,
-      affectedIds: [...bulkTargetIds],
-      previousValues: prevValues,
-      newValue: draftValue,
-      undoable: true,
-    };
-    setLastBulkChangeOp(op);
-    setBulkActiveParam(null);
-
-    toast.success('Bulk change applied', {
-      description: `Updated \"${paramDef.label}\" for ${bulkTargetIds.length} strategies.`,
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          setLastBulkChangeOp((prev) => prev ?? op);
-          void triggerUndoBulkChange();
-        }
-      }
-    });
-  }, [schema, bulkTargetIds, bulkDrafts, paramValues, originalValues]);
+    const draftValue = overrideValue ?? bulkDraftsRef.current[paramKey] ?? '';
+    commitBulkValue(paramKey, draftValue, bulkTargetIdsRef.current, true);
+  }, [commitBulkValue]);
 
   const triggerUndoBulkChange = useCallback(async () => {
     if (!lastBulkChangeOp || !lastBulkChangeOp.undoable) return;
     setUndoInFlight(true);
     const { columnKey, affectedIds, previousValues } = lastBulkChangeOp;
 
-    setParamValues((prev) => {
-      const next = new Map(prev);
-      affectedIds.forEach((id) => {
-        const current = { ...(next.get(id) || {}) };
-        const prevVal = previousValues[id];
-        if (prevVal === undefined) {
-          delete current[columnKey];
-        } else {
-          current[columnKey] = prevVal;
-        }
-        next.set(id, current);
-      });
-      return next;
+    const nextParamValues = new Map(paramValuesRef.current);
+    affectedIds.forEach((id) => {
+      const current = { ...(nextParamValues.get(id) || {}) };
+      const prevVal = previousValues[id];
+      if (prevVal === undefined) {
+        delete current[columnKey];
+      } else {
+        current[columnKey] = prevVal;
+      }
+      nextParamValues.set(id, current);
     });
+    paramValuesRef.current = nextParamValues;
+    setParamValues(nextParamValues);
 
-    setDirtyParams((prev) => {
-      const next = new Map(prev);
-      affectedIds.forEach((id) => {
-        const stratDirty = new Set(next.get(id) || []);
-        const original = originalValues.get(id)?.[columnKey] ?? '';
-        const prevVal = previousValues[id] ?? '';
-        if (prevVal !== original) {
-          stratDirty.add(columnKey);
-        } else {
-          stratDirty.delete(columnKey);
-        }
-        if (stratDirty.size > 0) {
-          next.set(id, stratDirty);
-        } else {
-          next.delete(id);
-        }
-      });
-      return next;
+    const nextDirtyParams = new Map(dirtyRef.current);
+    affectedIds.forEach((id) => {
+      const stratDirty = new Set(nextDirtyParams.get(id) || []);
+      const original = originalValuesRef.current.get(id)?.[columnKey] ?? '';
+      const prevVal = previousValues[id] ?? '';
+      if (prevVal !== original) {
+        stratDirty.add(columnKey);
+      } else {
+        stratDirty.delete(columnKey);
+      }
+      if (stratDirty.size > 0) {
+        nextDirtyParams.set(id, stratDirty);
+      } else {
+        nextDirtyParams.delete(id);
+      }
     });
+    dirtyRef.current = nextDirtyParams;
+    setDirtyParams(nextDirtyParams);
 
     if (schema?.params[columnKey]) {
       const paramDef = schema.params[columnKey];
-      setErrorParams((prev) => {
-        const next = new Map(prev);
-        affectedIds.forEach((id) => {
-          const value = previousValues[id];
-          const result = validateParam(columnKey, value ?? '', paramDef);
-          const stratErrors = { ...(next.get(id) || {}) };
-          if (!result.valid && result.error) {
-            stratErrors[columnKey] = result.error;
-          } else {
-            delete stratErrors[columnKey];
-          }
-          if (Object.keys(stratErrors).length > 0) {
-            next.set(id, stratErrors);
-          } else {
-            next.delete(id);
-          }
-        });
-        return next;
+      const nextErrorParams = new Map(errorParamsRef.current);
+      affectedIds.forEach((id) => {
+        const value = previousValues[id];
+        const result = validateParam(columnKey, value ?? '', paramDef);
+        const stratErrors = { ...(nextErrorParams.get(id) || {}) };
+        if (!result.valid && result.error) {
+          stratErrors[columnKey] = result.error;
+        } else {
+          delete stratErrors[columnKey];
+        }
+        if (Object.keys(stratErrors).length > 0) {
+          nextErrorParams.set(id, stratErrors);
+        } else {
+          nextErrorParams.delete(id);
+        }
       });
+      errorParamsRef.current = nextErrorParams;
+      setErrorParams(nextErrorParams);
     }
 
     setLastBulkChangeOp((prev) => (prev ? { ...prev, undoable: false } : prev));
     setUndoInFlight(false);
     toast.success('Bulk change undone');
-  }, [lastBulkChangeOp, originalValues, schema]);
+  }, [lastBulkChangeOp, schema]);
+
+  useEffect(() => {
+    triggerUndoBulkChangeRef.current = triggerUndoBulkChange;
+  }, [triggerUndoBulkChange]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2630,8 +2839,6 @@ export default function Params({
   const allowColumnDrag = customizeColumns && orderedParamDefs.length > 1;
   const canResetColumns = Boolean(columnOrder && !arraysShallowEqual(columnOrder, defaultColumnOrder));
   const isSortActive = Boolean(sortState.key && sortState.direction);
-  const dirtyCount = countDirtyCells(dirtyParams);
-  const hasDirtyParams = dirtyCount > 0;
   const autoRefreshActive = pollingEnabled;
   const autoPauseReason: AutoPauseReason | null = auto && !autoRefreshActive
     ? (hasInputFocus
@@ -2643,9 +2850,7 @@ export default function Params({
           : 'disabled')
     : null;
   const autoPauseLabel = autoPauseReason ? AUTO_PAUSE_LABELS[autoPauseReason] : null;
-  const selectedDirtyCount = countDirtyInSelection(dirtyParams, selectedStrategies);
   const isSavingAll = saveAllProgress !== null;
-  const hasErrors = Array.from(errorParams.values()).some(errors => Object.keys(errors).length > 0);
   const familyCounts = useMemo<Record<ParamsProfileId, number>>(
     () => strategies.reduce(
       (acc, strategy) => {
