@@ -57,6 +57,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -154,7 +155,17 @@ impl PolymarketExecutionClient {
             config.signature_type,
         ));
 
-        let submitter = OrderSubmitter::new(http_client.clone(), order_builder);
+        let retry_config = RetryConfig {
+            max_retries: config.max_retries,
+            initial_delay_ms: config.retry_delay_initial_ms,
+            max_delay_ms: config.retry_delay_max_ms,
+            backoff_factor: 2.0,
+            jitter_ms: 1_000,
+            operation_timeout_ms: Some(config.http_timeout_secs * 1_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+        let submitter = OrderSubmitter::new(http_client.clone(), order_builder, retry_config);
 
         let ws_client = PolymarketWebSocketClient::new_user(
             config.base_url_ws.clone(),

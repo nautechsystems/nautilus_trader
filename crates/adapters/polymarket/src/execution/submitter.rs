@@ -17,6 +17,9 @@
 //!
 //! Accepts Nautilus-native types, handles conversion to Polymarket types,
 //! order building, signing, and HTTP posting — following the dYdX OrderSubmitter pattern.
+//!
+//! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
+//! transient HTTP failures (timeouts, 5xx, rate limits).
 
 use std::sync::Arc;
 
@@ -25,12 +28,14 @@ use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     types::{Price, Quantity},
 };
+use nautilus_network::retry::{RetryConfig, RetryManager};
 
 use super::{order_builder::PolymarketOrderBuilder, parse::calculate_market_price};
 use crate::{
     common::enums::{PolymarketOrderSide, PolymarketOrderType},
     http::{
         clob::PolymarketClobHttpClient,
+        error::Error,
         query::{CancelResponse, OrderResponse},
     },
 };
@@ -41,25 +46,28 @@ use crate::{
 /// - Side/TIF conversion to Polymarket types
 /// - Expiration calculation
 /// - Order building and EIP-712 signing (via [`PolymarketOrderBuilder`])
-/// - HTTP posting to the CLOB API
+/// - HTTP posting to the CLOB API with automatic retry on transient failures
 #[derive(Debug, Clone)]
 pub(crate) struct OrderSubmitter {
     http_client: PolymarketClobHttpClient,
     order_builder: Arc<PolymarketOrderBuilder>,
+    retry_manager: Arc<RetryManager<Error>>,
 }
 
 impl OrderSubmitter {
     pub fn new(
         http_client: PolymarketClobHttpClient,
         order_builder: Arc<PolymarketOrderBuilder>,
+        retry_config: RetryConfig,
     ) -> Self {
         Self {
             http_client,
             order_builder,
+            retry_manager: Arc::new(RetryManager::new(retry_config)),
         }
     }
 
-    /// Builds a signed limit order and posts it.
+    /// Builds a signed limit order and posts it with retry on transient failures.
     ///
     /// Converts Nautilus types to Polymarket types, calculates expiration,
     /// builds and signs the order, then submits via HTTP.
@@ -100,8 +108,22 @@ impl OrderSubmitter {
             )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        self.http_client
-            .post_order(&poly_order, poly_order_type, post_only)
+        let http_client = self.http_client.clone();
+        self.retry_manager
+            .execute_with_retry(
+                "submit_limit_order",
+                || {
+                    let http_client = http_client.clone();
+                    let poly_order = poly_order.clone();
+                    async move {
+                        http_client
+                            .post_order(&poly_order, poly_order_type, post_only)
+                            .await
+                    }
+                },
+                |e| e.is_retryable(),
+                Error::transport,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
@@ -110,6 +132,7 @@ impl OrderSubmitter {
     ///
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
     /// to find the crossing price, then builds and submits a FOK order.
+    /// The book fetch is not retried (stale on retry); only the final POST is retried.
     pub async fn submit_market_order(
         &self,
         token_id: &str,
@@ -141,24 +164,63 @@ impl OrderSubmitter {
             .build_market_order(token_id, poly_side, price, amount_dec, neg_risk)
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
-        self.http_client
-            .post_order(&poly_order, PolymarketOrderType::FOK, false)
-            .await
-            .map_err(|e| anyhow::anyhow!("HTTP request failed: {e}"))
-    }
-
-    /// Cancels a single order.
-    pub async fn cancel_order(&self, venue_order_id: &str) -> anyhow::Result<CancelResponse> {
-        self.http_client
-            .cancel_order(venue_order_id)
+        let http_client = self.http_client.clone();
+        self.retry_manager
+            .execute_with_retry(
+                "submit_market_order",
+                || {
+                    let http_client = http_client.clone();
+                    let poly_order = poly_order.clone();
+                    async move {
+                        http_client
+                            .post_order(&poly_order, PolymarketOrderType::FOK, false)
+                            .await
+                    }
+                },
+                |e| e.is_retryable(),
+                Error::transport,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    /// Cancels multiple orders.
+    /// Cancels a single order with retry on transient failures.
+    pub async fn cancel_order(&self, venue_order_id: &str) -> anyhow::Result<CancelResponse> {
+        let http_client = self.http_client.clone();
+        let order_id = venue_order_id.to_string();
+        self.retry_manager
+            .execute_with_retry(
+                "cancel_order",
+                || {
+                    let http_client = http_client.clone();
+                    let order_id = order_id.clone();
+                    async move { http_client.cancel_order(&order_id).await }
+                },
+                |e| e.is_retryable(),
+                Error::transport,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    /// Cancels multiple orders with retry on transient failures.
     pub async fn cancel_orders(&self, venue_order_ids: &[&str]) -> anyhow::Result<CancelResponse> {
-        self.http_client
-            .cancel_orders(venue_order_ids)
+        let http_client = self.http_client.clone();
+        let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
+        self.retry_manager
+            .execute_with_retry(
+                "cancel_orders",
+                || {
+                    let http_client = http_client.clone();
+                    let order_ids = order_ids.clone();
+                    async move {
+                        let refs: Vec<&str> = order_ids.iter().map(String::as_str).collect();
+                        http_client.cancel_orders(&refs).await
+                    }
+                },
+                |e| e.is_retryable(),
+                Error::transport,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
