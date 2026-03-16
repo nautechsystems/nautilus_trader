@@ -10,6 +10,14 @@ on:
   pull_request:
     branches: ['*']
 
+env:
+  # Fork PRs cannot access repo/org variables so allow lists are empty;
+  # fall back to audit mode which logs calls without blocking them.
+  EGRESS_POLICY: >-
+    ${{ github.event.pull_request.head.repo.fork && 'audit'
+    || vars.STEP_SECURITY_EGRESS_POLICY
+    || 'block' }}
+
 jobs:
   pre-commit:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
@@ -17,7 +25,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -52,7 +60,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -80,7 +88,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -145,7 +153,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -251,7 +259,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -326,7 +334,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -389,7 +397,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -448,7 +456,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -509,7 +517,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -570,7 +578,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -686,7 +694,7 @@ jobs:
       # Security hardening
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -746,7 +754,7 @@ jobs:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}

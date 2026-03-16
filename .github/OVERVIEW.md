@@ -64,6 +64,9 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. The
   `security-audit.yml` workflow also reads its allow list from GitHub Environments so it can validate
   branch changes before promoting the same settings to scheduled runs on the default branch.
+- **Fork PR handling**: `build.yml` falls back to `egress-policy: audit` for fork PRs. Forks cannot
+  access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
+  run with read-only permissions and no access to secrets, so audit mode is safe.
 
 ### Allowed network endpoints
 
