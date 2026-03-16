@@ -684,13 +684,11 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     )
     assert "--serve-fluxboard" in install_script
     assert "--serve-pulse" in install_script
-    assert "--host 127.0.0.1" in install_script
-    assert (
-        "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m "
-        "nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} "
-        "--mode live --confirm-live --host 127.0.0.1 --port 5022 "
-        "--serve-fluxboard --serve-pulse" in install_script
-    )
+    assert 'TOKENMM_API_HOST="${TOKENMM_API_HOST:-}"' in install_script
+    assert 'read_existing_api_host() {' in install_script
+    assert 'api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"' in install_script
+    assert 'api_host="${api_host:-0.0.0.0}"' in install_script
+    assert "--host ${api_host}" in install_script
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
