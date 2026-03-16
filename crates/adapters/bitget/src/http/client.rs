@@ -1634,7 +1634,10 @@ impl BitgetHttpClient {
             size_precision,
             price_increment,
             size_increment,
-            None,
+            symbol
+                .size_multiplier
+                .as_deref()
+                .and_then(Self::positive_quantity),
             Some(Quantity::from("1")),
             None,
             symbol

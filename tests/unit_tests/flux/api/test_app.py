@@ -1188,7 +1188,13 @@ def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows
             "managed_orders": 0,
             "state": "bot_off",
             "ts_ms": 1_700_000_119_000,
-            "pricing_adjustments": [{"type": "inventory_skew", "global_qty_base": "999"}],
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "global_qty_base": "999",
+                    "local_qty_base": "1234",
+                },
+            ],
             "maker_v3": {
                 "quote_snapshot": {
                     "ts_ms": 1_700_000_119_111,
@@ -1314,10 +1320,10 @@ def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows
     assert secondary["global_qty_base"] == pytest.approx(-317104.54289229)
     assert secondary["global_qty_base_complete"] is False
     assert secondary["aggregation_mode"] == "partial"
-    assert secondary["local_qty_base"] == pytest.approx(87589.0)
+    assert secondary["local_qty_base"] == pytest.approx(1234.0)
     assert secondary["pricing_adjustments"][0]["global_qty_base"] == pytest.approx(-317104.54289229)
     assert secondary["pricing_adjustments"][0]["aggregation_mode"] == "partial"
-    assert secondary["pricing_adjustments"][0]["local_qty_base"] == pytest.approx(87589.0)
+    assert float(secondary["pricing_adjustments"][0]["local_qty_base"]) == pytest.approx(1234.0)
 
 
 def test_trades_profile_tokenmm_fans_out_allowlisted_strategies_in_global_time_order(

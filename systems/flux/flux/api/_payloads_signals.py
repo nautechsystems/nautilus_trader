@@ -1005,11 +1005,11 @@ def build_signals_payload_impl(
         elif best_case == "case2":
             spread_net_bps = spread_case2
 
-    decision_edge_bps = _first_valid_float(
+    explicit_decision_edge_bps = _first_valid_float(
         state.get("decision_edge_bps"),
         fv_row.get("decision_edge_bps"),
-        spread_net_bps,
     )
+    decision_edge_bps = _first_valid_float(explicit_decision_edge_bps, spread_net_bps)
 
     required_case1, required_case2 = _required_edges_by_case(params)
     required_edge_bps = _first_valid_float(
@@ -1022,7 +1022,8 @@ def build_signals_payload_impl(
         elif best_case == "case2":
             required_edge_bps = required_case2
 
-    edge2_bps = _first_valid_float(state.get("edge2_bps"), fv_row.get("edge2_bps"))
+    explicit_edge2_bps = _first_valid_float(state.get("edge2_bps"), fv_row.get("edge2_bps"))
+    edge2_bps = explicit_edge2_bps
     if edge2_bps is None and decision_edge_bps is not None and required_edge_bps is not None:
         edge2_bps = decision_edge_bps - required_edge_bps
 
@@ -1068,6 +1069,10 @@ def build_signals_payload_impl(
         quote_spread_bps = _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot)
         if quote_spread_bps is not None:
             spread_net_bps = quote_spread_bps
+            if explicit_decision_edge_bps is None:
+                decision_edge_bps = quote_spread_bps
+                if explicit_edge2_bps is None and required_edge_bps is not None:
+                    edge2_bps = decision_edge_bps - required_edge_bps
 
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = (

@@ -251,6 +251,7 @@ def test_build_signals_payload_keeps_spread_contract_aligned_with_makerv3_quote_
     assert quote_snapshot["ref_bid"] == 103.0
     assert quote_snapshot["ref_ask"] == 105.0
     assert payload["spread_net_bps"] == pytest.approx(expected_spread_bps, abs=0.1)
+    assert payload["decision_edge_bps"] == pytest.approx(expected_spread_bps, abs=0.1)
 
 
 def test_build_signals_payload_preserves_explicit_makerv3_quote_snapshot_epoch(

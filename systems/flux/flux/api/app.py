@@ -171,6 +171,12 @@ def _strategy_groups_include_tokenmm(metadata: StrategyMetadata) -> bool:
     return "tokenmm" in {part.strip() for part in groups.split(",") if part.strip()}
 
 
+def _component_inventory_is_fresh(component_payload: Mapping[str, Any] | None) -> bool:
+    if not isinstance(component_payload, Mapping):
+        return False
+    return not bool(component_payload.get("stale"))
+
+
 @dataclass(frozen=True)
 class ReadinessSnapshot:
     schema_prefix: str
@@ -688,6 +694,7 @@ class FluxApiStore:
             else inventory_payload.get("global_qty_complete"),
         )
         aggregation_mode = decode_text(inventory_payload.get("aggregation_mode")).strip() or None
+        component_inventory_fresh = _component_inventory_is_fresh(component_payload)
 
         pricing_adjustments = payload.get("pricing_adjustments")
         if isinstance(pricing_adjustments, list):
@@ -713,7 +720,7 @@ class FluxApiStore:
             if aggregation_mode is not None:
                 inventory_adjustment["aggregation_mode"] = aggregation_mode
 
-            if isinstance(component_payload, Mapping):
+            if component_inventory_fresh and isinstance(component_payload, Mapping):
                 local_qty_base = safe_float(
                     component_payload.get("local_qty_base") or component_payload.get("local_qty"),
                 )
@@ -750,7 +757,7 @@ class FluxApiStore:
         if aggregation_mode is not None:
             payload["aggregation_mode"] = aggregation_mode
 
-        if isinstance(component_payload, Mapping):
+        if component_inventory_fresh and isinstance(component_payload, Mapping):
             local_qty_base = safe_float(
                 component_payload.get("local_qty_base") or component_payload.get("local_qty"),
             )
