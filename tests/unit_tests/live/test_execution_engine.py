@@ -629,6 +629,46 @@ class TestLiveExecutionEngine:
         assert payload["client_order_id"] == order.client_order_id.value
 
     @pytest.mark.asyncio
+    async def test_order_rejected_repeated_insufficient_margin_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        for _ in range(4):
+            order = self.strategy.order_factory.limit(
+                instrument_id=AUDUSD_SIM.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+                price=AUDUSD_SIM.make_price(0.70000),
+            )
+
+            event = OrderRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="Order failed. Insufficient account balance.",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+                reconciliation=False,
+                due_post_only=False,
+            )
+
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected_insufficient_margin"
+        assert payload["reason"] == "Order failed. Insufficient account balance."
+        assert payload["event_type"] == "OrderRejected"
+
+    @pytest.mark.asyncio
     async def test_order_rejected_with_generic_exchange_error_publishes_execution_alert(self):
         published: list[object] = []
         self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
@@ -1142,6 +1182,49 @@ class TestLiveExecutionEngine:
         payload = json.loads(msg.payload)
         assert payload["alert_key"] == "exchange_order_modify_rejected"
         assert payload["reason"] == "Binance error -2038: ORDER_AMEND_REJECTED"
+
+    @pytest.mark.asyncio
+    async def test_modify_rejected_repeated_insufficient_margin_publishes_single_execution_alert_within_cooldown(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        await eventually(lambda: order.status == OrderStatus.ACCEPTED)
+
+        for idx in range(4):
+            event = OrderModifyRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="Insufficient margin",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns() + idx,
+                ts_init=self.clock.timestamp_ns() + idx,
+                reconciliation=False,
+            )
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_modify_rejected_insufficient_margin"
+        assert payload["reason"] == "Insufficient margin"
+        assert payload["event_type"] == "OrderModifyRejected"
 
     @pytest.mark.asyncio
     async def test_graceful_shutdown_cmd_queue_exception_enabled_calls_shutdown_system(self):

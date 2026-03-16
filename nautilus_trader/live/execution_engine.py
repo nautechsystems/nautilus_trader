@@ -4517,14 +4517,13 @@ class LiveExecutionEngine(ExecutionEngine):
             if event.due_post_only:
                 return
             if self._is_financial_reject_reason(reason):
-                self._publish_execution_alert(
-                    self._build_execution_alert_payload(
-                        event=event,
-                        strategy_id=strategy_id,
-                        alert_key="exchange_order_rejected_insufficient_margin",
-                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
-                        reason=event.reason,
-                    ),
+                self._publish_execution_alert_with_cooldown(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_rejected_insufficient_margin",
+                    message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                    cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
                 )
             elif self._is_terminal_reject_reason(reason):
                 self._publish_execution_alert_with_cooldown(
@@ -4564,14 +4563,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
         if isinstance(event, OrderModifyRejected):
             if self._is_financial_reject_reason(reason):
-                self._publish_execution_alert(
-                    self._build_execution_alert_payload(
-                        event=event,
-                        strategy_id=strategy_id,
-                        alert_key="exchange_order_modify_rejected_insufficient_margin",
-                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
-                        reason=event.reason,
-                    ),
+                self._publish_execution_alert_with_cooldown(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_modify_rejected_insufficient_margin",
+                    message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                    cooldown_ns=self._EXECUTION_ALERT_BURST_COOLDOWN_NS,
                 )
             else:
                 self._publish_execution_alert(
