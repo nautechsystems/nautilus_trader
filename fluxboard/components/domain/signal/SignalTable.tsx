@@ -666,7 +666,9 @@ function formatRatio(value?: number | null): string {
 function computeInventorySkewBps(adj?: InventorySkewAdjustment): number | undefined {
   if (!adj) return undefined;
 
-  // Canonical signed skew from backend (preferred).
+  // Canonical signed skew from backend (preferred). Signal should mirror the
+  // strategy-exported signed quote shift instead of re-deriving direction when
+  // this field is present.
   const signedSkew = coerceFiniteNumber(adj.skew_bps_signed);
   if (signedSkew !== undefined) return signedSkew;
 
@@ -1285,6 +1287,8 @@ function resolveVisibleStrategyFvMid(row: SignalStrategy): number | null {
 }
 
 function spreadMarketVsFvBps(row: SignalStrategy): number | null {
+  // Operator-facing spread should use the same maker quote snapshot truth that
+  // powers the visible "Our" / "Ref" rows, not a mixed live-leg view.
   const marketMid = resolveVisibleStrategyMarketMid(row);
   const fvMid = resolveVisibleStrategyFvMid(row);
   if (marketMid == null || fvMid == null || !Number.isFinite(fvMid) || fvMid === 0) return null;

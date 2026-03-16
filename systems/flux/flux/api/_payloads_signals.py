@@ -404,6 +404,9 @@ def _build_fallback_inventory_skew_adjustments(
     adjustment: dict[str, Any] = {
         "type": "inventory_skew",
     }
+    # `skew_bps_signed` is the canonical signed quote translation exported to
+    # operators and Fluxboard. Positive means our market moved up; negative
+    # means it moved down. UI should prefer this instead of re-deriving sign.
     if total_skew_bps is not None:
         adjustment["skew_bps_signed"] = total_skew_bps
         adjustment["inv_skew"] = total_skew_bps
@@ -710,7 +713,13 @@ def _derive_quote_snapshot(
     maker_leg: Mapping[str, Any] | None,
     ref_leg: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Derive a stable quote snapshot from state payloads and live leg data."""
+    """Derive a stable quote snapshot from state payloads and live leg data.
+
+    Operator-facing maker quote rows, spread, and effective edges are intended
+    to come from one quote-snapshot epoch. Downstream renderers should treat
+    this object as the pricing source of truth rather than mixing in other
+    live-leg values opportunistically.
+    """
 
     state_maker_v3 = state.get("maker_v3")
     quote_snapshot = {}
