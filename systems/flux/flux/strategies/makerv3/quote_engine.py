@@ -711,6 +711,7 @@ def refresh_quotes(  # noqa: C901
 
     strategy._last_pricing_debug = {
         "pricing": {
+            "ts_ms": now_ns // 1_000_000,
             "anchor_source": anchor_source,
             "fv": _decimal_to_json_str(fair_value),
             "anchor_bid": _decimal_to_json_str(anchor_bid),
@@ -772,6 +773,21 @@ def refresh_quotes(  # noqa: C901
             "maker_fresh": maker_fresh,
             "reference_fresh": reference_fresh,
         },
+    }
+    strategy._last_quote_snapshot = {
+        "ts_ms": now_ns // 1_000_000,
+        "maker_top_bid": _decimal_to_json_str(best_bid_px),
+        "maker_top_ask": _decimal_to_json_str(best_ask_px),
+        "ref_bid": _decimal_to_json_str(ref_bid),
+        "ref_ask": _decimal_to_json_str(ref_ask),
+        "place_bid": _decimal_to_json_str(l1_place_bid),
+        "place_ask": _decimal_to_json_str(l1_place_ask),
+        "cancel_bid": _decimal_to_json_str(l1_cancel_bid),
+        "cancel_ask": _decimal_to_json_str(l1_cancel_ask),
+        "eff_bid_edge_bps": _decimal_to_json_str(bid_edge1_eff_bps),
+        "eff_ask_edge_bps": _decimal_to_json_str(ask_edge1_eff_bps),
+        "skew_bps_signed": _decimal_to_json_str(total_skew_bps),
+        "place_edge_bps": _decimal_to_json_str(runtime_params["place_edge1"]),
     }
     per_level_outcomes: list[dict[str, Any]] = []
     decision_context_json = strategy._quote_cycle_decision_context(

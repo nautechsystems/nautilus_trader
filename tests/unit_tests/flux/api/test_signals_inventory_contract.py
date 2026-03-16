@@ -251,3 +251,62 @@ def test_build_signals_payload_keeps_spread_contract_aligned_with_makerv3_quote_
     assert quote_snapshot["ref_bid"] == 103.0
     assert quote_snapshot["ref_ask"] == 105.0
     assert payload["spread_net_bps"] == pytest.approx(expected_spread_bps, abs=0.1)
+
+
+def test_build_signals_payload_preserves_explicit_makerv3_quote_snapshot_epoch(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 103.0, "ask": 105.0, "ts_ms": 1_700_000_009_000},
+            "venue_b:ABC/USDT": {"bid": 103.0, "ask": 105.0, "ts_ms": 1_700_000_009_000},
+        },
+        now_ms_value=1_700_000_010_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1_700_000_010_000,
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_000_000,
+                    "mode": "STALE",
+                    "reason": "bot_off",
+                    "maker_top_bid": 99.0,
+                    "maker_top_ask": 100.0,
+                    "place_bid": 98.5,
+                    "place_ask": 100.5,
+                    "ref_bid": 101.0,
+                    "ref_ask": 102.0,
+                    "skew_bps_signed": -12.5,
+                },
+            },
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    quote_snapshot = payload["maker_v3"]["quote_snapshot"]
+    assert quote_snapshot["ts_ms"] == 1_700_000_000_000
+    assert quote_snapshot["mode"] == "STALE"
+    assert quote_snapshot["maker_top_bid"] == 99.0
+    assert quote_snapshot["maker_top_ask"] == 100.0
+    assert quote_snapshot["place_bid"] == 98.5
+    assert quote_snapshot["place_ask"] == 100.5
+    assert quote_snapshot["ref_bid"] == 101.0
+    assert quote_snapshot["ref_ask"] == 102.0
+    assert quote_snapshot["skew_bps_signed"] == -12.5

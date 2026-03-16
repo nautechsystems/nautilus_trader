@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from flux.api.payloads import contract_id_for_leg
+from flux.api.payloads import decode_text
 from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.shared.publisher_common import build_role_map_payload
 from flux.strategies.makerv3 import inventory as inventory_mod
@@ -715,6 +716,14 @@ def publish_state(
     if pricing_debug:
         strategy._last_pricing_debug = pricing_debug
         payload["pricing_debug"] = pricing_debug
+    last_quote_snapshot = getattr(strategy, "_last_quote_snapshot", None)
+    if isinstance(last_quote_snapshot, Mapping):
+        quote_snapshot = dict(last_quote_snapshot)
+        quote_snapshot["mode"] = decode_text(quote_snapshot.get("mode")).strip() or (
+            "ON" if effective_bot_on else "OFF"
+        )
+        quote_snapshot["reason"] = decode_text(quote_snapshot.get("reason")).strip() or effective_state
+        payload["maker_v3"] = {"quote_snapshot": quote_snapshot}
     strategy._publish_json(
         TOPIC_STATE,
         payload,

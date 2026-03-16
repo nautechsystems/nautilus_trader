@@ -728,36 +728,79 @@ def _derive_quote_snapshot(
         if isinstance(raw_quote_snapshot, Mapping):
             quote_snapshot = dict(raw_quote_snapshot)
 
+    pricing, _ = _state_pricing_debug(state)
+    pricing_ts_ms = coerce_ts_ms(pricing.get("ts_ms"))
     mode = "ON" if bot_on else "OFF"
     reason = decode_text(state.get("state"))
     quote_snapshot["mode"] = decode_text(quote_snapshot.get("mode")).strip() or mode
     quote_snapshot["reason"] = decode_text(quote_snapshot.get("reason")).strip() or reason
-    quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["ts_ms"] = coerce_ts_ms(pricing_ts_ms or quote_snapshot.get("ts_ms") or ts_ms)
 
-    pricing, _ = _state_pricing_debug(state)
-    maker_bid = _first_valid_float(
-        pricing.get("maker_top_bid"),
-        maker_leg.get("bid") if isinstance(maker_leg, Mapping) else None,
+    raw_maker_bid = _first_valid_float(quote_snapshot.get("maker_top_bid"), quote_snapshot.get("bid"))
+    raw_maker_ask = _first_valid_float(quote_snapshot.get("maker_top_ask"), quote_snapshot.get("ask"))
+    raw_ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    raw_ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    raw_place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
+    raw_place_ask = _first_valid_float(quote_snapshot.get("place_ask"))
+    raw_cancel_bid = _first_valid_float(quote_snapshot.get("cancel_bid"))
+    raw_cancel_ask = _first_valid_float(quote_snapshot.get("cancel_ask"))
+
+    has_snapshot_pricing = any(
+        _first_valid_float(
+            pricing.get(key),
+            quote_snapshot.get(key),
+        )
+        is not None
+        for key in (
+            "maker_top_bid",
+            "maker_top_ask",
+            "ref_bid",
+            "ref_ask",
+            "place_bid",
+            "place_ask",
+            "cancel_bid",
+            "cancel_ask",
+            "bid_edge1_eff_bps",
+            "ask_edge1_eff_bps",
+        )
     )
-    maker_ask = _first_valid_float(
-        pricing.get("maker_top_ask"),
-        maker_leg.get("ask") if isinstance(maker_leg, Mapping) else None,
-    )
-    ref_bid = _first_valid_float(
-        pricing.get("ref_bid"),
-        ref_leg.get("bid") if isinstance(ref_leg, Mapping) else None,
-    )
-    ref_ask = _first_valid_float(
-        pricing.get("ref_ask"),
-        ref_leg.get("ask") if isinstance(ref_leg, Mapping) else None,
-    )
-    place_bid = _first_valid_float(pricing.get("place_bid"), maker_bid)
-    place_ask = _first_valid_float(pricing.get("place_ask"), maker_ask)
-    cancel_bid = _first_valid_float(pricing.get("cancel_bid"))
-    cancel_ask = _first_valid_float(pricing.get("cancel_ask"))
+
+    maker_bid = _first_valid_float(pricing.get("maker_top_bid"), raw_maker_bid)
+    maker_ask = _first_valid_float(pricing.get("maker_top_ask"), raw_maker_ask)
+    ref_bid = _first_valid_float(pricing.get("ref_bid"), raw_ref_bid)
+    ref_ask = _first_valid_float(pricing.get("ref_ask"), raw_ref_ask)
+    place_bid = _first_valid_float(pricing.get("place_bid"), raw_place_bid)
+    place_ask = _first_valid_float(pricing.get("place_ask"), raw_place_ask)
+    cancel_bid = _first_valid_float(pricing.get("cancel_bid"), raw_cancel_bid)
+    cancel_ask = _first_valid_float(pricing.get("cancel_ask"), raw_cancel_ask)
+
+    if not has_snapshot_pricing:
+        maker_bid = _first_valid_float(
+            maker_bid,
+            maker_leg.get("bid") if isinstance(maker_leg, Mapping) else None,
+        )
+        maker_ask = _first_valid_float(
+            maker_ask,
+            maker_leg.get("ask") if isinstance(maker_leg, Mapping) else None,
+        )
+        ref_bid = _first_valid_float(
+            ref_bid,
+            ref_leg.get("bid") if isinstance(ref_leg, Mapping) else None,
+        )
+        ref_ask = _first_valid_float(
+            ref_ask,
+            ref_leg.get("ask") if isinstance(ref_leg, Mapping) else None,
+        )
+        place_bid = _first_valid_float(place_bid, maker_bid)
+        place_ask = _first_valid_float(place_ask, maker_ask)
+
     eff_bid = _first_valid_float(pricing.get("bid_edge1_eff_bps"))
     eff_ask = _first_valid_float(pricing.get("ask_edge1_eff_bps"))
-    place_edge = _first_valid_float(pricing.get("place_edge_bps"), params.get("place_edge1"))
+    place_edge = _first_valid_float(
+        pricing.get("place_edge_bps"),
+        quote_snapshot.get("place_edge_bps"),
+        params.get("place_edge1"),
+    )
 
     if isinstance(maker_leg, Mapping):
         quote_snapshot["maker_exchange"] = (
@@ -799,6 +842,27 @@ def _derive_quote_snapshot(
         quote_snapshot["place_edge_bps"] = place_edge
 
     return quote_snapshot
+
+
+def _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(quote_snapshot, Mapping):
+        return None
+    place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
+    place_ask = _first_valid_float(quote_snapshot.get("place_ask"))
+    ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    if (
+        place_bid is None
+        or place_ask is None
+        or ref_bid is None
+        or ref_ask is None
+    ):
+        return None
+    ref_mid = (ref_bid + ref_ask) / 2.0
+    if not ref_mid:
+        return None
+    market_mid = (place_bid + place_ask) / 2.0
+    return ((market_mid - ref_mid) / ref_mid) * 10_000.0
 
 
 def build_signals_payload_impl(
@@ -951,6 +1015,11 @@ def build_signals_payload_impl(
             ref_leg=ref_leg,
         )
     )
+
+    if strategy_family == "maker_v3":
+        quote_spread_bps = _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot)
+        if quote_spread_bps is not None:
+            spread_net_bps = quote_spread_bps
 
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = (
