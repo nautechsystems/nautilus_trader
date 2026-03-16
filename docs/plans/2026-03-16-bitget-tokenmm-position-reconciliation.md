@@ -30,12 +30,12 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Tasks 1-4 are complete. Targeted verification is green across execution reconciliation, MakerV3 inventory/balances, payload boundary, and Bitget adapter evidence. Commit/push/PR packaging remains |
+| Overall | completed | main | Execution-engine cleanup, MakerV3 fallback hardening, payload-boundary evidence, verification, split commits, push, and PR are complete |
 | Task 1: Lock The Bitget Quantity Contract With Evidence | completed | main | Added explicit adapter assertions that Bitget futures and UTA `total` map straight through to `PositionStatusReport.quantity`; no production adapter change required |
 | Task 2: Purge Stale `EXTERNAL` Reconciliation Artifacts Earlier | completed | main | `_process_cached_position_discrepancies()` now actively closes stale EXTERNAL reconciliation artifacts when effective owned qty already matches venue truth |
 | Task 3: Harden MakerV3 Cache-Fallback Inventory And Balances | completed | main | Added shared MakerV3 inventory filtering for stale EXTERNAL artifacts and defensive duplicate report collapse for same-instrument netting reports without position IDs |
 | Task 4: Verify Snapshot Assembly And Aggregation Boundaries | completed | main | Added payload regression proving managed strategy row assembly overrides embedded `EXTERNAL` strategy IDs while generic portfolio merge remains unchanged |
-| Task 5: Verification, Commit History, And PR | in_progress | main | Verification green: live recon slice `7 passed`, MakerV3 inventory/summary slice `18 passed`, publish_balances slice `10 passed`, payload+Bitget adapter slice `5 passed`; commit/push/PR still pending |
+| Task 5: Verification, Commit History, And PR | completed | main | Verification green: live recon slice `7 passed`, MakerV3 inventory/summary slice `18 passed`, publish_balances slice `10 passed`, payload+Bitget adapter slice `5 passed`; branch pushed and PR #52 opened |
 
 ---
 
