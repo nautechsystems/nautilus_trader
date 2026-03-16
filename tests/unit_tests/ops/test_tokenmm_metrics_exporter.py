@@ -8,6 +8,8 @@ from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -239,3 +241,64 @@ def test_poll_quote_states_removes_stale_fallback_labels_after_context_update() 
     assert exporter.registry.get_sample_value("tokenmm_quote_up", live_labels) == 1.0
     assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_100bps", live_labels) == 302.0
     assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_200bps", live_labels) == 302.0
+
+
+def test_poll_quote_states_keeps_other_strategies_live_when_one_redis_read_fails(caplog) -> None:
+    module = _load_exporter_module()
+
+    healthy_strategy_id = "okx_binance_plumeusdt_makerv3"
+    failed_strategy_id = "bybit_binance_plumeusdt_makerv3"
+    now_ms = 1_700_000_000_000
+
+    class FlakyRedis(FakeRedis):
+        def get(self, key: str):
+            if key == f"maker_arb:{failed_strategy_id}:state":
+                raise RuntimeError("redis unavailable")
+            return super().get(key)
+
+    redis_client = FlakyRedis()
+    redis_client.set(
+        f"maker_arb:{healthy_strategy_id}:state",
+        _row_json(
+            ts_ms=now_ms - 1_000,
+            mode="QUOTING",
+            maker_leg={"exchange": "okx_spot", "symbol": "PLUME_USDT"},
+            quote_snapshot={"maker_top_bid": "100", "maker_top_ask": "102"},
+            maker_orders={
+                "bid": [{"px": "100", "rem_qty": "2", "status": "OPEN"}],
+                "ask": [{"px": "102", "rem_qty": "1", "status": "LIVE"}],
+            },
+        ),
+    )
+    exporter = module.TokenMMMetricsExporter(
+        redis_client=redis_client,
+        env="prod",
+        strategy_ids=[failed_strategy_id, healthy_strategy_id],
+    )
+
+    with caplog.at_level("ERROR"):
+        exporter.poll_quote_states(now_ms=now_ms)
+
+    labels = {
+        "env": "prod",
+        "token": "PLUME",
+        "venue": "okx_spot",
+        "symbol": "PLUME/USDT",
+        "strategy_family": "maker_v3",
+    }
+    assert exporter.registry.get_sample_value("tokenmm_quote_up", labels) == 1.0
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_100bps", labels) == 302.0
+    assert "failed to poll strategy state" in caplog.text
+    assert failed_strategy_id in caplog.text
+
+
+def test_build_parser_rejects_invalid_poll_configuration() -> None:
+    module = _load_exporter_module()
+    parser = module._build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--poll-interval-s", "0"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--poll-interval-s", "0.4"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--state-stale-ms", "-1"])

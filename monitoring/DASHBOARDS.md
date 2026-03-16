@@ -34,6 +34,32 @@ Both sidecars stay off the trading hotpath. They poll existing Redis state and
 durable SQLite telemetry out of band instead of emitting metrics inline from
 MakerV3 strategy execution.
 
+## Example sidecar commands
+
+```bash
+python3 ops/scripts/exporters/tokenmm_metrics_exporter.py \
+  --env prod \
+  --port 9108 \
+  --poll-interval-s 5
+
+python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
+  --env prod \
+  --profile tokenmm \
+  --port 9094 \
+  --poll-interval-s 30 \
+  --window-hours 24
+```
+
+Operational notes:
+
+- both exporters reject `--poll-interval-s` values below `0.5`
+- the markouts exporter rejects non-positive `--window-hours` values so the
+  bounded trailing-window contract cannot silently turn into a full-table scan
+- the liquidity exporter keeps polling healthy strategies even if one Redis key
+  read fails for a cycle
+- the markouts exporter logs and keeps serving if a poll fails because a local
+  SQLite file is temporarily missing or locked
+
 ## Provisioning paths
 
 - Dashboard provider config:

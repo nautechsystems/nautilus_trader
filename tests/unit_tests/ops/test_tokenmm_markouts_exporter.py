@@ -4,12 +4,16 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from prometheus_client import CollectorRegistry
 
 import ops.scripts.exporters.tokenmm_markouts_exporter as markouts_exporter
 from ops.scripts.exporters.tokenmm_markouts_exporter import TokenMMMarkoutsExporter
 from ops.scripts.exporters.tokenmm_markouts_exporter import build_parser
 from ops.scripts.exporters.tokenmm_markouts_exporter import default_db_paths
+from ops.scripts.exporters.tokenmm_markouts_exporter import _build_fills_query
+from ops.scripts.exporters.tokenmm_markouts_exporter import _build_markouts_query
+from ops.scripts.exporters.tokenmm_markouts_exporter import _poll_once_with_logging
 from ops.scripts.exporters.tokenmm_markouts_exporter import _resolve_paths
 
 
@@ -59,6 +63,68 @@ def test_resolve_paths_honors_explicit_cli_db_overrides(tmp_path: Path) -> None:
 
     assert paths["fills"] == fills_db
     assert paths["markouts"] == markouts_db
+
+
+def test_build_fills_query_uses_compact_tuple_lookup() -> None:
+    query = _build_fills_query(
+        [
+            {"trader_id": "TRADER-1", "event_id": "fill-2"},
+            {"trader_id": "TRADER-1", "event_id": "fill-2"},
+            {"trader_id": "TRADER-2", "event_id": "fill-3"},
+        ],
+    )
+
+    assert query is not None
+    assert "(trader_id, event_id) IN" in query
+    assert " OR " not in query
+    assert "SELECT trader_id, event_id, strategy_id, order_side, instrument_id, fill_px, fill_qty, fill_ts_ms" in query
+
+
+def test_build_markouts_query_projects_only_required_columns() -> None:
+    query = _build_markouts_query(
+        benchmark_name="fv_market_mid",
+        window_hours=24.0,
+        now_ms=1_700_000_200_000,
+    )
+
+    assert "SELECT trader_id, event_id, strategy_id, benchmark_name, horizon_s, target_ts_ms, markout_bps, fill_px, fill_qty, resolution_status" in query
+    assert "FROM execution_markout" in query
+
+
+def test_build_parser_rejects_unbounded_or_invalid_poll_configuration() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--window-hours", "0"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--window-hours", "-1"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--poll-interval-s", "0"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--poll-interval-s", "0.4"])
+
+
+def test_exporter_rejects_non_positive_window_hours(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        TokenMMMarkoutsExporter(
+            fills_path=tmp_path / "fills.sqlite",
+            markouts_path=tmp_path / "markouts.sqlite",
+            env="prod",
+            profile="tokenmm",
+            window_hours=0,
+        )
+
+
+def test_poll_once_with_logging_catches_and_logs_poll_failures(caplog) -> None:
+    class BrokenExporter:
+        def poll_once(self) -> None:
+            raise FileNotFoundError("fills.sqlite")
+
+    with caplog.at_level("ERROR"):
+        _poll_once_with_logging(BrokenExporter())
+
+    assert "markouts poll failed" in caplog.text
+    assert "fills.sqlite" in caplog.text
 
 
 def test_load_markout_snapshot_bounds_markout_reads_and_matching_fill_reads(

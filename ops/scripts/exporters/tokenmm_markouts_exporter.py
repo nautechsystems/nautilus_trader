@@ -40,11 +40,50 @@ LABEL_NAMES = (
 DEFAULT_TELEMETRY_ROOT = Path("/var/lib/nautilus/telemetry")
 DEFAULT_BENCHMARK_NAME = "fv_market_mid"
 PROFILE_NORMALIZER = re.compile(r"[^a-z0-9]+")
+MARKOUT_QUERY_COLUMNS = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "benchmark_name",
+    "horizon_s",
+    "target_ts_ms",
+    "markout_bps",
+    "fill_px",
+    "fill_qty",
+    "resolution_status",
+)
+FILL_QUERY_COLUMNS = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "order_side",
+    "instrument_id",
+    "fill_px",
+    "fill_qty",
+    "fill_ts_ms",
+)
 
 
 def normalize_profile(profile: str) -> str:
     text = PROFILE_NORMALIZER.sub("_", str(profile or "").strip().lower()).strip("_")
     return text or "tokenmm"
+
+
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be a float") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be > 0")
+    return parsed
+
+
+def _poll_interval_seconds(value: str) -> float:
+    parsed = _positive_float(value)
+    if parsed < 0.5:
+        raise argparse.ArgumentTypeError("must be >= 0.5")
+    return parsed
 
 
 def default_db_paths(
@@ -77,8 +116,9 @@ def _build_markouts_query(
         window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)
         filters.append(f"target_ts_ms BETWEEN {window_start_ms} AND {now_ms}")
     where_clause = " AND ".join(filters)
+    select_cols = ", ".join(MARKOUT_QUERY_COLUMNS)
     return (
-        "SELECT * FROM execution_markout "
+        f"SELECT {select_cols} FROM execution_markout "
         f"WHERE {where_clause} "
         "ORDER BY target_ts_ms DESC"
     )
@@ -100,15 +140,18 @@ def _build_fills_query(markouts: list[dict[str, Any]]) -> str | None:
     if not fill_keys:
         return None
 
-    predicates = [
-        "(trader_id = {trader_id} AND event_id = {event_id})".format(
+    select_cols = ", ".join(FILL_QUERY_COLUMNS)
+    row_values = ", ".join(
+        "({trader_id}, {event_id})".format(
             trader_id=_sql_literal(trader_id),
             event_id=_sql_literal(event_id),
         )
         for trader_id, event_id in fill_keys
-    ]
-    where_clause = " OR ".join(predicates)
-    return f"SELECT * FROM execution_fill WHERE {where_clause}"
+    )
+    return (
+        f"SELECT {select_cols} FROM execution_fill "
+        f"WHERE (trader_id, event_id) IN ({row_values})"
+    )
 
 
 def load_markout_snapshot(
@@ -119,6 +162,8 @@ def load_markout_snapshot(
     window_hours: float = 24.0,
     now_ms: int | None = None,
 ) -> list[dict[str, Any]]:
+    if float(window_hours) <= 0:
+        raise ValueError("window_hours must be > 0 for bounded polling")
     if now_ms is None:
         now_ms = int(time.time() * 1000)
 
@@ -207,6 +252,8 @@ class TokenMMMarkoutsExporter:
         benchmark_name: str = DEFAULT_BENCHMARK_NAME,
         registry: CollectorRegistry | None = None,
     ) -> None:
+        if float(window_hours) <= 0:
+            raise ValueError("window_hours must be > 0 for bounded polling")
         self.fills_path = Path(fills_path)
         self.markouts_path = Path(markouts_path)
         self.env = str(env or "prod")
@@ -337,6 +384,13 @@ class TokenMMMarkoutsExporter:
         )
 
 
+def _poll_once_with_logging(exporter: TokenMMMarkoutsExporter) -> None:
+    try:
+        exporter.poll_once()
+    except Exception:
+        LOGGER.exception("markouts poll failed")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export durable TokenMM markout aggregates as Prometheus gauges.",
@@ -356,7 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--window-hours",
-        type=float,
+        type=_positive_float,
         default=24.0,
         help="Trailing target timestamp window used for bounded polling reads.",
     )
@@ -368,7 +422,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--poll-interval-s",
-        type=float,
+        type=_poll_interval_seconds,
         default=30.0,
         help="Polling interval in seconds.",
     )
@@ -419,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while not done:
-        exporter.poll_once()
+        _poll_once_with_logging(exporter)
         time.sleep(max(float(args.poll_interval_s), 0.5))
 
     return 0

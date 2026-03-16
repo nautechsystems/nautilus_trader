@@ -97,6 +97,21 @@ These sidecars do not add work to MakerV3 quote loops or fill handling. They
 read existing Redis state and existing SQLite telemetry out of band, off the
 trading hotpath.
 
+Recommended minimal sidecar invocation:
+
+```bash
+python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
+  --env prod \
+  --profile tokenmm \
+  --port 9094 \
+  --poll-interval-s 30 \
+  --window-hours 24
+```
+
+Keep the polling window bounded. The exporter now rejects non-positive
+`--window-hours` values so a bad override cannot silently widen polling into a
+full-table scan.
+
 ## Known limitations and scope
 
 Explicit v0 scope:

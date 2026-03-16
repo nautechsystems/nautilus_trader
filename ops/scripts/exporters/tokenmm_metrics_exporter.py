@@ -70,6 +70,33 @@ def _to_decimal(value: Any) -> Decimal | None:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be a float") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be > 0")
+    return parsed
+
+
+def _poll_interval_seconds(value: str) -> float:
+    parsed = _positive_float(value)
+    if parsed < 0.5:
+        raise argparse.ArgumentTypeError("must be >= 0.5")
+    return parsed
+
+
+def _non_negative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
+
+
 def normalize_venue(value: Any) -> str:
     text = str(value or "").strip().lower()
     if not text:
@@ -341,6 +368,25 @@ class TokenMMMetricsExporter:
     def _label_values(self, labels: dict[str, str]) -> tuple[str, ...]:
         return tuple(labels[name] for name in LABEL_NAMES)
 
+    def _preserve_current_metric_values(
+        self,
+        *,
+        labels: dict[str, str],
+        quote_up_values: dict[tuple[str, ...], float],
+        depth_100_values: dict[tuple[str, ...], float],
+        depth_200_values: dict[tuple[str, ...], float],
+    ) -> None:
+        label_values = self._label_values(labels)
+        sample_values = {
+            "tokenmm_quote_up": quote_up_values,
+            "tokenmm_quote_depth_usd_100bps": depth_100_values,
+            "tokenmm_quote_depth_usd_200bps": depth_200_values,
+        }
+        for metric_name, target in sample_values.items():
+            current = self.registry.get_sample_value(metric_name, labels)
+            if current is not None:
+                target[label_values] = float(current)
+
     def _sync_metric(
         self,
         *,
@@ -388,43 +434,53 @@ class TokenMMMetricsExporter:
         depth_100_values: dict[tuple[str, ...], float] = {}
         depth_200_values: dict[tuple[str, ...], float] = {}
         for strategy_id in self._contexts:
-            state_raw = self.redis.get(f"maker_arb:{strategy_id}:state")
-            state = self._parse_state_payload(state_raw) or {}
-            self._update_context_from_state(strategy_id, state)
+            previous_labels = self._labels(strategy_id)
+            try:
+                state_raw = self.redis.get(f"maker_arb:{strategy_id}:state")
+                state = self._parse_state_payload(state_raw) or {}
+                self._update_context_from_state(strategy_id, state)
 
-            labels = self._labels(strategy_id)
-            label_values = self._label_values(labels)
-            quote_up = compute_quote_up(
-                state.get("mode"),
-                state.get("ts_ms"),
-                now_ms,
-                self.state_stale_ms,
-            )
-            quote_up_values[label_values] = float(quote_up)
-
-            snapshot = state.get("quote_snapshot") if isinstance(state.get("quote_snapshot"), dict) else {}
-            top_bid = _to_decimal(snapshot.get("maker_top_bid")) or _to_decimal(state.get("maker_top_bid"))
-            top_ask = _to_decimal(snapshot.get("maker_top_ask")) or _to_decimal(state.get("maker_top_ask"))
-            maker_orders = state.get("maker_orders") if isinstance(state.get("maker_orders"), dict) else {}
-            if top_bid is None or top_ask is None:
-                depth_100 = Decimal("0")
-                depth_200 = Decimal("0")
-            else:
-                depth_100 = compute_depth_usd_within_bps(
-                    maker_orders=maker_orders,
-                    top_bid=top_bid,
-                    top_ask=top_ask,
-                    bps_limit=100,
+                labels = self._labels(strategy_id)
+                label_values = self._label_values(labels)
+                quote_up = compute_quote_up(
+                    state.get("mode"),
+                    state.get("ts_ms"),
+                    now_ms,
+                    self.state_stale_ms,
                 )
-                depth_200 = compute_depth_usd_within_bps(
-                    maker_orders=maker_orders,
-                    top_bid=top_bid,
-                    top_ask=top_ask,
-                    bps_limit=200,
-                )
+                quote_up_values[label_values] = float(quote_up)
 
-            depth_100_values[label_values] = float(depth_100)
-            depth_200_values[label_values] = float(depth_200)
+                snapshot = state.get("quote_snapshot") if isinstance(state.get("quote_snapshot"), dict) else {}
+                top_bid = _to_decimal(snapshot.get("maker_top_bid")) or _to_decimal(state.get("maker_top_bid"))
+                top_ask = _to_decimal(snapshot.get("maker_top_ask")) or _to_decimal(state.get("maker_top_ask"))
+                maker_orders = state.get("maker_orders") if isinstance(state.get("maker_orders"), dict) else {}
+                if top_bid is None or top_ask is None:
+                    depth_100 = Decimal("0")
+                    depth_200 = Decimal("0")
+                else:
+                    depth_100 = compute_depth_usd_within_bps(
+                        maker_orders=maker_orders,
+                        top_bid=top_bid,
+                        top_ask=top_ask,
+                        bps_limit=100,
+                    )
+                    depth_200 = compute_depth_usd_within_bps(
+                        maker_orders=maker_orders,
+                        top_bid=top_bid,
+                        top_ask=top_ask,
+                        bps_limit=200,
+                    )
+
+                depth_100_values[label_values] = float(depth_100)
+                depth_200_values[label_values] = float(depth_200)
+            except Exception:
+                LOGGER.exception("failed to poll strategy state for %s", strategy_id)
+                self._preserve_current_metric_values(
+                    labels=previous_labels,
+                    quote_up_values=quote_up_values,
+                    depth_100_values=depth_100_values,
+                    depth_200_values=depth_200_values,
+                )
 
         self._sync_metric(
             gauge=self.g_quote_up,
@@ -494,13 +550,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--poll-interval-s",
-        type=float,
+        type=_poll_interval_seconds,
         default=float(_env("POLL_INTERVAL_S", "5")),
         help="Polling interval in seconds.",
     )
     parser.add_argument(
         "--state-stale-ms",
-        type=int,
+        type=_non_negative_int,
         default=30_000,
         help="Freshness window for quote-up evaluation.",
     )
