@@ -32,6 +32,7 @@ pub mod option_contract;
 pub mod option_spread;
 pub mod perpetual_contract;
 pub mod synthetic;
+pub mod tick_scheme;
 
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
@@ -49,13 +50,24 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 pub use crate::instruments::{
-    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
-    commodity::Commodity, crypto_future::CryptoFuture, crypto_option::CryptoOption,
-    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-    futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    index_instrument::IndexInstrument, option_contract::OptionContract,
-    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
+    any::InstrumentAny,
+    betting::BettingInstrument,
+    binary_option::BinaryOption,
+    cfd::Cfd,
+    commodity::Commodity,
+    crypto_future::CryptoFuture,
+    crypto_option::CryptoOption,
+    crypto_perpetual::CryptoPerpetual,
+    currency_pair::CurrencyPair,
+    equity::Equity,
+    futures_contract::FuturesContract,
+    futures_spread::FuturesSpread,
+    index_instrument::IndexInstrument,
+    option_contract::OptionContract,
+    option_spread::OptionSpread,
+    perpetual_contract::PerpetualContract,
     synthetic::SyntheticInstrument,
+    tick_scheme::{FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme},
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
@@ -149,104 +161,6 @@ pub fn validate_instrument_common(
     }
 
     Ok(())
-}
-
-pub trait TickSchemeRule: Display {
-    fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
-    fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct FixedTickScheme {
-    tick: f64,
-}
-
-impl PartialEq for FixedTickScheme {
-    fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick
-    }
-}
-impl Eq for FixedTickScheme {}
-
-impl FixedTickScheme {
-    #[allow(clippy::missing_errors_doc)]
-    pub fn new(tick: f64) -> anyhow::Result<Self> {
-        check_predicate_true(tick > 0.0, "tick must be positive")?;
-        Ok(Self { tick })
-    }
-}
-
-impl TickSchemeRule for FixedTickScheme {
-    #[inline(always)]
-    fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
-        let base = (value / self.tick).floor() * self.tick;
-        Some(Price::new(base - (n as f64) * self.tick, precision))
-    }
-
-    #[inline(always)]
-    fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
-        let base = (value / self.tick).ceil() * self.tick;
-        Some(Price::new(base + (n as f64) * self.tick, precision))
-    }
-}
-
-impl Display for FixedTickScheme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FIXED")
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TickScheme {
-    Fixed(FixedTickScheme),
-    Crypto,
-}
-
-impl TickSchemeRule for TickScheme {
-    #[inline(always)]
-    fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
-        match self {
-            Self::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
-            Self::Crypto => {
-                let increment: f64 = 0.01;
-                let base = (value / increment).floor() * increment;
-                Some(Price::new(base - (n as f64) * increment, precision))
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
-        match self {
-            Self::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
-            Self::Crypto => {
-                let increment: f64 = 0.01;
-                let base = (value / increment).ceil() * increment;
-                Some(Price::new(base + (n as f64) * increment, precision))
-            }
-        }
-    }
-}
-
-impl Display for TickScheme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Fixed(_) => write!(f, "FIXED"),
-            Self::Crypto => write!(f, "CRYPTO_0_01"),
-        }
-    }
-}
-
-impl FromStr for TickScheme {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_ascii_uppercase().as_str() {
-            "FIXED" => Ok(Self::Fixed(FixedTickScheme::new(1.0)?)),
-            "CRYPTO_0_01" => Ok(Self::Crypto),
-            _ => anyhow::bail!("unknown tick scheme {s}"),
-        }
-    }
 }
 
 #[enum_dispatch]
@@ -546,8 +460,6 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::*};
@@ -762,20 +674,6 @@ mod tests {
     }
 
     #[rstest]
-    fn fixed_tick_scheme_prices() {
-        let scheme = FixedTickScheme::new(0.5).unwrap();
-        let bid = scheme.next_bid_price(10.3, 0, 2).unwrap();
-        let ask = scheme.next_ask_price(10.3, 0, 2).unwrap();
-        assert!(bid < ask);
-    }
-
-    #[rstest]
-    #[should_panic]
-    fn fixed_tick_negative() {
-        FixedTickScheme::new(-0.01).unwrap();
-    }
-
-    #[rstest]
     fn next_bid_prices_sequence(currency_pair_btcusdt: CurrencyPair) {
         let start = 10_000.0;
         let bids = currency_pair_btcusdt.next_bid_prices(start, 5);
@@ -793,13 +691,6 @@ mod tests {
         for i in 1..asks.len() {
             assert!(asks[i] > asks[i - 1]);
         }
-    }
-
-    #[rstest]
-    fn fixed_tick_boundary() {
-        let scheme = FixedTickScheme::new(0.5).unwrap();
-        let price = scheme.next_bid_price(10.5, 0, 2).unwrap();
-        assert_eq!(price, Price::new(10.5, 2));
     }
 
     #[rstest]
@@ -910,15 +801,6 @@ mod tests {
     }
 
     #[rstest]
-    fn fixed_tick_multiple_steps() {
-        let scheme = FixedTickScheme::new(1.0).unwrap();
-        let bid = scheme.next_bid_price(10.0, 2, 1).unwrap();
-        let ask = scheme.next_ask_price(10.0, 3, 1).unwrap();
-        assert_eq!(bid, Price::new(8.0, 1));
-        assert_eq!(ask, Price::new(13.0, 1));
-    }
-
-    #[rstest]
     #[case(1.234_999, 1.23)]
     #[case(1.235, 1.24)]
     #[case(1.235_001, 1.24)]
@@ -949,12 +831,6 @@ mod tests {
         let price_above = currency_pair_btcusdt.make_price(value_above);
         assert_eq!(price_below, price_exact);
         assert_ne!(price_exact, price_above);
-    }
-
-    #[rstest]
-    fn tick_scheme_round_trip() {
-        let scheme = TickScheme::from_str("CRYPTO_0_01").unwrap();
-        assert_eq!(scheme.to_string(), "CRYPTO_0_01");
     }
 
     #[rstest]
@@ -1200,16 +1076,6 @@ mod tests {
     ) {
         let qty = currency_pair_btcusdt.make_qty(input, Some(round_down));
         assert!(qty.as_f64().is_finite());
-    }
-
-    #[rstest]
-    fn pyo3_failure_tick_scheme_unknown() {
-        assert!(TickScheme::from_str("UNKNOWN").is_err());
-    }
-
-    #[rstest]
-    fn pyo3_failure_fixed_tick_zero() {
-        assert!(FixedTickScheme::new(0.0).is_err());
     }
 
     #[rstest]
