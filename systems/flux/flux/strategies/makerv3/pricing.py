@@ -162,9 +162,9 @@ def apply_inventory_skew_to_edges(
     """
     skew_abs = abs(total_skew_bps)
     if total_skew_bps > 0:
-        return bid_edge_bps + skew_abs, ask_edge_bps - skew_abs
-    if total_skew_bps < 0:
         return bid_edge_bps - skew_abs, ask_edge_bps + skew_abs
+    if total_skew_bps < 0:
+        return bid_edge_bps + skew_abs, ask_edge_bps - skew_abs
     return bid_edge_bps, ask_edge_bps
 
 

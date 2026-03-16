@@ -50,6 +50,10 @@ MakerV3 runtime params are backed by the canonical registry:
 
 Operational expectations:
 
+- Signed skew convention is canonical across strategy, API, and UI:
+  - positive values shift our quoted market up,
+  - negative values shift our quoted market down,
+  - `linear_offset_bps`, `global_skew_bps`, `local_skew_bps`, and `total_skew_bps` all use that convention.
 - Unknown keys are rejected (fail-fast).
 - Updates are coerced and applied atomically.
 - Hot-path-sensitive params (for example depth) are bounded to HFT-safe limits.

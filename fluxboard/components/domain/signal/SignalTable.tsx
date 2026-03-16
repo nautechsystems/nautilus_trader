@@ -695,9 +695,10 @@ function computeInventorySkewBps(adj?: InventorySkewAdjustment): number | undefi
   //   skew_bps < 0 => quotes shift down (buy lower, sell lower)
   //   skew_bps > 0 => quotes shift up (buy higher, sell higher)
   //
-  // We care about directional shift (translation), not widening/narrowing.
-  // Translation is the midpoint move across both legs, i.e. average delta.
-  return (deltaAsk + deltaBid) / 2;
+  // Edge deltas are not price deltas: moving quotes up reduces bid edge and
+  // increases ask edge by the same amount. Recover the signed translation from
+  // the edge-space change instead of averaging the deltas.
+  return (deltaAsk - deltaBid) / 2;
 }
 
 function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null {

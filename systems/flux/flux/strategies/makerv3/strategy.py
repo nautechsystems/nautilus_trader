@@ -183,7 +183,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         des_qty_local: NonNegativeFloat | None = None
         max_qty_local: NonNegativeFloat | None = None
         max_skew_bps_local: NonNegativeFloat | None = None
-        linear_offset_bps: NonNegativeFloat | None = None
+        linear_offset_bps: float | None = None
         max_age_ms: PositiveInt | None = None
         bid_edge1: float | None = None
         ask_edge1: float | None = None

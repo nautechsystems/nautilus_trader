@@ -110,6 +110,25 @@ def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config()
     assert runtime_params["order_reject_alert_after_s"] == Decimal(12)
 
 
+def test_initial_runtime_params_accept_signed_linear_offset_bps() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        linear_offset_bps=-3.5,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["linear_offset_bps"] == Decimal("-3.5")
+
+
+def test_runtime_param_coercion_accepts_negative_linear_offset_bps() -> None:
+    assert runtime_params_mod.coerce_runtime_param_value("linear_offset_bps", -7.25) == Decimal(
+        "-7.25",
+    )
+
+
 def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> None:
     config = MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
