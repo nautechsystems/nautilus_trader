@@ -294,6 +294,22 @@ pub struct TickSizeResponse {
     pub minimum_tick_size: f64,
 }
 
+/// A single price level from the CLOB order book.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClobBookLevel {
+    pub price: String,
+    pub size: String,
+}
+
+/// Response from the CLOB `GET /book` endpoint.
+///
+/// Extra fields (`market`, `asset_id`, `hash`, `timestamp`) are silently ignored.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClobBookResponse {
+    pub bids: Vec<ClobBookLevel>,
+    pub asks: Vec<ClobBookLevel>,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -556,5 +572,32 @@ mod tests {
         let response: SearchResponse = serde_json::from_str(json).unwrap();
         assert!(response.markets.is_none());
         assert!(response.events.is_none());
+    }
+
+    #[rstest]
+    fn test_clob_book_response_deserialization() {
+        let response: ClobBookResponse = load("clob_book_response.json");
+
+        assert_eq!(response.bids.len(), 3);
+        assert_eq!(response.asks.len(), 3);
+
+        assert_eq!(response.bids[0].price, "0.48");
+        assert_eq!(response.bids[0].size, "100.00");
+        assert_eq!(response.bids[2].price, "0.50");
+        assert_eq!(response.bids[2].size, "150.00");
+
+        assert_eq!(response.asks[0].price, "0.51");
+        assert_eq!(response.asks[0].size, "120.00");
+        assert_eq!(response.asks[2].price, "0.53");
+        assert_eq!(response.asks[2].size, "90.00");
+    }
+
+    #[rstest]
+    fn test_clob_book_response_ignores_extra_fields() {
+        // Verify serde silently ignores extra fields from the API
+        let json = r#"{"market": "0xabc", "asset_id": "123", "hash": "0x1", "timestamp": "123", "bids": [], "asks": []}"#;
+        let response: ClobBookResponse = serde_json::from_str(json).unwrap();
+        assert!(response.bids.is_empty());
+        assert!(response.asks.is_empty());
     }
 }

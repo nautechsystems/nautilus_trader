@@ -41,14 +41,14 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
     Ok(UnixNanos::from(ns))
 }
 
-fn parse_price(s: &str, precision: u8) -> anyhow::Result<Price> {
+pub(crate) fn parse_price(s: &str, precision: u8) -> anyhow::Result<Price> {
     let value: f64 = s
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid price '{s}': {e}"))?;
     Price::new_checked(value, precision)
 }
 
-fn parse_quantity(s: &str, precision: u8) -> anyhow::Result<Quantity> {
+pub(crate) fn parse_quantity(s: &str, precision: u8) -> anyhow::Result<Quantity> {
     let value: f64 = s
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid quantity '{s}': {e}"))?;

@@ -1,0 +1,16 @@
+{
+  "market": "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47",
+  "asset_id": "12345678901234567890",
+  "hash": "0xabc123",
+  "timestamp": "1703875200000",
+  "bids": [
+    {"price": "0.48", "size": "100.00"},
+    {"price": "0.49", "size": "200.00"},
+    {"price": "0.50", "size": "150.00"}
+  ],
+  "asks": [
+    {"price": "0.51", "size": "120.00"},
+    {"price": "0.52", "size": "180.00"},
+    {"price": "0.53", "size": "90.00"}
+  ]
+}
