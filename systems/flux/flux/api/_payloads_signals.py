@@ -791,8 +791,6 @@ def _derive_quote_snapshot(
             ref_ask,
             ref_leg.get("ask") if isinstance(ref_leg, Mapping) else None,
         )
-        place_bid = _first_valid_float(place_bid, maker_bid)
-        place_ask = _first_valid_float(place_ask, maker_ask)
 
     eff_bid = _first_valid_float(pricing.get("bid_edge1_eff_bps"))
     eff_ask = _first_valid_float(pricing.get("ask_edge1_eff_bps"))
