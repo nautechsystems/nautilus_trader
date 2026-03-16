@@ -117,6 +117,9 @@ def test_exporter_rejects_non_positive_window_hours(tmp_path: Path) -> None:
 
 def test_poll_once_with_logging_catches_and_logs_poll_failures(caplog) -> None:
     class BrokenExporter:
+        fills_path = Path("/tmp/fills.sqlite")
+        markouts_path = Path("/tmp/markouts.sqlite")
+
         def poll_once(self) -> None:
             raise FileNotFoundError("fills.sqlite")
 
@@ -124,6 +127,8 @@ def test_poll_once_with_logging_catches_and_logs_poll_failures(caplog) -> None:
         _poll_once_with_logging(BrokenExporter())
 
     assert "markouts poll failed" in caplog.text
+    assert "/tmp/fills.sqlite" in caplog.text
+    assert "/tmp/markouts.sqlite" in caplog.text
     assert "fills.sqlite" in caplog.text
 
 

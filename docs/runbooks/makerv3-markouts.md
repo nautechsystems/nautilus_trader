@@ -85,13 +85,14 @@ Operationally:
 The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
 
 - `ops/scripts/exporters/tokenmm_markouts_exporter.py` polls the existing
-  `fills.sqlite` and `markouts.sqlite` files and exposes aggregate Prometheus
-  gauges
+  `fills.sqlite` and `markouts.sqlite` files and exposes markout performance metrics
+  as aggregate Prometheus gauges
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
-  for the operator dashboard
+  for the operator dashboard focused on markout performance by strategy,
+  horizon, and side
 - `ops/scripts/exporters/tokenmm_metrics_exporter.py` and
   `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json` handle the separate
-  liquidity/uptime surface
+  liquidity and uptime metrics surface
 
 These sidecars do not add work to MakerV3 quote loops or fill handling. They
 read existing Redis state and existing SQLite telemetry out of band, off the

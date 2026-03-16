@@ -94,6 +94,9 @@ def test_markouts_runbook_mentions_grafana_sidecars() -> None:
 
     assert "tokenmm_markouts_exporter.py" in runbook
     assert "tokenmm_markouts_v1.json" in runbook
+    assert "markout performance metrics" in runbook
     assert "off the trading hotpath" in runbook
     assert "tokenmm_markouts_v1.json" in catalog
     assert "tokenmm_markouts_exporter.py" in catalog
+    assert "liquidity and uptime metrics" in catalog
+    assert "markout performance metrics" in catalog

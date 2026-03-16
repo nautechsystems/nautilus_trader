@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import signal
+import sys
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -21,6 +22,11 @@ from prometheus_client import CollectorRegistry
 from prometheus_client import Gauge
 from prometheus_client import start_http_server
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from ops.scripts.exporters.common import poll_interval_seconds_arg
 
 LOGGER = logging.getLogger("tokenmm_metrics_exporter")
 
@@ -68,24 +74,6 @@ def _to_decimal(value: Any) -> Decimal | None:
     if not parsed.is_finite():
         return None
     return parsed
-
-
-def _positive_float(value: str) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise argparse.ArgumentTypeError("must be a float") from exc
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be > 0")
-    return parsed
-
-
-def _poll_interval_seconds(value: str) -> float:
-    parsed = _positive_float(value)
-    if parsed < 0.5:
-        raise argparse.ArgumentTypeError("must be >= 0.5")
-    return parsed
-
 
 def _non_negative_int(value: str) -> int:
     try:
@@ -550,7 +538,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--poll-interval-s",
-        type=_poll_interval_seconds,
+        type=poll_interval_seconds_arg,
         default=float(_env("POLL_INTERVAL_S", "5")),
         help="Polling interval in seconds.",
     )

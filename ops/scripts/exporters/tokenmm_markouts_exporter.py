@@ -20,6 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from ops.scripts.exporters.common import poll_interval_seconds_arg
+from ops.scripts.exporters.common import positive_float_arg
 from research.tokenmm.telemetry_helpers import merge_fills_and_markouts
 from research.tokenmm.telemetry_helpers import load_sqlite_query
 from research.tokenmm.telemetry_helpers import numeric
@@ -67,24 +69,6 @@ FILL_QUERY_COLUMNS = (
 def normalize_profile(profile: str) -> str:
     text = PROFILE_NORMALIZER.sub("_", str(profile or "").strip().lower()).strip("_")
     return text or "tokenmm"
-
-
-def _positive_float(value: str) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise argparse.ArgumentTypeError("must be a float") from exc
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be > 0")
-    return parsed
-
-
-def _poll_interval_seconds(value: str) -> float:
-    parsed = _positive_float(value)
-    if parsed < 0.5:
-        raise argparse.ArgumentTypeError("must be >= 0.5")
-    return parsed
-
 
 def default_db_paths(
     *,
@@ -388,7 +372,11 @@ def _poll_once_with_logging(exporter: TokenMMMarkoutsExporter) -> None:
     try:
         exporter.poll_once()
     except Exception:
-        LOGGER.exception("markouts poll failed")
+        LOGGER.exception(
+            "markouts poll failed for fills_db=%s markouts_db=%s",
+            getattr(exporter, "fills_path", "unknown"),
+            getattr(exporter, "markouts_path", "unknown"),
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -410,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--window-hours",
-        type=_positive_float,
+        type=positive_float_arg,
         default=24.0,
         help="Trailing target timestamp window used for bounded polling reads.",
     )
@@ -422,7 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--poll-interval-s",
-        type=_poll_interval_seconds,
+        type=poll_interval_seconds_arg,
         default=30.0,
         help="Polling interval in seconds.",
     )

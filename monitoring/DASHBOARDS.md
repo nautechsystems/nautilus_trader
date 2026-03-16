@@ -28,7 +28,9 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 ## Exporters
 
 - Liquidity sidecar: `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help`
+  Provides liquidity and uptime metrics from existing Redis strategy state.
 - Markouts sidecar: `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help`
+  Provides markout performance metrics from existing `fills.sqlite` and `markouts.sqlite`.
 
 Both sidecars stay off the trading hotpath. They poll existing Redis state and
 durable SQLite telemetry out of band instead of emitting metrics inline from
