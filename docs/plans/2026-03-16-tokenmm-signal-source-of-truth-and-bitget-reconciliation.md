@@ -15,10 +15,10 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | codex | Task 2 complete; Task 3 started on Signal render alignment |
+| Overall | in_progress | codex | Tasks 1-2 complete; Task 3 started on Signal render alignment |
 | Task 1: Freeze Signal source-of-truth contract | completed | codex | Commit `0b5d820d3d`; red-state verified: pytest has 1 failing spread contract, vitest has 1 failing maker-truth spread render |
-| Task 2: Publish coherent MakerV3 quote snapshot | completed | codex | Focused backend tests green: quote-cycle snapshot cached/published coherently and API spread now follows maker snapshot |
-| Task 3: Make Signal render from one pricing truth | in_progress | codex | Updating Signal to use maker quote snapshot for spread and visible pricing truth |
+| Task 2: Publish coherent MakerV3 quote snapshot | completed | codex | Commit `bb691a6b03`; focused backend suite green: `35 passed` for quote_engine + signal contract tests |
+| Task 3: Make Signal render from one pricing truth | in_progress | codex | Investigating remaining UI mismatch where spread still uses visible leg mids instead of maker quote snapshot |
 | Task 4: Fix Bitget perp startup position parsing/reconciliation | not_started | unassigned | Plan created |
 | Task 5: Eliminate duplicate position inflation in balances/inventory | not_started | unassigned | Plan created |
 | Task 6: Verify live behavior, docs, and PR hygiene | not_started | unassigned | Plan created |
