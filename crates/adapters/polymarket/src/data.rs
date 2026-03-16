@@ -26,15 +26,19 @@ use nautilus_common::{
     clients::DataClient,
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, DataResponse,
         data::{
+            InstrumentResponse, InstrumentsResponse, RequestInstrument, RequestInstruments,
             SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     providers::InstrumentProvider,
 };
-use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+use nautilus_core::{
+    datetime::datetime_to_unix_nanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::{Data as NautilusData, OrderBookDeltas_API, QuoteTick},
     enums::BookType,
@@ -50,8 +54,8 @@ use crate::{
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
-    http::gamma::PolymarketGammaHttpClient,
-    providers::PolymarketInstrumentProvider,
+    http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
+    providers::{PolymarketInstrumentProvider, extract_condition_id},
     websocket::{
         client::PolymarketWebSocketClient,
         messages::{MarketWsMessage, PolymarketQuotes, PolymarketWsMessage},
@@ -538,6 +542,122 @@ impl DataClient for PolymarketDataClient {
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+        let instruments: Vec<InstrumentAny> =
+            self.provider.store().list_all().into_iter().cloned().collect();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let venue = *POLYMARKET_VENUE;
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params;
+        let ts_init = self.clock.get_time_ns();
+
+        log::info!(
+            "Returning {} cached instruments for request",
+            instruments.len()
+        );
+
+        let response = DataResponse::Instruments(InstrumentsResponse::new(
+            request_id,
+            client_id,
+            venue,
+            instruments,
+            start_nanos,
+            end_nanos,
+            ts_init,
+            params,
+        ));
+
+        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+            log::error!("Failed to send instruments response: {e}");
+        }
+
+        Ok(())
+    }
+
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let instrument_id = request.instrument_id;
+
+        // Fast path: return from cache
+        if let Some(instrument) = self.provider.store().find(&instrument_id).cloned() {
+            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                request.request_id,
+                request.client_id.unwrap_or(self.client_id),
+                instrument_id,
+                instrument,
+                datetime_to_unix_nanos(request.start),
+                datetime_to_unix_nanos(request.end),
+                self.clock.get_time_ns(),
+                request.params,
+            )));
+
+            if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send instrument response: {e}");
+            }
+
+            return Ok(());
+        }
+
+        // Slow path: fetch from Gamma API via condition_id
+        log::info!("Instrument {instrument_id} not in cache, fetching from Gamma API");
+
+        let http = self.provider.http_client().clone();
+        let sender = self.data_sender.clone();
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let request_id = request.request_id;
+        let start = request.start;
+        let end = request.end;
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            let condition_id = match extract_condition_id(&instrument_id) {
+                Ok(cid) => cid,
+                Err(e) => {
+                    log::error!("Failed to extract condition_id for {instrument_id}: {e}");
+                    return;
+                }
+            };
+
+            let query_params = GetGammaMarketsParams {
+                condition_ids: Some(condition_id),
+                ..Default::default()
+            };
+
+            let instrument = match http.request_instruments_by_params(query_params).await {
+                Ok(instruments) => instruments.into_iter().find(|i| i.id() == instrument_id),
+                Err(e) => {
+                    log::error!(
+                        "Failed to fetch instrument {instrument_id} from Gamma API: {e}"
+                    );
+                    return;
+                }
+            };
+
+            if let Some(inst) = instrument {
+                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                    request_id,
+                    client_id,
+                    instrument_id,
+                    inst,
+                    datetime_to_unix_nanos(start),
+                    datetime_to_unix_nanos(end),
+                    clock.get_time_ns(),
+                    params,
+                )));
+
+                if let Err(e) = sender.send(DataEvent::Response(response)) {
+                    log::error!("Failed to send instrument response: {e}");
+                }
+            } else {
+                log::error!("Instrument {instrument_id} not found on Polymarket");
+            }
+        });
+
+        Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
