@@ -863,6 +863,56 @@ def _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | No
     return ((market_mid - ref_mid) / ref_mid) * 10_000.0
 
 
+def _top_level_signal_ts_ms(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+    fallback_ts_ms: int | None,
+) -> int | None:
+    if isinstance(quote_snapshot, Mapping):
+        quoted_ts_ms = coerce_ts_ms(quote_snapshot.get("ts_ms"))
+        if quoted_ts_ms is not None:
+            return quoted_ts_ms
+    return coerce_ts_ms(state.get("ts_ms") or state.get("ts_event") or fallback_ts_ms)
+
+
+def _top_level_signal_mode(
+    *,
+    quote_snapshot: Mapping[str, Any] | None,
+    bot_on: bool,
+) -> str:
+    if isinstance(quote_snapshot, Mapping):
+        mode = decode_text(quote_snapshot.get("mode")).strip().upper()
+        if mode:
+            return mode
+    return "ON" if bot_on else "OFF"
+
+
+def _top_level_signal_reason(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+) -> str | None:
+    if isinstance(quote_snapshot, Mapping):
+        reason = decode_text(quote_snapshot.get("reason")).strip()
+        if reason:
+            return reason
+    reason = decode_text(state.get("state")).strip()
+    return reason or None
+
+
+def _top_level_signal_signed_skew_bps(
+    *,
+    pricing_adjustments: Sequence[dict[str, Any]],
+    quote_snapshot: Mapping[str, Any] | None,
+) -> float | None:
+    inventory_adjustment = _first_inventory_skew_adjustment(pricing_adjustments)
+    return _first_valid_float(
+        inventory_adjustment.get("skew_bps_signed"),
+        quote_snapshot.get("skew_bps_signed") if isinstance(quote_snapshot, Mapping) else None,
+    )
+
+
 def build_signals_payload_impl(
     *,
     strategy_id: str,
@@ -1075,10 +1125,32 @@ def build_signals_payload_impl(
             }
         md_health["state_stale"] = state_stale
 
+    top_level_ts_ms = _top_level_signal_ts_ms(
+        state=state,
+        quote_snapshot=quote_snapshot,
+        fallback_ts_ms=ts_ms,
+    )
+    top_level_mode = _top_level_signal_mode(
+        quote_snapshot=quote_snapshot,
+        bot_on=bot_on,
+    )
+    top_level_reason = _top_level_signal_reason(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    )
+    top_level_skew_bps = _top_level_signal_signed_skew_bps(
+        pricing_adjustments=pricing_adjustments,
+        quote_snapshot=quote_snapshot,
+    )
+
     return {
         "id": strategy_id,
         "meta": metadata.as_payload(strategy_id=strategy_id),
         "strategy_family": strategy_family,
+        "ts_ms": top_level_ts_ms,
+        "mode": top_level_mode,
+        "reason": top_level_reason,
+        "skew_bps_signed": top_level_skew_bps,
         "tradeable": tradeable,
         "blocked": blocked,
         "near_tradeable": near_tradeable,

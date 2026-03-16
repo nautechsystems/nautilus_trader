@@ -42,6 +42,7 @@ from flux.api.payloads import merge_portfolio_balances_rows
 from flux.api.payloads import normalize_symbol_parts
 from flux.api.payloads import now_ms
 from flux.api.payloads import safe_bool
+from flux.api.payloads import safe_float
 from flux.api.payloads import safe_int
 from flux.api.payloads import select_latest_strategy_row
 from flux.api.payloads import strategy_id_from_row
@@ -161,6 +162,13 @@ def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str,
         if name not in ordered:
             ordered[str(name)] = dict(spec)
     return ordered
+
+
+def _strategy_groups_include_tokenmm(metadata: StrategyMetadata) -> bool:
+    groups = decode_text(metadata.strategy_groups).strip().lower()
+    if not groups:
+        return False
+    return "tokenmm" in {part.strip() for part in groups.split(",") if part.strip()}
 
 
 @dataclass(frozen=True)
@@ -616,6 +624,156 @@ class FluxApiStore:
         payload = load_json(self._redis.get(key))
         return dict(payload) if isinstance(payload, Mapping) else None
 
+    def _tokenmm_inventory_overlay(
+        self,
+        *,
+        strategy_id: str,
+        metadata: StrategyMetadata,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
+        if not _strategy_groups_include_tokenmm(metadata):
+            return None
+
+        portfolio_snapshot = self.load_portfolio_snapshot("tokenmm")
+        if portfolio_snapshot is None:
+            return None
+
+        inventory = portfolio_snapshot.get("inventory")
+        inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
+        request_now_ms = now_ms()
+        snapshot_stale_after_ms = (
+            safe_int(inventory_payload.get("stale_after_ms"))
+            or TOKENMM_BALANCES_STALE_AFTER_MS
+        )
+        if not (
+            _timestamp_is_fresh(
+                portfolio_snapshot.get("server_ts_ms"),
+                now_ms_value=request_now_ms,
+                stale_after_ms=snapshot_stale_after_ms,
+            )
+            and _timestamp_is_fresh(
+                inventory_payload.get("ts_ms"),
+                now_ms_value=request_now_ms,
+                stale_after_ms=snapshot_stale_after_ms,
+            )
+        ):
+            return None
+
+        components_payload = inventory_payload.get("components")
+        if not isinstance(components_payload, list):
+            components_payload = portfolio_snapshot.get("components")
+        component = next(
+            (
+                dict(item)
+                for item in (components_payload or [])
+                if isinstance(item, Mapping)
+                and decode_text(item.get("strategy_id")).strip() == strategy_id
+            ),
+            None,
+        )
+        return inventory_payload, component
+
+    def _apply_tokenmm_inventory_overlay(
+        self,
+        *,
+        payload: dict[str, Any],
+        inventory_payload: Mapping[str, Any],
+        component_payload: Mapping[str, Any] | None,
+    ) -> None:
+        global_qty_base = safe_float(
+            inventory_payload.get("global_qty_base") or inventory_payload.get("global_qty"),
+        )
+        global_qty_complete = safe_bool(
+            inventory_payload.get("global_qty_base_complete")
+            if inventory_payload.get("global_qty_base_complete") is not None
+            else inventory_payload.get("global_qty_complete"),
+        )
+        aggregation_mode = decode_text(inventory_payload.get("aggregation_mode")).strip() or None
+
+        pricing_adjustments = payload.get("pricing_adjustments")
+        if isinstance(pricing_adjustments, list):
+            inventory_adjustment_index = next(
+                (
+                    index
+                    for index, item in enumerate(pricing_adjustments)
+                    if isinstance(item, Mapping)
+                    and decode_text(item.get("type")).strip().lower() == "inventory_skew"
+                ),
+                None,
+            )
+            if inventory_adjustment_index is None:
+                pricing_adjustments.append({"type": "inventory_skew"})
+                inventory_adjustment_index = len(pricing_adjustments) - 1
+            inventory_adjustment = dict(pricing_adjustments[inventory_adjustment_index])
+            if global_qty_base is not None:
+                inventory_adjustment["global_qty_base"] = global_qty_base
+                inventory_adjustment["global_qty"] = global_qty_base
+            if global_qty_complete is not None:
+                inventory_adjustment["global_qty_base_complete"] = global_qty_complete
+                inventory_adjustment["global_qty_complete"] = global_qty_complete
+            if aggregation_mode is not None:
+                inventory_adjustment["aggregation_mode"] = aggregation_mode
+
+            if isinstance(component_payload, Mapping):
+                local_qty_base = safe_float(
+                    component_payload.get("local_qty_base") or component_payload.get("local_qty"),
+                )
+                local_position_qty_base = safe_float(component_payload.get("local_position_qty_base"))
+                local_position_qty_venue = safe_float(
+                    component_payload.get("local_position_qty_venue"),
+                )
+                qty_conversion_status = (
+                    decode_text(component_payload.get("qty_conversion_status")).strip() or None
+                )
+                qty_conversion_source = (
+                    decode_text(component_payload.get("qty_conversion_source")).strip() or None
+                )
+                if local_qty_base is not None:
+                    inventory_adjustment["local_qty_base"] = local_qty_base
+                    inventory_adjustment["local_qty"] = local_qty_base
+                if local_position_qty_base is not None:
+                    inventory_adjustment["position_qty_base"] = local_position_qty_base
+                if local_position_qty_venue is not None:
+                    inventory_adjustment["position_qty_venue"] = local_position_qty_venue
+                if qty_conversion_status is not None:
+                    inventory_adjustment["qty_conversion_status"] = qty_conversion_status
+                if qty_conversion_source is not None:
+                    inventory_adjustment["qty_conversion_source"] = qty_conversion_source
+
+            pricing_adjustments[inventory_adjustment_index] = inventory_adjustment
+
+        if global_qty_base is not None:
+            payload["global_qty_base"] = global_qty_base
+            payload["global_qty"] = global_qty_base
+        if global_qty_complete is not None:
+            payload["global_qty_base_complete"] = global_qty_complete
+            payload["global_qty_complete"] = global_qty_complete
+        if aggregation_mode is not None:
+            payload["aggregation_mode"] = aggregation_mode
+
+        if isinstance(component_payload, Mapping):
+            local_qty_base = safe_float(
+                component_payload.get("local_qty_base") or component_payload.get("local_qty"),
+            )
+            local_position_qty_base = safe_float(component_payload.get("local_position_qty_base"))
+            local_position_qty_venue = safe_float(component_payload.get("local_position_qty_venue"))
+            qty_conversion_status = (
+                decode_text(component_payload.get("qty_conversion_status")).strip() or None
+            )
+            qty_conversion_source = (
+                decode_text(component_payload.get("qty_conversion_source")).strip() or None
+            )
+            if local_qty_base is not None:
+                payload["local_qty_base"] = local_qty_base
+                payload["local_qty"] = local_qty_base
+            if local_position_qty_base is not None:
+                payload["position_qty_base"] = local_position_qty_base
+            if local_position_qty_venue is not None:
+                payload["position_qty_venue"] = local_position_qty_venue
+            if qty_conversion_status is not None:
+                payload["qty_conversion_status"] = qty_conversion_status
+            if qty_conversion_source is not None:
+                payload["qty_conversion_source"] = qty_conversion_source
+
     def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
 
@@ -676,6 +834,17 @@ class FluxApiStore:
             balances=balances,
             legs=legs,
         )
+        inventory_overlay = self._tokenmm_inventory_overlay(
+            strategy_id=strategy_id,
+            metadata=metadata,
+        )
+        if inventory_overlay is not None:
+            inventory_payload, component_payload = inventory_overlay
+            self._apply_tokenmm_inventory_overlay(
+                payload=payload,
+                inventory_payload=inventory_payload,
+                component_payload=component_payload,
+            )
         payload["running"] = self._running_state_from_strategy_state(state)
         return payload
 

@@ -310,3 +310,57 @@ def test_build_signals_payload_preserves_explicit_makerv3_quote_snapshot_epoch(
     assert quote_snapshot["ref_bid"] == 101.0
     assert quote_snapshot["ref_ask"] == 102.0
     assert quote_snapshot["skew_bps_signed"] == -12.5
+
+
+def test_build_signals_payload_promotes_operator_quote_fields_to_top_level(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=1_700_000_001_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1_700_000_000_000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "skew_bps_signed": -12.5,
+                },
+            ],
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_000_123,
+                    "mode": "OFF",
+                    "reason": "bot_off",
+                    "skew_bps_signed": -12.5,
+                    "place_bid": 98.5,
+                    "place_ask": 100.5,
+                    "ref_bid": 101.0,
+                    "ref_ask": 102.0,
+                },
+            },
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["ts_ms"] == 1_700_000_000_123
+    assert payload["mode"] == "OFF"
+    assert payload["reason"] == "bot_off"
+    assert payload["skew_bps_signed"] == -12.5
