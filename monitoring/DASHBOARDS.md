@@ -18,6 +18,17 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 - `tokenmm_liquidity_v1.json`
 - `tokenmm_markouts_v1.json`
 
+## Current files
+
+- `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json`
+- `monitoring/grafana/provisioning/dashboards/dashboards.yml`
+- `monitoring/grafana/provisioning/datasources/datasources.yml`
+
+## Exporters
+
+- Liquidity sidecar: `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help`
+- Markouts sidecar: planned in Task 3
+
 ## Provisioning paths
 
 - Dashboard provider config:
