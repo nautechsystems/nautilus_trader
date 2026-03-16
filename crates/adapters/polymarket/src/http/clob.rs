@@ -382,6 +382,12 @@ impl PolymarketClobHttpClient {
         let params = [("token_id", token_id)];
         self.send_get("/tick-size", Some(&params), false).await
     }
+
+    /// Fetches the order book for a token from the CLOB API (public endpoint).
+    pub async fn get_book(&self, token_id: &str) -> Result<ClobBookResponse> {
+        let params = [("token_id", token_id)];
+        self.send_get("/book", Some(&params), false).await
+    }
 }
 
 /// Provides an unauthenticated HTTP client for public CLOB endpoints.
