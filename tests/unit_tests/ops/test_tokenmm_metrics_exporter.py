@@ -184,3 +184,58 @@ def test_exporter_source_uses_existing_redis_state_contract() -> None:
     assert "maker_arb:" in source
     assert "flux.strategies" not in source
     assert "flux.runners" not in source
+
+
+def test_poll_quote_states_removes_stale_fallback_labels_after_context_update() -> None:
+    module = _load_exporter_module()
+
+    strategy_id = "bybit_binance_plumeusdt_makerv3"
+    redis_client = FakeRedis()
+    exporter = module.TokenMMMetricsExporter(
+        redis_client=redis_client,
+        env="prod",
+        strategy_ids=[strategy_id],
+    )
+    now_ms = 1_700_000_000_000
+
+    fallback_labels = {
+        "env": "prod",
+        "token": "PLUME",
+        "venue": "bybit_spot",
+        "symbol": "PLUME/USDT",
+        "strategy_family": "maker_v3",
+    }
+    live_labels = {
+        "env": "prod",
+        "token": "PLUME",
+        "venue": "bybit_linear",
+        "symbol": "PLUME/USDT",
+        "strategy_family": "maker_v3",
+    }
+
+    assert exporter.registry.get_sample_value("tokenmm_quote_up", fallback_labels) == 0.0
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_100bps", fallback_labels) == 0.0
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_200bps", fallback_labels) == 0.0
+
+    redis_client.set(
+        f"maker_arb:{strategy_id}:state",
+        _row_json(
+            ts_ms=now_ms - 1_000,
+            mode="QUOTING",
+            maker_leg={"exchange": "bybit_linear", "symbol": "PLUME_USDT"},
+            quote_snapshot={"maker_top_bid": "100", "maker_top_ask": "102"},
+            maker_orders={
+                "bid": [{"px": "100", "rem_qty": "2", "status": "OPEN"}],
+                "ask": [{"px": "102", "rem_qty": "1", "status": "LIVE"}],
+            },
+        ),
+    )
+
+    exporter.poll_quote_states(now_ms=now_ms)
+
+    assert exporter.registry.get_sample_value("tokenmm_quote_up", fallback_labels) is None
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_100bps", fallback_labels) is None
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_200bps", fallback_labels) is None
+    assert exporter.registry.get_sample_value("tokenmm_quote_up", live_labels) == 1.0
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_100bps", live_labels) == 302.0
+    assert exporter.registry.get_sample_value("tokenmm_quote_depth_usd_200bps", live_labels) == 302.0

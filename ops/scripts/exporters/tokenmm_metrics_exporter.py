@@ -319,15 +319,42 @@ class TokenMMMetricsExporter:
             LABEL_NAMES,
             registry=self.registry,
         )
+        self._active_labels: dict[str, set[tuple[str, ...]]] = {
+            "quote_up": set(),
+            "depth_100": set(),
+            "depth_200": set(),
+        }
 
         for strategy_id in self._contexts:
             labels = self._labels(strategy_id)
             self.g_quote_up.labels(**labels).set(0.0)
             self.g_depth_100.labels(**labels).set(0.0)
             self.g_depth_200.labels(**labels).set(0.0)
+            label_values = self._label_values(labels)
+            self._active_labels["quote_up"].add(label_values)
+            self._active_labels["depth_100"].add(label_values)
+            self._active_labels["depth_200"].add(label_values)
 
     def _labels(self, strategy_id: str) -> dict[str, str]:
         return self._contexts[strategy_id].labels(self.env)
+
+    def _label_values(self, labels: dict[str, str]) -> tuple[str, ...]:
+        return tuple(labels[name] for name in LABEL_NAMES)
+
+    def _sync_metric(
+        self,
+        *,
+        gauge: Gauge,
+        metric_key: str,
+        values: dict[tuple[str, ...], float],
+    ) -> None:
+        previous = self._active_labels[metric_key]
+        current = set(values)
+        for label_values in previous - current:
+            gauge.remove(*label_values)
+        for label_values, value in values.items():
+            gauge.labels(*label_values).set(value)
+        self._active_labels[metric_key] = current
 
     def _parse_state_payload(self, raw: Any) -> dict[str, Any] | None:
         if raw is None:
@@ -357,19 +384,23 @@ class TokenMMMetricsExporter:
             context.token = _symbol_base(symbol)
 
     def poll_quote_states(self, *, now_ms: int) -> None:
+        quote_up_values: dict[tuple[str, ...], float] = {}
+        depth_100_values: dict[tuple[str, ...], float] = {}
+        depth_200_values: dict[tuple[str, ...], float] = {}
         for strategy_id in self._contexts:
             state_raw = self.redis.get(f"maker_arb:{strategy_id}:state")
             state = self._parse_state_payload(state_raw) or {}
             self._update_context_from_state(strategy_id, state)
 
             labels = self._labels(strategy_id)
+            label_values = self._label_values(labels)
             quote_up = compute_quote_up(
                 state.get("mode"),
                 state.get("ts_ms"),
                 now_ms,
                 self.state_stale_ms,
             )
-            self.g_quote_up.labels(**labels).set(float(quote_up))
+            quote_up_values[label_values] = float(quote_up)
 
             snapshot = state.get("quote_snapshot") if isinstance(state.get("quote_snapshot"), dict) else {}
             top_bid = _to_decimal(snapshot.get("maker_top_bid")) or _to_decimal(state.get("maker_top_bid"))
@@ -392,8 +423,24 @@ class TokenMMMetricsExporter:
                     bps_limit=200,
                 )
 
-            self.g_depth_100.labels(**labels).set(float(depth_100))
-            self.g_depth_200.labels(**labels).set(float(depth_200))
+            depth_100_values[label_values] = float(depth_100)
+            depth_200_values[label_values] = float(depth_200)
+
+        self._sync_metric(
+            gauge=self.g_quote_up,
+            metric_key="quote_up",
+            values=quote_up_values,
+        )
+        self._sync_metric(
+            gauge=self.g_depth_100,
+            metric_key="depth_100",
+            values=depth_100_values,
+        )
+        self._sync_metric(
+            gauge=self.g_depth_200,
+            metric_key="depth_200",
+            values=depth_200_values,
+        )
 
 
 def _parse_strategy_ids(values: list[str]) -> list[str]:

@@ -21,13 +21,18 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 ## Current files
 
 - `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json`
+- `monitoring/grafana/dashboards/tokenmm_markouts_v1.json`
 - `monitoring/grafana/provisioning/dashboards/dashboards.yml`
 - `monitoring/grafana/provisioning/datasources/datasources.yml`
 
 ## Exporters
 
 - Liquidity sidecar: `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help`
-- Markouts sidecar: planned in Task 3
+- Markouts sidecar: `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help`
+
+Both sidecars stay off the trading hotpath. They poll existing Redis state and
+durable SQLite telemetry out of band instead of emitting metrics inline from
+MakerV3 strategy execution.
 
 ## Provisioning paths
 
@@ -41,6 +46,8 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 
 ```bash
 python3 -m pytest -q --noconftest tests/unit_tests/ops/test_grafana_assets.py
+python3 -m json.tool monitoring/grafana/dashboards/tokenmm_liquidity_v1.json >/dev/null
+python3 -m json.tool monitoring/grafana/dashboards/tokenmm_markouts_v1.json >/dev/null
 python3 - <<'PY'
 import yaml
 from pathlib import Path

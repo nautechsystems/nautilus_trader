@@ -80,6 +80,23 @@ Operationally:
 - `_prepare_telemetry_paths(...)` creates the parent directory for
   `markouts_db_path` automatically on node startup
 
+## Grafana sidecars
+
+The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
+
+- `ops/scripts/exporters/tokenmm_markouts_exporter.py` polls the existing
+  `fills.sqlite` and `markouts.sqlite` files and exposes aggregate Prometheus
+  gauges
+- `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
+  for the operator dashboard
+- `ops/scripts/exporters/tokenmm_metrics_exporter.py` and
+  `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json` handle the separate
+  liquidity/uptime surface
+
+These sidecars do not add work to MakerV3 quote loops or fill handling. They
+read existing Redis state and existing SQLite telemetry out of band, off the
+trading hotpath.
+
 ## Known limitations and scope
 
 Explicit v0 scope:

@@ -21,8 +21,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from research.tokenmm.telemetry_helpers import merge_fills_and_markouts
+from research.tokenmm.telemetry_helpers import load_sqlite_query
 from research.tokenmm.telemetry_helpers import numeric
-from research.tokenmm.telemetry_helpers import load_sqlite_table
 
 
 LOGGER = logging.getLogger("tokenmm_markouts_exporter")
@@ -62,6 +62,55 @@ def default_db_paths(
     }
 
 
+def _sql_literal(value: Any) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _build_markouts_query(
+    *,
+    benchmark_name: str,
+    window_hours: float,
+    now_ms: int,
+) -> str:
+    filters = [f"benchmark_name = {_sql_literal(benchmark_name)}"]
+    if window_hours > 0:
+        window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)
+        filters.append(f"target_ts_ms BETWEEN {window_start_ms} AND {now_ms}")
+    where_clause = " AND ".join(filters)
+    return (
+        "SELECT * FROM execution_markout "
+        f"WHERE {where_clause} "
+        "ORDER BY target_ts_ms DESC"
+    )
+
+
+def _build_fills_query(markouts: list[dict[str, Any]]) -> str | None:
+    fill_keys: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in markouts:
+        trader_id = row.get("trader_id")
+        event_id = row.get("event_id")
+        if trader_id is None or event_id is None:
+            continue
+        fill_key = (str(trader_id), str(event_id))
+        if fill_key in seen:
+            continue
+        seen.add(fill_key)
+        fill_keys.append(fill_key)
+    if not fill_keys:
+        return None
+
+    predicates = [
+        "(trader_id = {trader_id} AND event_id = {event_id})".format(
+            trader_id=_sql_literal(trader_id),
+            event_id=_sql_literal(event_id),
+        )
+        for trader_id, event_id in fill_keys
+    ]
+    where_clause = " OR ".join(predicates)
+    return f"SELECT * FROM execution_fill WHERE {where_clause}"
+
+
 def load_markout_snapshot(
     *,
     fills_path: Path,
@@ -70,17 +119,23 @@ def load_markout_snapshot(
     window_hours: float = 24.0,
     now_ms: int | None = None,
 ) -> list[dict[str, Any]]:
-    fills = load_sqlite_table(fills_path, "execution_fill")
-    markouts = load_sqlite_table(markouts_path, "execution_markout")
-    merged = merge_fills_and_markouts(fills=fills, markouts=markouts)
-
-    if "benchmark_name" in merged.columns:
-        merged = merged.loc[merged["benchmark_name"].fillna("") == benchmark_name].copy()
-    if merged.empty:
-        return []
-
     if now_ms is None:
         now_ms = int(time.time() * 1000)
+
+    markouts_query = _build_markouts_query(
+        benchmark_name=benchmark_name,
+        window_hours=window_hours,
+        now_ms=now_ms,
+    )
+    markouts = load_sqlite_query(markouts_path, markouts_query)
+    if markouts.empty:
+        return []
+
+    fills_query = _build_fills_query(markouts.to_dict("records"))
+    if not fills_query:
+        return []
+    fills = load_sqlite_query(fills_path, fills_query)
+    merged = merge_fills_and_markouts(fills=fills, markouts=markouts)
     if window_hours > 0 and "target_ts_ms" in merged.columns:
         target_ts_ms = numeric(merged["target_ts_ms"])
         window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)

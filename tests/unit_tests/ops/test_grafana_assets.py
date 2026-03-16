@@ -64,3 +64,36 @@ def test_liquidity_dashboard_uses_tokenmm_metric_names() -> None:
     assert any("tokenmm_quote_depth_usd_100bps" in expr for expr in expressions)
     assert any("tokenmm_quote_depth_usd_200bps" in expr for expr in expressions)
     assert all("chainsaw_mm_" not in expr for expr in expressions)
+
+
+def test_markouts_dashboard_uses_tokenmm_markout_metric_names() -> None:
+    path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
+    assert path.exists(), "markouts dashboard JSON should exist"
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["uid"] == "tokenmm-markouts-v1"
+    panel_types = {panel["type"] for panel in payload["panels"]}
+    assert "table" in panel_types
+    assert "timeseries" in panel_types or "stat" in panel_types or "barchart" in panel_types
+
+    expressions = [
+        target["expr"]
+        for panel in payload["panels"]
+        for target in panel.get("targets", [])
+        if "expr" in target
+    ]
+    assert any("tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any("tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any("tokenmm_markout_resolved_rows" in expr for expr in expressions)
+
+
+def test_markouts_runbook_mentions_grafana_sidecars() -> None:
+    runbook = (_repo_root() / "docs/runbooks/makerv3-markouts.md").read_text(encoding="utf-8")
+    catalog = (_repo_root() / "monitoring/DASHBOARDS.md").read_text(encoding="utf-8")
+
+    assert "tokenmm_markouts_exporter.py" in runbook
+    assert "tokenmm_markouts_v1.json" in runbook
+    assert "off the trading hotpath" in runbook
+    assert "tokenmm_markouts_v1.json" in catalog
+    assert "tokenmm_markouts_exporter.py" in catalog
