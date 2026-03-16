@@ -28,7 +28,6 @@
 
 use std::{
     collections::HashMap,
-    fmt::Display,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -46,8 +45,8 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_polymarket::{
-    config::PolymarketDataClientConfig, factories::PolymarketDataClientFactory,
-    filters::EventSlugFilter,
+    common::models::PolymarketLabel, config::PolymarketDataClientConfig,
+    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
 };
 
 // ---------------------------------------------------------------------------
@@ -61,39 +60,6 @@ struct ElectionSubscriberConfig {
     client_id: ClientId,
 }
 
-/// Human-readable label for a Polymarket instrument.
-#[derive(Debug, Clone)]
-struct MarketLabel {
-    description: String,
-    outcome: String,
-}
-
-impl Display for MarketLabel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}]", self.description, self.outcome)
-    }
-}
-
-impl MarketLabel {
-    fn from_instrument(instrument: &InstrumentAny) -> Self {
-        if let InstrumentAny::BinaryOption(opt) = instrument {
-            Self {
-                description: opt
-                    .description
-                    .map_or_else(|| instrument.id().to_string(), |d| d.to_string()),
-                outcome: opt
-                    .outcome
-                    .map_or_else(|| "?".to_string(), |o| o.to_string()),
-            }
-        } else {
-            Self {
-                description: instrument.id().to_string(),
-                outcome: "?".to_string(),
-            }
-        }
-    }
-}
-
 /// A custom [`DataActor`] that reads all instruments loaded by the provider
 /// (filtered via [`EventSlugFilter`] on the config) and subscribes to live
 /// trade ticks for each.
@@ -102,7 +68,7 @@ struct ElectionTradeSubscriber {
     core: DataActorCore,
     config: ElectionSubscriberConfig,
     subscribed: Vec<InstrumentId>,
-    labels: HashMap<InstrumentId, MarketLabel>,
+    labels: HashMap<InstrumentId, PolymarketLabel>,
 }
 
 impl ElectionTradeSubscriber {
@@ -136,10 +102,10 @@ impl DataActor for ElectionTradeSubscriber {
 
         // Read instruments from cache and build human-readable label index
         let cache = self.cache();
-        let instruments: Vec<(InstrumentId, MarketLabel)> = cache
+        let instruments: Vec<(InstrumentId, PolymarketLabel)> = cache
             .instruments(&venue, None)
             .iter()
-            .map(|i| (i.id(), MarketLabel::from_instrument(i)))
+            .map(|i| (i.id(), PolymarketLabel::from_instrument(i)))
             .collect();
         drop(cache); // Release borrow before calling subscribe methods
 
@@ -171,7 +137,7 @@ impl DataActor for ElectionTradeSubscriber {
         let label = self
             .labels
             .entry(instrument.id())
-            .or_insert_with(|| MarketLabel::from_instrument(instrument));
+            .or_insert_with(|| PolymarketLabel::from_instrument(instrument));
         log::info!("Instrument update: {label}");
         Ok(())
     }

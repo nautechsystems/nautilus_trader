@@ -15,6 +15,13 @@
 
 //! Shared model types for the Polymarket adapter.
 
+use std::fmt::Display;
+
+use nautilus_common::cache::Cache;
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -50,6 +57,46 @@ pub struct PolymarketMakerOrder {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub price: Decimal,
+}
+
+/// Human-readable label for a Polymarket instrument.
+#[derive(Debug, Clone)]
+pub struct PolymarketLabel {
+    pub description: String,
+    pub outcome: String,
+}
+
+impl Display for PolymarketLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} [{}]", self.description, self.outcome)
+    }
+}
+
+impl PolymarketLabel {
+    /// Build a label from an instrument reference.
+    pub fn from_instrument(instrument: &InstrumentAny) -> Self {
+        if let InstrumentAny::BinaryOption(opt) = instrument {
+            Self {
+                description: opt
+                    .description
+                    .map_or_else(|| instrument.id().to_string(), |d| d.to_string()),
+                outcome: opt
+                    .outcome
+                    .map_or_else(|| "?".to_string(), |o| o.to_string()),
+            }
+        } else {
+            Self {
+                description: instrument.id().to_string(),
+                outcome: "?".to_string(),
+            }
+        }
+    }
+
+    /// Look up an instrument by ID in the cache and build a label.
+    /// Returns `None` if the instrument is not in the cache.
+    pub fn from_cache(instrument_id: &InstrumentId, cache: &Cache) -> Option<Self> {
+        cache.instrument(instrument_id).map(Self::from_instrument)
+    }
 }
 
 #[cfg(test)]
