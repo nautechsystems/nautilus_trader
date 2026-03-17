@@ -16,6 +16,7 @@ type MakerV4DisplayRow = SignalStrategy & {
   _makerLeg: MakerV4LegSnapshot | null;
   _hedgeLeg: MakerV4LegSnapshot | null;
   _operator: MakerV4OperatorPayload | null;
+  _quoteHealthUsable: boolean;
   _statusLabel: ReturnType<typeof describeTradingStatus>;
   _lastUpdateMs: number | null;
   _lastAgeMs: number | null;
@@ -101,17 +102,63 @@ function deriveLastUpdateMs(snapshot: MakerV4QuoteSnapshot | null): number | nul
   return Math.max(...candidates);
 }
 
-function deriveLastAgeMs(snapshot: MakerV4QuoteSnapshot | null, lastUpdateMs: number | null): number | null {
+function deriveLastAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
   const snapshotAges = [
     coerceNumber(snapshot?.maker_leg?.age_ms),
     coerceNumber(snapshot?.hedge_leg?.age_ms),
     coerceNumber(snapshot?.ref_leg?.age_ms),
   ].filter((value): value is number => value != null);
   if (snapshotAges.length > 0) {
-    return Math.min(...snapshotAges);
+    return Math.max(...snapshotAges);
   }
   if (lastUpdateMs == null) return null;
-  return Math.max(0, Date.now() - lastUpdateMs);
+  return Math.max(0, nowMs - lastUpdateMs);
+}
+
+function isLegUsable(leg: MakerV4LegSnapshot | null | undefined): boolean {
+  if (!leg) return false;
+  const feedState = formatStateWord(leg.feed_state);
+  const quoteState = formatStateWord(leg.quote_state);
+  const usabilityFlags = [leg.pricing_usable, leg.hedge_usable]
+    .filter((value): value is boolean => typeof value === 'boolean');
+  if (feedState && !['ok', 'fresh'].includes(feedState)) return false;
+  if (quoteState && quoteState !== 'fresh') return false;
+  if (usabilityFlags.length === 0) return false;
+  return usabilityFlags.every(Boolean);
+}
+
+function isQuoteHealthUsable(snapshot: MakerV4QuoteSnapshot | null): boolean {
+  if (!snapshot) return false;
+  return [snapshot.maker_leg, snapshot.hedge_leg, snapshot.ref_leg].every((leg) => isLegUsable(leg ?? null));
+}
+
+function getAgeColor(ageMs: number | null): string {
+  if (ageMs == null) return colors.text.muted;
+  if (ageMs > 10_000) return colors.semantic.danger.DEFAULT;
+  if (ageMs > 3_000) return colors.semantic.warning.DEFAULT;
+  return colors.text.primary;
+}
+
+function formatLegAge(leg: MakerV4LegSnapshot | null | undefined): string {
+  const ageMs = coerceNumber(leg?.age_ms);
+  return ageMs == null ? '—' : fmtAgeSec(ageMs);
+}
+
+function buildAgeTooltip(row: MakerV4DisplayRow): string {
+  const lines = [
+    `Worst leg age: ${row._lastAgeMs != null ? fmtAgeSec(row._lastAgeMs) : '—'}`,
+    `Maker leg: ${formatLegAge(row._makerLeg)}`,
+    `Hedge leg: ${formatLegAge(row._hedgeLeg)}`,
+    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null)}`,
+  ];
+  if (row._lastUpdateMs != null) {
+    lines.push(`Last update: ${formatLocal(row._lastUpdateMs)}`);
+  }
+  return lines.join('\n');
 }
 
 function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
@@ -206,11 +253,12 @@ export default function MakerV4SignalTable({
     return sourceRows.map((row) => {
       const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
       const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
-      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs) ?? (lastUpdateMs != null ? Math.max(0, nowProvider() - lastUpdateMs) : null);
+      const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
+      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowProvider());
       const status = deriveStrategyStatus({
         running: resolveSignalRunning(row, nowProvider()),
         trading: row.params?.bot_on,
-        blocked: Boolean(row.blocked) || quoteSnapshot?.hedge_ready === false,
+        blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
       });
 
       return {
@@ -219,6 +267,7 @@ export default function MakerV4SignalTable({
         _makerLeg: quoteSnapshot?.maker_leg ?? null,
         _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
         _operator: row.maker_v4?.operator ?? null,
+        _quoteHealthUsable: quoteHealthUsable,
         _statusLabel: describeTradingStatus(status),
         _lastUpdateMs: lastUpdateMs,
         _lastAgeMs: lastAgeMs,
@@ -334,15 +383,24 @@ export default function MakerV4SignalTable({
       id: 'mid_spread',
       header: 'Mid Spread',
       cell: ({ row }) => {
+        const quoteHealthUsable = row.original._quoteHealthUsable;
         const midSpreadBps = coerceNumber(row.original._quoteSnapshot?.mid_spread_bps);
         const makerMid = coerceNumber(row.original._makerLeg?.mid);
         const hedgeMid = coerceNumber((row.original._hedgeLeg ?? row.original._quoteSnapshot?.ref_leg)?.mid);
         const tooltip = [
           'Strategy-published maker-vs-hedge midpoint spread',
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
           `Mid spread: ${formatBps(midSpreadBps)}`,
           `Maker mid: ${makerMid == null ? '—' : fmtPriceSignal(makerMid)}`,
           `Hedge mid: ${hedgeMid == null ? '—' : fmtPriceSignal(hedgeMid)}`,
         ].join('\n');
+        if (!quoteHealthUsable) {
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span className="cursor-help text-xs text-neutral-500">stale</span>
+            </SimpleTooltip>
+          );
+        }
         return (
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <span
@@ -371,6 +429,7 @@ export default function MakerV4SignalTable({
       id: 'arb_spread',
       header: 'Arb Spread',
       cell: ({ row }) => {
+        const quoteHealthUsable = row.original._quoteHealthUsable;
         const arbBidSpreadBps = coerceNumber(row.original._quoteSnapshot?.arb_bid_spread_bps);
         const arbAskSpreadBps = coerceNumber(row.original._quoteSnapshot?.arb_ask_spread_bps);
         const makerBid = coerceNumber(row.original._makerLeg?.bid);
@@ -379,18 +438,26 @@ export default function MakerV4SignalTable({
         const hedgeAsk = coerceNumber((row.original._hedgeLeg ?? row.original._quoteSnapshot?.ref_leg)?.ask);
         const tooltip = [
           'Strategy-published arbitrage bounds',
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
           `Bid arb spread: ${formatBps(arbBidSpreadBps)} (hedge bid vs maker ask)`,
           `Ask arb spread: ${formatBps(arbAskSpreadBps)} (maker bid vs hedge ask)`,
           `Maker bid / ask: ${makerBid == null ? '—' : fmtPriceSignal(makerBid)} / ${makerAsk == null ? '—' : fmtPriceSignal(makerAsk)}`,
           `Hedge bid / ask: ${hedgeBid == null ? '—' : fmtPriceSignal(hedgeBid)} / ${hedgeAsk == null ? '—' : fmtPriceSignal(hedgeAsk)}`,
         ].join('\n');
+        if (!quoteHealthUsable) {
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span className="cursor-help text-xs text-neutral-500">stale</span>
+            </SimpleTooltip>
+          );
+        }
         return (
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <div className="flex cursor-help flex-col font-mono text-[11px] leading-tight">
-              <span style={{ color: arbBidSpreadBps != null && arbBidSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.default }}>
+              <span style={{ color: arbBidSpreadBps != null && arbBidSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.primary }}>
                 {`B ${formatCompactBps(arbBidSpreadBps)}`}
               </span>
-              <span style={{ color: arbAskSpreadBps != null && arbAskSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.default }}>
+              <span style={{ color: arbAskSpreadBps != null && arbAskSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.primary }}>
                 {`A ${formatCompactBps(arbAskSpreadBps)}`}
               </span>
             </div>
@@ -405,21 +472,24 @@ export default function MakerV4SignalTable({
         const snapshot = row.original._quoteSnapshot;
         const hedgePolicy = row.original._operator?.hedge_policy;
         const hedgeBacklog = row.original._operator?.hedge_backlog;
-        const hedgeReady = snapshot?.hedge_ready === true;
-        const disabledReason = snapshot?.hedge_disabled_reason ?? (row.original.tradeable === false ? 'blocked' : '—');
+        const quoteHealthUsable = row.original._quoteHealthUsable;
+        const hasBacklog = Boolean(hedgeBacklog?.blocked_reason);
+        const hedgeReady = snapshot?.hedge_ready === true && quoteHealthUsable && !hasBacklog;
+        const disabledReason = snapshot?.hedge_disabled_reason
+          ?? (!quoteHealthUsable ? 'quote_health_unusable' : (row.original.tradeable === false ? 'blocked' : '—'));
         const route = resolveConfiguredHedgeRoute(row.original);
         const timeInForce = hedgePolicy?.time_in_force ?? '—';
         const hedgeLatencyMs = coerceNumber(snapshot?.hedge_latency_ms);
         const hedgeSlippageBps = coerceNumber(snapshot?.hedge_slippage_bps_vs_mid);
         const backlogQty = hedgeBacklog?.requested_qty == null ? '—' : String(hedgeBacklog.requested_qty);
         const backlogSide = hedgeBacklog?.side?.trim() || '—';
-        const hasBacklog = Boolean(hedgeBacklog?.blocked_reason);
         const subLabel = hasBacklog
           ? `${backlogSide} ${backlogQty}`
-          : (hedgeLatencyMs != null ? `${route} · ${hedgeLatencyMs} ms` : `${route} · ${timeInForce}`);
+          : (!quoteHealthUsable ? 'Quote health' : (hedgeLatencyMs != null ? `${route} · ${hedgeLatencyMs} ms` : `${route} · ${timeInForce}`));
         const tooltip = [
           `Route: ${route}`,
           `Time in force: ${timeInForce}`,
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
           `Reason: ${disabledReason}`,
           `Hedge backlog: ${hasBacklog ? `${backlogSide} ${backlogQty} (${hedgeBacklog?.blocked_reason ?? 'blocked'})` : '—'}`,
           `Hedge latency: ${hedgeLatencyMs != null ? `${hedgeLatencyMs} ms` : '—'}`,
@@ -430,13 +500,35 @@ export default function MakerV4SignalTable({
         ].join('\n');
         return (
           <StatusPill
-            status={hedgeReady ? 'ok' : hasBacklog || snapshot?.hedge_disabled_reason ? 'warning' : 'muted'}
+            status={hedgeReady ? 'ok' : hasBacklog || !quoteHealthUsable || snapshot?.hedge_disabled_reason ? 'warning' : 'muted'}
             label={hedgeReady ? 'Ready' : hasBacklog ? 'Backlog' : 'Blocked'}
             subLabel={subLabel}
             tooltip={tooltip}
             size="xs"
             tone="subtle"
           />
+        );
+      },
+    },
+    {
+      accessorFn: (row) => row._lastAgeMs ?? Number.POSITIVE_INFINITY,
+      id: 'age_ms',
+      header: 'Age',
+      cell: ({ row }) => {
+        const ageMs = row.original._lastAgeMs;
+        if (ageMs == null) {
+          return <span className="text-xs text-neutral-500">—</span>;
+        }
+        const tooltip = buildAgeTooltip(row.original);
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <span
+              className="cursor-help font-mono text-xs"
+              style={{ color: getAgeColor(ageMs) }}
+            >
+              {fmtAgeSec(ageMs)}
+            </span>
+          </SimpleTooltip>
         );
       },
     },

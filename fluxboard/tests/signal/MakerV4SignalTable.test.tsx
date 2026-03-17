@@ -64,7 +64,7 @@ function buildMakerV4Strategy(): SignalStrategy {
     strategy_family: 'maker_v4',
     running: true,
     tradeable: false,
-    blocked: true,
+    blocked: false,
     balances_ok: true,
     params: { bot_on: '0', qty: '1' },
     meta: {
@@ -128,20 +128,21 @@ function buildMakerV4Strategy(): SignalStrategy {
         quoted_spread_bps: 8.0,
         expected_maker_fee_bps: 0.25,
         assumed_hedge_fee_bps: 1.0,
-        hedge_ready: false,
+        hedge_ready: true,
         hedge_route: 'BLUEOCEAN',
-        hedge_disabled_reason: 'stale_quote',
+        hedge_disabled_reason: null,
         fee_snapshot_age_s: 9,
+        ibkr_quote_age_ms: 3_000,
         hedge_latency_ms: 45,
         hedge_slippage_bps_vs_mid: 1.5,
         maker_leg: {
           venue: 'HYPERLIQUID',
           instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
           feed_state: 'ok',
-          quote_state: 'old',
-          pricing_usable: false,
-          hedge_usable: false,
-          reason_code: 'maker_quote_old',
+          quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
+          age_ms: 1_000,
         },
         hedge_leg: {
           venue: 'IBKR',
@@ -151,15 +152,16 @@ function buildMakerV4Strategy(): SignalStrategy {
           quote_state: 'fresh',
           pricing_usable: true,
           hedge_usable: true,
+          age_ms: 2_000,
         },
         ref_leg: {
           venue: 'IBKR',
           instrument_id: 'AAPL.NASDAQ',
           feed_state: 'ok',
-          quote_state: 'old',
-          pricing_usable: false,
-          hedge_usable: false,
-          reason_code: 'stale_quote',
+          quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
+          age_ms: 3_000,
         },
       },
     },
@@ -205,8 +207,60 @@ describe('MakerV4SignalTable', () => {
     expect(screen.getByText(/45 ms/i)).toBeInTheDocument();
   });
 
+  it('uses worst-leg age and hides actionable spread and hedge states when quote health is stale', () => {
+    const strategy = buildMakerV4Strategy();
+    strategy.tradeable = false;
+    strategy.blocked = true;
+    strategy.maker_v4 = {
+      ...strategy.maker_v4,
+      quote_snapshot: {
+        ...strategy.maker_v4?.quote_snapshot,
+        hedge_ready: true,
+        hedge_disabled_reason: null,
+        ref_leg: {
+          ...strategy.maker_v4?.quote_snapshot?.ref_leg,
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'reference_quote_old',
+          age_ms: 9_000,
+        },
+      },
+    } as any;
+
+    render(
+      <MakerV4SignalTable
+        rows={[strategy]}
+        nowProvider={() => 1_700_000_010_000}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /Age/i })).toBeInTheDocument();
+    expect(screen.getByText('9s')).toBeInTheDocument();
+    expect(screen.getByText(/Paused/i)).toBeInTheDocument();
+    expect(screen.getByText(/Blocked/i)).toBeInTheDocument();
+    expect(screen.getByText(/Quote health/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^stale$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('2.0 bps')).not.toBeInTheDocument();
+    expect(screen.queryByText('B 14.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('A -11.0')).not.toBeInTheDocument();
+  });
+
   it('shows quote health separately from age and surfaces hedge backlog state', () => {
     const strategy = buildMakerV4Strategy();
+    strategy.maker_v4 = {
+      ...strategy.maker_v4,
+      quote_snapshot: {
+        ...strategy.maker_v4?.quote_snapshot,
+        maker_leg: {
+          ...strategy.maker_v4?.quote_snapshot?.maker_leg,
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'maker_quote_old',
+        },
+      },
+    } as any;
     strategy.maker_v4 = {
       ...strategy.maker_v4,
       operator: {
@@ -229,7 +283,7 @@ describe('MakerV4SignalTable', () => {
     );
 
     expect(screen.getByText('Feed ok · Quote old')).toBeInTheDocument();
-    expect(screen.getByText('Backlog')).toBeInTheDocument();
+    expect(screen.getByText(/Backlog/i)).toBeInTheDocument();
     expect(screen.getByText(/SELL 1/)).toBeInTheDocument();
   });
 
