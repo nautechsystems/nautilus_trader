@@ -425,18 +425,27 @@ def _register_fluxboard_spa_base_path(
     )
 
 
-def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
+def _attach_fluxboard_tokenmm_routes(
+    app: Any,
+    *,
+    dist_dir: Path,
+    surface_backends: dict[str, str] | None = None,
+) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
+    resolved_surface_backends = surface_backends or {}
 
     def _serve_shared_static(subpath: str) -> Any:
         normalized = subpath.strip().lstrip("/")
         candidate = (dist_root / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root), normalized)
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        equities_backend = resolved_surface_backends.get("equities")
+        if equities_backend:
+            return _proxy_request_to_backend(equities_backend)
+        abort(404)
 
     def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
         target = DEFAULT_TOKENMM_BASE_PATH
@@ -589,7 +598,11 @@ def main() -> None:
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
-        _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
+        _attach_fluxboard_tokenmm_routes(
+            app,
+            dist_dir=dist_path,
+            surface_backends=surface_backends,
+        )
     if args.serve_pulse:
         dist_path = _resolve_pulse_dist_path(args, api_cfg)
         _attach_pulse_routes(app, dist_dir=dist_path)
