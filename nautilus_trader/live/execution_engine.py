@@ -3247,7 +3247,6 @@ class LiveExecutionEngine(ExecutionEngine):
                 cached_qty=raw_qty,
                 venue_qty=report.signed_decimal_qty,
                 position_ids=stale_position_ids,
-                raw_qty=raw_qty,
                 effective_qty=effective_qty,
             )
 
