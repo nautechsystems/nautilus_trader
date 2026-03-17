@@ -383,12 +383,12 @@ def _build_fallback_inventory_skew_adjustments(
         global_ratio = None
         global_skew = None
         if max_qty_global > 0:
-            global_ratio = max(-1.0, min(1.0, (inventory_qty - des_qty_global) / max_qty_global))
+            global_ratio = max(-1.0, min(1.0, (des_qty_global - inventory_qty) / max_qty_global))
             global_skew = global_ratio * max(0.0, max_skew_global)
         local_ratio = None
         local_skew = None
         if max_qty_local > 0:
-            local_ratio = max(-1.0, min(1.0, (inventory_qty - des_qty_local) / max_qty_local))
+            local_ratio = max(-1.0, min(1.0, (des_qty_local - inventory_qty) / max_qty_local))
             local_skew = local_ratio * max(0.0, max_skew_local)
         total_skew = linear_offset
         if global_skew is not None:
@@ -426,6 +426,10 @@ def _build_fallback_inventory_skew_adjustments(
     if total_skew_bps is not None:
         adjustment["skew_bps_signed"] = total_skew_bps
         adjustment["inv_skew"] = total_skew_bps
+
+    linear_offset_bps = _first_valid_float(skew.get("linear_offset_bps"), params.get("linear_offset_bps"))
+    if linear_offset_bps is not None:
+        adjustment["linear_offset_bps"] = linear_offset_bps
 
     global_ratio = _first_valid_float(skew.get("global_ratio"))
     local_ratio = _first_valid_float(skew.get("local_ratio"))
@@ -525,6 +529,28 @@ def _build_fallback_inventory_skew_adjustments(
     return [adjustment]
 
 
+def _normalize_inventory_skew_adjustment(adjustment: Mapping[str, Any] | dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(adjustment)
+    if decode_text(normalized.get("type")).strip().lower() != "inventory_skew":
+        return normalized
+
+    signed_skew = _first_valid_float(normalized.get("skew_bps_signed"))
+    legacy_skew = _first_valid_float(normalized.get("inv_skew"))
+    if signed_skew is not None:
+        normalized["skew_bps_signed"] = signed_skew
+        normalized["inv_skew"] = signed_skew
+    elif legacy_skew is not None:
+        normalized["skew_bps_signed"] = legacy_skew
+        normalized["inv_skew"] = legacy_skew
+
+    for key in ("linear_offset_bps", "inv_skew_global", "inv_skew_local"):
+        value = _first_valid_float(normalized.get(key))
+        if value is not None:
+            normalized[key] = value
+
+    return normalized
+
+
 def _merge_inventory_skew_adjustments(
     *,
     current: list[dict[str, Any]],
@@ -548,17 +574,17 @@ def _merge_inventory_skew_adjustments(
     merged_inventory = False
     for item in current:
         if item.get("type") != "inventory_skew" or merged_inventory:
-            merged.append(item)
+            merged.append(_normalize_inventory_skew_adjustment(item))
             continue
         merged_item = dict(fallback_inventory)
         for key, value in item.items():
             if value is not None:
                 merged_item[key] = value
-        merged.append(merged_item)
+        merged.append(_normalize_inventory_skew_adjustment(merged_item))
         merged_inventory = True
 
     if not merged_inventory:
-        merged.append(fallback_inventory)
+        merged.append(_normalize_inventory_skew_adjustment(fallback_inventory))
     return merged
 
 
@@ -571,7 +597,11 @@ def _derive_pricing_adjustments(
 ) -> list[dict[str, Any]]:
     state_adjustments = state.get("pricing_adjustments")
     if isinstance(state_adjustments, list):
-        normalized = [dict(item) for item in state_adjustments if isinstance(item, Mapping)]
+        normalized = [
+            _normalize_inventory_skew_adjustment(item)
+            for item in state_adjustments
+            if isinstance(item, Mapping)
+        ]
         fallback = _build_fallback_inventory_skew_adjustments(
             state=state,
             params=params,
@@ -580,12 +610,15 @@ def _derive_pricing_adjustments(
         )
         return _merge_inventory_skew_adjustments(current=normalized, fallback=fallback)
 
-    return _build_fallback_inventory_skew_adjustments(
+    return [
+        _normalize_inventory_skew_adjustment(item)
+        for item in _build_fallback_inventory_skew_adjustments(
         state=state,
         params=params,
         ts_ms=ts_ms,
         risk_delta=risk_delta,
-    )
+        )
+    ]
 
 
 def _derive_strategy_family(strategy_class: str) -> str:

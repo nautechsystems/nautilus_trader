@@ -746,6 +746,7 @@ export function buildInventorySkewTooltip(
 ): string | null {
   if (!adj) return null;
   const skewBps = computeInventorySkewBps(adj);
+  const linearSkew = coerceFiniteNumber(adj.linear_offset_bps ?? params?.linear_offset_bps);
   const desQtyGlobal = params?.des_qty_global ?? params?.des_qty;
   const maxQtyGlobal = params?.max_qty_global ?? params?.max_qty;
   const maxSkewGlobal = params?.max_skew_bps_global ?? params?.max_skew_bps;
@@ -760,11 +761,13 @@ export function buildInventorySkewTooltip(
   const localMatchedRows = coerceFiniteNumber(adj.local_qty_matched_rows);
   const localMissingSnapshot = coerceFiniteNumber(adj.local_qty_missing_snapshot);
   const localQtyKey = adj.local_qty_key;
+  const actualBidEdge = coerceFiniteNumber(adj.eff_bid_edge_bps ?? adj.base_bid_edge_bps);
+  const actualAskEdge = coerceFiniteNumber(adj.eff_ask_edge_bps ?? adj.base_ask_edge_bps);
   const lines: string[] = [
     'Inventory skew (MakerV3):',
-    `total skew_bps: ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'} (quote shift only)`,
-    `total inv_ratio: ${formatSignedRatio(adj.inv_ratio)} (clamped to [-1, +1])`,
-    `total inv_skew: ${formatSignedBps(adj.inv_skew)} bps`,
+    `quoted FV shift: ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'} bps`,
+    `linear + global + local = total: ${formatSignedBps(linearSkew)} + ${formatSignedBps(globalSkew)} + ${formatSignedBps(localSkew)} = ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'}`,
+    `inventory ratio: ${formatSignedRatio(adj.inv_ratio)} (clamped to [-1, +1])`,
     '',
     'Global inventory:',
     `qty / max / max_skew_bps: ${desQtyGlobal ?? '—'} / ${maxQtyGlobal ?? '—'} / ${maxSkewGlobal ?? '—'}`,
@@ -795,10 +798,8 @@ export function buildInventorySkewTooltip(
 
   lines.push(
     '',
-    'Edges (bps):',
-    `base bid/ask: ${formatBps(adj.base_bid_edge_bps)} / ${formatBps(adj.base_ask_edge_bps)}`,
-    `eff bid/ask: ${formatBps(adj.eff_bid_edge_bps)} / ${formatBps(adj.eff_ask_edge_bps)}`,
-    `delta bid/ask: ${formatSignedBps(adj.delta_bid_edge_bps)} / ${formatSignedBps(adj.delta_ask_edge_bps)}`,
+    'Actual maker edges (bps):',
+    `actual bid edge / ask edge: ${formatBps(actualBidEdge)} / ${formatBps(actualAskEdge)}`,
     '',
     'Local skew changes maker quotes only; hedge remains global-only.',
   );
@@ -2588,10 +2589,10 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Adj/Skew"
             tooltip={[
-              'MakerV3 quote adjustments.',
+              'MakerV3 quoted-FV adjustments.',
               'Inventory skew combines global inventory and local inventory.',
-              'Shown as signed skew_bps: negative shifts quotes down, positive shifts quotes up.',
-              'Hover for global/local breakdown and edge deltas.',
+              'Positive means we quote as if FV is higher; negative means we quote as if FV is lower.',
+              'Hover for linear + global + local breakdown and actual bid/ask edges.',
             ].join('\n')}
           />
         ),

@@ -50,9 +50,12 @@ MakerV3 runtime params are backed by the canonical registry:
 
 Operational expectations:
 
+- Raw/reference FV remains the market-derived anchor used by the strategy.
+- Signed skew and offsets do not mutate that raw/reference FV estimator; they adjust quoted FV / quote placement relative to the reference market.
 - Signed skew convention is canonical across strategy, API, and UI:
-  - positive values shift our quoted market up,
-  - negative values shift our quoted market down,
+  - positive values raise our quoted FV / quote richer,
+  - negative values lower our quoted FV / quote cheaper,
+  - short inventory relative to target should therefore produce positive skew,
   - `linear_offset_bps`, `global_skew_bps`, `local_skew_bps`, and `total_skew_bps` all use that convention.
 - Unknown keys are rejected (fail-fast).
 - Updates are coerced and applied atomically.
@@ -63,6 +66,23 @@ Wiring:
 - The strategy can be provided a manager instance via `set_params_manager(...)`.
 - Or it can be provided a lazy factory via `set_params_manager_factory(...)` (preferred for runners that construct Redis
   clients at runtime).
+
+Operator examples:
+
+- `global_qty < des_qty_global` and `local_qty < des_qty_local` should produce positive `global_skew_bps` and `local_skew_bps`, so total skew is positive.
+- `global_qty > des_qty_global` and `local_qty > des_qty_local` should produce negative skew components, so total skew is negative.
+- `linear_offset_bps = +5` means we quote as if FV is `+5 bps` higher relative to the reference market.
+- Signal should display the arithmetic contract `linear + global + local = total`.
+
+Rollout checklist:
+
+1. Pause or gate affected live TokenMM strategies before deploying the skew-semantics change.
+2. In staging or replay, confirm short inventory displays positive skew and long inventory displays negative skew.
+3. Confirm Signal tooltips read naturally for operators:
+   - quoted FV shift
+   - linear/global/local/total breakdown
+   - actual bid edge / ask edge
+4. Capture one before/after payload sample or screenshot for Lan sign-off.
 
 ## Topics and observability
 

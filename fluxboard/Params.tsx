@@ -860,15 +860,15 @@ const HEADER_HINTS: Record<string, string> = {
   max_qty_global:
     'MakerV3 global inventory cap (base units). <= 0 disables global inventory ratio/skew.',
   max_skew_bps_global:
-    'MakerV3 global skew cap (bps). Combined with max_skew_bps_local for total maker skew.',
+    'MakerV3 global inventory-driven quoted FV adjustment cap (bps). Combined with max_skew_bps_local for total skew.',
   des_qty_local:
     'MakerV3 local target inventory (base units) for additive local skew (local venue/instrument/base bucket).',
   max_qty_local:
     'MakerV3 local inventory cap (base units). <= 0 disables local component.',
   max_skew_bps_local:
-    'MakerV3 local skew cap (bps). Added to global skew for maker-leg total skew.',
+    'MakerV3 local inventory-driven quoted FV adjustment cap (bps). Added to global skew for total skew.',
   linear_offset_bps:
-    'MakerV3 signed quote shift in bps. Positive moves maker quotes up; negative moves maker quotes down.',
+    'MakerV3 manual quoted FV adjustment in bps relative to the reference market. Positive quotes richer; negative quotes cheaper.',
   des_qty:
     'Legacy alias for des_qty_global.',
   max_qty:

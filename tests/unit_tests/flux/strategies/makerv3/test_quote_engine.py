@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import nautilus_trader.flux.strategies.makerv3.quote_engine as quote_engine_mod
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
+from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -1256,6 +1257,78 @@ def test_refresh_quotes_exposes_split_inventory_fields_in_pricing_debug(
     assert skew["global_spot_qty"] == "1003"
     assert skew["local_position_qty"] == "2"
     assert skew["local_spot_qty"] == "3"
+
+
+def test_refresh_quotes_short_inventory_moves_quotes_up_and_exports_component_sum(
+    clocked_strategy_factory,
+) -> None:
+    def _configured_strategy() -> object:
+        strategy = clocked_strategy_factory([1_000_000_001])
+        strategy._maker_instrument = SimpleNamespace(
+            price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+            make_price=lambda value: Decimal(str(value)),
+        )
+        strategy._order_qty = object()
+        strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+        strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000
+        strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000
+        strategy._managed_orders = list
+        strategy._rebalance_side = lambda **_kwargs: 0
+        strategy._place_missing_levels = lambda **_kwargs: 0
+        strategy._publish_json = lambda *_args, **_kwargs: None
+        strategy._publish_event = lambda *_args, **_kwargs: None
+        strategy._maker_base_currency_code = lambda: "PLUME"
+        runtime_params = dict(strategy._quote_runtime_params_snapshot())
+        runtime_params.update(
+            {
+                "des_qty_global": Decimal(0),
+                "max_qty_global": Decimal(100),
+                "max_skew_bps_global": Decimal(20),
+                "des_qty_local": Decimal(0),
+                "max_qty_local": Decimal(40),
+                "max_skew_bps_local": Decimal(10),
+                "linear_offset_bps": Decimal(1),
+            }
+        )
+        strategy._quote_runtime_params_snapshot = lambda: runtime_params
+        strategy._spot_balance_total = lambda _base_currency: Decimal(0)
+        strategy._maker_local_spot_qty = lambda _base_currency: Decimal(0)
+        return strategy
+
+    flat_strategy = _configured_strategy()
+    flat_strategy._position_exposure_summary = lambda _base_currency: inventory_mod.PositionExposureSummary(
+        venue_qty=Decimal(0),
+        base_qty=Decimal(0),
+    )
+    flat_strategy._maker_local_position_summary = lambda _base_currency: inventory_mod.PositionExposureSummary(
+        venue_qty=Decimal(0),
+        base_qty=Decimal(0),
+    )
+    flat_strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    short_strategy = _configured_strategy()
+    short_strategy._position_exposure_summary = lambda _base_currency: inventory_mod.PositionExposureSummary(
+        venue_qty=Decimal(-50),
+        base_qty=Decimal(-50),
+    )
+    short_strategy._maker_local_position_summary = lambda _base_currency: inventory_mod.PositionExposureSummary(
+        venue_qty=Decimal(-20),
+        base_qty=Decimal(-20),
+    )
+    short_strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    baseline_pricing = flat_strategy._last_pricing_debug["pricing"]
+    short_pricing = short_strategy._last_pricing_debug["pricing"]
+    short_skew = short_strategy._last_pricing_debug["skew"]
+
+    assert Decimal(short_pricing["total_skew_bps"]) > 0
+    assert Decimal(short_pricing["place_bid"]) > Decimal(baseline_pricing["place_bid"])
+    assert Decimal(short_pricing["place_ask"]) > Decimal(baseline_pricing["place_ask"])
+    assert Decimal(short_skew["total_skew_bps"]) == (
+        Decimal(short_skew["linear_offset_bps"])
+        + Decimal(short_skew["global_skew_bps"])
+        + Decimal(short_skew["local_skew_bps"])
+    )
 
 
 def test_refresh_quotes_exposes_l1_quote_targets_in_pricing_debug(

@@ -526,8 +526,11 @@ def compute_inventory_skew(
     global_ratio: Decimal | None = None
     global_skew_bps: Decimal | None = None
     if global_inventory_qty is not None and max_qty_global > 0:
+        # Positive skew means quoted FV up / quotes richer, so inventory skew
+        # must be computed as the gap back to target rather than the sign of the
+        # current inventory itself.
         global_ratio = clamp_decimal(
-            (global_inventory_qty - des_qty_global) / max_qty_global,
+            (des_qty_global - global_inventory_qty) / max_qty_global,
             Decimal(-1),
             Decimal(1),
         )
@@ -537,7 +540,7 @@ def compute_inventory_skew(
     local_skew_bps: Decimal | None = None
     if local_inventory_qty is not None and max_qty_local > 0:
         local_ratio = clamp_decimal(
-            (local_inventory_qty - des_qty_local) / max_qty_local,
+            (des_qty_local - local_inventory_qty) / max_qty_local,
             Decimal(-1),
             Decimal(1),
         )

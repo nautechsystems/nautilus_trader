@@ -24,7 +24,7 @@ def _runtime_params(**overrides: Decimal | float | str) -> dict[str, Decimal]:
     return params
 
 
-def test_compute_inventory_skew_nets_global_and_local_components_and_clamps_ratios() -> None:
+def test_compute_inventory_skew_treats_long_inventory_as_negative_quoted_fv_shift() -> None:
     skew = compute_inventory_skew(
         global_position_qty_venue=Decimal("0.5"),
         global_position_qty_base=Decimal(5),
@@ -61,11 +61,43 @@ def test_compute_inventory_skew_nets_global_and_local_components_and_clamps_rati
     assert skew["local_inventory_qty_base"] == Decimal(3)
     assert skew["local_inventory_qty"] == Decimal(3)
     assert skew["local_inventory_source"] == "positions_plus_spot"
-    assert skew["global_ratio"] == Decimal(1)
-    assert skew["global_skew_bps"] == Decimal(10)
-    assert skew["local_ratio"] == Decimal("0.3")
-    assert skew["local_skew_bps"] == Decimal("1.5")
-    assert skew["total_skew_bps"] == Decimal("12.5")
+    # Positive skew means quoted FV up / quotes richer. Long inventory must
+    # create a negative skew so the strategy sells back toward target.
+    assert skew["global_ratio"] == Decimal(-1)
+    assert skew["global_skew_bps"] == Decimal(-10)
+    assert skew["local_ratio"] == Decimal("-0.3")
+    assert skew["local_skew_bps"] == Decimal("-1.5")
+    assert skew["total_skew_bps"] == Decimal("-10.5")
+
+
+def test_compute_inventory_skew_treats_short_inventory_as_positive_quoted_fv_shift() -> None:
+    skew = compute_inventory_skew(
+        global_position_qty_venue=Decimal("0.5"),
+        global_position_qty_base=Decimal(5),
+        global_spot_qty=Decimal(9),
+        local_position_qty_venue=Decimal("0.2"),
+        local_position_qty_base=Decimal(2),
+        local_spot_qty=Decimal(1),
+        base_currency="BTC",
+        runtime_params=_runtime_params(
+            des_qty_global=20,
+            max_qty_global=20,
+            max_skew_bps_global=10,
+            des_qty_local=5,
+            max_qty_local=10,
+            max_skew_bps_local=5,
+        ),
+    )
+
+    # Short inventory relative to target must create a positive skew so the
+    # strategy buys back toward target.
+    assert skew["global_inventory_qty"] == Decimal(14)
+    assert skew["local_inventory_qty"] == Decimal(3)
+    assert skew["global_ratio"] == Decimal("0.3")
+    assert skew["global_skew_bps"] == Decimal(3)
+    assert skew["local_ratio"] == Decimal("0.2")
+    assert skew["local_skew_bps"] == Decimal(1)
+    assert skew["total_skew_bps"] == Decimal(4)
 
 
 def test_compute_inventory_skew_keeps_global_spot_out_of_local_when_local_inventory_is_absent() -> (
@@ -96,8 +128,8 @@ def test_compute_inventory_skew_keeps_global_spot_out_of_local_when_local_invent
     assert skew["local_inventory_source"] == "unavailable"
     assert skew["local_inventory_qty_base"] is None
     assert skew["local_inventory_qty"] is None
-    assert skew["global_ratio"] == Decimal("0.5")
-    assert skew["global_skew_bps"] == Decimal(6)
+    assert skew["global_ratio"] == Decimal("-0.5")
+    assert skew["global_skew_bps"] == Decimal(-6)
     assert skew["local_ratio"] is None
     assert skew["local_skew_bps"] is None
 

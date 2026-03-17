@@ -1560,6 +1560,143 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
     assert skew["delta_ask_edge_bps"] == 2.0
 
 
+def test_build_signals_payload_keeps_legacy_inv_skew_alias_in_sync_with_canonical_signed_skew(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=1_700_000_001_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="plumeusdt_okx_perp_makerv3",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "skew_bps_signed": -3.86,
+                    "inv_skew": 999.0,
+                }
+            ],
+        },
+        fv_row={"fv": 0.012285},
+        params={"qty": 10.0},
+        balances=[],
+        legs=legs,
+    )
+
+    skew = payload["pricing_adjustments"][0]
+    assert skew["skew_bps_signed"] == -3.86
+    # `inv_skew` is a compatibility alias for the same quoted-FV shift, not an
+    # independent sign convention.
+    assert skew["inv_skew"] == -3.86
+
+
+def test_build_signals_payload_promotes_legacy_inv_skew_when_signed_skew_is_missing(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=1_700_000_001_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="plumeusdt_okx_perp_makerv3",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "inv_skew": 4.25,
+                }
+            ],
+        },
+        fv_row={"fv": 0.012285},
+        params={"qty": 10.0},
+        balances=[],
+        legs=legs,
+    )
+
+    skew = payload["pricing_adjustments"][0]
+    assert skew["skew_bps_signed"] == 4.25
+    assert skew["inv_skew"] == 4.25
+
+
+def test_build_signals_payload_fallback_keeps_short_inventory_as_positive_quoted_fv_shift(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=1_700_000_001_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="plumeusdt_bybit_spot_makerv3",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "risk_delta": -500.0,
+        },
+        fv_row={"fv": 0.013345},
+        params={
+            "qty": 1.0,
+            "linear_offset_bps": 1.0,
+            "des_qty_global": 0.0,
+            "max_qty_global": 1000.0,
+            "max_skew_bps_global": 20.0,
+            "des_qty_local": 0.0,
+            "max_qty_local": 500.0,
+            "max_skew_bps_local": 10.0,
+        },
+        balances=[],
+        legs=legs,
+    )
+
+    # Positive skew means quoted FV up / quotes richer. A short inventory
+    # fallback must preserve that buy-to-target bias and export the component
+    # breakdown that Signal shows as `linear + global + local = total`.
+    skew = payload["pricing_adjustments"][0]
+    assert skew["type"] == "inventory_skew"
+    assert skew["skew_bps_signed"] == 21.0
+    assert skew["inv_skew"] == 21.0
+    assert skew["linear_offset_bps"] == 1.0
+    assert skew["inv_skew_global"] == 10.0
+    assert skew["inv_skew_local"] == 10.0
+
+
 def test_build_signals_payload_derives_quote_status_from_managed_orders_when_missing(
     contract_catalog,
 ) -> None:
