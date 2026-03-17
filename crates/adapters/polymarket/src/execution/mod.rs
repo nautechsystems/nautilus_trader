@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    cache::fifo::FifoCache,
+    cache::fifo::{FifoCache, FifoCacheMap},
     clients::ExecutionClient,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::execution::{
@@ -109,6 +109,9 @@ pub struct PolymarketExecutionClient {
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
     neg_risk_index: AHashMap<InstrumentId, bool>,
+    accepted_orders: Arc<Mutex<FifoCache<VenueOrderId, 10_000>>>,
+    pending_fills: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_order_reports: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
 }
 
 impl PolymarketExecutionClient {
@@ -203,6 +206,9 @@ impl PolymarketExecutionClient {
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
             neg_risk_index: AHashMap::new(),
+            accepted_orders: Arc::new(Mutex::new(FifoCache::default())),
+            pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
+            pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
         })
     }
 
@@ -301,6 +307,10 @@ impl PolymarketExecutionClient {
             .unwrap_or_else(|| self.secrets.address.clone());
         let user_api_key = self.secrets.credential.api_key().to_string();
 
+        let accepted_orders = self.accepted_orders.clone();
+        let pending_fills = self.pending_fills.clone();
+        let pending_order_reports = self.pending_order_reports.clone();
+
         let handle = get_runtime().spawn(async move {
             let mut processed_fills: FifoCache<String, 10_000> = FifoCache::default();
 
@@ -353,9 +363,25 @@ impl PolymarketExecutionClient {
                                 None,
                             );
                             report.price = Some(price);
-                            emitter.send_order_status_report(report);
+
+                            let is_accepted = accepted_orders.lock().expect(MUTEX_POISONED).contains(&venue_order_id);
+                            if is_accepted {
+                                emitter.send_order_status_report(report);
+                            } else {
+                                let mut guard = pending_order_reports.lock().expect(MUTEX_POISONED);
+                                if let Some(reports) = guard.get_mut(&venue_order_id) {
+                                    reports.push(report);
+                                } else {
+                                    guard.insert(venue_order_id, vec![report]);
+                                }
+                            }
                         }
                         UserWsMessage::Trade(trade) => {
+                            log::info!(
+                                "WS Trade: id={}, status={:?}, taker_order_id={}, size={}, price={}",
+                                trade.id, trade.status, trade.taker_order_id, trade.size, trade.price
+                            );
+
                             if !trade.status.is_finalized()
                                 && !matches!(trade.status, PolymarketTradeStatus::Matched)
                             {
@@ -443,7 +469,18 @@ impl PolymarketExecutionClient {
                                         ts_event,
                                         ts_event,
                                     );
-                                    emitter.send_fill_report(report);
+                                    let maker_venue_order_id = report.venue_order_id;
+                                    let is_accepted = accepted_orders.lock().expect(MUTEX_POISONED).contains(&maker_venue_order_id);
+                                    if is_accepted {
+                                        emitter.send_fill_report(report);
+                                    } else {
+                                        let mut guard = pending_fills.lock().expect(MUTEX_POISONED);
+                                        if let Some(fills) = guard.get_mut(&maker_venue_order_id) {
+                                            fills.push(report);
+                                        } else {
+                                            guard.insert(maker_venue_order_id, vec![report]);
+                                        }
+                                    }
                                 }
                             } else {
                                 let instrument = match token_instruments.get(&trade.asset_id) {
@@ -478,7 +515,7 @@ impl PolymarketExecutionClient {
                                 let commission_value =
                                     compute_commission(fee_bps, size, price_dec);
                                 let usdc = get_usdc_currency();
-                                emitter.send_fill_report(FillReport {
+                                let fill_report = FillReport {
                                     account_id,
                                     instrument_id: instrument.id(),
                                     venue_order_id,
@@ -493,7 +530,18 @@ impl PolymarketExecutionClient {
                                     ts_init: ts_event,
                                     client_order_id: None,
                                     venue_position_id: None,
-                                });
+                                };
+                                let is_accepted = accepted_orders.lock().expect(MUTEX_POISONED).contains(&venue_order_id);
+                                if is_accepted {
+                                    emitter.send_fill_report(fill_report);
+                                } else {
+                                    let mut guard = pending_fills.lock().expect(MUTEX_POISONED);
+                                    if let Some(fills) = guard.get_mut(&venue_order_id) {
+                                        fills.push(fill_report);
+                                    } else {
+                                        guard.insert(venue_order_id, vec![fill_report]);
+                                    }
+                                }
                             }
                         }
                     },
@@ -563,6 +611,9 @@ impl PolymarketExecutionClient {
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let accepted_orders = self.accepted_orders.clone();
+        let pending_fills = self.pending_fills.clone();
+        let pending_order_reports = self.pending_order_reports.clone();
 
         self.spawn_task("submit_limit_order", async move {
             match submitter
@@ -579,7 +630,15 @@ impl PolymarketExecutionClient {
                 .await
             {
                 Ok(response) => {
-                    handle_order_response(Ok(response), &order, &emitter, clock);
+                    handle_order_response(
+                        Ok(response),
+                        &order,
+                        &emitter,
+                        clock,
+                        &accepted_orders,
+                        &pending_fills,
+                        &pending_order_reports,
+                    );
                 }
                 Err(e) => {
                     let ts = clock.get_time_ns();
@@ -609,6 +668,9 @@ impl PolymarketExecutionClient {
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let accepted_orders = self.accepted_orders.clone();
+        let pending_fills = self.pending_fills.clone();
+        let pending_order_reports = self.pending_order_reports.clone();
 
         self.spawn_task("submit_market_order", async move {
             match submitter
@@ -617,7 +679,15 @@ impl PolymarketExecutionClient {
             {
                 Ok(response) => {
                     emitter.emit_order_submitted(&order);
-                    handle_order_response(Ok(response), &order, &emitter, clock);
+                    handle_order_response(
+                        Ok(response),
+                        &order,
+                        &emitter,
+                        clock,
+                        &accepted_orders,
+                        &pending_fills,
+                        &pending_order_reports,
+                    );
                 }
                 Err(e) => {
                     let ts = clock.get_time_ns();
@@ -1256,6 +1326,9 @@ fn handle_order_response(
     order: &OrderAny,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
+    accepted_orders: &Arc<Mutex<FifoCache<VenueOrderId, 10_000>>>,
+    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
 ) {
     match result {
         Ok(response) => {
@@ -1264,6 +1337,34 @@ fn handle_order_response(
                     let venue_order_id = VenueOrderId::from(order_id.as_str());
                     let ts = clock.get_time_ns();
                     emitter.emit_order_accepted(order, venue_order_id, ts);
+
+                    // Mark order as accepted (FifoCache auto-evicts oldest beyond 10K capacity)
+                    accepted_orders
+                        .lock()
+                        .expect(MUTEX_POISONED)
+                        .add(venue_order_id);
+
+                    // Drain any fills buffered during the HTTP round-trip
+                    if let Some(buffered) = pending_fills
+                        .lock()
+                        .expect(MUTEX_POISONED)
+                        .remove(&venue_order_id)
+                    {
+                        for fill in buffered {
+                            emitter.send_fill_report(fill);
+                        }
+                    }
+
+                    // Drain any order reports buffered during the HTTP round-trip
+                    if let Some(buffered) = pending_order_reports
+                        .lock()
+                        .expect(MUTEX_POISONED)
+                        .remove(&venue_order_id)
+                    {
+                        for report in buffered {
+                            emitter.send_order_status_report(report);
+                        }
+                    }
                 } else {
                     log::warn!(
                         "Order accepted but no order_id returned for {}",
