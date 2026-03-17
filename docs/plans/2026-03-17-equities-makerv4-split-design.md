@@ -61,6 +61,8 @@ Recommended strategy metadata:
 - `params_profile = "equities_make_take"` for a selected make-take row
 - `params_profile = "equities_take_take"` for a selected take-take row
 - `GET /api/v1/param-schema` and related Fluxboard schema caching must become strategy-aware, for example via a `strategy=<strategy_id>` selector, rather than assuming one page-global schema
+- the generic params API must resolve schema/defaults/validation per strategy across `GET /api/v1/params`, bulk `POST/PATCH /api/v1/params`, and `GET/POST/PATCH /api/v1/strategies/<id>/parameters`; one app-global schema/default bundle is not sufficient for the split
+- the live `run_api.main()` path must bind per-strategy family and asset metadata from merged config plus `strategy_contracts`, not only helper-unit tests that inject contracts into an isolated `[api]` table
 - row metadata still carries family-specific `param_set` / `strategy_family`
 - persisted Fluxboard `maker_v4` params preferences should migrate into the new split profiles
 
@@ -130,6 +132,8 @@ Recommended shared-core responsibilities:
 - shared hedge/take order intent and pending-hedge/backlog lifecycle
 - shared portfolio-risk reads against the `portfolio=equities` aggregate
 - shared signal/operator payload helpers
+- shared fee-rule and pricing helpers that currently live in `makerv4.fees` and `makerv4.pricing`
+- shared runner capability helpers so `run_node.py` no longer branches on `param_set == "makerv4"` for runtime params, immediate-hedge behavior, venue promotion, or allowed instruments
 
 Family-specific responsibilities:
 
@@ -180,7 +184,7 @@ Implications:
 
 - `strategy_contracts` may now contain two rows with the same `portfolio_asset_id`
 - `api.equities_strategy_ids` and `api.equities_required_strategy_ids` must allow both rows
-- portfolio aggregation must group multiple strategy IDs under the same asset without assuming one strategy per asset
+- the existing tuple-based asset grouping in `run_portfolio.py` should be reused rather than replaced; only patch portfolio-runner logic if deploy/readiness tests expose a real remaining gap
 - readiness must validate shared asset-level state while still expecting both strategy processes to be present when enrolled
 
 The shared portfolio/book remains canonical for:
@@ -208,6 +212,12 @@ The split needs contract coverage at four levels:
 2. Shared portfolio/deploy/readiness contracts for dual strategies per asset
 3. API payload and Fluxboard family-aware rendering
 4. Shared-core hedge, fee, and quote-health behavior reused by both families
+
+Execution sequencing should keep the shared lane green:
+
+- local fail-first testing inside a task is fine
+- committed red shared-branch contract tests are not part of the plan
+- generic `flux.api.app` mixed-family params tests and Fluxboard websocket delta-merge tests are required coverage, not optional polish
 
 The migration is complete when:
 
