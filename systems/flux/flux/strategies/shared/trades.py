@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from contextlib import suppress
 from decimal import Decimal
+import re
 from typing import Any
 from typing import Callable
 from typing import Mapping
@@ -124,11 +125,10 @@ def _commission_payload(
     commission: Any,
     instrument: Any | None,
 ) -> dict[str, str]:
-    amount = _decimal_or_none(commission)
+    amount, currency_code = _parse_commission_value(commission)
     if amount is None:
         return {}
     amount_text = str(amount)
-    currency_code = _currency_code(getattr(commission, "currency", None))
     payload = {
         "fee": amount_text,
         "fee_amount_raw": amount_text,
@@ -138,6 +138,34 @@ def _commission_payload(
         if currency_code in _quote_currency_codes(instrument):
             payload["fee_quote"] = amount_text
     return payload
+
+
+_COMMISSION_TEXT_RE = re.compile(
+    r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\s+([A-Za-z0-9:_-]+))?\s*$",
+)
+
+
+def _parse_commission_value(commission: Any) -> tuple[Decimal | None, str]:
+    amount = _decimal_or_none(commission)
+    currency_code = _currency_code(getattr(commission, "currency", None))
+    if amount is not None:
+        return amount, currency_code
+
+    text = _text(commission)
+    if not text:
+        return None, currency_code
+
+    match = _COMMISSION_TEXT_RE.match(text)
+    if match is None:
+        return None, currency_code
+
+    with suppress(Exception):
+        amount = Decimal(match.group(1))
+    if amount is None:
+        return None, currency_code
+
+    parsed_currency = _currency_code(match.group(2))
+    return amount, currency_code or parsed_currency
 
 
 def build_trade_payload(
