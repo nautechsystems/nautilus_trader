@@ -1,5 +1,7 @@
 # MakerV4 Take-Take And Overnight Hedge Implementation Plan
 
+> Historical note: This March 16, 2026 plan preserves an earlier overnight hedge assumption that used `SMART + includeOvernight=true + DAY` plus `cancel_after_ms` semantics outside RTH. That contract is superseded by the active March 17, 2026 MakerV4 outside-RTH policy: take-take hedges remain immediate, overnight permissions/tags are preserved when needed, and stale or invalid IBKR quotes fail closed instead of downgrading into passive overnight resting hedges.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
 
@@ -12,12 +14,12 @@
 ## Current Review Findings
 
 1. MakerV4 is locally close to a live canary, but Task 5 in the current cutover plan is still blocked on Hyperliquid funded-account request headroom.
-2. Live IBKR overnight execution is now proven through the Nautilus path, but the valid production shape is narrower than the original hedge design:
+2. Historical March 16 view: live IBKR overnight execution through the Nautilus path appeared narrower than the original hedge design:
    - `SMART + includeOvernight=true` works.
    - direct `OVERNIGHT` route is not the default production path.
-   - `IOC` is invalid on the overnight SMART stock route.
-   - overnight-capable stock hedges therefore need a session-aware order policy, not a hardcoded IOC assumption.
-3. The current Makerv4 hedge path still assumes immediate IOC semantics in the core design, so it must be adjusted before an overnight live canary.
+   - the working assumption at the time was that outside-RTH SMART stock hedges should not stay `IOC`.
+   - this document therefore explored a session-aware order policy with passive overnight behavior.
+3. Superseded by the March 17 contract: Makerv4 take-take hedges keep immediate semantics outside RTH, and quote/routing failures fail closed rather than downgrading into passive overnight behavior.
 4. For economics, the current live smoke fill returned `1.00 USD` commission on `BUY 1 GOOGL`, which is consistent with IBKR Fixed pricing or fixed-like treatment for the current path/account. For production basis trading we should target `IBKR Pro Tiered` and avoid fee-sensitive directed-routing assumptions.
 5. `take_take` should stay in MakerV4 as an explicit mode:
    - it aggresses Hyperliquid first,
@@ -29,7 +31,7 @@
 ## External Constraints
 
 - IBKR official docs indicate overnight-capable US stock API orders use `includeOvernight=True`, with `SMART` for combined regular/overnight access or `OVERNIGHT` for overnight-only routing.
-- Live testing in this worktree already established that `SMART + includeOvernight=true + DAY` fills, while `SMART + includeOvernight=true + IOC` is rejected as invalid for the order/security combination.
+- Historical March 16 testing in this worktree suggested `SMART + includeOvernight=true + DAY` as the overnight-capable path; that observation is preserved here for design history only and is superseded by the March 17 immediate outside-RTH hedge contract.
 - IBKR official pricing docs indicate directed API orders do not get Tiered treatment; the production target for basis hedging should be `SMART` plus the account on `IBKR Pro Tiered`.
 
 ## Progress Tracker

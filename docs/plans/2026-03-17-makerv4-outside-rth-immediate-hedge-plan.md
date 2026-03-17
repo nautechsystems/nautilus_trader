@@ -15,11 +15,11 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | controller | Execution started via subagent-driven-development |
-| Task 1: Lock Immediate Hedge Policy Contract | in_progress | implementer | Commit `bd26fb46bf` landed; `uv run --group test python -m pytest tests/unit_tests/flux/strategies/shared/test_ibkr_order_policy.py -q` passed (`3 passed`); implementer follow-up needed for `ruff` import ordering |
-| Task 2: Update Makerv4 Strategy Expectations | in_progress | implementer | Uncommitted overnight strategy test expectation changes detected in working tree; controller reconciling before review |
-| Task 3: Implement Outside-RTH Immediate Hedge Policy | not_started | unassigned | Plan created |
-| Task 4: Document and Verify Operational Behavior | not_started | unassigned | Plan created |
+| Overall | completed | controller | Outside-RTH immediate hedge contract verified; final bundle passed (`95 passed`). Background subagent also created unintended broad commit `6bbc394c84`; controller left it in place to avoid reverting unrelated work without approval. |
+| Task 1: Lock Immediate Hedge Policy Contract | completed | controller | Shared-policy contract landed in `bd26fb46bf`, quality follow-up committed in `94c8f548eb`, `ruff` clean, and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_ibkr_order_policy.py -q` passed (`3 passed`) |
+| Task 2: Update Makerv4 Strategy Expectations | completed | controller | Existing branch state in `6bbc394c84` aligned the overnight strategy tests; focused subset passed with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py -k 'regular_session_hedge_policy or overnight_hedge_policy or pending_hedge_policy or take_take' -q` (`14 passed`) |
+| Task 3: Implement Outside-RTH Immediate Hedge Policy | completed | controller | End-to-end strategy path honored the immediate outside-RTH policy after Task 1; focused overnight/take-take tests passed and broader Makerv4 regressions passed (`test_pricing`: `13 passed`, `test_publisher_contract`: `7 passed`, `test_runtime_params`: `10 passed`) |
+| Task 4: Document and Verify Operational Behavior | completed | controller | README and historical March 16 plan note were updated to reflect the active immediate outside-RTH contract; sanity grep confirmed remaining `DAY/resting` mentions are historical/superseded, and final verification bundle passed (`95 passed`) |
 
 ---
 

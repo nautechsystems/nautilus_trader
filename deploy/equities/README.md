@@ -34,9 +34,10 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## Overnight IBKR Hedge Contract
 
-- Overnight-capable IBKR stock hedges prefer `SMART`.
-- Set `includeOvernight=true` on the overnight-capable SMART stock route.
-- Do not use `IOC` on the overnight SMART stock route; the overnight-capable submission contract is non-IOC.
+- MakerV4 take-take hedges remain immediate outside regular US equity hours; do not silently downgrade into a passive overnight stock hedge.
+- Overnight-capable IBKR stock hedges still prefer `SMART`.
+- Set `includeOvernight=true` on the overnight-capable SMART stock route when outside RTH permissions are required.
+- Quote validation still gates submission outside RTH; stale or invalid IBKR quotes fail closed instead of falling back to a resting `DAY` order.
 - The production fee target for basis hedging is `IBKR Pro Tiered`, expressed as an explicit fee-plan assumption rather than an account-id-specific special case.
 - Residual hedge management remains out of scope for this wave; fail closed instead of trying to recover residuals automatically.
 
