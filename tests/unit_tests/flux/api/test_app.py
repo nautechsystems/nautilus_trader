@@ -260,7 +260,13 @@ def test_signals_uses_batched_pipeline_for_key_lookup(
     assert response.status_code == 200
     assert body["ok"] is True
     assert body["data"]["strategies"][0]["id"] == flux_config.identity.strategy_id
-    assert redis_client.direct_get_calls == []
+    assert redis_client.direct_get_calls == [
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+    ]
     assert redis_client.pipeline_exec_count >= 1
     batch = redis_client.pipeline_batches[-1]
     assert sum(1 for command in batch if command[0] == "get") == 2 + len(contract_catalog)
@@ -1324,6 +1330,67 @@ def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows
     assert secondary["pricing_adjustments"][0]["global_qty_base"] == pytest.approx(-317104.54289229)
     assert secondary["pricing_adjustments"][0]["aggregation_mode"] == "partial"
     assert float(secondary["pricing_adjustments"][0]["local_qty_base"]) == pytest.approx(1234.0)
+
+
+def test_signals_endpoint_fallback_inventory_skew_uses_canonical_quoted_fv_contract(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.state(),
+        {
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "risk_delta": -500.0,
+        },
+    )
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bot_on": "1",
+            "max_age_ms": "10000",
+            "linear_offset_bps": "1.0",
+            "des_qty_global": "0.0",
+            "max_qty_global": "1000.0",
+            "max_skew_bps_global": "20.0",
+            "des_qty_local": "0.0",
+            "max_qty_local": "500.0",
+            "max_skew_bps_local": "10.0",
+        },
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 0.013345}],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=MAKERV3_RUNTIME_PARAM_SCHEMA,
+        params_defaults=MAKERV3_RUNTIME_PARAM_DEFAULTS,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    skew = row["pricing_adjustments"][0]
+    assert skew["skew_bps_signed"] == pytest.approx(21.0)
+    assert skew["inv_skew"] == pytest.approx(21.0)
+    assert skew["linear_offset_bps"] == pytest.approx(1.0)
+    assert skew["inv_skew_global"] == pytest.approx(10.0)
+    assert skew["inv_skew_local"] == pytest.approx(10.0)
 
 
 def test_signals_profile_tokenmm_backfills_missing_local_qty_from_stale_component_inventory(
