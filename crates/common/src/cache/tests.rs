@@ -3153,6 +3153,45 @@ fn test_released_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
 }
 
 #[rstest]
+fn test_emulated_order_indexes_in_orders_active_local(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("1.00010"))
+        .emulation_trigger(TriggerType::LastPrice)
+        .build();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let emulated = OrderEmulated::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let mut order = order;
+    order.apply(OrderEventAny::Emulated(emulated)).unwrap();
+    cache.update_order(&order).unwrap();
+
+    assert!(
+        cache
+            .index
+            .orders_active_local
+            .contains(&order.client_order_id()),
+        "Emulated order should remain in orders_active_local index"
+    );
+    assert!(cache.is_order_active_local(&order.client_order_id()));
+    assert_eq!(
+        cache.orders_active_local_count(None, None, None, None, None),
+        1
+    );
+}
+
+#[rstest]
 fn test_update_released_order_removes_from_orders_emulated(
     mut cache: Cache,
     audusd_sim: CurrencyPair,

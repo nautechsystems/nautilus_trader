@@ -313,12 +313,12 @@ is_active_local = self.cache.is_order_active_local(client_order_id)  # Checks if
 
 ```python
 # Get counts of orders in different states
-open_count = self.cache.orders_open_count()          # Number of open orders
-closed_count = self.cache.orders_closed_count()      # Number of closed orders
-emulated_count = self.cache.orders_emulated_count()  # Number of emulated orders
-inflight_count = self.cache.orders_inflight_count()  # Number of inflight orders
-local_active_count = self.cache.orders_active_local()# Number of locally active orders not submitted to venue
-total_count = self.cache.orders_total_count()        # Total number of orders in the system
+open_count = self.cache.orders_open_count()                  # Number of open orders
+closed_count = self.cache.orders_closed_count()              # Number of closed orders
+emulated_count = self.cache.orders_emulated_count()          # Number of emulated orders
+inflight_count = self.cache.orders_inflight_count()          # Number of inflight orders
+local_active_count = self.cache.orders_active_local_count()  # Number of locally active orders not submitted to venue
+total_count = self.cache.orders_total_count()                # Total number of orders in the system
 
 # Get filtered order counts
 buy_orders_count = self.cache.orders_open_count(side=OrderSide.BUY)  # Number of currently open BUY orders
