@@ -87,6 +87,9 @@ use crate::{
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_minute(NonZeroU32::new(1200).unwrap()));
 
+const BUILDER_PERP_ASSET_BASE: u32 = 100_000;
+const BUILDER_PERP_DEX_STRIDE: u32 = 10_000;
+
 /// Provides a raw HTTP client for low-level Hyperliquid REST API operations.
 ///
 /// This client handles HTTP infrastructure, request signing, and raw API calls
@@ -1259,9 +1262,28 @@ impl HyperliquidHttpClient {
         self.account_id = Some(account_id);
     }
 
+    fn builder_perp_asset_base(dex: &str, index: u32) -> Result<u32> {
+        if index == 0 {
+            return Err(Error::bad_request(format!(
+                "Invalid perp DEX index 0 for builder DEX: {dex}"
+            )));
+        }
+
+        index
+            .checked_mul(BUILDER_PERP_DEX_STRIDE)
+            .and_then(|offset| BUILDER_PERP_ASSET_BASE.checked_add(offset))
+            .ok_or_else(|| {
+                Error::bad_request(format!(
+                    "Builder perp asset index overflow for DEX: {dex} with index {index}"
+                ))
+            })
+    }
+
     async fn resolve_perp_dex_index(&self, dex: &str) -> Result<u32> {
-        const BUILDER_PERP_ASSET_BASE: u32 = 100_000;
-        let response = self.inner.send_info_request(&InfoRequest::perp_dexs()).await?;
+        let response = self
+            .inner
+            .send_info_request(&InfoRequest::perp_dexs())
+            .await?;
         let dexs = response
             .as_array()
             .ok_or_else(|| Error::bad_request("perpDexs response was not an array"))?;
@@ -1270,32 +1292,25 @@ impl HyperliquidHttpClient {
             .position(|entry| entry.get("name").and_then(|value| value.as_str()) == Some(dex))
             .map(|index| index as u32)
             .ok_or_else(|| Error::bad_request(format!("DEX not found in perpDexs response: {dex}")))
-            .and_then(|index| {
-                if index == 0 {
-                    Err(Error::bad_request(format!(
-                        "Invalid perp DEX index 0 for builder DEX: {dex}"
-                    )))
-                } else if BUILDER_PERP_ASSET_BASE + index * 10_000 < BUILDER_PERP_ASSET_BASE {
-                    Err(Error::bad_request(format!(
-                        "Builder perp asset index overflow for DEX: {dex}"
-                    )))
-                } else {
-                    Ok(index)
-                }
-            })
+            .and_then(|index| Self::builder_perp_asset_base(dex, index).map(|_| index))
     }
 
     fn remap_builder_perp_asset_indices(
         perp_defs: &mut [HyperliquidInstrumentDef],
-        perp_dex_index: u32,
-    ) {
-        const BUILDER_PERP_ASSET_BASE: u32 = 100_000;
-        const BUILDER_PERP_DEX_STRIDE: u32 = 10_000;
-
+        builder_asset_base: u32,
+    ) -> Result<()> {
         for def in perp_defs {
-            def.asset_index =
-                BUILDER_PERP_ASSET_BASE + perp_dex_index * BUILDER_PERP_DEX_STRIDE + def.asset_index;
+            def.asset_index = builder_asset_base
+                .checked_add(def.asset_index)
+                .ok_or_else(|| {
+                    Error::bad_request(format!(
+                        "Builder perp asset index overflow for instrument {}",
+                        def.symbol
+                    ))
+                })?;
         }
+
+        Ok(())
     }
 
     /// Fetch and parse all available instrument definitions from Hyperliquid.
@@ -1314,15 +1329,17 @@ impl HyperliquidHttpClient {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
         let dex = dex.or(self.inner.dex.as_deref());
         let perp_dex_index = match dex {
-            Some(dex_name) => Some(self.resolve_perp_dex_index(dex_name).await?),
+            Some(dex_name) => Some((dex_name, self.resolve_perp_dex_index(dex_name).await?)),
             None => None,
         };
 
         match self.load_perp_meta_with_dex(dex).await {
             Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
                 Ok(mut perp_defs) => {
-                    if let Some(index) = perp_dex_index {
-                        Self::remap_builder_perp_asset_indices(&mut perp_defs, index);
+                    if let Some((dex_name, index)) = perp_dex_index {
+                        let builder_asset_base =
+                            Self::builder_perp_asset_base(dex_name, index)?;
+                        Self::remap_builder_perp_asset_indices(&mut perp_defs, builder_asset_base)?;
                     }
                     log::debug!(
                         "Loaded Hyperliquid perp definitions: count={}",
@@ -2011,17 +2028,18 @@ impl HyperliquidHttpClient {
 
             // Get instrument from cache - convert &str to Ustr for lookup
             let coin_ustr = Ustr::from(coin);
-            let mut instrument =
+            let instrument =
                 self.get_or_create_instrument(&coin_ustr, Some(HyperliquidProductType::Perp));
-            if instrument.is_none() && !refreshed_instruments {
+            let instrument = if instrument.is_some() || refreshed_instruments {
+                instrument
+            } else {
                 let instruments = self.request_instruments_with_dex(dex).await?;
                 for inst in instruments {
                     self.cache_instrument(inst);
                 }
                 refreshed_instruments = true;
-                instrument =
-                    self.get_or_create_instrument(&coin_ustr, Some(HyperliquidProductType::Perp));
-            }
+                self.get_or_create_instrument(&coin_ustr, Some(HyperliquidProductType::Perp))
+            };
             let instrument = match instrument {
                 Some(inst) => inst,
                 None => continue, // Skip if instrument not found
@@ -2848,5 +2866,25 @@ mod tests {
             client.get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), None);
         assert!(retrieved_without_type.is_some());
         assert_eq!(retrieved_without_type.unwrap().id(), instrument.id());
+    }
+
+    #[rstest]
+    fn test_builder_perp_asset_base_for_dex_index() {
+        let asset_base = HyperliquidHttpClient::builder_perp_asset_base("xyz", 1).unwrap();
+
+        assert_eq!(asset_base, 110_000);
+    }
+
+    #[rstest]
+    fn test_builder_perp_asset_base_rejects_overflow() {
+        let overflow_index = (u32::MAX / 10_000) + 1;
+
+        let error = HyperliquidHttpClient::builder_perp_asset_base("xyz", overflow_index)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("Builder perp asset index overflow"));
+        assert!(error.contains("xyz"));
+        assert!(error.contains(&overflow_index.to_string()));
     }
 }
