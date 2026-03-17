@@ -317,6 +317,11 @@ pub trait Order: 'static + Send {
 
     /// Calculates potential overfill quantity without mutating order state.
     fn calculate_overfill(&self, fill_qty: Quantity) -> Quantity {
+        if self.is_quote_quantity() {
+            // Cannot compute overfill without fill price; model's filled()
+            // tracks it properly using quote-unit conversion
+            return Quantity::zero(fill_qty.precision);
+        }
         let potential_filled = self.filled_qty() + fill_qty;
         potential_filled.saturating_sub(self.quantity())
     }
@@ -798,20 +803,50 @@ impl OrderCore {
             self.filled_qty.precision,
         );
 
-        // Calculate overfill if any
-        if new_filled_qty > self.quantity {
-            let overfill_raw = new_filled_qty.raw - self.quantity.raw;
-            self.overfill_qty = Quantity::from_raw(
-                self.overfill_qty.raw.saturating_add(overfill_raw),
-                self.filled_qty.precision,
-            );
-        }
+        if self.is_quote_quantity {
+            // Quote quantity: convert fill to quote units via Decimal arithmetic
+            // quote_consumed = last_qty (base) * last_px = quote value of this fill
+            // Round to order precision to avoid sub-precision residuals
+            let precision = u32::from(self.quantity.precision);
+            let consumed_dec =
+                (event.last_qty.as_decimal() * event.last_px.as_decimal()).round_dp(precision);
+            let leaves_dec = self.leaves_qty.as_decimal() - consumed_dec;
 
-        if new_filled_qty < self.quantity {
-            self.status = OrderStatus::PartiallyFilled;
+            if leaves_dec <= Decimal::ZERO {
+                if leaves_dec < Decimal::ZERO {
+                    // Overfill in quote terms
+                    let overfill = Quantity::from_decimal_dp(-leaves_dec, self.quantity.precision)
+                        .unwrap_or(Quantity::zero(self.quantity.precision));
+                    self.overfill_qty = Quantity::from_raw(
+                        self.overfill_qty.raw.saturating_add(overfill.raw),
+                        self.quantity.precision,
+                    );
+                }
+                self.leaves_qty = Quantity::zero(self.quantity.precision);
+                self.status = OrderStatus::Filled;
+                self.ts_closed = Some(event.ts_event);
+            } else {
+                self.leaves_qty = Quantity::from_decimal_dp(leaves_dec, self.quantity.precision)
+                    .unwrap_or(Quantity::zero(self.quantity.precision));
+                self.status = OrderStatus::PartiallyFilled;
+            }
         } else {
-            self.status = OrderStatus::Filled;
-            self.ts_closed = Some(event.ts_event);
+            // Calculate overfill if any
+            if new_filled_qty > self.quantity {
+                let overfill_raw = new_filled_qty.raw - self.quantity.raw;
+                self.overfill_qty = Quantity::from_raw(
+                    self.overfill_qty.raw.saturating_add(overfill_raw),
+                    self.filled_qty.precision,
+                );
+            }
+
+            if new_filled_qty < self.quantity {
+                self.status = OrderStatus::PartiallyFilled;
+            } else {
+                self.status = OrderStatus::Filled;
+                self.ts_closed = Some(event.ts_event);
+            }
+            self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         }
 
         self.venue_order_id = Some(event.venue_order_id);
@@ -820,7 +855,6 @@ impl OrderCore {
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
         self.filled_qty = new_filled_qty;
-        self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
 
         if self.ts_accepted.is_none() {
@@ -1583,5 +1617,119 @@ mod tests {
 
         assert_eq!(order.status(), OrderStatus::Triggered);
         assert_eq!(order.quantity(), Quantity::from(80_000));
+    }
+
+    #[rstest]
+    fn test_filled_quote_quantity_single_fill() {
+        // Polymarket-style: BUY 5 USDC worth, fill 23.696681 shares @ 0.211
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::new(5.0, 6))
+            .quote_quantity(true)
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill = OrderFilledBuilder::default()
+            .last_qty(Quantity::new(23.696_681, 6))
+            .last_px(Price::new(0.211, 3))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.leaves_qty(), Quantity::zero(6));
+        assert_eq!(order.overfill_qty(), Quantity::zero(6));
+        // filled_qty is always in base units
+        assert_eq!(order.filled_qty(), Quantity::new(23.696_681, 6));
+    }
+
+    #[rstest]
+    fn test_filled_quote_quantity_partial_fills() {
+        // Order 100 USDC, two partial fills
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::new(100.0, 6))
+            .quote_quantity(true)
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill1 = OrderFilledBuilder::default()
+            .last_qty(Quantity::new(50.0, 6))
+            .last_px(Price::new(0.5, 1))
+            .trade_id(TradeId::from("TRADE-1"))
+            .build()
+            .unwrap();
+        let fill2 = OrderFilledBuilder::default()
+            .last_qty(Quantity::new(100.0, 6))
+            .last_px(Price::new(0.75, 2))
+            .trade_id(TradeId::from("TRADE-2"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill1)).unwrap();
+
+        // After fill1: 50 * 0.5 = 25 USDC consumed, leaves = 75
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.leaves_qty(), Quantity::new(75.0, 6));
+
+        order.apply(OrderEventAny::Filled(fill2)).unwrap();
+
+        // After fill2: 100 * 0.75 = 75 USDC consumed, leaves = 0
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.leaves_qty(), Quantity::zero(6));
+        assert_eq!(order.overfill_qty(), Quantity::zero(6));
+    }
+
+    #[rstest]
+    fn test_filled_quote_quantity_overfill() {
+        // Order 5 USDC, fill consumes 6 USDC worth
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::new(5.0, 6))
+            .quote_quantity(true)
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill = OrderFilledBuilder::default()
+            .last_qty(Quantity::new(30.0, 6))
+            .last_px(Price::new(0.2, 1))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+
+        // 30 * 0.2 = 6 USDC consumed, overfill = 1 USDC
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.leaves_qty(), Quantity::zero(6));
+        assert_eq!(order.overfill_qty(), Quantity::new(1.0, 6));
+    }
+
+    #[rstest]
+    fn test_calculate_overfill_returns_zero_for_quote_quantity() {
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::new(5.0, 6))
+            .quote_quantity(true)
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        // Even with a large fill_qty, calculate_overfill returns zero for quote_quantity
+        let overfill = order.calculate_overfill(Quantity::new(100.0, 6));
+        assert_eq!(overfill, Quantity::zero(6));
     }
 }

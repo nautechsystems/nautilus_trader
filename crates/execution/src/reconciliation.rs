@@ -1573,26 +1573,26 @@ pub fn reconcile_fill_report(
         return None;
     }
 
-    let potential_filled_qty = order.filled_qty() + report.last_qty;
-    if potential_filled_qty > order.quantity() {
+    let potential_overfill = order.calculate_overfill(report.last_qty);
+    if potential_overfill.is_positive() {
         if !allow_overfills {
             log::warn!(
-                "Rejecting fill that would cause overfill for {}: order.quantity={}, order.filled_qty={}, fill.last_qty={}, would result in filled_qty={}",
+                "Rejecting fill that would cause overfill for {}: order.quantity={}, order.filled_qty={}, fill.last_qty={}, potential_overfill={}",
                 order.client_order_id(),
                 order.quantity(),
                 order.filled_qty(),
                 report.last_qty,
-                potential_filled_qty
+                potential_overfill
             );
             return None;
         }
         log::warn!(
-            "Allowing overfill during reconciliation for {}: order.quantity={}, order.filled_qty={}, fill.last_qty={}, will result in filled_qty={}",
+            "Allowing overfill during reconciliation for {}: order.quantity={}, order.filled_qty={}, fill.last_qty={}, potential_overfill={}",
             order.client_order_id(),
             order.quantity(),
             order.filled_qty(),
             report.last_qty,
-            potential_filled_qty
+            potential_overfill
         );
     }
 

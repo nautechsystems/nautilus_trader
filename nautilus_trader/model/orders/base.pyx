@@ -1101,6 +1101,11 @@ cdef class Order:
         self.ts_last = event.ts_event
 
     cdef Quantity calculate_overfill_c(self, Quantity fill_qty):
+        if self.is_quote_quantity:
+            # Cannot compute overfill without fill price; the _filled()
+            # method tracks it properly using quote-unit conversion
+            return Quantity.zero_c(fill_qty._mem.precision)
+
         cdef QuantityRaw potential_filled_raw = self.filled_qty._mem.raw + fill_qty._mem.raw
 
         if potential_filled_raw > self.quantity._mem.raw:
@@ -1171,12 +1176,6 @@ cdef class Order:
         self.ts_closed = event.ts_event
 
     cdef void _filled(self, OrderFilled fill):
-        if self.filled_qty._mem.raw + fill.last_qty._mem.raw < self.quantity._mem.raw:
-            self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
-        else:
-            self._fsm.trigger(OrderStatus.FILLED)
-            self.ts_closed = fill.ts_event
-
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
@@ -1188,18 +1187,58 @@ cdef class Order:
 
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
         cdef uint8_t fill_precision = max(self.filled_qty._mem.precision, fill.last_qty._mem.precision)
+        cdef uint8_t qty_prec = self.quantity._mem.precision
+        cdef double consumed
+        cdef double leaves
+        cdef PriceRaw raw_leaves_qty
 
-        # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
-        cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
-
-        if raw_leaves_qty < 0:
-            self.overfill_qty = self.overfill_qty.add(
-                Quantity.from_raw_c(-raw_leaves_qty, fill_precision)
+        if self.is_quote_quantity:
+            # Quote quantity: fills arrive in base units but order qty is in quote units.
+            # Convert fill to quote units: consumed = last_qty (base) * last_px
+            consumed = round(
+                fill.last_qty.as_f64_c() * fill.last_px.as_f64_c(),
+                <int>qty_prec,
             )
-            raw_leaves_qty = 0  # Clamp to zero
+            leaves = round(
+                self.leaves_qty.as_f64_c() - consumed,
+                <int>qty_prec,
+            )
 
-        self.filled_qty = Quantity.from_raw_c(raw_filled_qty, fill_precision)
-        self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill_precision)
+            if leaves <= 0.0:
+                self._fsm.trigger(OrderStatus.FILLED)
+                self.ts_closed = fill.ts_event
+                if leaves < 0.0:
+                    # Overfill in quote terms
+                    self.overfill_qty = Quantity(
+                        self.overfill_qty.as_f64_c() + (-leaves),
+                        qty_prec,
+                    )
+                self.leaves_qty = Quantity.zero_c(qty_prec)
+            else:
+                self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
+                self.leaves_qty = Quantity(leaves, qty_prec)
+
+            self.filled_qty = Quantity.from_raw_c(raw_filled_qty, fill_precision)
+        else:
+            # Base quantity: compare fill directly against order quantity
+            if raw_filled_qty < self.quantity._mem.raw:
+                self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
+            else:
+                self._fsm.trigger(OrderStatus.FILLED)
+                self.ts_closed = fill.ts_event
+
+            # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
+            raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+
+            if raw_leaves_qty < 0:
+                self.overfill_qty = self.overfill_qty.add(
+                    Quantity.from_raw_c(-raw_leaves_qty, fill_precision)
+                )
+                raw_leaves_qty = 0  # Clamp to zero
+
+            self.filled_qty = Quantity.from_raw_c(raw_filled_qty, fill_precision)
+            self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill_precision)
+
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()
