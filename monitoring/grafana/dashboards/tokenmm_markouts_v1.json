@@ -1,0 +1,545 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Snapshot of average resolved markout, resolution rate, and resolved row count by strategy, horizon, and side.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Resolution Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Resolved Rows"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,horizon_s,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Average Markout Bps",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,horizon_s,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Resolution Rate",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(max by (strategy_id,horizon_s,order_side) (tokenmm_markout_resolved_rows{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Resolved Rows",
+          "refId": "C"
+        }
+      ],
+      "title": "Strategy + Horizon Snapshot",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "series_key",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "benchmark_name": true,
+              "benchmark_name 1": true,
+              "benchmark_name 2": true,
+              "env": true,
+              "horizon_s": true,
+              "horizon_s 1": true,
+              "horizon_s 2": true,
+              "order_side": true,
+              "order_side 1": true,
+              "order_side 2": true,
+              "profile": true,
+              "profile 1": true,
+              "profile 2": true,
+              "strategy_id": true,
+              "strategy_id 1": true,
+              "strategy_id 2": true
+            },
+            "renameByName": {
+              "Value #A": "Average Markout Bps",
+              "Value #B": "Resolution Rate",
+              "Value #C": "Resolved Rows",
+              "series_key": "Strategy | Horizon | Side"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": true,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}",
+          "legendFormat": "{{strategy_id}} {{horizon_s}}s {{order_side}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Average Resolved Markout Bps",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}",
+          "legendFormat": "{{strategy_id}} {{horizon_s}}s {{order_side}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Resolution Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tokenmm_markout_resolved_rows{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}",
+          "legendFormat": "{{strategy_id}} {{horizon_s}}s {{order_side}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Resolved Rows",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "tokenmm",
+    "markouts"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "prod",
+          "value": "prod"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "env",
+        "name": "env",
+        "options": [
+          {
+            "selected": true,
+            "text": "prod",
+            "value": "prod"
+          }
+        ],
+        "query": "prod",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "tokenmm",
+          "value": "tokenmm"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "profile",
+        "name": "profile",
+        "options": [
+          {
+            "selected": true,
+            "text": "tokenmm",
+            "value": "tokenmm"
+          }
+        ],
+        "query": "tokenmm",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "strategy_id",
+        "name": "strategy_id",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "order_side",
+        "name": "order_side",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "horizon_s",
+        "name": "horizon_s",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "fv_market_mid",
+          "value": "fv_market_mid"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "benchmark_name",
+        "name": "benchmark_name",
+        "options": [
+          {
+            "selected": true,
+            "text": "fv_market_mid",
+            "value": "fv_market_mid"
+          }
+        ],
+        "query": "fv_market_mid",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "15m",
+          "value": "15m"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "window",
+        "name": "window",
+        "options": [
+          {
+            "selected": true,
+            "text": "15m",
+            "value": "15m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          },
+          {
+            "selected": false,
+            "text": "4h",
+            "value": "4h"
+          },
+          {
+            "selected": false,
+            "text": "24h",
+            "value": "24h"
+          }
+        ],
+        "query": "15m,1h,4h,24h",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "TokenMM Markouts (v1)",
+  "uid": "tokenmm-markouts-v1",
+  "version": 1,
+  "weekStart": ""
+}
