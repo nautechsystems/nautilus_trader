@@ -47,6 +47,7 @@ _THREAD_ERR_TOKENS = (
 _CONFIG_SECTION_NAME = "lan_rogue_trader_alert"
 _LEGACY_CONFIG_SECTION_NAME = "lan_usdt_watch"
 _DEFAULT_STATE_PATH = Path("state/lan_rogue_trader_alert.json")
+_TELEGRAM_NEXT_UPDATE_ID_KEY = "telegram_next_update_id"
 
 
 def _default_http_timeout_seconds() -> float:
@@ -177,21 +178,55 @@ class JsonStateStore:
         self.path = path
 
     def load(self) -> WatchState | None:
+        payload = self._load_payload()
+        if payload is None:
+            return None
+        if "last_balance" not in payload:
+            return None
+        try:
+            return WatchState.from_dict(payload)
+        except Exception as exc:
+            LOG.error("Failed to load state file %s: %s", self.path, exc)
+            return None
+
+    def save(self, state: WatchState, next_update_id: int | None = None) -> None:
+        payload = state.to_dict()
+        persisted_update_id = self.load_update_offset() if next_update_id is None else int(next_update_id)
+        if persisted_update_id > 0:
+            payload[_TELEGRAM_NEXT_UPDATE_ID_KEY] = persisted_update_id
+        self._write_payload(payload)
+
+    def load_update_offset(self) -> int:
+        payload = self._load_payload()
+        if payload is None:
+            return 0
+        try:
+            return int(payload.get(_TELEGRAM_NEXT_UPDATE_ID_KEY) or 0)
+        except (TypeError, ValueError) as exc:
+            LOG.error("Failed to parse Telegram update offset from %s: %s", self.path, exc)
+            return 0
+
+    def save_update_offset(self, next_update_id: int) -> None:
+        payload = dict(self._load_payload() or {})
+        payload[_TELEGRAM_NEXT_UPDATE_ID_KEY] = int(next_update_id)
+        self._write_payload(payload)
+
+    def _load_payload(self) -> Mapping[str, Any] | None:
         if not self.path.exists():
             return None
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(payload, Mapping):
                 raise RuntimeError("state payload must be a JSON object")
-            return WatchState.from_dict(payload)
+            return payload
         except Exception as exc:
             LOG.error("Failed to load state file %s: %s", self.path, exc)
             return None
 
-    def save(self, state: WatchState) -> None:
+    def _write_payload(self, payload: Mapping[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
-        data = json.dumps(state.to_dict(), separators=(",", ":"), sort_keys=True)
+        data = json.dumps(dict(payload), separators=(",", ":"), sort_keys=True)
         with tmp_path.open("w", encoding="utf-8") as handle:
             handle.write(data)
             handle.write("\n")
@@ -326,7 +361,7 @@ class BinanceSpotClient:
             locked = _as_decimal(row.get("locked"), "locked")
             return free + locked
 
-        return Decimal("0")
+        return Decimal(0)
 
 
 class BalanceClient(Protocol):
@@ -360,6 +395,7 @@ class TelegramNotifier:
         self.session = session
         self.base_url = base_url.rstrip("/")
         self.max_retries = max(1, int(max_retries))
+        self._bot_username: str | None = None
 
     def send_message(self, text: str) -> bool:
         if self.thread_id is None:
@@ -380,6 +416,65 @@ class TelegramNotifier:
 
         return False
 
+    def get_updates(self, offset: int | None, timeout_sec: int) -> list[Mapping[str, Any]]:
+        payload: dict[str, Any] = {
+            "allowed_updates": ["message"],
+            "timeout": max(0, int(timeout_sec)),
+        }
+        if offset is not None:
+            payload["offset"] = int(offset)
+
+        url = f"{self.base_url}/bot{self.bot_token}/getUpdates"
+        response = self._post_with_retries(url=url, payload=payload, timeout=float(timeout_sec) + 5.0)
+        if response is None:
+            return []
+
+        data = _safe_json(response)
+        if not isinstance(data, Mapping):
+            LOG.error("Telegram getUpdates returned non-object payload")
+            return []
+
+        result = data.get("result")
+        if not isinstance(result, list):
+            return []
+        return [update for update in result if isinstance(update, Mapping)]
+
+    def get_bot_username(self) -> str:
+        if self._bot_username is not None:
+            return self._bot_username
+
+        url = f"{self.base_url}/bot{self.bot_token}/getMe"
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(url, timeout=10.0)
+                status = int(response.status_code)
+                desc = _telegram_description(response)
+                if 200 <= status < 300:
+                    data = _safe_json(response)
+                    if isinstance(data, Mapping):
+                        result = data.get("result")
+                        if isinstance(result, Mapping):
+                            username = str(result.get("username") or "").strip()
+                            if username:
+                                self._bot_username = username
+                                return username
+                    LOG.error("Telegram getMe returned no username")
+                    return ""
+                if _is_transient(status) and attempt < self.max_retries - 1:
+                    _sleep_retry(attempt)
+                    continue
+                LOG.error("Telegram getMe failed: status=%s desc=%s", status, desc)
+                return ""
+            except requests.RequestException as exc:
+                if attempt < self.max_retries - 1:
+                    _sleep_retry(attempt)
+                    continue
+                redacted_error = _redact_secret_text(str(exc), self.bot_token)
+                LOG.error("Telegram getMe transport failure: %s", redacted_error)
+                return ""
+
+        return ""
+
     def _send(self, text: str, thread_id: int | None) -> tuple[bool, int | None, str]:
         url = f"{self.base_url}/bot{self.bot_token}/sendMessage"
         payload: dict[str, Any] = {
@@ -390,37 +485,55 @@ class TelegramNotifier:
         if thread_id is not None:
             payload["message_thread_id"] = int(thread_id)
 
+        response = self._post_with_retries(url=url, payload=payload, timeout=10.0)
+        if response is None:
+            return False, None, "send failed"
+
+        status = int(response.status_code)
+        desc = _telegram_description(response)
+        if 200 <= status < 300:
+            data = _safe_json(response)
+            if isinstance(data, Mapping) and data.get("ok") is False:
+                LOG.error("Telegram send failed: status=%s desc=%s", status, desc)
+                return False, status, desc
+            return True, status, ""
+
+        LOG.error("Telegram send failed: status=%s desc=%s", status, desc)
+        return False, status, desc
+
+    def _post_with_retries(
+        self,
+        *,
+        url: str,
+        payload: Mapping[str, Any],
+        timeout: float,
+    ) -> requests.Response | None:
         for attempt in range(self.max_retries):
             try:
-                response = self.session.post(url, json=payload, timeout=10.0)
+                response = self.session.post(url, json=dict(payload), timeout=timeout)
                 status = int(response.status_code)
-                desc = _telegram_description(response)
-
-                if 200 <= status < 300:
-                    data = _safe_json(response)
-                    if isinstance(data, Mapping) and data.get("ok") is False:
-                        if _is_transient(status):
-                            _sleep_retry(attempt)
-                            continue
-                        LOG.error("Telegram send failed: status=%s desc=%s", status, desc)
-                        return False, status, desc
-                    return True, status, ""
-
+                data = _safe_json(response)
                 if _is_transient(status) and attempt < self.max_retries - 1:
                     _sleep_retry(attempt)
                     continue
-
-                LOG.error("Telegram send failed: status=%s desc=%s", status, desc)
-                return False, status, desc
+                if (
+                    isinstance(data, Mapping)
+                    and data.get("ok") is False
+                    and _is_transient(status)
+                    and attempt < self.max_retries - 1
+                ):
+                    _sleep_retry(attempt)
+                    continue
+                return response
             except requests.RequestException as exc:
                 if attempt < self.max_retries - 1:
                     _sleep_retry(attempt)
                     continue
                 redacted_error = _redact_secret_text(str(exc), self.bot_token)
-                LOG.error("Telegram send transport failure: %s", redacted_error)
-                return False, None, redacted_error
+                LOG.error("Telegram transport failure: %s", redacted_error)
+                return None
 
-        return False, None, "send failed"
+        return None
 
 
 class LanRogueTraderAlertService:
@@ -441,12 +554,23 @@ class LanRogueTraderAlertService:
         self._now = now_fn
         self.state: WatchState | None = None
         self._missing_asset_episode_open = False
+        self._telegram_next_update_id = 0
 
     def run_forever(self) -> None:
         self.state = self.store.load()
+        self._telegram_next_update_id = self.store.load_update_offset()
+        if self._telegram_next_update_id == 0:
+            self._prime_telegram_update_offset()
+        next_poll_at = int(self._now())
         while True:
-            self.poll_once()
-            self._sleep(self.config.poll_secs)
+            now = int(self._now())
+            if now >= next_poll_at:
+                self.poll_once()
+                next_poll_at = int(self._now()) + self.config.poll_secs
+                continue
+
+            timeout_sec = min(20, max(0, next_poll_at - now))
+            self.process_telegram_updates(timeout_sec=timeout_sec)
 
     def poll_once(self) -> None:
         now = int(self._now())
@@ -472,6 +596,20 @@ class LanRogueTraderAlertService:
             return
 
         self._apply_balance(balance=balance, now=now)
+
+    def process_telegram_updates(self, timeout_sec: int) -> int:
+        updates = self.telegram.get_updates(
+            offset=self._telegram_next_update_id or None,
+            timeout_sec=max(0, int(timeout_sec)),
+        )
+        handled = 0
+        for update in updates:
+            update_id = int(update.get("update_id") or 0)
+            if update_id > 0:
+                self._set_telegram_next_update_id(update_id + 1)
+            self._handle_telegram_update(update)
+            handled += 1
+        return handled
 
     def _handle_missing_asset(self, now: int, error_text: str) -> None:
         if self._missing_asset_episode_open:
@@ -550,6 +688,76 @@ class LanRogueTraderAlertService:
         self.state.pending_last_balance = balance
         self.state.pending_last_at = 0
         self.state.pending_count = 0
+
+    def _prime_telegram_update_offset(self) -> None:
+        updates = self.telegram.get_updates(offset=None, timeout_sec=0)
+        next_update_id = 0
+        for update in updates:
+            update_id = int(update.get("update_id") or 0)
+            next_update_id = max(next_update_id, update_id + 1)
+        if next_update_id > 0:
+            self._set_telegram_next_update_id(next_update_id)
+
+    def _set_telegram_next_update_id(self, next_update_id: int) -> None:
+        if next_update_id <= self._telegram_next_update_id:
+            return
+        self._telegram_next_update_id = int(next_update_id)
+        if self.state is not None:
+            self.store.save(self.state, next_update_id=self._telegram_next_update_id)
+        else:
+            self.store.save_update_offset(self._telegram_next_update_id)
+
+    def _handle_telegram_update(self, update: Mapping[str, Any]) -> None:
+        message = update.get("message")
+        if not isinstance(message, Mapping):
+            return
+        if not self._is_authorized_telegram_message(message):
+            return
+
+        text = str(message.get("text") or "").strip()
+        if not self._is_reset_command(text):
+            return
+
+        self._handle_reset_command(now=int(self._now()))
+
+    def _is_authorized_telegram_message(self, message: Mapping[str, Any]) -> bool:
+        chat = message.get("chat")
+        if not isinstance(chat, Mapping):
+            return False
+        if int(chat.get("id") or 0) != self.config.telegram_chat_id:
+            return False
+        if self.config.telegram_thread_id is None:
+            return True
+        return int(message.get("message_thread_id") or 0) == self.config.telegram_thread_id
+
+    def _is_reset_command(self, text: str) -> bool:
+        if not text:
+            return False
+        command = text.split(maxsplit=1)[0]
+        if not command.startswith("/"):
+            return False
+        command_text = command[1:]
+        if "@" not in command_text:
+            return command_text == "reset"
+
+        base, username = command_text.split("@", 1)
+        if base != "reset":
+            return False
+        bot_username = self.telegram.get_bot_username()
+        return bool(bot_username) and username.casefold() == bot_username.casefold()
+
+    def _handle_reset_command(self, now: int) -> None:
+        try:
+            balance = self.binance_client.fetch_balance()
+            self._missing_asset_episode_open = False
+        except Exception as exc:
+            LOG.exception("Failed to reset Lan rogue trader alert baseline")
+            self.telegram.send_message(render_reset_failure(config=self.config, error_text=str(exc), now=now))
+            return
+
+        self.state = WatchState.initial(balance)
+        self.store.save(self.state, next_update_id=self._telegram_next_update_id)
+        self.telegram.send_message(render_reset_confirmation(config=self.config, balance=balance, now=now))
 
 
 def _repo_root() -> Path:
@@ -667,6 +875,24 @@ def render_deferred_summary(config: WatchConfig, state: WatchState, now: int) ->
         f"Net: {fmt_amount(net)} USDT\n"
         f"Changes seen: {state.pending_count}\n"
         f"Summary sent at: {format_local_utc(now, config.timezone_name)}"
+    )
+
+
+def render_reset_confirmation(config: WatchConfig, balance: Decimal, now: int) -> str:
+    return (
+        "✅ Lan USDT Watch baseline reset\n"
+        f"Account: {config.account_label}\n"
+        f"Balance: {fmt_amount(balance)} USDT\n"
+        f"When: {format_local_utc(now, config.timezone_name)}"
+    )
+
+
+def render_reset_failure(config: WatchConfig, error_text: str, now: int) -> str:
+    return (
+        "⚠️ Lan USDT Watch reset failed\n"
+        f"Account: {config.account_label}\n"
+        f"Issue: {error_text}\n"
+        f"When: {format_local_utc(now, config.timezone_name)}"
     )
 
 
@@ -806,4 +1032,6 @@ __all__ = [
     "render_baseline",
     "render_deferred_summary",
     "render_immediate_alert",
+    "render_reset_confirmation",
+    "render_reset_failure",
 ]

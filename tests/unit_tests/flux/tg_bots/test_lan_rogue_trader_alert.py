@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from decimal import Decimal
+import json
 import logging
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,28 @@ class DummyNotifier:
     def send_message(self, text: str) -> bool:
         self.messages.append(text)
         return True
+
+
+class DummyTelegramControl(DummyNotifier):
+    def __init__(
+        self,
+        updates: list[dict[str, Any]] | None = None,
+        *,
+        username: str = "lan_rogue_trader_bot",
+    ) -> None:
+        super().__init__()
+        self.updates = list(updates or [])
+        self.username = username
+        self.calls: list[dict[str, Any]] = []
+
+    def get_updates(self, offset: int | None, timeout_sec: int) -> list[dict[str, Any]]:
+        self.calls.append({"offset": offset, "timeout_sec": timeout_sec})
+        updates = list(self.updates)
+        self.updates.clear()
+        return updates
+
+    def get_bot_username(self) -> str:
+        return self.username
 
 
 class DummyBinance:
@@ -268,6 +291,140 @@ def test_missing_usdt_row_alerts_once_per_episode(tmp_path: Path) -> None:
 
     error_msgs = [message for message in notifier.messages if "watch error" in message.lower()]
     assert len(error_msgs) == 2
+
+
+def test_authorized_reset_rebaselines_immediately_and_confirms(tmp_path: Path) -> None:
+    cfg = make_config(tmp_path, telegram_thread_id=42)
+    telegram = DummyTelegramControl(
+        updates=[
+            {
+                "update_id": 7,
+                "message": {
+                    "chat": {"id": cfg.telegram_chat_id},
+                    "message_thread_id": 42,
+                    "text": "/reset",
+                },
+            }
+        ]
+    )
+    store = JsonStateStore(cfg.state_path)
+    svc = LanRogueTraderAlertService(cfg, FixedBalanceClient(Decimal("125.00")), telegram, store)
+    svc.state = WatchState.initial(Decimal("100.00"))
+
+    svc.process_telegram_updates(timeout_sec=0)
+
+    assert svc.state is not None
+    assert svc.state.last_balance == Decimal("125.00")
+    assert svc.state.pending is False
+    assert len(telegram.messages) == 1
+    assert "baseline reset" in telegram.messages[0].lower()
+    assert "125.00" in telegram.messages[0]
+    payload = json.loads(cfg.state_path.read_text(encoding="utf-8"))
+    assert payload["last_balance"] == "125.00"
+    assert payload["telegram_next_update_id"] == 8
+
+
+def test_reset_accepts_command_addressed_to_bot_username(tmp_path: Path) -> None:
+    cfg = make_config(tmp_path, telegram_thread_id=None)
+    telegram = DummyTelegramControl(
+        updates=[
+            {
+                "update_id": 3,
+                "message": {
+                    "chat": {"id": cfg.telegram_chat_id},
+                    "text": "/reset@lan_rogue_trader_bot",
+                },
+            }
+        ]
+    )
+    store = JsonStateStore(cfg.state_path)
+    svc = LanRogueTraderAlertService(cfg, FixedBalanceClient(Decimal("140.00")), telegram, store)
+    svc.state = WatchState.initial(Decimal("100.00"))
+
+    svc.process_telegram_updates(timeout_sec=0)
+
+    assert svc.state is not None
+    assert svc.state.last_balance == Decimal("140.00")
+    assert len(telegram.messages) == 1
+
+
+def test_reset_ignores_wrong_chat_or_topic(tmp_path: Path) -> None:
+    cfg = make_config(tmp_path, telegram_thread_id=42)
+    telegram = DummyTelegramControl(
+        updates=[
+            {
+                "update_id": 11,
+                "message": {
+                    "chat": {"id": -100999},
+                    "message_thread_id": 42,
+                    "text": "/reset",
+                },
+            },
+            {
+                "update_id": 12,
+                "message": {
+                    "chat": {"id": cfg.telegram_chat_id},
+                    "message_thread_id": 99,
+                    "text": "/reset",
+                },
+            },
+        ]
+    )
+    store = JsonStateStore(cfg.state_path)
+    svc = LanRogueTraderAlertService(cfg, FixedBalanceClient(Decimal("125.00")), telegram, store)
+    svc.state = WatchState.initial(Decimal("100.00"))
+
+    svc.process_telegram_updates(timeout_sec=0)
+
+    assert svc.state is not None
+    assert svc.state.last_balance == Decimal("100.00")
+    assert telegram.messages == []
+    payload = json.loads(cfg.state_path.read_text(encoding="utf-8"))
+    assert payload["last_balance"] == "100.00"
+    assert payload["telegram_next_update_id"] == 13
+
+
+def test_reset_failure_keeps_existing_state_and_sends_error(tmp_path: Path) -> None:
+    cfg = make_config(tmp_path, telegram_thread_id=None)
+    telegram = DummyTelegramControl(
+        updates=[
+            {
+                "update_id": 21,
+                "message": {
+                    "chat": {"id": cfg.telegram_chat_id},
+                    "text": "/reset",
+                },
+            }
+        ]
+    )
+    store = JsonStateStore(cfg.state_path)
+    svc = LanRogueTraderAlertService(
+        cfg,
+        DummyBinance([RuntimeError("boom")]),
+        telegram,
+        store,
+    )
+    svc.state = WatchState.initial(Decimal("100.00"))
+    store.save(svc.state)
+
+    svc.process_telegram_updates(timeout_sec=0)
+
+    assert svc.state is not None
+    assert svc.state.last_balance == Decimal("100.00")
+    assert len(telegram.messages) == 1
+    assert "reset failed" in telegram.messages[0].lower()
+    payload = json.loads(cfg.state_path.read_text(encoding="utf-8"))
+    assert payload["last_balance"] == "100.00"
+    assert payload["telegram_next_update_id"] == 22
+
+
+def test_telegram_offset_round_trips_without_watch_state(tmp_path: Path) -> None:
+    store = JsonStateStore(tmp_path / "lan_state.json")
+
+    store.save_update_offset(55)
+
+    assert store.load() is None
+    assert store.load_update_offset() == 55
 
 
 def test_binance_signature_is_deterministic() -> None:
