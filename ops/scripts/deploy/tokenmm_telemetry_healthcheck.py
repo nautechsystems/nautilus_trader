@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -46,8 +47,11 @@ def _dir_size_gb(path: Path) -> float:
     if not path.exists():
         return 0.0
     total = 0
-    for candidate in path.rglob("*"):
-        if candidate.is_file():
+    for dirpath, _, filenames in os.walk(path):
+        for filename in filenames:
+            candidate = Path(dirpath, filename)
+            if candidate.is_symlink():
+                continue
             total += candidate.stat().st_size
     return total / (1024**3)
 
@@ -66,7 +70,7 @@ def _shipper_lag_minutes(path: Path) -> float:
         return 0.0
 
     updated_at = str(row[0] or row[1])
-    ts = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    ts = datetime.fromisoformat(updated_at)
     return max(0.0, (datetime.now(UTC) - ts).total_seconds() / 60.0)
 
 

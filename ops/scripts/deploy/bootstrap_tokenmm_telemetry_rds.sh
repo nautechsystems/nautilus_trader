@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
 DB_INSTANCE_ID="${TOKENMM_TELEMETRY_DB_INSTANCE_ID:-nautilus-tokenmm-telemetry}"
 DB_NAME="${NAUTILUS_TELEMETRY_PG_DATABASE:-nautilus_telemetry}"
@@ -99,15 +98,12 @@ main() {
   require_cmd openssl
   require_cmd curl
 
-  local imds_token instance_id identity_doc az vpc_id
+  local imds_token instance_id vpc_id
   imds_token="$(metadata_token)"
   instance_id="$(metadata_get "${imds_token}" "meta-data/instance-id")"
-  identity_doc="$(metadata_get "${imds_token}" "dynamic/instance-identity/document")"
-  az="$(printf '%s' "${identity_doc}" | jq -r '.availabilityZone')"
 
-  local instance_desc subnet_id
+  local instance_desc
   instance_desc="$(aws ec2 describe-instances --region "${AWS_REGION}" --instance-ids "${instance_id}")"
-  subnet_id="$(printf '%s' "${instance_desc}" | jq -r '.Reservations[0].Instances[0].SubnetId')"
   vpc_id="$(printf '%s' "${instance_desc}" | jq -r '.Reservations[0].Instances[0].VpcId')"
   mapfile -t host_security_groups < <(printf '%s' "${instance_desc}" | jq -r '.Reservations[0].Instances[0].SecurityGroups[].GroupId')
   mapfile -t subnet_ids < <(aws ec2 describe-subnets --region "${AWS_REGION}" --filters "Name=vpc-id,Values=${vpc_id}" "Name=state,Values=available" | jq -r '.Subnets[].SubnetId')
@@ -131,7 +127,7 @@ main() {
     run_cmd aws ec2 authorize-security-group-ingress \
       --region "${AWS_REGION}" \
       --group-id "${db_sg_id}" \
-      --ip-permissions "IpProtocol=tcp,FromPort=${DB_PORT},ToPort=${DB_PORT},UserIdGroupPairs=[{GroupId=${sg_id}}]" >/dev/null 2>&1 || true
+      --ip-permissions "IpProtocol=tcp,FromPort=${DB_PORT},ToPort=${DB_PORT},UserIdGroupPairs=[{GroupId=${sg_id}}]" > /dev/null 2>&1 || true
   done
 
   local subnet_group_name="${DB_INSTANCE_ID}-db-subnet-group"
@@ -152,7 +148,7 @@ main() {
   secret_username="$(printf '%s' "${secret_payload}" | jq -r '.username // "nautilus_tokenmm"')"
   secret_password="$(printf '%s' "${secret_payload}" | jq -r '.password // empty')"
   if [[ -z "${secret_password}" ]]; then
-    secret_password="$(openssl rand -base64 30 | tr -d '\n' | tr '/+' 'AZ')"
+    secret_password="$(openssl rand -alnum 32)"
   fi
 
   if [[ -z "${secret_json}" ]]; then
@@ -184,7 +180,7 @@ main() {
       --db-subnet-group-name "${subnet_group_name}" \
       --vpc-security-group-ids "${db_sg_id}" \
       --multi-az \
-      --copy-tags-to-snapshot >/dev/null
+      --copy-tags-to-snapshot > /dev/null
     if [[ "${DRY_RUN}" == "1" ]]; then
       db_desc='{"DBInstances":[{"Endpoint":{"Address":"nautilus-tokenmm-telemetry.dry-run.ap-southeast-1.rds.amazonaws.com"}}]}'
     else
@@ -202,7 +198,7 @@ main() {
       --secret-string "{\"host\":\"${db_host}\",\"port\":${DB_PORT},\"database\":\"${DB_NAME}\",\"schema\":\"${DB_SCHEMA}\",\"username\":\"${secret_username}\",\"password\":\"${secret_password}\",\"sslmode\":\"require\"}" > /dev/null
   fi
 
-  cat <<EOF
+  cat << EOF
 TOKENMM_AWS_REGION=${AWS_REGION}
 NAUTILUS_TELEMETRY_PG_SECRET_ID=${SECRET_ID}
 NAUTILUS_TELEMETRY_PG_HOST=${db_host}
