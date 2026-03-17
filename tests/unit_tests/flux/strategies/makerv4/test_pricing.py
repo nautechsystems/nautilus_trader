@@ -6,6 +6,9 @@ from nautilus_trader.flux.strategies.makerv4 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv4.pricing import build_ibkr_ioc_limit
 from nautilus_trader.flux.strategies.makerv4.pricing import build_maker_quote_price
 from nautilus_trader.flux.strategies.makerv4.pricing import validate_ibkr_quote
+from nautilus_trader.flux.strategies.shared.equities_arb import (
+    observability as shared_observability_mod,
+)
 from nautilus_trader.flux.strategies.makerv4.rounding import round_hyperliquid_price
 
 
@@ -218,3 +221,8 @@ def test_take_take_limit_price_returns_cross_price_when_fee_aware_threshold_is_m
         hl_taker_fee_bps=assumptions.hl_taker_fee_bps,
         hedge_fee_bps=hedge_fee_bps,
     ) == Decimal("189.20")
+
+
+def test_makerv4_pricing_reexports_shared_equities_arb_helpers() -> None:
+    assert pricing_mod.build_fee_assumptions is shared_observability_mod.build_fee_assumptions
+    assert pricing_mod.build_take_take_limit_price is shared_observability_mod.build_take_take_limit_price

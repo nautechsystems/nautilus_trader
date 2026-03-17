@@ -17,8 +17,12 @@ from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live.hyperliquid_account import _post_hyperliquid_info
 from flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
-from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
-from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
+from flux.strategies.shared.equities_arb.reference_balances import (
+    IbkrReferenceBalanceSnapshotProviderConfig,
+)
+from flux.strategies.shared.equities_arb.reference_balances import (
+    get_cached_ibkr_reference_balance_provider,
+)
 from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 

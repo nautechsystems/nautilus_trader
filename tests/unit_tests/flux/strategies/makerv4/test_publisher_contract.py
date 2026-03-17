@@ -10,6 +10,9 @@ from nautilus_trader.flux.strategies.makerv4.market_data import IbkrQuoteSnapsho
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4Strategy
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4StrategyConfig
 from nautilus_trader.flux.strategies.makerv4.wire import MakerFill
+from nautilus_trader.flux.strategies.shared.equities_arb.observability import (
+    build_quote_snapshot_payload as shared_equities_arb_build_quote_snapshot_payload,
+)
 from nautilus_trader.flux.strategies.shared.quote_snapshot import (
     build_quote_snapshot_payload as shared_build_quote_snapshot_payload,
 )
@@ -47,6 +50,8 @@ def _instrument(*, raw_symbol: str) -> SimpleNamespace:
 
 
 def test_makerv4_publisher_reuses_shared_quote_snapshot_contract() -> None:
+    assert build_quote_snapshot_payload is shared_equities_arb_build_quote_snapshot_payload
+
     payload = build_quote_snapshot_payload(
         maker_leg={"venue": "HYPERLIQUID", "symbol": "AAPL/USD"},
         hedge_leg={"venue": "IBKR", "symbol": "AAPL/USD"},

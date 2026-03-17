@@ -4,12 +4,24 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.flux.strategies.makerv4.instruments import (
+from nautilus_trader.flux.strategies.makerv4 import instruments as makerv4_instruments_mod
+from nautilus_trader.flux.strategies.shared.equities_arb.instruments import (
     hyperliquid_perp_to_ibkr_instrument_id,
 )
-from nautilus_trader.flux.strategies.makerv4.instruments import (
+from nautilus_trader.flux.strategies.shared.equities_arb.instruments import (
     translate_hyperliquid_fill_to_ibkr_shares,
 )
+
+
+def test_makerv4_instruments_reexport_shared_equities_arb_helpers() -> None:
+    assert (
+        makerv4_instruments_mod.translate_hyperliquid_fill_to_ibkr_shares
+        is translate_hyperliquid_fill_to_ibkr_shares
+    )
+    assert (
+        makerv4_instruments_mod.hyperliquid_perp_to_ibkr_instrument_id
+        is hyperliquid_perp_to_ibkr_instrument_id
+    )
 
 
 def test_translate_hyperliquid_fill_to_ibkr_shares_rounds_down_to_int() -> None:

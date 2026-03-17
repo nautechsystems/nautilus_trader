@@ -18,7 +18,6 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
@@ -37,11 +36,19 @@ from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
-from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
-from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
-from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
-from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
-from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
+from flux.strategies.shared.equities_arb.core import (
+    effective_venue_resolution_config as shared_effective_venue_resolution_config,
+)
+from flux.strategies.shared.equities_arb.core import runtime_params_module_for_strategy
+from flux.strategies.shared.equities_arb.core import strategy_allowed_instrument_ids
+from flux.strategies.shared.equities_arb.core import strategy_supports_immediate_hedge
+from flux.strategies.shared.equities_arb.core import strategy_uses_profile_account_projection
+from flux.strategies.shared.equities_arb.reference_balances import (
+    IbkrReferenceBalanceSnapshotProviderConfig,
+)
+from flux.strategies.shared.equities_arb.reference_balances import (
+    get_cached_ibkr_reference_balance_provider,
+)
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
@@ -331,23 +338,15 @@ def _resolve_strategy_spec(config: dict[str, Any]) -> FluxStrategySpec:
 
 
 def _runtime_params_module(strategy_spec: FluxStrategySpec):
-    if strategy_spec.param_set == "makerv4":
-        return makerv4_runtime_params_mod
-    return makerv3_runtime_params_mod
+    return runtime_params_module_for_strategy(strategy_spec)
 
 
 def _supports_immediate_hedge(strategy_spec: FluxStrategySpec) -> bool:
-    capabilities = getattr(strategy_spec, "capabilities", None)
-    if capabilities is not None and hasattr(capabilities, "supports_immediate_hedge"):
-        return bool(capabilities.supports_immediate_hedge)
-    return getattr(strategy_spec, "param_set", "") == "makerv4"
+    return strategy_supports_immediate_hedge(strategy_spec)
 
 
 def _uses_profile_account_projection(strategy_spec: FluxStrategySpec) -> bool:
-    capabilities = getattr(strategy_spec, "capabilities", None)
-    if capabilities is not None and hasattr(capabilities, "uses_profile_account_projection"):
-        return bool(capabilities.uses_profile_account_projection)
-    return True
+    return strategy_uses_profile_account_projection(strategy_spec)
 
 
 def _strategy_allowed_instrument_ids(
@@ -356,9 +355,11 @@ def _strategy_allowed_instrument_ids(
     maker_instrument_id: InstrumentId,
     reference_instrument_id: InstrumentId,
 ) -> list[InstrumentId]:
-    if _supports_immediate_hedge(strategy_spec):
-        return [maker_instrument_id, reference_instrument_id]
-    return [maker_instrument_id]
+    return strategy_allowed_instrument_ids(
+        strategy_spec=strategy_spec,
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
 
 
 def _effective_venue_resolution_config(
@@ -366,79 +367,10 @@ def _effective_venue_resolution_config(
     config: dict[str, Any],
     strategy_spec: FluxStrategySpec,
 ) -> dict[str, Any]:
-    if not _supports_immediate_hedge(strategy_spec):
-        return config
-
-    node_cfg = config.get("node")
-    if not isinstance(node_cfg, dict):
-        return config
-
-    venue_entries = node_cfg.get("venues")
-    if not isinstance(venue_entries, dict):
-        return config
-
-    hyperliquid_cfg = venue_entries.get("HYPERLIQUID")
-    ibkr_cfg = venue_entries.get("IBKR")
-    if not isinstance(hyperliquid_cfg, dict) or not isinstance(ibkr_cfg, dict):
-        return config
-
-    maker_instrument_id = _optional_text(hyperliquid_cfg.get("instrument_id"))
-    if maker_instrument_id is None:
-        return config
-
-    strategy_cfg = _table(config, "strategy")
-    derived_reference_instrument_id = hyperliquid_perp_to_ibkr_instrument_id(
-        maker_instrument_id,
-        primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
+    return shared_effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
     )
-    identity_cfg = config.get("identity")
-    external_strategy_id = (
-        _optional_text(identity_cfg.get("external_strategy_id"))
-        if isinstance(identity_cfg, dict)
-        else None
-    ) or _resolve_flux_strategy_id(config)
-    ibkr_scope_overrides: dict[str, Any] = {}
-    scope_configs = {
-        scope.scope_id: scope
-        for scope in decode_account_scopes(config.get("account_scopes") or [])
-    }
-    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
-        if contract.strategy_id != external_strategy_id:
-            continue
-        scope_id = contract.hedge_account_scope_id or contract.reference_account_scope_id
-        scope = scope_configs.get(scope_id)
-        if scope is None or scope.provider.lower() != "ibkr":
-            break
-        if scope.ibg_host is not None:
-            ibkr_scope_overrides["ibg_host"] = scope.ibg_host
-        if scope.ibg_port is not None and scope.dockerized_gateway is None:
-            ibkr_scope_overrides["ibg_port"] = scope.ibg_port
-        if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
-            ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
-        if scope.account_id is not None:
-            ibkr_scope_overrides["account_id"] = scope.account_id
-        if scope.dockerized_gateway is not None:
-            ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
-        break
-    needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != derived_reference_instrument_id
-    needs_execution_promotion = not bool(ibkr_cfg.get("execution", False))
-    needs_scope_overlay = bool(ibkr_scope_overrides)
-    if not needs_reference_rewrite and not needs_execution_promotion and not needs_scope_overlay:
-        return config
-
-    effective_node_cfg = dict(node_cfg)
-    effective_venue_entries = dict(venue_entries)
-    effective_venue_entries["IBKR"] = {
-        **ibkr_cfg,
-        **ibkr_scope_overrides,
-        "instrument_id": derived_reference_instrument_id,
-        "execution": True,
-    }
-    effective_node_cfg["venues"] = effective_venue_entries
-    return {
-        **config,
-        "node": effective_node_cfg,
-    }
 
 
 def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:

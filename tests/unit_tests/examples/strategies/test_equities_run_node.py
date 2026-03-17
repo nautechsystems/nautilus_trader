@@ -600,6 +600,17 @@ def test_resolve_strategy_spec_uses_explicit_strategy_param_set(monkeypatch) -> 
     assert spec.profile_key == "maker_v4"
 
 
+def test_runtime_params_module_follows_strategy_capabilities_not_param_set() -> None:
+    strategy_spec = SimpleNamespace(
+        param_set="future_equities_arb",
+        capabilities=SimpleNamespace(supports_immediate_hedge=True),
+    )
+
+    runtime_params_mod = run_node._runtime_params_module(strategy_spec)
+
+    assert runtime_params_mod.PARAM_SET == "makerv4"
+
+
 def test_build_node_warns_when_qty_unit_missing_and_defaults_to_venue(
     monkeypatch,
     caplog,
@@ -1609,9 +1620,9 @@ def test_build_node_force_enable_execution_overrides_explicit_false_for_makerv4(
     assert captured["enable_execution"] is True
 
 
-def test_effective_venue_resolution_config_promotes_ibkr_execution_for_makerv4() -> None:
+def test_effective_venue_resolution_config_promotes_ibkr_execution_for_immediate_hedge_spec() -> None:
     strategy_spec = SimpleNamespace(
-        param_set="makerv4",
+        param_set="future_equities_arb",
         capabilities=SimpleNamespace(supports_immediate_hedge=True),
     )
     config = {
@@ -1644,9 +1655,9 @@ def test_effective_venue_resolution_config_promotes_ibkr_execution_for_makerv4()
     assert config["node"]["venues"]["IBKR"]["execution"] is False
 
 
-def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for_makerv4() -> None:
+def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for_immediate_hedge_spec() -> None:
     strategy_spec = SimpleNamespace(
-        param_set="makerv4",
+        param_set="future_equities_arb",
         capabilities=SimpleNamespace(supports_immediate_hedge=True),
     )
     config = {

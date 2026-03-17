@@ -32,11 +32,19 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 from flux.strategies.makerv4 import fees as fees_mod
 from flux.strategies.makerv4 import publisher as publisher_mod
 from flux.strategies.makerv4 import runtime_params as runtime_params_mod
-from flux.strategies.makerv4.instruments import translate_hyperliquid_fill_to_ibkr_shares
-from flux.strategies.makerv4.managed_orders import HedgeBacklogState
-from flux.strategies.makerv4.managed_orders import HedgeOrderIntent
+from flux.strategies.shared.equities_arb.hedging import HedgeBacklogState
+from flux.strategies.shared.equities_arb.hedging import HedgeOrderIntent
+from flux.strategies.shared.equities_arb.hedging import PendingHedgeState
+from flux.strategies.shared.equities_arb.hedging import build_hedge_backlog_payload
+from flux.strategies.shared.equities_arb.hedging import build_hedge_policy_payload
+from flux.strategies.shared.equities_arb.hedging import build_pending_hedge_payload
+from flux.strategies.shared.equities_arb.instruments import (
+    translate_hyperliquid_fill_to_ibkr_shares,
+)
+from flux.strategies.shared.equities_arb.observability import (
+    build_fee_assumptions_payload,
+)
 from flux.strategies.makerv4.managed_orders import ManagedMakerOrderState
-from flux.strategies.makerv4.managed_orders import PendingHedgeState
 from flux.strategies.makerv4.market_data import IbkrQuoteSnapshot
 from flux.strategies.makerv4.pricing import build_effective_ibkr_fee_bps
 from flux.strategies.makerv4.pricing import build_fee_assumptions
@@ -48,7 +56,6 @@ from flux.strategies.shared.account_projection_positions import (
     read_matching_shared_account_position_row,
 )
 from flux.strategies.shared import alerts as shared_alerts_mod
-from flux.strategies.shared.ibkr_order_policy import build_ibkr_hedge_order_policy
 from flux.strategies.shared.ibkr_order_policy import is_us_equities_regular_session
 from flux.strategies.shared.ibkr_tags import build_ibkr_order_tags
 from flux.strategies.shared.publisher_common import build_role_map_payload
@@ -488,37 +495,21 @@ class MakerV4Strategy(Strategy):
         ]
 
     def _pending_hedge_payload(self) -> dict[str, Any] | None:
-        if self._pending_hedge is None:
-            return None
-        return {
-            "client_order_id": self._pending_hedge.order_id,
-            "instrument_id": str(self._hedge_instrument_id(self._pending_hedge.route)),
-            "route": self._pending_hedge.route,
-            "side": self._pending_hedge.side,
-            "time_in_force": self._pending_hedge.time_in_force,
-            "outside_rth": self._pending_hedge.outside_rth,
-            "include_overnight": self._pending_hedge.include_overnight,
-            "cancel_after_ms": self._pending_hedge.cancel_after_ms,
-            "remaining_qty": makerv3_publisher_mod.decimal_to_json_str(
-                self._pending_hedge.remaining_qty,
+        return build_pending_hedge_payload(
+            self._pending_hedge,
+            hedge_instrument_id=(
+                None
+                if self._pending_hedge is None
+                else self._hedge_instrument_id(self._pending_hedge.route)
             ),
-        }
+            decimal_to_json=makerv3_publisher_mod.decimal_to_json_str,
+        )
 
     def _hedge_backlog_payload(self) -> dict[str, Any] | None:
-        if self._hedge_backlog is None:
-            return None
-        return {
-            "fill_id": self._hedge_backlog.fill_id,
-            "side": self._hedge_backlog.side,
-            "requested_qty": makerv3_publisher_mod.decimal_to_json_str(
-                self._hedge_backlog.requested_qty,
-            ),
-            "blocked_reason": self._hedge_backlog.blocked_reason,
-            "fill_ts_ms": self._hedge_backlog.fill_ts_ms,
-            "maker_fee_bps": makerv3_publisher_mod.decimal_to_json_str(
-                self._hedge_backlog.maker_fee_bps,
-            ),
-        }
+        return build_hedge_backlog_payload(
+            self._hedge_backlog,
+            decimal_to_json=makerv3_publisher_mod.decimal_to_json_str,
+        )
 
     def _maker_quote_status_payload(self) -> dict[str, int]:
         bid_open = 1 if "BUY" in self._managed_maker_orders else 0
@@ -1097,14 +1088,7 @@ class MakerV4Strategy(Strategy):
         )
 
     def _fee_assumptions_payload(self) -> dict[str, Any]:
-        assumptions = self._fee_assumptions()
-        return {
-            "ibkr_fee_plan": assumptions.ibkr_fee_plan,
-            "ibkr_fee_min_usd": float(assumptions.ibkr_fee_min_usd),
-            "hl_taker_fee_bps": float(assumptions.hl_taker_fee_bps),
-            "hl_maker_fee_bps": float(assumptions.hl_maker_fee_bps),
-            "assumed_hedge_fee_bps": float(assumptions.assumed_hedge_fee_bps),
-        }
+        return build_fee_assumptions_payload(self._fee_assumptions())
 
     def _fee_assumptions(self):
         legacy_hedge_fee_plan = str(self._runtime_params.get("hedge_fee_plan", "")).strip().lower()
@@ -1137,7 +1121,7 @@ class MakerV4Strategy(Strategy):
         return is_us_equities_regular_session(int(ts_ms))
 
     def _hedge_policy_payload(self, *, now_ns: int) -> dict[str, Any]:
-        policy = build_ibkr_hedge_order_policy(
+        return build_hedge_policy_payload(
             configured_route=self._hedge_route(),
             outside_rth_enabled=bool(getattr(self.config, "outside_rth_hedge_enabled", False)),
             is_regular_session=self._is_regular_hedge_session(
@@ -1145,13 +1129,6 @@ class MakerV4Strategy(Strategy):
             ),
             hedge_mode=self._execution_mode(),
         )
-        return {
-            "route": policy.route,
-            "time_in_force": policy.time_in_force,
-            "outside_rth": policy.outside_rth,
-            "include_overnight": policy.include_overnight,
-            "cancel_after_ms": policy.cancel_after_ms,
-        }
 
     def _hedge_instrument_id(self, hedge_route: str | None = None) -> Any:
         explicit = str(self._last_pricing_debug.get("hedge_instrument_id", "")).strip()
@@ -2271,24 +2248,26 @@ class MakerV4Strategy(Strategy):
             return "invalid_hedge_limit"
 
         hedge_route = self._hedge_route()
-        policy = build_ibkr_hedge_order_policy(
+        policy = build_hedge_policy_payload(
             configured_route=hedge_route,
             outside_rth_enabled=bool(getattr(self.config, "outside_rth_hedge_enabled", False)),
             is_regular_session=self._is_regular_hedge_session(ts_ms=int(fill_ts_ms)),
             hedge_mode="maker_hedge",
         )
-        effective_hedge_route = str(policy.route).strip().upper() or None
+        effective_hedge_route = str(policy["route"]).strip().upper() or None
         hedge_instrument_id = self._hedge_instrument_id(effective_hedge_route)
         order = HedgeOrderIntent(
             instrument_id=str(hedge_instrument_id),
             side=hedge_side,
             qty=abs(Decimal(str(hedge_qty))),
             limit_price=limit_price,
-            route=policy.route,
-            time_in_force=policy.time_in_force,
-            outside_rth=policy.outside_rth,
-            include_overnight=policy.include_overnight,
-            cancel_after_ms=policy.cancel_after_ms,
+            route=str(policy["route"]),
+            time_in_force=str(policy["time_in_force"]),
+            outside_rth=bool(policy["outside_rth"]),
+            include_overnight=bool(policy["include_overnight"]),
+            cancel_after_ms=(
+                None if policy["cancel_after_ms"] is None else int(policy["cancel_after_ms"])
+            ),
         )
         self._last_pricing_debug.update(
             {
@@ -2310,11 +2289,11 @@ class MakerV4Strategy(Strategy):
             requested_qty=abs(Decimal(str(hedge_qty))),
             remaining_qty=abs(Decimal(str(hedge_qty))),
             limit_price=limit_price,
-            route=policy.route,
-            time_in_force=policy.time_in_force,
+            route=str(policy["route"]),
+            time_in_force=str(policy["time_in_force"]),
             outside_rth=order.outside_rth,
-            include_overnight=policy.include_overnight,
-            cancel_after_ms=policy.cancel_after_ms,
+            include_overnight=bool(policy["include_overnight"]),
+            cancel_after_ms=order.cancel_after_ms,
         )
         _ = fee_rules
         return order, pending
