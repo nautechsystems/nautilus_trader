@@ -1346,7 +1346,7 @@ def build_signals_payload_impl(
         top_level_age_ms = max(0, leg_clock_ts_ms - top_level_ts_ms)
         md_health["signal_state_age_ms"] = top_level_age_ms
         state_stale = top_level_age_ms >= 30_000
-    elif top_level_ts_ms is not None and not explicit_quote_snapshot:
+    elif top_level_ts_ms is not None:
         top_level_age_ms = max(0, now_ms_fn() - top_level_ts_ms)
         md_health["signal_state_age_ms"] = top_level_age_ms
         state_stale = top_level_age_ms >= 30_000

@@ -204,7 +204,7 @@ describe('Params bulk apply row', () => {
     });
   });
 
-  it('flushes a typed bulk qty draft through Save Selected without requiring Enter first', async () => {
+  it('flushes a typed bulk qty draft through Save Selected without mutating non-selected filtered rows', async () => {
     await renderFilteredParams();
     selectStrategyRow('futu_hl_a');
 
@@ -222,6 +222,11 @@ describe('Params bulk apply row', () => {
     expect(updates).toEqual([
       { strategy_id: 'futu_hl_a', params: { qty: '12' } },
     ]);
+
+    await waitFor(() => {
+      expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('12');
+      expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('6');
+    });
   });
 
   it('pauses polling while a typed bulk qty draft is pending', async () => {

@@ -1815,25 +1815,12 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
-        exact_entries = tuple(
+        return tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
-        if account_id is None:
-            return exact_entries
-
-        unscoped_entries = tuple(
-            snapshot
-            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
-            self._startup_reconciliation_snapshot.items()
-            if snapshot_instrument_id == instrument_id and snapshot_account_id is None
-        )
-        if not unscoped_entries:
-            return exact_entries
-
-        return (*exact_entries, *unscoped_entries)
 
     def _startup_snapshot_for_instrument(
         self,
@@ -3206,10 +3193,14 @@ class LiveExecutionEngine(ExecutionEngine):
             )
             return True  # Filtered instrument not loaded
 
-        positions_open: list[Position] = self._cache.positions_open(
-            venue=None,  # Faster query filtering
-            instrument_id=report.instrument_id,
-        )
+        positions_open_kwargs: dict[str, Any] = {
+            "venue": None,  # Faster query filtering
+            "instrument_id": report.instrument_id,
+        }
+        if report.account_id is not None:
+            positions_open_kwargs["account_id"] = report.account_id
+
+        positions_open: list[Position] = self._cache.positions_open(**positions_open_kwargs)
 
         if allow_startup_external_cleanup:
             effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (

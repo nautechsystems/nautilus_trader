@@ -25,6 +25,8 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.execution_engine import StartupOrderReference
+from nautilus_trader.live.execution_engine import StartupStrategyCacheSnapshot
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.currencies import USD
@@ -1682,6 +1684,112 @@ class TestLiveExecutionEngine:
         assert result is True
         assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
         assert [command.open_only for command in order_commands] == [True]
+
+    def test_startup_snapshot_for_instrument_skips_accountless_entries_for_account_scoped_client(
+        self,
+    ):
+        self.exec_engine._startup_reconciliation_snapshot = {
+            (
+                self.client.account_id,
+                AUDUSD_SIM.id,
+                StrategyId("S-OWNED"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=self.client.account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("S-OWNED"),
+                open_position_ids=(PositionId("P-OWNED-001"),),
+                open_position_qty=Decimal("1"),
+                open_order_refs=(),
+                cached_order_count=1,
+            ),
+            (
+                None,
+                AUDUSD_SIM.id,
+                StrategyId("EXTERNAL"),
+            ): StartupStrategyCacheSnapshot(
+                account_id=None,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=StrategyId("EXTERNAL"),
+                open_position_ids=(PositionId("P-UNSCOPED-001"),),
+                open_position_qty=Decimal("1"),
+                open_order_refs=(
+                    StartupOrderReference(
+                        client_order_id=ClientOrderId("UNSCOPED-OPEN-001"),
+                        venue_order_id=VenueOrderId("UNSCOPED-VENUE-001"),
+                    ),
+                ),
+                cached_order_count=1,
+            ),
+        }
+
+        snapshot = self.exec_engine._startup_snapshot_for_instrument(
+            self.client.account_id,
+            AUDUSD_SIM.id,
+        )
+
+        assert snapshot.strategy_snapshots == (
+            self.exec_engine._startup_reconciliation_snapshot[
+                (
+                    self.client.account_id,
+                    AUDUSD_SIM.id,
+                    StrategyId("S-OWNED"),
+                )
+            ],
+        )
+        assert snapshot.total_cached_order_count == 1
+        assert snapshot.open_order_refs == ()
+
+    def test_reconcile_position_report_netting_startup_cleanup_uses_matching_account_scope(
+        self,
+    ):
+        class StubPosition:
+            def __init__(self, position_id: str, qty: str) -> None:
+                self.id = PositionId(position_id)
+                self.strategy_id = StrategyId("S-OWNED")
+                self.avg_px_open = "1.00000"
+                self._qty = Decimal(qty)
+
+            def signed_decimal_qty(self) -> Decimal:
+                return self._qty
+
+        owned_position = StubPosition("P-OWNED-ACCOUNT", "100")
+
+        def positions_open(*, venue=None, instrument_id=None, account_id=None):
+            assert venue is None
+            assert instrument_id == AUDUSD_SIM.id
+            assert account_id == self.client.account_id
+            return [owned_position]
+
+        self.exec_engine._cache = SimpleNamespace(
+            instrument=lambda instrument_id: AUDUSD_SIM if instrument_id == AUDUSD_SIM.id else None,
+            positions_open=positions_open,
+            orders_for_position=lambda _position_id: [],
+        )
+        self.exec_engine._startup_effective_netting_positions_for_venue_qty = (
+            lambda positions_open, account_id, instrument_id, venue_qty: (
+                positions_open,
+                [],
+                Decimal("100"),
+                Decimal("100"),
+            )
+        )
+
+        report = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        result = self.exec_engine._reconcile_position_report_netting(
+            report,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_preserves_client_generate_mass_status_overrides(

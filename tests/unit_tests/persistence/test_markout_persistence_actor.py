@@ -315,6 +315,45 @@ def test_markout_actor_resolves_fv_for_runtime_strategy_instance_id(tmp_path) ->
     ]
 
 
+def test_markout_actor_persists_stopped_rows_for_pending_horizons_on_stop(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(30, 60))
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(
+        instrument,
+        side="BUY",
+        last_px="100",
+        ts_event=1_000_000_000,
+        client_order_id="O-STOP-001",
+        trade_id="E-STOP-001",
+    )
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    actor.stop()
+
+    rows = _fetch_rows(
+        db_path,
+        """
+        SELECT horizon_s, benchmark_px, markout_abs, resolution_status
+        FROM execution_markout
+        ORDER BY horizon_s
+        """,
+    )
+
+    assert [
+        (
+            row["horizon_s"],
+            row["benchmark_px"],
+            row["markout_abs"],
+            row["resolution_status"],
+        )
+        for row in rows
+    ] == [
+        (30, None, None, "stopped"),
+        (60, None, None, "stopped"),
+    ]
+
+
 def test_markout_actor_expires_rows_when_future_fv_never_arrives(tmp_path) -> None:
     actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(30,), max_pending_ms=500)
     instrument = TestInstrumentProvider.btcusdt_binance()

@@ -32,8 +32,13 @@ LOGGER = logging.getLogger("tokenmm_metrics_exporter")
 
 LABEL_NAMES = ("env", "token", "venue", "symbol", "strategy_family")
 DEFAULT_STRATEGY_IDS = (
-    "bybit_binance_plumeusdt_makerv3",
-    "okx_binance_plumeusdt_makerv3",
+    "plumeusdt_bybit_perp_makerv3",
+    "plumeusdt_bybit_spot_makerv3",
+    "plumeusdt_okx_perp_makerv3",
+    "plumeusdt_binance_perp_makerv3",
+    "plumeusdt_binance_spot_makerv3",
+    "plumeusdt_bitget_perp_makerv3",
+    "plumeusdt_bitget_spot_makerv3",
 )
 DEFAULT_STRATEGY_FAMILY = "maker_v3"
 ACTIVE_ORDER_STATUSES = {"open", "live", "placed"}
@@ -43,7 +48,10 @@ KNOWN_MARKET_VENUES = {
     "binance_perp",
     "bybit_linear",
     "bybit_inverse",
+    "bybit_perp",
     "bybit_spot",
+    "bitget_perp",
+    "bitget_spot",
     "okx_perp",
     "okx_spot",
 }
@@ -75,6 +83,7 @@ def _to_decimal(value: Any) -> Decimal | None:
         return None
     return parsed
 
+
 def _non_negative_int(value: str) -> int:
     try:
         parsed = int(value)
@@ -92,6 +101,12 @@ def normalize_venue(value: Any) -> str:
     text = text.split(":", 1)[0]
     if text in {"bybit", "bybit_spot"}:
         return "bybit_spot"
+    if text in {"bybit_perp", "bybit_linear", "bybit_inverse"}:
+        return text
+    if text in {"bitget", "bitget_spot"}:
+        return "bitget_spot"
+    if text == "bitget_perp":
+        return "bitget_perp"
     if text in {"okx", "okx_spot"}:
         return "okx_spot"
     if text in {"binance", "binance_spot"}:
@@ -100,6 +115,10 @@ def normalize_venue(value: Any) -> str:
         return text
     if text.startswith("bybit"):
         return "bybit_spot"
+    if text.startswith("bitget_perp"):
+        return "bitget_perp"
+    if text.startswith("bitget"):
+        return "bitget_spot"
     if text.startswith("okx"):
         return "okx_spot"
     if text.startswith("binance"):
@@ -201,6 +220,17 @@ class StrategyContext:
 def _parse_strategy_context(strategy_id: str) -> StrategyContext:
     sid = str(strategy_id or "").strip()
     parts = sid.split("_")
+    if len(parts) >= 4 and parts[0] and parts[-1] == "makerv3":
+        symbol = normalize_symbol(parts[0])
+        maker_venue = normalize_venue("_".join(parts[1:3]))
+        token = _symbol_base(symbol)
+        return StrategyContext(
+            strategy_id=sid,
+            token=token,
+            venue=maker_venue,
+            symbol=symbol,
+        )
+
     maker_venue = normalize_venue(parts[0] if parts else "unknown")
     raw_symbol = parts[2] if len(parts) >= 3 else ""
     symbol = normalize_symbol(raw_symbol)
