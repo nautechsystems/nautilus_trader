@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
-from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -33,7 +33,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
-from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -62,9 +61,28 @@ from nautilus_trader.model.objects import Quantity
 class BitgetExecutionClient(LiveExecutionClient):
     """Minimal Bitget execution client scaffold."""
 
+    UTA_PRIVATE_WS_URL = "wss://ws.bitget.com/v3/ws/private"
+    HISTORY_PAGE_LIMIT = 100
+
     @staticmethod
     def _default_account_id(client_name: str) -> AccountId:
         return AccountId(f"{client_name}-001")
+
+    @classmethod
+    def _derive_account_type(cls, config: BitgetExecClientConfig) -> AccountType:
+        product_types = {
+            cls._product_type_key(product_type)
+            for product_type in (config.product_types or ())
+            if cls._string_value(product_type)
+        }
+        if product_types:
+            return AccountType.CASH if product_types == {"SPOT"} else AccountType.MARGIN
+
+        return (
+            AccountType.MARGIN
+            if cls._account_mode_from_config(config) == "UTA"
+            else AccountType.CASH
+        )
 
     def __init__(
         self,
@@ -77,12 +95,13 @@ class BitgetExecutionClient(LiveExecutionClient):
         config: BitgetExecClientConfig,
         name: str | None = None,
     ) -> None:
+        account_type = BitgetExecutionClient._derive_account_type(config)
         super().__init__(
             loop=loop,
             client_id=ClientId(name or "BITGET"),
             venue=BITGET_VENUE,
             oms_type=OmsType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=account_type,
             base_currency=None,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
@@ -115,8 +134,13 @@ class BitgetExecutionClient(LiveExecutionClient):
             )
             return
 
-        ws_url = self._config.base_url_ws_private or nautilus_pyo3.get_bitget_ws_private_url(
-            self._environment,
+        ws_url = (
+            self._config.base_url_ws_private
+            or (
+                BitgetExecutionClient.UTA_PRIVATE_WS_URL
+                if BitgetExecutionClient._account_mode_from_config(self._config) == "UTA"
+                else nautilus_pyo3.get_bitget_ws_private_url(self._environment)
+            )
         )
         ws_config = nautilus_pyo3.WebSocketConfig(
             url=ws_url,
@@ -163,7 +187,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 return
 
             if event == "subscribe":
-                channel = str(arg.get("channel") or "")
+                channel = str(arg.get("channel") or arg.get("topic") or "")
                 inst_type = str(arg.get("instType") or "")
                 self._log.info(
                     f"Bitget private WebSocket subscribed: channel={channel} instType={inst_type}",
@@ -181,17 +205,17 @@ class BitgetExecutionClient(LiveExecutionClient):
                     )
                 return
 
-            channel = str(arg.get("channel") or "")
+            channel = str(arg.get("channel") or arg.get("topic") or "")
             if channel == "account":
                 self._handle_account_channel(payload)
                 return
-            if channel == "orders":
+            if channel in {"orders", "order"}:
                 self._handle_orders_channel(payload)
                 return
             if channel == "fill":
                 self._handle_fill_channel(payload)
                 return
-            if channel == "positions":
+            if channel in {"positions", "position"}:
                 self._handle_positions_channel(payload)
                 return
 
@@ -226,6 +250,23 @@ class BitgetExecutionClient(LiveExecutionClient):
             self._log.debug("Bitget private account payload received: 0 entries")
             return
 
+        arg = payload.get("arg") or {}
+        if str(arg.get("topic") or "").strip().lower() == "account":
+            flattened: list[dict[str, Any]] = []
+            payload_ts = payload.get("ts")
+            for account in data:
+                for entry in account.get("coin") or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    normalized = dict(entry)
+                    if normalized.get("uTime") in (None, "") and payload_ts is not None:
+                        normalized["uTime"] = payload_ts
+                    flattened.append(normalized)
+            data = flattened
+            if not data:
+                self._log.debug("Bitget UTA private account payload produced no balances")
+                return
+
         balances: list[AccountBalance] = []
         latest_update_ms = 0
 
@@ -251,7 +292,10 @@ class BitgetExecutionClient(LiveExecutionClient):
                     free=free,
                 ),
             )
-            latest_update_ms = max(latest_update_ms, int(entry.get("uTime") or 0))
+            latest_update_ms = max(
+                latest_update_ms,
+                int(entry.get("uTime") or payload.get("ts") or 0),
+            )
 
         if not balances:
             self._log.debug("Bitget private account payload produced no balances")
@@ -296,6 +340,13 @@ class BitgetExecutionClient(LiveExecutionClient):
         if normalized.endswith("USDC-FUTURES"):
             return "USDC-FUTURES"
         return normalized
+
+    def _log_unclaimed_private_update_at_debug(self) -> bool:
+        config = getattr(self, "_config", None)
+        if bool(getattr(config, "filter_unclaimed_external_orders", False)):
+            return True
+
+        return BitgetExecutionClient._account_mode_from_config(config) == "UTA"
 
     def _product_type_for_instrument(self, instrument: Any) -> Any:
         settlement_code = BitgetExecutionClient._currency_code(
@@ -351,6 +402,59 @@ class BitgetExecutionClient(LiveExecutionClient):
         return str(value).strip()
 
     @staticmethod
+    def _account_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "account_mode", None))
+        return value.upper() or None
+
+    @staticmethod
+    def _margin_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "margin_mode", None))
+        return value.lower() or None
+
+    @staticmethod
+    def _position_mode_from_config(config: Any) -> str | None:
+        value = BitgetExecutionClient._string_value(getattr(config, "position_mode", None))
+        return value.lower().replace("-", "_").replace(" ", "_") or None
+
+    @staticmethod
+    def _allow_cash_borrowing_from_config(config: Any) -> bool:
+        return bool(getattr(config, "allow_cash_borrowing", False))
+
+    @staticmethod
+    def _format_exchange_error_reason(error: Exception) -> str:
+        reason = str(error).strip()
+        if not reason:
+            return reason
+        if reason.startswith("bitget_http_error:"):
+            return reason
+
+        match = re.match(r"^HTTP request failed with status (\d+)(?: body=(.+))?$", reason)
+        if not match:
+            return reason
+
+        status = match.group(1)
+        body = match.group(2)
+        if not body:
+            return f"bitget_http_error: status={status}"
+
+        try:
+            payload = BitgetExecutionClient._parse_response_payload(body)
+        except Exception:
+            return f"bitget_http_error: status={status}"
+
+        if isinstance(payload, dict):
+            code = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "code"))
+            msg = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "msg"))
+            parts = [f"bitget_http_error: status={status}"]
+            if code:
+                parts.append(f"code={code}")
+            if msg:
+                parts.append(f"msg={msg}")
+            return " ".join(parts)
+
+        return f"bitget_http_error: status={status}"
+
+    @staticmethod
     def _is_delivery_symbol(symbol: str) -> bool:
         if "-" not in symbol:
             return False
@@ -362,6 +466,17 @@ class BitgetExecutionClient(LiveExecutionClient):
         symbol = getattr(getattr(instrument_id, "symbol", None), "value", None)
         if symbol is None:
             symbol = str(instrument_id)
+        if symbol.endswith("-PERP"):
+            return symbol[:-5]
+        if BitgetExecutionClient._is_delivery_symbol(symbol):
+            return symbol.rsplit("-", 1)[0]
+        return symbol
+
+    @staticmethod
+    def _raw_symbol_from_value(value: Any) -> str:
+        symbol = BitgetExecutionClient._string_value(value).split(".", 1)[0]
+        if not symbol:
+            return ""
         if symbol.endswith("-PERP"):
             return symbol[:-5]
         if BitgetExecutionClient._is_delivery_symbol(symbol):
@@ -416,6 +531,31 @@ class BitgetExecutionClient(LiveExecutionClient):
         if hasattr(code, "as_str"):
             return str(code.as_str()).strip().upper()
         return str(code).strip().upper()
+
+    @staticmethod
+    def _position_payload_debug_summary(payload: Any) -> str:
+        keys = (
+            "symbol",
+            "instId",
+            "posId",
+            "positionId",
+            "holdSide",
+            "posSide",
+            "total",
+            "available",
+            "locked",
+            "holdVolume",
+            "openPriceAvg",
+            "avgPrice",
+            "marginMode",
+            "assetMode",
+        )
+        parts: list[str] = []
+        for key in keys:
+            value = BitgetExecutionClient._field(payload, key)
+            if value not in (None, ""):
+                parts.append(f"{key}={value}")
+        return " ".join(parts)
 
     def _margin_coin_for_instrument_id(self, instrument_id: Any) -> str | None:
         product_type = BitgetExecutionClient._product_type_for_instrument_id(self, instrument_id)
@@ -483,6 +623,64 @@ class BitgetExecutionClient(LiveExecutionClient):
         return None
 
     @staticmethod
+    def _instrument_id_to_str(instrument: Any) -> str:
+        instrument_id = getattr(instrument, "id", instrument)
+        symbol = getattr(getattr(instrument_id, "symbol", None), "value", None)
+        if symbol is not None:
+            return str(symbol)
+        return str(instrument_id)
+
+    def _resolve_private_position_instrument(
+        self,
+        arg_inst_type: Any,
+        payload: Any,
+    ) -> tuple[Any | None, Any | None, str | None]:
+        raw_symbol = BitgetExecutionClient._raw_symbol_from_value(
+            BitgetExecutionClient._field(payload, "symbol")
+            or BitgetExecutionClient._field(payload, "instId"),
+        )
+        if not raw_symbol:
+            return None, None, None
+
+        inst_type_key = BitgetExecutionClient._product_type_key(arg_inst_type)
+        if inst_type_key != "UTA":
+            instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
+                self,
+                arg_inst_type,
+                raw_symbol,
+            )
+            if instrument is None:
+                return None, None, None
+            return instrument, arg_inst_type, None
+
+        matches: list[tuple[Any, Any]] = []
+        instrument_ids = getattr(self._cache, "instrument_ids", None)
+        cache_get = getattr(self._cache, "instrument", None)
+        if callable(instrument_ids) and callable(cache_get):
+            for instrument_id in instrument_ids(venue=BITGET_VENUE):
+                instrument = cache_get(instrument_id)
+                instrument_raw_symbol = getattr(getattr(instrument, "raw_symbol", None), "value", None)
+                if instrument is None or instrument_raw_symbol != raw_symbol:
+                    continue
+
+                product_type = BitgetExecutionClient._product_type_for_instrument(self, instrument)
+                if BitgetExecutionClient._product_type_key(product_type) == "SPOT":
+                    continue
+                matches.append((instrument, product_type))
+
+        if not matches:
+            return None, None, None
+
+        if len(matches) > 1:
+            candidates = ", ".join(
+                BitgetExecutionClient._instrument_id_to_str(instrument) for instrument, _ in matches
+            )
+            return None, None, f"ambiguous non-spot instrument match for symbol={raw_symbol} candidates={candidates}"
+
+        instrument, product_type = matches[0]
+        return instrument, product_type, None
+
+    @staticmethod
     def _order_side_to_api_str(side: OrderSide) -> str:
         return "buy" if side == OrderSide.BUY else "sell"
 
@@ -527,11 +725,13 @@ class BitgetExecutionClient(LiveExecutionClient):
     @staticmethod
     def _parse_order_status(payload: Any) -> OrderStatus:
         status = BitgetExecutionClient._normalize_private_order_status(
-            BitgetExecutionClient._field(payload, "status"),
+            BitgetExecutionClient._field(payload, "status")
+            or BitgetExecutionClient._field(payload, "orderStatus"),
         )
         filled_qty = Decimal(
             BitgetExecutionClient._string_value(
                 BitgetExecutionClient._field(payload, "baseVolume")
+                or BitgetExecutionClient._field(payload, "cumExecQty")
                 or BitgetExecutionClient._field(payload, "filledQty")
                 or "0",
             ),
@@ -566,6 +766,70 @@ class BitgetExecutionClient(LiveExecutionClient):
         if value is None:
             return None
         return int(value.timestamp() * 1000)
+
+    @staticmethod
+    def _history_item_millis(payload: Any) -> int | None:
+        for field_name in ("updatedTime", "uTime", "createdTime", "cTime"):
+            text = BitgetExecutionClient._string_value(
+                BitgetExecutionClient._field(payload, field_name),
+            )
+            if not text:
+                continue
+            try:
+                return int(text)
+            except ValueError:
+                continue
+        return None
+
+    async def _collect_history_payload_items(
+        self,
+        request_page: Any,
+        *,
+        dedupe_key: Any,
+        start_ms: int | None,
+        end_ms: int | None,
+    ) -> list[Any]:
+        current_end_ms = end_ms
+        last_oldest_ms: int | None = None
+        seen_keys: set[str] = set()
+        collected: list[Any] = []
+
+        while True:
+            payload = await request_page(current_end_ms, BitgetExecutionClient.HISTORY_PAGE_LIMIT)
+            items = BitgetExecutionClient._payload_items(payload)
+            if not items:
+                break
+
+            oldest_ms: int | None = None
+            for item in items:
+                item_ms = BitgetExecutionClient._history_item_millis(item)
+                if item_ms is not None:
+                    oldest_ms = item_ms if oldest_ms is None else min(oldest_ms, item_ms)
+                    if end_ms is not None and item_ms > end_ms:
+                        continue
+                    if start_ms is not None and item_ms < start_ms:
+                        continue
+
+                key = dedupe_key(item)
+                if key and key in seen_keys:
+                    continue
+                if key:
+                    seen_keys.add(key)
+                collected.append(item)
+
+            if len(items) < BitgetExecutionClient.HISTORY_PAGE_LIMIT:
+                break
+            if oldest_ms is None:
+                break
+            if start_ms is not None and oldest_ms <= start_ms:
+                break
+            if last_oldest_ms is not None and oldest_ms >= last_oldest_ms:
+                break
+
+            last_oldest_ms = oldest_ms
+            current_end_ms = oldest_ms - 1
+
+        return collected
 
     @staticmethod
     def _is_truthy_flag(value: Any) -> bool:
@@ -611,28 +875,36 @@ class BitgetExecutionClient(LiveExecutionClient):
 
         status = BitgetExecutionClient._parse_order_status(payload)
         quantity_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "size"),
+            BitgetExecutionClient._field(payload, "size")
+            or BitgetExecutionClient._field(payload, "qty"),
         ) or "0"
         filled_qty_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "baseVolume")
+            or BitgetExecutionClient._field(payload, "cumExecQty")
             or BitgetExecutionClient._field(payload, "filledQty")
             or "0",
         )
         if status == OrderStatus.FILLED and filled_qty_raw in {"", "0"}:
             filled_qty_raw = quantity_raw
 
-        force = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "force")).lower()
+        force = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "force")
+            or BitgetExecutionClient._field(payload, "timeInForce"),
+        ).lower()
         post_only = force == "post_only"
         price_raw = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "price"))
         avg_px_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "priceAvg"),
+            BitgetExecutionClient._field(payload, "priceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice"),
         )
         accepted_ts = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "cTime")
+            or BitgetExecutionClient._field(payload, "createdTime")
             or BitgetExecutionClient._field(payload, "ctime"),
         )
         last_ts = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "uTime")
+            or BitgetExecutionClient._field(payload, "updatedTime")
             or BitgetExecutionClient._field(payload, "utime")
             or BitgetExecutionClient._field(payload, "cTime"),
             fallback=accepted_ts,
@@ -689,7 +961,10 @@ class BitgetExecutionClient(LiveExecutionClient):
             return None
 
         order_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "orderId"))
-        trade_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "tradeId"))
+        trade_id = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "tradeId")
+            or BitgetExecutionClient._field(payload, "execId"),
+        )
         if not order_id or not trade_id:
             return None
 
@@ -706,16 +981,21 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
         total_fee = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(fee_detail, "totalFee")
+            or BitgetExecutionClient._field(fee_detail, "fee")
             or BitgetExecutionClient._field(payload, "fillFee")
             or "0",
         )
         last_px_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "priceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice")
+            or BitgetExecutionClient._field(payload, "execPrice")
             or BitgetExecutionClient._field(payload, "price")
             or "0",
         )
         last_qty_raw = BitgetExecutionClient._string_value(
             BitgetExecutionClient._field(payload, "size")
+            or BitgetExecutionClient._field(payload, "qty")
+            or BitgetExecutionClient._field(payload, "execQty")
             or BitgetExecutionClient._field(payload, "fillQty")
             or "0",
         )
@@ -737,6 +1017,8 @@ class BitgetExecutionClient(LiveExecutionClient):
             ),
             ts_event=BitgetExecutionClient._timestamp_ns_from_value(
                 BitgetExecutionClient._field(payload, "uTime")
+                or BitgetExecutionClient._field(payload, "updatedTime")
+                or BitgetExecutionClient._field(payload, "createdTime")
                 or BitgetExecutionClient._field(payload, "cTime"),
             )
             or (ts_init or self._clock.timestamp_ns()),
@@ -749,46 +1031,64 @@ class BitgetExecutionClient(LiveExecutionClient):
         payload: Any,
         product_type: Any,
         fallback_instrument_id: Any | None = None,
+        instrument: Any | None = None,
         ts_init: int | None = None,
     ) -> PositionStatusReport | None:
-        raw_symbol = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "symbol"),
-        ) or (
-            BitgetExecutionClient._raw_symbol_from_instrument_id(fallback_instrument_id)
-            if fallback_instrument_id is not None
-            else ""
-        )
-        instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
-            self,
-            product_type,
-            raw_symbol,
-            fallback_instrument_id=fallback_instrument_id,
-        )
-        if instrument is None:
+        resolved_instrument = instrument
+        if resolved_instrument is None:
+            raw_symbol = BitgetExecutionClient._string_value(
+                BitgetExecutionClient._field(payload, "symbol"),
+            ) or (
+                BitgetExecutionClient._raw_symbol_from_instrument_id(fallback_instrument_id)
+                if fallback_instrument_id is not None
+                else ""
+            )
+            resolved_instrument = BitgetExecutionClient._resolve_instrument_by_symbol(
+                self,
+                product_type,
+                raw_symbol,
+                fallback_instrument_id=fallback_instrument_id,
+            )
+        if resolved_instrument is None:
             return None
+
+        if (
+            BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA"
+            and BitgetExecutionClient._product_type_key(product_type) != "SPOT"
+        ):
+            self._log.info(
+                "Bitget UTA startup position payload "
+                f"instrument={resolved_instrument.id} "
+                f"{BitgetExecutionClient._position_payload_debug_summary(payload)}",
+            )
 
         total = Decimal(
             BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "total") or "0"),
         )
         ts_event = BitgetExecutionClient._timestamp_ns_from_value(
-            BitgetExecutionClient._field(payload, "uTime"),
+            BitgetExecutionClient._field(payload, "uTime")
+            or BitgetExecutionClient._field(payload, "updatedTime"),
         ) or (ts_init or self._clock.timestamp_ns())
         venue_position_id = None
-        pos_id = BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "posId"))
+        pos_id = BitgetExecutionClient._string_value(
+            BitgetExecutionClient._field(payload, "posId")
+            or BitgetExecutionClient._field(payload, "positionId"),
+        )
         if pos_id:
             venue_position_id = PositionId(pos_id)
 
         avg_px_raw = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "openPriceAvg"),
+            BitgetExecutionClient._field(payload, "openPriceAvg")
+            or BitgetExecutionClient._field(payload, "avgPrice"),
         )
         avg_px_open = Decimal(avg_px_raw) if avg_px_raw and avg_px_raw != "0" else None
 
         if total == 0:
             return PositionStatusReport(
                 account_id=self.account_id,
-                instrument_id=instrument.id,
+                instrument_id=resolved_instrument.id,
                 position_side=PositionSide.FLAT,
-                quantity=Quantity.zero(instrument.size_precision),
+                quantity=Quantity.zero(resolved_instrument.size_precision),
                 venue_position_id=venue_position_id,
                 avg_px_open=None,
                 report_id=UUID4(),
@@ -797,19 +1097,21 @@ class BitgetExecutionClient(LiveExecutionClient):
             )
 
         hold_side = BitgetExecutionClient._string_value(
-            BitgetExecutionClient._field(payload, "holdSide"),
+            BitgetExecutionClient._field(payload, "holdSide")
+            or BitgetExecutionClient._field(payload, "posSide"),
         ).lower()
         position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
+        quantity_text = str(abs(total))
         try:
-            quantity = instrument.make_qty(str(abs(total)), round_down=True)
+            quantity = resolved_instrument.make_qty(quantity_text, round_down=True)
         except TypeError:
-            quantity = instrument.make_qty(str(abs(total)))
+            quantity = resolved_instrument.make_qty(quantity_text)
         except ValueError:
-            quantity = Quantity.from_str(str(abs(total)))
+            quantity = Quantity.from_str(quantity_text)
 
         return PositionStatusReport(
             account_id=self.account_id,
-            instrument_id=instrument.id,
+            instrument_id=resolved_instrument.id,
             position_side=position_side,
             quantity=quantity,
             venue_position_id=venue_position_id,
@@ -848,9 +1150,11 @@ class BitgetExecutionClient(LiveExecutionClient):
             order = self._cache.order(client_order_id) if client_order_id is not None else None
             if order is None:
                 lookup = client_oid or order_id or "<missing>"
-                self._log.warning(
-                    f"Bitget private order update ignored: order not found for {lookup}",
-                )
+                message = f"Bitget private order update ignored: order not found for {lookup}"
+                if BitgetExecutionClient._log_unclaimed_private_update_at_debug(self):
+                    self._log.debug(message)
+                else:
+                    self._log.warning(message)
                 continue
 
             client_order_id = order.client_order_id
@@ -954,9 +1258,11 @@ class BitgetExecutionClient(LiveExecutionClient):
             client_order_id = self._cache.client_order_id(venue_order_id)
             order = self._cache.order(client_order_id) if client_order_id is not None else None
             if order is None:
-                self._log.warning(
-                    f"Bitget private fill update ignored: order not found for {order_id}",
-                )
+                message = f"Bitget private fill update ignored: order not found for {order_id}"
+                if BitgetExecutionClient._log_unclaimed_private_update_at_debug(self):
+                    self._log.debug(message)
+                else:
+                    self._log.warning(message)
                 continue
 
             instrument = self._cache.instrument(order.instrument_id)
@@ -1003,70 +1309,49 @@ class BitgetExecutionClient(LiveExecutionClient):
             return
 
         arg = payload.get("arg") or {}
-        inst_type = BitgetExecutionClient._product_type_key(arg.get("instType"))
-        instruments_by_key: dict[tuple[str, str], Any] = {}
-        for instrument_id in self._cache.instrument_ids(venue=BITGET_VENUE):
-            instrument = self._cache.instrument(instrument_id)
-            raw_symbol = getattr(getattr(instrument, "raw_symbol", None), "value", None)
-            if instrument is not None and raw_symbol:
-                key = (
-                    BitgetExecutionClient._product_type_key(
-                        BitgetExecutionClient._product_type_for_instrument(self, instrument),
-                    ),
-                    str(raw_symbol),
-                )
-                instruments_by_key[key] = instrument
+        arg_inst_type = arg.get("instType")
+        inst_type = BitgetExecutionClient._product_type_key(arg_inst_type)
 
         for entry in data:
-            inst_id = str(entry.get("instId") or "").strip()
-            instrument = instruments_by_key.get((inst_type, inst_id))
-            if instrument is None:
+            instrument, product_type, resolution_error = BitgetExecutionClient._resolve_private_position_instrument(
+                self,
+                arg_inst_type,
+                entry,
+            )
+            if resolution_error:
                 self._log.warning(
                     "Bitget private position update ignored: "
-                    f"instrument not found for instType={inst_type} instId={inst_id}",
+                    f"{resolution_error} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
                 )
                 continue
 
-            total = Decimal(str(entry.get("total") or "0"))
-            ts_event = millis_to_nanos(int(entry.get("uTime") or payload.get("ts") or 0))
-            venue_position_id = PositionId(str(entry["posId"])) if entry.get("posId") else None
-            avg_px_raw = str(entry.get("openPriceAvg") or "").strip()
-            avg_px_open = Decimal(avg_px_raw) if avg_px_raw and avg_px_raw != "0" else None
-
-            if total == 0:
-                report = PositionStatusReport(
-                    account_id=self.account_id,
-                    instrument_id=instrument.id,
-                    position_side=PositionSide.FLAT,
-                    quantity=Quantity.zero(instrument.size_precision),
-                    venue_position_id=venue_position_id,
-                    avg_px_open=None,
-                    report_id=UUID4(),
-                    ts_last=ts_event,
-                    ts_init=ts_event,
+            inst_id = BitgetExecutionClient._string_value(entry.get("instId"))
+            if instrument is None or product_type is None:
+                self._log.warning(
+                    "Bitget private position update ignored: "
+                    f"instrument not found for instType={inst_type} instId={inst_id} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
                 )
-            else:
-                hold_side = str(entry.get("holdSide") or "").strip().lower()
-                position_side = PositionSide.SHORT if hold_side == "short" else PositionSide.LONG
-                try:
-                    quantity = instrument.make_qty(str(abs(total)), round_down=True)
-                except TypeError:
-                    quantity = instrument.make_qty(str(abs(total)))
-                except ValueError:
-                    quantity = Quantity.from_str(str(abs(total)))
+                continue
 
-                report = PositionStatusReport(
-                    account_id=self.account_id,
-                    instrument_id=instrument.id,
-                    position_side=position_side,
-                    quantity=quantity,
-                    venue_position_id=venue_position_id,
-                    avg_px_open=avg_px_open,
-                    report_id=UUID4(),
-                    ts_last=ts_event,
-                    ts_init=ts_event,
+            report = BitgetExecutionClient._build_position_status_report(
+                self,
+                entry,
+                product_type,
+                fallback_instrument_id=getattr(instrument, "id", None),
+                instrument=instrument,
+                ts_init=BitgetExecutionClient._timestamp_ns_from_value(
+                    entry.get("uTime") or payload.get("ts"),
+                ),
+            )
+            if report is None:
+                self._log.warning(
+                    "Bitget private position update ignored: "
+                    f"instrument not found for instType={inst_type} instId={inst_id} "
+                    f"{BitgetExecutionClient._position_payload_debug_summary(entry)}",
                 )
-
+                continue
             self._send_position_status_report(report)
 
     async def _authenticate_ws(self) -> None:
@@ -1090,6 +1375,21 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
 
     async def _subscribe_private_ws(self) -> None:
+        if BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA":
+            subscriptions = [
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "account"}]},
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "order"}]},
+                {"op": "subscribe", "args": [{"instType": "UTA", "topic": "fill"}]},
+            ]
+            if any(not self._is_spot_product_type(product_type) for product_type in self._product_types):
+                subscriptions.append(
+                    {"op": "subscribe", "args": [{"instType": "UTA", "topic": "position"}]},
+                )
+
+            for subscription in subscriptions:
+                await self._send_ws_text(json.dumps(subscription, separators=(",", ":")))
+            return
+
         for product_type in self._product_types:
             await self._send_ws_text(
                 nautilus_pyo3.BitgetWebSocketClient.subscribe_account_message(
@@ -1171,6 +1471,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                 ),
                 client_oid=command.client_order_id.value if command.client_order_id else None,
                 order_id=venue_order_id.value if venue_order_id else None,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
             return BitgetExecutionClient._build_order_status_report(
                 self,
@@ -1219,6 +1531,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                     start=start_ms,
                     end=end_ms,
                     limit=None,
+                    account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    position_mode=BitgetExecutionClient._position_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
                 )
                 for item in BitgetExecutionClient._payload_items(payload):
                     report = BitgetExecutionClient._build_order_status_report(
@@ -1258,20 +1582,56 @@ class BitgetExecutionClient(LiveExecutionClient):
                 symbol = None
 
             for product_type in product_types:
-                payload = await self._http_client.request_fill_reports(
-                    product_type=product_type,
-                    symbol=symbol,
-                    margin_coin=(
-                        BitgetExecutionClient._margin_coin_for_instrument_id(self, command.instrument_id)
-                        if command.instrument_id is not None
-                        else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
-                    ),
-                    order_id=command.venue_order_id.value if command.venue_order_id else None,
-                    start=start_ms,
-                    end=end_ms,
-                    limit=None,
+                margin_coin = (
+                    BitgetExecutionClient._margin_coin_for_instrument_id(self, command.instrument_id)
+                    if command.instrument_id is not None
+                    else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
                 )
-                for item in BitgetExecutionClient._payload_items(payload):
+                account_mode = BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+                allow_cash_borrowing = BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                )
+                margin_mode = BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+                position_mode = BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                )
+
+                async def request_page(page_end_ms: int | None, limit: int) -> Any:
+                    return await self._http_client.request_fill_reports(
+                        product_type=product_type,
+                        symbol=symbol,
+                        margin_coin=margin_coin,
+                        order_id=command.venue_order_id.value if command.venue_order_id else None,
+                        start=start_ms,
+                        end=page_end_ms,
+                        limit=limit,
+                        account_mode=account_mode,
+                        allow_cash_borrowing=allow_cash_borrowing,
+                        margin_mode=margin_mode,
+                        position_mode=position_mode,
+                    )
+
+                payload_items = await BitgetExecutionClient._collect_history_payload_items(
+                    self,
+                    request_page=request_page,
+                    dedupe_key=lambda item: (
+                        BitgetExecutionClient._string_value(
+                            BitgetExecutionClient._field(item, "tradeId")
+                            or BitgetExecutionClient._field(item, "execId"),
+                        )
+                        or BitgetExecutionClient._string_value(
+                            BitgetExecutionClient._field(item, "orderId"),
+                        )
+                    ),
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                )
+
+                for item in payload_items:
                     if (
                         command.venue_order_id is not None
                         and BitgetExecutionClient._string_value(
@@ -1329,6 +1689,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                         if command.instrument_id is not None
                         else ("USDC" if BitgetExecutionClient._product_type_key(product_type) == "USDC-FUTURES" else None)
                     ),
+                    account_mode=BitgetExecutionClient._account_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
+                    position_mode=BitgetExecutionClient._position_mode_from_config(
+                        getattr(self, "_config", None),
+                    ),
                 )
                 for item in BitgetExecutionClient._payload_items(payload):
                     report = BitgetExecutionClient._build_position_status_report(
@@ -1344,65 +1716,6 @@ class BitgetExecutionClient(LiveExecutionClient):
             self._log.exception("Failed to generate PositionStatusReports", e)
 
         return reports
-
-    async def generate_mass_status(
-        self, lookback_mins: int | None = None
-    ) -> ExecutionMassStatus | None:
-        self.reconciliation_active = True
-        since = None
-        if lookback_mins is not None:
-            since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
-
-        try:
-            order_reports, fill_reports, position_reports = await asyncio.gather(
-                self.generate_order_status_reports(
-                    GenerateOrderStatusReports(
-                        instrument_id=None,
-                        start=since,
-                        end=None,
-                        open_only=True,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-                self.generate_fill_reports(
-                    GenerateFillReports(
-                        instrument_id=None,
-                        venue_order_id=None,
-                        start=since,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-                self.generate_position_status_reports(
-                    GeneratePositionStatusReports(
-                        instrument_id=None,
-                        start=since,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                ),
-            )
-
-            mass_status = ExecutionMassStatus(
-                client_id=self.id,
-                account_id=self.account_id
-                or BitgetExecutionClient._default_account_id(self.id.value),
-                venue=BITGET_VENUE,
-                report_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            mass_status.add_order_reports(order_reports)
-            mass_status.add_fill_reports(fill_reports)
-            mass_status.add_position_reports(position_reports)
-            return mass_status
-        except Exception as e:
-            self._log.exception("Cannot reconcile execution state", e)
-            return None
-        finally:
-            self.reconciliation_active = False
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -1446,6 +1759,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                 force=BitgetExecutionClient._time_in_force_to_api_force(order),
                 price=str(order.price) if order.has_price else None,
                 reduce_only=order.is_reduce_only,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
             payload = BitgetExecutionClient._parse_response_payload(payload)
             order_id = BitgetExecutionClient._string_value(
@@ -1459,7 +1784,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=str(e),
+                reason=BitgetExecutionClient._format_exchange_error_reason(e),
                 ts_event=self._clock.timestamp_ns(),
             )
 
@@ -1572,6 +1897,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                 ),
                 client_oid=command.client_order_id.value,
                 order_id=venue_order_id.value if venue_order_id else None,
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
@@ -1580,7 +1917,7 @@ class BitgetExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                reason=str(e),
+                reason=BitgetExecutionClient._format_exchange_error_reason(e),
                 ts_event=self._clock.timestamp_ns(),
             )
 
@@ -1601,6 +1938,18 @@ class BitgetExecutionClient(LiveExecutionClient):
                 margin_coin=BitgetExecutionClient._margin_coin_for_instrument_id(
                     self,
                     command.instrument_id,
+                ),
+                account_mode=BitgetExecutionClient._account_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                allow_cash_borrowing=BitgetExecutionClient._allow_cash_borrowing_from_config(
+                    getattr(self, "_config", None),
+                ),
+                margin_mode=BitgetExecutionClient._margin_mode_from_config(
+                    getattr(self, "_config", None),
+                ),
+                position_mode=BitgetExecutionClient._position_mode_from_config(
+                    getattr(self, "_config", None),
                 ),
             )
         except Exception as e:

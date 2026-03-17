@@ -14,7 +14,7 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
   - `flux.runners.tokenmm.run_portfolio`
   - `flux.runners.tokenmm.run_bridge`
   - `flux.runners.tokenmm.run_api`
-- Active production strategy topology:
+- Allowlisted production strategy topology:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
   - `plumeusdt_okx_perp_makerv3`
@@ -32,7 +32,15 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
-- All seven active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- All seven allowlisted strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- Supported live core for this pass:
+  - `plumeusdt_bybit_perp_makerv3`
+  - `plumeusdt_bybit_spot_makerv3`
+  - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_bitget_perp_makerv3`
+  - `plumeusdt_bitget_spot_makerv3`
+- Binance perp and Binance spot stay allowlisted but parked.
+- Shared portfolio completeness requires only the supported live core.
 
 Deploy-root resolution for `install_tokenmm_systemd.sh`:
 
@@ -42,49 +50,74 @@ Deploy-root resolution for `install_tokenmm_systemd.sh`:
 
 If the resolved root is a worktree, the installer exits with an error instead of repointing production.
 
-## Binance Spot Margin Recovery Canary
+## Binance Spot Market-Making Contract
 
-Use this checklist when restoring `plumeusdt_binance_spot_makerv3` after a borrowing or alerting regression.
+Dedicated runbook:
+`docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-Preconditions:
+`plumeusdt_binance_spot_makerv3` is parked for this pass. Binance spot and
+Binance perp are not part of the supported live core or required completeness
+set. They remain allowlisted in the standard 7-node target and must stay
+`bot_on = false` on this pass. The dedicated Binance runbook is for future
+reintroduction work, not the current supported live core.
 
-- Deploy the branch that contains:
-  - `allow_cash_borrowing = true` under `[node.venues.BINANCE_SPOT]`
-  - `spot_cash_borrowing_policy = "both_sides"` under `[strategy]`
-  - the Binance adapter borrow-on-submit fix
-  - the MakerV3/API/Fluxboard alert surfacing fix
-- Keep `force_bot_off_on_start = true` and `bot_on = false` in the strategy TOML for the first restart.
+Operating contract:
 
-Canary order:
+- keep Binance strategies parked with `force_bot_off_on_start = true` and
+  `bot_on = false`
+- keep Binance nodes enrolled in the standard 7-node target only as parked
+  services; do not use them as the rollout/canary surface for this pass
+- do not treat parked Binance nodes as required contributors to shared tokenmm
+  portfolio completeness
+- if Binance is reintroduced later, do it through a separate rollout branch and
+  dedicated operator review
 
-1. Restart only the Binance spot node while it is still bot-off:
-   - `sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service`
-2. Check service health and fresh API state:
-   - `journalctl -u flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service --since "10 min ago" --no-pager`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3"`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=20"`
-3. Verify before enabling quoting:
-   - startup completes without borrow-mode or submit-shape errors
-   - the signals payload is fresh
-   - the alerts payload is readable and rows expose stable `id` / `row_id`
-4. Enable quoting through the approved runtime control path only after the bot-off checks pass.
-5. Watch the canary continuously for at least one quote-replacement window and one denial/rejection window:
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3" | jq '.data.rows[0]'`
-   - `curl -fsS "http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=plumeusdt_binance_spot_makerv3&limit=50" | jq '.data.rows'`
+## Bitget Spot + Perp Market-Making Contract
 
-Acceptance criteria:
+Dedicated runbook:
+`docs/runbooks/tokenmm-bitget-spot-perp-market-making.md`
 
-- `maker_quote_status` shows working/open orders on at least one side instead of only blocked counts.
-- Binance spot orders are accepted or working; they are no longer denied for zero free quote/base when borrowing is requested.
-- Fresh denials or rejections appear in Fluxboard Alerts with visible `ERROR`/`CRITICAL` severity.
-- Journals stay clear of venue-protection and borrow-mode configuration errors.
+`plumeusdt_bitget_spot_makerv3` and `plumeusdt_bitget_perp_makerv3` target
+Bitget UTA/shared-margin parity as the preferred production contract.
 
-Rollback immediately if any release gate fails:
+Operating contract:
 
-1. Put the strategy back to bot-off using the approved runtime control path.
-2. Restart the strategy service if in-flight state needs clearing.
-3. Revert the offending deploy or config change before another canary.
-4. Preserve `journalctl`, `/api/v1/signals`, and `/api/v1/alerts` evidence in the incident notes before retrying.
+- preferred account model: Bitget unified/shared-margin account for both
+  strategies
+- preferred spot behavior: shared-collateral quoting with borrowing only where
+  needed, constrained to sell-side borrowing on the first rollout
+- preferred perp behavior: USDT-margined perp in one-way/netting mode
+- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
+  restart and canary
+- verify balances through `GET /api/v1/balances?profile=tokenmm` before enabling
+  quoting; do not treat invisible Bitget collateral or inventory as production
+  ready
+- if the UTA/shared-margin path is still blocked, the only accepted temporary
+  fallback is funded spot inventory plus funded perp collateral, with that
+  downgrade called out explicitly in the runbook
+- do not silently promote the funded-inventory fallback as the final Bitget
+  production contract
+- before enabling quoting, clear the operator-side account checklist in
+  `docs/runbooks/tokenmm-bitget-spot-perp-market-making.md`:
+  - confirm UTA/shared-margin is actually enabled if parity is the chosen path
+  - record the UTA mode and the Bitget equity threshold cleared for that mode
+  - confirm `PLUME` loan/margin support if borrow-backed spot quoting is
+    expected
+  - confirm futures is enabled in one-way mode
+  - confirm the live key has the required permissions
+- before restart, clear the local readiness checks from the same runbook:
+  - `/etc/flux/common.env` Bitget credentials must match the intended live
+    account
+  - `GET /api/v1/balances?profile=tokenmm` must show the chosen live contract
+    through our stack, not just in the Bitget UI
+  - `GET /api/v1/signals?profile=tokenmm` must show both Bitget strategies
+    still bot-off
+- restart both Bitget services in bot-off mode first and inspect the journal:
+  - no fresh `UNSUPPORTED_ACCOUNT_MODE`
+  - no fresh `400` / `429` burst while bot-off
+  - no startup failure that leaves balances/signals stale
+- capture the account-mode, permissions, balances/signals payloads, and journal
+  evidence in the runbook before the first canary
 
 ## Inventory and balances model
 
@@ -113,6 +146,12 @@ semantics documented here are the current source of truth.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
 - `risk_delta` remains diagnostic only and must not silently replace `local_qty_base` for spot local inventory.
 - startup reconciliation failure means degraded or blocked trading, not best-effort stale-cache trading.
+- startup reconciliation may discard stale cached `EXTERNAL` netting positions only when removing them makes
+  the non-`EXTERNAL` cached quantity exactly match the venue-reported quantity; this cleanup is limited to the
+  startup reconciliation path and does not relax continuous discrepancy checks.
+- single-client live TokenMM nodes scope startup reconciliation order/fill/position history to their configured
+  `reconciliation_instrument_ids`; this keeps per-strategy recovery overrides from pulling unrelated account
+  history during restart.
 - `global_qty_base` may be complete or partial; consumers must use explicit completeness metadata instead of
   inferring status from nullability alone.
 - live execution-enabled TokenMM nodes must keep `exec_reconciliation = true` and
@@ -185,7 +224,7 @@ Runtime registration is explicit:
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 active
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 allowlisted
   node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.

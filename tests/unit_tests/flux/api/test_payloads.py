@@ -173,6 +173,70 @@ def test_build_balances_rows_prefers_base_qty_and_preserves_venue_qty_fields() -
     )
 
 
+def test_build_balances_rows_ignores_nested_external_positions_when_building_strategy_view() -> None:
+    rows = build_balances_rows(
+        raw_snapshot=[
+            {
+                "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                "positions": [
+                    {
+                        "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                        "exchange": "bitget",
+                        "kind": "position",
+                        "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                        "signed_qty": "-62890",
+                        "signed_qty_base": "-62890",
+                    },
+                    {
+                        "strategy_id": "EXTERNAL",
+                        "exchange": "bitget",
+                        "kind": "position",
+                        "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                        "signed_qty": "-187140",
+                        "signed_qty_base": "-187140",
+                    },
+                ],
+            },
+        ],
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "plumeusdt_bitget_perp_makerv3"
+    assert position_rows[0]["signed_qty"] == "-62890"
+    assert position_rows[0]["signed_qty_base"] == "-62890"
+
+
+def test_build_balances_rows_keeps_spot_positions_without_suffix_labeled_spot() -> None:
+    rows = build_balances_rows(
+        raw_snapshot=[
+            {
+                "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                "exchange": "bitget",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT.BITGET",
+                "product_type": "perp",
+                "market_type": "perp",
+                "asset": "PLUME",
+                "signed_qty": "-500",
+                "quantity": "500",
+                "side": "SHORT",
+            },
+        ],
+        strategy_id="plumeusdt_bitget_spot_makerv3",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["product_type"] == "spot"
+    assert row["market_type"] == "spot"
+    assert row["contract_type"] == "spot"
+    assert row["display_name_short"] == "PLUME Spot"
+    assert row["display_name_long"] == "Bitget PLUME Spot"
+    assert row["instrument_uid"] == "bitget:spot:PLUMEUSDT.BITGET"
+
+
 def test_build_balances_rows_preserves_upstream_position_valuation_without_mark() -> None:
     rows = build_balances_rows(
         raw_snapshot=[
@@ -278,6 +342,28 @@ def test_build_balances_rows_preserves_account_id_and_formats_stable_cash_withou
     assert row["market_type"] == "perp"
     assert row["display_name_short"] == "USDT"
     assert row["display_name_long"] == "Bitget USDT"
+
+
+def test_build_balances_rows_excludes_embedded_external_positions_from_requested_strategy_snapshot() -> None:
+    rows = build_balances_rows(
+        raw_snapshot={
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "positions": [
+                {
+                    "kind": "position",
+                    "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                    "signed_qty": "-250030",
+                    "quantity": "250030",
+                    "side": "SHORT",
+                    "strategy_id": "EXTERNAL",
+                    "position_id": "P-EXTERNAL",
+                },
+            ],
+        },
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    assert rows == []
 
 
 def test_enrich_balances_rows_formats_instrumentless_stable_spot_rows_without_suffix() -> None:
@@ -574,7 +660,7 @@ def test_merge_portfolio_balances_rows_backfills_latest_cash_mark_even_when_spar
     assert cash["mv_raw"] == pytest.approx(68.170210246)
 
 
-def test_merge_portfolio_balances_rows_merges_same_account_stable_cash_across_product_scopes() -> None:
+def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stable_cash() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
             "plumeusdt_bitget_spot_makerv3": [
@@ -607,23 +693,29 @@ def test_merge_portfolio_balances_rows_merges_same_account_stable_cash_across_pr
             ],
         },
         portfolio_id="tokenmm",
+        preserve_product_scope_cash=True,
     )
 
-    cash_rows = [
-        row
-        for row in merged
-        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
-    ]
+    cash_rows = sorted(
+        [
+            row
+            for row in merged
+            if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
 
     assert len(cash_rows) == 1
     row = cash_rows[0]
     assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
     assert row["total"] == "500"
+    assert row["product_type"] == "spot"
     assert row["display_name_short"] == "USDT"
     assert row["display_name_long"] == "Bitget USDT"
+    assert row.get("scope") == "shared_account"
 
 
-def test_merge_portfolio_balances_rows_keeps_non_zero_stable_cash_when_newer_duplicate_scope_reports_zero() -> None:
+def test_merge_portfolio_balances_rows_prefers_non_zero_bitget_shared_account_stable_cash() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
             "plumeusdt_bitget_spot_makerv3": [
@@ -656,18 +748,139 @@ def test_merge_portfolio_balances_rows_keeps_non_zero_stable_cash_when_newer_dup
             ],
         },
         portfolio_id="tokenmm",
+        preserve_product_scope_cash=True,
     )
 
-    cash_rows = [
-        row
-        for row in merged
-        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
-    ]
+    cash_rows = sorted(
+        [
+            row
+            for row in merged
+            if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
 
     assert len(cash_rows) == 1
     row = cash_rows[0]
     assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
     assert row["total"] == "500"
+    assert row["product_type"] == "spot"
+
+
+def test_merge_portfolio_balances_rows_keeps_non_bitget_shared_stable_cash_labels_generic() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "plumeusdt_bybit_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bybit_spot_makerv3",
+                    "exchange": "bybit",
+                    "account_id": "BYBIT-UNIFIED",
+                    "asset": "USDT",
+                    "free": "500",
+                    "locked": "0",
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_bybit_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_bybit_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "exchange": "bybit",
+                    "account_id": "BYBIT-UNIFIED",
+                    "asset": "USDT",
+                    "free": "500",
+                    "locked": "0",
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_bybit_perp_makerv3:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+        preserve_product_scope_cash=True,
+    )
+
+    cash_rows = [
+        row
+        for row in merged
+        if row.get("exchange") == "bybit" and row.get("asset") == "USDT"
+    ]
+
+    assert len(cash_rows) == 1
+    row = cash_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bybit:BYBIT-UNIFIED:USDT"
+    assert row["scope"] == "shared_account"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bybit USDT"
+
+
+def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stable_cash_alongside_non_stable_rows() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "plumeusdt_bitget_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "500",
+                    "locked": "0",
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_bitget_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+                {
+                    "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "PLUME",
+                    "free": "25000",
+                    "locked": "0",
+                    "total": "25000",
+                    "ts_ms": 1_700_000_000_010,
+                    "row_id": "plumeusdt_bitget_spot_makerv3:cash:1",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_bitget_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "0",
+                    "locked": "0",
+                    "total": "0",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_bitget_perp_makerv3:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+        preserve_product_scope_cash=True,
+    )
+
+    bitget_rows = sorted(
+        [
+            row
+            for row in merged
+            if row.get("exchange") == "bitget" and row.get("account") == "BITGET-001"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
+
+    assert [row["row_id"] for row in bitget_rows] == [
+        "tokenmm:cash:bitget:BITGET-001:PLUME",
+        "tokenmm:cash:bitget:BITGET-001:USDT",
+    ]
+    assert [row.get("product_type") for row in bitget_rows] == ["spot", "spot"]
+    assert [row["total"] for row in bitget_rows] == ["25000", "500"]
+    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account"]
 
 
 def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:
@@ -1128,6 +1341,8 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 101.0
     assert payload["maker_v3"]["quote_snapshot"]["ref_bid"] == 99.0
     assert payload["maker_v3"]["quote_snapshot"]["ref_ask"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"].get("place_bid") is None
+    assert payload["maker_v3"]["quote_snapshot"].get("place_ask") is None
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
 
 
@@ -1323,8 +1538,10 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
         legs=legs,
     )
 
-    assert payload["maker_v3"]["quote_snapshot"]["place_bid"] == 100.0
-    assert payload["maker_v3"]["quote_snapshot"]["place_ask"] == 101.0
+    assert payload["maker_v3"]["quote_snapshot"].get("place_bid") is None
+    assert payload["maker_v3"]["quote_snapshot"].get("place_ask") is None
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_bid"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 101.0
     assert payload["maker_v3"]["quote_snapshot"]["eff_bid_edge_bps"] == 8.0
     assert payload["maker_v3"]["quote_snapshot"]["eff_ask_edge_bps"] == 12.0
     assert payload["maker_v3"]["quote_snapshot"]["place_edge_bps"] == 2.0

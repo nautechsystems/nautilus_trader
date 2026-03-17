@@ -25,8 +25,10 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_generate_missing_orders = false
-exec_reconciliation_lookback_mins = 15
+exec_generate_missing_orders = true
+# Extended startup history for prolonged-downtime recovery; startup reconciliation
+# remains scoped to the configured instrument set for this single-client node.
+exec_reconciliation_lookback_mins = 1440
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
 filter_position_reports = false
@@ -46,6 +48,9 @@ api_key_env = "BITGET_API_KEY"
 api_secret_env = "BITGET_API_SECRET"
 api_passphrase_env = "BITGET_API_PASSPHRASE"
 product_type = "USDT_FUTURES"
+account_mode = "UTA"
+margin_mode = "cross"
+position_mode = "one_way"
 demo = false
 
 [node.venues.BINANCE_SPOT]
@@ -64,6 +69,10 @@ qty = "1000"
 qty_unit = "base"
 bot_on = false
 max_age_ms = 10000
+max_cancels_per_side_per_cycle = 1
+max_places_per_side_per_cycle = 2
+max_total_actions_per_cycle = 4
+max_pending_cancels_per_side = 1
 des_qty_global = 0.0
 max_qty_global = 50000.0
 max_skew_bps_global = 10.0

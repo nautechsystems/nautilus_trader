@@ -23,6 +23,7 @@ from flux.strategies.makerv3 import managed_orders as managed_orders_mod
 from flux.strategies.makerv3 import market_data as market_data_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
 from flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
@@ -57,6 +58,7 @@ from flux.strategies.shared.trades import publish_trade as publish_shared_trade
 from flux.strategies.makerv3.wire import QuoteCycleContext
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
+from nautilus_trader.live.reconciliation import collapse_duplicate_netting_position_reports
 
 
 if TYPE_CHECKING:
@@ -93,6 +95,21 @@ def _did_bot_turn_off(previous_bot_on: bool, current_bot_on: bool) -> bool:
 def _normalized_reject_reason(reason: Any) -> str:
     text = str(reason or "").strip()
     return text or "unknown"
+
+
+_TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
+    "order not exists",
+    "too late to cancel",
+    "unknown order sent",
+    "order does not exist",
+)
+
+
+def _is_terminal_cancel_reject_reason(reason: Any) -> bool:
+    normalized = failures_mod.normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS)
 
 
 def _order_side_text(side: Any) -> str | None:
@@ -191,7 +208,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         des_qty_local: NonNegativeFloat | None = None
         max_qty_local: NonNegativeFloat | None = None
         max_skew_bps_local: NonNegativeFloat | None = None
-        linear_offset_bps: NonNegativeFloat | None = None
+        linear_offset_bps: float | None = None
         max_age_ms: PositiveInt | None = None
         bid_edge1: float | None = None
         ask_edge1: float | None = None
@@ -212,6 +229,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
         order_reject_alert_after_s: NonNegativeFloat | None = None
         pending_cancel_grace_ms: NonNegativeInt | None = None
         pending_cancel_block_after_ms: NonNegativeInt | None = None
+        max_cancels_per_side_per_cycle: NonNegativeInt | None = None
+        max_places_per_side_per_cycle: NonNegativeInt | None = None
+        max_total_actions_per_cycle: NonNegativeInt | None = None
+        max_pending_cancels_per_side: NonNegativeInt | None = None
         quote_liveness_stall_after_ms: NonNegativeInt | None = None
         quote_liveness_recover_after_ms: NonNegativeInt | None = None
         quote_fail_critical_after_count: NonNegativeInt | None = None
@@ -290,6 +311,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_order_event_ns = 0
             self._last_state_name: str | None = None
             self._state_is_blocked = False
+            self._startup_bot_off_active = False
+            self._startup_bot_off_control_revision = ""
             self._startup_cleanup_pending = False
             self._stop_allow_instrument_cancel_override: bool | None = None
             self._inventory_skew_cache = inventory_mod.InventorySkewCache(
@@ -318,6 +341,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._profile_account_projection_schema_version = "v1"
             self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
             self._last_maker_position_activity_ns = 0
+            self._bounded_convergence_next_start_side = OrderSide.BUY
 
         def on_start(self) -> None:
             """
@@ -337,12 +361,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_order_event_ns = 0
             self._last_state_name = None
             self._state_is_blocked = False
+            self._startup_bot_off_active = False
+            self._startup_bot_off_control_revision = ""
             self._startup_cleanup_pending = False
             self._set_managed_only_stop_safety(False)
             self._last_actionable_alert_ns.clear()
             self._last_actionable_alert_transition.clear()
             self._latest_maker_position_report_snapshot = None
             self._last_maker_position_activity_ns = 0
+            self._bounded_convergence_next_start_side = OrderSide.BUY
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -806,17 +833,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
             manager = self._ensure_params_manager()
             if manager is None:
                 self._apply_runtime_param_updates(updates)
+                if "bot_on" in updates:
+                    runtime_params_mod.note_explicit_bot_on_update(self)
                 return
 
             update_fn = getattr(manager, "update", None)
             publish_fn = getattr(manager, "publish_update", None)
             if not callable(update_fn) or not callable(publish_fn):
                 self._apply_runtime_param_updates(updates)
+                if "bot_on" in updates:
+                    runtime_params_mod.note_explicit_bot_on_update(self)
                 return
 
             applied_updates = update_fn(updates)
             publish_fn(applied_updates, ts_ms=int(now_ns // 1_000_000))
             self._apply_runtime_param_updates(applied_updates)
+            if "bot_on" in applied_updates:
+                runtime_params_mod.note_explicit_bot_on_update(self, manager=manager)
 
         def _refresh_runtime_params(
             self,
@@ -901,14 +934,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             last_order_event_ns = int(getattr(self, "_last_order_event_ns", 0) or 0)
             if last_order_event_ns > 0:
                 payload["last_order_event_ts_ms"] = last_order_event_ns // 1_000_000
-            pending_cancel_count = len(self._pending_cancel_client_order_ids)
+            pending_cancel_ids = tuple(self._pending_cancel_client_order_ids)
+            pending_cancel_count = len(pending_cancel_ids)
             if pending_cancel_count > 0:
                 payload["pending_cancel_count"] = pending_cancel_count
                 current_state_ns = int(getattr(self, "_last_state_ns", 0) or 0)
                 oldest_pending_cancel_ns = min(
                     (
                         int(self._pending_cancel_first_seen_ns_by_client_order_id.get(client_order_id, 0) or 0)
-                        for client_order_id in self._pending_cancel_client_order_ids
+                        for client_order_id in pending_cancel_ids
                     ),
                     default=0,
                 )
@@ -1251,6 +1285,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
             if now_ns is None:
                 return
+            if _is_terminal_cancel_reject_reason(reason):
+                self._clear_cancel_reject_retry_after(client_order_id)
+                self._reconcile_managed_order(
+                    client_order_id,
+                    lifecycle="cancel_rejected_terminal",
+                    instrument_id=getattr(event, "instrument_id", None),
+                    reason=reason,
+                )
+                self._publish_current_state_snapshot()
+                return
             if self._startup_cleanup_pending and failures_mod.is_venue_protection_reason(reason):
                 self._set_cancel_reject_retry_after(client_order_id, now_ns=int(now_ns))
                 self._track_order_rejection_alert(
@@ -1483,6 +1527,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             fallback_ts_ns: int = 0,
         ) -> dict[str, Any] | None:
+            relevant_reports: list[Any] = [
+                report
+                for report in list(reports or ())
+                if getattr(report, "instrument_id", None) == self.config.maker_instrument_id
+            ]
+            if not relevant_reports:
+                return None
+
+            relevant_reports, _collapse_events = collapse_duplicate_netting_position_reports(
+                relevant_reports,
+            )
+
             total = Decimal(0)
             avg_px_num = Decimal(0)
             avg_px_den = Decimal(0)
@@ -1490,9 +1546,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             position_id: str | None = None
             found = False
 
-            for report in list(reports or ()):
-                if getattr(report, "instrument_id", None) != self.config.maker_instrument_id:
-                    continue
+            for report in relevant_reports:
                 signed_qty = _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
                 if signed_qty is None:
                     signed_qty = _to_decimal_or_none(getattr(report, "signed_qty", None))
@@ -1565,14 +1619,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "ts_ns": max(0, int(ts_ns)),
             }
 
-        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+        def _maker_position_report_snapshot(self) -> dict[str, Any] | None:
             snapshot = getattr(self, "_latest_maker_position_report_snapshot", None)
             if not isinstance(snapshot, Mapping):
+                return None
+            return dict(snapshot)
+
+        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            snapshot = self._maker_position_report_snapshot()
+            if snapshot is None:
                 return None
             report_ts_ns = int(snapshot.get("ts_ns") or 0)
             local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
             if report_ts_ns > 0 and report_ts_ns >= local_activity_ns:
-                return dict(snapshot)
+                return snapshot
             return None
 
         def _handle_execution_report_message(self, message: Any) -> None:
@@ -1648,6 +1708,24 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return list(positions_open())
             return None
 
+        def _inventory_positions(self) -> list[Position] | None:
+            positions = self._open_positions()
+            if positions is None:
+                return None
+            cache = self._inventory_cache()
+            orders_for_position = getattr(cache, "orders_for_position", None)
+            snapshot = self._maker_position_report_snapshot()
+            expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+                snapshot,
+                instrument_id=self.config.maker_instrument_id,
+            )
+            return maker_reconciliation_mod.effective_maker_positions(
+                positions,
+                maker_instrument_id=self.config.maker_instrument_id,
+                expected_venue_qty=expected_qty,
+                order_lookup=orders_for_position if callable(orders_for_position) else None,
+            )
+
         def _inventory_base_exposure_last_px(self) -> Decimal | None:
             if self._last_fv is not None:
                 return self._last_fv
@@ -1667,7 +1745,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> inventory_mod.PositionExposureSummary:
             if not currency_code:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
-            positions = self._open_positions()
+            positions = self._inventory_positions()
             if positions is None:
                 return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
             cache = self._inventory_cache()
@@ -2293,6 +2371,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params: Mapping[str, Any] | None = None,
             managed_orders: list[Order] | None = None,
             per_level_outcomes: list[dict[str, Any]] | None = None,
+            bounded_convergence: Mapping[str, Any] | None = None,
         ) -> dict[str, Any] | None:
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
@@ -2318,6 +2397,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             if per_level_outcomes:
                 payload["per_level_outcomes"] = list(per_level_outcomes)
+
+            if bounded_convergence:
+                payload["bounded_convergence"] = _json_safe_value(dict(bounded_convergence))
 
             return payload or None
 
@@ -2446,30 +2528,66 @@ if _NAUTILUS_IMPORT_ERROR is None:
             desired_levels: list[tuple[Price, Decimal, Decimal]],
             now_ns: int,
             max_age_ms: int,
+            max_reprice_cancel_actions: int | None = None,
+            max_place_actions: int | None = None,
+            max_total_actions: int | None = None,
+            backlog_mode: str = "normal",
+            planned_level_indices_out: list[int] | None = None,
+            cancel_actions: tuple[Any, ...] | list[Any] | None = None,
             quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> int:
             if quote_cycle_id is None and quote_cycle is not None:
                 quote_cycle_id = quote_cycle.quote_cycle_id
-            side_name = "buy" if side == OrderSide.BUY else "sell"
-            active_prices = [_price_to_decimal(order.price) for order in active_orders]
-            active_stale = [
-                self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-                for order in active_orders
-            ]
+            if max_reprice_cancel_actions is None:
+                max_reprice_cancel_actions = self._runtime_int("max_cancels_per_side_per_cycle")
+            if max_place_actions is None:
+                max_place_actions = self._runtime_int("max_places_per_side_per_cycle")
+            if max_total_actions is None:
+                max_total_actions = self._runtime_int("max_total_actions_per_cycle")
             desired_dec = [
                 (_price_to_decimal(target_price), cancel_px, match_tol)
                 for target_price, cancel_px, match_tol in desired_levels
             ]
-
-            cancel_actions, _ = plan_side_rebalance_details(
-                side=side_name,
-                active_prices=active_prices,
-                active_stale=active_stale,
-                desired_levels=desired_dec,
-                stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
-            )
+            if cancel_actions is None:
+                side_name = "buy" if side == OrderSide.BUY else "sell"
+                active_prices = [_price_to_decimal(order.price) for order in active_orders]
+                active_stale = [
+                    self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
+                    for order in active_orders
+                ]
+                plan = rebalancing_mod.plan_side_bounded_convergence(
+                    side=side_name,
+                    active_prices=active_prices,
+                    active_stale=active_stale,
+                    desired_levels=desired_dec,
+                    stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+                    max_reprice_cancel_actions=max(
+                        0,
+                        int(max_reprice_cancel_actions or 0),
+                    ),
+                    max_place_actions=max(
+                        0,
+                        int(max_place_actions or 0),
+                    ),
+                    max_total_actions=max(
+                        0,
+                        int(max_total_actions or 0),
+                    ),
+                    backlog_mode=backlog_mode,
+                )
+                cancel_actions = plan.cancel_actions
+                if planned_level_indices_out is not None:
+                    planned_level_indices_out[:] = [
+                        int(level_index)
+                        for level_index in plan.place_level_indices
+                    ]
+            elif planned_level_indices_out is not None:
+                planned_level_indices_out[:] = [
+                    int(level_index)
+                    for level_index in planned_level_indices_out
+                ]
 
             cancel_count = 0
             for cancel_action in cancel_actions:
@@ -2518,10 +2636,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
             per_level_outcomes: list[dict[str, Any]] | None = None,
+            level_indices: tuple[int, ...] | list[int] | None = None,
+            pending_backlog_mode: str | None = None,
         ) -> int:
             if quote_cycle_id is None and quote_cycle is not None:
                 quote_cycle_id = quote_cycle.quote_cycle_id
-            if self._has_pending_managed_cancels():
+            if pending_backlog_mode is None:
+                if self._has_pending_managed_cancels():
+                    return 0
+            elif str(pending_backlog_mode).lower() != "normal":
                 return 0
             if now_ns is None:
                 now_ns = int(self.clock.timestamp_ns())
@@ -2532,7 +2655,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return 0
             places = 0
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
-            for level_index, (target_price, cancel_px, match_tol) in enumerate(desired_levels):
+            selected_level_indices = (
+                range(len(desired_levels))
+                if level_indices is None
+                else [
+                    int(level_index)
+                    for level_index in level_indices
+                    if 0 <= int(level_index) < len(desired_levels)
+                ]
+            )
+            for level_index in selected_level_indices:
+                target_price, cancel_px, match_tol = desired_levels[level_index]
                 if self._terminal_order_denial_circuit_open or not self._effective_bot_on():
                     break
                 target_px = _price_to_decimal(target_price)

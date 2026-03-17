@@ -25,8 +25,10 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_generate_missing_orders = false
-exec_reconciliation_lookback_mins = 15
+exec_generate_missing_orders = true
+# Extended startup history for prolonged-downtime recovery; startup reconciliation
+# is instrument-scoped for single-client TokenMM nodes.
+exec_reconciliation_lookback_mins = 1440
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
 filter_position_reports = false
@@ -66,6 +68,10 @@ qty = "1000"
 qty_unit = "base"
 bot_on = false
 max_age_ms = 10000
+max_cancels_per_side_per_cycle = 2
+max_places_per_side_per_cycle = 2
+max_total_actions_per_cycle = 6
+max_pending_cancels_per_side = 2
 des_qty_global = 0.0
 max_qty_global = 50000.0
 max_skew_bps_global = 10.0

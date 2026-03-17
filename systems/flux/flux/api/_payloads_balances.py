@@ -394,9 +394,10 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
             for index, position in enumerate(positions):
                 if not isinstance(position, dict):
                     continue
+                position_sid = strategy_id_from_row(position, sid)
                 flattened_row = {
                     **position,
-                    "strategy_id": sid,
+                    "strategy_id": position_sid,
                     "row_id": f"{sid}:posraw:{index}",
                 }
                 flattened_row.setdefault("kind", "position")
@@ -554,6 +555,12 @@ def _should_replace_cash_row(
         if not previous_is_zero and candidate_is_zero:
             return False
 
+        if candidate_ts_ms == previous_ts_ms:
+            previous_product_type = _row_product_type_hint(previous_row)
+            candidate_product_type = _row_product_type_hint(candidate_row)
+            if previous_product_type != candidate_product_type:
+                return candidate_product_type == "spot"
+
     return candidate_ts_ms >= previous_ts_ms
 
 
@@ -604,6 +611,10 @@ def _collapse_duplicate_cash_scope_rows(
                 continue
             cash_latest.pop(key, None)
             cash_source_strategy_ids.pop(key, None)
+
+
+def _annotate_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return _normalize_shared_scope_stable_cash_row(row)
 
 
 def _row_exchange_hint(row: Mapping[str, Any]) -> str:
@@ -676,6 +687,109 @@ def _balance_product_type(row: Mapping[str, Any]) -> str:
     return decode_text(naming.get("product_type")).strip().lower()
 
 
+def _is_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> bool:
+    if _is_position_row(dict(row)):
+        return False
+    if row.get("scope") != "shared_account":
+        return False
+    asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+    if asset not in _STABLE_BALANCE_ASSETS:
+        return False
+    return _balance_product_type(row) in {"spot", "perp"}
+
+
+def _canonical_shared_stable_cash_row_id(row: Mapping[str, Any]) -> str:
+    row_id = decode_text(row.get("row_id")).strip()
+    product_type = _balance_product_type(row)
+    asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+    if row_id and product_type in {"spot", "perp"} and asset and row_id.endswith(f":{product_type}:{asset}"):
+        prefix, _scope, asset = row_id.rsplit(":", maxsplit=2)
+        return f"{prefix}:{asset}"
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    account = decode_text(row.get("account") or row.get("account_id")).strip()
+    strategy_id = decode_text(row.get("strategy_id")).strip()
+    if strategy_id and exchange and asset:
+        return f"{strategy_id}:cash:{exchange}:{account}:{asset}" if account else f"{strategy_id}:cash:{exchange}:{asset}"
+    return row_id
+
+
+def _normalize_shared_scope_stable_cash_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    if not _is_shared_scope_stable_cash_row(out):
+        return out
+    out["row_id"] = _canonical_shared_stable_cash_row_id(out)
+    out["product_type"] = "spot"
+    if out.get("market_type") is not None:
+        out["market_type"] = "spot"
+    return enrich_row_with_canonical_naming(out)
+
+
+def _should_prefer_shared_stable_cash_row(
+    previous_row: Mapping[str, Any],
+    candidate_row: Mapping[str, Any],
+) -> bool:
+    previous_qty = _balance_row_qty(previous_row)
+    candidate_qty = _balance_row_qty(candidate_row)
+    previous_is_zero = _is_zero_balance_qty(previous_qty)
+    candidate_is_zero = _is_zero_balance_qty(candidate_qty)
+    if previous_is_zero and not candidate_is_zero:
+        return True
+    if not previous_is_zero and candidate_is_zero:
+        return False
+
+    previous_ts_ms = _row_ts_ms(previous_row)
+    candidate_ts_ms = _row_ts_ms(candidate_row)
+    if candidate_ts_ms != previous_ts_ms:
+        return candidate_ts_ms > previous_ts_ms
+
+    previous_product_type = _balance_product_type(previous_row)
+    candidate_product_type = _balance_product_type(candidate_row)
+    if previous_product_type != candidate_product_type:
+        return candidate_product_type == "spot"
+
+    return decode_text(candidate_row.get("row_id")).strip() >= decode_text(previous_row.get("row_id")).strip()
+
+
+def _collapse_shared_scope_stable_cash_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_rows = [dict(source_row) for source_row in rows if isinstance(source_row, Mapping)]
+    grouped: dict[tuple[str, str, str], list[int]] = {}
+    for index, row in enumerate(normalized_rows):
+        if not _is_shared_scope_stable_cash_row(row):
+            continue
+        key = _cash_row_identity(row)
+        if key is None:
+            continue
+        grouped.setdefault(key, []).append(index)
+
+    if not grouped:
+        return normalized_rows
+
+    drop_indexes: set[int] = set()
+    for indexes in grouped.values():
+        if len(indexes) < 2:
+            continue
+        keep_index = indexes[0]
+        keep_row = normalized_rows[keep_index]
+        for index in indexes[1:]:
+            row = normalized_rows[index]
+            if _should_prefer_shared_stable_cash_row(keep_row, row):
+                keep_index = index
+                keep_row = row
+
+        normalized_rows[keep_index] = _normalize_shared_scope_stable_cash_row(keep_row)
+        for index in indexes:
+            if index != keep_index:
+                drop_indexes.add(index)
+
+    return [
+        row
+        for index, row in enumerate(normalized_rows)
+        if index not in drop_indexes
+    ]
+
+
 def collapse_balance_display_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """
     Prefer spot cash rows over duplicate spot-position rows for the same venue/base asset.
@@ -685,7 +799,7 @@ def collapse_balance_display_rows(rows: Sequence[Mapping[str, Any]]) -> list[dic
     """
 
     cash_keys: dict[tuple[str, str], set[str]] = {}
-    normalized_rows = [dict(source_row) for source_row in rows if isinstance(source_row, Mapping)]
+    normalized_rows = _collapse_shared_scope_stable_cash_rows(rows)
 
     for row in normalized_rows:
         if _is_position_row(row):
@@ -893,7 +1007,10 @@ def merge_portfolio_balances_rows(
             carried = dict(latest_row)
         else:
             carried = _carry_forward_cash_mark(dict(latest_row), marked_previous)
-        if cash_key[1] and len(cash_source_strategy_ids.get(cash_key, set())) > 1:
+        if cash_key[1] and (
+            len(cash_source_strategy_ids.get(cash_key, set())) > 1
+            or cash_key[:3] in scoped_cash_conflicts
+        ):
             carried["scope"] = "shared_account"
         cash_latest[cash_key] = (latest_ts_ms, carried)
 
@@ -909,7 +1026,10 @@ def merge_portfolio_balances_rows(
     merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
     merged_rows.sort(key=_portfolio_balance_sort_key)
     return collapse_balance_display_rows(
-        [enrich_row_with_canonical_naming(row) for row in merged_rows],
+        [
+            _annotate_shared_scope_stable_cash_row(enrich_row_with_canonical_naming(row))
+            for row in merged_rows
+        ],
     )
 
 

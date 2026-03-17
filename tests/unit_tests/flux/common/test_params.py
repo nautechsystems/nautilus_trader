@@ -32,6 +32,11 @@ def test_makerv3_registry_exposes_schema_defaults_and_hot_path_bounds() -> None:
     assert schema["max_age_ms"]["maximum"] == 60_000
     assert schema["quote_fail_critical_after_count"]["minimum"] == 0
     assert schema["quote_fail_critical_after_count"]["maximum"] == 100
+    assert schema["max_cancels_per_side_per_cycle"]["advanced"] is True
+    assert schema["max_places_per_side_per_cycle"]["advanced"] is True
+    assert schema["max_total_actions_per_cycle"]["advanced"] is True
+    assert schema["max_pending_cancels_per_side"]["advanced"] is True
+    assert "advanced" not in schema["n_orders1"]
 
 
 def test_makerv4_registry_exposes_explicit_param_set_with_compatible_schema() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import tomllib
 from pathlib import Path
 
@@ -18,6 +19,12 @@ def _tokenmm_strategy_ids() -> list[str]:
     return [str(item).strip() for item in raw_ids if str(item).strip()]
 
 
+def _tokenmm_required_strategy_ids() -> list[str]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_ids = config.get("api", {}).get("tokenmm_required_strategy_ids") or []
+    return [str(item).strip() for item in raw_ids if str(item).strip()]
+
+
 def _strategy_config_path(strategy_id: str) -> Path:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
     active_path = strategies_dir / f"{strategy_id}.toml"
@@ -28,7 +35,24 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
+TOKENMM_REQUIRED_STRATEGY_IDS = _tokenmm_required_strategy_ids()
+TOKENMM_SUPPORTED_CORE_STRATEGY_IDS = [
+    "plumeusdt_bybit_perp_makerv3",
+    "plumeusdt_bybit_spot_makerv3",
+    "plumeusdt_okx_perp_makerv3",
+    "plumeusdt_bitget_perp_makerv3",
+    "plumeusdt_bitget_spot_makerv3",
+]
 DEPLOY_ROOT_PLACEHOLDER = "/absolute/path/to/deploy-root"
+
+
+def _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config: dict) -> None:
+    assert strategy_config["identity"]["strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["identity"]["strategy_instance_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["identity"]["external_strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["strategy"]["strategy_id"] == "plumeusdt_binance_spot_makerv3"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["api_key_env"] == "BINANCE_API_KEY"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["api_secret_env"] == "BINANCE_API_SECRET"
 
 
 def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
@@ -66,7 +90,7 @@ def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     assert 'service_status_line "portfolio"' in script
 
 
-def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
+def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type() -> None:
     shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
@@ -75,7 +99,24 @@ def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
     )
 
     assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
+        "MARGIN",
+        "PORTFOLIO_MARGIN",
+    }
+    _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
+
+
+def test_tokenmm_binance_spot_portfolio_margin_variant_preserves_identity_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+    pm_variant = deepcopy(strategy_config)
+    pm_variant["node"]["venues"]["BINANCE_SPOT"]["account_type"] = "PORTFOLIO_MARGIN"
+
+    assert pm_variant["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
+    _assert_tokenmm_binance_spot_strategy_identity_contract(pm_variant)
 
 
 def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> None:
@@ -89,16 +130,49 @@ def test_tokenmm_binance_spot_strategy_declares_cash_borrowing_contract() -> Non
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
 
 
-def test_tokenmm_binance_spot_strategy_pins_supported_cross_margin_contract() -> None:
+def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
             "rb",
         ),
     )
 
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
+        "MARGIN",
+        "PORTFOLIO_MARGIN",
+    }
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
+    assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_bitget_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
+    assert strategy_config["node"]["venues"]["BITGET"]["allow_cash_borrowing"] is True
+    assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
+    assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
+    assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "sell_only"
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
+    assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_bitget_perp_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
+    assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
+    assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
     assert strategy_config["strategy"]["force_bot_off_on_start"] is True
     assert strategy_config["strategy"]["bot_on"] is False
 
@@ -109,6 +183,24 @@ def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
     for strategy_id in TOKENMM_STRATEGY_IDS:
         assert (strategies_dir / f"{strategy_id}.toml").is_file()
         assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
+
+
+def test_tokenmm_registry_keeps_seven_node_allowlist_but_requires_only_supported_live_core() -> None:
+    assert TOKENMM_STRATEGY_IDS == [
+        "plumeusdt_bybit_perp_makerv3",
+        "plumeusdt_bybit_spot_makerv3",
+        "plumeusdt_okx_perp_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_bitget_perp_makerv3",
+        "plumeusdt_bitget_spot_makerv3",
+    ]
+    assert len(TOKENMM_STRATEGY_IDS) == 7
+    assert TOKENMM_REQUIRED_STRATEGY_IDS == TOKENMM_SUPPORTED_CORE_STRATEGY_IDS
+    assert len(TOKENMM_REQUIRED_STRATEGY_IDS) == 5
+    assert set(TOKENMM_REQUIRED_STRATEGY_IDS).issubset(TOKENMM_STRATEGY_IDS)
+    assert "plumeusdt_binance_perp_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
+    assert "plumeusdt_binance_spot_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
 
 
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
@@ -496,15 +588,26 @@ def test_tokenmm_stack_script_exports_resolved_redis_runtime_to_all_services() -
 
 def test_tokenmm_live_configs_enable_shared_account_reconciliation_guardrails() -> None:
     root = _repo_root()
-    config_paths = [
+    shared_config_paths = [
         root / "deploy/tokenmm/tokenmm.live.toml",
         root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
     ]
-    config_paths.extend(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS)
+    strategy_lookbacks = {
+        "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_bitget_perp_makerv3": 1440,
+        "plumeusdt_okx_perp_makerv3": 1440,
+    }
 
-    for path in config_paths:
+    for path in shared_config_paths:
         text = _read(path)
         assert "exec_reconciliation_lookback_mins = 15" in text
+        assert "filter_unclaimed_external_orders = true" in text
+        assert "filter_position_reports = false" in text
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        text = _read(_strategy_config_path(strategy_id))
+        expected_lookback = strategy_lookbacks.get(strategy_id, 15)
+        assert f"exec_reconciliation_lookback_mins = {expected_lookback}" in text
         assert "filter_unclaimed_external_orders = true" in text
         assert "filter_position_reports = false" in text
 
@@ -581,13 +684,11 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     )
     assert "--serve-fluxboard" in install_script
     assert "--serve-pulse" in install_script
-    assert "--host 127.0.0.1" in install_script
-    assert (
-        "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 ${TOKENMM_PYTHON_BIN} -m "
-        "nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} "
-        "--mode live --confirm-live --host 127.0.0.1 --port 5022 "
-        "--serve-fluxboard --serve-pulse" in install_script
-    )
+    assert 'TOKENMM_API_HOST="${TOKENMM_API_HOST:-}"' in install_script
+    assert 'read_existing_api_host() {' in install_script
+    assert 'api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"' in install_script
+    assert 'api_host="${api_host:-0.0.0.0}"' in install_script
+    assert "--host ${api_host}" in install_script
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
@@ -630,15 +731,26 @@ def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_
     None
 ):
     repo_root = _repo_root()
-    config_paths = [
+    shared_config_paths = [
         repo_root / "deploy/tokenmm/tokenmm.live.toml",
         repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
-        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
     ]
+    strategy_lookbacks = {
+        "plumeusdt_bybit_perp_makerv3": 1440,
+        "plumeusdt_bitget_perp_makerv3": 1440,
+        "plumeusdt_okx_perp_makerv3": 1440,
+    }
 
-    for path in config_paths:
+    for path in shared_config_paths:
         config = _read(path)
         assert "exec_reconciliation_lookback_mins = 15" in config
+        assert "filter_unclaimed_external_orders = true" in config
+        assert "filter_position_reports = false" in config
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        config = _read(_strategy_config_path(strategy_id))
+        expected_lookback = strategy_lookbacks.get(strategy_id, 15)
+        assert f"exec_reconciliation_lookback_mins = {expected_lookback}" in config
         assert "filter_unclaimed_external_orders = true" in config
         assert "filter_position_reports = false" in config
 
@@ -655,17 +767,28 @@ def test_tokenmm_strategy_configs_explicitly_set_manage_stop_false() -> None:
         assert "manage_stop = false" in config
 
 
-def test_tokenmm_live_configs_explicitly_disable_generate_missing_orders() -> None:
+def test_tokenmm_live_configs_explicitly_set_generate_missing_orders_policy() -> None:
     repo_root = _repo_root()
-    config_paths = [
-        repo_root / "deploy/tokenmm/tokenmm.live.toml",
-        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
-        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
-    ]
+    expected_flags = {
+        repo_root / "deploy/tokenmm/tokenmm.live.toml": False,
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml": False,
+        _strategy_config_path("plumeusdt_bybit_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_okx_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_bitget_perp_makerv3"): True,
+        _strategy_config_path("plumeusdt_bybit_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_bitget_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_binance_spot_makerv3"): False,
+        _strategy_config_path("plumeusdt_binance_perp_makerv3"): False,
+    }
 
-    for path in config_paths:
+    for path, expected_enabled in expected_flags.items():
         config = _read(path)
-        assert "exec_generate_missing_orders = false" in config
+        expected_line = (
+            "exec_generate_missing_orders = true"
+            if expected_enabled
+            else "exec_generate_missing_orders = false"
+        )
+        assert expected_line in config
 
 
 def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
@@ -714,10 +837,14 @@ def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     assert "- `plumeusdt_binance_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_perp_makerv3`" in readme
     assert "- `plumeusdt_bitget_spot_makerv3`" in readme
-    assert "All seven active strategies price off Binance spot" in readme
-    assert "and the 7 active" in readme
+    assert "All seven allowlisted strategies price off Binance spot" in readme
+    assert "and the 7 allowlisted" in readme
+    assert "allowlist" in readme
     assert "`params` returns the 7 allowlisted strategy IDs" in readme
     assert "`signal` returns seven per-strategy rows." in readme
+    assert "Supported live core for this pass" in readme
+    assert "Binance perp and Binance spot stay allowlisted but parked" in readme
+    assert "Shared portfolio completeness requires only the supported live core" in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:
@@ -786,6 +913,34 @@ def test_tokenmm_okx_perp_configs_default_to_cross_margin() -> None:
     assert 'OKX perp configs should set `margin_mode = "CROSS"`' in template
 
 
+def test_supported_tokenmm_perp_configs_pin_bounded_convergence_budgets() -> None:
+    expectations = {
+        "plumeusdt_bybit_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 1",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 4",
+            "max_pending_cancels_per_side = 1",
+        ),
+        "plumeusdt_okx_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 2",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 6",
+            "max_pending_cancels_per_side = 2",
+        ),
+        "plumeusdt_bitget_perp_makerv3": (
+            "max_cancels_per_side_per_cycle = 1",
+            "max_places_per_side_per_cycle = 2",
+            "max_total_actions_per_cycle = 4",
+            "max_pending_cancels_per_side = 1",
+        ),
+    }
+
+    for strategy_id, required_lines in expectations.items():
+        config = _read(_strategy_config_path(strategy_id))
+        for line in required_lines:
+            assert line in config
+
+
 def test_deploy_env_examples_default_to_safe_paper_profiles_and_direct_prod_rejection() -> None:
     tokenmm_env = _read(_repo_root() / "deploy/tokenmm/tokenmm_stack.env.example")
 
@@ -846,6 +1001,7 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "Production node lifecycle is managed from Pulse via flux@ units." in strategies_readme
     assert "`exec_reconciliation_lookback_mins`" in strategies_readme
     assert "`15`" in strategies_readme
+    assert "Wider lookbacks are allowed only as explicit per-strategy recovery overrides" in strategies_readme
     assert "filter_unclaimed_external_orders = true" in strategies_readme
     assert "filter_position_reports = false" in strategies_readme
     assert "flux.runners.tokenmm.run_node" in strategies_readme

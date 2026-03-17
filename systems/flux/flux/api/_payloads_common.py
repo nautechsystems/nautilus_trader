@@ -333,6 +333,8 @@ def _derive_contract_type(
         return "perp"
     if raw_symbol:
         return "spot"
+    if is_position:
+        return "perp"
     return "cash"
 
 
@@ -400,13 +402,19 @@ def canonical_naming_fields(
         venue=venue_text,
         is_position=is_position,
     )
+    derived_product_type = "perp" if contract_type in _PERP_CONTRACT_TYPES else "spot"
     explicit_product_type = decode_text(product_type).strip().lower()
     if explicit_product_type in {"spot", "perp"}:
-        product_type = explicit_product_type
+        if contract_type == "cash":
+            product_type = explicit_product_type
+        elif explicit_product_type == derived_product_type:
+            product_type = explicit_product_type
+        else:
+            # Prefer the resolved contract type when upstream product metadata conflicts with the
+            # instrument identity. This avoids spot positions inheriting a stale "perp" label.
+            product_type = derived_product_type
     else:
-        product_type = "perp" if contract_type in _PERP_CONTRACT_TYPES else "spot"
-        if contract_type == "cash" and product_type != "spot":
-            product_type = "spot"
+        product_type = derived_product_type
     if not base_asset:
         base_asset = inventory_asset_text or decode_text(asset).strip().upper()
     pair = f"{base_asset}/{quote_asset}" if base_asset and quote_asset else (inventory_asset_text or raw_symbol)

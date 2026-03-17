@@ -93,6 +93,7 @@ class RuntimeParamSpec:
     minimum: int | float | None = None
     maximum: int | float | None = None
     options: tuple[tuple[str, str], ...] | None = None
+    advanced: bool = False
 
     def __post_init__(self) -> None:  # noqa: C901
         if not isinstance(self.name, str) or not self.name:
@@ -190,6 +191,8 @@ class RuntimeParamSpec:
             "type": self.schema_type,
             "description": self.description,
         }
+        if self.advanced:
+            schema["advanced"] = True
         if self.options is not None:
             schema["options"] = [[value, label] for value, label in self.options]
         if self.minimum is not None:
@@ -408,8 +411,8 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         name="linear_offset_bps",
         schema_type="number",
         default=0.0,
-        description="Linear inventory offset in bps.",
-        minimum=0.0,
+        description="Signed maker quote shift in bps (+ moves quotes up, - moves quotes down).",
+        minimum=-5_000.0,
         maximum=5_000.0,
     ),
     RuntimeParamSpec(
@@ -555,6 +558,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         description="Grace window before a pending cancel is considered aged.",
         minimum=0,
         maximum=60_000,
+        advanced=True,
     ),
     RuntimeParamSpec(
         name="pending_cancel_block_after_ms",
@@ -563,6 +567,43 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         description="Age at which a pending cancel blocks quote placement.",
         minimum=0,
         maximum=60_000,
+        advanced=True,
+    ),
+    RuntimeParamSpec(
+        name="max_cancels_per_side_per_cycle",
+        schema_type="integer",
+        default=1,
+        description="Max repricing cancels per side per quote cycle.",
+        minimum=0,
+        maximum=100,
+        advanced=True,
+    ),
+    RuntimeParamSpec(
+        name="max_places_per_side_per_cycle",
+        schema_type="integer",
+        default=1,
+        description="Max new quote places per side per quote cycle.",
+        minimum=0,
+        maximum=100,
+        advanced=True,
+    ),
+    RuntimeParamSpec(
+        name="max_total_actions_per_cycle",
+        schema_type="integer",
+        default=2,
+        description="Max total quote change actions per quote cycle.",
+        minimum=0,
+        maximum=100,
+        advanced=True,
+    ),
+    RuntimeParamSpec(
+        name="max_pending_cancels_per_side",
+        schema_type="integer",
+        default=1,
+        description="Pending cancel count per side before backlog throttling starts.",
+        minimum=0,
+        maximum=100,
+        advanced=True,
     ),
     RuntimeParamSpec(
         name="quote_liveness_stall_after_ms",
@@ -571,6 +612,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         description="Budget before missing quote progress is treated as stalled.",
         minimum=0,
         maximum=300_000,
+        advanced=True,
     ),
     RuntimeParamSpec(
         name="quote_liveness_recover_after_ms",
@@ -579,6 +621,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         description="Required healthy progress window before clearing liveness stall state.",
         minimum=0,
         maximum=60_000,
+        advanced=True,
     ),
     RuntimeParamSpec(
         name="quote_fail_critical_after_count",

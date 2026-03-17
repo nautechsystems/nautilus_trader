@@ -6,6 +6,7 @@ from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
+from typing import cast
 
 from nautilus_trader.flux.strategies.shared.quote_health import evaluate_quote_health
 
@@ -419,6 +420,9 @@ def _build_fallback_inventory_skew_adjustments(
     adjustment: dict[str, Any] = {
         "type": "inventory_skew",
     }
+    # `skew_bps_signed` is the canonical signed quote translation exported to
+    # operators and Fluxboard. Positive means our market moved up; negative
+    # means it moved down. UI should prefer this instead of re-deriving sign.
     if total_skew_bps is not None:
         adjustment["skew_bps_signed"] = total_skew_bps
         adjustment["inv_skew"] = total_skew_bps
@@ -905,7 +909,13 @@ def _derive_quote_snapshot(
     maker_leg: Mapping[str, Any] | None,
     ref_leg: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Derive a stable quote snapshot from state payloads and live leg data."""
+    """Derive a stable quote snapshot from state payloads and live leg data.
+
+    Operator-facing maker quote rows, spread, and effective edges are intended
+    to come from one quote-snapshot epoch. Downstream renderers should treat
+    this object as the pricing source of truth rather than mixing in other
+    live-leg values opportunistically.
+    """
 
     state_maker_v3 = state.get("maker_v3")
     quote_snapshot = {}
@@ -914,36 +924,77 @@ def _derive_quote_snapshot(
         if isinstance(raw_quote_snapshot, Mapping):
             quote_snapshot = dict(raw_quote_snapshot)
 
+    pricing, _ = _state_pricing_debug(state)
+    pricing_ts_ms = coerce_ts_ms(pricing.get("ts_ms"))
     mode = "ON" if bot_on else "OFF"
     reason = decode_text(state.get("state"))
     quote_snapshot["mode"] = decode_text(quote_snapshot.get("mode")).strip() or mode
     quote_snapshot["reason"] = decode_text(quote_snapshot.get("reason")).strip() or reason
-    quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["ts_ms"] = coerce_ts_ms(pricing_ts_ms or quote_snapshot.get("ts_ms") or ts_ms)
 
-    pricing, _ = _state_pricing_debug(state)
-    maker_bid = _first_valid_float(
-        pricing.get("maker_top_bid"),
-        maker_leg.get("bid") if isinstance(maker_leg, Mapping) else None,
+    raw_maker_bid = _first_valid_float(quote_snapshot.get("maker_top_bid"), quote_snapshot.get("bid"))
+    raw_maker_ask = _first_valid_float(quote_snapshot.get("maker_top_ask"), quote_snapshot.get("ask"))
+    raw_ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    raw_ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    raw_place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
+    raw_place_ask = _first_valid_float(quote_snapshot.get("place_ask"))
+    raw_cancel_bid = _first_valid_float(quote_snapshot.get("cancel_bid"))
+    raw_cancel_ask = _first_valid_float(quote_snapshot.get("cancel_ask"))
+
+    has_snapshot_pricing = any(
+        _first_valid_float(
+            pricing.get(key),
+            quote_snapshot.get(key),
+        )
+        is not None
+        for key in (
+            "maker_top_bid",
+            "maker_top_ask",
+            "ref_bid",
+            "ref_ask",
+            "place_bid",
+            "place_ask",
+            "cancel_bid",
+            "cancel_ask",
+            "bid_edge1_eff_bps",
+            "ask_edge1_eff_bps",
+        )
     )
-    maker_ask = _first_valid_float(
-        pricing.get("maker_top_ask"),
-        maker_leg.get("ask") if isinstance(maker_leg, Mapping) else None,
-    )
-    ref_bid = _first_valid_float(
-        pricing.get("ref_bid"),
-        ref_leg.get("bid") if isinstance(ref_leg, Mapping) else None,
-    )
-    ref_ask = _first_valid_float(
-        pricing.get("ref_ask"),
-        ref_leg.get("ask") if isinstance(ref_leg, Mapping) else None,
-    )
-    place_bid = _first_valid_float(pricing.get("place_bid"), maker_bid)
-    place_ask = _first_valid_float(pricing.get("place_ask"), maker_ask)
-    cancel_bid = _first_valid_float(pricing.get("cancel_bid"))
-    cancel_ask = _first_valid_float(pricing.get("cancel_ask"))
+
+    maker_bid = _first_valid_float(pricing.get("maker_top_bid"), raw_maker_bid)
+    maker_ask = _first_valid_float(pricing.get("maker_top_ask"), raw_maker_ask)
+    ref_bid = _first_valid_float(pricing.get("ref_bid"), raw_ref_bid)
+    ref_ask = _first_valid_float(pricing.get("ref_ask"), raw_ref_ask)
+    place_bid = _first_valid_float(pricing.get("place_bid"), raw_place_bid)
+    place_ask = _first_valid_float(pricing.get("place_ask"), raw_place_ask)
+    cancel_bid = _first_valid_float(pricing.get("cancel_bid"), raw_cancel_bid)
+    cancel_ask = _first_valid_float(pricing.get("cancel_ask"), raw_cancel_ask)
+
+    if not has_snapshot_pricing:
+        maker_bid = _first_valid_float(
+            maker_bid,
+            maker_leg.get("bid") if isinstance(maker_leg, Mapping) else None,
+        )
+        maker_ask = _first_valid_float(
+            maker_ask,
+            maker_leg.get("ask") if isinstance(maker_leg, Mapping) else None,
+        )
+        ref_bid = _first_valid_float(
+            ref_bid,
+            ref_leg.get("bid") if isinstance(ref_leg, Mapping) else None,
+        )
+        ref_ask = _first_valid_float(
+            ref_ask,
+            ref_leg.get("ask") if isinstance(ref_leg, Mapping) else None,
+        )
+
     eff_bid = _first_valid_float(pricing.get("bid_edge1_eff_bps"))
     eff_ask = _first_valid_float(pricing.get("ask_edge1_eff_bps"))
-    place_edge = _first_valid_float(pricing.get("place_edge_bps"), params.get("place_edge1"))
+    place_edge = _first_valid_float(
+        pricing.get("place_edge_bps"),
+        quote_snapshot.get("place_edge_bps"),
+        params.get("place_edge1"),
+    )
 
     if isinstance(maker_leg, Mapping):
         quote_snapshot["maker_exchange"] = (
@@ -985,6 +1036,77 @@ def _derive_quote_snapshot(
         quote_snapshot["place_edge_bps"] = place_edge
 
     return quote_snapshot
+
+
+def _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(quote_snapshot, Mapping):
+        return None
+    place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
+    place_ask = _first_valid_float(quote_snapshot.get("place_ask"))
+    ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    if (
+        place_bid is None
+        or place_ask is None
+        or ref_bid is None
+        or ref_ask is None
+    ):
+        return None
+    ref_mid = (ref_bid + ref_ask) / 2.0
+    if not ref_mid:
+        return None
+    market_mid = (place_bid + place_ask) / 2.0
+    return ((market_mid - ref_mid) / ref_mid) * 10_000.0
+
+
+def _top_level_signal_ts_ms(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+    fallback_ts_ms: int | None,
+) -> int | None:
+    if isinstance(quote_snapshot, Mapping):
+        quoted_ts_ms = coerce_ts_ms(quote_snapshot.get("ts_ms"))
+        if quoted_ts_ms is not None:
+            return quoted_ts_ms
+    return coerce_ts_ms(state.get("ts_ms") or state.get("ts_event") or fallback_ts_ms)
+
+
+def _top_level_signal_mode(
+    *,
+    quote_snapshot: Mapping[str, Any] | None,
+    bot_on: bool,
+) -> str:
+    if isinstance(quote_snapshot, Mapping):
+        mode = decode_text(quote_snapshot.get("mode")).strip().upper()
+        if mode:
+            return mode
+    return "ON" if bot_on else "OFF"
+
+
+def _top_level_signal_reason(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+) -> str | None:
+    if isinstance(quote_snapshot, Mapping):
+        reason = decode_text(quote_snapshot.get("reason")).strip()
+        if reason:
+            return reason
+    reason = decode_text(state.get("state")).strip()
+    return reason or None
+
+
+def _top_level_signal_signed_skew_bps(
+    *,
+    pricing_adjustments: Sequence[dict[str, Any]],
+    quote_snapshot: Mapping[str, Any] | None,
+) -> float | None:
+    inventory_adjustment = _first_inventory_skew_adjustment(pricing_adjustments)
+    return _first_valid_float(
+        inventory_adjustment.get("skew_bps_signed"),
+        quote_snapshot.get("skew_bps_signed") if isinstance(quote_snapshot, Mapping) else None,
+    )
 
 
 def build_signals_payload_impl(
@@ -1080,11 +1202,11 @@ def build_signals_payload_impl(
         elif best_case == "case2":
             spread_net_bps = spread_case2
 
-    decision_edge_bps = _first_valid_float(
+    explicit_decision_edge_bps = _first_valid_float(
         state.get("decision_edge_bps"),
         fv_row.get("decision_edge_bps"),
-        spread_net_bps,
     )
+    decision_edge_bps = _first_valid_float(explicit_decision_edge_bps, spread_net_bps)
 
     required_case1, required_case2 = _required_edges_by_case(params)
     required_edge_bps = _first_valid_float(
@@ -1097,7 +1219,8 @@ def build_signals_payload_impl(
         elif best_case == "case2":
             required_edge_bps = required_case2
 
-    edge2_bps = _first_valid_float(state.get("edge2_bps"), fv_row.get("edge2_bps"))
+    explicit_edge2_bps = _first_valid_float(state.get("edge2_bps"), fv_row.get("edge2_bps"))
+    edge2_bps = explicit_edge2_bps
     if edge2_bps is None and decision_edge_bps is not None and required_edge_bps is not None:
         edge2_bps = decision_edge_bps - required_edge_bps
 
@@ -1140,6 +1263,15 @@ def build_signals_payload_impl(
         )
     )
 
+    if strategy_family == "maker_v3":
+        quote_spread_bps = _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot)
+        if quote_spread_bps is not None:
+            spread_net_bps = quote_spread_bps
+            if explicit_decision_edge_bps is None:
+                decision_edge_bps = quote_spread_bps
+                if explicit_edge2_bps is None and required_edge_bps is not None:
+                    edge2_bps = decision_edge_bps - required_edge_bps
+
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = (
         dict(state_quote_status) if isinstance(state_quote_status, Mapping) else None
@@ -1171,6 +1303,11 @@ def build_signals_payload_impl(
         tradeable = False
         blocked = True
 
+    top_level_ts_ms = _top_level_signal_ts_ms(
+        state=state,
+        quote_snapshot=quote_snapshot,
+        fallback_ts_ms=ts_ms,
+    )
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
         "stale_legs": sorted(
@@ -1178,23 +1315,75 @@ def build_signals_payload_impl(
         ),
     }
     if ts_ms is not None:
-        state_age_ms = max(0, now_ms_fn() - ts_ms)
-        md_health["strategy_state_age_ms"] = state_age_ms
-        live_legs = any(safe_int(row.get("age_ms")) is not None for row in legs.values())
-        state_stale = state_age_ms >= 30_000 and not live_legs
-        if state_stale:
-            managed = 0
-            tradeable = False
-            blocked = True
-            maker_quote_status = {
-                "bid_open": 0,
-                "ask_open": 0,
-                "bid_depth": 0,
-                "ask_depth": 0,
-                "bid_blocked": 0,
-                "ask_blocked": 0,
-            }
-        md_health["state_stale"] = state_stale
+        md_health["strategy_state_age_ms"] = max(0, now_ms_fn() - ts_ms)
+
+    explicit_quote_snapshot = isinstance(state.get("maker_v3"), Mapping) and isinstance(
+        cast(Mapping[str, Any], state.get("maker_v3")).get("quote_snapshot"),
+        Mapping,
+    )
+    explicit_quote_snapshot = explicit_quote_snapshot or (
+        isinstance(state.get("maker_v4"), Mapping)
+        and isinstance(cast(Mapping[str, Any], state.get("maker_v4")).get("quote_snapshot"), Mapping)
+    )
+    has_partial_strategy_state = bool(
+        pricing_adjustments
+        or explicit_quote_snapshot
+        or state_name
+        or managed
+        or parsed_bot_on is not None
+    )
+
+    state_stale = False
+    leg_clock_ts_ms = max(
+        (
+            leg_ts_ms
+            for row in legs.values()
+            if (leg_ts_ms := coerce_ts_ms(row.get("ts_ms"))) is not None
+        ),
+        default=None,
+    )
+    if top_level_ts_ms is not None and leg_clock_ts_ms is not None:
+        top_level_age_ms = max(0, leg_clock_ts_ms - top_level_ts_ms)
+        md_health["signal_state_age_ms"] = top_level_age_ms
+        state_stale = top_level_age_ms >= 30_000
+    elif top_level_ts_ms is not None and not explicit_quote_snapshot:
+        top_level_age_ms = max(0, now_ms_fn() - top_level_ts_ms)
+        md_health["signal_state_age_ms"] = top_level_age_ms
+        state_stale = top_level_age_ms >= 30_000
+    elif top_level_ts_ms is None and has_partial_strategy_state:
+        state_stale = True
+
+    if state_stale:
+        managed = 0
+        tradeable = False
+        blocked = True
+        maker_quote_status = {
+            "bid_open": 0,
+            "ask_open": 0,
+            "bid_depth": 0,
+            "ask_depth": 0,
+            "bid_blocked": 0,
+            "ask_blocked": 0,
+        }
+    md_health["state_stale"] = state_stale
+
+    if state_stale:
+        top_level_mode = "STALE"
+        top_level_reason = "stale_state"
+        top_level_skew_bps = None
+    else:
+        top_level_mode = _top_level_signal_mode(
+            quote_snapshot=quote_snapshot,
+            bot_on=bot_on,
+        )
+        top_level_reason = _top_level_signal_reason(
+            state=state,
+            quote_snapshot=quote_snapshot,
+        )
+        top_level_skew_bps = _top_level_signal_signed_skew_bps(
+            pricing_adjustments=pricing_adjustments,
+            quote_snapshot=quote_snapshot,
+        )
 
     if strategy_family == "maker_v4" and _maker_v4_quote_health_blocks_new_risk(
         state=state,
@@ -1221,6 +1410,10 @@ def build_signals_payload_impl(
         "meta": metadata.as_payload(strategy_id=strategy_id),
         "running": running,
         "strategy_family": strategy_family,
+        "ts_ms": top_level_ts_ms,
+        "mode": top_level_mode,
+        "reason": top_level_reason,
+        "skew_bps_signed": top_level_skew_bps,
         "tradeable": tradeable,
         "blocked": blocked,
         "near_tradeable": near_tradeable,

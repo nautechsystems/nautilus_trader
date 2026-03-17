@@ -133,6 +133,25 @@ def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config()
     assert runtime_params["order_reject_alert_after_s"] == Decimal(12)
 
 
+def test_initial_runtime_params_accept_signed_linear_offset_bps() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        linear_offset_bps=-3.5,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["linear_offset_bps"] == Decimal("-3.5")
+
+
+def test_runtime_param_coercion_accepts_negative_linear_offset_bps() -> None:
+    assert runtime_params_mod.coerce_runtime_param_value("linear_offset_bps", -7.25) == Decimal(
+        "-7.25",
+    )
+
+
 def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> None:
     config = MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
@@ -150,6 +169,25 @@ def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> Non
     assert runtime_params["pending_cancel_block_after_ms"] == 1_500
     assert runtime_params["quote_liveness_stall_after_ms"] == 3_000
     assert runtime_params["quote_liveness_recover_after_ms"] == 900
+
+
+def test_initial_runtime_params_seed_bounded_convergence_budgets_from_config() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        max_cancels_per_side_per_cycle=2,
+        max_places_per_side_per_cycle=3,
+        max_total_actions_per_cycle=4,
+        max_pending_cancels_per_side=1,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["max_cancels_per_side_per_cycle"] == 2
+    assert runtime_params["max_places_per_side_per_cycle"] == 3
+    assert runtime_params["max_total_actions_per_cycle"] == 4
+    assert runtime_params["max_pending_cancels_per_side"] == 1
 
 
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
@@ -313,6 +351,7 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
         max_age_ms=321,
         n_orders2=4,
         bid_edge1=0.77,
+        max_cancels_per_side_per_cycle=2,
     )
 
     factory = MakerV3Strategy.params_manager_factory(redis_client=object())
@@ -321,3 +360,83 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
     assert manager.defaults["max_age_ms"] == strategy.config.max_age_ms
     assert manager.defaults["n_orders2"] == strategy.config.n_orders2
     assert manager.defaults["bid_edge1"] == pytest.approx(strategy.config.bid_edge1)
+    assert (
+        manager.defaults["max_cancels_per_side_per_cycle"]
+        == strategy.config.max_cancels_per_side_per_cycle
+    )
+
+
+def test_prepare_runtime_params_for_startup_keeps_persisted_bot_on_unchanged(
+    strategy_factory,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.control_revision = "rev-start"
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            self.stored.update(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+        def load_bot_on_control_revision(self) -> str:
+            return self.control_revision
+
+    strategy = strategy_factory(force_bot_off_on_start=True)
+    manager = _ParamsManager()
+    strategy.set_params_manager(manager)
+
+    runtime_params_mod.prepare_runtime_params_for_startup(strategy)
+
+    assert manager.update_calls == []
+    assert manager.publish_calls == []
+    assert strategy._runtime_params["bot_on"] is True
+    assert strategy._effective_bot_on() is False
+
+
+def test_refresh_runtime_params_clears_startup_bot_off_latch_after_explicit_bot_on_control_update(
+    strategy_factory,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.control_revision = "rev-start"
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def load_bot_on_control_revision(self) -> str:
+            return self.control_revision
+
+    strategy = strategy_factory(force_bot_off_on_start=True)
+    manager = _ParamsManager()
+    strategy.set_params_manager(manager)
+
+    runtime_params_mod.prepare_runtime_params_for_startup(strategy)
+    runtime_params_mod.refresh_runtime_params(strategy, now_ns=1_000_000_000, force=True)
+
+    assert strategy._runtime_params["bot_on"] is True
+    assert strategy._effective_bot_on() is False
+    assert strategy._startup_bot_off_active is True
+
+    manager.control_revision = "rev-operator-1"
+    runtime_params_mod.refresh_runtime_params(strategy, now_ns=2_000_000_000, force=True)
+
+    assert strategy._startup_bot_off_active is False
+    assert strategy._effective_bot_on() is True

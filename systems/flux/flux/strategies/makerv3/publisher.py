@@ -12,9 +12,13 @@ from decimal import Decimal
 from typing import Any
 
 from flux.api.payloads import contract_id_for_leg
+from flux.api.payloads import decode_text
+from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.shared.publisher_common import build_role_map_payload
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
+from flux.strategies.makerv3 import reconciliation as maker_reconciliation_mod
+from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.constants import BLOCKED_STATE_PREFIX
 from flux.strategies.makerv3.constants import TOPIC_ALERT
 from flux.strategies.makerv3.constants import TOPIC_BALANCES
@@ -144,6 +148,36 @@ def _matching_base_positions(
         ):
             filtered.append(position)
     return filtered
+
+
+def _maker_position_report_snapshot(strategy: Any) -> dict[str, Any] | None:
+    snapshot_lookup = getattr(strategy, "_maker_position_report_snapshot", None)
+    if callable(snapshot_lookup):
+        with suppress(Exception):
+            snapshot = snapshot_lookup()
+            if isinstance(snapshot, Mapping):
+                return dict(snapshot)
+
+    snapshot = getattr(strategy, "_latest_maker_position_report_snapshot", None)
+    if isinstance(snapshot, Mapping):
+        return dict(snapshot)
+    return None
+
+
+def _effective_inventory_positions(strategy: Any, positions: Sequence[Any]) -> list[Any]:
+    cache = _strategy_cache(strategy)
+    orders_for_position = getattr(cache, "orders_for_position", None)
+    snapshot = _maker_position_report_snapshot(strategy)
+    expected_qty = maker_reconciliation_mod.maker_snapshot_signed_qty(
+        snapshot,
+        instrument_id=strategy.config.maker_instrument_id,
+    )
+    return maker_reconciliation_mod.effective_maker_positions(
+        positions,
+        maker_instrument_id=strategy.config.maker_instrument_id,
+        expected_venue_qty=expected_qty,
+        order_lookup=orders_for_position if callable(orders_for_position) else None,
+    )
 
 
 def _account_balances_rows(account: Any) -> list[dict[str, str]]:
@@ -647,19 +681,20 @@ def publish_state(
     now_ns = int(strategy.clock.timestamp_ns())
     was_blocked = bool(getattr(strategy, "_state_is_blocked", False))
     is_blocked = _is_blocked_state(state)
+    effective_state = runtime_params_mod.effective_state_name(strategy, state)
     previous_state = getattr(strategy, "_last_state_name", None)
     if was_blocked != is_blocked:
         strategy._publish_event(
             "state_transition",
             from_state=previous_state,
-            to_state=state,
+            to_state=effective_state,
             from_blocked=was_blocked,
             to_blocked=is_blocked,
         )
         if not is_blocked:
             strategy._last_stale_cancel_ns = 0
     strategy._state_is_blocked = is_blocked
-    strategy._last_state_name = state
+    strategy._last_state_name = effective_state
     strategy._last_state_ns = now_ns
     managed_orders_list = list(managed_orders) if managed_orders is not None else None
     if managed_orders_list is None:
@@ -667,10 +702,22 @@ def publish_state(
     if managed_orders_count is None:
         managed_orders_count = len(managed_orders_list)
     tracked_managed_orders = strategy._tracked_managed_order_count()
+    effective_bot_on = strategy._effective_bot_on()
+    persisted_bot_on = runtime_params_mod.persisted_bot_on(strategy)
+    config_bot_on = runtime_params_mod.config_bot_on(strategy)
+    bot_on_reason = runtime_params_mod.bot_on_reason(strategy)
     payload: dict[str, Any] = {
         "strategy_id": strategy._external_strategy_id,
-        "state": state,
-        "bot_on": strategy._effective_bot_on(),
+        "state": effective_state,
+        "bot_on": effective_bot_on,
+        "effective_bot_on": effective_bot_on,
+        "persisted_bot_on": persisted_bot_on,
+        "config_bot_on": config_bot_on,
+        "startup_bot_off_active": bool(getattr(strategy, "_startup_bot_off_active", False)),
+        "terminal_order_denial_active": bool(
+            getattr(strategy, "_terminal_order_denial_circuit_open", False),
+        ),
+        "bot_on_reason": bot_on_reason,
         "managed_orders": max(0, int(managed_orders_count)),
         "tracked_managed_orders": tracked_managed_orders,
         "ts_event": now_ns,
@@ -679,7 +726,7 @@ def publish_state(
     maker_quote_status = _maker_quote_status_payload(
         strategy,
         managed_orders=managed_orders_list,
-        state=state,
+        state=effective_state,
     )
     if maker_quote_status is not None:
         payload["maker_quote_status"] = maker_quote_status
@@ -690,7 +737,7 @@ def publish_state(
             payload["quote_progress"] = quote_progress
     quote_blockers_fn = getattr(strategy, "_quote_blockers_payload", None)
     if callable(quote_blockers_fn):
-        quote_blockers = quote_blockers_fn(state=state)
+        quote_blockers = quote_blockers_fn(state=effective_state)
         if quote_blockers:
             payload["quote_blockers"] = quote_blockers
     quote_health_fn = getattr(strategy, "_quote_health_payload", None)
@@ -709,6 +756,14 @@ def publish_state(
     if pricing_debug:
         strategy._last_pricing_debug = pricing_debug
         payload["pricing_debug"] = pricing_debug
+    last_quote_snapshot = getattr(strategy, "_last_quote_snapshot", None)
+    if isinstance(last_quote_snapshot, Mapping):
+        quote_snapshot = dict(last_quote_snapshot)
+        quote_snapshot["mode"] = decode_text(quote_snapshot.get("mode")).strip() or (
+            "ON" if effective_bot_on else "OFF"
+        )
+        quote_snapshot["reason"] = decode_text(quote_snapshot.get("reason")).strip() or effective_state
+        payload["maker_v3"] = {"quote_snapshot": quote_snapshot}
     strategy._publish_json(
         TOPIC_STATE,
         payload,
@@ -854,6 +909,7 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                         instrument_id=strategy.config.maker_instrument_id,
                     ),
                 )
+        positions = _effective_inventory_positions(strategy, positions)
         if not positions and callable(positions_open):
             maker_instrument = getattr(strategy, "_maker_instrument", None)
             instruments = getattr(strategy, "_instruments", {})
@@ -864,10 +920,11 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
                 instrument_id=strategy.config.maker_instrument_id,
             )
             with suppress(Exception):
+                all_positions = _effective_inventory_positions(strategy, list(positions_open()))
                 positions.extend(
                     _matching_base_positions(
                         strategy,
-                        list(positions_open()),
+                        all_positions,
                         base_currency=maker_base_currency,
                     ),
                 )

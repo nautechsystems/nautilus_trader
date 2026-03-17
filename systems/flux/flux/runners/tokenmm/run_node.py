@@ -306,6 +306,26 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
             ),
         )
 
+    markouts_db_path = _optional_text(telemetry.get("markouts_db_path"))
+    if markouts_db_path is not None:
+        actor_config: dict[str, Any] = {"db_path": markouts_db_path}
+        raw_horizons = telemetry.get("markout_horizons_s")
+        if isinstance(raw_horizons, list | tuple):
+            actor_config["horizons_s"] = [int(value) for value in raw_horizons]
+        actors.append(
+            ImportableActorConfig(
+                actor_path=(
+                    "nautilus_trader.flux.persistence.markouts.actor:"
+                    "ExecutionMarkoutPersistenceActor"
+                ),
+                config_path=(
+                    "nautilus_trader.flux.persistence.markouts.config:"
+                    "ExecutionMarkoutPersistenceActorConfig"
+                ),
+                config=actor_config,
+            ),
+        )
+
     return actors
 
 
@@ -321,6 +341,7 @@ def _prepare_telemetry_paths(config: dict[str, Any]) -> None:
         "fills_db_path",
         "orders_db_path",
         "quote_cycles_db_path",
+        "markouts_db_path",
         "portfolio_inventory_db_path",
         "state_db_path",
     ):

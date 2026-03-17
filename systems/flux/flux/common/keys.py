@@ -221,6 +221,9 @@ class FluxRedisKeys:
     def params_hash_key(self) -> str:
         return f"{self.prefix}:params:{self._strategy_id}"
 
+    def params_metadata_key(self) -> str:
+        return f"{self.prefix}:params-meta:{self._strategy_id}"
+
     def params_pubsub_channel(self) -> str:
         return f"{self.prefix}:params:{self._strategy_id}"
 

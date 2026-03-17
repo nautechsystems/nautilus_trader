@@ -36,6 +36,10 @@ class BitgetExecClientConfig(LiveExecClientConfig):
     product_types: tuple[object, ...] | None = None
     base_url_http: str | None = None
     base_url_ws_private: str | None = None
+    account_mode: str | None = None
+    allow_cash_borrowing: bool = False
+    margin_mode: str | None = None
+    position_mode: str | None = None
     demo: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None

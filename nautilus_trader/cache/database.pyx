@@ -24,6 +24,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -628,11 +629,21 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return None
 
         cdef bytes initial_event = result.pop(0)
-        cdef Account account = AccountFactory.create_c(self._serializer.deserialize(initial_event))
+        cdef AccountState account_state = self._serializer.deserialize(initial_event)
+        cdef Account account = AccountFactory.create_c(account_state)
 
         cdef bytes event
         for event in result:
-            account.apply(event=self._serializer.deserialize(event))
+            account_state = self._serializer.deserialize(event)
+            if account_state.account_type != account.type:
+                self._log.warning(
+                    f"Rebuilding cached account {account_id.to_str()} during startup replay "
+                    f"because account_type changed from {account.type} to {account_state.account_type}",
+                    LogColor.YELLOW,
+                )
+                account = AccountFactory.create_c(account_state)
+            else:
+                account.apply(event=account_state)
 
         return account
 

@@ -7,6 +7,7 @@ const { mockSetActiveProfile, paramsStoreState } = vi.hoisted(() => ({
   mockSetActiveProfile: vi.fn(),
   paramsStoreState: {
     activeProfile: 'maker_v2' as const,
+    viewMode: 'compact' as const,
   },
 }));
 
@@ -26,8 +27,12 @@ vi.mock('../../stores', () => {
   const baseStore = {
     auto: false,
     setAuto: vi.fn(),
-    viewMode: 'compact' as const,
-    setViewMode: vi.fn(),
+    get viewMode() {
+      return paramsStoreState.viewMode;
+    },
+    setViewMode: (mode: 'compact' | 'full') => {
+      paramsStoreState.viewMode = mode;
+    },
     get activeProfile() {
       return paramsStoreState.activeProfile;
     },
@@ -68,6 +73,7 @@ describe('Params profile column filtering', () => {
     vi.clearAllMocks();
     mockSetActiveProfile.mockReset();
     paramsStoreState.activeProfile = 'maker_v2';
+    paramsStoreState.viewMode = 'compact';
 
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
       params: {
@@ -227,6 +233,71 @@ describe('Params profile column filtering', () => {
     });
     expect(screen.getByRole('button', { name: 'Sort by bid_edge1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sort by ask_edge1' })).toBeInTheDocument();
+  });
+
+  it('hides advanced bounded-convergence params by default and shows them in Advanced Params mode', async () => {
+    paramsStoreState.activeProfile = 'maker_v3';
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        bot_on: {
+          key: 'bot_on',
+          label: 'bot_on',
+          description: 'toggle',
+          type: 'select',
+          default: '0',
+          options: [['0', 'Off'], ['1', 'On']],
+        },
+        qty: {
+          key: 'qty',
+          label: 'qty',
+          description: 'size',
+          type: 'float',
+          default: 1,
+        },
+        max_cancels_per_side_per_cycle: {
+          key: 'max_cancels_per_side_per_cycle',
+          label: 'max_cancels_per_side_per_cycle',
+          description: 'cancel budget',
+          type: 'int',
+          default: 1,
+          advanced: true,
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'plumeusdt_bybit_perp_makerv3',
+        running: true,
+        meta: { class: 'maker_v3' },
+        hot_params: ['bot_on', 'qty'],
+        params: {
+          bot_on: '1',
+          qty: '1000',
+          max_cancels_per_side_per_cycle: '1',
+        },
+      },
+    ] as any);
+
+    const { rerender } = render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('plumeusdt_bybit_perp_makerv3')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Sort by qty' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Sort by max_cancels_per_side_per_cycle' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Advanced Params/i }));
+    rerender(<Params />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Sort by max_cancels_per_side_per_cycle' }),
+      ).toBeInTheDocument();
+    });
   });
 
 });

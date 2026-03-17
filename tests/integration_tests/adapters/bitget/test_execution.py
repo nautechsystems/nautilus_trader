@@ -3,6 +3,8 @@
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
 
+import json
+
 import pytest
 from decimal import Decimal
 from types import SimpleNamespace
@@ -11,10 +13,11 @@ from unittest.mock import patch
 from nautilus_trader.adapters.bitget.execution import BitgetExecutionClient
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
@@ -23,6 +26,28 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
+
+
+def test_derive_account_type_uses_margin_for_non_spot_products() -> None:
+    account_type = BitgetExecutionClient._derive_account_type(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            account_mode="UTA",
+            product_types=("USDT_FUTURES",),
+        ),
+    )
+
+    assert account_type == AccountType.MARGIN
+
+
+def test_derive_account_type_keeps_spot_only_uta_as_cash() -> None:
+    account_type = BitgetExecutionClient._derive_account_type(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            account_mode="UTA",
+            product_types=("SPOT",),
+        ),
+    )
+
+    assert account_type == AccountType.CASH
 
 
 @pytest.mark.asyncio
@@ -143,29 +168,66 @@ async def test_connect_opens_private_websocket_and_sends_login() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_mass_status_defaults_account_id_when_unset() -> None:
-    async def no_reports(_command):
-        return []
+async def test_connect_uses_uta_private_websocket_url_when_account_mode_is_uta() -> None:
+    captured_configs: list[object] = []
+
+    class DummyWebSocketClient:
+        @staticmethod
+        async def connect(*, loop_, config, handler, post_reconnection):
+            captured_configs.append(config)
+            return object()
 
     dummy = SimpleNamespace(
-        reconciliation_active=False,
-        account_id=None,
-        id=SimpleNamespace(value="BITGET"),
-        _clock=SimpleNamespace(
-            utc_now=lambda: None,
-            timestamp_ns=lambda: 999,
+        _config=SimpleNamespace(
+            api_key="key",
+            api_secret="secret",
+            api_passphrase="pass",
+            account_mode="UTA",
+            product_types=("SPOT",),
+            base_url_ws_private=None,
+            retry_delay_initial_ms=None,
+            retry_delay_max_ms=None,
         ),
-        _log=SimpleNamespace(exception=lambda *_args, **_kwargs: None),
-        generate_order_status_reports=no_reports,
-        generate_fill_reports=no_reports,
-        generate_position_status_reports=no_reports,
+        _environment=nautilus_pyo3.BitgetEnvironment.MAINNET,
+        _loop=object(),
+        _handle_ws_message=lambda _raw: None,
+        _handle_ws_reconnect=lambda: None,
+        _send_ws_text=lambda _message: None,
+        _log=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+        _product_types=("SPOT",),
+        _ws_client=None,
     )
 
-    mass_status = await BitgetExecutionClient.generate_mass_status(dummy)  # type: ignore[arg-type]
+    async def authenticate_ws() -> None:
+        return None
 
-    assert mass_status is not None
-    assert mass_status.account_id == AccountId("BITGET-001")
-    assert dummy.reconciliation_active is False
+    dummy._authenticate_ws = authenticate_ws
+
+    with patch(
+        "nautilus_trader.adapters.bitget.execution.nautilus_pyo3.WebSocketConfig",
+        lambda **kwargs: SimpleNamespace(**kwargs),
+    ), patch(
+        "nautilus_trader.adapters.bitget.execution.nautilus_pyo3.WebSocketClient",
+        DummyWebSocketClient,
+    ), patch(
+        "nautilus_trader.adapters.bitget.execution.nautilus_pyo3.BitgetWebSocketClient.ping_message",
+        lambda: "rust-ping",
+        create=True,
+    ), patch(
+        "nautilus_trader.adapters.bitget.execution.nautilus_pyo3.get_bitget_ws_private_url",
+        lambda environment: "wss://classic.example/v2/ws/private",
+        create=True,
+    ):
+        await BitgetExecutionClient._connect(dummy)  # type: ignore[arg-type]
+
+    assert captured_configs[0].url == "wss://ws.bitget.com/v3/ws/private"
+
+
+def test_generate_mass_status_uses_live_execution_client_default() -> None:
+    assert BitgetExecutionClient.generate_mass_status is LiveExecutionClient.generate_mass_status
 
 
 def test_handle_ws_reconnect_schedules_reauth_on_event_loop_thread() -> None:
@@ -261,6 +323,24 @@ def test_handle_ws_message_login_success_with_numeric_code_schedules_private_sub
     )
 
     assert calls == [dummy._on_ws_authenticated]
+
+
+def test_format_exchange_error_reason_parses_http_status_payload() -> None:
+    err = RuntimeError(
+        'HTTP request failed with status 429 body={"code":"22004","msg":"too many requests"}',
+    )
+
+    reason = BitgetExecutionClient._format_exchange_error_reason(err)
+
+    assert reason == "bitget_http_error: status=429 code=22004 msg=too many requests"
+
+
+def test_format_exchange_error_reason_preserves_non_http_errors() -> None:
+    err = RuntimeError("boom")
+
+    reason = BitgetExecutionClient._format_exchange_error_reason(err)
+
+    assert reason == "boom"
 
 
 def test_on_ws_authenticated_subscribes_private_channels() -> None:
@@ -380,6 +460,27 @@ def test_handle_ws_message_routes_account_channel_payload() -> None:
     assert handled[0]["data"] == [{"coin": "USDT"}]
 
 
+def test_handle_ws_message_routes_uta_account_topic_payload() -> None:
+    handled: list[dict] = []
+    dummy = SimpleNamespace(
+        _handle_account_channel=lambda payload: handled.append(payload),
+        _log=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+            debug=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_ws_message(
+        dummy,  # type: ignore[arg-type]
+        b'{"action":"snapshot","arg":{"instType":"UTA","topic":"account"},"data":[{"coin":[{"coin":"USDT"}]}],"ts":1695713887792}',
+    )
+
+    assert handled[0]["arg"]["topic"] == "account"
+    assert handled[0]["data"] == [{"coin": [{"coin": "USDT"}]}]
+
+
 def test_handle_ws_message_routes_order_fill_and_position_channels() -> None:
     order_payloads: list[dict] = []
     fill_payloads: list[dict] = []
@@ -412,6 +513,40 @@ def test_handle_ws_message_routes_order_fill_and_position_channels() -> None:
     assert order_payloads[0]["arg"]["channel"] == "orders"
     assert fill_payloads[0]["arg"]["channel"] == "fill"
     assert position_payloads[0]["arg"]["channel"] == "positions"
+
+
+def test_handle_ws_message_routes_uta_order_fill_and_position_topics() -> None:
+    order_payloads: list[dict] = []
+    fill_payloads: list[dict] = []
+    position_payloads: list[dict] = []
+    dummy = SimpleNamespace(
+        _handle_orders_channel=lambda payload: order_payloads.append(payload),
+        _handle_fill_channel=lambda payload: fill_payloads.append(payload),
+        _handle_positions_channel=lambda payload: position_payloads.append(payload),
+        _log=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+            debug=lambda *_args, **_kwargs: None,
+            error=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_ws_message(
+        dummy,  # type: ignore[arg-type]
+        b'{"action":"snapshot","arg":{"instType":"UTA","topic":"order"},"data":[{"orderId":"1"}]}',
+    )
+    BitgetExecutionClient._handle_ws_message(
+        dummy,  # type: ignore[arg-type]
+        b'{"action":"snapshot","arg":{"instType":"UTA","topic":"fill"},"data":[{"tradeId":"1"}]}',
+    )
+    BitgetExecutionClient._handle_ws_message(
+        dummy,  # type: ignore[arg-type]
+        b'{"action":"snapshot","arg":{"instType":"UTA","topic":"position"},"data":[{"posId":"1"}]}',
+    )
+
+    assert order_payloads[0]["arg"]["topic"] == "order"
+    assert fill_payloads[0]["arg"]["topic"] == "fill"
+    assert position_payloads[0]["arg"]["topic"] == "position"
 
 
 def test_handle_account_channel_generates_account_state() -> None:
@@ -481,6 +616,44 @@ def test_handle_account_channel_generates_account_state_for_futures_margin_paylo
     assert generated[0]["margins"] == []
     assert generated[0]["reported"] is True
     assert generated[0]["ts_event"] == millis_to_nanos(1708883200999)
+
+
+def test_handle_account_channel_generates_account_state_for_uta_payload() -> None:
+    generated: list[dict] = []
+    payload = {
+        "action": "snapshot",
+        "arg": {"instType": "UTA", "topic": "account"},
+        "data": [
+            {
+                "totalEquity": "500.05",
+                "coin": [
+                    {
+                        "coin": "USDT",
+                        "available": "500",
+                        "locked": "0",
+                        "equity": "500",
+                    },
+                ],
+            },
+        ],
+        "ts": 1708883201888,
+    }
+    dummy = SimpleNamespace(
+        generate_account_state=lambda **kwargs: generated.append(kwargs),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_account_channel(dummy, payload)  # type: ignore[arg-type]
+
+    assert len(generated) == 1
+    balance = generated[0]["balances"][0]
+    assert str(balance.free) == "500.00000000 USDT"
+    assert str(balance.locked) == "0.00000000 USDT"
+    assert str(balance.total) == "500.00000000 USDT"
+    assert generated[0]["reported"] is True
+    assert generated[0]["ts_event"] == millis_to_nanos(1708883201888)
 
 
 def test_handle_orders_channel_generates_order_accepted() -> None:
@@ -642,6 +815,86 @@ def test_handle_orders_channel_generates_order_canceled_from_venue_lookup() -> N
     assert canceled[0]["ts_event"] == millis_to_nanos(1708883200123)
 
 
+def test_handle_orders_channel_logs_debug_for_unknown_order_when_filtering_unclaimed_external_orders() -> None:
+    warnings: list[str] = []
+    debug_messages: list[str] = []
+    dummy = SimpleNamespace(
+        _cache=SimpleNamespace(
+            order=lambda _cid: None,
+            client_order_id=lambda _vid: None,
+            venue_order_id=lambda _cid: None,
+        ),
+        _config=SimpleNamespace(filter_unclaimed_external_orders=True),
+        _log=SimpleNamespace(
+            debug=lambda message, *_args, **_kwargs: debug_messages.append(message),
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_orders_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "channel": "orders"},
+            "data": [
+                {
+                    "clientOid": "foreign-order",
+                    "orderId": "12345",
+                    "price": "45000",
+                    "size": "0.01",
+                    "status": "new",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert debug_messages == [
+        "Bitget private order update ignored: order not found for foreign-order",
+    ]
+
+
+def test_handle_orders_channel_logs_debug_for_unknown_order_in_uta_mode() -> None:
+    warnings: list[str] = []
+    debug_messages: list[str] = []
+    dummy = SimpleNamespace(
+        _cache=SimpleNamespace(
+            order=lambda _cid: None,
+            client_order_id=lambda _vid: None,
+            venue_order_id=lambda _cid: None,
+        ),
+        _config=SimpleNamespace(account_mode="UTA", filter_unclaimed_external_orders=False),
+        _log=SimpleNamespace(
+            debug=lambda message, *_args, **_kwargs: debug_messages.append(message),
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_orders_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "channel": "orders"},
+            "data": [
+                {
+                    "clientOid": "foreign-order",
+                    "orderId": "12345",
+                    "price": "45000",
+                    "size": "0.01",
+                    "status": "new",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert debug_messages == [
+        "Bitget private order update ignored: order not found for foreign-order",
+    ]
+
+
 def test_handle_fill_channel_generates_order_filled_from_venue_lookup() -> None:
     fills: list[dict] = []
     warnings: list[str] = []
@@ -702,6 +955,82 @@ def test_handle_fill_channel_generates_order_filled_from_venue_lookup() -> None:
     assert fills[0]["commission"] == Money("0.1", usdt)
     assert fills[0]["liquidity_side"] == LiquiditySide.TAKER
     assert fills[0]["ts_event"] == millis_to_nanos(1708883200123)
+
+
+def test_handle_fill_channel_logs_debug_for_unknown_order_when_filtering_unclaimed_external_orders() -> None:
+    warnings: list[str] = []
+    debug_messages: list[str] = []
+    dummy = SimpleNamespace(
+        _cache=SimpleNamespace(
+            client_order_id=lambda _vid: None,
+            order=lambda _cid: None,
+        ),
+        _config=SimpleNamespace(filter_unclaimed_external_orders=True),
+        _log=SimpleNamespace(
+            debug=lambda message, *_args, **_kwargs: debug_messages.append(message),
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_fill_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "channel": "fill"},
+            "data": [
+                {
+                    "orderId": "12345",
+                    "tradeId": "67890",
+                    "priceAvg": "45000",
+                    "size": "0.01",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert debug_messages == [
+        "Bitget private fill update ignored: order not found for 12345",
+    ]
+
+
+def test_handle_fill_channel_logs_debug_for_unknown_order_in_uta_mode() -> None:
+    warnings: list[str] = []
+    debug_messages: list[str] = []
+    dummy = SimpleNamespace(
+        _cache=SimpleNamespace(
+            client_order_id=lambda _vid: None,
+            order=lambda _cid: None,
+        ),
+        _config=SimpleNamespace(account_mode="UTA", filter_unclaimed_external_orders=False),
+        _log=SimpleNamespace(
+            debug=lambda message, *_args, **_kwargs: debug_messages.append(message),
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_fill_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "channel": "fill"},
+            "data": [
+                {
+                    "orderId": "12345",
+                    "tradeId": "67890",
+                    "priceAvg": "45000",
+                    "size": "0.01",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert debug_messages == [
+        "Bitget private fill update ignored: order not found for 12345",
+    ]
 
 
 def test_handle_fill_channel_maps_marker_liquidity_typo_to_maker() -> None:
@@ -860,6 +1189,309 @@ def test_handle_positions_channel_sends_flat_position_status_report() -> None:
     assert report.venue_position_id == PositionId("p-2")
 
 
+def test_handle_positions_channel_uta_resolves_symbol_to_futures_instrument() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+    spot_instrument = SimpleNamespace(
+        id=SimpleNamespace(symbol=SimpleNamespace(value="BTCUSDT.BITGET")),
+        raw_symbol=SimpleNamespace(value="BTCUSDT"),
+        size_precision=8,
+        make_qty=lambda value, round_down=True: Quantity.from_str(value),
+    )
+    futures_instrument = SimpleNamespace(
+        id="BTCUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="BTCUSDT"),
+        size_precision=4,
+        make_qty=lambda value, round_down=True: Quantity.from_str(value),
+    )
+    instruments = {
+        "BTCUSDT.BITGET": spot_instrument,
+        "BTCUSDT-PERP.BITGET": futures_instrument,
+    }
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: list(instruments),
+            instrument=lambda instrument_id: instruments.get(instrument_id),
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instruments.get(instrument_id)),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "BTCUSDT",
+                    "instId": "",
+                    "posId": "p-uta-1",
+                    "posSide": "long",
+                    "total": "0.01",
+                    "avgPrice": "45000",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.instrument_id == "BTCUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.LONG
+    assert report.quantity == Quantity.from_str("0.01")
+    assert report.avg_px_open == Decimal("45000")
+    assert report.venue_position_id == PositionId("p-uta-1")
+    assert report.ts_last == millis_to_nanos(1708883200123)
+
+
+def test_handle_positions_channel_uta_preserves_base_coin_position_quantity() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+
+    def _make_qty(value, round_down=True):
+        del round_down
+        return Quantity.from_str(str(value))
+
+    futures_instrument = SimpleNamespace(
+        id="PLUMEUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
+        size_precision=4,
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
+        base_currency="PLUME",
+        quote_currency="USDT",
+        settlement_currency="USDT",
+        is_inverse=False,
+        make_qty=_make_qty,
+    )
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: ["PLUMEUSDT-PERP.BITGET"],
+            instrument=lambda _instrument_id: futures_instrument,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda _instrument_id: futures_instrument),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "PLUMEUSDT",
+                    "instId": "",
+                    "posId": "p-uta-plume-1",
+                    "posSide": "short",
+                    "total": "250030",
+                    "avgPrice": "0.01192",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.SHORT
+    assert report.quantity == Quantity.from_str("250030")
+    assert report.avg_px_open == Decimal("0.01192")
+    assert report.venue_position_id == PositionId("p-uta-plume-1")
+
+
+def test_build_position_status_report_uta_preserves_base_coin_position_quantity() -> None:
+    def _make_qty(value, round_down=True):
+        del round_down
+        return Quantity.from_str(str(value))
+
+    futures_instrument = SimpleNamespace(
+        id="PLUMEUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
+        size_precision=4,
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
+        base_currency="PLUME",
+        quote_currency="USDT",
+        settlement_currency="USDT",
+        is_inverse=False,
+        make_qty=_make_qty,
+    )
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: ["PLUMEUSDT-PERP.BITGET"],
+            instrument=lambda _instrument_id: futures_instrument,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda _instrument_id: futures_instrument),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    report = BitgetExecutionClient._build_position_status_report(  # type: ignore[arg-type]
+        dummy,
+        {
+            "symbol": "PLUMEUSDT",
+            "posId": "p-uta-plume-1",
+            "posSide": "short",
+            "total": "250030",
+            "avgPrice": "0.01192",
+            "uTime": "1708883200123",
+        },
+        "USDT-FUTURES",
+        instrument=futures_instrument,
+    )
+
+    assert report is not None
+    assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.SHORT
+    assert report.quantity == Quantity.from_str("250030")
+    assert report.avg_px_open == Decimal("0.01192")
+    assert report.venue_position_id == PositionId("p-uta-plume-1")
+    assert report.ts_last == millis_to_nanos(1708883200123)
+
+
+def test_handle_positions_channel_uta_sends_flat_position_status_report() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+    instrument = SimpleNamespace(
+        id="BTCUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="BTCUSDT"),
+        size_precision=4,
+        make_qty=lambda value, round_down=True: Quantity.from_str(value),
+    )
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: ["BTCUSDT-PERP.BITGET"],
+            instrument=lambda _instrument_id: instrument,
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda _instrument_id: instrument),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "BTCUSDT",
+                    "instId": "",
+                    "posId": "p-uta-2",
+                    "holdSide": "long",
+                    "total": "0",
+                    "openPriceAvg": "0",
+                    "uTime": "1708883200456",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.position_side == PositionSide.FLAT
+    assert report.quantity == Quantity.zero(4)
+    assert report.avg_px_open is None
+    assert report.venue_position_id == PositionId("p-uta-2")
+
+
+def test_handle_positions_channel_uta_warns_on_ambiguous_non_spot_symbol_match() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+    perpetual_instrument = SimpleNamespace(
+        id="BTCUSD-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="BTCUSD"),
+        size_precision=0,
+        make_qty=lambda value, round_down=True: Quantity.from_str(value),
+    )
+    delivery_instrument = SimpleNamespace(
+        id="BTCUSD-240628.BITGET",
+        raw_symbol=SimpleNamespace(value="BTCUSD"),
+        size_precision=0,
+        make_qty=lambda value, round_down=True: Quantity.from_str(value),
+    )
+    instruments = {
+        perpetual_instrument.id: perpetual_instrument,
+        delivery_instrument.id: delivery_instrument,
+    }
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: list(instruments),
+            instrument=lambda instrument_id: instruments.get(instrument_id),
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instruments.get(instrument_id)),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "BTCUSD",
+                    "instId": "",
+                    "posId": "p-uta-3",
+                    "posSide": "long",
+                    "total": "1",
+                    "avgPrice": "65000",
+                    "uTime": "1708883200789",
+                },
+            ],
+        },
+    )
+
+    assert reports == []
+    assert len(warnings) == 1
+    assert "ambiguous" in warnings[0]
+    assert "symbol=BTCUSD" in warnings[0]
+
+
 @pytest.mark.asyncio
 async def test_subscribe_private_ws_uses_expected_channels_for_spot_and_futures() -> None:
     sent: list[str] = []
@@ -895,6 +1527,33 @@ async def test_subscribe_private_ws_uses_expected_channels_for_spot_and_futures(
         "subscribe:USDT-FUTURES:orders:default",
         "subscribe:USDT-FUTURES:fill:default",
         "subscribe:USDT-FUTURES:positions:default",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_private_ws_uses_uta_topics_when_account_mode_is_uta() -> None:
+    sent: list[str] = []
+
+    async def send_ws_text(message: str) -> None:
+        sent.append(message)
+
+    dummy = SimpleNamespace(
+        _config=SimpleNamespace(account_mode="UTA"),
+        _product_types=("SPOT", "USDT-FUTURES"),
+        _send_ws_text=send_ws_text,
+    )
+    dummy._is_spot_product_type = lambda product_type: BitgetExecutionClient._is_spot_product_type(  # type: ignore[attr-defined]
+        dummy,
+        product_type,
+    )
+
+    await BitgetExecutionClient._subscribe_private_ws(dummy)  # type: ignore[arg-type]
+
+    assert [json.loads(message) for message in sent] == [
+        {"op": "subscribe", "args": [{"instType": "UTA", "topic": "account"}]},
+        {"op": "subscribe", "args": [{"instType": "UTA", "topic": "order"}]},
+        {"op": "subscribe", "args": [{"instType": "UTA", "topic": "fill"}]},
+        {"op": "subscribe", "args": [{"instType": "UTA", "topic": "position"}]},
     ]
 
 

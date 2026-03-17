@@ -260,11 +260,70 @@ def test_signals_uses_batched_pipeline_for_key_lookup(
     assert response.status_code == 200
     assert body["ok"] is True
     assert body["data"]["strategies"][0]["id"] == flux_config.identity.strategy_id
-    assert redis_client.direct_get_calls == []
+    assert redis_client.direct_get_calls == [
+        keys.state(),
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+    ]
     assert redis_client.pipeline_exec_count >= 1
     batch = redis_client.pipeline_batches[-1]
     assert sum(1 for command in batch if command[0] == "get") == 2 + len(contract_catalog)
     assert any(command[0] == "xrevrange" for command in batch)
+
+
+def test_signals_include_explicit_running_state_from_runner_truth(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.state(),
+        {
+            "state": "on_stop",
+            "bot_on": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bot_on": "1",
+            "max_age_ms": "10000",
+        },
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    strategy = body["data"]["strategies"][0]
+    assert strategy["id"] == flux_config.identity.strategy_id
+    assert strategy["state"]["state"] == "on_stop"
+    assert strategy["running"] is False
 
 
 def test_healthz_readiness_exception_returns_not_ok_with_error(
@@ -835,7 +894,6 @@ def test_signals_include_explicit_service_running_state_while_preserving_stale_s
         primary_keys.fv_stream(),
         [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
     )
-
     app = create_flux_api_app(
         flux_config,
         redis_client,
@@ -859,6 +917,140 @@ def test_signals_include_explicit_service_running_state_while_preserving_stale_s
     assert row["tradeable"] is False
     assert row["blocked"] is True
     assert row["debug"]["md_health"]["state_stale"] is True
+
+
+def test_params_include_persisted_and_effective_bot_on_fields(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "state": "startup_bot_off",
+            "bot_on": False,
+            "effective_bot_on": False,
+            "persisted_bot_on": True,
+            "config_bot_on": True,
+            "bot_on_reason": "startup_bot_off",
+            "startup_bot_off_active": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_009_500,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"][0]
+    assert row["params"]["bot_on"] is True
+    assert row["persisted_bot_on"] is True
+    assert row["config_bot_on"] is True
+    assert row["effective_bot_on"] is False
+    assert row["bot_on_reason"] == "startup_bot_off"
+    assert row["startup_bot_off_active"] is True
+    assert row["state"] == "startup_bot_off"
+    assert row["running"] is True
+
+
+def test_params_ignore_stale_state_summary_when_augmenting_bot_on_fields(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "state": "startup_bot_off",
+            "bot_on": False,
+            "effective_bot_on": False,
+            "persisted_bot_on": True,
+            "config_bot_on": True,
+            "bot_on_reason": "startup_bot_off",
+            "startup_bot_off_active": True,
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"][0]
+    assert row["params"]["bot_on"] is True
+    assert row["persisted_bot_on"] is True
+    assert row["config_bot_on"] is True
+    assert row["effective_bot_on"] is True
+    assert row["bot_on_reason"] == "running"
+    assert row["startup_bot_off_active"] is False
+    assert row["running"] is False
+    assert "state" not in row
+
+
+def test_store_update_params_records_bot_on_control_revision(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    result = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    metadata = redis_client.hashes[keys.params_metadata_key()]
+
+    assert result["updated"] == ["bot_on"]
+    assert result["params"]["bot_on"] is True
+    assert metadata["bot_on_control_revision"].decode("utf-8")
 
 
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
@@ -1042,6 +1234,308 @@ def test_signals_with_strategy_query_keeps_per_strategy_debug_view_with_tokenmm_
     assert response.status_code == 200
     assert len(body["data"]["strategies"]) == 1
     assert body["data"]["strategies"][0]["id"] == "strategy_02"
+
+
+def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "startup_bot_off",
+            "ts_ms": 1_700_000_120_000,
+            "pricing_adjustments": [{"type": "inventory_skew", "global_qty_base": "15"}],
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_120_111,
+                    "mode": "OFF",
+                    "reason": "startup_bot_off",
+                },
+            },
+        },
+    )
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(primary_keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        primary_keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+    redis_client.set_json(
+        secondary_keys.state(),
+        {
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1_700_000_119_000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "global_qty_base": "999",
+                    "local_qty_base": "1234",
+                },
+            ],
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_119_111,
+                    "mode": "OFF",
+                    "reason": "bot_off",
+                },
+            },
+        },
+    )
+    redis_client.set_hash_json(
+        secondary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(secondary_keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        secondary_keys.fv_stream(),
+        [{"strategy_id": "strategy_02", "fv": 100.0}],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "-317104.54289229",
+                "global_qty": "-317104.54289229",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": [],
+                "stale_required": ["strategy_02"],
+                "null_qty_required": [],
+                "degraded": True,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "-10",
+                        "local_qty": "-10",
+                        "local_position_qty_base": "-10",
+                        "local_position_qty_venue": "-10",
+                        "ts_ms": 122_000,
+                        "state": "startup_bot_off",
+                    },
+                    {
+                        "strategy_id": "strategy_02",
+                        "local_qty_base": "87589",
+                        "local_qty": "87589",
+                        "local_position_qty_base": "87589",
+                        "local_position_qty_venue": "87589",
+                        "ts_ms": 119_500,
+                        "state": "bot_off",
+                        "stale": True,
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "-10",
+                    "local_qty": "-10",
+                    "local_position_qty_base": "-10",
+                    "local_position_qty_venue": "-10",
+                    "ts_ms": 122_000,
+                    "state": "startup_bot_off",
+                },
+                {
+                    "strategy_id": "strategy_02",
+                    "local_qty_base": "87589",
+                    "local_qty": "87589",
+                    "local_position_qty_base": "87589",
+                    "local_position_qty_venue": "87589",
+                    "ts_ms": 119_500,
+                    "state": "bot_off",
+                    "stale": True,
+                },
+            ],
+            "balances": {
+                "rows": [],
+                "totals": {"mv_raw": 0.0, "mv_display": "$0.00"},
+            },
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id, "strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in body["data"]["strategies"]}
+
+    primary = rows[flux_config.identity.strategy_id]
+    assert primary["global_qty_base"] == pytest.approx(-317104.54289229)
+    assert primary["global_qty_base_complete"] is False
+    assert primary["aggregation_mode"] == "partial"
+    assert primary["local_qty_base"] == pytest.approx(-10.0)
+    assert primary["mode"] == "OFF"
+    assert primary["reason"] == "startup_bot_off"
+    assert primary["ts_ms"] == 1_700_000_120_111
+    assert primary["pricing_adjustments"][0]["global_qty_base"] == pytest.approx(-317104.54289229)
+    assert primary["pricing_adjustments"][0]["aggregation_mode"] == "partial"
+    assert primary["pricing_adjustments"][0]["local_qty_base"] == pytest.approx(-10.0)
+
+    secondary = rows["strategy_02"]
+    assert secondary["global_qty_base"] == pytest.approx(-317104.54289229)
+    assert secondary["global_qty_base_complete"] is False
+    assert secondary["aggregation_mode"] == "partial"
+    assert secondary["local_qty_base"] == pytest.approx(1234.0)
+    assert secondary["pricing_adjustments"][0]["global_qty_base"] == pytest.approx(-317104.54289229)
+    assert secondary["pricing_adjustments"][0]["aggregation_mode"] == "partial"
+    assert float(secondary["pricing_adjustments"][0]["local_qty_base"]) == pytest.approx(1234.0)
+
+
+def test_signals_profile_tokenmm_backfills_missing_local_qty_from_stale_component_inventory(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "global_qty_base": "999",
+                },
+            ],
+        },
+    )
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(primary_keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        primary_keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "-317104.54289229",
+                "global_qty": "-317104.54289229",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": [],
+                "stale_required": [flux_config.identity.strategy_id],
+                "null_qty_required": [],
+                "degraded": True,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "87589",
+                        "local_qty": "87589",
+                        "local_position_qty_base": "87589",
+                        "local_position_qty_venue": "87589",
+                        "qty_conversion_status": "identity",
+                        "qty_conversion_source": "generic:multiplier=1",
+                        "ts_ms": 119_500,
+                        "state": "bot_off",
+                        "stale": True,
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "87589",
+                    "local_qty": "87589",
+                    "local_position_qty_base": "87589",
+                    "local_position_qty_venue": "87589",
+                    "qty_conversion_status": "identity",
+                    "qty_conversion_source": "generic:multiplier=1",
+                    "ts_ms": 119_500,
+                    "state": "bot_off",
+                    "stale": True,
+                },
+            ],
+            "balances": {"rows": [], "totals": {"mv_raw": 0.0, "mv_display": "$0.00"}},
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["local_qty_base"] == pytest.approx(87589.0)
+    assert row["position_qty_base"] == pytest.approx(87589.0)
+    assert row["position_qty_venue"] == pytest.approx(87589.0)
+    assert row["qty_conversion_status"] == "identity"
+    assert row["qty_conversion_source"] == "generic:multiplier=1"
+    assert row["pricing_adjustments"][0]["local_qty_base"] == pytest.approx(87589.0)
 
 
 def test_trades_profile_tokenmm_fans_out_allowlisted_strategies_in_global_time_order(
@@ -3630,7 +4124,7 @@ def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     assert all(component["stale"] is False for component in body["data"]["components"])
 
 
-def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product_scopes(
+def test_balances_profile_tokenmm_canonicalizes_bitget_shared_account_cash(
     flux_config,
     redis_client,
     contract_catalog,
@@ -3696,15 +4190,235 @@ def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product
         body = response.get_json()
 
     assert response.status_code == 200
+    bitget_rows = sorted(
+        [
+            row
+            for row in body["data"]["rows"]
+            if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
+    assert row["product_type"] == "spot"
+    assert row["display_name_short"] == "USDT"
+    assert row.get("scope") == "shared_account"
+
+
+def test_balances_profile_tokenmm_canonicalizes_bitget_shared_account_cash_alongside_non_stable_rows(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "500",
+                "locked": "0",
+                "total": "500",
+                "product_type": "spot",
+                "ts_ms": 1_700_000_000_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "PLUME",
+                "free": "25000",
+                "locked": "0",
+                "total": "25000",
+                "product_type": "spot",
+                "ts_ms": 1_700_000_000_010,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                "account_id": "BITGET-001",
+                "exchange": "bitget",
+                "asset": "USDT",
+                "free": "0",
+                "locked": "0",
+                "total": "0",
+                "product_type": "perp",
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+    )
+
+    bitget_contract_catalog = (
+        ContractCatalogEntry(
+            exchange="bitget",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT.BITGET",
+        ),
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=bitget_contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "plumeusdt_bitget_perp_makerv3"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    bitget_rows = sorted(
+        [
+            row
+            for row in body["data"]["rows"]
+            if row.get("exchange") == "bitget" and row.get("account") == "BITGET-001"
+        ],
+        key=lambda row: str(row["row_id"]),
+    )
+
+    assert [row["row_id"] for row in bitget_rows] == [
+        "tokenmm:cash:bitget:BITGET-001:PLUME",
+        "tokenmm:cash:bitget:BITGET-001:USDT",
+    ]
+    assert [row.get("product_type") for row in bitget_rows] == ["spot", "spot"]
+    assert [row["total"] for row in bitget_rows] == ["25000", "500"]
+    assert [row.get("scope") for row in bitget_rows] == [None, "shared_account"]
+
+
+def test_balances_profile_tokenmm_portfolio_snapshot_canonicalizes_shared_stable_cash_without_changing_global_qty(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "PLUME",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty_base": "79577.70469832",
+                "global_qty": "79577.70469832",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "missing_required": [],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": False,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:bitget:BITGET-001:spot:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bitget",
+                        "account": "BITGET-001",
+                        "account_id": "BITGET-001",
+                        "asset": "USDT",
+                        "free": "440.735561",
+                        "total": "440.735561",
+                        "product_type": "spot",
+                        "scope": "shared_account",
+                        "mark_raw": 1.0,
+                        "mv_raw": 440.735561,
+                        "ts_ms": 122_000,
+                    },
+                    {
+                        "row_id": "tokenmm:cash:bitget:BITGET-001:perp:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bitget",
+                        "account": "BITGET-001",
+                        "account_id": "BITGET-001",
+                        "asset": "USDT",
+                        "free": "440.735561",
+                        "total": "440.735561",
+                        "product_type": "perp",
+                        "scope": "shared_account",
+                        "mark_raw": 1.0,
+                        "mv_raw": 440.735561,
+                        "ts_ms": 122_100,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 881.471122,
+                    "mv_display": "$881.47",
+                },
+            },
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["global_qty_base"] == "79577.70469832"
     bitget_rows = [
         row
         for row in body["data"]["rows"]
         if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
     ]
     assert len(bitget_rows) == 1
-    row = bitget_rows[0]
-    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
-    assert row["total"] == "500"
+    assert bitget_rows[0]["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert bitget_rows[0]["total"] == "440.735561"
+    assert bitget_rows[0]["product_type"] == "spot"
+    assert bitget_rows[0]["display_name_short"] == "USDT"
+    assert bitget_rows[0]["display_name_long"] == "Bitget USDT"
+    risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
+    assert risk_groups["USD_CASH"]["net_mv"] == pytest.approx(440.735561)
+    assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(440.735561)
 
 
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(

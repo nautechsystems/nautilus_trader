@@ -53,6 +53,33 @@ where
     Option::<T>::deserialize(deserializer).map(|value| value.unwrap_or_default())
 }
 
+fn normalize_fee_detail_value(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                normalize_fee_detail_value(item);
+            }
+        }
+        Value::Object(map) => {
+            if !map.contains_key("totalFee") {
+                if let Some(fee) = map.get("fee").cloned() {
+                    map.insert("totalFee".to_string(), fee);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn deserialize_fee_detail<'de, D>(deserializer: D) -> Result<Value, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut value = Option::<Value>::deserialize(deserializer)?.unwrap_or(Value::Null);
+    normalize_fee_detail_value(&mut value);
+    Ok(value)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitgetApiResponse<T> {
@@ -220,29 +247,29 @@ pub struct BitgetOrderInfo {
     pub side: String,
     #[serde(default)]
     pub order_type: String,
-    #[serde(default)]
+    #[serde(default, alias = "orderStatus")]
     pub status: String,
-    #[serde(default)]
+    #[serde(default, alias = "timeInForce")]
     pub force: String,
     #[serde(default)]
     pub price: String,
-    #[serde(default)]
+    #[serde(default, alias = "avgPrice")]
     pub price_avg: String,
-    #[serde(default)]
+    #[serde(default, alias = "qty")]
     pub size: String,
-    #[serde(default)]
+    #[serde(default, alias = "cumExecQty", alias = "filledQty")]
     pub base_volume: String,
-    #[serde(default)]
+    #[serde(default, alias = "cumExecValue")]
     pub quote_volume: String,
     #[serde(default)]
     pub reduce_only: String,
-    #[serde(default)]
+    #[serde(default, alias = "posSide")]
     pub pos_side: String,
-    #[serde(default)]
+    #[serde(default, alias = "createdTime")]
     pub c_time: String,
-    #[serde(default)]
+    #[serde(default, alias = "updatedTime")]
     pub u_time: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_fee_detail")]
     pub fee_detail: Value,
 }
 
@@ -255,20 +282,27 @@ pub struct BitgetMixOrdersPage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct BitgetUtaOrdersPage {
+    #[serde(default, deserialize_with = "deserialize_default_on_null")]
+    pub list: Vec<BitgetOrderInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct BitgetFillInfo {
     #[serde(default)]
     pub symbol: String,
     #[serde(default)]
     pub order_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "execId")]
     pub trade_id: String,
     #[serde(default)]
     pub side: String,
     #[serde(default)]
     pub price: String,
-    #[serde(default)]
+    #[serde(default, alias = "avgPrice", alias = "execPrice")]
     pub price_avg: String,
-    #[serde(default)]
+    #[serde(default, alias = "qty", alias = "execQty")]
     pub size: String,
     #[serde(default)]
     pub trade_scope: String,
@@ -276,11 +310,11 @@ pub struct BitgetFillInfo {
     pub fee_coin: String,
     #[serde(default)]
     pub fill_fee: String,
-    #[serde(default)]
+    #[serde(default, alias = "createdTime")]
     pub c_time: String,
-    #[serde(default)]
+    #[serde(default, alias = "updatedTime")]
     pub u_time: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_fee_detail")]
     pub fee_detail: Value,
 }
 
@@ -293,17 +327,31 @@ pub struct BitgetMixFillsPage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct BitgetUtaFillsPage {
+    #[serde(default, deserialize_with = "deserialize_default_on_null")]
+    pub list: Vec<BitgetFillInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct BitgetPositionInfo {
     #[serde(default)]
     pub symbol: String,
     #[serde(default)]
     pub total: String,
-    #[serde(default)]
+    #[serde(default, alias = "posSide")]
     pub hold_side: String,
-    #[serde(default)]
+    #[serde(default, alias = "avgPrice")]
     pub open_price_avg: String,
-    #[serde(default)]
+    #[serde(default, alias = "positionId")]
     pub pos_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "updatedTime")]
     pub u_time: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BitgetUtaPositionsPage {
+    #[serde(default, deserialize_with = "deserialize_default_on_null")]
+    pub list: Vec<BitgetPositionInfo>,
 }

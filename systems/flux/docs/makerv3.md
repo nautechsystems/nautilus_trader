@@ -50,6 +50,10 @@ MakerV3 runtime params are backed by the canonical registry:
 
 Operational expectations:
 
+- Signed skew convention is canonical across strategy, API, and UI:
+  - positive values shift our quoted market up,
+  - negative values shift our quoted market down,
+  - `linear_offset_bps`, `global_skew_bps`, `local_skew_bps`, and `total_skew_bps` all use that convention.
 - Unknown keys are rejected (fail-fast).
 - Updates are coerced and applied atomically.
 - Hot-path-sensitive params (for example depth) are bounded to HFT-safe limits.
@@ -74,12 +78,14 @@ MakerV3 publishes structured JSON payloads to canonical topics:
 - `flux.makerv3.trade`: order fill notices for downstream monitoring/analytics, including decision
   correlation fields when available.
 
-MakerV3 telemetry is persisted across three surfaces:
+MakerV3 telemetry is persisted across four surfaces:
 
 - `quote_cycle` for every decision pass, including no-order cycles.
 - `order_action` for actual lifecycle events enriched from `flux.makerv3.order_intent`.
 - `execution_fill` for fills enriched with the same correlation metadata plus IB gateway
   send/receipt timestamps when available.
+- `execution_markout` for derived 30s/60s/120s live-forward markouts vs `fv_market_mid`
+  on TokenMM nodes.
 
 Generic execution-pipeline timing is emitted on `events.execution.timing` for all live strategies
 which traverse the standard `Strategy -> RiskEngine -> ExecutionEngine -> LiveExecutionClient`
@@ -101,6 +107,8 @@ Operational guidance:
 
 - Keep high-volume quote-cycle, state, and pricing diagnostics on these structured topics.
 - Use process logs for lifecycle events, guardrails, failures, and operator actions rather than repeating hot-path telemetry in text logs.
+- See `docs/runbooks/makerv3-markouts.md` for the markouts operator workflow, join keys,
+  and current scope limits.
 
 Quote-cycle events use an envelope with:
 

@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import SignalTable, { buildBalanceTooltip, buildStrategyParamTooltip } from '@/components/domain/signal/SignalTable';
+import SignalTable, {
+  buildBalanceTooltip,
+  buildStrategyParamTooltip,
+} from '@/components/domain/signal/SignalTable';
 import { useSignalStore } from '@/stores';
 import * as apiModule from '@/api';
 import type { SignalStrategy } from '@/types';
@@ -75,7 +78,7 @@ describe('SignalTable audit coverage', () => {
     initSignalState({ rows: [] });
   });
 
-  it('renders visible market-A mid vs visible market-B/FV mid instead of quote mid or backend spread_net_bps', async () => {
+  it('renders maker spread from the quote snapshot used by the operator-facing Our/Ref rows', async () => {
     const strategy: SignalStrategy = {
       id: 'spread_strategy',
       params: { bot_on: '1', cex_bid_edge: '5', cex_ask_edge: '5', pool_edge: '2' } as any,
@@ -133,8 +136,8 @@ describe('SignalTable audit coverage', () => {
     await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
 
     const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
-    expect(spreadCell?.textContent).toContain('0.0 bps');
-    expect(spreadCell?.textContent).not.toContain('14.5 bps');
+    expect(spreadCell?.textContent).toContain('-288.5 bps');
+    expect(spreadCell?.textContent).not.toContain('0.0 bps');
   });
 
   it('builds balance methodology text from payload data instead of a hardcoded 10x rule', () => {
@@ -225,5 +228,66 @@ describe('SignalTable audit coverage', () => {
     const localQty = container.querySelector('tbody tr td:nth-child(4) span');
     expect(globalQty?.className).not.toContain('cursor-help');
     expect(localQty?.className).not.toContain('cursor-help');
+  });
+
+  it('derives signed skew from edge deltas using quote-direction semantics when canonical signed skew is absent', async () => {
+    const strategyUp: SignalStrategy = {
+      id: 'delta_skew_up',
+      params: { bot_on: '1' } as any,
+      running: true,
+      state: { state: 'running', ts_ms: Date.now(), bot_on: true } as any,
+      pricing_adjustments: [
+        {
+          type: 'inventory_skew',
+          base_bid_edge_bps: 10,
+          base_ask_edge_bps: 10,
+          eff_bid_edge_bps: 8,
+          eff_ask_edge_bps: 12,
+        } as any,
+      ],
+      strategy_family: 'maker_v3',
+      meta: {
+        class: 'maker_v3',
+        strategy_groups: 'tokenmm',
+      } as any,
+      legs: {
+        A: {
+          exchange: 'bybit_linear',
+          coin: 'PLUME',
+          decision_bid: 1,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          decision_bid: 1.02,
+          decision_ask: 1.03,
+          update_time: '2025-01-15 12:00:01',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+    const strategyDown: SignalStrategy = {
+      ...strategyUp,
+      id: 'delta_skew_down',
+      pricing_adjustments: [
+        {
+          type: 'inventory_skew',
+          base_bid_edge_bps: 10,
+          base_ask_edge_bps: 10,
+          eff_bid_edge_bps: 12,
+          eff_ask_edge_bps: 8,
+        } as any,
+      ],
+    };
+
+    initSignalState({ rows: [strategyUp, strategyDown] });
+    renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText('delta_skew_up')).toBeInTheDocument());
+
+    expect(screen.getByText('+2.0')).toBeInTheDocument();
+    expect(screen.getByText('-2.0')).toBeInTheDocument();
   });
 });

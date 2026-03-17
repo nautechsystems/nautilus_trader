@@ -268,6 +268,28 @@ class TestCacheDatabaseAdapter:
         assert self.database.load_account(account.id) == account
 
     @pytest.mark.asyncio
+    async def test_load_account_rebuilds_when_account_type_changes_during_startup_replay(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.database.add_account(account)
+
+        await eventually(lambda: self.database.load_account(account.id))
+
+        repaired_account = TestExecStubs.margin_account(account_id=account.id)
+
+        # Act
+        self.database.update_account(repaired_account)
+
+        # Assert
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.type == AccountType.MARGIN,
+        )
+
+        loaded_account = self.database.load_account(account.id)
+        assert loaded_account == repaired_account
+
+    @pytest.mark.asyncio
     async def test_delete_account_event_removes_event_from_redis_list(self):
         # Arrange
         account = TestExecStubs.cash_account()
