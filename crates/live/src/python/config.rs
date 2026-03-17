@@ -89,7 +89,7 @@ impl LiveExecEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, purge_from_database=None, own_books_audit_interval_secs=None, graceful_shutdown_on_error=None, qsize=None))]
+    #[pyo3(signature = (reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, purge_from_database=None, own_books_audit_interval_secs=None, graceful_shutdown_on_error=None, convert_quote_qty_to_base=None, qsize=None))]
     fn py_new(
         reconciliation: Option<bool>,
         reconciliation_startup_delay_secs: Option<f64>,
@@ -122,6 +122,7 @@ impl LiveExecEngineConfig {
         purge_from_database: Option<bool>,
         own_books_audit_interval_secs: Option<f64>,
         graceful_shutdown_on_error: Option<bool>,
+        convert_quote_qty_to_base: Option<bool>,
         qsize: Option<u32>,
     ) -> Self {
         let default = Self::default();
@@ -172,6 +173,8 @@ impl LiveExecEngineConfig {
             own_books_audit_interval_secs,
             graceful_shutdown_on_error: graceful_shutdown_on_error
                 .unwrap_or(default.graceful_shutdown_on_error),
+            convert_quote_qty_to_base: convert_quote_qty_to_base
+                .unwrap_or(default.convert_quote_qty_to_base),
             qsize: qsize.unwrap_or(default.qsize),
         }
     }

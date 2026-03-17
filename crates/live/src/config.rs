@@ -157,6 +157,11 @@ pub struct LiveExecEngineConfig {
     pub own_books_audit_interval_secs: Option<f64>,
     /// If the engine should gracefully shutdown when queue processing encounters unexpected errors.
     pub graceful_shutdown_on_error: bool,
+    /// If quote-denominated order quantities should be converted to base units before submission.
+    /// Defaults to `false` — this behavior is deprecated and adapters should handle quote
+    /// quantity semantics directly.
+    #[serde(default)]
+    pub convert_quote_qty_to_base: bool,
     /// The queue size for the engine's internal queue buffers.
     pub qsize: u32,
 }
@@ -195,14 +200,18 @@ impl Default for LiveExecEngineConfig {
             purge_from_database: false,
             own_books_audit_interval_secs: None,
             graceful_shutdown_on_error: false,
+            convert_quote_qty_to_base: false,
             qsize: 100_000,
         }
     }
 }
 
 impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
-    fn from(_config: LiveExecEngineConfig) -> Self {
-        Self::default()
+    fn from(config: LiveExecEngineConfig) -> Self {
+        Self {
+            convert_quote_qty_to_base: config.convert_quote_qty_to_base,
+            ..Self::default()
+        }
     }
 }
 

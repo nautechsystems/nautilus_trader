@@ -147,6 +147,15 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Configure whether quote-denominated order quantities are converted to base units
+    /// before submission. Set to `false` for venues where the adapter handles quote quantity
+    /// semantics directly (e.g. Polymarket market BUY orders).
+    #[must_use]
+    pub fn with_convert_quote_qty_to_base(mut self, value: bool) -> Self {
+        self.config.exec_engine.convert_quote_qty_to_base = value;
+        self
+    }
+
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
     pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
