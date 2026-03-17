@@ -535,6 +535,9 @@ Require:
 
 - two active strategy IDs per symbol are allowed in `equities.live.toml`
 - `strategy_contracts` may repeat `portfolio_asset_id`
+- `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py` must include a true same-symbol fixture such as `aapl_tradexyz_make_take` plus `aapl_tradexyz_take_take` sharing `portfolio_asset_id="AAPL"`; duplicated copies of the same strategy ID do not count
+- `tests/unit_tests/examples/strategies/test_equities_readiness.py` must include the same `make_take` plus `take_take` same-asset fixture and prove readiness expects both strategy IDs while evaluating one shared asset-level portfolio state
+- `tests/unit_tests/examples/strategies/test_equities_stack_contract.py` must stop hard-rejecting duplicate `portfolio_asset_id` values and instead assert uniqueness at the strategy-id level while allowing repeated asset IDs for the split variants
 - readiness expects both enrolled strategies while still checking shared asset-level portfolio health
 - the template and README use the new naming pattern
 - actual per-variant strategy TOMLs exist under the current one-strategy-per-node deploy model
