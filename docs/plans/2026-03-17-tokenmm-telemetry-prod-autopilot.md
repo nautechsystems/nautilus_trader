@@ -15,13 +15,13 @@
 
 | Task | Status | Owner | Notes / Last Update |
 | --- | --- | --- | --- |
-| Overall | in_progress | main | Prod deployed from stable root; final branch update and PR creation remaining |
+| Overall | completed | main | Prod deployed from stable root, branch pushed, and PR opened at `clickconfirm/nautilus-trader#57` |
 | Task 1: Lock The Managed Telemetry Contract In Tests | completed | main | `pytest --noconftest` contract slices passed in both worktree and stable root |
 | Task 2: Add AWS Bootstrap Automation For The Telemetry Sink | completed | main | Provisioned `nautilus-tokenmm-telemetry` RDS PostgreSQL 16.13 in `ap-southeast-1`, plus SG, subnet group, and Secrets Manager secret |
 | Task 3: Auto-Load Postgres Credentials And Harden Shipper Startup | completed | main | Shipper wrapper deployed; live `flux@tokenmm-telemetry-shipper.service` now runs cleanly with AWS-loaded credentials |
 | Task 4: Bound Local Telemetry Retention And Add Health Guardrails | completed | main | `prune_retention_hours = 48`, health timer installed/started, healthcheck passes on prod thresholds |
 | Task 5: Execute The Production Backfill And Disk-Reclaim Cutover | completed | main | Deleted oversized balance/portfolio snapshot SQLite surfaces and restarted node/portfolio services; `/` dropped to 71% used with 185G free |
-| Task 6: Update Runbooks, Verify End-To-End, And Open The PR | in_progress | main | Docs updated, production verification captured, PR push/create pending |
+| Task 6: Update Runbooks, Verify End-To-End, And Open The PR | completed | main | Branch pushed to both remotes and PR opened at `clickconfirm/nautilus-trader#57` |
 
 ---
 
