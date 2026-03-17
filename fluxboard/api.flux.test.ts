@@ -382,6 +382,74 @@ describe('api.patchStrategyParams', () => {
 
     await expect(api.patchStrategyParams('makerv3', { qty: '-1' })).rejects.toThrow(/qty must be >= 0/i);
   });
+
+  it('appends profile to params writes on equities routes', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
+        failed: [],
+        errors: [],
+      },
+    });
+
+    await api.patchStrategyParams('aapl_tradexyz_makerv4', { qty: '1' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+});
+
+describe('api.updateParams', () => {
+  beforeEach(() => {
+    fetchJSONMock.mockReset();
+    setPathname('/equities/params');
+  });
+
+  it('appends profile to bulk params writes on equities routes', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
+        failed: [],
+        errors: [],
+      },
+    });
+
+    await api.updateParams([
+      { strategy_id: 'aapl_tradexyz_makerv4', params: { qty: '1' } },
+    ]);
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+});
+
+describe('api.getStrategyConfig', () => {
+  beforeEach(() => {
+    fetchJSONMock.mockReset();
+    setPathname('/equities/params');
+  });
+
+  it('appends profile to strategy config requests on equities routes', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        strategies_ini: '',
+        relations_ini: '',
+        catalog_excerpts: '',
+      },
+    });
+
+    await api.getStrategyConfig('aapl_tradexyz_makerv4');
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/strategies/aapl_tradexyz_makerv4/config-files?');
+    expect(path).toContain('profile=equities');
+  });
 });
 
 describe('profile-scoped read APIs', () => {
@@ -654,6 +722,39 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('normalizes non-bot boolean params and preserves params metadata for maker_v4 rows', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          strategy_id: 'aapl_tradexyz_makerv4',
+          meta: {
+            class: 'maker_v4',
+            param_set: 'makerv4',
+            strategy_family: 'maker_v4',
+            strategy_version: 'v4',
+          },
+          schema: {
+            instant_hedge_enabled: { type: 'boolean' },
+          },
+          params: {
+            instant_hedge_enabled: true,
+            execution_mode: 'maker_hedge',
+          },
+        },
+      ],
+    });
+
+    const rows = await api.getParams();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].meta?.param_set).toBe('makerv4');
+    expect(rows[0].params).toMatchObject({
+      instant_hedge_enabled: '1',
+      execution_mode: 'maker_hedge',
+    });
+  });
+
   it('does not derive params running flag from bot_on when backend omits running', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({
@@ -761,6 +862,181 @@ describe('profile-scoped read APIs', () => {
     expect(payload.rows[0]?.children[0]?.coin).toBe('PLUME');
     expect(payload.rows[0]?.children[0]?.display_name_short).toBe('PLUME Spot');
     expect(payload.rows[0]?.children[0]?.product_type).toBe('spot');
+  });
+
+  it('normalizes equities flat balances rows with nanosecond timestamps', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            exchange: 'ibkr',
+            coin: 'TSLA',
+            total: '3',
+            mv_raw: 1424.18500005,
+            mark_raw: 474.72833335,
+            ts_ms: 1773338848623000000,
+          },
+        ],
+        total: 1,
+        totals: {
+          mv_raw: 1424.18500005,
+          mv_display: '$1424.19',
+        },
+      },
+    });
+
+    const payload = await api.getBalances();
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0]?.canonical).toBe('TSLA');
+    expect(payload.rows[0]?.children[0]?.last_ts).toBe(1773338848623);
+    expect(payload.rows[0]?.children[0]?.time_iso).toBe('2026-03-12T18:07:28.623Z');
+  });
+
+  it('normalizes equities IBKR stock balances and keeps master-equity totals', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            exchange: 'ibkr',
+            kind: 'position',
+            instrument_id: 'AAPL.NASDAQ',
+            asset: 'AAPL',
+            quantity: '5',
+            signed_qty: '5',
+            product_type: 'spot',
+            contract_type: 'equity',
+            display_name_short: 'AAPL Stock',
+            display_name_long: 'Ibkr AAPL Stock',
+            mv_raw: 1278.5,
+            mark_raw: 255.7,
+            ts_ms: 1773338848623,
+          },
+        ],
+        total: 1,
+        totals: {
+          mv_raw: 1278.5,
+          mv_display: '$1278.50',
+          account_equity_raw: 7478.386872,
+          account_equity_display: '$7478.39',
+          withdrawable_raw: 7478.386872,
+          withdrawable_display: '$7478.39',
+        },
+      },
+    });
+
+    const payload = await api.getBalances();
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0]?.children[0]?.product_type).toBe('spot');
+    expect(payload.rows[0]?.children[0]?.contract_type).toBe('equity');
+    expect(payload.rows[0]?.children[0]?.display_name_short).toBe('AAPL Stock');
+    expect((payload.totals as any).account_equity_raw).toBe(7478.386872);
+    expect((payload.totals as any).withdrawable_raw).toBe(7478.386872);
+  });
+
+  it('normalizes hyperliquid xyz shared account balances with perp positions', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDE',
+            exchange: 'hyperliquid',
+            account: 'HYPERLIQUID-master',
+            asset: 'USDE',
+            total: '1075.37415731',
+            product_type: 'spot',
+            contract_type: 'cash',
+            ts_ms: 1773338848623,
+            source_scope: 'shared_account',
+            account_scope_id: 'hyperliquid.xyz.main',
+            strategy_id: 'equities',
+          },
+          {
+            row_id: 'equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID',
+            exchange: 'hyperliquid',
+            kind: 'position',
+            instrument_id: 'xyz:NVDA-USD-PERP.HYPERLIQUID',
+            asset: 'NVDA',
+            signed_qty: '-9.111',
+            quantity: '9.111',
+            product_type: 'perp',
+            contract_type: 'perp',
+            mark_raw: 183.22,
+            mv_raw: -1669.32042,
+            ts_ms: 1773338848624,
+            source_scope: 'shared_account',
+            account_scope_id: 'hyperliquid.xyz.main',
+            strategy_id: 'equities',
+          },
+          {
+            row_id: 'equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:COIN-USD-PERP.HYPERLIQUID',
+            exchange: 'hyperliquid',
+            kind: 'position',
+            instrument_id: 'xyz:COIN-USD-PERP.HYPERLIQUID',
+            asset: 'COIN',
+            signed_qty: '-22.715',
+            quantity: '22.715',
+            product_type: 'perp',
+            contract_type: 'perp',
+            mark_raw: 194.5,
+            mv_raw: -4418.0675,
+            ts_ms: 1773338848625,
+            source_scope: 'shared_account',
+            account_scope_id: 'hyperliquid.xyz.main',
+            strategy_id: 'equities',
+          },
+          {
+            row_id: 'equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:GOOGL-USD-PERP.HYPERLIQUID',
+            exchange: 'hyperliquid',
+            kind: 'position',
+            instrument_id: 'xyz:GOOGL-USD-PERP.HYPERLIQUID',
+            asset: 'GOOGL',
+            signed_qty: '-6',
+            quantity: '6',
+            product_type: 'perp',
+            contract_type: 'perp',
+            mark_raw: 303.15,
+            mv_raw: -1818.9,
+            ts_ms: 1773338848626,
+            source_scope: 'shared_account',
+            account_scope_id: 'hyperliquid.xyz.main',
+            strategy_id: 'equities',
+          },
+        ],
+        total: 4,
+        totals: {
+          mv_raw: -6830.91342,
+          mv_display: '-$6830.91',
+          account_equity_raw: 8314.466609,
+          account_equity_display: '$8314.47',
+          withdrawable_raw: 0,
+          withdrawable_display: '$0.00',
+        },
+      },
+    });
+
+    const payload = await api.getBalances();
+    const byCanonical = Object.fromEntries(payload.rows.map((row) => [row.canonical, row]));
+
+    expect(Object.keys(byCanonical).sort()).toEqual(['COIN', 'GOOGL', 'NVDA', 'USDE']);
+    expect(
+      payload.rows
+        .filter((row) => row.canonical !== 'USDE')
+        .every((row) => row.children.every((child) => child.contract_type === 'perp')),
+    ).toBe(true);
+    expect(byCanonical.NVDA?.children[0]?.product_type).toBe('perp');
+    expect(byCanonical.NVDA?.children[0]?.contract_type).toBe('perp');
+    expect(byCanonical.NVDA?.children[0]?.display_name_short).toBe('NVDA Perp');
+    expect(byCanonical.COIN?.children[0]?.instrument_id).toBe('XYZ:COIN-USD-PERP.HYPERLIQUID');
+    expect(byCanonical.GOOGL?.children[0]?.qty_raw).toBe(-6);
+    expect(byCanonical.USDE?.children[0]?.contract_type).toBe('cash');
+    expect((payload.totals as any).account_equity_raw).toBe(8314.466609);
+    expect((payload.totals as any).withdrawable_raw).toBe(0);
   });
 
   it('preserves alerts pagination metadata on getAlerts while keeping array return shape', async () => {

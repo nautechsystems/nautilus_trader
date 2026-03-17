@@ -88,13 +88,14 @@ def get_cached_ib_client(
         # Create a unique key for the gateway based on its trading_mode
         gateway_key = (dockerized_gateway.trading_mode,)
 
-        if gateway_key not in GATEWAYS:
+        if dockerized_gateway.manage_container and gateway_key not in GATEWAYS:
             gateway = DockerizedIBGateway(dockerized_gateway)
             gateway.safe_start(wait=dockerized_gateway.timeout)
             GATEWAYS[gateway_key] = gateway
-            port = gateway.port
-        else:
+        if gateway_key in GATEWAYS:
             port = GATEWAYS[gateway_key].port
+        else:
+            port = DockerizedIBGateway.PORTS_INTERNAL[dockerized_gateway.trading_mode]
     else:
         PyCondition.not_none(
             host,

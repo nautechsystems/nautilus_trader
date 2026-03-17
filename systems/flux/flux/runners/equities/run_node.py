@@ -6,48 +6,48 @@ Run a live Equities trading node using the canonical equities strategy spec.
 from __future__ import annotations
 
 import argparse
+import inspect
+import logging
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
-import inspect
-import logging
 from pathlib import Path
 from typing import Any
 
 import redis
 
+from flux.common.config import FLUX_DEFAULT_NAMESPACE
+from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.common.account_scopes import decode_account_scopes
+from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.runners.live import resolve_strategy_venues
+from flux.runners.shared.bootstrap import build_redis_client_kwargs
+from flux.runners.shared.bootstrap import build_redis_database_config
+from flux.runners.shared.bootstrap import load_config as load_shared_config
+from flux.runners.shared.bootstrap import load_runtime_config as load_shared_runtime_config
+from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
+from flux.runners.shared.bootstrap import (
+    resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap,
+)
+from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
+from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.bootstrap import table as shared_table
+from flux.runners.shared.logging import build_node_logging_config
+from flux.runners.shared.qty_units import resolve_runner_qty_unit
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.strategies import FluxStrategySpec
+from flux.strategies import get_strategy_spec
+from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
+from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
+from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
+from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
+from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
-from flux.common.config import FLUX_DEFAULT_NAMESPACE
-from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.runners.live import resolve_strategy_venues
-from flux.runners.shared.bootstrap import build_redis_client_kwargs
-from flux.runners.shared.bootstrap import build_redis_database_config
-from flux.runners.shared.bootstrap import load_runtime_config as load_shared_runtime_config
-from flux.runners.shared.bootstrap import load_config as load_shared_config
-from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
-from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
-from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
-from flux.runners.shared.bootstrap import strategy_startup_lock
-from flux.runners.shared.logging import build_node_logging_config
-from flux.runners.shared.qty_units import resolve_runner_qty_unit
-from flux.runners.shared.bootstrap import table as shared_table
-from flux.runners.shared.strategy_set import get_strategy_set_descriptor
-from flux.strategies import FluxStrategySpec
-from flux.strategies import get_strategy_spec
-from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
-from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
-from flux.strategies.makerv4.reference_balances import (
-    IbkrReferenceBalanceSnapshotProviderConfig,
-)
-from flux.strategies.makerv4.reference_balances import (
-    get_cached_ibkr_reference_balance_provider,
-)
-from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
@@ -79,6 +79,24 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _profile_owned_account_projections_enabled(config: dict[str, Any]) -> bool:
+    portfolio_cfg = config.get("portfolio")
+    if not isinstance(portfolio_cfg, dict):
+        return True
+    return bool(portfolio_cfg.get("profile_owned_account_projections", True))
+
+
+def _dockerized_ib_gateway_config(ibkr_cfg: dict[str, Any]) -> DockerizedIBGatewayConfig | None:
+    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
+    if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
+        return dockerized_gateway_cfg
+    if isinstance(dockerized_gateway_cfg, dict):
+        return DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
+    if dockerized_gateway_cfg is not None:
+        raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
+    return None
 
 
 def _client_order_id_config(instrument_id: InstrumentId) -> dict[str, Any]:
@@ -118,7 +136,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio"),
+        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes"),
     )
 
 
@@ -183,11 +201,41 @@ def _attach_portfolio_inventory_feed(
     )
 
 
+def _attach_profile_account_projection_feed(
+    *,
+    strategy: Any,
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    configure_projection_feed = getattr(strategy, "configure_profile_account_projection_feed", None)
+    if not callable(configure_projection_feed):
+        return
+    account_scope_id = _optional_text(getattr(strategy.config, "execution_account_scope_id", None))
+    if account_scope_id is None:
+        return
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    configure_projection_feed(
+        redis_client=redis_client,
+        profile_id=EQUITIES_DESCRIPTOR.profile,
+        account_scope_id=account_scope_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+
+
 def _attach_reference_balance_snapshot_provider(
     *,
     strategy: Any,
     config: dict[str, Any],
+    strategy_spec: FluxStrategySpec,
 ) -> None:
+    if (
+        _uses_profile_account_projection(strategy_spec)
+        and _profile_owned_account_projections_enabled(config)
+    ):
+        return
+
     configure_provider = getattr(strategy, "configure_reference_balance_snapshot_provider", None)
     if not callable(configure_provider):
         return
@@ -208,20 +256,14 @@ def _attach_reference_balance_snapshot_provider(
     if adapter_id not in {"ibkr", "interactive_brokers"}:
         return
 
-    dockerized_gateway_cfg = ibkr_cfg.get("dockerized_gateway")
-    dockerized_gateway = None
-    if isinstance(dockerized_gateway_cfg, DockerizedIBGatewayConfig):
-        dockerized_gateway = dockerized_gateway_cfg
-    elif isinstance(dockerized_gateway_cfg, dict):
-        dockerized_gateway = DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
-    elif dockerized_gateway_cfg is not None:
-        raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
-
+    dockerized_gateway = _dockerized_ib_gateway_config(ibkr_cfg)
     provider = get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
             ibg_port=(
-                None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
+                None
+                if dockerized_gateway is not None or ibkr_cfg.get("ibg_port") is None
+                else int(ibkr_cfg.get("ibg_port"))
             ),
             ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
             dockerized_gateway=dockerized_gateway,
@@ -294,13 +336,27 @@ def _runtime_params_module(strategy_spec: FluxStrategySpec):
     return makerv3_runtime_params_mod
 
 
+def _supports_immediate_hedge(strategy_spec: FluxStrategySpec) -> bool:
+    capabilities = getattr(strategy_spec, "capabilities", None)
+    if capabilities is not None and hasattr(capabilities, "supports_immediate_hedge"):
+        return bool(capabilities.supports_immediate_hedge)
+    return getattr(strategy_spec, "param_set", "") == "makerv4"
+
+
+def _uses_profile_account_projection(strategy_spec: FluxStrategySpec) -> bool:
+    capabilities = getattr(strategy_spec, "capabilities", None)
+    if capabilities is not None and hasattr(capabilities, "uses_profile_account_projection"):
+        return bool(capabilities.uses_profile_account_projection)
+    return True
+
+
 def _strategy_allowed_instrument_ids(
     *,
     strategy_spec: FluxStrategySpec,
     maker_instrument_id: InstrumentId,
     reference_instrument_id: InstrumentId,
 ) -> list[InstrumentId]:
-    if strategy_spec.param_set == "makerv4":
+    if _supports_immediate_hedge(strategy_spec):
         return [maker_instrument_id, reference_instrument_id]
     return [maker_instrument_id]
 
@@ -310,7 +366,7 @@ def _effective_venue_resolution_config(
     config: dict[str, Any],
     strategy_spec: FluxStrategySpec,
 ) -> dict[str, Any]:
-    if strategy_spec.param_set != "makerv4":
+    if not _supports_immediate_hedge(strategy_spec):
         return config
 
     node_cfg = config.get("node")
@@ -335,14 +391,48 @@ def _effective_venue_resolution_config(
         maker_instrument_id,
         primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     )
-    if _optional_text(ibkr_cfg.get("instrument_id")) == derived_reference_instrument_id:
+    identity_cfg = config.get("identity")
+    external_strategy_id = (
+        _optional_text(identity_cfg.get("external_strategy_id"))
+        if isinstance(identity_cfg, dict)
+        else None
+    ) or _resolve_flux_strategy_id(config)
+    ibkr_scope_overrides: dict[str, Any] = {}
+    scope_configs = {
+        scope.scope_id: scope
+        for scope in decode_account_scopes(config.get("account_scopes") or [])
+    }
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id != external_strategy_id:
+            continue
+        scope_id = contract.hedge_account_scope_id or contract.reference_account_scope_id
+        scope = scope_configs.get(scope_id)
+        if scope is None or scope.provider.lower() != "ibkr":
+            break
+        if scope.ibg_host is not None:
+            ibkr_scope_overrides["ibg_host"] = scope.ibg_host
+        if scope.ibg_port is not None and scope.dockerized_gateway is None:
+            ibkr_scope_overrides["ibg_port"] = scope.ibg_port
+        if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
+            ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
+        if scope.account_id is not None:
+            ibkr_scope_overrides["account_id"] = scope.account_id
+        if scope.dockerized_gateway is not None:
+            ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
+        break
+    needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != derived_reference_instrument_id
+    needs_execution_promotion = not bool(ibkr_cfg.get("execution", False))
+    needs_scope_overlay = bool(ibkr_scope_overrides)
+    if not needs_reference_rewrite and not needs_execution_promotion and not needs_scope_overlay:
         return config
 
     effective_node_cfg = dict(node_cfg)
     effective_venue_entries = dict(venue_entries)
     effective_venue_entries["IBKR"] = {
         **ibkr_cfg,
+        **ibkr_scope_overrides,
         "instrument_id": derived_reference_instrument_id,
+        "execution": True,
     }
     effective_node_cfg["venues"] = effective_venue_entries
     return {
@@ -366,10 +456,15 @@ def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:
 
 def _optional_strategy_config_kwargs(
     *,
+    config: dict[str, Any],
+    external_strategy_id: str,
     strategy_spec: FluxStrategySpec,
     strategy_cfg: dict[str, Any],
 ) -> dict[str, Any]:
     candidates: dict[str, Any] = {
+        "reference_use_quote_ticks": bool(
+            strategy_cfg.get("reference_use_quote_ticks", False),
+        ),
         "outside_rth_hedge_enabled": bool(strategy_cfg.get("outside_rth_hedge_enabled", False)),
         "hedge_price_tick_size": Decimal(str(strategy_cfg.get("hedge_price_tick_size", "0.01"))),
         "hedge_min_share_increment": Decimal(
@@ -379,6 +474,12 @@ def _optional_strategy_config_kwargs(
         "max_ibkr_spread_bps": Decimal(str(strategy_cfg.get("max_ibkr_spread_bps", "25"))),
         "ibkr_primary_exchange": str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     }
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id != external_strategy_id:
+            continue
+        candidates["portfolio_asset_id"] = contract.portfolio_asset_id
+        candidates["execution_account_scope_id"] = contract.execution_account_scope_id
+        break
     return {
         field_name: value
         for field_name, value in candidates.items()
@@ -470,7 +571,7 @@ def build_node(
         exec_engine=LiveExecEngineConfig(
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
             reconciliation_lookback_mins=reconciliation_lookback_mins,
-            reconciliation_instrument_ids=[maker_instrument_id],
+            reconciliation_instrument_ids=allowed_instrument_ids,
             reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,
             filter_unclaimed_external_orders=filter_unclaimed_external_orders,
             filter_position_reports=filter_position_reports,
@@ -525,8 +626,8 @@ def build_node(
         timeout_post_stop=float(node_cfg.get("timeout_post_stop", 5.0)),
     )
 
-    order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
-    qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
+    order_qty = Decimal(str(strategy_cfg.get("order_qty", "1")))
+    qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
     qty_unit = resolve_runner_qty_unit(
         strategy_cfg,
@@ -542,7 +643,7 @@ def build_node(
             external_strategy_id=external_strategy_id,
             allowed_submit_instrument_ids=allowed_instrument_ids,
             external_order_claims=allowed_instrument_ids,
-            manage_stop=bool(strategy_cfg.get("manage_stop", mode == "live")),
+            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
             order_qty=order_qty,
             qty_unit=qty_unit,
             qty=qty,
@@ -586,6 +687,8 @@ def build_node(
                 strategy_cfg.get("cancel_all_instrument_orders", False),
             ),
             **_optional_strategy_config_kwargs(
+                config=config,
+                external_strategy_id=external_strategy_id,
                 strategy_spec=strategy_spec,
                 strategy_cfg=strategy_cfg,
             ),
@@ -606,9 +709,16 @@ def build_node(
         namespace=namespace,
         schema_version=schema_version,
     )
+    _attach_profile_account_projection_feed(
+        strategy=strategy,
+        redis_cfg=redis_cfg,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
     _attach_reference_balance_snapshot_provider(
         strategy=strategy,
         config=venue_resolution_config,
+        strategy_spec=strategy_spec,
     )
 
     node = TradingNode(config=config_node)

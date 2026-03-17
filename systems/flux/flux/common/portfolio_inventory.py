@@ -137,6 +137,22 @@ def decode_portfolio_inventory(raw: Any) -> dict[str, Any] | None:
     return dict(raw)
 
 
+def normalize_inventory_by_asset(
+    inventory_by_asset: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for asset_id, payload in inventory_by_asset.items():
+        canonical_asset_id = _optional_text(asset_id)
+        if canonical_asset_id is None:
+            continue
+        canonical_asset_id = canonical_asset_id.upper()
+        row = dict(payload) if isinstance(payload, Mapping) else {}
+        base_currency = _optional_text(row.get("base_currency")) or canonical_asset_id
+        row["base_currency"] = base_currency.upper()
+        normalized[canonical_asset_id] = row
+    return dict(sorted(normalized.items()))
+
+
 def aggregate_components(
     *,
     portfolio_id: str,

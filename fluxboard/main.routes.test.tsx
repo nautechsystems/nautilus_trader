@@ -1,3 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +12,9 @@ vi.mock('react-dom/client', () => ({
 
 import { buildFluxboardChildRoutes, buildFluxboardTopLevelRoutes, buildTokenmmAliasTarget } from './main';
 import { getUiSurface } from './config/uiProfiles';
+
+const require = createRequire(import.meta.url);
+const viteBinPath = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
 
 describe('main route builder', () => {
   it('registers top-level profile, alias, and catch-all routes', () => {
@@ -134,4 +142,35 @@ describe('main route builder', () => {
     expect(buildTokenmmAliasTarget('signal', '?foo=1', '#section')).toBe('/tokenmm/signal?foo=1#section');
     expect(buildTokenmmAliasTarget(undefined, '?foo=1', '#section')).toBe('/tokenmm?foo=1#section');
   });
+
+  it('pins production builds to the shared static fluxboard base path', () => {
+    const viteConfigSource = readFileSync(`${process.cwd()}/vite.config.ts`, 'utf-8');
+
+    expect(viteConfigSource).toContain("const DEFAULT_FLUXBOARD_BASE_PATH = '/static/fluxboard/';");
+    expect(viteConfigSource).toMatch(/base:\s*isDevServer\s*\?\s*'\/'\s*:\s*DEFAULT_FLUXBOARD_BASE_PATH/);
+    expect(viteConfigSource).not.toContain('normalizeBasePath(process.env.FLUXBOARD_BASE_PATH');
+  });
+
+  it('emits shared static asset paths in production build output', async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'fluxboard-build-'));
+
+    try {
+      execFileSync(
+        process.execPath,
+        [viteBinPath, 'build', '--outDir', outDir, '--emptyOutDir'],
+        {
+          cwd: process.cwd(),
+          env: process.env,
+          stdio: 'pipe',
+        },
+      );
+
+      const html = readFileSync(path.join(outDir, 'index.html'), 'utf-8');
+      expect(html).toContain('/static/fluxboard/assets/');
+      expect(html).not.toContain('/tokenmm/assets/');
+      expect(html).not.toContain('/equities/assets/');
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  }, 15000);
 });

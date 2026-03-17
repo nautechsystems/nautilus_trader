@@ -36,7 +36,10 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
+        consts::{
+            HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS, startup_connect_delay,
+            startup_connect_identity,
+        },
         credential::Secrets,
         parse::{
             clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
@@ -1276,6 +1279,17 @@ impl HyperliquidExecutionClient {
         let subscription_address = self.get_account_address()?;
 
         let mut ws_client = self.ws_client.clone();
+        let connect_identity = startup_connect_identity("exec", self.core.client_id);
+        let connect_delay = startup_connect_delay(&connect_identity, ws_client.url());
+
+        if !connect_delay.is_zero() {
+            log::info!(
+                "Applying Hyperliquid startup connect spread of {}ms for client {} (identity={connect_identity})",
+                connect_delay.as_millis(),
+                self.core.client_id
+            );
+            tokio::time::sleep(connect_delay).await;
+        }
 
         let instruments = self
             .http_client
@@ -1361,7 +1375,9 @@ impl HyperliquidExecutionClient {
                             }
                             // Reconnected is handled by WS client internally
                             // (resubscribe_all) and never forwarded here
-                            NautilusWsMessage::Reconnected => {}
+                            NautilusWsMessage::Reconnecting
+                            | NautilusWsMessage::Reconnected
+                            | NautilusWsMessage::Pong => {}
                             NautilusWsMessage::Error(e) => {
                                 log::error!("WebSocket error: {e}");
                             }

@@ -492,6 +492,10 @@ export type BalancesTotals = {
   stable_mv_display?: string | null;
   non_stable_mv_raw?: number | null;
   non_stable_mv_display?: string | null;
+  account_equity_raw?: number | null;
+  account_equity_display?: string | null;
+  withdrawable_raw?: number | null;
+  withdrawable_display?: string | null;
 };
 
 export type RiskGroup = {
@@ -567,6 +571,7 @@ export type SignalStrategiesPayload = {
 
 // Signal page types
 export type SignalLeg = CanonicalNamingFields & {
+  route?: string | null;
   contract_id?: string;
   coin?: string;
   exchange?: string;
@@ -703,6 +708,9 @@ export type MakerV4QuoteSnapshot = {
   maker_leg?: MakerV4LegSnapshot;
   hedge_leg?: MakerV4LegSnapshot;
   ref_leg?: MakerV4LegSnapshot;
+  mid_spread_bps?: string | number | null;
+  arb_bid_spread_bps?: string | number | null;
+  arb_ask_spread_bps?: string | number | null;
   effective_spread_bps?: string | number | null;
   quoted_spread_bps?: string | number | null;
   expected_maker_fee_bps?: string | number | null;
@@ -716,6 +724,33 @@ export type MakerV4QuoteSnapshot = {
   hedge_latency_ms?: string | number | null;
   hedge_slippage_bps_vs_mid?: string | number | null;
   [key: string]: unknown;
+};
+
+export type MakerV4OperatorPayload = {
+  execution_mode?: 'maker_hedge' | 'take_take';
+  behavior?: 'maker' | 'take_take';
+  hedge_policy?: {
+    route?: string;
+    time_in_force?: string;
+    outside_rth?: boolean;
+    include_overnight?: boolean;
+    cancel_after_ms?: number | null;
+  };
+  fee_assumptions?: {
+    ibkr_fee_plan?: string;
+    ibkr_fee_min_usd?: number | null;
+    hl_taker_fee_bps?: number | null;
+    hl_maker_fee_bps?: number | null;
+    assumed_hedge_fee_bps?: number | null;
+  };
+  hedge_backlog?: {
+    fill_id?: string | null;
+    side?: string | null;
+    requested_qty?: string | number | null;
+    blocked_reason?: string | null;
+    fill_ts_ms?: number | null;
+    maker_fee_bps?: number | null;
+  } | null;
 };
 
 export type SignalStrategy = {
@@ -779,6 +814,7 @@ export type SignalStrategy = {
   };
   maker_v4?: {
     quote_snapshot?: MakerV4QuoteSnapshot;
+    operator?: MakerV4OperatorPayload;
   };
   strategy_family?: 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
   risk_delta?: number;

@@ -8,6 +8,8 @@ from typing import Any
 import pytest
 
 from nautilus_trader.flux.api.payloads import build_balances_rows
+from nautilus_trader.flux.common.account_projection import encode_profile_account_snapshot
+from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.strategies import MakerV3Strategy as MakerV3StrategyFromRoot
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig as MakerV3StrategyConfigFromRoot
 from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
@@ -36,6 +38,18 @@ def _json_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, str):
         return json.loads(value)
     return value
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, bytes] = {}
+
+    def get(self, key: str) -> bytes | None:
+        return self.values.get(key)
+
+    def set(self, key: str, value: str | bytes) -> bool:
+        self.values[key] = value.encode() if isinstance(value, str) else value
+        return True
 
 
 class _MutatingPendingCancelFirstSeen(dict[str, int]):
@@ -499,6 +513,57 @@ def test_on_order_pending_cancel_state_exports_quote_blocker_metadata(
     assert state_payload["quote_blockers"][0]["oldest_pending_cancel_age_ms"] == 0
 
 
+def test_publish_state_exports_explicit_quote_health_reason_codes(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._quote_health_payload = lambda *, now_ns: {
+        "maker": {
+            "feed_state": "ok",
+            "quote_state": "old",
+            "quote_age_ms": 125,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "maker_quote_old",
+        },
+        "reference": {
+            "feed_state": "unknown",
+            "quote_state": "missing",
+            "quote_age_ms": None,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "reference_feed_unknown",
+        },
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("blocked_reference_md")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_health"] == {
+        "maker": {
+            "feed_state": "ok",
+            "quote_state": "old",
+            "quote_age_ms": 125,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "maker_quote_old",
+        },
+        "reference": {
+            "feed_state": "unknown",
+            "quote_state": "missing",
+            "quote_age_ms": None,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "reference_feed_unknown",
+        },
+    }
+
+
 def test_publish_state_exports_last_completed_quote_progress(
     clocked_strategy_factory,
 ) -> None:
@@ -775,6 +840,46 @@ def test_publish_balances_skips_portfolio_lookup_when_no_cached_accounts(
     balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
     assert balances_payload["accounts"] == []
     assert account_calls == []
+
+
+def test_publish_balances_excludes_strategy_owned_supplemental_ibkr_rows(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=lambda: [],
+        positions_open=lambda instrument_id=None: [],
+        instrument=lambda instrument_id: None,
+    )
+    strategy._supplemental_balance_snapshot = lambda: {
+        "accounts": [
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "total": "1000",
+            },
+        ],
+        "positions": [
+            {
+                "exchange": "ibkr",
+                "instrument_id": "AAPL.NASDAQ",
+                "asset": "AAPL",
+                "kind": "position",
+                "signed_qty": "25",
+            },
+        ],
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert balances_payload["accounts"] == []
+    assert balances_payload["positions"] == []
 
 
 def test_publish_balances_uses_fresh_venue_position_report_for_maker_instrument(
@@ -1430,6 +1535,182 @@ def test_publish_state_backfills_inventory_skew_when_quote_cycle_has_not_run(
     assert state_payload["pricing_debug"]["skew"]["local_inventory_qty"] == "-9806"
     assert state_payload["pricing_debug"]["skew"]["local_inventory_qty_base"] == "-98060"
     assert state_payload["pricing_debug"]["skew"]["local_inventory_source"] == "positions"
+
+
+def test_publish_state_exports_shared_account_projection_inventory_source(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="GOOGL"),
+        multiplier=Quantity.from_str("1"),
+        info={"base_exposure_mode": "identity"},
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        calculate_base_exposure_qty=lambda qty, _price=None: qty,
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(id=reference_instrument_id),
+    }
+    strategy._managed_orders = list
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._quote_runtime_params_snapshot = lambda: {
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(10),
+        "max_skew_bps_global": Decimal(20),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(10),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_999,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["pricing_debug"]["skew"]["local_position_qty_base"] == "-6"
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_qty_base"] == "-6"
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_source"] == "shared_account_projection"
+
+
+def test_publish_state_preserves_projection_provided_base_and_conversion_fields(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="GOOGL"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(id=reference_instrument_id),
+    }
+    strategy._managed_orders = list
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._quote_runtime_params_snapshot = lambda: {
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(10),
+        "max_skew_bps_global": Decimal(20),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(10),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "signed_qty_base": "-600",
+                        "qty_conversion_status": "projection_cached",
+                        "qty_conversion_source": "projection:precomputed",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_999,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["pricing_debug"]["skew"]["local_position_qty_venue"] == "-6"
+    assert state_payload["pricing_debug"]["skew"]["local_position_qty_base"] == "-600"
+    assert (
+        state_payload["pricing_debug"]["skew"]["local_position_qty_conversion_status"]
+        == "projection_cached"
+    )
+    assert (
+        state_payload["pricing_debug"]["skew"]["local_position_qty_conversion_source"]
+        == "projection:precomputed"
+    )
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_qty_base"] == "-600"
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_source"] == "shared_account_projection"
 
 
 def test_publish_state_refreshes_skew_while_preserving_cached_pricing_debug(

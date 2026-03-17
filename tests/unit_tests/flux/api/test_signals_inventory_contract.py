@@ -403,6 +403,53 @@ def test_build_signals_payload_marks_timestamp_less_pricing_state_stale(
     assert payload["skew_bps_signed"] is None
 
 
+def test_build_signals_payload_marks_explicit_quote_snapshot_stale_without_leg_timestamps(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 2,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_000_000,
+                    "mode": "ON",
+                    "reason": "quoting",
+                    "place_bid": 98.5,
+                    "place_ask": 100.5,
+                    "ref_bid": 101.0,
+                    "ref_ask": 102.0,
+                },
+            },
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0},
+        balances=[],
+        legs=build_legs_payload(
+            contracts=contract_catalog,
+            market_rows={},
+            now_ms_value=1_700_000_040_000,
+        ),
+    )
+
+    assert payload["debug"]["md_health"]["state_stale"] is True
+    assert payload["debug"]["md_health"]["signal_state_age_ms"] == 40_000
+    assert payload["mode"] == "STALE"
+    assert payload["reason"] == "stale_state"
+    assert payload["managed_orders"] == 0
+
+
 def test_build_signals_payload_promotes_operator_quote_fields_to_top_level(
     contract_catalog,
 ) -> None:

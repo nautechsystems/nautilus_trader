@@ -354,7 +354,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
     RuntimeParamSpec(
         name="qty",
         schema_type="number",
-        default=1_000.0,
+        default=1.0,
         description="Target order quantity in the configured qty_unit.",
         minimum=0.0,
         maximum=1_000_000.0,

@@ -14,15 +14,6 @@ function toPort(rawValue: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function normalizeBasePath(rawValue: string | undefined, fallback: string): string {
-  const trimmed = (rawValue || '').trim();
-  if (!trimmed) {
-    return fallback;
-  }
-  const prefixed = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return prefixed.endsWith('/') ? prefixed : `${prefixed}/`;
-}
-
 function parseAllowedHosts(rawValue: string | undefined): string[] {
   const baseHosts = ['localhost', '127.0.0.1', '::1'];
   const extraHosts = (rawValue || '')
@@ -69,7 +60,7 @@ export default defineConfig(({ command }) => {
   return {
     base: isDevServer
       ? '/'
-      : normalizeBasePath(process.env.FLUXBOARD_BASE_PATH, DEFAULT_FLUXBOARD_BASE_PATH),
+      : DEFAULT_FLUXBOARD_BASE_PATH,
     plugins: [react()],
     resolve: {
       alias: {

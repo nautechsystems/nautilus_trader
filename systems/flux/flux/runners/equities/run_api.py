@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
+from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.pulse import PulseControlPlane
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
@@ -34,6 +36,8 @@ from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
 from flux.strategies import get_strategy_spec
+from flux.strategies.registry import FluxStrategySpec
+from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
 from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_DEFAULTS
 from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_SCHEMA
 
@@ -46,6 +50,7 @@ EQUITIES_ALIAS_BASE_PATH = (
     EQUITIES_DESCRIPTOR.route_aliases[0] if EQUITIES_DESCRIPTOR.route_aliases else None
 )
 DEFAULT_PULSE_BASE_PATH = "/pulse"
+DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
 
 
 def _repo_root() -> Path:
@@ -67,6 +72,57 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _pulse_status_to_running(status: str) -> bool | None:
+    normalized = _optional_text(status)
+    if normalized is None:
+        return None
+    if normalized == "active":
+        return True
+    if normalized in {"inactive", "failed", "restarting", "stopping"}:
+        return False
+    return None
+
+
+def _build_strategy_running_resolver(
+    *,
+    pulse_control: PulseControlPlane | None = None,
+    cache_ttl_s: float = 1.0,
+):
+    pulse = pulse_control or PulseControlPlane()
+    ttl_s = max(float(cache_ttl_s), 0.0)
+    cached_running: dict[str, bool | None] = {}
+    cache_expires_at = 0.0
+
+    def _resolve(strategy_ids: list[str] | tuple[str, ...]) -> dict[str, bool | None]:
+        nonlocal cache_expires_at, cached_running
+
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = _optional_text(strategy_id)
+            if strategy_text is None or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+        if not deduped_ids:
+            return {}
+
+        refresh_needed = time.monotonic() >= cache_expires_at or any(
+            strategy_id not in cached_running for strategy_id in deduped_ids
+        )
+        if refresh_needed:
+            next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_running)
+            for strategy_id in deduped_ids:
+                status = pulse.get_job_status(f"equities-node-{strategy_id}")
+                next_cache[strategy_id] = _pulse_status_to_running(status)
+            cached_running = next_cache
+            cache_expires_at = time.monotonic() + ttl_s
+
+        return {strategy_id: cached_running.get(strategy_id) for strategy_id in deduped_ids}
+
+    return _resolve
 
 
 def _load_config(path: Path) -> dict[str, Any]:
@@ -95,7 +151,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--serve-fluxboard",
         action="store_true",
-        help="Serve built Fluxboard static assets at /equities/* with SPA fallback.",
+        help=(
+            "Serve built Fluxboard static assets at /static/fluxboard/* and "
+            "the SPA entry route at /equities with SPA fallback."
+        ),
     )
     parser.add_argument(
         "--fluxboard-dist",
@@ -177,6 +236,43 @@ def _build_contract_catalog(config: dict[str, Any]) -> tuple[ContractCatalogEntr
         )
 
     return tuple(deduped.values())
+
+
+def _build_contract_catalog_by_strategy(
+    config: dict[str, Any],
+    *,
+    contract_catalog: Sequence[ContractCatalogEntry],
+) -> dict[str, tuple[ContractCatalogEntry, ...]]:
+    contracts_by_instrument_id = {
+        contract.instrument_id.strip().upper(): contract
+        for contract in contract_catalog
+        if contract.instrument_id.strip()
+    }
+    contracts_by_strategy_id: dict[str, tuple[ContractCatalogEntry, ...]] = {}
+    for strategy_contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        per_strategy: list[ContractCatalogEntry] = []
+        seen: set[tuple[str, str, str]] = set()
+        for instrument_id in (
+            strategy_contract.maker_instrument_id,
+            strategy_contract.reference_instrument_id,
+        ):
+            contract = contracts_by_instrument_id.get(instrument_id.strip().upper())
+            if contract is None:
+                raise ValueError(
+                    "Missing contract catalog entry for "
+                    f"{strategy_contract.strategy_id!r} instrument {instrument_id!r}",
+                )
+            key = (
+                contract.exchange.strip().lower(),
+                contract.symbol.strip().upper(),
+                contract.instrument_id.strip().upper(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            per_strategy.append(contract)
+        contracts_by_strategy_id[strategy_contract.strategy_id] = tuple(per_strategy)
+    return contracts_by_strategy_id
 
 
 def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool) -> FluxConfig:
@@ -272,12 +368,16 @@ def _resolve_strategy_name(api_cfg: dict[str, Any]) -> str:
     return strategy_name
 
 
-def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> StrategyMetadata:
-    strategy_spec = get_strategy_spec(strategy_name)
+def _build_strategy_metadata(
+    api_cfg: dict[str, Any],
+    *,
+    strategy_spec: FluxStrategySpec,
+    base_asset: str | None = None,
+) -> StrategyMetadata:
     return StrategyMetadata(
         strategy_class=str(strategy_spec.profile_key),
         strategy_groups=str(api_cfg.get("strategy_groups", EQUITIES_DESCRIPTOR.profile)),
-        base_asset=str(api_cfg.get("base_asset", "BASE")),
+        base_asset=str(base_asset or api_cfg.get("base_asset", "BASE")),
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
         param_set=strategy_spec.param_set,
         strategy_family=strategy_spec.strategy_family,
@@ -285,8 +385,38 @@ def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> 
     )
 
 
+def build_equities_strategy_metadata_map(
+    api_cfg: dict[str, Any],
+    *,
+    strategy_ids: list[str],
+) -> dict[str, StrategyMetadata]:
+    configured_strategy_class = _optional_text(api_cfg.get("strategy_class"))
+    default_strategy_spec = (
+        get_strategy_spec(_resolve_strategy_name(api_cfg))
+        if configured_strategy_class
+        else DEFAULT_EQUITIES_STRATEGY_SPEC
+    )
+    contracts_by_strategy_id = {
+        contract.strategy_id: contract
+        for contract in decode_strategy_contracts(api_cfg.get("strategy_contracts") or [])
+    }
+    metadata_by_strategy_id: dict[str, StrategyMetadata] = {}
+    for strategy_id in strategy_ids:
+        contract = contracts_by_strategy_id.get(strategy_id)
+        strategy_spec = resolve_strategy_spec_for_strategy_id(
+            strategy_id,
+            default=default_strategy_spec,
+        )
+        metadata_by_strategy_id[strategy_id] = _build_strategy_metadata(
+            api_cfg,
+            strategy_spec=strategy_spec,
+            base_asset=(contract.portfolio_asset_id if contract is not None else None),
+        )
+    return metadata_by_strategy_id
+
+
 def build_strategy_metadata_for_test(strategy_name: str) -> StrategyMetadata:
-    return _build_strategy_metadata({}, strategy_name=strategy_name)
+    return _build_strategy_metadata({}, strategy_spec=get_strategy_spec(strategy_name))
 
 
 def _resolve_runtime_params_payloads(
@@ -294,7 +424,10 @@ def _resolve_runtime_params_payloads(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     if strategy_name == "makerv4":
         return MAKERV4_RUNTIME_PARAM_SCHEMA, MAKERV4_RUNTIME_PARAM_DEFAULTS
-    return MAKERV3_RUNTIME_PARAM_SCHEMA, MAKERV3_RUNTIME_PARAM_DEFAULTS
+    defaults = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
+    # Equities canaries use 1-share order sizing by default; keep the API fallback aligned with node runtime.
+    defaults["qty"] = 1.0
+    return MAKERV3_RUNTIME_PARAM_SCHEMA, defaults
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -336,14 +469,54 @@ def _is_within(parent: Path, candidate: Path) -> bool:
     return True
 
 
+def _register_fluxboard_spa_base_path(
+    app: Any,
+    *,
+    dist_root: Path,
+    base_path: str,
+    endpoint_prefix: str,
+) -> None:
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    def _serve_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+    app.add_url_rule(
+        base_path,
+        endpoint=f"{endpoint_prefix}_index",
+        view_func=_serve_index,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        f"{base_path}/",
+        endpoint=f"{endpoint_prefix}_index_slash",
+        view_func=_serve_index,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        f"{base_path}/<path:subpath>",
+        endpoint=f"{endpoint_prefix}_asset_or_spa",
+        view_func=_serve_asset_or_spa,
+        methods=["GET"],
+    )
+
+
 def _attach_fluxboard_equities_routes(app: Any, *, dist_dir: Path) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
 
-    def _serve_index() -> Any:
-        return send_from_directory(str(dist_root), "index.html")
+    def _serve_shared_static(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root), normalized)
 
     if EQUITIES_ALIAS_BASE_PATH:
         @app.get(EQUITIES_ALIAS_BASE_PATH)
@@ -356,28 +529,16 @@ def _attach_fluxboard_equities_routes(app: Any, *, dist_dir: Path) -> None:
             _ = subpath
             abort(404)
 
-    @app.get(DEFAULT_EQUITIES_BASE_PATH)
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/")
-    def _equities_index() -> Any:
-        return _serve_index()
+    @app.get(f"{DEFAULT_FLUXBOARD_STATIC_BASE_PATH}/<path:subpath>")
+    def _fluxboard_shared_static(subpath: str) -> Any:
+        return _serve_shared_static(subpath)
 
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/assets/<path:asset_path>")
-    def _equities_assets(asset_path: str) -> Any:
-        normalized = asset_path.strip().lstrip("/")
-        candidate = (dist_root / "assets" / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root / "assets"), normalized)
-
-    @app.get(f"{DEFAULT_EQUITIES_BASE_PATH}/<path:subpath>")
-    def _equities_asset_or_spa(subpath: str) -> Any:
-        normalized = subpath.strip().lstrip("/")
-        candidate = (dist_root / normalized).resolve()
-        if candidate.is_file() and _is_within(dist_root, candidate):
-            return send_from_directory(str(dist_root), normalized)
-        if normalized.startswith("assets/"):
-            abort(404)
-        return _serve_index()
+    _register_fluxboard_spa_base_path(
+        app,
+        dist_root=dist_root,
+        base_path=DEFAULT_EQUITIES_BASE_PATH,
+        endpoint_prefix="fluxboard_equities",
+    )
 
 
 def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
@@ -461,9 +622,17 @@ def main() -> None:
 
     metadata = _build_strategy_metadata(
         api_cfg,
-        strategy_name=strategy_spec.strategy_id,
+        strategy_spec=strategy_spec,
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
+    strategy_metadata_map = build_equities_strategy_metadata_map(
+        api_cfg,
+        strategy_ids=profile_strategy_map.get(EQUITIES_DESCRIPTOR.profile, []),
+    )
+    contract_catalog_by_strategy = _build_contract_catalog_by_strategy(
+        config,
+        contract_catalog=contracts,
+    )
     emit_startup_banner(
         prefix="equities-run-api",
         message=_equities_profile_summary(profile_strategy_map, profile_required_strategy_map),
@@ -485,7 +654,13 @@ def main() -> None:
         flux_config,
         cast(RedisClientProtocol, redis_client),
         contract_catalog=contracts,
+        contract_catalog_resolver=lambda strategy_id: contract_catalog_by_strategy.get(
+            strategy_id,
+            contracts,
+        ),
+        strategy_running_resolver=_build_strategy_running_resolver(),
         strategy_metadata=metadata,
+        strategy_metadata_resolver=strategy_metadata_map.__getitem__,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
         params_schema=params_schema,

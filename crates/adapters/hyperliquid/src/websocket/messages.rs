@@ -1033,6 +1033,10 @@ pub enum NautilusWsMessage {
     FundingRate(FundingRateUpdate),
     /// Error occurred.
     Error(String),
+    /// Hyperliquid app-level pong received.
+    Pong,
+    /// WebSocket reconnecting.
+    Reconnecting,
     /// WebSocket reconnected.
     Reconnected,
 }

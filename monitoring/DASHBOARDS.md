@@ -13,7 +13,7 @@ The trading system must not emit Prometheus metrics inline from MakerV3 strategy
 execution for this surface. Dashboards are expected to read from sidecar
 exporters that poll existing Redis state and local SQLite telemetry out of band.
 
-## Planned dashboards
+## Dashboard files
 
 - `tokenmm_liquidity_v1.json`
 - `tokenmm_markouts_v1.json`
@@ -29,6 +29,8 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 
 - Liquidity sidecar: `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help`
   Provides liquidity and uptime metrics from existing Redis strategy state.
+  Discovers `tokenmm` strategies from `configs/strategies.ini` or falls back to
+  the current `plumeusdt_<venue>_<product>_makerv3` allowlist.
 - Markouts sidecar: `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help`
   Provides markout performance metrics from existing `fills.sqlite` and `markouts.sqlite`.
 

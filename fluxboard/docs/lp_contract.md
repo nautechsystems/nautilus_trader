@@ -58,7 +58,7 @@ Each LP hedger uses the same Redis family keyed by `<state_key>`:
   - `plume_weth_lp`
 - `third_lp` must not appear in the public selector contract until it has a real identity and config.
 - `LP_API_BACKEND_URL=http://127.0.0.1:5025` remains the hidden backend contract.
-- Built Fluxboard static files must resolve from the neutral shared prefix `/static/fluxboard/*`; `/lp` and `/tokenmm` stay SPA entry routes, not asset owners.
+- Built Fluxboard static files must resolve from the neutral shared prefix `/static/fluxboard/*`; `/equities`, `/lp`, and `/tokenmm` stay SPA entry routes, not asset owners.
 - Band1 and Band2 are the only auto-started production instances during rollout.
 - `service-hedger3` and `service-hedger4` are staged managed services: Pulse-visible, stopped by default, and not part of `flux-lp.target`.
 - The shared surface must keep the Chainsaw-visible controls available: instance selector, state pills, restart, enable/disable, config editing, geometry overrides, threshold overrides, and recent-hedges clear.

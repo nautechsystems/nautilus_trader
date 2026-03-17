@@ -132,7 +132,7 @@ class ExecutionMarkoutPersistenceActor(
             )
 
     def on_stop(self) -> None:
-        self._expire_pending(now_ms=self._now_ms())
+        self._finalize_pending_on_stop(now_ms=self._now_ms())
         if self.clock is not None:
             with suppress(Exception):
                 if self._expiry_check_timer_name in set(self.clock.timer_names):
@@ -385,6 +385,42 @@ class ExecutionMarkoutPersistenceActor(
                 self._pending_by_strategy[strategy_id] = remaining_by_client_order_id
             else:
                 self._pending_by_strategy.pop(strategy_id, None)
+
+    def _finalize_pending_on_stop(self, *, now_ms: int) -> None:
+        if not self._pending_by_strategy:
+            return
+
+        for strategy_id, strategy_pending_rows in list(self._pending_by_strategy.items()):
+            for client_order_id, pending_rows in strategy_pending_rows.items():
+                for row in pending_rows:
+                    resolution_status = (
+                        "expired" if row.expires_at_ts_ms <= now_ms else "stopped"
+                    )
+                    self._enqueue_payload(
+                        _ResolvedMarkout(
+                            event_id=row.event_id,
+                            trade_id=row.trade_id,
+                            strategy_id=row.strategy_id,
+                            instrument_id=row.instrument_id,
+                            client_order_id=client_order_id,
+                            order_side=row.order_side,
+                            fill_px=row.fill_px,
+                            fill_qty=row.fill_qty,
+                            benchmark_name=row.benchmark_name,
+                            horizon_s=row.horizon_s,
+                            target_ts_ms=row.target_ts_ms,
+                            benchmark_ts_ms=None,
+                            benchmark_px=None,
+                            markout_abs=None,
+                            markout_bps=None,
+                            resolution_status=resolution_status,
+                            run_id=row.run_id,
+                            quote_cycle_id=row.quote_cycle_id,
+                            reason_code=row.reason_code,
+                            level_index=row.level_index,
+                        ),
+                    )
+            self._pending_by_strategy.pop(strategy_id, None)
 
     def _now_ms(self) -> int:
         return current_ts_ns(self.clock) // 1_000_000

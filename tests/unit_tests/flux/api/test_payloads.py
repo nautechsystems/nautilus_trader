@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib
-import nautilus_trader.flux.api.payloads as payloads
+
 import pytest
 
+import nautilus_trader.flux.api.payloads as payloads
+from nautilus_trader.flux.api._payloads_balances import combine_portfolio_snapshot_rows
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_alerts_rows
@@ -1105,6 +1107,179 @@ def test_filter_balance_rows_for_contract_scope_keeps_stable_collateral_for_usd_
     ]
 
 
+def test_filter_balance_rows_for_contract_scope_preserves_shared_account_rows_when_requested() -> None:
+    rows = [
+        {
+            "row_id": "cash-hkd",
+            "exchange": "ibkr",
+            "asset": "HKD",
+            "total": "85671.33",
+            "source_scope": "shared_account",
+            "account_scope_id": "ibkr.reference.main",
+        },
+        {
+            "row_id": "pos-f",
+            "exchange": "ibkr",
+            "kind": "position",
+            "instrument_id": "F.NYSE",
+            "asset": "F",
+            "signed_qty": "-6",
+            "source_scope": "shared_account",
+            "account_scope_id": "ibkr.reference.main",
+        },
+        {
+            "row_id": "pos-aapl",
+            "exchange": "ibkr",
+            "kind": "position",
+            "instrument_id": "AAPL.NASDAQ",
+            "asset": "AAPL",
+            "signed_qty": "1",
+        },
+    ]
+
+    filtered = filter_balance_rows_for_contract_scope(
+        rows,
+        contracts=(
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        preserve_shared_account_rows=True,
+    )
+
+    assert [row["row_id"] for row in filtered] == [
+        "cash-hkd",
+        "pos-f",
+        "pos-aapl",
+    ]
+
+
+def test_combine_portfolio_snapshot_rows_uses_semantic_identity_for_shared_accounts() -> None:
+    rows = combine_portfolio_snapshot_rows(
+        balance_rows=[
+            {
+                "row_id": "equities:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDC",
+                "total": "0.00000000",
+                "scope": "shared_account",
+                "ts_ms": 200,
+            },
+        ],
+        account_rows=[
+            {
+                "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDC",
+                "total": "0.000000",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 100,
+            },
+            {
+                "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:HKD",
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "HKD",
+                "total": "85671.33",
+                "source_scope": "shared_account",
+                "account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    )
+
+    by_identity = {
+        (row["exchange"], row["asset"]): row
+        for row in rows
+    }
+
+    assert sorted(by_identity) == [("hyperliquid", "USDC"), ("ibkr", "HKD")]
+    assert by_identity[("hyperliquid", "USDC")]["source_scope"] == "shared_account"
+    assert by_identity[("hyperliquid", "USDC")]["account_scope_id"] == "hyperliquid.xyz.main"
+    assert (
+        by_identity[("hyperliquid", "USDC")]["row_id"]
+        == "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC"
+    )
+    assert by_identity[("ibkr", "HKD")]["account_scope_id"] == "ibkr.reference.main"
+
+
+def test_combine_portfolio_snapshot_rows_deduplicates_ibkr_account_aliases() -> None:
+    rows = combine_portfolio_snapshot_rows(
+        balance_rows=[
+            {
+                "row_id": "equities:cash:ibkr:IBKR-U10015777:HKD",
+                "exchange": "ibkr",
+                "account": "IBKR-U10015777",
+                "asset": "HKD",
+                "total": "85412.63",
+                "ts_ms": 100,
+            },
+        ],
+        account_rows=[
+            {
+                "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U10015777:HKD",
+                "exchange": "ibkr",
+                "account": "U10015777",
+                "asset": "HKD",
+                "total": "85412.63",
+                "source_scope": "shared_account",
+                "account_scope_id": "ibkr.reference.main",
+                "ts_ms": 200,
+            },
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["row_id"] == "equities:shared:ibkr.reference.main:cash:ibkr:U10015777:HKD"
+    assert rows[0]["account"] == "U10015777"
+    assert rows[0]["account_scope_id"] == "ibkr.reference.main"
+
+
+def test_combine_portfolio_snapshot_rows_assigns_distinct_position_row_ids_per_account() -> None:
+    rows = combine_portfolio_snapshot_rows(
+        balance_rows=[],
+        account_rows=[
+            {
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "AAPL",
+                "kind": "position",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "signed_qty": "-1",
+                "ts_ms": 200,
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+            },
+            {
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-alt",
+                "asset": "AAPL",
+                "kind": "position",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "signed_qty": "-2",
+                "ts_ms": 201,
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.alt",
+            },
+        ],
+        portfolio_id="equities",
+    )
+
+    rows_by_account = {row["account"]: row for row in rows}
+
+    assert sorted(rows_by_account) == ["HYPERLIQUID-alt", "HYPERLIQUID-master"]
+    assert rows_by_account["HYPERLIQUID-master"]["row_id"] == (
+        "equities:pos:hyperliquid:HYPERLIQUID-MASTER:XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    )
+    assert rows_by_account["HYPERLIQUID-alt"]["row_id"] == (
+        "equities:pos:hyperliquid:HYPERLIQUID-ALT:XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    )
+
+
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
@@ -1245,7 +1420,7 @@ def test_build_signals_payload_preserves_ibkr_ref_identity_without_ref_leg_data(
     )
 
     payload = build_signals_payload(
-        strategy_id="aapl_tradexyz_makerv3",
+        strategy_id="aapl_tradexyz_makerv4",
         metadata=metadata,
         state={
             "bot_on": False,
@@ -1294,8 +1469,8 @@ def test_strategy_metadata_payload_includes_param_set_and_strategy_version() -> 
         strategy_version="v3",
     )
 
-    assert metadata.as_payload(strategy_id="aapl_tradexyz_makerv3") == {
-        "strategy_id": "aapl_tradexyz_makerv3",
+    assert metadata.as_payload(strategy_id="aapl_tradexyz_makerv4") == {
+        "strategy_id": "aapl_tradexyz_makerv4",
         "class": "maker_v3",
         "strategy_groups": "equities",
         "base_asset": "AAPL",
@@ -2643,3 +2818,208 @@ def test_build_signals_payload_synthesizes_distinct_makerv4_hedge_leg_from_role_
     assert quote_snapshot["hedge_leg"]["symbol"] == "AAPL/USD"
     assert quote_snapshot["ref_leg"]["instrument_id"] == "AAPL.NASDAQ"
     assert quote_snapshot["hedge_route"] == "BLUEOCEAN"
+
+
+def test_build_signals_payload_emits_makerv4_execution_mode_overnight_and_fee_operator_contract() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv4",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": 6.5,
+                    "hedge_route": "SMART",
+                },
+                "hedge_policy": {
+                    "route": "BLUEOCEAN",
+                    "time_in_force": "IOC",
+                    "outside_rth": False,
+                    "include_overnight": False,
+                    "cancel_after_ms": 5000,
+                },
+                "fee_assumptions": {
+                    "ibkr_fee_plan": "tiered",
+                    "ibkr_fee_min_usd": 0.35,
+                    "hl_taker_fee_bps": 4.5,
+                    "hl_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                },
+                "pending_hedge": {
+                    "route": "SMART",
+                    "time_in_force": "DAY",
+                    "outside_rth": True,
+                    "include_overnight": True,
+                    "cancel_after_ms": None,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0, "execution_mode": "take_take"},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["maker_v4"]["operator"] == {
+        "execution_mode": "take_take",
+        "behavior": "take_take",
+        "hedge_policy": {
+            "route": "SMART",
+            "time_in_force": "DAY",
+            "outside_rth": True,
+            "include_overnight": True,
+            "cancel_after_ms": None,
+        },
+        "fee_assumptions": {
+            "ibkr_fee_plan": "tiered",
+            "ibkr_fee_min_usd": 0.35,
+            "hl_taker_fee_bps": 4.5,
+            "hl_maker_fee_bps": 0.25,
+            "assumed_hedge_fee_bps": 1.0,
+        },
+    }
+
+
+def test_build_signals_payload_emits_complete_makerv4_steady_state_hedge_policy_without_pending_hedge(
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv4",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 0,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": 6.5,
+                    "hedge_route": "SMART",
+                },
+                "hedge_policy": {
+                    "route": "SMART",
+                    "time_in_force": "DAY",
+                    "outside_rth": True,
+                    "include_overnight": True,
+                    "cancel_after_ms": 5000,
+                },
+                "fee_assumptions": {
+                    "ibkr_fee_plan": "tiered",
+                    "ibkr_fee_min_usd": 0.35,
+                    "hl_taker_fee_bps": 4.5,
+                    "hl_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0, "execution_mode": "take_take"},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["maker_v4"]["operator"]["hedge_policy"] == {
+        "route": "SMART",
+        "time_in_force": "DAY",
+        "outside_rth": True,
+        "include_overnight": True,
+        "cancel_after_ms": 5000,
+    }

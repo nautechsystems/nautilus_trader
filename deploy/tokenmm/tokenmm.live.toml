@@ -158,7 +158,7 @@ inventory_stale_after_ms = 3000
 inventory_aggregation_mode = "partial"
 allow_partial_global_risk = true
 # Naming convention:
-# - Flux strategy IDs: <execution_venue>_<product>_plumeusdt_makerv3
+# - Flux strategy IDs: plumeusdt_<venue>_<product>_makerv3
 # - Reference pricing stays on Binance spot via the `BINANCE_SPOT` venue alias.
 # - TokenMM strategy file names match Flux strategy IDs exactly.
 # - Production deploy configs use descriptive Nautilus strategy IDs, not generic numeric tags.

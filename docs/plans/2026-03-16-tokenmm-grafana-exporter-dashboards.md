@@ -1,29 +1,26 @@
 # TokenMM Grafana Exporter Dashboards Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-> **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
-
 **Goal:** Add a minimal Grafana surface for TokenMM by porting the Chainsaw liquidity dashboard and adding a basic durable markouts dashboard backed by local exporters in this repo.
 
 **Architecture:** Recommended approach: copy only the Grafana provisioning scaffold and the relevant TokenMM dashboard shape from `/home/ubuntu/chainsaw`, then add two small repo-local exporters. Use a Redis-backed exporter for quote uptime and quote depth because those metrics live in live strategy state today, and use a SQLite-backed exporter for markouts because `execution_markout` is already the durable source of truth in this repo. Do not pull in the full Chainsaw monitoring stack, exchange-volume polling, or broader warehouse/reporting work for this PR. Most importantly, all Grafana work must stay off the strategy hotpath: no additional logic in quote-cycle execution, no synchronous Prometheus emission from strategy code, no new persistence in live handlers for dashboard-only needs, and no changes that add per-tick or per-fill overhead to trading execution.
 
 **Tech Stack:** Python 3.13, `prometheus_client`, Redis, SQLite, pandas, Grafana JSON dashboards, pytest.
 
-## Progress Tracker
+## Progress tracker
 
 **Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
 
-| Task | Status | Owner | Notes / Last Update |
-| --- | --- | --- | --- |
-| Overall | completed | main | 2026-03-16: Tasks 1-4 are now implemented and verified in the worktree. Final targeted verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_metrics_exporter.py tests/unit_tests/ops/test_tokenmm_markouts_exporter.py tests/unit_tests/ops/test_grafana_assets.py` -> `16 passed`; both dashboard JSON files parse with `python3 -m json.tool`; both exporters pass `--help`; `git diff --check` -> clean. Baseline note retained: `pytest -q --noconftest tests/unit_tests/ops/test_makerv3_markouts.py tests/unit_tests/research/test_telemetry_helpers.py` on clean `origin/main` currently hits 2 existing `flux.api` import failures in the markouts ops slice. |
-| Task 1: Create The Minimal Grafana Scaffold And Asset Contract Tests | completed | main | 2026-03-16: implemented in `55e623d3022894acbfe7efad05a0bc4895d575ee`; verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_grafana_assets.py` -> `3 passed`; YAML parse check -> `yaml-ok`; `git diff --check` -> clean. Spec review: ✅. Quality review: no findings. Commit-hygiene caveat: the commit also captured the controller-owned plan doc, which reviews judged incidental and non-blocking. |
-| Task 2: Port The TokenMM Liquidity Exporter And Dashboard | completed | main | 2026-03-16: repaired the label-lifecycle bug with test-first changes in the worktree: added a regression test proving stale fallback label tuples are removed after Redis context updates, then switched metric updates to sync current labelsets and remove stale ones. Verification after the fix: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_metrics_exporter.py` -> `6 passed`; `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help` -> PASS; `git diff --check -- ops/scripts/exporters/tokenmm_metrics_exporter.py tests/unit_tests/ops/test_tokenmm_metrics_exporter.py` -> clean. |
-| Task 3: Add The SQLite-Backed TokenMM Markouts Exporter | completed | main | 2026-03-16: bounded-read fix is now implemented locally with test-first coverage. The exporter now issues a bounded `execution_markout` query filtered by `benchmark_name` and trailing `target_ts_ms`, then loads only matching `execution_fill` rows by durable fill key instead of full-table scans. Verification from the worktree: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_markouts_exporter.py` -> `4 passed`; `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help` -> PASS; `git diff --check -- ops/scripts/exporters/tokenmm_markouts_exporter.py tests/unit_tests/ops/test_tokenmm_markouts_exporter.py` -> clean. |
-| Task 4: Add The Basic Markouts Dashboard And Operator Docs | completed | main | 2026-03-16: accepted the existing branch changes for `tokenmm_markouts_v1.json`, the monitoring catalog, and the markouts runbook updates after final verification. Asset coverage now verifies the markouts dashboard metric names and the runbook’s explicit off-hotpath sidecar guidance. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_grafana_assets.py` -> `6 passed`; both dashboard JSON files parse with `python3 -m json.tool`. |
+| Task | Status | Notes / last update |
+| --- | --- | --- |
+| Overall | completed | 2026-03-16: Tasks 1-4 are implemented and verified. Final targeted verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_metrics_exporter.py tests/unit_tests/ops/test_tokenmm_markouts_exporter.py tests/unit_tests/ops/test_grafana_assets.py` -> `16 passed`; both dashboard JSON files parse with `python3 -m json.tool`; both exporters pass `--help`; `git diff --check` -> clean. Baseline note retained: `pytest -q --noconftest tests/unit_tests/ops/test_makerv3_markouts.py tests/unit_tests/research/test_telemetry_helpers.py` on clean `origin/main` currently hits two existing `flux.api` import failures in the markouts ops slice. |
+| Task 1: Create The Minimal Grafana Scaffold And Asset Contract Tests | completed | 2026-03-16: implemented in `55e623d3022894acbfe7efad05a0bc4895d575ee`; verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_grafana_assets.py` -> `3 passed`; YAML parse check -> `yaml-ok`; `git diff --check` -> clean. Spec review passed. Quality review found no issues. |
+| Task 2: Port The TokenMM Liquidity Exporter And Dashboard | completed | 2026-03-16: repaired the label-lifecycle bug with test-first changes: added a regression test proving stale fallback label tuples are removed after Redis context updates, then switched metric updates to sync current labelsets and remove stale ones. Verification after the fix: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_metrics_exporter.py` -> `6 passed`; `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help` -> PASS; `git diff --check -- ops/scripts/exporters/tokenmm_metrics_exporter.py tests/unit_tests/ops/test_tokenmm_metrics_exporter.py` -> clean. |
+| Task 3: Add The SQLite-Backed TokenMM Markouts Exporter | completed | 2026-03-16: bounded-read fix is implemented with test-first coverage. The exporter now issues a bounded `execution_markout` query filtered by `benchmark_name` and trailing `target_ts_ms`, then loads only matching `execution_fill` rows by durable fill key instead of full-table scans. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_tokenmm_markouts_exporter.py` -> `4 passed`; `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help` -> PASS; `git diff --check -- ops/scripts/exporters/tokenmm_markouts_exporter.py tests/unit_tests/ops/test_tokenmm_markouts_exporter.py` -> clean. |
+| Task 4: Add The Basic Markouts Dashboard And Operator Docs | completed | 2026-03-16: finalized `tokenmm_markouts_v1.json`, the monitoring catalog, and the markouts runbook updates after verification. Asset coverage verifies the markouts dashboard metric names and the runbook’s explicit off-hotpath sidecar guidance. Verification: `python3 -m pytest -q --noconftest tests/unit_tests/ops/test_grafana_assets.py` -> `6 passed`; both dashboard JSON files parse with `python3 -m json.tool`. |
 
 ---
 
-## Hotpath Guardrails
+## Hotpath guardrails
 
 These constraints are mandatory for every task in this plan.
 
@@ -33,7 +30,7 @@ These constraints are mandatory for every task in this plan.
 - Prefer already-published Redis state and already-persisted SQLite tables. If data is not already available cheaply, leave it out of scope for this PR.
 - Reviews must reject any change that adds dashboard-driven work to the trade/quote hotpath.
 
-### Task 1: Create The Minimal Grafana Scaffold And Asset Contract Tests
+### Task 1: Create the minimal Grafana scaffold and asset contract tests
 
 **Files:**
 - Create: `monitoring/grafana/provisioning/dashboards/dashboards.yml`
@@ -94,7 +91,7 @@ git commit -m "feat(monitoring): add minimal grafana scaffold"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 2: Port The TokenMM Liquidity Exporter And Dashboard
+### Task 2: Port the TokenMM liquidity exporter and dashboard
 
 **Files:**
 - Create: `ops/scripts/exporters/tokenmm_metrics_exporter.py`
@@ -186,7 +183,7 @@ git commit -m "feat(tokenmm): add grafana liquidity exporter"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 3: Add The SQLite-Backed TokenMM Markouts Exporter
+### Task 3: Add the SQLite-backed TokenMM markouts exporter
 
 **Files:**
 - Create: `ops/scripts/exporters/tokenmm_markouts_exporter.py`
@@ -265,7 +262,7 @@ git commit -m "feat(markouts): add grafana sqlite exporter"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 4: Add The Basic Markouts Dashboard And Operator Docs
+### Task 4: Add the basic markouts dashboard and operator docs
 
 **Files:**
 - Create: `monitoring/grafana/dashboards/tokenmm_markouts_v1.json`

@@ -773,6 +773,8 @@ pub enum HyperliquidFillDirection {
 pub enum HyperliquidInfoRequestType {
     /// Get metadata about available markets.
     Meta,
+    /// Get registered perp DEX metadata.
+    PerpDexs,
     /// Get spot metadata (tokens and pairs).
     SpotMeta,
     /// Get metadata with asset contexts (for price precision).
@@ -837,6 +839,7 @@ impl HyperliquidInfoRequestType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Meta => "meta",
+            Self::PerpDexs => "perpDexs",
             Self::SpotMeta => "spotMeta",
             Self::MetaAndAssetCtxs => "metaAndAssetCtxs",
             Self::SpotMetaAndAssetCtxs => "spotMetaAndAssetCtxs",

@@ -274,6 +274,55 @@ def test_order_rejected_structured_bitget_http_429_triggers_venue_protection_cir
     assert events[-1][1]["raw_reason"] == raw_reason
 
 
+def test_order_rejected_hyperliquid_cumulative_request_limit_triggers_venue_protection_circuit(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(cancel_all_instrument_orders=True)
+
+    canceled: list[tuple[str, bool, bool | None]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    stopped: list[bool] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    strategy._cancel_managed_quotes = lambda reason, force=False, **kwargs: canceled.append(
+        (reason, force, kwargs.get("allow_instrument_cancel")),
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy.stop_immediately = lambda: stopped.append(True)
+
+    raw_reason = (
+        "Too many cumulative requests sent (15965 > 15855) for cumulative volume traded "
+        "$5856.56. Place taker orders to free up 1 request per USDC traded."
+    )
+    strategy.on_order_rejected(
+        SimpleNamespace(
+            client_order_id="RESTING-1",
+            instrument_id=strategy.config.maker_instrument_id,
+            reason=raw_reason,
+            due_post_only=False,
+            ts_event=1,
+        ),
+    )
+
+    assert stopped == [True]
+    assert canceled == [("venue_protection_circuit_breaker", True, False)]
+    assert states[-1] == "blocked_venue_protection"
+    assert alerts[-1]["alert_key"] == "venue_protection_circuit_breaker"
+    assert alerts[-1]["source_event"] == "order_rejected"
+    assert alerts[-1]["raw_reason"] == raw_reason
+    assert alerts[-1]["quota_requests_used"] == 15965
+    assert alerts[-1]["quota_requests_cap"] == 15855
+    assert alerts[-1]["quota_cumulative_volume_traded"] == "5856.56"
+    assert events[-1][0] == "venue_protection_circuit_breaker"
+    assert events[-1][1]["raw_reason"] == raw_reason
+    assert events[-1][1]["quota_requests_used"] == 15965
+    assert events[-1][1]["quota_requests_cap"] == 15855
+    assert events[-1][1]["quota_cumulative_volume_traded"] == "5856.56"
+
+
 def test_order_cancel_rejected_nonfatal_reason_sets_retry_cooldown_and_alerts_burst(
     strategy_factory,
 ) -> None:

@@ -76,7 +76,14 @@ class BitgetExecutionClient(LiveExecutionClient):
             if cls._string_value(product_type)
         }
         if product_types:
-            return AccountType.CASH if product_types == {"SPOT"} else AccountType.MARGIN
+            if product_types == {"SPOT"}:
+                return (
+                    AccountType.MARGIN
+                    if cls._account_mode_from_config(config) == "UTA"
+                    and cls._allow_cash_borrowing_from_config(config)
+                    else AccountType.CASH
+                )
+            return AccountType.MARGIN
 
         return (
             AccountType.MARGIN

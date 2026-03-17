@@ -6,6 +6,7 @@ from typing import Any
 
 from nautilus_trader.flux.strategies.makerv3.inventory import InventorySkewCache
 from nautilus_trader.flux.strategies.makerv3.inventory import compute_inventory_skew
+from nautilus_trader.flux.strategies.makerv3.inventory import portfolio_asset_id
 
 
 def _runtime_params(**overrides: Decimal | float | str) -> dict[str, Decimal]:
@@ -190,3 +191,11 @@ def test_inventory_skew_cache_honors_ttl_and_invalidation() -> None:
     assert third["inventory_qty"] == Decimal(2)
     assert fourth["inventory_qty"] == Decimal(3)
     assert calls["count"] == 3
+
+
+def test_portfolio_asset_id_prefers_configured_canonical_asset() -> None:
+    assert portfolio_asset_id(
+        configured_asset_id="AAPL",
+        instrument=None,
+        instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+    ) == "AAPL"

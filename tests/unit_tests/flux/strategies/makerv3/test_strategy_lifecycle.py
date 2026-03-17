@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.common.account_projection import encode_profile_account_snapshot
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import decode_component
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
@@ -143,6 +144,12 @@ def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility
     assert events[2][1]["cancel_success"] == 0
     assert events[2][1]["cancel_all_instrument"] is False
     assert strategy._managed_client_order_ids == {"RESTING-1"}
+
+
+def test_strategy_factory_accepts_execution_account_scope_id(strategy_factory) -> None:
+    strategy = strategy_factory(execution_account_scope_id="hyperliquid.xyz.main")
+
+    assert strategy.config.execution_account_scope_id == "hyperliquid.xyz.main"
 
 
 def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(
@@ -398,6 +405,62 @@ def test_on_start_preserves_runtime_bot_on_when_force_off_disabled(
     assert manager.update_calls == []
     assert manager.publish_calls == []
     assert strategy._effective_bot_on() is True
+
+
+def test_on_start_uses_quote_ticks_for_reference_leg_when_enabled(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory(reference_use_quote_ticks=True)
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._runtime_bool = lambda _name: False
+    strategy._refresh_runtime_params = lambda *args, **kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+
+    subscribed_books: list[str] = []
+    subscribed_quotes: list[str] = []
+    unsubscribed_books: list[str] = []
+    unsubscribed_quotes: list[str] = []
+    strategy.subscribe_order_book_deltas = lambda instrument_id, **_kwargs: subscribed_books.append(
+        str(instrument_id),
+    )
+    strategy.subscribe_quote_ticks = lambda instrument_id, **_kwargs: subscribed_quotes.append(
+        str(instrument_id),
+    )
+    strategy.unsubscribe_order_book_deltas = lambda instrument_id, **_kwargs: unsubscribed_books.append(
+        str(instrument_id),
+    )
+    strategy.unsubscribe_quote_ticks = lambda instrument_id, **_kwargs: unsubscribed_quotes.append(
+        str(instrument_id),
+    )
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy.on_start()
+    strategy.on_stop()
+
+    assert subscribed_books == [str(strategy.config.maker_instrument_id)]
+    assert subscribed_quotes == [str(strategy.config.reference_instrument_id)]
+    assert unsubscribed_books == [str(strategy.config.maker_instrument_id)]
+    assert unsubscribed_quotes == [str(strategy.config.reference_instrument_id)]
+    assert strategy.config.reference_instrument_id not in strategy._books
 
 
 def test_on_start_logs_derivative_qty_guardrail_summary(strategy_factory, monkeypatch) -> None:
@@ -1916,6 +1979,466 @@ def test_compute_inventory_skew_uses_shared_portfolio_global_qty_and_maker_leg_l
     assert skew["local_inventory_qty_base"] == Decimal(36689)
 
 
+def test_maker_local_position_summary_falls_back_to_shared_account_projection_for_exact_instrument(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_999,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    summary = strategy._maker_local_position_summary("GOOGL")
+
+    assert summary.venue_qty == Decimal("-6")
+    assert summary.base_qty == Decimal("-6")
+
+
+def test_maker_local_position_summary_prefers_fresh_flat_local_snapshot_over_older_shared_account_projection(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    other_instrument_id = InstrumentId.from_str("XYZ:NVDA-USD-PERP.HYPERLIQUID")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+        other_instrument_id: _identity_exposure_instrument(
+            other_instrument_id,
+            base_currency="NVDA",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_999,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(
+            position_reports={
+                other_instrument_id: [
+                    SimpleNamespace(
+                        instrument_id=other_instrument_id,
+                        signed_decimal_qty=Decimal("2"),
+                        avg_px_open=Decimal("100"),
+                        ts_last=1_700_000_000_124_000_000,
+                        ts_init=1_700_000_000_124_000_000,
+                        venue_position_id=None,
+                    ),
+                ],
+            },
+            ts_init=1_700_000_000_124_000_000,
+        ),
+    )
+
+    summary = strategy._maker_local_position_summary("GOOGL")
+
+    assert summary.venue_qty == Decimal("0")
+    assert summary.base_qty == Decimal("0")
+
+
+def test_maker_local_position_summary_ignores_stale_shared_account_projection_snapshot(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_700_000_010_500_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_009_900_000_000,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_000,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    summary = strategy._maker_local_position_summary("GOOGL")
+
+    assert summary.venue_qty == Decimal("0")
+    assert summary.base_qty == Decimal("0")
+
+
+def test_maker_local_position_summary_ignores_shared_account_projection_older_than_local_activity(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_700_000_010_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_010_000,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy._last_maker_position_activity_ns = 1_700_000_000_124_000_000
+
+    summary = strategy._maker_local_position_summary("GOOGL")
+
+    assert summary.venue_qty == Decimal("0")
+    assert summary.base_qty == Decimal("0")
+
+
+def test_publish_portfolio_inventory_component_uses_shared_account_projection_when_cache_is_flat(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_000_123,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_000_999,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    component = decode_component(
+        fake_redis.get(
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id=strategy._external_strategy_id,
+                portfolio_id="equities",
+                base_currency="GOOGL",
+            ),
+        ),
+    )
+
+    assert component is not None
+    assert component.local_qty_base == Decimal("-6")
+    assert component.local_position_qty_venue == Decimal("-6")
+    assert component.local_position_qty_base == Decimal("-6")
+
+
+def test_publish_portfolio_inventory_component_uses_projection_snapshot_timestamp(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("GOOGL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_700_000_010_500_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="GOOGL",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="GOOGL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(
+            reference_instrument_id,
+            base_currency="GOOGL",
+        ),
+    }
+    fake_redis = _FakeRedis()
+    fake_redis.set(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+        ),
+        encode_profile_account_snapshot(
+            {
+                "profile_id": "equities",
+                "account_scope_ids": ["hyperliquid.xyz.main"],
+                "rows": [
+                    {
+                        "kind": "position",
+                        "account_scope_id": "hyperliquid.xyz.main",
+                        "instrument_id": "XYZ:GOOGL-USD-PERP.HYPERLIQUID",
+                        "signed_qty_venue": "-6",
+                        "ts_ms": 1_700_000_009_900_000_000,
+                    },
+                ],
+                "totals": {},
+                "server_ts_ms": 1_700_000_010_000,
+            },
+        ),
+    )
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy.configure_profile_account_projection_feed(
+        redis_client=fake_redis,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    component = decode_component(
+        fake_redis.get(
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id=strategy._external_strategy_id,
+                portfolio_id="equities",
+                base_currency="GOOGL",
+            ),
+        ),
+    )
+
+    assert component is not None
+    assert component.local_qty_base == Decimal("-6")
+    assert component.ts_ms == 1_700_000_010_000
+
+
 def test_compute_inventory_skew_uses_partial_shared_portfolio_global_qty_when_enabled(
     clocked_strategy_factory,
 ) -> None:
@@ -2148,6 +2671,54 @@ def test_publish_portfolio_inventory_component_uses_maker_leg_only(
     assert component.qty_conversion_status == "identity"
     assert component.qty_conversion_source == "instrument.info:base_exposure_mode=identity"
     assert component.maker_instrument_id == "PLUMEUSDT-LINEAR.BYBIT"
+
+
+def test_publish_portfolio_inventory_component_uses_portfolio_asset_id_not_xyz_base(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="AAPL",
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(
+        maker_instrument_id,
+        base_currency="XYZ:AAPL",
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: _identity_exposure_instrument(reference_instrument_id, base_currency="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [
+            SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(25)),
+        ],
+        accounts=lambda: [],
+        account_for_venue=lambda venue: None,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    fake_redis = _FakeRedis()
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    key = FluxRedisKeys.portfolio_inventory_component(
+        strategy_id=strategy._external_strategy_id,
+        portfolio_id="equities",
+        base_currency="AAPL",
+    )
+    component = decode_component(fake_redis.get(key))
+
+    assert component is not None
+    assert component.base_currency == "AAPL"
 
 
 def test_publish_portfolio_inventory_component_keeps_conversion_diagnostics_for_unavailable_base_exposure(

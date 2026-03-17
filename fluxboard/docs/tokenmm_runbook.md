@@ -50,6 +50,7 @@ pnpm --dir pulse-ui install --frozen-lockfile
 - Vite dev server default: `127.0.0.1:5173`.
 - Vite preview default: `127.0.0.1:4173`.
 - Socket.IO path: `/socket.io`.
+- Shared Fluxboard static mount in prod-like mode: `/static/fluxboard/`.
 - TokenMM app base path in prod-like mode: `/tokenmm/`.
 - Pulse app base path in prod-like mode: `/pulse/`.
 - Legacy alias routes: `/tokenm` and `/tokenm/*` redirect to `/tokenmm` for backward compatibility.
@@ -58,7 +59,7 @@ Frontend variables (set in `fluxboard/.env`, template: `fluxboard/.env.example`)
 
 - `FLUXAPI_SCHEME`, `FLUXAPI_HOST`, `FLUXAPI_PORT`, `FLUXAPI_URL`: Vite proxy target.
 - `VITE_BACKEND_URL=/`: forces same-origin socket URL so Vite proxies `/socket.io` in dev.
-- `FLUXBOARD_BASE_PATH=/tokenmm/`: build base path for prod-like serving.
+- Production builds pin Fluxboard assets to the shared `/static/fluxboard/*` prefix while `/tokenmm/*` remains the SPA route; there is no operator-set frontend base-path knob for prod.
 
 Backend runner variables (export in shell before running `flux.runners.tokenmm.run_api`; also documented as comments in `fluxboard/.env.example`):
 
@@ -139,7 +140,7 @@ FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python -m flux.runners.tokenmm.run_api
 
 Expected behavior:
 
-- Built assets are served from `fluxboard/dist`.
+- Built Fluxboard assets are served from the shared `/static/fluxboard/*` mount backed by `fluxboard/dist`.
 - Built Pulse assets are served from `pulse-ui/dist`.
 - `/tokenmm/*` deep links return SPA HTML (including `/tokenmm/order-view`).
 - `/pulse/*` deep links return SPA HTML.

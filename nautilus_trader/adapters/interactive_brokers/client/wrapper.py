@@ -857,6 +857,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         received.
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_account_summary_end,
+            req_id=reqId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
         self.logAnswer(current_fn_name(), vars())

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Shared types and pure helpers for Flux API payload assembly."""
+
+from __future__ import annotations
 
 import json
 import time
@@ -134,6 +134,20 @@ def as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     return [value]
+
+
+def decode_text_list(value: Any) -> list[str]:
+    """Normalize a scalar or sequence into a de-duplicated list of non-empty text values."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in as_list(value):
+        text = decode_text(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
 
 
 def safe_int(value: Any) -> int | None:
@@ -311,6 +325,12 @@ def _derive_contract_type(
         return "swap"
     if venue_text.endswith("_LINEAR"):
         return "linear"
+    if is_position:
+        if venue_text.split("_", maxsplit=1)[0] == "IBKR":
+            return "equity"
+        if raw_symbol:
+            return "spot"
+        return "perp"
     if raw_symbol:
         return "spot"
     if is_position:
@@ -406,6 +426,8 @@ def canonical_naming_fields(
         and not instrument_text
     ):
         display_name_short = display_asset
+    elif contract_type == "equity":
+        display_name_short = f"{display_asset} Stock".strip() if display_asset else "Stock"
     elif product_type == "perp":
         display_name_short = f"{display_asset} Perp".strip()
     else:
@@ -663,6 +685,7 @@ def build_params_payload(
     params: dict[str, Any],
     schema: Mapping[str, Mapping[str, Any]],
     running: bool | None = None,
+    metadata: StrategyMetadata | None = None,
 ) -> dict[str, Any]:
     """Build the params response payload for a strategy."""
 
@@ -672,6 +695,8 @@ def build_params_payload(
         "schema": {str(name): dict(spec) for name, spec in schema.items()},
     }
     payload["running"] = running
+    if metadata is not None:
+        payload["meta"] = metadata.as_payload(strategy_id=strategy_id)
     return payload
 
 

@@ -17,7 +17,6 @@ from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AF
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import decode_portfolio_inventory
 from flux.common.portfolio_inventory import encode_component
-from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.makerv3 import failures as failures_mod
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import managed_orders as managed_orders_mod
@@ -52,9 +51,13 @@ from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
+from flux.strategies.shared.account_projection_positions import (
+    read_matching_shared_account_position_row,
+)
+from flux.strategies.shared.trades import publish_trade as publish_shared_trade
+from flux.strategies.makerv3.wire import QuoteCycleContext
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
-from flux.strategies.makerv3.wire import QuoteCycleContext
 from nautilus_trader.live.reconciliation import collapse_duplicate_netting_position_reports
 
 
@@ -69,8 +72,6 @@ if TYPE_CHECKING:
 _to_decimal = pricing_mod.to_decimal
 _to_decimal_or_none = pricing_mod.to_decimal_or_none
 _to_int_or_default = pricing_mod.to_int_or_default
-
-
 _decimal_to_json_str = publisher_mod.decimal_to_json_str
 
 
@@ -127,6 +128,26 @@ def _order_side_text(side: Any) -> str | None:
     return text or None
 
 
+def _quote_cycle_seq_from_id(value: str | None) -> int:
+    text = str(value or "")
+    if ":" not in text:
+        return 0
+    try:
+        return int(text.rsplit(":", 1)[1])
+    except ValueError:
+        return 0
+
+
+def _normalized_timestamp_ms(value: Any) -> int:
+    try:
+        ts_value = int(value or 0)
+    except Exception:
+        return 0
+    while ts_value > 10_000_000_000_000:
+        ts_value //= 1_000
+    return max(0, ts_value)
+
+
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, Decimal):
         return _decimal_to_json_str(value)
@@ -175,6 +196,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
         maker_instrument_id: InstrumentId
         reference_instrument_id: InstrumentId
         order_qty: Decimal
+        portfolio_asset_id: str | None = None
+        execution_account_scope_id: str | None = None
         qty_unit: OrderQtyUnit = "venue"
         external_strategy_id: str = "makerv3"
         bot_on: bool | None = None
@@ -216,6 +239,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         quote_fail_critical_after_s: NonNegativeFloat | None = None
         spot_cash_borrowing_policy: SpotCashBorrowingPolicy = "none"
         force_bot_off_on_start: bool = False
+        reference_use_quote_ticks: bool = False
         cancel_all_instrument_orders: bool = False
 
         @property
@@ -306,6 +330,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
             )
             self._portfolio_inventory_allow_partial_global_risk = False
+            self._profile_account_projection_client: Any | None = None
+            self._profile_account_projection_profile_id: str | None = None
+            self._profile_account_projection_account_scope_id = (
+                self.config.execution_account_scope_id.strip()
+                if self.config.execution_account_scope_id
+                else None
+            )
+            self._profile_account_projection_namespace = "flux"
+            self._profile_account_projection_schema_version = "v1"
             self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
             self._last_maker_position_activity_ns = 0
             self._bounded_convergence_next_start_side = OrderSide.BUY
@@ -394,24 +427,32 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     continue
                 subscribed_instrument_ids.append(instrument_id)
 
+            reference_uses_quote_ticks = self._reference_uses_quote_ticks()
             self._books = {
                 instrument_id: OrderBook(
                     instrument_id=instrument_id,
                     book_type=BookType.L2_MBP,
                 )
                 for instrument_id in subscribed_instrument_ids
+                if not (
+                    reference_uses_quote_ticks
+                    and instrument_id == self.config.reference_instrument_id
+                )
             }
-            self._last_bbo = dict.fromkeys(self._books)
-            self._last_bbo_ts_ns = dict.fromkeys(self._books, 0)
-            self._last_bbo_event_ts_ns = dict.fromkeys(self._books, 0)
-            self._last_bbo_init_ts_ns = dict.fromkeys(self._books, 0)
-            self._last_market_bbo_publish_ns = dict.fromkeys(self._books, 0)
+            self._last_bbo = dict.fromkeys(subscribed_instrument_ids)
+            self._last_bbo_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
+            self._last_bbo_event_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
+            self._last_bbo_init_ts_ns = dict.fromkeys(subscribed_instrument_ids, 0)
+            self._last_market_bbo_publish_ns = dict.fromkeys(subscribed_instrument_ids, 0)
 
             for instrument_id in subscribed_instrument_ids:
-                self.subscribe_order_book_deltas(
-                    instrument_id=instrument_id,
-                    book_type=BookType.L2_MBP,
-                )
+                if reference_uses_quote_ticks and instrument_id == self.config.reference_instrument_id:
+                    self.subscribe_quote_ticks(instrument_id=instrument_id)
+                else:
+                    self.subscribe_order_book_deltas(
+                        instrument_id=instrument_id,
+                        book_type=BookType.L2_MBP,
+                    )
             msgbus = getattr(self, "msgbus", None)
             if msgbus is None:
                 msgbus = getattr(self, "_msgbus", None)
@@ -518,7 +559,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 if instrument_id in unsubscribed_instrument_ids:
                     continue
                 unsubscribed_instrument_ids.append(instrument_id)
-                self.unsubscribe_order_book_deltas(instrument_id=instrument_id)
+                if self._reference_uses_quote_ticks() and instrument_id == self.config.reference_instrument_id:
+                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+                else:
+                    self.unsubscribe_order_book_deltas(instrument_id=instrument_id)
             self._publish_portfolio_inventory_component(state="on_stop")
             self._publish_state("on_stop")
             self.log.info(
@@ -560,25 +604,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if not self._books_fresh_for_quoting(now_ns=now_ns):
                 return
 
-            quote_cycle = self._begin_quote_cycle(
-                now_ns=now_ns,
-                trigger_source="timer_guard",
-                trigger_instrument_id=self.config.maker_instrument_id,
-                trigger_md_ts_event_ns=int(
-                    self._last_bbo_event_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                )
-                or None,
-                trigger_md_ts_init_ns=int(
-                    self._last_bbo_init_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                )
-                or None,
-            )
+            quote_cycle_id = self._next_quote_cycle_id(now_ns=now_ns)
             try:
-                self._refresh_quotes(
-                    now_ns=now_ns,
-                    quote_cycle_id=quote_cycle.quote_cycle_id,
-                    quote_cycle=quote_cycle,
-                )
+                self._refresh_quotes(now_ns=now_ns, quote_cycle_id=quote_cycle_id)
                 self._quote_failures_ns.clear()
             except Exception as e:
                 self._handle_quote_failure(now_ns=now_ns, exc=e, context="on_time_event")
@@ -588,6 +616,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             Process market deltas and trigger quote-cycle refresh when eligible.
             """
             market_data_mod.on_order_book_deltas(self, deltas)
+
+        def on_quote_tick(self, tick: Any) -> None:
+            """
+            Process top-of-book quote ticks for the reference leg when configured.
+            """
+            market_data_mod.on_quote_tick(self, tick)
 
         def _enforce_stale_market_data(self, *, now_ns: int) -> None:
             """
@@ -611,61 +645,38 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return
 
             max_age_ms = self._runtime_int("max_age_ms")
-            max_age_ns = max_age_ms * 1_000_000
 
             maker_ts_ns = int(self._last_bbo_ts_ns.get(self.config.maker_instrument_id, 0) or 0)
             if maker_ts_ns <= 0:
-                quote_cycle = self._begin_quote_cycle(
-                    now_ns=now_ns,
-                    trigger_source="timer_guard",
-                    trigger_instrument_id=self.config.maker_instrument_id,
-                    trigger_md_ts_event_ns=int(
-                        self._last_bbo_event_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                    )
-                    or None,
-                    trigger_md_ts_init_ns=int(
-                        self._last_bbo_init_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                    )
-                    or None,
-                )
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_maker_md",
                     cancel_reason="maker_book_unavailable",
                     reason_code=REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE,
-                    quote_cycle=quote_cycle,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
                     warning_message=(
                         "Quoting blocked (maker book unavailable) "
                         f"strategy_id={self._external_strategy_id}"
                     ),
                 )
                 return
-            maker_age_ns = now_ns - maker_ts_ns
-            if maker_age_ns >= max_age_ns:
-                age_ms = int(maker_age_ns / 1_000_000)
-                quote_cycle = self._begin_quote_cycle(
-                    now_ns=now_ns,
-                    trigger_source="timer_guard",
-                    trigger_instrument_id=self.config.maker_instrument_id,
-                    trigger_md_ts_event_ns=int(
-                        self._last_bbo_event_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                    )
-                    or None,
-                    trigger_md_ts_init_ns=int(
-                        self._last_bbo_init_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
-                    )
-                    or None,
-                )
+            maker_health = self._quote_health(
+                instrument_id=self.config.maker_instrument_id,
+                leg_role="maker",
+                now_ns=now_ns,
+                max_quote_age_ms=max_age_ms,
+            )
+            if not maker_health.usable_for_pricing:
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_maker_md",
                     cancel_reason="maker_md_stale",
                     reason_code=REASON_BLOCKED_MAKER_MD_STALE,
-                    quote_cycle=quote_cycle,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
                     warning_message=(
                         "Quoting blocked (maker data stale) "
                         f"strategy_id={self._external_strategy_id} "
-                        f"age_ms={age_ms} max_age_ms={max_age_ms}"
+                        f"age_ms={maker_health.quote_age_ms} max_age_ms={max_age_ms}"
                     ),
                 )
                 return
@@ -673,39 +684,34 @@ if _NAUTILUS_IMPORT_ERROR is None:
             reference_ts_ns = int(
                 self._last_bbo_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
             )
-            reference_age_ns = now_ns - reference_ts_ns if reference_ts_ns > 0 else None
-            if reference_age_ns is None or reference_age_ns >= max_age_ns:
-                reference_age_ms = (
-                    int(reference_age_ns / 1_000_000) if reference_age_ns is not None else None
-                )
-                quote_cycle = self._begin_quote_cycle(
-                    now_ns=now_ns,
-                    trigger_source="timer_guard",
-                    trigger_instrument_id=self.config.reference_instrument_id,
-                    trigger_md_ts_event_ns=int(
-                        self._last_bbo_event_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
-                    )
-                    or None,
-                    trigger_md_ts_init_ns=int(
-                        self._last_bbo_init_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
-                    )
-                    or None,
-                )
+            reference_health = self._quote_health(
+                instrument_id=self.config.reference_instrument_id,
+                leg_role="reference",
+                now_ns=now_ns,
+                max_quote_age_ms=max_age_ms,
+            )
+            if reference_ts_ns <= 0 or not reference_health.usable_for_pricing:
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_reference_md",
                     cancel_reason="reference_md_stale",
                     reason_code=REASON_BLOCKED_REFERENCE_MD_STALE,
-                    quote_cycle=quote_cycle,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
                     warning_message=(
                         "Quoting blocked (reference data stale) "
                         f"strategy_id={self._external_strategy_id} "
-                        f"age_ms={reference_age_ms} max_age_ms={max_age_ms}"
+                        f"age_ms={reference_health.quote_age_ms} max_age_ms={max_age_ms}"
                     ),
                 )
 
         def _effective_bot_on(self) -> bool:
             return runtime_params_mod.effective_bot_on(self)
+
+        def _reference_uses_quote_ticks(self) -> bool:
+            return bool(
+                getattr(self.config, "reference_use_quote_ticks", False)
+                and self.config.reference_instrument_id != self.config.maker_instrument_id
+            )
 
         def _quote_management_suspended(self) -> bool:
             is_exiting = getattr(self, "is_exiting", None)
@@ -722,13 +728,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
             max_age_ms: int | None = None,
         ) -> bool:
             max_age_value = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
-            max_age_ns = max(1, max_age_value) * 1_000_000
-            for instrument_id in (
-                self.config.maker_instrument_id,
-                self.config.reference_instrument_id,
+            for leg_role, instrument_id in (
+                ("maker", self.config.maker_instrument_id),
+                ("reference", self.config.reference_instrument_id),
             ):
-                ts_ns = int(self._last_bbo_ts_ns.get(instrument_id, 0) or 0)
-                if ts_ns <= 0 or now_ns - ts_ns >= max_age_ns:
+                health = self._quote_health(
+                    instrument_id=instrument_id,
+                    leg_role=leg_role,
+                    now_ns=now_ns,
+                    max_quote_age_ms=max_age_value,
+                )
+                if not health.usable_for_pricing:
                     return False
             return True
 
@@ -1100,22 +1110,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 state=self._last_state_name or "running",
                 now_ms_value=int(int(event.ts_event) // 1_000_000),
             )
-            trade_payload = {
-                "strategy_id": self._external_strategy_id,
-                "event": "order_filled",
-                "instrument_id": str(event.instrument_id),
-                "client_order_id": str(event.client_order_id),
-                "trade_id": str(event.trade_id),
-                "side": str(event.order_side),
-                "qty": str(event.last_qty),
-                "price": str(event.last_px),
-                "ts_event": int(event.ts_event),
-            }
+            trade_context: dict[str, Any] = {}
             if place_intent is not None:
                 for key in ("run_id", "quote_cycle_id", "reason_code", "level_index"):
                     if place_intent.get(key) is not None:
-                        trade_payload[key] = place_intent[key]
-            self._publish_json(TOPIC_TRADE, trade_payload)
+                        trade_context[key] = place_intent[key]
+            publish_shared_trade(
+                self._publish_json,
+                strategy_id=self._external_strategy_id,
+                event=event,
+                instrument_lookup=self._resolve_instrument,
+                trade_role="maker",
+                extra_fields=trade_context,
+                topic=TOPIC_TRADE,
+            )
             self._record_maker_position_activity(event)
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
             self._publish_current_state_snapshot()
@@ -1589,7 +1597,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 qty_conversion_status = "missing_metadata"
                 qty_conversion_source = "maker instrument unavailable"
             else:
-                exposure = exposure_from_venue_qty(
+                exposure = inventory_mod.base_exposure_from_venue_qty(
                     instrument,
                     signed_qty,
                     last_px=self._inventory_base_exposure_last_px(),
@@ -1814,6 +1822,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 instrument_id=self.config.maker_instrument_id,
             )
 
+        def _portfolio_asset_id(self) -> str | None:
+            instrument = self._maker_instrument
+            if instrument is None:
+                instrument = self._instruments.get(self.config.maker_instrument_id)
+            return inventory_mod.portfolio_asset_id(
+                configured_asset_id=getattr(self.config, "portfolio_asset_id", None),
+                instrument=instrument,
+                instrument_id=self.config.maker_instrument_id,
+            )
+
         def configure_portfolio_inventory_feed(
             self,
             *,
@@ -1830,6 +1848,21 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._portfolio_inventory_schema_version = schema_version
             self._portfolio_inventory_stale_after_ms = max(1, int(stale_after_ms))
             self._portfolio_inventory_allow_partial_global_risk = bool(allow_partial_global_risk)
+
+        def configure_profile_account_projection_feed(
+            self,
+            *,
+            redis_client: Any,
+            profile_id: str,
+            account_scope_id: str,
+            namespace: str,
+            schema_version: str,
+        ) -> None:
+            self._profile_account_projection_client = redis_client
+            self._profile_account_projection_profile_id = profile_id.strip() or None
+            self._profile_account_projection_account_scope_id = account_scope_id.strip() or None
+            self._profile_account_projection_namespace = namespace
+            self._profile_account_projection_schema_version = schema_version
 
         def _maker_instrument_is_spot(self) -> bool:
             instrument_id_text = str(self.config.maker_instrument_id).upper()
@@ -1856,59 +1889,168 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return side == OrderSide.SELL
             return False
 
+        def _position_summary_from_snapshot(
+            self,
+            snapshot: Mapping[str, Any],
+        ) -> inventory_mod.PositionExposureSummary:
+            signed_qty = _to_decimal_or_none(snapshot.get("signed_qty"))
+            if signed_qty is None:
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
+            snapshot_base_qty_raw = snapshot.get("signed_qty_base")
+            if snapshot_base_qty_raw is None:
+                snapshot_base_qty_raw = snapshot.get("base_qty")
+            snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
+            snapshot_conversion_status = str(
+                snapshot.get("qty_conversion_status") or "",
+            ).strip() or None
+            snapshot_conversion_source = str(
+                snapshot.get("qty_conversion_source") or "",
+            ).strip() or None
+            if snapshot_base_qty is not None or snapshot_conversion_status is not None:
+                return inventory_mod.PositionExposureSummary(
+                    venue_qty=signed_qty,
+                    base_qty=snapshot_base_qty,
+                    qty_complete=snapshot_base_qty is not None,
+                    qty_conversion_status=snapshot_conversion_status,
+                    qty_conversion_source=snapshot_conversion_source,
+                )
+            instrument = self._resolve_instrument(self.config.maker_instrument_id)
+            if instrument is None:
+                return inventory_mod.PositionExposureSummary(
+                    venue_qty=signed_qty,
+                    base_qty=None,
+                    qty_complete=False,
+                    qty_conversion_status="missing_metadata",
+                    qty_conversion_source="maker instrument unavailable",
+                )
+            exposure = inventory_mod.base_exposure_from_venue_qty(
+                instrument,
+                signed_qty,
+                last_px=self._inventory_base_exposure_last_px(),
+            )
+            return inventory_mod.PositionExposureSummary(
+                venue_qty=signed_qty,
+                base_qty=exposure.base_qty,
+                qty_complete=exposure.base_qty is not None,
+                qty_conversion_status=exposure.qty_conversion_status,
+                qty_conversion_source=exposure.qty_conversion_source,
+            )
+
+        def _shared_account_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            client = self._profile_account_projection_client
+            profile_id = self._profile_account_projection_profile_id
+            account_scope_id = self._profile_account_projection_account_scope_id
+            if client is None or profile_id is None or account_scope_id is None:
+                return None
+            row = read_matching_shared_account_position_row(
+                redis_client=client,
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                instrument_id=str(self.config.maker_instrument_id),
+                namespace=self._profile_account_projection_namespace,
+                schema_version=self._profile_account_projection_schema_version,
+            )
+            if not isinstance(row, Mapping):
+                return None
+            signed_qty = _to_decimal_or_none(row.get("signed_qty_venue") or row.get("signed_qty"))
+            if signed_qty is None:
+                return None
+            projection_ts_ms = _normalized_timestamp_ms(row.get("server_ts_ms"))
+            if projection_ts_ms <= 0:
+                return None
+            now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
+            if now_ms_value - projection_ts_ms > max(1, self._portfolio_inventory_stale_after_ms):
+                return None
+            row_ts_ms = _normalized_timestamp_ms(
+                row.get("ts_ms") or row.get("ts_last") or row.get("ts_init"),
+            )
+            position_state_ts_ms = row_ts_ms if row_ts_ms > 0 else projection_ts_ms
+            local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
+            if position_state_ts_ms * 1_000_000 < local_activity_ns:
+                return None
+            avg_px_open = _to_decimal_or_none(row.get("avg_px_open"))
+            if avg_px_open is None:
+                avg_px_open = _to_decimal_or_none(row.get("mark_px") or row.get("mark"))
+            position_id = str(
+                row.get("venue_position_id") or row.get("position_id") or "",
+            ).strip() or None
+            snapshot = self._build_maker_position_report_snapshot(
+                signed_qty=signed_qty,
+                avg_px_open=avg_px_open,
+                position_id=position_id,
+                ts_ns=projection_ts_ms * 1_000_000,
+            )
+            snapshot["ts_ms"] = projection_ts_ms
+            snapshot["position_ts_ms"] = position_state_ts_ms
+            snapshot_base_qty_raw = row.get("signed_qty_base")
+            if snapshot_base_qty_raw is None:
+                snapshot_base_qty_raw = row.get("base_qty")
+            snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
+            if snapshot_base_qty is not None:
+                snapshot["signed_qty_base"] = snapshot_base_qty
+                snapshot["quantity_base"] = abs(snapshot_base_qty)
+            snapshot_conversion_status = str(
+                row.get("qty_conversion_status") or "",
+            ).strip() or None
+            if snapshot_conversion_status is not None:
+                snapshot["qty_conversion_status"] = snapshot_conversion_status
+            snapshot_conversion_source = str(
+                row.get("qty_conversion_source") or "",
+            ).strip() or None
+            if snapshot_conversion_source is not None:
+                snapshot["qty_conversion_source"] = snapshot_conversion_source
+            return snapshot
+
+        @staticmethod
+        def _position_summary_has_nonzero_inventory(
+            summary: inventory_mod.PositionExposureSummary,
+        ) -> bool:
+            return any(
+                qty is not None and qty != 0
+                for qty in (summary.venue_qty, summary.base_qty)
+            )
+
+        def _maker_local_position_context(
+            self,
+            currency_code: str | None,
+        ) -> tuple[inventory_mod.PositionExposureSummary, str | None, int | None]:
+            if not currency_code or self._maker_instrument_is_spot():
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None), None, None
+            fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
+            if fresh_report_snapshot is not None:
+                return (
+                    self._position_summary_from_snapshot(fresh_report_snapshot),
+                    "positions",
+                    _normalized_timestamp_ms(
+                        fresh_report_snapshot.get("ts_ms")
+                        or (
+                            int(fresh_report_snapshot.get("ts_ns") or 0) // 1_000_000
+                        ),
+                    ),
+                )
+            position_summary = self._position_exposure_summary(
+                currency_code,
+                instrument_id=self.config.maker_instrument_id,
+            )
+            if self._position_summary_has_nonzero_inventory(position_summary):
+                return position_summary, "positions", None
+            shared_snapshot = self._shared_account_maker_position_report_snapshot()
+            if shared_snapshot is not None:
+                return (
+                    self._position_summary_from_snapshot(shared_snapshot),
+                    "shared_account_projection",
+                    _normalized_timestamp_ms(shared_snapshot.get("ts_ms")),
+                )
+            if position_summary.venue_qty is not None or position_summary.base_qty is not None:
+                return position_summary, "positions", None
+            return position_summary, None, None
+
         def _maker_local_position_summary(
             self,
             currency_code: str | None,
         ) -> inventory_mod.PositionExposureSummary:
-            if not currency_code or self._maker_instrument_is_spot():
-                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
-            fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
-            if fresh_report_snapshot is not None:
-                signed_qty = _to_decimal_or_none(fresh_report_snapshot.get("signed_qty"))
-                if signed_qty is not None:
-                    snapshot_base_qty_raw = fresh_report_snapshot.get("signed_qty_base")
-                    if snapshot_base_qty_raw is None:
-                        snapshot_base_qty_raw = fresh_report_snapshot.get("base_qty")
-                    snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
-                    snapshot_conversion_status = str(
-                        fresh_report_snapshot.get("qty_conversion_status") or "",
-                    ).strip() or None
-                    snapshot_conversion_source = str(
-                        fresh_report_snapshot.get("qty_conversion_source") or "",
-                    ).strip() or None
-                    if snapshot_base_qty is not None or snapshot_conversion_status is not None:
-                        return inventory_mod.PositionExposureSummary(
-                            venue_qty=signed_qty,
-                            base_qty=snapshot_base_qty,
-                            qty_complete=snapshot_base_qty is not None,
-                            qty_conversion_status=snapshot_conversion_status,
-                            qty_conversion_source=snapshot_conversion_source,
-                        )
-                    instrument = self._resolve_instrument(self.config.maker_instrument_id)
-                    if instrument is None:
-                        return inventory_mod.PositionExposureSummary(
-                            venue_qty=signed_qty,
-                            base_qty=None,
-                            qty_complete=False,
-                            qty_conversion_status="missing_metadata",
-                            qty_conversion_source="maker instrument unavailable",
-                        )
-                    exposure = exposure_from_venue_qty(
-                        instrument,
-                        signed_qty,
-                        last_px=self._inventory_base_exposure_last_px(),
-                    )
-                    return inventory_mod.PositionExposureSummary(
-                        venue_qty=signed_qty,
-                        base_qty=exposure.base_qty,
-                        qty_complete=exposure.base_qty is not None,
-                        qty_conversion_status=exposure.qty_conversion_status,
-                        qty_conversion_source=exposure.qty_conversion_source,
-                    )
-            return self._position_exposure_summary(
-                currency_code,
-                instrument_id=self.config.maker_instrument_id,
-            )
+            summary, _source, _source_ts_ms = self._maker_local_position_context(currency_code)
+            return summary
 
         def _maker_local_spot_qty(self, currency_code: str | None) -> Decimal | None:
             if not currency_code or not self._maker_instrument_is_spot():
@@ -1980,16 +2122,29 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> None:
             portfolio_id = self._portfolio_inventory_portfolio_id
             client = self._portfolio_inventory_client
-            base_currency = self._maker_base_currency_code()
-            if not portfolio_id or client is None or not base_currency:
+            portfolio_asset_id = self._portfolio_asset_id()
+            maker_base_currency = self._maker_base_currency_code()
+            if (
+                not portfolio_id
+                or client is None
+                or not portfolio_asset_id
+                or not maker_base_currency
+            ):
                 return
             ts_ms = (
                 int(self.clock.timestamp_ns() // 1_000_000)
                 if now_ms_value is None
                 else int(now_ms_value)
             )
-            local_position_summary = self._maker_local_position_summary(base_currency)
-            local_spot_qty = self._maker_local_spot_qty(base_currency)
+            local_position_summary, local_position_source, local_position_source_ts_ms = (
+                self._maker_local_position_context(maker_base_currency)
+            )
+            if (
+                local_position_source == "shared_account_projection"
+                and local_position_source_ts_ms is not None
+            ):
+                ts_ms = local_position_source_ts_ms
+            local_spot_qty = self._maker_local_spot_qty(maker_base_currency)
             local_qty_base = inventory_mod.local_inventory_total(
                 local_position_qty=local_position_summary.base_qty,
                 local_spot_qty=local_spot_qty,
@@ -1997,7 +2152,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             component = StrategyInventoryComponent(
                 strategy_id=self._external_strategy_id,
                 portfolio_id=portfolio_id,
-                base_currency=base_currency,
+                base_currency=portfolio_asset_id,
                 local_qty_base=local_qty_base,
                 ts_ms=ts_ms,
                 local_position_qty_venue=local_position_summary.venue_qty,
@@ -2012,7 +2167,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             key = FluxRedisKeys.portfolio_inventory_component(
                 strategy_id=self._external_strategy_id,
                 portfolio_id=portfolio_id,
-                base_currency=base_currency,
+                base_currency=portfolio_asset_id,
                 namespace=self._portfolio_inventory_namespace,
                 schema_version=self._portfolio_inventory_schema_version,
             )
@@ -2025,8 +2180,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params: Mapping[str, Any] | None = None,
         ) -> dict[str, Any]:
             base_currency = self._maker_base_currency_code()
+            portfolio_asset_id = self._portfolio_asset_id()
             portfolio_global_qty_base, _portfolio_block_reason, portfolio_diagnostics = (
-                self._shared_portfolio_inventory_qty_and_block_reason(base_currency)
+                self._shared_portfolio_inventory_qty_and_block_reason(portfolio_asset_id)
             )
             use_shared_portfolio = bool(self._portfolio_inventory_portfolio_id)
             global_position_summary = inventory_mod.PositionExposureSummary(
@@ -2057,7 +2213,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     if portfolio_global_qty_base is not None
                     else "portfolio_unavailable"
                 )
-            local_position_summary = self._maker_local_position_summary(base_currency)
+            local_position_summary, local_position_source, _local_position_source_ts_ms = self._maker_local_position_context(
+                base_currency,
+            )
             local_spot_qty = self._maker_local_spot_qty(base_currency)
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
@@ -2075,6 +2233,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 base_currency=base_currency,
                 runtime_params=runtime_params,
             )
+            if (
+                local_position_source == "shared_account_projection"
+                and local_position_summary.base_qty is not None
+                and local_spot_qty is None
+            ):
+                skew["local_inventory_source"] = "shared_account_projection"
             if global_position_summary.qty_conversion_status is not None:
                 skew["global_position_qty_conversion_status"] = global_position_summary.qty_conversion_status
                 skew["global_position_qty_conversion_source"] = global_position_summary.qty_conversion_source
@@ -2129,7 +2293,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 quote_cycle_seq=int(getattr(self, "_quote_cycle_seq", 0)),
                 instrument_id=str(self.config.maker_instrument_id),
                 trigger_source=trigger_source,
-                trigger_instrument_id=str(trigger_instrument_id) if trigger_instrument_id is not None else None,
+                trigger_instrument_id=(
+                    None if trigger_instrument_id is None else str(trigger_instrument_id)
+                ),
                 trigger_md_ts_event_ns=trigger_md_ts_event_ns,
                 trigger_md_ts_init_ns=trigger_md_ts_init_ns,
                 ts_cycle_start_ns=int(now_ns),
@@ -2155,7 +2321,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 quote_cycle_seq=quote_cycle_seq,
                 instrument_id=str(self.config.maker_instrument_id),
                 trigger_source=trigger_source,
-                trigger_instrument_id=str(trigger_instrument_id) if trigger_instrument_id is not None else None,
+                trigger_instrument_id=(
+                    None if trigger_instrument_id is None else str(trigger_instrument_id)
+                ),
                 trigger_md_ts_event_ns=trigger_md_ts_event_ns,
                 trigger_md_ts_init_ns=trigger_md_ts_init_ns,
                 ts_cycle_start_ns=int(now_ns),
@@ -2179,6 +2347,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 quote_cycle = self._quote_cycle_context_from_id(
                     now_ns=now_ns,
                     quote_cycle_id=quote_cycle_id_value,
+                    trigger_source=event_payload.pop("trigger_source", None),
+                    trigger_instrument_id=event_payload.pop("trigger_instrument_id", None),
+                    trigger_md_ts_event_ns=event_payload.pop("trigger_md_ts_event_ns", None),
+                    trigger_md_ts_init_ns=event_payload.pop("trigger_md_ts_init_ns", None),
                 )
             envelope = build_quote_cycle_envelope(
                 context=quote_cycle,
@@ -2236,8 +2408,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             intent_type: str,
             client_order_id: str,
-            quote_cycle: QuoteCycleContext | None = None,
-            quote_cycle_id: str | None = None,
+            quote_cycle_id: str | None,
             reason_code: str,
             side: OrderSide | str | None,
             level_index: int | None,
@@ -2255,25 +2426,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "client_order_id": client_order_id,
                 "intent_type": intent_type,
                 "run_id": str(getattr(self, "_run_id", self._strategy_identity)),
-                "quote_cycle_id": (
-                    quote_cycle.quote_cycle_id if quote_cycle is not None else quote_cycle_id
-                ),
+                "quote_cycle_id": quote_cycle_id,
                 "reason_code": reason_code,
                 "side": _order_side_text(side),
                 "level_index": level_index,
                 "target_px": None if target_px is None else str(target_px),
                 "cancel_px": None if cancel_px is None else str(cancel_px),
                 "match_tol": None if match_tol is None else str(match_tol),
-                "ts_market_data_event_ns": (
-                    quote_cycle.trigger_md_ts_event_ns if quote_cycle is not None else None
-                ),
-                "ts_market_data_recv_ns": (
-                    quote_cycle.trigger_md_ts_init_ns if quote_cycle is not None else None
-                ),
                 "ts_decision_ns": int(ts_decision_ns),
                 "ts_submit_local_ns": ts_submit_local_ns,
                 "ts_cancel_request_local_ns": ts_cancel_request_local_ns,
-                "decision_context_json": None,
+                "decision_context_json": _json_safe_value(decision_context_json),
             }
             with suppress(Exception):
                 self._publish_json(TOPIC_ORDER_INTENT, payload)
@@ -2300,6 +2463,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             quote_cycle_id: str | None = None,
             warning_message: str,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             quote_engine_mod.handle_stale_quote_block(
                 self,
                 now_ns=now_ns,
@@ -2373,13 +2538,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             quote_cycle_id: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> int:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             if max_reprice_cancel_actions is None:
                 max_reprice_cancel_actions = self._runtime_int("max_cancels_per_side_per_cycle")
             if max_place_actions is None:
                 max_place_actions = self._runtime_int("max_places_per_side_per_cycle")
             if max_total_actions is None:
                 max_total_actions = self._runtime_int("max_total_actions_per_cycle")
-
             desired_dec = [
                 (_price_to_decimal(target_price), cancel_px, match_tol)
                 for target_price, cancel_px, match_tol in desired_levels
@@ -2440,7 +2606,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="CANCEL",
                     client_order_id=str(getattr(order, "client_order_id", "")),
-                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
                     reason_code=cancel_action.reason_code,
                     side=side,
@@ -2474,6 +2639,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             level_indices: tuple[int, ...] | list[int] | None = None,
             pending_backlog_mode: str | None = None,
         ) -> int:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             if pending_backlog_mode is None:
                 if self._has_pending_managed_cancels():
                     return 0
@@ -2547,7 +2714,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="PLACE",
                     client_order_id=str(getattr(order, "client_order_id", "")),
-                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
                     reason_code=REASON_PLACE_MISSING_LEVEL,
                     side=side,
@@ -2613,6 +2779,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             reason_code: str | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             if managed_orders is None:
                 managed_orders = self._managed_orders()
             requested_cancel_ids: set[str] = set()
@@ -2633,7 +2801,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     self._publish_order_intent(
                         intent_type="CANCEL",
                         client_order_id=str(getattr(order, "client_order_id", "")),
-                        quote_cycle=quote_cycle,
                         quote_cycle_id=quote_cycle_id,
                         reason_code=cancel_reason_code,
                         side=getattr(order, "side", None),
@@ -2695,6 +2862,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._invalidate_inventory_skew_cache()
 
         def _best_bid_ask(self, instrument_id: InstrumentId) -> tuple[Decimal, Decimal] | None:
+            if self._reference_uses_quote_ticks() and instrument_id == self.config.reference_instrument_id:
+                cached = self._last_bbo.get(instrument_id)
+                if cached is not None:
+                    return cached
             book = self._books.get(instrument_id)
             if book is None:
                 return None
@@ -2703,6 +2874,61 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if bid is None or ask is None:
                 return None
             return bid.as_decimal(), ask.as_decimal()
+
+        def _quote_health(
+            self,
+            *,
+            instrument_id: InstrumentId,
+            leg_role: str,
+            now_ns: int,
+            max_quote_age_ms: int | None = None,
+        ) -> Any:
+            bbo = self._best_bid_ask(instrument_id)
+            bid: Decimal | None = None
+            ask: Decimal | None = None
+            if bbo is not None:
+                bid, ask = bbo
+            ts_ns = int(self._last_bbo_ts_ns.get(instrument_id, 0) or 0)
+            quote_age_ms = max(0, (int(now_ns) - ts_ns) // 1_000_000) if ts_ns > 0 else None
+            transport_connected = True if (bbo is not None or ts_ns > 0) else None
+            subscription_healthy = True if (bbo is not None or ts_ns > 0) else None
+            max_age_value = (
+                self._runtime_int("max_age_ms")
+                if max_quote_age_ms is None
+                else int(max_quote_age_ms)
+            )
+            return quote_engine_mod.evaluate_quote_health(
+                leg_role=leg_role,
+                bid=bid,
+                ask=ask,
+                quote_age_ms=quote_age_ms,
+                max_quote_age_ms=max(0, max_age_value - 1),
+                transport_connected=transport_connected,
+                subscription_healthy=subscription_healthy,
+            )
+
+        def _quote_health_payload(self, *, now_ns: int) -> dict[str, Any]:
+            payload: dict[str, Any] = {}
+            for leg_role, instrument_id in (
+                ("maker", self.config.maker_instrument_id),
+                ("reference", self.config.reference_instrument_id),
+            ):
+                health = self._quote_health(
+                    instrument_id=instrument_id,
+                    leg_role=leg_role,
+                    now_ns=now_ns,
+                )
+                leg_payload: dict[str, Any] = {
+                    "feed_state": health.feed_state,
+                    "quote_state": health.quote_state,
+                    "quote_age_ms": health.quote_age_ms,
+                    "pricing_usable": health.usable_for_pricing,
+                    "hedge_usable": health.usable_for_hedging,
+                }
+                if health.reason_code is not None:
+                    leg_payload["reason_code"] = health.reason_code
+                payload[leg_role] = leg_payload
+            return payload
 
         def _best_mid(self, instrument_id: InstrumentId) -> Decimal | None:
             bbo = self._best_bid_ask(instrument_id)

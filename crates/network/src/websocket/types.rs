@@ -58,4 +58,6 @@ pub(crate) enum WriterCommand {
     Update(MessageWriter, tokio::sync::oneshot::Sender<bool>),
     /// Send message to the server.
     Send(Message),
+    /// Send message without buffering it for reconnect replay.
+    SendUnbuffered(Message),
 }

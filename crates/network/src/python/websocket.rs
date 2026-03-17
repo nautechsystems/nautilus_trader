@@ -11,7 +11,7 @@ use pyo3::{Py, create_exception, exceptions::PyException, prelude::*, types::PyB
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
-    RECONNECTED,
+    RECONNECTED, RECONNECTING,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -104,7 +104,8 @@ impl WebSocketClient {
         let handler_clone = clone_py_object(&handler);
 
         let message_handler: MessageHandler = Arc::new(move |msg: Message| {
-            if matches!(msg, Message::Text(ref text) if text.as_str() == RECONNECTED) {
+            if matches!(msg, Message::Text(ref text) if text.as_str() == RECONNECTED || text.as_str() == RECONNECTING)
+            {
                 return;
             }
 

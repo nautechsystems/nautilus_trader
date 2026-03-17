@@ -44,4 +44,18 @@ describe('signalRunState', () => {
     expect(resolveSignalRunning(strategy, nowMs)).toBe(false);
     expect(deriveSignalRunState(strategy, nowMs)).toBe('stopped');
   });
+
+  it('keeps stale state snapshots running when backend provides explicit runner liveness', () => {
+    const nowMs = 1_700_000_000_000;
+    const strategy = {
+      running: true,
+      state: {
+        state: 'quotes_replaced',
+        ts_ms: nowMs - 10_000,
+      },
+    } as Pick<SignalStrategy, 'running' | 'state'>;
+
+    expect(resolveSignalRunning(strategy, nowMs)).toBe(true);
+    expect(deriveSignalRunState(strategy, nowMs)).toBe('running');
+  });
 });

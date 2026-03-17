@@ -36,14 +36,15 @@ use super::{
     config::WebSocketConfig,
     consts::{
         CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
-        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, SEND_OPERATION_CHECK_INTERVAL_MS,
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, RECONNECT_STABILIZATION_DELAY_MS,
+        SEND_OPERATION_CHECK_INTERVAL_MS,
     },
     types::{MessageHandler, MessageReader, MessageWriter, PingHandler, WriterCommand},
 };
 #[cfg(feature = "turmoil")]
 use crate::net::TcpConnector;
 use crate::{
-    RECONNECTED,
+    RECONNECTED, RECONNECTING,
     backoff::ExponentialBackoff,
     error::SendError,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -399,11 +400,36 @@ impl WebSocketClientInner {
                 return Ok(());
             }
 
+            if let Some(ref read_task) = self.read_task.take()
+                && !read_task.is_finished()
+            {
+                read_task.abort();
+                log_task_aborted("read");
+            }
+
+            let replacement_read_task = if self.message_handler.is_some() {
+                Some(Self::spawn_message_handler_task(
+                    self.connection_mode.clone(),
+                    reader,
+                    self.message_handler.as_ref(),
+                    self.ping_handler.as_ref(),
+                    self.config.idle_timeout_ms,
+                ))
+            } else {
+                None
+            };
+
             // Use a oneshot channel to synchronize with the writer task.
             // We must verify that the buffer was successfully drained before transitioning to ACTIVE
             // to prevent silent message loss if the new connection drops immediately.
             let (tx, rx) = tokio::sync::oneshot::channel();
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
+                if let Some(ref read_task) = replacement_read_task
+                    && !read_task.is_finished()
+                {
+                    read_task.abort();
+                    log_task_aborted("read");
+                }
                 log::error!("{e}");
                 return Err(Error::Io(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
@@ -415,6 +441,12 @@ impl WebSocketClientInner {
             match rx.await {
                 Ok(true) => log::debug!("Writer confirmed buffer drain success"),
                 Ok(false) => {
+                    if let Some(ref read_task) = replacement_read_task
+                        && !read_task.is_finished()
+                    {
+                        read_task.abort();
+                        log_task_aborted("read");
+                    }
                     log::warn!("Writer failed to drain buffer, aborting reconnect");
                     // Return error to trigger retry logic in controller
                     return Err(Error::Io(std::io::Error::other(
@@ -422,6 +454,12 @@ impl WebSocketClientInner {
                     )));
                 }
                 Err(e) => {
+                    if let Some(ref read_task) = replacement_read_task
+                        && !read_task.is_finished()
+                    {
+                        read_task.abort();
+                        log_task_aborted("read");
+                    }
                     log::error!("Writer dropped update channel: {e}");
                     return Err(Error::Io(std::io::Error::new(
                         std::io::ErrorKind::BrokenPipe,
@@ -430,19 +468,15 @@ impl WebSocketClientInner {
                 }
             }
 
-            // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
-
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
-                log::debug!("Reconnect aborted mid-flight (after delay)");
+                if let Some(ref read_task) = replacement_read_task
+                    && !read_task.is_finished()
+                {
+                    read_task.abort();
+                    log_task_aborted("read");
+                }
+                log::debug!("Reconnect aborted mid-flight (before reader swap)");
                 return Ok(());
-            }
-
-            if let Some(ref read_task) = self.read_task.take()
-                && !read_task.is_finished()
-            {
-                read_task.abort();
-                log_task_aborted("read");
             }
 
             // Atomically transition from Reconnect to Active
@@ -457,21 +491,17 @@ impl WebSocketClientInner {
                 )
                 .is_err()
             {
+                if let Some(ref read_task) = replacement_read_task
+                    && !read_task.is_finished()
+                {
+                    read_task.abort();
+                    log_task_aborted("read");
+                }
                 log::debug!("Reconnect aborted (state changed during reconnect)");
                 return Ok(());
             }
 
-            self.read_task = if self.message_handler.is_some() {
-                Some(Self::spawn_message_handler_task(
-                    self.connection_mode.clone(),
-                    reader,
-                    self.message_handler.as_ref(),
-                    self.ping_handler.as_ref(),
-                    self.config.idle_timeout_ms,
-                ))
-            } else {
-                None
-            };
+            self.read_task = replacement_read_task;
 
             log::debug!("Reconnect succeeded");
             Ok(())
@@ -522,8 +552,9 @@ impl WebSocketClientInner {
             let mut last_data_time = tokio::time::Instant::now();
 
             loop {
-                if !ConnectionMode::from_atomic(&connection_state).is_active() {
-                    break;
+                match ConnectionMode::from_atomic(&connection_state) {
+                    ConnectionMode::Disconnect | ConnectionMode::Closed => break,
+                    ConnectionMode::Active | ConnectionMode::Reconnect => {}
                 }
 
                 match tokio::time::timeout(check_interval, reader.next()).await {
@@ -626,6 +657,23 @@ impl WebSocketClientInner {
         send_error_occurred
     }
 
+    /// Probes a replacement writer before declaring reconnect success.
+    ///
+    /// This closes the false-positive reconnect hole where a new socket has connected,
+    /// but the first post-reconnect send would still fail because the writer is already
+    /// closing. A lightweight ping exercises the real send path without mutating
+    /// application-level subscription state.
+    async fn probe_reconnected_writer(writer: &mut MessageWriter) -> bool {
+        log::debug!("Probing replacement writer after reconnection");
+
+        if let Err(e) = writer.send(Message::Ping(vec![].into())).await {
+            log::error!("Failed to probe replacement writer after reconnection: {e}");
+            return true;
+        }
+
+        false
+    }
+
     fn spawn_write_task(
         connection_state: Arc<AtomicU8>,
         writer: MessageWriter,
@@ -689,9 +737,6 @@ impl WebSocketClientInner {
                             WriterCommand::Update(new_writer, tx) => {
                                 log::debug!("Received new writer");
 
-                                // Delay before closing connection
-                                tokio::time::sleep(Duration::from_millis(100)).await;
-
                                 // Attempt to close the writer gracefully on update,
                                 // we ignore any error as the writer may already be closed.
                                 _ = tokio::time::timeout(
@@ -703,11 +748,15 @@ impl WebSocketClientInner {
                                 active_writer = new_writer;
                                 log::debug!("Updated writer");
 
-                                let send_error = Self::drain_reconnect_buffer(
-                                    &mut reconnect_buffer,
-                                    &mut active_writer,
-                                )
-                                .await;
+                                let send_error = if reconnect_buffer.is_empty() {
+                                    Self::probe_reconnected_writer(&mut active_writer).await
+                                } else {
+                                    Self::drain_reconnect_buffer(
+                                        &mut reconnect_buffer,
+                                        &mut active_writer,
+                                    )
+                                    .await
+                                };
 
                                 if let Err(e) = tx.send(!send_error) {
                                     log::error!(
@@ -723,11 +772,22 @@ impl WebSocketClientInner {
                                 );
                                 reconnect_buffer.push_back(msg);
                             }
+                            WriterCommand::SendUnbuffered(_msg) if mode.is_reconnect() => {
+                                log::debug!("Dropping unbuffered message during reconnection");
+                            }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.send(msg.clone()).await {
                                     log::error!("Failed to send message: {e}");
                                     log::warn!("Writer triggering reconnect");
                                     reconnect_buffer.push_back(msg);
+                                    connection_state
+                                        .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                                }
+                            }
+                            WriterCommand::SendUnbuffered(msg) => {
+                                if let Err(e) = active_writer.send(msg).await {
+                                    log::error!("Failed to send unbuffered message: {e}");
+                                    log::warn!("Writer triggering reconnect");
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
                                 }
@@ -1136,6 +1196,63 @@ impl WebSocketClient {
             .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
+    /// Queues the given text `data` for the writer task without waiting for `ACTIVE`.
+    ///
+    /// This preserves reconnect-buffer replay semantics for callers that own reconnect
+    /// coordination at a higher layer and need replayable messages enqueued while the
+    /// transport is still in `RECONNECT`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to queue the message.
+    #[allow(unused_variables)]
+    pub async fn queue_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
+        if self.is_closed() || self.is_disconnecting() {
+            return Err(SendError::Closed);
+        }
+
+        self.rate_limiter.await_keys_ready(keys).await;
+
+        if self.is_closed() || self.is_disconnecting() {
+            return Err(SendError::Closed);
+        }
+
+        log::trace!("Queueing text: {data:?}");
+
+        let msg = Message::Text(data.into());
+        self.writer_tx
+            .send(WriterCommand::Send(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+    }
+
+    /// Sends the given text `data` without reconnect-buffer replay semantics.
+    ///
+    /// Use this for idempotent control frames where a higher layer owns reconnect replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
+    #[allow(unused_variables)]
+    pub async fn send_text_unbuffered(
+        &self,
+        data: String,
+        keys: Option<&[Ustr]>,
+    ) -> Result<(), SendError> {
+        if self.is_closed() || self.is_disconnecting() {
+            return Err(SendError::Closed);
+        }
+
+        self.rate_limiter.await_keys_ready(keys).await;
+        self.wait_for_active().await?;
+
+        log::trace!("Sending unbuffered text: {data:?}");
+
+        let msg = Message::Text(data.into());
+        self.writer_tx
+            .send(WriterCommand::SendUnbuffered(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+    }
+
     /// Sends a pong frame back to the server.
     ///
     /// # Errors
@@ -1198,6 +1315,7 @@ impl WebSocketClient {
             log_task_started("controller");
 
             let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
+            let mut reconnecting_notified = false;
 
             loop {
                 tokio::time::sleep(check_interval).await;
@@ -1256,6 +1374,15 @@ impl WebSocketClient {
                 }
 
                 if mode.is_reconnect() {
+                    if !reconnecting_notified {
+                        if let Some(ref handler) = inner.message_handler {
+                            let reconnecting_msg = Message::Text(RECONNECTING.to_string().into());
+                            handler(reconnecting_msg);
+                            log::debug!("Sent reconnecting message to handler");
+                        }
+                        reconnecting_notified = true;
+                    }
+
                     // Check if max reconnection attempts exceeded
                     if let Some(max_attempts) = inner.reconnect_max_attempts
                         && inner.reconnection_attempt_count >= max_attempts
@@ -1278,17 +1405,49 @@ impl WebSocketClient {
 
                     match inner.reconnect().await {
                         Ok(()) => {
-                            inner.backoff.reset();
-                            inner.reconnection_attempt_count = 0; // Reset counter on success
-
                             // Only invoke callbacks if not in disconnect state
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                tokio::time::sleep(Duration::from_millis(
+                                    RECONNECT_STABILIZATION_DELAY_MS,
+                                ))
+                                .await;
+
+                                if ConnectionMode::from_atomic(&connection_mode).is_active()
+                                    && !inner.is_alive()
+                                {
+                                    log::warn!(
+                                        "Reconnected socket did not survive stabilization window; retrying"
+                                    );
+                                    reconnecting_notified = false;
+                                    let _ = connection_mode.compare_exchange(
+                                        ConnectionMode::Active.as_u8(),
+                                        ConnectionMode::Reconnect.as_u8(),
+                                        Ordering::SeqCst,
+                                        Ordering::SeqCst,
+                                    );
+
+                                    let mut duration = inner.backoff.next_duration();
+                                    if duration.is_zero() {
+                                        duration = inner.backoff.next_duration();
+                                    }
+
+                                    if !duration.is_zero() {
+                                        log::warn!("Backing off for {}s...", duration.as_secs_f64());
+                                        tokio::time::sleep(duration).await;
+                                    }
+                                    continue;
+                                }
+
+                                inner.backoff.reset();
+                                inner.reconnection_attempt_count = 0; // Reset counter on success
+
                                 if let Some(ref handler) = inner.message_handler {
                                     let reconnected_msg =
                                         Message::Text(RECONNECTED.to_string().into());
                                     handler(reconnected_msg);
                                     log::debug!("Sent reconnected message to handler");
                                 }
+                                reconnecting_notified = false;
 
                                 // TODO: Retain this legacy callback for use from Python
                                 if let Some(ref callback) = post_reconnection {
@@ -1304,6 +1463,7 @@ impl WebSocketClient {
                             }
                         }
                         Err(e) => {
+                            reconnecting_notified = false;
                             let duration = inner.backoff.next_duration();
                             log::warn!(
                                 "Reconnect attempt {} failed: {e}",
@@ -1609,6 +1769,11 @@ mod tests {
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
 mod rust_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
     use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
@@ -1891,6 +2056,779 @@ mod rust_tests {
         assert!(
             result.is_ok(),
             "Should receive message after reconnection within timeout"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_emits_single_reconnected_after_writer_is_usable() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: die before the writer update path can safely use it.
+            // The writer task waits before swapping writers, so a short-lived connection here
+            // reproduces the false-positive reconnect seen in live equities nodes.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                sleep(Duration::from_millis(20)).await;
+                let _ = ws.close(None).await;
+            }
+
+            // Third connection: stable replacement that should be the only one that produces
+            // a RECONNECTED sentinel to consumers.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let mut reconnected_count = 0usize;
+        let collect = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(msg) = rx.recv().await
+                    && matches!(msg, Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED)
+                {
+                    reconnected_count += 1;
+                    if reconnected_count >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            collect.is_err(),
+            "should not emit RECONNECTED for the dead replacement socket"
+        );
+        assert_eq!(
+            reconnected_count, 1,
+            "only the stable replacement connection should emit RECONNECTED"
+        );
+
+        client
+            .send_text("hello-after-stable-reconnect".to_string(), None)
+            .await
+            .expect("stable replacement connection should accept sends");
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_does_not_emit_reconnected_for_socket_that_dies_during_stabilization() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: survive long enough for the initial writer swap/probe to pass,
+            // but die before the stabilization window should complete.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                sleep(Duration::from_millis(80)).await;
+                drop(ws);
+            }
+
+            // Third connection: stable replacement that should be the first and only one that
+            // emits a RECONNECTED sentinel.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let mut reconnected_count = 0usize;
+        let collect = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(msg) = rx.recv().await
+                    && matches!(msg, Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED)
+                {
+                    reconnected_count += 1;
+                    if reconnected_count >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            collect.is_err(),
+            "should not emit RECONNECTED for the replacement socket that dies during stabilization"
+        );
+        assert_eq!(
+            reconnected_count, 1,
+            "only the stable third connection should emit RECONNECTED"
+        );
+
+        client
+            .send_text("hello-after-stable-reconnect".to_string(), None)
+            .await
+            .expect("stable replacement connection should accept sends");
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_stabilization_failure_waits_for_backoff_before_retrying() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (delay_tx, delay_rx) = tokio::sync::oneshot::channel::<Duration>();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: survive long enough for reconnect() to succeed,
+            // then die before the stabilization window completes.
+            let second_connected_at = if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                let connected_at = tokio::time::Instant::now();
+                sleep(Duration::from_millis(80)).await;
+                drop(ws);
+                connected_at
+            } else {
+                return;
+            };
+
+            // Third connection: report how long the client waited before retrying.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                let _ = delay_tx.send(second_connected_at.elapsed());
+
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(200),
+            reconnect_delay_max_ms: Some(200),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let delay = tokio::time::timeout(Duration::from_secs(3), delay_rx)
+            .await
+            .expect("timed out waiting for third reconnect attempt")
+            .expect("server did not record third reconnect delay");
+
+        assert!(
+            delay >= Duration::from_millis(250),
+            "stabilization failure should wait for reconnect backoff before retrying, saw only {delay:?}"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_reemits_reconnecting_after_stabilization_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: survive long enough for reconnect() to succeed,
+            // then die before the stabilization window completes.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                sleep(Duration::from_millis(80)).await;
+                drop(ws);
+            }
+
+            // Third connection: stable replacement.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let reconnecting_count = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut reconnecting_count = 0usize;
+            let mut saw_reconnected = false;
+
+            loop {
+                if let Some(msg) = rx.recv().await {
+                    match msg {
+                        Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTING => {
+                            reconnecting_count += 1;
+                        }
+                        Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED => {
+                            saw_reconnected = true;
+                        }
+                        _ => {}
+                    }
+
+                    if saw_reconnected && reconnecting_count >= 2 {
+                        break reconnecting_count;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for reconnecting/reconnected sequence");
+
+        assert_eq!(
+            reconnecting_count, 2,
+            "expected a second RECONNECTING sentinel after the stabilization failure"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_does_not_emit_reconnected_after_buffer_drain_on_socket_that_dies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: stay up long enough for the reconnect buffer to drain,
+            // then die before the connection is truly usable for fresh sends.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                let _ = ws.next().await;
+                sleep(Duration::from_millis(40)).await;
+                drop(ws);
+            }
+
+            // Third connection: stable replacement that should be the only one that
+            // emits RECONNECTED after the buffered write path.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if client.is_reconnecting() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("client did not enter RECONNECT state");
+
+        client
+            .writer_tx
+            .send(WriterCommand::Send(Message::Text(
+                "buffer-me".to_string().into(),
+            )))
+            .expect("failed to queue buffered message");
+
+        let mut reconnected_count = 0usize;
+        let collect = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(msg) = rx.recv().await
+                    && matches!(msg, Message::Text(ref text) if AsRef::<str>::as_ref(text) == RECONNECTED)
+                {
+                    reconnected_count += 1;
+                    if reconnected_count >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            collect.is_err(),
+            "should not emit RECONNECTED for the replacement socket that only drained buffered writes"
+        );
+        assert_eq!(
+            reconnected_count, 1,
+            "only the stable third connection should emit RECONNECTED"
+        );
+
+        client
+            .send_text("hello-after-stable-reconnect".to_string(), None)
+            .await
+            .expect("stable replacement connection should accept sends");
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_starts_reader_before_writer_probe_on_replacement_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (first_frame_tx, first_frame_rx) = tokio::sync::oneshot::channel::<Message>();
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: immediately send a control ping and require the first client
+            // frame to be the matching pong. If the reconnect probe runs before the reader is
+            // active, the first client frame will be a ping instead and the socket will be closed.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                if ws
+                    .send(Message::Ping(vec![1, 2, 3].into()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+
+                let first_frame = tokio::time::timeout(Duration::from_millis(250), ws.next())
+                    .await
+                    .ok()
+                    .and_then(|msg| msg)
+                    .and_then(Result::ok);
+
+                if let Some(msg) = first_frame {
+                    let _ = first_frame_tx.send(msg.clone());
+
+                    if matches!(msg, Message::Pong(ref payload) if payload.as_ref() == [1, 2, 3]) {
+                        while let Some(Ok(msg)) = ws.next().await {
+                            if ws.send(msg).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        let first_frame = tokio::time::timeout(Duration::from_secs(2), first_frame_rx)
+            .await
+            .expect("timed out waiting for replacement socket first client frame")
+            .expect("replacement socket did not observe a first client frame");
+
+        assert!(
+            matches!(first_frame, Message::Pong(ref payload) if payload.as_ref() == [1, 2, 3]),
+            "replacement socket should answer server ping before any reconnect probe, saw {first_frame:?}"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_answers_server_ping_before_reconnect_gap_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let saw_replacement_pong = Arc::new(AtomicBool::new(false));
+        let saw_replacement_pong_server = Arc::clone(&saw_replacement_pong);
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to trigger reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Second connection: require a prompt pong on the replacement socket.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                let ping_payload = b"replacement-ping".to_vec();
+                ws.send(Message::Ping(ping_payload.clone().into()))
+                    .await
+                    .expect("server should send replacement ping");
+
+                let pong_deadline = tokio::time::Instant::now() + Duration::from_millis(80);
+                loop {
+                    let remaining =
+                        pong_deadline.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        break;
+                    }
+
+                    match tokio::time::timeout(remaining, ws.next()).await {
+                        Ok(Some(Ok(Message::Pong(data))))
+                            if data.as_ref() == ping_payload.as_slice() =>
+                        {
+                            saw_replacement_pong_server.store(true, Ordering::SeqCst);
+                            break;
+                        }
+                        Ok(Some(Ok(_))) => {}
+                        Ok(Some(Err(_))) | Ok(None) | Err(_) => break,
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        wait_until_async(
+            || async { saw_replacement_pong.load(Ordering::SeqCst) },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        assert!(
+            saw_replacement_pong.load(Ordering::SeqCst),
+            "replacement socket should answer a server ping before the reconnect gap deadline"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_unbuffered_message_is_not_replayed_after_reconnect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen_messages = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+        let seen_messages_server = Arc::clone(&seen_messages);
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately to force reconnect.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Hold the replacement accept long enough for the client to spend
+            // a measurable interval in RECONNECT before the stable socket arrives.
+            sleep(Duration::from_millis(150)).await;
+
+            // Second connection: stable receiver that records all text messages.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if let Message::Text(text) = msg {
+                        seen_messages_server
+                            .lock()
+                            .await
+                            .push(AsRef::<str>::as_ref(&text).to_string());
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if client.is_reconnecting() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("client did not enter RECONNECT state");
+
+        client
+            .writer_tx
+            .send(WriterCommand::SendUnbuffered(Message::Text(
+                "do-not-replay".to_string().into(),
+            )))
+            .expect("failed to queue unbuffered message");
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let seen = seen_messages.lock().await.clone();
+        assert!(
+            !seen.iter().any(|msg| msg == "do-not-replay"),
+            "unbuffered reconnect message should not be replayed on the replacement socket"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_initial_unbuffered_send_waits_for_stable_connection_after_reader_dies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen_messages = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+        let seen_messages_server = Arc::clone(&seen_messages);
+
+        let server = task::spawn(async move {
+            // First connection: accept then close immediately after the handshake.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                drop(ws);
+            }
+
+            // Hold the stable replacement briefly so the client attempts the send while
+            // the old reader has already died but the controller has not yet noticed.
+            sleep(Duration::from_millis(150)).await;
+
+            // Second connection: stable receiver that records all text messages.
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(mut ws) = accept_async(stream).await
+            {
+                while let Some(Ok(msg)) = ws.next().await {
+                    if let Message::Text(text) = msg {
+                        seen_messages_server
+                            .lock()
+                            .await
+                            .push(AsRef::<str>::as_ref(&text).to_string());
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(25),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        sleep(Duration::from_millis(20)).await;
+
+        client
+            .send_text_unbuffered("startup-unbuffered".to_string(), None)
+            .await
+            .expect("startup unbuffered send should enqueue once a stable socket is ready");
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let seen = seen_messages.lock().await.clone();
+        assert!(
+            seen.iter().any(|msg| msg == "startup-unbuffered"),
+            "initial unbuffered send should wait for a stable replacement socket"
         );
 
         client.disconnect().await;

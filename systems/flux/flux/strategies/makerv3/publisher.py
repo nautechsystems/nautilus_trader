@@ -280,7 +280,11 @@ def _position_qty_payload(
                 shared_last_px = latest_last_px
 
     with suppress(Exception):
-        exposure = exposure_from_venue_qty(instrument, signed_qty_dec, last_px=shared_last_px)
+        exposure = inventory_mod.base_exposure_from_venue_qty(
+            instrument,
+            signed_qty_dec,
+            last_px=shared_last_px,
+        )
         payload["qty_conversion_status"] = exposure.qty_conversion_status
         payload["qty_conversion_source"] = exposure.qty_conversion_source
         if exposure.base_qty is not None:
@@ -736,6 +740,11 @@ def publish_state(
         quote_blockers = quote_blockers_fn(state=effective_state)
         if quote_blockers:
             payload["quote_blockers"] = quote_blockers
+    quote_health_fn = getattr(strategy, "_quote_health_payload", None)
+    if callable(quote_health_fn):
+        quote_health = quote_health_fn(now_ns=now_ns)
+        if quote_health:
+            payload["quote_health"] = quote_health
     maker_role_map = _maker_role_map_payload(strategy)
     if maker_role_map:
         payload["maker_role_map"] = maker_role_map
@@ -876,18 +885,6 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
     for account in accounts:
         payload["accounts"].append(_serialize_account_payload(account))
 
-    supplemental_balance_snapshot = None
-    supplemental_balance_snapshot_lookup = getattr(strategy, "_supplemental_balance_snapshot", None)
-    if callable(supplemental_balance_snapshot_lookup):
-        with suppress(Exception):
-            supplemental_balance_snapshot = supplemental_balance_snapshot_lookup()
-    if isinstance(supplemental_balance_snapshot, Mapping):
-        supplemental_accounts = supplemental_balance_snapshot.get("accounts")
-        if isinstance(supplemental_accounts, Sequence):
-            for account in supplemental_accounts:
-                if isinstance(account, dict):
-                    payload["accounts"].append(dict(account))
-
     fresh_maker_position_snapshot = None
     fresh_snapshot_lookup = getattr(strategy, "_fresh_maker_position_report_snapshot", None)
     if callable(fresh_snapshot_lookup):
@@ -934,13 +931,6 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
 
     for position in positions:
         payload["positions"].append(_serialize_position_payload(strategy, position))
-
-    if isinstance(supplemental_balance_snapshot, Mapping):
-        supplemental_positions = supplemental_balance_snapshot.get("positions")
-        if isinstance(supplemental_positions, Sequence):
-            for position in supplemental_positions:
-                if isinstance(position, dict):
-                    payload["positions"].append(dict(position))
 
     payload["ts_event"] = now_ns
     payload["ts_ms"] = now_ns // 1_000_000

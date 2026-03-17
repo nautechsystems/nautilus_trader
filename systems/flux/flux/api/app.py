@@ -19,9 +19,10 @@ from flask import g
 from flask import has_request_context
 from flask import request
 
+from flux.api._payloads_balances import build_balance_risk_groups
+from flux.api._payloads_balances import combine_portfolio_snapshot_rows
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
-from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api.payloads import build_alerts_rows
 from flux.api.payloads import build_balances_rows
 from flux.api.payloads import build_envelope
@@ -57,6 +58,7 @@ from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.params.manager import FluxParamsManager
 from flux.runners.shared.strategy_set import StrategySetDescriptor
 from flux.runners.shared.strategy_set import get_strategy_set_descriptors
+
 
 if __name__ == "flux.api.app":
     sys.modules.setdefault("nautilus_trader.flux.api.app", sys.modules[__name__])
@@ -103,6 +105,9 @@ class RedisClientProtocol(Protocol):
     def hset(self, key: str, mapping: dict[str, str]) -> int: ...
     def publish(self, channel: str, message: str) -> int: ...
     def pipeline(self, transaction: bool = ...) -> RedisPipelineProtocol: ...
+
+
+StrategyRunningResolver = Callable[[Sequence[str]], Mapping[str, bool | None]]
 
 
 class ParamsStoreValidationError(ValueError):
@@ -191,6 +196,8 @@ class FluxApiStore:
         flux_config: FluxConfig,
         redis_client: RedisClientProtocol,
         contract_catalog: Sequence[ContractCatalogEntry],
+        contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
+        strategy_running_resolver: StrategyRunningResolver | None = None,
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -220,6 +227,8 @@ class FluxApiStore:
         ).defaults
         self._contract_specs = self._validate_contract_catalog(contract_catalog)
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
+        self._contract_catalog_resolver = contract_catalog_resolver
+        self._strategy_running_resolver = strategy_running_resolver
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -255,6 +264,20 @@ class FluxApiStore:
             namespace=self._config.identity.namespace,
             schema_version=self._config.identity.schema_version,
         )
+
+    def _contract_specs_for_strategy(
+        self,
+        strategy_id: str,
+    ) -> tuple[tuple[ContractCatalogEntry, str, str], ...]:
+        if self._contract_catalog_resolver is None:
+            return self._contract_specs
+        resolved = self._contract_catalog_resolver(strategy_id)
+        if not resolved:
+            return self._contract_specs
+        return self._validate_contract_catalog(resolved)
+
+    def _contracts_for_strategy(self, strategy_id: str) -> tuple[ContractCatalogEntry, ...]:
+        return tuple(spec[0] for spec in self._contract_specs_for_strategy(strategy_id))
 
     def _params_manager(self, strategy_id: str) -> FluxParamsManager:
         return FluxParamsManager(
@@ -380,6 +403,45 @@ class FluxApiStore:
 
         return True
 
+    def _load_running_state_from_strategy_state(self, strategy_id: str) -> bool | None:
+        keys = self._keys_for_strategy(strategy_id)
+        state_raw = self._redis.get(keys.state())
+        state_value = load_json(state_raw)
+        state = dict(state_value) if isinstance(state_value, dict) else {}
+        return self._running_state_from_strategy_state(state)
+
+    def load_running_states(self, strategy_ids: Sequence[str]) -> dict[str, bool | None]:
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = decode_text(strategy_id).strip()
+            if not strategy_text or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+
+        if not deduped_ids:
+            return {}
+
+        if self._strategy_running_resolver is None:
+            return {
+                strategy_id: self._load_running_state_from_strategy_state(strategy_id)
+                for strategy_id in deduped_ids
+            }
+
+        resolved_raw = dict(self._strategy_running_resolver(deduped_ids))
+        resolved: dict[str, bool | None] = {}
+        for strategy_id in deduped_ids:
+            if strategy_id in resolved_raw:
+                value = safe_bool(resolved_raw.get(strategy_id))
+                resolved[strategy_id] = value if value is not None else None
+            else:
+                resolved[strategy_id] = self._load_running_state_from_strategy_state(strategy_id)
+        return resolved
+
+    def load_running_state(self, strategy_id: str) -> bool | None:
+        return self.load_running_states([strategy_id]).get(strategy_id)
+
     def load_state_summary(self, strategy_id: str) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
         state_raw = self._redis.get(keys.state())
@@ -413,13 +475,6 @@ class FluxApiStore:
         if reason:
             summary["bot_on_reason"] = reason
         return summary
-
-    def load_running_state(self, strategy_id: str) -> bool | None:
-        keys = self._keys_for_strategy(strategy_id)
-        state_raw = self._redis.get(keys.state())
-        state_value = load_json(state_raw)
-        state = dict(state_value) if isinstance(state_value, dict) else {}
-        return self._running_state_from_strategy_state(state)
 
     def _strategy_id_from_params_key(self, raw_key: Any, *, key_prefix: str) -> str | None:
         key = decode_text(raw_key).strip()
@@ -492,59 +547,126 @@ class FluxApiStore:
         params = self.load_params(strategy_id)
         return {"updated": sorted(applied_updates), "params": params}
 
-    def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, str, str | None]]:
+    @staticmethod
+    def _instrument_exchange_alias(contract: ContractCatalogEntry) -> str | None:
+        contract_exchange = decode_text(contract.exchange).strip().lower()
+        instrument_text = decode_text(contract.instrument_id).strip().upper()
+        if "." not in instrument_text:
+            return None
+        venue_text = instrument_text.rsplit(".", maxsplit=1)[1].strip().upper()
+        if not venue_text:
+            return None
+        venue_root = venue_text.split("_", maxsplit=1)[0].lower()
+        if not venue_root or venue_root == contract_exchange:
+            return None
+        return venue_root
+
+    def _market_keys(
+        self,
+        strategy_id: str,
+        *,
+        contract_specs: Sequence[tuple[ContractCatalogEntry, str, str]] | None = None,
+    ) -> list[tuple[ContractCatalogEntry, list[str]]]:
         keys = self._keys_for_strategy(strategy_id)
-        out: list[tuple[ContractCatalogEntry, str, str | None]] = []
+        out: list[tuple[ContractCatalogEntry, list[str]]] = []
         legacy_counts: dict[tuple[str, str, str], int] = {}
-        for contract, base, quote in self._contract_specs:
+        active_specs = tuple(contract_specs) if contract_specs is not None else self._contract_specs_for_strategy(strategy_id)
+        for contract, base, quote in active_specs:
             legacy_key = (contract.exchange, base, quote)
             legacy_counts[legacy_key] = legacy_counts.get(legacy_key, 0) + 1
-        for contract, base, quote in self._contract_specs:
-            primary_key = keys.market_last(
-                exchange=contract.exchange,
-                base=base,
-                quote=quote,
-                instrument_id=contract.instrument_id or None,
-            )
-            fallback_key = None
-            if contract.instrument_id and legacy_counts[(contract.exchange, base, quote)] == 1:
-                fallback_key = keys.market_last(
+        for contract, base, quote in active_specs:
+            key_candidates = [
+                keys.market_last(
                     exchange=contract.exchange,
                     base=base,
                     quote=quote,
-                )
-            out.append(
-                (
-                    contract,
-                    primary_key,
-                    fallback_key,
+                    instrument_id=contract.instrument_id or None,
                 ),
-            )
+            ]
+            alias_exchange = self._instrument_exchange_alias(contract)
+            if alias_exchange and contract.instrument_id:
+                key_candidates.append(
+                    keys.market_last(
+                        exchange=alias_exchange,
+                        base=base,
+                        quote=quote,
+                        instrument_id=contract.instrument_id,
+                    ),
+                )
+            if contract.instrument_id and legacy_counts[(contract.exchange, base, quote)] == 1:
+                key_candidates.append(
+                    keys.market_last(
+                        exchange=contract.exchange,
+                        base=base,
+                        quote=quote,
+                    ),
+                )
+            out.append((contract, key_candidates))
         return out
 
     @staticmethod
-    def _decode_market_row(primary_raw: Any, fallback_raw: Any = None) -> dict[str, Any]:
-        primary = load_json(primary_raw)
-        primary_row = dict(primary) if isinstance(primary, dict) else {}
-        fallback = load_json(fallback_raw)
-        fallback_row = dict(fallback) if isinstance(fallback, dict) else {}
-        if not primary_row:
-            return fallback_row
-        if not fallback_row:
-            return primary_row
-        merged = dict(fallback_row)
-        merged.update(primary_row)
+    def _decode_market_rows(raw_values: Sequence[Any]) -> dict[str, Any]:
+        decoded_rows = [FluxApiStore._parse_market_row(raw_value) for raw_value in raw_values]
+        return FluxApiStore._merge_market_row_values(decoded_rows)
+
+    @staticmethod
+    def _parse_market_row(raw_value: Any) -> dict[str, Any]:
+        parsed = load_json(raw_value)
+        return dict(parsed) if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _merge_market_row_values(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for row in reversed(list(rows)):
+            if not row:
+                continue
+            for key, value in row.items():
+                if value is None and key in merged:
+                    continue
+                merged[key] = value
         return merged
 
+    @staticmethod
+    def _decode_market_row(primary_raw: Any, fallback_raw: Any = None) -> dict[str, Any]:
+        return FluxApiStore._decode_market_rows(
+            [raw for raw in (primary_raw, fallback_raw) if raw is not None],
+        )
+
+    def _decode_market_row_candidates(
+        self,
+        contract: ContractCatalogEntry,
+        raw_values: Sequence[Any],
+    ) -> dict[str, Any]:
+        decoded_rows = [self._parse_market_row(raw_value) for raw_value in raw_values]
+        if not decoded_rows:
+            return {}
+
+        canonical_row = decoded_rows[0]
+        next_index = 1
+        alias_row: dict[str, Any] = {}
+        if contract.instrument_id and self._instrument_exchange_alias(contract) and next_index < len(
+            decoded_rows
+        ):
+            alias_row = decoded_rows[next_index]
+            next_index += 1
+        legacy_row: dict[str, Any] = {}
+        if contract.instrument_id and next_index < len(decoded_rows):
+            legacy_row = decoded_rows[next_index]
+
+        selected_row = canonical_row or alias_row
+        if selected_row:
+            return self._merge_market_row_values([selected_row, legacy_row])
+        return dict(legacy_row)
+
     def load_market_rows(self, strategy_id: str) -> dict[str, dict[str, Any]]:
-        market_pairs = self._market_keys(strategy_id)
+        contract_specs = self._contract_specs_for_strategy(strategy_id)
+        market_pairs = self._market_keys(strategy_id, contract_specs=contract_specs)
         pipe = self._redis.pipeline(transaction=False)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Market pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -552,14 +674,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 0
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,
@@ -823,20 +943,27 @@ class FluxApiStore:
             ):
                 payload["qty_conversion_source"] = qty_conversion_source
 
-    def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:
+    def load_signals_payload(
+        self,
+        strategy_id: str,
+        metadata: StrategyMetadata,
+        *,
+        running: bool | None = None,
+    ) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
+        contract_specs = self._contract_specs_for_strategy(strategy_id)
+        strategy_contracts = tuple(spec[0] for spec in contract_specs)
 
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.state())
         pipe.xrevrange(keys.fv_stream(), count=50)
         pipe.get(keys.balances_snapshot())
-        market_pairs = self._market_keys(strategy_id)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        market_pairs = self._market_keys(strategy_id, contract_specs=contract_specs)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = 3 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = 3 + sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Signals pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -853,14 +980,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 3
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,
@@ -868,7 +993,7 @@ class FluxApiStore:
             )
             market_rows[contract_id] = parsed
         legs = build_legs_payload(
-            contracts=self._contracts,
+            contracts=strategy_contracts,
             market_rows=market_rows,
             now_ms_value=now_ms(),
         )
@@ -882,6 +1007,7 @@ class FluxApiStore:
             params=params,
             balances=balances,
             legs=legs,
+            running=running,
         )
         inventory_overlay = self._tokenmm_inventory_overlay(
             strategy_id=strategy_id,
@@ -894,7 +1020,9 @@ class FluxApiStore:
                 inventory_payload=inventory_payload,
                 component_payload=component_payload,
             )
-        payload["running"] = self._running_state_from_strategy_state(state)
+        payload["running"] = (
+            running if running is not None else self._running_state_from_strategy_state(state)
+        )
         return payload
 
     def load_balances_rows(self, strategy_id: str) -> list[dict[str, Any]]:
@@ -903,15 +1031,16 @@ class FluxApiStore:
 
     def load_balances_rows_with_presence(self, strategy_id: str) -> tuple[list[dict[str, Any]], bool]:
         keys = self._keys_for_strategy(strategy_id)
+        contract_specs = self._contract_specs_for_strategy(strategy_id)
+        strategy_contracts = tuple(spec[0] for spec in contract_specs)
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.balances_snapshot())
-        market_pairs = self._market_keys(strategy_id)
-        for _, market_key, fallback_key in market_pairs:
-            pipe.get(market_key)
-            if fallback_key:
-                pipe.get(fallback_key)
+        market_pairs = self._market_keys(strategy_id, contract_specs=contract_specs)
+        for _, key_candidates in market_pairs:
+            for market_key in key_candidates:
+                pipe.get(market_key)
         raw = pipe.execute()
-        expected_length = 1 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        expected_length = 1 + sum(len(key_candidates) for _, key_candidates in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Balances pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -923,14 +1052,12 @@ class FluxApiStore:
 
         market_rows: dict[str, dict[str, Any]] = {}
         raw_index = 1
-        for contract, _market_key, fallback_key in market_pairs:
-            primary_raw = raw[raw_index]
-            raw_index += 1
-            fallback_raw = None
-            if fallback_key:
-                fallback_raw = raw[raw_index]
-                raw_index += 1
-            parsed = self._decode_market_row(primary_raw, fallback_raw)
+        for contract, key_candidates in market_pairs:
+            parsed = self._decode_market_row_candidates(
+                contract,
+                raw[raw_index : raw_index + len(key_candidates)],
+            )
+            raw_index += len(key_candidates)
             contract_id = contract_id_for_leg(
                 exchange=contract.exchange,
                 symbol=contract.symbol,
@@ -942,7 +1069,7 @@ class FluxApiStore:
             collapse_balance_display_rows(
                 enrich_balances_rows(
                     rows,
-                    contracts=self._contracts,
+                    contracts=strategy_contracts,
                     market_rows=market_rows,
                 ),
             ),
@@ -1130,6 +1257,65 @@ def _balances_totals(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _portfolio_snapshot_rows(raw_rows: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_rows, Sequence) or isinstance(raw_rows, str | bytes):
+        return []
+    return [dict(row) for row in raw_rows if isinstance(row, Mapping)]
+
+
+def _portfolio_snapshot_inventory_summary(
+    portfolio_snapshot: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    raw_inventory_by_asset = portfolio_snapshot.get("inventory_by_asset")
+    if not isinstance(raw_inventory_by_asset, Mapping):
+        return None
+
+    inventory_by_asset: dict[str, dict[str, Any]] = {}
+    components: list[dict[str, Any]] = []
+    missing_required: set[str] = set()
+    stale_required: set[str] = set()
+    null_qty_required: set[str] = set()
+    degraded = False
+    stale_after_ms = TOKENMM_BALANCES_STALE_AFTER_MS
+
+    for asset_id, payload in raw_inventory_by_asset.items():
+        canonical_asset_id = decode_text(asset_id).strip().upper()
+        if not canonical_asset_id or not isinstance(payload, Mapping):
+            continue
+        normalized_payload = dict(payload)
+        normalized_payload["base_currency"] = (
+            decode_text(normalized_payload.get("base_currency") or canonical_asset_id).strip().upper()
+            or canonical_asset_id
+        )
+        inventory_by_asset[canonical_asset_id] = normalized_payload
+        stale_after_ms = max(
+            stale_after_ms,
+            safe_int(normalized_payload.get("stale_after_ms")) or TOKENMM_BALANCES_STALE_AFTER_MS,
+        )
+        degraded = degraded or bool(normalized_payload.get("degraded", False))
+        missing_required.update(decode_text(item).strip() for item in normalized_payload.get("missing_required") or [])
+        stale_required.update(decode_text(item).strip() for item in normalized_payload.get("stale_required") or [])
+        null_qty_required.update(
+            decode_text(item).strip() for item in normalized_payload.get("null_qty_required") or []
+        )
+        for component in normalized_payload.get("components") or []:
+            if not isinstance(component, Mapping):
+                continue
+            component_row = dict(component)
+            component_row.setdefault("portfolio_asset_id", canonical_asset_id)
+            components.append(component_row)
+
+    return {
+        "inventory_by_asset": dict(sorted(inventory_by_asset.items())),
+        "components": components,
+        "missing_required": sorted(item for item in missing_required if item),
+        "stale_required": sorted(item for item in stale_required if item),
+        "null_qty_required": sorted(item for item in null_qty_required if item),
+        "degraded": degraded or bool(missing_required or stale_required or null_qty_required),
+        "stale_after_ms": stale_after_ms,
+    }
+
+
 def _normalize_trade_side(value: Any) -> str:
     side = decode_text(value).strip().lower()
     if side in {"1", "buy", "bid"}:
@@ -1257,6 +1443,8 @@ def create_flux_api_app(  # noqa: C901
     redis_client: RedisClientProtocol,
     *,
     contract_catalog: Sequence[ContractCatalogEntry],
+    contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
+    strategy_running_resolver: StrategyRunningResolver | None = None,
     strategy_metadata: StrategyMetadata,
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
@@ -1285,6 +1473,8 @@ def create_flux_api_app(  # noqa: C901
         flux_config=flux_config,
         redis_client=redis_client,
         contract_catalog=contract_catalog,
+        contract_catalog_resolver=contract_catalog_resolver,
+        strategy_running_resolver=strategy_running_resolver,
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
@@ -1355,6 +1545,8 @@ def create_flux_api_app(  # noqa: C901
         if strategy_metadata_resolver is not None:
             try:
                 metadata = strategy_metadata_resolver(strategy_id)
+            except LookupError:
+                metadata = strategy_metadata
             except Exception as e:
                 raise ApiEnvelopeError(
                     status=500,
@@ -1648,6 +1840,7 @@ def create_flux_api_app(  # noqa: C901
             if not strategy_ids:
                 strategy_ids = [default_strategy_id]
 
+        running_states = store.load_running_states(strategy_ids)
         payloads: list[dict[str, Any]] = []
         for strategy_id in strategy_ids:
             try:
@@ -1664,7 +1857,8 @@ def create_flux_api_app(  # noqa: C901
                 strategy_id=strategy_id,
                 params=params,
                 schema=_ordered_params_schema(schema),
-                running=store.load_running_state(strategy_id),
+                running=running_states.get(strategy_id),
+                metadata=_metadata_for_strategy(strategy_id),
             )
             payload["persisted_bot_on"] = (
                 state_summary.get("persisted_bot_on")
@@ -1858,12 +2052,14 @@ def create_flux_api_app(  # noqa: C901
         else:
             strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
 
+        running_states = store.load_running_states(strategy_ids)
         strategy_payloads: list[dict[str, Any]] = []
         for strategy_id in strategy_ids:
             try:
                 strategy_payload = store.load_signals_payload(
                     strategy_id,
                     _metadata_for_strategy(strategy_id),
+                    running=running_states.get(strategy_id),
                 )
             except ParamsStoreValidationError as e:
                 return _error(
@@ -1886,10 +2082,12 @@ def create_flux_api_app(  # noqa: C901
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
         strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+        running_state = store.load_running_states([strategy_id]).get(strategy_id)
         try:
             strategy_payload = store.load_signals_payload(
                 strategy_id,
                 _metadata_for_strategy(strategy_id),
+                running=running_state,
             )
         except ParamsStoreValidationError as e:
             return _error(
@@ -1978,106 +2176,177 @@ def create_flux_api_app(  # noqa: C901
             request_now_ms = now_ms()
             portfolio_snapshot = (
                 store.load_portfolio_snapshot(profile_normalized)
-                if profile_normalized == "tokenmm"
+                if profile_text
                 else None
             )
             if portfolio_snapshot is not None:
-                inventory = portfolio_snapshot.get("inventory")
-                inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
-                snapshot_stale_after_ms = (
-                    safe_int(inventory_payload.get("stale_after_ms"))
-                    or TOKENMM_BALANCES_STALE_AFTER_MS
-                )
-                if (
-                    _timestamp_is_fresh(
+                inventory_summary = _portfolio_snapshot_inventory_summary(portfolio_snapshot)
+                if profile_normalized == "equities" and inventory_summary is not None:
+                    snapshot_stale_after_ms = inventory_summary["stale_after_ms"]
+                    if _timestamp_is_fresh(
                         portfolio_snapshot.get("server_ts_ms"),
                         now_ms_value=request_now_ms,
                         stale_after_ms=snapshot_stale_after_ms,
-                    )
-                    and _timestamp_is_fresh(
-                        inventory_payload.get("ts_ms"),
-                        now_ms_value=request_now_ms,
-                        stale_after_ms=snapshot_stale_after_ms,
-                    )
-                ):
-                    snapshot_balances = portfolio_snapshot.get("balances")
-                    snapshot_rows_raw = (
-                        snapshot_balances.get("rows")
-                        if isinstance(snapshot_balances, Mapping)
-                        else []
-                    )
-                    snapshot_rows = [
-                        dict(row)
-                        for row in snapshot_rows_raw
-                        if isinstance(row, Mapping)
-                    ]
-                    rows = filter_balance_rows_for_contract_scope(
-                        snapshot_rows,
-                        contracts=store._contracts,
-                    )
-                    if not rows and snapshot_rows:
-                        rows = snapshot_rows
-                    if strategy_ids:
-                        market_rows = store.load_market_rows_for_strategies(strategy_ids)
-                        rows = collapse_balance_display_rows(
-                            enrich_balances_rows(
-                                rows,
-                                contracts=store._contracts,
-                                market_rows=market_rows,
+                    ):
+                        snapshot_balances = portfolio_snapshot.get("balances")
+                        snapshot_accounts = portfolio_snapshot.get("accounts")
+                        snapshot_rows = combine_portfolio_snapshot_rows(
+                            balance_rows=_portfolio_snapshot_rows(
+                                snapshot_balances.get("rows")
+                                if isinstance(snapshot_balances, Mapping)
+                                else [],
                             ),
-                        )
-                    rows, risk_groups = build_balance_risk_groups(rows)
-                    response_ts_ms = (
-                        safe_int(portfolio_snapshot.get("server_ts_ms"))
-                        or safe_int(inventory_payload.get("ts_ms"))
-                        or request_now_ms
-                    )
-                    components_payload = inventory_payload.get("components")
-                    if not isinstance(components_payload, list):
-                        components_payload = portfolio_snapshot.get("components")
-                    components = [
-                        dict(component)
-                        for component in (components_payload or [])
-                        if isinstance(component, Mapping)
-                    ]
-                    total_rows = len(rows)
-                    return _ok(
-                        data={
-                            "source": "portfolio_snapshot",
-                            "rows": rows[:limit],
-                            "count": total_rows,
-                            "total": total_rows,
-                            "limit": limit,
-                            "totals": _balances_totals(rows),
-                            "risk_groups": risk_groups,
-                            "server_ts_ms": response_ts_ms,
-                            "portfolio_id": decode_text(
+                            account_rows=_portfolio_snapshot_rows(
+                                snapshot_accounts.get("rows")
+                                if isinstance(snapshot_accounts, Mapping)
+                                else [],
+                            ),
+                            portfolio_id=decode_text(
                                 portfolio_snapshot.get("portfolio_id") or profile_normalized,
                             ),
-                            "base_currency": decode_text(
-                                portfolio_snapshot.get("base_currency")
-                                or inventory_payload.get("base_currency"),
-                            ).strip().upper(),
-                            "components": components,
-                            "degraded": bool(inventory_payload.get("degraded", False)),
-                            "global_qty_base": inventory_payload.get("global_qty_base")
-                            or inventory_payload.get("global_qty"),
-                            "global_qty": inventory_payload.get("global_qty"),
-                            "aggregation_mode": decode_text(
-                                inventory_payload.get("aggregation_mode") or "strict",
-                            ),
-                            "global_qty_base_complete": bool(
-                                inventory_payload.get("global_qty_base_complete", True),
-                            ),
-                            "global_qty_complete": bool(
-                                inventory_payload.get("global_qty_complete", True),
-                            ),
-                            "missing_required": list(inventory_payload.get("missing_required") or []),
-                            "stale_required": list(inventory_payload.get("stale_required") or []),
-                            "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
-                            "stale_after_ms": snapshot_stale_after_ms,
-                        },
+                        )
+                        rows = filter_balance_rows_for_contract_scope(
+                            snapshot_rows,
+                            contracts=store._contracts,
+                            preserve_shared_account_rows=True,
+                        )
+                        if not rows and snapshot_rows:
+                            rows = snapshot_rows
+                        if strategy_ids:
+                            market_rows = store.load_market_rows_for_strategies(strategy_ids)
+                            rows = collapse_balance_display_rows(
+                                enrich_balances_rows(
+                                    rows,
+                                    contracts=store._contracts,
+                                    market_rows=market_rows,
+                                ),
+                            )
+                        rows, risk_groups = build_balance_risk_groups(rows)
+                        response_ts_ms = safe_int(portfolio_snapshot.get("server_ts_ms")) or request_now_ms
+                        base_currency = decode_text(portfolio_snapshot.get("base_currency")).strip().upper()
+                        if not base_currency and len(inventory_summary["inventory_by_asset"]) == 1:
+                            base_currency = next(iter(inventory_summary["inventory_by_asset"]))
+                        totals = _balances_totals(rows)
+                        if isinstance(snapshot_accounts, Mapping):
+                            account_totals = snapshot_accounts.get("totals")
+                            if isinstance(account_totals, Mapping):
+                                totals.update(dict(account_totals))
+                        total_rows = len(rows)
+                        return _ok(
+                            data={
+                                "source": "portfolio_snapshot_v2",
+                                "rows": rows[:limit],
+                                "count": total_rows,
+                                "total": total_rows,
+                                "limit": limit,
+                                "totals": totals,
+                                "risk_groups": risk_groups,
+                                "server_ts_ms": response_ts_ms,
+                                "portfolio_id": decode_text(
+                                    portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                                ),
+                                "base_currency": base_currency,
+                                "inventory_by_asset": inventory_summary["inventory_by_asset"],
+                                "components": inventory_summary["components"],
+                                "degraded": inventory_summary["degraded"],
+                                "missing_required": inventory_summary["missing_required"],
+                                "stale_required": inventory_summary["stale_required"],
+                                "null_qty_required": inventory_summary["null_qty_required"],
+                                "stale_after_ms": snapshot_stale_after_ms,
+                            },
+                        )
+                elif profile_normalized == "tokenmm":
+                    inventory = portfolio_snapshot.get("inventory")
+                    inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
+                    snapshot_stale_after_ms = (
+                        safe_int(inventory_payload.get("stale_after_ms"))
+                        or TOKENMM_BALANCES_STALE_AFTER_MS
                     )
+                    if (
+                        _timestamp_is_fresh(
+                            portfolio_snapshot.get("server_ts_ms"),
+                            now_ms_value=request_now_ms,
+                            stale_after_ms=snapshot_stale_after_ms,
+                        )
+                        and _timestamp_is_fresh(
+                            inventory_payload.get("ts_ms"),
+                            now_ms_value=request_now_ms,
+                            stale_after_ms=snapshot_stale_after_ms,
+                        )
+                    ):
+                        snapshot_balances = portfolio_snapshot.get("balances")
+                        snapshot_rows = _portfolio_snapshot_rows(
+                            snapshot_balances.get("rows")
+                            if isinstance(snapshot_balances, Mapping)
+                            else [],
+                        )
+                        rows = filter_balance_rows_for_contract_scope(
+                            snapshot_rows,
+                            contracts=store._contracts,
+                        )
+                        if not rows and snapshot_rows:
+                            rows = snapshot_rows
+                        if strategy_ids:
+                            market_rows = store.load_market_rows_for_strategies(strategy_ids)
+                            rows = collapse_balance_display_rows(
+                                enrich_balances_rows(
+                                    rows,
+                                    contracts=store._contracts,
+                                    market_rows=market_rows,
+                                ),
+                            )
+                        rows, risk_groups = build_balance_risk_groups(rows)
+                        response_ts_ms = (
+                            safe_int(portfolio_snapshot.get("server_ts_ms"))
+                            or safe_int(inventory_payload.get("ts_ms"))
+                            or request_now_ms
+                        )
+                        components_payload = inventory_payload.get("components")
+                        if not isinstance(components_payload, list):
+                            components_payload = portfolio_snapshot.get("components")
+                        components = [
+                            dict(component)
+                            for component in (components_payload or [])
+                            if isinstance(component, Mapping)
+                        ]
+                        total_rows = len(rows)
+                        return _ok(
+                            data={
+                                "source": "portfolio_snapshot",
+                                "rows": rows[:limit],
+                                "count": total_rows,
+                                "total": total_rows,
+                                "limit": limit,
+                                "totals": _balances_totals(rows),
+                                "risk_groups": risk_groups,
+                                "server_ts_ms": response_ts_ms,
+                                "portfolio_id": decode_text(
+                                    portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                                ),
+                                "base_currency": decode_text(
+                                    portfolio_snapshot.get("base_currency")
+                                    or inventory_payload.get("base_currency"),
+                                ).strip().upper(),
+                                "components": components,
+                                "degraded": bool(inventory_payload.get("degraded", False)),
+                                "global_qty_base": inventory_payload.get("global_qty_base")
+                                or inventory_payload.get("global_qty"),
+                                "global_qty": inventory_payload.get("global_qty"),
+                                "aggregation_mode": decode_text(
+                                    inventory_payload.get("aggregation_mode") or "strict",
+                                ),
+                                "global_qty_base_complete": bool(
+                                    inventory_payload.get("global_qty_base_complete", True),
+                                ),
+                                "global_qty_complete": bool(
+                                    inventory_payload.get("global_qty_complete", True),
+                                ),
+                                "missing_required": list(inventory_payload.get("missing_required") or []),
+                                "stale_required": list(inventory_payload.get("stale_required") or []),
+                                "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
+                                "stale_after_ms": snapshot_stale_after_ms,
+                            },
+                        )
 
             response_ts_ms = request_now_ms
             rows_by_strategy: dict[str, list[dict[str, Any]]] = {}
@@ -2123,6 +2392,7 @@ def create_flux_api_app(  # noqa: C901
             filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,
                 contracts=store._contracts,
+                preserve_shared_account_rows=(profile_normalized == "equities"),
             )
             if filtered_rows:
                 rows = filtered_rows

@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import redis
-from nautilus_trader.config import DatabaseConfig
 
 from flux.runners.shared.redis_env import apply_redis_env_overrides
 from flux.runners.shared.redis_env import optional_text as redis_optional_text
 from flux.runners.shared.strategy_set import StrategySetDescriptor
+from nautilus_trader.config import DatabaseConfig
+
 
 if __name__ == "flux.runners.shared.bootstrap":
     sys.modules.setdefault("nautilus_trader.flux.runners.shared.bootstrap", sys.modules[__name__])
@@ -60,6 +61,11 @@ def merge_shared_tables(
         value = shared_config.get(table_name)
         if isinstance(value, dict):
             merged[table_name] = dict(value)
+        elif isinstance(value, list):
+            merged[table_name] = [
+                dict(row) if isinstance(row, dict) else row
+                for row in value
+            ]
     return merged
 
 

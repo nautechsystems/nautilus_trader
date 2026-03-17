@@ -9,12 +9,21 @@ COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-equities.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/equities/equities.live.toml"
 STRATEGIES_DIR="${ROOT_DIR}/deploy/equities/strategies"
+EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
+ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"
 
 declare -a NODE_STRATEGIES=()
 
 require_sudo() {
   if [[ "${EUID}" -ne 0 ]]; then
     echo "[equities-systemd] run with sudo" >&2
+    exit 1
+  fi
+}
+
+require_project_python() {
+  if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then
+    echo "[equities-systemd] missing project python at ${EQUITIES_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` first" >&2
     exit 1
   fi
 }
@@ -67,8 +76,17 @@ install_units() {
     "${COMMON_ENV_PATH}"
 }
 
+append_checkout_env_overrides() {
+  local env_path="$1"
+
+  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${ROOT_DIR}" "${ROOT_DIR}" >> "${env_path}"
+}
+
 cleanup_obsolete_envs() {
   rm -f "${ENV_DIR}/equities-api.env"
+  rm -f "${ENV_DIR}/equities-portfolio.env"
+  rm -f "${ENV_DIR}/equities-bridge.env"
+  find "${ENV_DIR}" -maxdepth 1 -type f -name 'equities-node-*.env' -delete
 }
 
 render_target() {
@@ -78,16 +96,18 @@ render_target() {
 }
 
 render_api_env() {
+  # Shared-host equities keeps /equities as the SPA entry route; Fluxboard assets load from /static/fluxboard/*.
   strategy_stack_write_env \
     "${ENV_DIR}/equities-api.env" \
     "Equities API backend" \
     "equities" \
     "Equities" \
     "20" \
-    "env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.equities.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5024 --serve-fluxboard" \
+    "env FLUXBOARD_SERVE_DIST=1 ${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5024 --serve-fluxboard" \
     "5024" \
     "" \
     "0"
+  append_checkout_env_overrides "${ENV_DIR}/equities-api.env"
 }
 
 render_portfolio_env() {
@@ -97,7 +117,8 @@ render_portfolio_env() {
     "equities" \
     "Equities" \
     "20" \
-    "python3 -m nautilus_trader.flux.runners.equities.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
+    "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
+  append_checkout_env_overrides "${ENV_DIR}/equities-portfolio.env"
 }
 
 render_bridge_env() {
@@ -107,19 +128,26 @@ render_bridge_env() {
     "equities" \
     "Equities" \
     "20" \
-    "python3 -m nautilus_trader.flux.runners.equities.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live"
+    "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live"
+  append_checkout_env_overrides "${ENV_DIR}/equities-bridge.env"
 }
 
 render_node_envs() {
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    local service_id="equities-node-${strategy_id}"
+    local cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live"
+    if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
+      cmd+=" --enable-execution"
+    fi
     strategy_stack_write_env \
-      "${ENV_DIR}/equities-node-${strategy_id}.env" \
+      "${ENV_DIR}/${service_id}.env" \
       "Equities node ${strategy_id}" \
       "equities" \
       "Equities" \
       "20" \
-      "python3 -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+      "${cmd}"
+    append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"
   done
 }
 
@@ -134,6 +162,7 @@ enable_stack() {
 
 main() {
   require_sudo
+  require_project_python
   discover_node_strategies
   install_units
   cleanup_obsolete_envs

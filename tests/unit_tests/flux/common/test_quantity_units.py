@@ -13,6 +13,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -68,6 +69,29 @@ def _okx_inverse_perpetual(
         ts_event=0,
         ts_init=0,
         info=info,
+    )
+
+
+def _hyperliquid_identity_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("xyz:AAPL-USD-PERP"),
+            venue=Venue("HYPERLIQUID"),
+        ),
+        raw_symbol=Symbol("xyz:AAPL"),
+        base_currency=Currency.from_str("xyz:AAPL"),
+        quote_currency=USD,
+        settlement_currency=USDC,
+        is_inverse=False,
+        price_precision=3,
+        size_precision=3,
+        price_increment=Price.from_str("0.001"),
+        size_increment=Quantity.from_str("0.001"),
+        multiplier=Quantity.from_str("1"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={"base_exposure_mode": "identity"},
     )
 
 
@@ -178,6 +202,17 @@ def test_exposure_from_venue_qty_flags_incomplete_okx_metadata() -> None:
     assert exposure.qty_conversion_source == "instrument.info:incomplete_okx_quantity_unit_metadata"
 
 
+def test_exposure_from_venue_qty_honors_identity_metadata_without_core_quanto_math() -> None:
+    instrument = _hyperliquid_identity_perpetual()
+
+    exposure = exposure_from_venue_qty(instrument, Decimal("1"))
+
+    assert exposure.venue_qty == Decimal("1")
+    assert exposure.base_qty == Decimal("1")
+    assert exposure.qty_conversion_status == "identity"
+    assert exposure.qty_conversion_source == "instrument.info:base_exposure_mode=identity"
+
+
 def test_venue_qty_from_base_qty_round_trips_exact_multiplier_conversion() -> None:
     instrument = _okx_linear_perpetual(
         info={
@@ -214,3 +249,14 @@ def test_venue_qty_from_base_qty_preserves_short_base_exposure_sign() -> None:
     assert exposure.base_qty == Decimal("-3430")
     assert exposure.qty_conversion_status == "exact_multiplier"
     assert exposure.qty_conversion_source == "instrument.info:base_exposure_mode=exact_multiplier"
+
+
+def test_venue_qty_from_base_qty_honors_identity_metadata_without_quanto_roundtrip_failure() -> None:
+    instrument = _hyperliquid_identity_perpetual()
+
+    exposure = venue_qty_from_base_qty(instrument, Decimal("1"))
+
+    assert exposure.venue_qty == Decimal("1")
+    assert exposure.base_qty == Decimal("1")
+    assert exposure.qty_conversion_status == "identity"
+    assert exposure.qty_conversion_source == "instrument.info:base_exposure_mode=identity"

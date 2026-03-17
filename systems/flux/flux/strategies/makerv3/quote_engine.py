@@ -34,6 +34,7 @@ from flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
 from flux.strategies.makerv3.constants import REASON_SKIPPED_CANCEL_REJECT_COOLDOWN
 from flux.strategies.makerv3.constants import REASON_SKIPPED_PENDING_CANCELS
 from flux.strategies.makerv3.wire import QuoteCycleContext
+from flux.strategies.shared.quote_health import evaluate_quote_health
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 
@@ -465,22 +466,14 @@ def refresh_quotes(  # noqa: C901
         return
     best_bid_px, best_ask_px = maker_bbo
     maker_mid = (best_bid_px + best_ask_px) / Decimal(2)
-
-    maker_age_ms = None
-    if strategy._last_bbo_ts_ns.get(strategy.config.maker_instrument_id, 0) > 0:
-        maker_age_ms = int(
-            (now_ns - strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id]) / 1_000_000,
-        )
-    reference_age_ms = None
-    if strategy._last_bbo_ts_ns.get(strategy.config.reference_instrument_id, 0) > 0:
-        reference_age_ms = int(
-            (now_ns - strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id])
-            / 1_000_000,
-        )
     max_age_ms = int(runtime_params["max_age_ms"])
-    maker_fresh = bool(maker_age_ms is not None and maker_age_ms < max_age_ms)
-    reference_fresh = bool(reference_age_ms is not None and reference_age_ms < max_age_ms)
-    if not maker_fresh:
+    maker_health = strategy._quote_health(
+        instrument_id=strategy.config.maker_instrument_id,
+        leg_role="maker",
+        now_ns=now_ns,
+        max_quote_age_ms=max_age_ms,
+    )
+    if not maker_health.usable_for_pricing:
         handle_stale_quote_block(
             strategy,
             now_ns=now_ns,
@@ -491,13 +484,19 @@ def refresh_quotes(  # noqa: C901
             quote_cycle_id=quote_cycle_id,
             warning_message=(
                 f"Quoting blocked (maker data stale) strategy_id={strategy._external_strategy_id} "
-                f"age_ms={maker_age_ms} max_age_ms={max_age_ms}"
+                f"age_ms={maker_health.quote_age_ms} max_age_ms={max_age_ms}"
             ),
         )
         return
 
     ref_bbo = strategy._best_bid_ask(strategy.config.reference_instrument_id)
-    if ref_bbo is None or not reference_fresh:
+    reference_health = strategy._quote_health(
+        instrument_id=strategy.config.reference_instrument_id,
+        leg_role="reference",
+        now_ns=now_ns,
+        max_quote_age_ms=max_age_ms,
+    )
+    if ref_bbo is None or not reference_health.usable_for_pricing:
         handle_stale_quote_block(
             strategy,
             now_ns=now_ns,
@@ -508,7 +507,7 @@ def refresh_quotes(  # noqa: C901
             quote_cycle_id=quote_cycle_id,
             warning_message=(
                 f"Quoting blocked (reference data stale) strategy_id={strategy._external_strategy_id} "
-                f"age_ms={reference_age_ms} max_age_ms={max_age_ms}"
+                f"age_ms={reference_health.quote_age_ms} max_age_ms={max_age_ms}"
             ),
         )
         return
@@ -540,10 +539,11 @@ def refresh_quotes(  # noqa: C901
         )
         return
     base_currency = strategy._maker_base_currency_code()
+    portfolio_asset_id = strategy._portfolio_asset_id() or base_currency
     if strategy._portfolio_inventory_portfolio_id:
         _, portfolio_block_reason, _portfolio_diagnostics = (
             strategy._shared_portfolio_inventory_qty_and_block_reason(
-            base_currency,
+            portfolio_asset_id,
             )
         )
         if portfolio_block_reason == REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE:
@@ -771,10 +771,10 @@ def refresh_quotes(  # noqa: C901
             "total_skew_bps": _decimal_to_json_str(skew_ctx["total_skew_bps"]),
         },
         "md_health": {
-            "maker_age_ms": maker_age_ms,
-            "reference_age_ms": reference_age_ms,
-            "maker_fresh": maker_fresh,
-            "reference_fresh": reference_fresh,
+            "maker_age_ms": maker_health.quote_age_ms,
+            "reference_age_ms": reference_health.quote_age_ms,
+            "maker_fresh": maker_health.usable_for_pricing,
+            "reference_fresh": reference_health.usable_for_pricing,
         },
     }
     strategy._last_quote_snapshot = {

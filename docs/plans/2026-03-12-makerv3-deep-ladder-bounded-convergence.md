@@ -1,21 +1,18 @@
 # MakerV3 Deep Ladder Bounded Convergence Implementation Plan
 
-> **For the execution agent:** REQUIRED SUB-SKILL: Before implementing this plan, choose exactly one execution mode and use the matching skill: `superpowers:subagent-driven-development` for same-session execution or `superpowers:executing-plans` for a separate-session handoff.
-> **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
-
 **Goal:** Make MakerV3 safe and efficient for deep 3-band ladders on Bybit, OKX, and Bitget by replacing unbounded cancel/replace behavior with venue-aware bounded convergence while preserving low-latency quote maintenance.
 
 **Architecture:** Keep pricing and target generation pure, but replace the current per-side rebalance planner with a deterministic bounded-convergence planner that separates target computation from action budgeting. The strategy should converge toward the desired ladder incrementally under explicit per-side and per-venue budgets, with correctness fixes for pending-cancel state, cancel-reject reconciliation, and terminal-state publishing. The first implementation should keep the control surface intentionally small and portable: simple budgets, explicit action priorities, and no venue-specific hot-path branches.
 
 **Tech Stack:** Python, Nautilus Trader strategy runtime, Flux MakerV3, Redis state publishing, pytest unit tests.
 
-## External Review Context
+## External review context
 
-### Current Intended Semantics
+### Current intended semantics
 
 MakerV3 should support deep ladders without full-book churn. In steady state, the quote loop should mostly no-op. When the market tightens, the strategy should add at the touch and peel passive tail orders only as needed. When the market widens, it should cancel the most aggressive orders first and converge outward under a bounded action budget. This is the expected HFT-standard shape for a deep resting stack: high quote quality, low unnecessary churn, deterministic change-rate control, and venue-fit rate behavior.
 
-### Current Observed Behavior
+### Current observed behavior
 
 On Thursday, March 12, 2026 at `09:44:06 UTC`, `plumeusdt_bybit_perp_makerv3` self-stopped under venue protection after a cancel storm. The relevant evidence from the current code/log path is:
 
@@ -24,7 +21,7 @@ On Thursday, March 12, 2026 at `09:44:06 UTC`, `plumeusdt_bybit_perp_makerv3` se
 - Bybit returned repeated `order not exists or too late to cancel` rejects followed by `Too many visits. Exceeded the API Rate Limit.`.
 - The process remained alive, but state publishing later went stale, so Flux displayed a misleading `Runner Off` state.
 
-### Current Code Paths And Gaps
+### Current code paths and gaps
 
 1. **Unbounded aggressive-side cancellation**
 
@@ -56,7 +53,7 @@ On Thursday, March 12, 2026 at `09:44:06 UTC`, `plumeusdt_bybit_perp_makerv3` se
 
    Consequence: the UI says `Runner Off` when the runner process is still alive but the strategy is stopped inside it.
 
-### Design Requirements
+### Design requirements
 
 - Support steady-state 3-band ladders with `15+` orders per side.
 - Preserve low latency and avoid heavy per-cycle object churn.
@@ -66,14 +63,14 @@ On Thursday, March 12, 2026 at `09:44:06 UTC`, `plumeusdt_bybit_perp_makerv3` se
 - Preserve quote quality while making venue protection exceptional, not routine.
 - Distinguish healthy bounded convergence from persistent lag and from broken state.
 
-### Non-Goals
+### Non-goals
 
 - Do not solve Binance-specific issues in this wave.
 - Do not change the economic ladder model, skew model, or pricing anchors unless required by bounded convergence.
 - Do not hack around the problem by permanently reducing Bybit to a shallow ladder. Temporary rollout profiles may be used, but the architecture must support deep ladders correctly.
 - Do not introduce a large matrix of venue- and band-specific pacing knobs in v1.
 
-## Proposed Architecture
+## Proposed architecture
 
 ### 1. Split "desired ladder" from "allowed action budget"
 
@@ -91,7 +88,7 @@ The planner should return a small, ordered action set:
 - `place` actions, bounded by remaining slots and action budget
 - explicit convergence diagnostics for telemetry
 
-### 1a. Planner Contract Must Stay Pure
+### 1a. Planner contract must stay pure
 
 The planner should be a pure side-local function with an explicit contract.
 
@@ -138,7 +135,7 @@ The core rebalancing policy for a deep ladder should be:
 
 This keeps the ladder elegant: it behaves like a bounded moving front rather than a full resnapshot.
 
-### 2a. Explicit Room-Creation Rules
+### 2a. Explicit room-creation rules
 
 When side capacity is full and more aggressive missing levels need room, the planner should prefer:
 
@@ -149,7 +146,7 @@ When side capacity is full and more aggressive missing levels need room, the pla
 
 That last rule is the main defense against pseudo-resnapshot behavior under oscillating markets.
 
-### 2b. Add Hysteresis / Keep Bucket
+### 2b. Add hysteresis / keep bucket
 
 Budgets prevent catastrophe, but they do not by themselves prevent constant low-value churn. The planner should classify active levels into:
 
@@ -172,7 +169,7 @@ These should live in MakerV3 runtime params/config, but the policy logic should 
 
 The initial implementation should stop there. Do not add band-specific budgets, adaptive rate matrices, or venue-specific action taxonomies unless the simple version proves insufficient.
 
-### 3a. Backlog Modes Must Be Explicit
+### 3a. Backlog modes must be explicit
 
 Backlog handling should distinguish:
 
@@ -198,7 +195,7 @@ The convergence change should ship with the required correctness fixes:
 
 These are not optional cleanups; they are part of making the convergence engine auditable and production-safe.
 
-### 5. Make Convergence Observable
+### 5. Make convergence observable
 
 Bounded convergence means the ladder may be intentionally not-perfect for short periods. Telemetry must distinguish healthy lag from broken state.
 
@@ -218,21 +215,21 @@ Operators should be able to tell the difference between:
 - persistent lag under budget pressure
 - pathological blocked/stopped state
 
-## Progress Tracker
+## Progress tracker
 
 **Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
 
-| Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Task 1: Reproduce Failure Mode And Lock Spec Tests | completed | controller | none | `tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_order_safety.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py` | `shared` | `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312` | `a0b9b44461 + 6a2577f441` | `rebalancing: 6 intended fails; quote_engine: 3 intended fails; order_safety: 2 intended fails; observability: 2 intended fails; spec review: pass; quality review: pass` | 2026-03-12: Task 1 complete; only minor naming nit left in existing quote-engine test |
-| Task 2: Introduce Pure Bounded-Convergence Planner | completed | controller | Task 1: Reproduce Failure Mode And Lock Spec Tests | `systems/flux/flux/strategies/makerv3/rebalancing.py`, `tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py` | `shared` | `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312` | `6592904b95 + fd6cc80f91 + 5835d836c5 + 41a25d7b4d` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py` (21 passed); spec review: pass; quality review: pass | 2026-03-12: Task 2 complete; residual gap only on extra sell-side/room-replacement symmetry coverage |
-| Task 3: Integrate Planner Into Quote Cycle With Venue Budgets | completed | controller | Task 2: Introduce Pure Bounded-Convergence Planner | `systems/flux/flux/strategies/makerv3/strategy.py`, `systems/flux/flux/strategies/makerv3/quote_engine.py`, `systems/flux/flux/strategies/makerv3/runtime_params.py`, `systems/flux/flux/common/params.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` | `shared` | `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312` | `fce567a29d` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` (17 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py` (26 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_order_safety.py -k 'rebalance_side or place_missing_levels or backlog or pending_cancel or runtime_param'` (28 passed, 36 deselected) | 2026-03-12: controller-side spec/quality gates used after reviewer agents stalled post-reboot |
-| Task 4: Fix Cancel-Reject Reconciliation And State Export Correctness | completed | controller | Task 1: Reproduce Failure Mode And Lock Spec Tests | `systems/flux/flux/strategies/makerv3/strategy.py`, `systems/flux/flux/strategies/makerv3/publisher.py`, `tests/unit_tests/flux/strategies/makerv3/test_order_safety.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py`, `tests/unit_tests/flux/api/test_app.py` | `shared` | `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312` | `5533e5a578` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_order_safety.py` (22 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py -k 'pending_cancel or state'` (9 passed, 21 deselected); `pytest -q tests/unit_tests/flux/api/test_app.py -k 'running or state'` (3 passed) | 2026-03-12: terminal cancel-reject reconciliation and pending-cancel snapshot hardening committed; controller-side review used after reviewer agents stalled post-reboot |
-| Task 5: Rollout Profiles, Telemetry, And Verification | completed | controller | Task 4: Fix Cancel-Reject Reconciliation And State Export Correctness | `deploy/tokenmm/strategies/plumeusdt_bybit_perp_makerv3.toml`, `deploy/tokenmm/strategies/plumeusdt_okx_perp_makerv3.toml`, `deploy/tokenmm/strategies/plumeusdt_bitget_perp_makerv3.toml`, `tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py`, `systems/flux/flux/strategies/makerv3/quote_engine.py`, `systems/flux/flux/strategies/makerv3/strategy.py`, `docs/runbooks/tokenmm-makerv3-bounded-convergence-rollout.md`, `docs/plans` | `shared` | `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312` | working_tree | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py tests/unit_tests/flux/strategies/makerv3/test_order_safety.py tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` (116 passed); `pytest -q tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_payloads.py` (131 passed); `pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py` (49 passed); `git diff --check` (clean) | 2026-03-12: explicit perp rollout budgets, bounded-convergence telemetry, and rollout runbook landed; full targeted verification passed |
+| Task | Status | Depends On | Write Scope | Verification | Notes / last update |
+| --- | --- | --- | --- | --- | --- |
+| Task 1: Reproduce Failure Mode And Lock Spec Tests | completed | none | `tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_order_safety.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py` | `rebalancing: 6 intended fails; quote_engine: 3 intended fails; order_safety: 2 intended fails; observability: 2 intended fails; spec review: pass; quality review: pass` | 2026-03-12: Task 1 complete; only minor naming feedback remained in an existing quote-engine test. |
+| Task 2: Introduce Pure Bounded-Convergence Planner | completed | Task 1: Reproduce Failure Mode And Lock Spec Tests | `systems/flux/flux/strategies/makerv3/rebalancing.py`, `tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py` (21 passed); spec review: pass; quality review: pass | 2026-03-12: Task 2 complete; residual gap only on extra sell-side and room-replacement symmetry coverage. |
+| Task 3: Integrate Planner Into Quote Cycle With Venue Budgets | completed | Task 2: Introduce Pure Bounded-Convergence Planner | `systems/flux/flux/strategies/makerv3/strategy.py`, `systems/flux/flux/strategies/makerv3/quote_engine.py`, `systems/flux/flux/strategies/makerv3/runtime_params.py`, `systems/flux/flux/common/params.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` (17 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py` (26 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_order_safety.py -k 'rebalance_side or place_missing_levels or backlog or pending_cancel or runtime_param'` (28 passed, 36 deselected) | 2026-03-12: Task 3 complete; planner integration and venue budgets passed targeted verification. |
+| Task 4: Fix Cancel-Reject Reconciliation And State Export Correctness | completed | Task 1: Reproduce Failure Mode And Lock Spec Tests | `systems/flux/flux/strategies/makerv3/strategy.py`, `systems/flux/flux/strategies/makerv3/publisher.py`, `tests/unit_tests/flux/strategies/makerv3/test_order_safety.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py`, `tests/unit_tests/flux/api/test_app.py` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_order_safety.py` (22 passed); `pytest -q tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py -k 'pending_cancel or state'` (9 passed, 21 deselected); `pytest -q tests/unit_tests/flux/api/test_app.py -k 'running or state'` (3 passed) | 2026-03-12: Task 4 complete; terminal cancel-reject reconciliation and pending-cancel snapshot hardening landed with targeted verification. |
+| Task 5: Rollout Profiles, Telemetry, And Verification | completed | Task 4: Fix Cancel-Reject Reconciliation And State Export Correctness | `deploy/tokenmm/strategies/plumeusdt_bybit_perp_makerv3.toml`, `deploy/tokenmm/strategies/plumeusdt_okx_perp_makerv3.toml`, `deploy/tokenmm/strategies/plumeusdt_bitget_perp_makerv3.toml`, `tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py`, `tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py`, `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py`, `systems/flux/flux/strategies/makerv3/quote_engine.py`, `systems/flux/flux/strategies/makerv3/strategy.py`, `docs/runbooks/tokenmm-makerv3-bounded-convergence-rollout.md`, `docs/plans` | `pytest -q tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py tests/unit_tests/flux/strategies/makerv3/test_quote_engine.py tests/unit_tests/flux/strategies/makerv3/test_order_safety.py tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py tests/unit_tests/flux/strategies/makerv3/test_runtime_params.py` (116 passed); `pytest -q tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_payloads.py` (131 passed); `pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py` (49 passed); `git diff --check` (clean) | 2026-03-12: explicit perp rollout budgets, bounded-convergence telemetry, and the rollout runbook landed; full targeted verification passed. |
 
 ---
 
-### Task 1: Reproduce Failure Mode And Lock Spec Tests
+### Task 1: Reproduce failure mode and lock spec tests
 
 **Files:**
 - Modify: `tests/unit_tests/flux/strategies/makerv3/test_rebalancing.py`
@@ -299,7 +296,7 @@ git commit -m "test: lock MakerV3 bounded convergence behavior"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 2: Introduce Pure Bounded-Convergence Planner
+### Task 2: Introduce pure bounded-convergence planner
 
 **Files:**
 - Modify: `systems/flux/flux/strategies/makerv3/rebalancing.py`
@@ -367,7 +364,7 @@ git commit -m "feat: add bounded convergence planner for MakerV3 ladders"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 3: Integrate Planner Into Quote Cycle With Venue Budgets
+### Task 3: Integrate planner into quote cycle with venue budgets
 
 **Files:**
 - Modify: `systems/flux/flux/strategies/makerv3/strategy.py`
@@ -432,7 +429,7 @@ git commit -m "feat: bound MakerV3 ladder convergence by venue-safe budgets"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 4: Fix Cancel-Reject Reconciliation And State Export Correctness
+### Task 4: Fix cancel-reject reconciliation and state export correctness
 
 **Files:**
 - Modify: `systems/flux/flux/strategies/makerv3/strategy.py`
@@ -488,7 +485,7 @@ git commit -m "fix: harden MakerV3 cancel lifecycle and state export"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 5: Rollout Profiles, Telemetry, And Verification
+### Task 5: Rollout profiles, telemetry, and verification
 
 **Files:**
 - Modify: `deploy/tokenmm/strategies/plumeusdt_bybit_perp_makerv3.toml`
@@ -550,15 +547,15 @@ git commit -m "chore: roll out bounded convergence for tokenmm MakerV3 ladders"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-## Verification And Review Notes
+## Verification and review notes
 
-- The worktree for this plan is `/home/ubuntu/nautilus_trader/.worktrees/codex-bybit-makerv3-ladder-hardening-20260312`.
-- Branch name is `codex/bybit-makerv3-ladder-hardening-20260312`.
-- A direct pytest baseline from the fresh worktree currently requires local native Nautilus build artifacts. Before implementation execution, either:
-  - build the worktree (`uv run --group test python build.py` or project-standard equivalent), or
-  - execute tests from an environment where compiled artifacts are already present.
+- A direct pytest baseline for this plan requires local native Nautilus build
+  artifacts in some environments. Before implementation execution, either build
+  the repo (`uv run --group test python build.py` or the project-standard
+  equivalent) or execute tests from an environment where compiled artifacts are
+  already present.
 
-## Acceptance Criteria
+## Acceptance criteria
 
 - Deep 3-band ladders can remain live on Bybit, OKX, and Bitget without whole-side or whole-book churn during ordinary market movement.
 - A single quote cycle cannot emit a venue-unsafe cancel burst.
@@ -570,9 +567,3 @@ git commit -m "chore: roll out bounded convergence for tokenmm MakerV3 ladders"
 - Pending-cancel backlog above threshold prevents further repricing on that side without forcing a global strategy freeze for every transient backlog event.
 - Terminal-ish cancel rejects such as `order not exists or too late to cancel` reconcile managed tracking within one event cycle.
 - Telemetry distinguishes healthy bounded convergence from persistent lag and from blocked state.
-
-## Execution Recommendation
-
-Recommended execution mode: `superpowers:subagent-driven-development`.
-
-Reason: this work cleanly splits into pure planner/test work, runtime/config wiring, and correctness/observability hardening, but the surfaces are still coupled enough that same-session orchestration with pinned review checkpoints is the safer choice.

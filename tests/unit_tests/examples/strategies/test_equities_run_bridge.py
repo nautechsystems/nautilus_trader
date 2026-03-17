@@ -88,14 +88,14 @@ ssl = false
     )
     monkeypatch.setenv(
         "EQUITIES_REDIS_HOST",
-        "master.equities-redis-prod.wapqos.apse1.cache.amazonaws.com",
+        "master.equities.wapqos.apse1.cache.amazonaws.com",
     )
     monkeypatch.setenv("EQUITIES_REDIS_PORT", "6379")
     monkeypatch.setenv("EQUITIES_REDIS_SSL", "true")
 
     config = _load_config(config_path)
 
-    assert config["redis"]["host"] == "master.equities-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert config["redis"]["host"] == "master.equities.wapqos.apse1.cache.amazonaws.com"
     assert config["redis"]["port"] == 6379
     assert config["redis"]["ssl"] is True
 

@@ -65,13 +65,13 @@ def test_discover_strategy_contexts_filters_by_group_and_normalizes_venues(tmp_p
     (cfg_dir / "strategies.ini").write_text(
         "\n".join(
             [
-                "[strategy:bybit_binance_plumeusdt_makerv3]",
+                "[strategy:plumeusdt_bybit_perp_makerv3]",
                 "strategy_groups = tokenmm",
                 "exchange = bybit_linear",
                 "base_asset = PLUME",
                 "quote_asset = USDT",
                 "",
-                "[strategy:okx_binance_plumeusdt_spot_makerv3]",
+                "[strategy:plumeusdt_okx_spot_makerv3]",
                 "strategy_groups = tokenmm",
                 "exchange = okx",
                 "base_asset = PLUME",
@@ -94,13 +94,39 @@ def test_discover_strategy_contexts_filters_by_group_and_normalizes_venues(tmp_p
     )
 
     assert set(contexts.keys()) == {
-        "bybit_binance_plumeusdt_makerv3",
-        "okx_binance_plumeusdt_spot_makerv3",
+        "plumeusdt_bybit_perp_makerv3",
+        "plumeusdt_okx_spot_makerv3",
     }
-    assert contexts["bybit_binance_plumeusdt_makerv3"].venue == "bybit_linear"
-    assert contexts["bybit_binance_plumeusdt_makerv3"].symbol == "PLUME/USDT"
-    assert contexts["okx_binance_plumeusdt_spot_makerv3"].venue == "okx_spot"
-    assert contexts["okx_binance_plumeusdt_spot_makerv3"].symbol == "PLUME/USDT"
+    assert contexts["plumeusdt_bybit_perp_makerv3"].venue == "bybit_linear"
+    assert contexts["plumeusdt_bybit_perp_makerv3"].symbol == "PLUME/USDT"
+    assert contexts["plumeusdt_okx_spot_makerv3"].venue == "okx_spot"
+    assert contexts["plumeusdt_okx_spot_makerv3"].symbol == "PLUME/USDT"
+
+
+def test_parse_strategy_context_supports_current_plumeusdt_strategy_ids() -> None:
+    module = _load_exporter_module()
+
+    context = module._parse_strategy_context("plumeusdt_bitget_perp_makerv3")
+
+    assert context.token == "PLUME"
+    assert context.venue == "bitget_perp"
+    assert context.symbol == "PLUME/USDT"
+
+
+def test_resolve_strategy_ids_falls_back_to_current_live_allowlist() -> None:
+    module = _load_exporter_module()
+
+    args = module._build_parser().parse_args(["--config-dir", "/tmp/tokenmm-missing-config-dir"])
+
+    assert module._resolve_strategy_ids(args) == [
+        "plumeusdt_bybit_perp_makerv3",
+        "plumeusdt_bybit_spot_makerv3",
+        "plumeusdt_okx_perp_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_bitget_perp_makerv3",
+        "plumeusdt_bitget_spot_makerv3",
+    ]
 
 
 def test_depth_within_bps_uses_bid_and_ask_and_filters_distance() -> None:
@@ -137,7 +163,7 @@ def test_depth_within_bps_uses_bid_and_ask_and_filters_distance() -> None:
 def test_quote_state_poll_exports_tokenmm_metric_names() -> None:
     module = _load_exporter_module()
 
-    strategy_id = "bybit_binance_plumeusdt_makerv3"
+    strategy_id = "plumeusdt_bybit_perp_makerv3"
     redis_client = FakeRedis()
     exporter = module.TokenMMMetricsExporter(
         redis_client=redis_client,
@@ -191,7 +217,7 @@ def test_exporter_source_uses_existing_redis_state_contract() -> None:
 def test_poll_quote_states_removes_stale_fallback_labels_after_context_update() -> None:
     module = _load_exporter_module()
 
-    strategy_id = "bybit_binance_plumeusdt_makerv3"
+    strategy_id = "plumeusdt_bybit_perp_makerv3"
     redis_client = FakeRedis()
     exporter = module.TokenMMMetricsExporter(
         redis_client=redis_client,
@@ -203,7 +229,7 @@ def test_poll_quote_states_removes_stale_fallback_labels_after_context_update() 
     fallback_labels = {
         "env": "prod",
         "token": "PLUME",
-        "venue": "bybit_spot",
+        "venue": "bybit_perp",
         "symbol": "PLUME/USDT",
         "strategy_family": "maker_v3",
     }
@@ -246,8 +272,8 @@ def test_poll_quote_states_removes_stale_fallback_labels_after_context_update() 
 def test_poll_quote_states_keeps_other_strategies_live_when_one_redis_read_fails(caplog) -> None:
     module = _load_exporter_module()
 
-    healthy_strategy_id = "okx_binance_plumeusdt_makerv3"
-    failed_strategy_id = "bybit_binance_plumeusdt_makerv3"
+    healthy_strategy_id = "plumeusdt_okx_perp_makerv3"
+    failed_strategy_id = "plumeusdt_bybit_perp_makerv3"
     now_ms = 1_700_000_000_000
 
     class FlakyRedis(FakeRedis):

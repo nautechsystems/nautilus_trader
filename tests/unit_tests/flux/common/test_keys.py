@@ -87,6 +87,11 @@ class TestFluxRedisKeys:
             "tokenmm:v1:in:stream:paper:maker_v3_01:market_bbo"
         )
 
+    def test_portfolio_snapshot_key_is_profile_scoped_not_last_asset_wins(self) -> None:
+        assert FluxRedisKeys.portfolio_snapshot(portfolio_id="equities") == (
+            "flux:v1:portfolio:snapshot:equities"
+        )
+
     def test_builds_inbound_stream_key(self):
         # Arrange
         keys = FluxRedisKeys(strategy_id="maker_v3_01")

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import sys
 from typing import Any
 
+from flux.strategies.shared.capabilities import FluxStrategyCapabilities
 from flux.strategies.makerv4.constants import MAKERV4_PARAM_SET
 from flux.strategies.makerv4.constants import MAKERV4_PROFILE_KEY
 from flux.strategies.makerv4.constants import MAKERV4_STRATEGY_FAMILY
@@ -48,6 +49,7 @@ class FluxStrategySpec:
     strategy_family: str
     strategy_version: str
     profile_key: str
+    capabilities: FluxStrategyCapabilities
 
     @property
     def name(self) -> str:
@@ -72,6 +74,11 @@ MAKERV3_STRATEGY_SPEC = FluxStrategySpec(
     strategy_family="maker_v3",
     strategy_version="v3",
     profile_key="maker_v3",
+    capabilities=FluxStrategyCapabilities(
+        publishes_local_inventory=True,
+        uses_profile_account_projection=True,
+        supports_immediate_hedge=False,
+    ),
 )
 
 MAKERV4_STRATEGY_SPEC = FluxStrategySpec(
@@ -82,6 +89,11 @@ MAKERV4_STRATEGY_SPEC = FluxStrategySpec(
     strategy_family=MAKERV4_STRATEGY_FAMILY,
     strategy_version=MAKERV4_STRATEGY_VERSION,
     profile_key=MAKERV4_PROFILE_KEY,
+    capabilities=FluxStrategyCapabilities(
+        publishes_local_inventory=True,
+        uses_profile_account_projection=True,
+        supports_immediate_hedge=True,
+    ),
 )
 
 _SPECS: tuple[FluxStrategySpec, ...] = (
@@ -109,16 +121,42 @@ def get_strategy_spec(name: Any) -> FluxStrategySpec:
     return spec
 
 
+def resolve_strategy_spec_for_strategy_id(
+    strategy_id: Any,
+    *,
+    default: FluxStrategySpec | None = None,
+) -> FluxStrategySpec:
+    normalized = _normalize_name(strategy_id)
+    if not normalized:
+        if default is not None:
+            return default
+        raise ValueError(f"Unsupported flux strategy id: {strategy_id!r}")
+
+    direct_match = _SPECS_BY_NAME.get(normalized)
+    if direct_match is not None:
+        return direct_match
+
+    for spec in _SPECS:
+        if normalized.endswith(f"_{spec.strategy_id}") or normalized.endswith(f"_{spec.profile_key}"):
+            return spec
+
+    if default is not None:
+        return default
+    raise ValueError(f"Unsupported flux strategy id: {strategy_id!r}")
+
+
 def get_strategy_identity(name: Any) -> FluxStrategyIdentity:
     return get_strategy_spec(name).identity
 
 
 __all__ = [
     "FluxStrategyIdentity",
+    "FluxStrategyCapabilities",
     "FluxStrategySpec",
     "MAKERV3_STRATEGY_SPEC",
     "MAKERV4_STRATEGY_SPEC",
     "get_strategy_identity",
     "get_strategy_spec",
     "get_strategy_specs",
+    "resolve_strategy_spec_for_strategy_id",
 ]

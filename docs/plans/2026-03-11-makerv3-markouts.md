@@ -1,29 +1,26 @@
 # MakerV3 Markouts Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-> **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
-
 **Goal:** Produce same-day preliminary MakerV3 markout numbers using existing Redis telemetry, then add a minimal live-forward persistence path for 30s, 60s, and 120s markouts vs `fv_market` mid. For v0, treat `fv_market` as the existing `fv` field published on `flux.makerv3.fv` unless product requirements say otherwise.
 
 **Architecture:** Split the work into two layers. First, add a read-only reporting script that reads the existing `flux:v1:trades:stream:{strategy_id}` and `flux:v1:fv:stream:{strategy_id}` streams so we can compute preliminary numbers immediately when Redis retention still covers the requested horizons. Second, add a lightweight local persistence actor that subscribes to fills and `flux.makerv3.fv`, resolves the 30s/60s/120s markouts online, and stores only final markout rows in SQLite next to existing fills and orders; do not persist a raw live market-data history in v0. The broader Nautilus live `streaming` / catalog path stays out of scope for this first PR because the Flux live runner does not wire it today and it is heavier than needed for same-day markout delivery.
 
 **Tech Stack:** Flux Redis bridge, MakerV3 topics (`flux.makerv3.trade`, `flux.makerv3.fv`, `events.fills.*`), TokenMM live runner, SQLite persistence actors, Python CLI/reporting, pytest.
 
-## Progress Tracker
+## Progress tracker
 
 **Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
 
-| Task | Status | Owner | Notes / Last Update |
-| --- | --- | --- | --- |
-| Overall | completed | main | 2026-03-11: Task 1 report path, Task 2 live-forward persistence, Task 3 TokenMM wiring, and Task 4 operator docs are all implemented and verified in worktree `makerv3-markouts-plan` |
-| Task 1: Build The Read-Only Redis Markout Report | completed | main | 2026-03-11: completed after fixing the FV-window truncation bug and adding stable `fill_id` output; verification: `pytest -q --noconftest tests/unit_tests/ops/test_makerv3_markouts.py` (`7 passed`), `python ops/scripts/makerv3_markouts.py --help`, and `git diff --check`; residual gap: no end-to-end test yet for bridge-shaped Redis payloads or live profile-config resolution |
-| Task 2: Add Live-Forward Markout Persistence | completed | main | 2026-03-11: completed with local controller review after actor/test implementation; verification: `pytest -q tests/unit_tests/persistence/test_markout_persistence_actor.py` (`3 passed`) plus adjacent persistence suites (`48 passed`) |
-| Task 3: Wire Markouts Into TokenMM Telemetry Config | completed | main | 2026-03-11: completed with TokenMM runner wiring and deploy defaults; verification: `pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k markout` (`3 passed`) and full run-node suite (`42 passed`) |
-| Task 4: Document The Operator Workflow And Future Design Boundaries | completed | main | 2026-03-11: completed with `docs/runbooks/makerv3-markouts.md`, MakerV3 observability doc update, and docs contract test; verification: `pytest -q tests/unit_tests/docs/test_makerv3_markouts_docs.py` (`1 passed`) and combined ops/docs slice (`8 passed`) |
+| Task | Status | Notes / last update |
+| --- | --- | --- |
+| Overall | completed | 2026-03-11: Task 1 report path, Task 2 live-forward persistence, Task 3 TokenMM wiring, and Task 4 operator docs are implemented and verified. |
+| Task 1: Build The Read-Only Redis Markout Report | completed | 2026-03-11: completed after fixing the FV-window truncation bug and adding stable `fill_id` output; verification: `pytest -q --noconftest tests/unit_tests/ops/test_makerv3_markouts.py` (`7 passed`), `python ops/scripts/makerv3_markouts.py --help`, and `git diff --check`; residual gap: no end-to-end test yet for bridge-shaped Redis payloads or live profile-config resolution. |
+| Task 2: Add Live-Forward Markout Persistence | completed | 2026-03-11: completed after actor and test implementation; verification: `pytest -q tests/unit_tests/persistence/test_markout_persistence_actor.py` (`3 passed`) plus adjacent persistence suites (`48 passed`). |
+| Task 3: Wire Markouts Into TokenMM Telemetry Config | completed | 2026-03-11: completed with TokenMM runner wiring and deploy defaults; verification: `pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_node.py -k markout` (`3 passed`) and the full run-node suite (`42 passed`). |
+| Task 4: Document The Operator Workflow And Future Design Boundaries | completed | 2026-03-11: completed with `docs/runbooks/makerv3-markouts.md`, the MakerV3 observability doc update, and the docs contract test; verification: `pytest -q tests/unit_tests/docs/test_makerv3_markouts_docs.py` (`1 passed`) and the combined ops/docs slice (`8 passed`). |
 
 ---
 
-### Task 1: Build The Read-Only Redis Markout Report
+### Task 1: Build the read-only Redis markout report
 
 **Files:**
 - Create: `ops/scripts/makerv3_markouts.py`
@@ -139,7 +136,7 @@ git commit -m "feat(markouts): add makerv3 redis markout report"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 2: Add Live-Forward Markout Persistence
+### Task 2: Add live-forward markout persistence
 
 **Files:**
 - Create: `systems/flux/flux/persistence/markouts/__init__.py`
@@ -255,7 +252,7 @@ git commit -m "feat(markouts): persist live-forward makerv3 markouts"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 3: Wire Markouts Into TokenMM Telemetry Config
+### Task 3: Wire markouts into TokenMM telemetry config
 
 **Files:**
 - Modify: `systems/flux/flux/runners/tokenmm/run_node.py`
@@ -341,7 +338,7 @@ git commit -m "feat(tokenmm): wire makerv3 markout telemetry"
 
 **Progress Updates:** After finishing any step that changes task state, update the Progress Tracker before moving on.
 
-### Task 4: Document The Operator Workflow And Future Design Boundaries
+### Task 4: Document the operator workflow and future design boundaries
 
 **Files:**
 - Create: `docs/runbooks/makerv3-markouts.md`

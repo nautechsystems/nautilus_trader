@@ -14,6 +14,7 @@ from typing import Any
 
 from nautilus_trader.accounting.accounts.base import Account
 from flux.common.quantity_units import exposure_from_venue_qty
+from flux.common.quantity_units import QuantityExposure
 from flux.strategies.makerv3.pricing import clamp_decimal
 from flux.strategies.makerv3.pricing import to_decimal
 from flux.strategies.makerv3.pricing import to_decimal_or_none
@@ -108,6 +109,70 @@ def maker_base_currency_code(
 
     parsed_base, _ = normalize_contract_symbol(str(getattr(instrument, "id", instrument_id)))
     return parsed_base or None
+
+
+def portfolio_asset_id(
+    *,
+    configured_asset_id: Any,
+    instrument: Instrument | None,
+    instrument_id: Any,
+) -> str | None:
+    configured_code = _stringify_identifier(configured_asset_id).strip().upper()
+    if configured_code:
+        return configured_code
+    return maker_base_currency_code(
+        instrument=instrument,
+        instrument_id=instrument_id,
+    )
+
+
+def base_exposure_from_venue_qty(
+    instrument: Instrument,
+    venue_qty: Any,
+    *,
+    last_px: Decimal | None = None,
+) -> QuantityExposure:
+    exposure = exposure_from_venue_qty(instrument, venue_qty, last_px=last_px)
+    if exposure.base_qty is None or exposure.qty_conversion_status != "price_based":
+        return exposure
+
+    calculate_base_exposure_qty = getattr(instrument, "calculate_base_exposure_qty", None)
+    make_qty = getattr(instrument, "make_qty", None)
+    if not callable(calculate_base_exposure_qty) or not callable(make_qty):
+        return exposure
+
+    venue_qty_dec = to_decimal_or_none(venue_qty)
+    if venue_qty_dec is None or venue_qty_dec == 0:
+        return exposure
+    if last_px is None:
+        return exposure
+
+    make_price = getattr(instrument, "make_price", None)
+    if not callable(make_price):
+        return exposure
+
+    try:
+        normalized_qty = make_qty(abs(venue_qty_dec))
+        normalized_price = make_price(last_px)
+        native_base_qty = calculate_base_exposure_qty(normalized_qty, normalized_price)
+    except Exception:
+        return exposure
+
+    native_base_qty_dec = to_decimal_or_none(native_base_qty)
+    if native_base_qty_dec is None:
+        return exposure
+
+    if venue_qty_dec < 0:
+        native_base_qty_dec = -abs(native_base_qty_dec)
+    else:
+        native_base_qty_dec = abs(native_base_qty_dec)
+
+    return QuantityExposure(
+        venue_qty=exposure.venue_qty,
+        base_qty=native_base_qty_dec,
+        qty_conversion_status=exposure.qty_conversion_status,
+        qty_conversion_source=exposure.qty_conversion_source,
+    )
 
 
 def instrument_base_currency_code(
@@ -269,7 +334,7 @@ def position_exposure_summary(
                 qty_conversion_source="position instrument unavailable",
             )
 
-        exposure = exposure_from_venue_qty(instrument, signed_qty, last_px=last_px)
+        exposure = base_exposure_from_venue_qty(instrument, signed_qty, last_px=last_px)
         if exposure.base_qty is None:
             return PositionExposureSummary(
                 venue_qty=total_venue,
@@ -580,13 +645,15 @@ __all__ = [
     "INVENTORY_SKEW_RUNTIME_PARAMS",
     "InventorySkewCache",
     "account_venue_code",
+    "base_exposure_from_venue_qty",
     "compute_inventory_skew",
     "instrument_base_currency_code",
+    "maker_base_currency_code",
+    "normalize_contract_symbol",
+    "portfolio_asset_id",
     "position_exposure_summary",
     "position_inventory_total",
     "position_matches_base_currency",
-    "maker_base_currency_code",
-    "normalize_contract_symbol",
     "position_signed_qty",
     "spot_balance_total",
 ]

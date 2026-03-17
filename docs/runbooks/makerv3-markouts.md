@@ -129,9 +129,11 @@ Important limitations:
 
 - the read-only Redis report is retention-bound and should be treated as
   preliminary numbers only
-- unresolved live-forward rows are held in memory until they resolve or expire
-- a node restart can drop in-flight horizons that were not yet resolved or
-  expired
+- unresolved live-forward rows remain pending until they resolve, expire, or
+  the actor stops
+- a clean actor stop persists still-pending horizons with
+  `resolution_status="stopped"` so operators can distinguish shutdown from
+  true expiry
 
 If a restart happens and Redis retention still covers the window, rerun the
 read-only report to recover preliminary numbers for the missed interval.

@@ -493,4 +493,33 @@ impl HyperliquidHttpClient {
             to_string(&json).map_err(to_pyvalue_err)
         })
     }
+
+    /// Queries the address-based request-quota state and returns the JSON response as a string.
+    #[pyo3(name = "info_user_rate_limit")]
+    fn py_info_user_rate_limit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let json = client.info_user_rate_limit().await.map_err(to_pyvalue_err)?;
+            to_string(&json).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Reserves additional address-based request quota from perps balance.
+    #[pyo3(name = "reserve_request_weight")]
+    fn py_reserve_request_weight<'py>(
+        &self,
+        py: Python<'py>,
+        weight: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .reserve_request_weight(weight)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
 }

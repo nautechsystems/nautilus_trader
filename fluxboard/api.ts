@@ -105,6 +105,13 @@ function appendProfileQuery(qs: URLSearchParams): void {
   if (profile !== 'default') qs.set('profile', profile);
 }
 
+function buildProfileScopedPath(path: string): string {
+  const qs = new URLSearchParams();
+  appendProfileQuery(qs);
+  const query = qs.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 function routePrefersKeyLabel(profile: PathProfile): boolean {
   return profile === 'tokenmm' || profile === 'equities';
 }
@@ -138,6 +145,15 @@ function unwrapFluxEnvelope<T>(payload: T | FluxEnvelope<T>): T {
 function toFiniteNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function coerceTimestampMs(value: unknown): number | undefined {
+  const ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) return undefined;
+  if (ts < 1e12) return Math.trunc(ts * 1000);
+  if (ts >= 1e18) return Math.trunc(ts / 1e6);
+  if (ts >= 1e15) return Math.trunc(ts / 1e3);
+  return Math.trunc(ts);
 }
 
 function toUpperToken(value: unknown, fallback = 'UNKNOWN'): string {
@@ -183,11 +199,12 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
     const canonical = normalizeCoinHint(row);
     const parentId = `${canonical}_LOGICAL`;
     const venue = String(row.exchange ?? row.venue ?? 'unknown').trim().toLowerCase() || 'unknown';
+    const isPosition = String(row.kind ?? '').trim().toLowerCase() === 'position';
     const naming = deriveCanonicalNaming(row, {
       exchange: venue,
       symbol: String(row.symbol ?? '').trim(),
       asset: canonical,
-      isPosition: String(row.kind ?? '').trim().toLowerCase() === 'position',
+      isPosition,
     });
     const childCoin = (() => {
       const preferred = toUpperToken(
@@ -199,10 +216,10 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       }
       return preferred;
     })();
-    const qtyRaw = toFiniteNumber(
-      row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free,
-      0,
-    );
+    const qtyValue = isPosition
+      ? (row.signed_qty ?? row.total ?? row.quantity ?? row.qty ?? row.free)
+      : (row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free);
+    const qtyRaw = toFiniteNumber(qtyValue, 0);
     let mvRaw = toFiniteNumber(
       row.mv_raw ?? row.mv ?? row.notional ?? row.notional_quote ?? row.notional_usd,
       Number.NaN,
@@ -218,7 +235,7 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
         mvRaw = 0;
       }
     }
-    const tsMs = toFiniteNumber(row.ts_ms ?? row.ts ?? row.timestamp, 0);
+    const tsMs = coerceTimestampMs(row.ts_ms ?? row.ts ?? row.timestamp) ?? 0;
 
     const child: BalanceChildRow = {
       id: String(row.row_id ?? `${parentId}:${venue}:${childCoin}:${index}`),
@@ -229,7 +246,7 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       wallet: String(row.account ?? row.account_id ?? '').trim() || null,
       address: String(row.address ?? '').trim() || null,
       label: String(row.label ?? row.kind ?? '').trim() || null,
-      qty_display: String(row.total ?? row.quantity ?? row.signed_qty ?? row.free ?? qtyRaw),
+      qty_display: String(qtyValue ?? qtyRaw),
       qty_raw: qtyRaw,
       mv_display: formatMoneyDisplay(mvRaw),
       mv_raw: mvRaw,
@@ -496,12 +513,21 @@ function normalizeParamSchemaPayloadWithOptions(
   return { params, deprecated };
 }
 
-function normalizeParamsMap(raw: unknown): Record<string, string> {
+function normalizeParamsMap(
+  raw: unknown,
+  schema?: Record<string, unknown> | null,
+): Record<string, string> {
   if (!raw || typeof raw !== 'object') return {};
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (value == null) continue;
-    if (key === 'bot_on') {
+    const schemaEntry =
+      schema && typeof schema === 'object' ? (schema as Record<string, unknown>)[key] : undefined;
+    const schemaType =
+      schemaEntry && typeof schemaEntry === 'object'
+        ? String((schemaEntry as Record<string, unknown>).type ?? '').trim().toLowerCase()
+        : '';
+    if (key === 'bot_on' || typeof value === 'boolean' || schemaType === 'boolean' || schemaType === 'bool') {
       out[key] = normalizeTradingFlag(value) ?? String(value);
       continue;
     }
@@ -643,6 +669,8 @@ export function deriveCanonicalNaming(
   if (!contractType) {
     if (venue.endsWith('_SPOT')) contractType = 'spot';
     else if (venue.endsWith('_PERP')) contractType = 'perp';
+    else if (isPosition && venueRoot === 'ibkr') contractType = 'equity';
+    else if (isPosition && rawSymbol) contractType = 'spot';
     else if (isPosition) contractType = 'perp';
     else if (rawSymbol) contractType = 'spot';
     else contractType = 'cash';
@@ -665,7 +693,15 @@ export function deriveCanonicalNaming(
   const displayAsset = inventoryAsset || baseAsset || rawSymbol;
   const displayNameShort = String(
     raw.display_name_short ??
-      (displayAsset ? `${displayAsset} ${productType === 'perp' ? 'Perp' : 'Spot'}` : ''),
+      (
+        displayAsset
+          ? `${displayAsset} ${
+              contractType === 'equity'
+                ? 'Stock'
+                : (productType === 'perp' ? 'Perp' : 'Spot')
+            }`
+          : ''
+      ),
   ).trim();
   const displayNameLong = String(
     raw.display_name_long ??
@@ -1749,7 +1785,9 @@ export const api = {
     const generatedAt =
       typeof payload.generated_at === 'string' && payload.generated_at
         ? payload.generated_at
-        : new Date(toFiniteNumber((payload as Record<string, unknown>).server_ts_ms, Date.now())).toISOString();
+        : new Date(
+            coerceTimestampMs((payload as Record<string, unknown>).server_ts_ms) ?? Date.now(),
+          ).toISOString();
     return {
       ...payload,
       rows,
@@ -1797,7 +1835,8 @@ export const api = {
   },
 
   getStrategyParams: async (id: string) => {
-    const response = await fetchJSON<FluxEnvelope<{ params?: Record<string, any>; parameters?: Record<string, any> }>>(`/api/v1/strategies/${id}/parameters`);
+    const path = buildProfileScopedPath(`/api/v1/strategies/${id}/parameters`);
+    const response = await fetchJSON<FluxEnvelope<{ params?: Record<string, any>; parameters?: Record<string, any> }>>(path);
     const payload = unwrapFluxEnvelope(response);
     const params = payload?.params || payload?.parameters || {};
     const normalized: Record<string, string> = {};
@@ -1811,11 +1850,12 @@ export const api = {
   saveStrategyParams: async (id: string, params: StrategyParams) => {
     try {
       const payload = { updates: [{ strategy_id: id, params }], source: 'fluxboard' };
+      const path = buildProfileScopedPath(BULK_PARAMS_PATH);
       const extra = await signedJsonHeaders(payload, {
         method: 'PATCH',
-        path: '/api/v1/params',
+        path,
       });
-      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>('/api/v1/params', {
+      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...extra },
         body: JSON.stringify(payload)
@@ -1833,11 +1873,12 @@ export const api = {
   // Update strategy parameters without toast (for custom error handling)
   updateStrategyParams: async (id: string, params: StrategyParams) => {
     const payload = { updates: [{ strategy_id: id, params }], source: 'fluxboard' };
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, {
       method: 'PATCH',
-      path: BULK_PARAMS_PATH,
+      path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1849,11 +1890,12 @@ export const api = {
   // PATCH strategy parameters (partial update with source field)
   patchStrategyParams: async (id: string, params: StrategyParams, source = 'fluxboard') => {
     const payload = { updates: [{ strategy_id: id, params }], source };
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, {
       method: 'PATCH',
-      path: BULK_PARAMS_PATH,
+      path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1897,7 +1939,10 @@ export const api = {
     return rows.map((row) => {
       const candidate = row as Record<string, unknown>;
       const strategyId = String(candidate.strategy_id ?? '').trim();
-      const params = normalizeParamsMap(candidate.params);
+      const schema = candidate.schema && typeof candidate.schema === 'object'
+        ? (candidate.schema as Record<string, unknown>)
+        : null;
+      const params = normalizeParamsMap(candidate.params, schema);
       const runningCandidate = candidate.running;
       const runningFlag = normalizeTradingFlag(runningCandidate);
       const running =
@@ -1921,8 +1966,9 @@ export const api = {
     source = 'fluxboard'
   ) => {
     const payload = { updates, source };
-    const extra = await signedJsonHeaders(payload, { method: 'PATCH', path: BULK_PARAMS_PATH });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
+    const extra = await signedJsonHeaders(payload, { method: 'PATCH', path });
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1932,7 +1978,8 @@ export const api = {
 
   // Get config files for a strategy
   getStrategyConfig: async (id: string) => {
-    const response = await fetchJSON<import('./types').ConfigResponse | FluxEnvelope<import('./types').ConfigResponse>>(`/api/v1/strategies/${id}/config-files`);
+    const path = buildProfileScopedPath(`/api/v1/strategies/${id}/config-files`);
+    const response = await fetchJSON<import('./types').ConfigResponse | FluxEnvelope<import('./types').ConfigResponse>>(path);
     return unwrapFluxEnvelope(response);
   },
 

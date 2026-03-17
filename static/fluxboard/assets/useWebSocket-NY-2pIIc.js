@@ -1,0 +1,1 @@
+import{r as t,ae as c}from"./index-8mC8-Qbi.js";function a(e,r){const o=t.useRef(r);t.useEffect(()=>{o.current=r},[r]),t.useEffect(()=>{const s=f=>{o.current(f)};return c.on(e,s),()=>{c.off(e,s)}},[e])}export{a as u};

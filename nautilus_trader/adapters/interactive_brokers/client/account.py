@@ -180,6 +180,14 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         if handler := self._event_subscriptions.get(name, None):
             handler(tag, value, currency)
 
+    async def process_account_summary_end(self, *, req_id: int) -> None:
+        """
+        Signal that an account summary stream has completed.
+        """
+        for name in (f"accountSummaryEnd-{req_id}", "accountSummaryEnd"):
+            if handler := self._event_subscriptions.get(name, None):
+                handler(req_id)
+
     async def process_managed_accounts(self, *, accounts_list: str) -> None:
         """
         Receive a comma-separated string with the managed account ids.

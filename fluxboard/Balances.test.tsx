@@ -29,6 +29,10 @@ const mockedApi = vi.mocked(api, true);
 const mockUsePolling = vi.fn();
 let seenFetchFns: WeakSet<() => unknown>;
 
+function setPathname(pathname: string) {
+  (window.location as unknown as { pathname?: string }).pathname = pathname;
+}
+
 vi.mock('./hooks', () => ({
   usePolling: (fn: () => unknown | Promise<unknown>, interval: number, enabled?: boolean) =>
     mockUsePolling(fn, interval, enabled),
@@ -112,7 +116,11 @@ const buildPayload = () => ({
     stable_mv_raw: 0,
     stable_mv_display: '$0.00',
     non_stable_mv_raw: 75.5,
-    non_stable_mv_display: '$75.50'
+    non_stable_mv_display: '$75.50',
+    account_equity_raw: 7478.386872,
+    account_equity_display: '$7478.39',
+    withdrawable_raw: 7478.386872,
+    withdrawable_display: '$7478.39',
   },
   generated_at: '2024-01-01T01:05:00Z',
   view: 'parents_only',
@@ -122,6 +130,7 @@ const buildPayload = () => ({
 describe('Balances component', () => {
   beforeEach(() => {
     seenFetchFns = new WeakSet();
+    setPathname('/balances');
     localStorage.clear();
     useBalancesStore.setState({
       rows: [],
@@ -173,6 +182,65 @@ describe('Balances component', () => {
     });
 
     expect(screen.getByText('Net Equity (Σ MV): $75.50')).toBeInTheDocument();
+    expect(screen.getByText('Account Equity')).toBeInTheDocument();
+    expect(screen.getByText('Withdrawable')).toBeInTheDocument();
+    expect(screen.getAllByText('$7478.39')).toHaveLength(2);
+  });
+
+  it('keeps non-zero quantity rows visible when market value is temporarily unavailable', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'AAPL_LOGICAL',
+          coin: 'AAPL_LOGICAL',
+          canonical: 'AAPL',
+          is_parent: true,
+          stable: false,
+          qty_display: '5',
+          qty_raw: 5,
+          mv_display: '$0.00',
+          mv_raw: 0,
+          mark_display: null,
+          mark_raw: null,
+          time_display: '1h ago',
+          time_iso: '2024-01-01T01:00:00Z',
+          last_ts: 1704070800000,
+          raw: { qty: 5, mv_usd: 0, mark: null },
+          children: [
+            {
+              id: 'AAPL_LOGICAL:AAPL:ibkr',
+              parent_id: 'AAPL_LOGICAL',
+              coin: 'AAPL',
+              display_name_short: 'AAPL Spot',
+              venue: 'ibkr',
+              wallet: 'shared',
+              qty_display: '5',
+              qty_raw: 5,
+              mv_display: '$0.00',
+              mv_raw: 0,
+              mark_display: null,
+              mark_raw: null,
+              time_display: '1h ago',
+              time_iso: '2024-01-01T01:00:00Z',
+              last_ts: 1704070800000,
+            },
+          ],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 0, mv_display: '$0.00' },
+      generated_at: '2024-01-01T01:05:00Z',
+      view: 'parents_only',
+      risk_groups: [],
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
   });
 
   it('prefers authoritative totals.mv_display when net_mv_display is missing', async () => {
@@ -191,6 +259,73 @@ describe('Balances component', () => {
     });
 
     expect(screen.getByText('Net Equity (Σ MV): $999.12')).toBeInTheDocument();
+  });
+
+  it('renders master account totals even when only balances totals are available', async () => {
+    const payload = buildPayload();
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...payload,
+      totals: {
+        mv_raw: 1075.37415731,
+        mv_display: '$1075.37',
+        account_equity_raw: 7478.386872,
+        account_equity_display: '$7478.39',
+        withdrawable_raw: 7478.386872,
+        withdrawable_display: '$7478.39',
+      },
+    } as any);
+
+    render(<Balances />);
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Account Equity')).toBeInTheDocument();
+    expect(screen.getByText('Withdrawable')).toBeInTheDocument();
+    expect(screen.getAllByText('$7478.39')).toHaveLength(2);
+  });
+
+  it('rerenders when only master account totals change across polls', async () => {
+    const initialPayload = buildPayload();
+    const updatedPayload = buildPayload();
+    initialPayload.totals = {
+      mv_raw: 1075.37415731,
+      mv_display: '$1075.37',
+      account_equity_raw: 7478.386872,
+      account_equity_display: '$7478.39',
+      withdrawable_raw: 7478.386872,
+      withdrawable_display: '$7478.39',
+    } as any;
+    updatedPayload.totals = {
+      mv_raw: 1075.37415731,
+      mv_display: '$1075.37',
+      account_equity_raw: 8123.45,
+      account_equity_display: '$8123.45',
+      withdrawable_raw: 7999.01,
+      withdrawable_display: '$7999.01',
+    } as any;
+
+    mockedApi.getBalances
+      .mockResolvedValueOnce(initialPayload as any)
+      .mockResolvedValueOnce(updatedPayload as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account Equity')).toBeInTheDocument();
+    });
+    expect(screen.getAllByText('$7478.39')).toHaveLength(2);
+    expect(screen.queryByText('$7999.01')).not.toBeInTheDocument();
+
+    const [pollFn] = mockUsePolling.mock.calls[0];
+    await act(async () => {
+      await pollFn();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('$8123.45')).toBeInTheDocument();
+      expect(screen.getByText('$7999.01')).toBeInTheDocument();
+    });
   });
 
   it('defaults to expanded rows and allows collapsing from the header control', async () => {
@@ -444,6 +579,61 @@ describe('Balances component', () => {
       expect(screen.getByText('PLUME Treasury Position')).toBeInTheDocument();
     });
     expect(screen.queryByText('PLUME Perp')).not.toBeInTheDocument();
+  });
+
+  it('does not apply balances filters persisted for another profile', async () => {
+    setPathname('/tokenmm/balances');
+    localStorage.setItem(
+      'balances:filters:v2',
+      JSON.stringify({
+        hideZero: true,
+        logicalOnly: true,
+        stableOnly: false,
+        sortBy: 'mv',
+        sortDir: 'desc',
+        columnFilters: { coin: 'PLUME' },
+      }),
+    );
+    setPathname('/equities/balances');
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      rows: [
+        {
+          ...buildPayload().rows[0],
+          id: 'AAPL_LOGICAL',
+          coin: 'AAPL_LOGICAL',
+          canonical: 'AAPL',
+          children: [
+            {
+              ...buildPayload().rows[0].children[0],
+              id: 'AAPL_LOGICAL:AAPL:ibkr_aapl',
+              parent_id: 'AAPL_LOGICAL',
+              coin: 'AAPL',
+              display_name_short: 'AAPL Spot',
+              display_name_long: 'IBKR AAPL Spot',
+              inventory_asset: 'AAPL',
+              venue: 'ibkr',
+              wallet: 'main',
+            },
+          ],
+          raw: { qty: 10, mv_usd: 2550, mark: 255 },
+          qty_display: '10',
+          qty_raw: 10,
+          mv_display: '$2550.00',
+          mv_raw: 2550,
+          mark_display: '255',
+          mark_raw: 255,
+        },
+      ],
+      totals: { mv_raw: 2550, mv_display: '$2550.00' },
+    });
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(mockedApi.getBalances).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps gross-but-net-flat risk rows visible by default', async () => {

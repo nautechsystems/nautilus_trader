@@ -99,6 +99,14 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
     *state.last_request_body.lock().await = Some(request_body.clone());
 
     match request_type.as_str() {
+        "perpDexs" => Json(json!([
+            null,
+            {
+                "name": "xyz",
+                "fullName": "XYZ"
+            }
+        ]))
+        .into_response(),
         "meta" => {
             let meta = load_json("http_meta_perp_sample.json");
             Json(meta).into_response()

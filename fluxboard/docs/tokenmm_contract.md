@@ -107,6 +107,25 @@ Required leg fields:
 | `age_ms` | `integer \| null` | yes | Age at serialization |
 | `state` | `string` | yes | Health marker |
 
+## Shared Quote Health Semantics
+
+These semantics are shared across Flux strategy families and should remain stable as new strategies and venues are added.
+
+1. `age_ms` is informational only: it is the time since the last observed quote update at serialization time.
+2. `age_ms` alone does not prove feed failure. Quiet books and unchanged quotes may still have large ages.
+3. `feed_state`, when present, describes transport/subscription health:
+   - `ok`
+   - `degraded`
+   - `down`
+   - `unknown`
+4. `quote_state`, when present, describes quote freshness/presence:
+   - `fresh`
+   - `old`
+   - `missing`
+5. Old-but-connected quotes must be represented as `feed_state = ok` and `quote_state = old`; they are not feed-down by default.
+6. `tradeable` and any future `hedgeable`-style flags are backend policy outputs, not UI heuristics derived from `age_ms`.
+7. Operator surfaces should present quote age separately from feed health so “quiet market”, “old quote”, and “broken feed” are not conflated.
+
 ## Common HTTP Rules
 
 1. TokenMM REST clients SHOULD send `profile` query on TokenMM endpoints.

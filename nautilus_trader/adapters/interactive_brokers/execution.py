@@ -427,6 +427,34 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return order_status
 
+    def _matches_requested_instrument(
+        self,
+        *,
+        contract: IBContract | None,
+        requested_instrument_id: InstrumentId | None,
+    ) -> bool:
+        if requested_instrument_id is None or contract is None:
+            return True
+
+        cached_instrument_id = self.instrument_provider.contract_id_to_instrument_id.get(contract.conId)
+        if cached_instrument_id is not None:
+            return cached_instrument_id == requested_instrument_id
+
+        requested_symbol = requested_instrument_id.symbol.value
+        if contract.secType == "CASH":
+            requested_cash_pair = f"{contract.symbol}/{contract.currency}"
+            return requested_symbol in {contract.symbol, requested_cash_pair, contract.localSymbol}
+
+        if contract.symbol and contract.symbol != requested_symbol:
+            return False
+
+        requested_venue = requested_instrument_id.venue.value
+        contract_venues = {venue for venue in (contract.primaryExchange, contract.exchange) if venue}
+        if contract_venues and requested_venue not in contract_venues and requested_venue != "IBKR":
+            return False
+
+        return True
+
     async def generate_order_status_reports(  # noqa: C901 (complexity due to position adjustment logic)
         self,
         command: GenerateOrderStatusReports,
@@ -445,7 +473,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         open_order_fills: dict[InstrumentId, Decimal] = {}
 
         for ib_order in ib_orders:
+            if not self._matches_requested_instrument(
+                contract=getattr(ib_order, "contract", None),
+                requested_instrument_id=command.instrument_id,
+            ):
+                continue
+
             order_status = await self._parse_ib_order_to_order_status_report(ib_order)
+            if (
+                command.instrument_id is not None
+                and order_status.instrument_id != command.instrument_id
+            ):
+                continue
             report.append(order_status)
 
             # Track filled quantities by instrument for synthetic order adjustment
@@ -478,6 +517,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_init = self._clock.timestamp_ns()
 
             for position in positions:
+                if not self._matches_requested_instrument(
+                    contract=position.contract,
+                    requested_instrument_id=command.instrument_id,
+                ):
+                    continue
+
                 instrument = await self.instrument_provider.get_instrument(position.contract)
 
                 if instrument is None:
@@ -489,6 +534,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                         self._log.error(
                             f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
                         )
+                    continue
+
+                if command.instrument_id is not None and instrument.id != command.instrument_id:
                     continue
 
                 # Calculate the adjusted quantity for the synthetic order (fixes #3476)
@@ -734,6 +782,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return []
 
         for position in positions:
+            if not self._matches_requested_instrument(
+                contract=position.contract,
+                requested_instrument_id=command.instrument_id,
+            ):
+                continue
+
             self._log.debug(f"Trying PositionStatusReport for {position.contract.conId}")
 
             instrument = await self.instrument_provider.get_instrument(position.contract)
@@ -747,6 +801,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     self._log.error(
                         f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
                     )
+                continue
+
+            if command.instrument_id is not None and instrument.id != command.instrument_id:
                 continue
 
             if not self._cache.instrument(instrument.id):
@@ -776,6 +833,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             self._log.debug(f"Received {position_status!r}")
             report.append(position_status)
+
+        if command.instrument_id and not report:
+            now = self._clock.timestamp_ns()
+            flat_report = PositionStatusReport(
+                account_id=self.account_id,
+                instrument_id=command.instrument_id,
+                position_side=PositionSide.FLAT,
+                quantity=Quantity.zero(),
+                report_id=UUID4(),
+                ts_last=now,
+                ts_init=now,
+            )
+            self._log.debug(f"Generated FLAT report for {command.instrument_id}")
+            return [flat_report]
 
         return report
 

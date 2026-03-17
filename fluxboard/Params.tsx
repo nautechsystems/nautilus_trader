@@ -1807,11 +1807,14 @@ export default function Params({
     [schema, clearPendingBulkDraft]
   );
 
-  const flushPendingBulkDrafts = useCallback(() => {
+  const flushPendingBulkDrafts = useCallback((targetIds?: readonly string[]) => {
+    const scopedTargetIds = Array.isArray(targetIds)
+      ? targetIds.filter((id) => pendingBulkTargetIdsRef.current.includes(id))
+      : pendingBulkTargetIdsRef.current;
     const pendingCommits = collectPendingBulkCommits(
       bulkDraftsRef.current,
       pendingBulkDraftKeysRef.current,
-      pendingBulkTargetIdsRef.current,
+      scopedTargetIds,
       paramValuesRef.current
     );
 
@@ -2315,7 +2318,7 @@ export default function Params({
   }, [flushPendingBulkDrafts, ensureNoValidationErrors, collectBulkUpdates, performBulkSave]);
 
   const saveAllSelected = useCallback(async () => {
-    flushPendingBulkDrafts();
+    flushPendingBulkDrafts(selectedStrategies);
     const targetIds = selectedStrategies.filter((id) => dirtyRef.current.has(id));
     if (targetIds.length === 0) {
       toast.error('No dirty params in selection');

@@ -103,7 +103,7 @@ Fluxboard is a Vite + React app kept under `fluxboard/`.
 
 - Strategy selector
 - Live parameter editor
-- POST to Redis with error toasts
+- Bulk and per-row saves through FluxAPI with inline validation and error toasts
 
 ### Trades
 
@@ -181,17 +181,19 @@ New UI work should prefer tokens/theme variables over raw Tailwind color/spacing
 
 ## API Endpoints (Proxied to :5022)
 
-- `GET /api/v1/market-data/snapshot` - Market snapshots
+- `GET /api/v1/signals` - Strategy state, quote status, and top-level operator signal rows
+- `GET /api/v1/balances` - Balance and risk rows
 - `GET /api/v1/trades?limit=<n>&offset=<n>` - Paged trades (returns totals and optional cursor fields)
 - `GET /api/v1/trades?limit=<n>&cursor=<token>` - Fetch the next historical slice using the opaque cursor token
-- `GET /api/v1/fvs` - Fair values
+- `GET /api/v1/trades/delta` - Incremental trades refresh for live views
 - `GET /api/v1/strategies` - Strategy list
 - `GET /api/v1/strategies/<id>/parameters` - Strategy params
 - `PATCH /api/v1/strategies/<id>/parameters` - Save params
 - `GET /api/v1/param-schema` - Schema (types, bounds, defaults)
 - `GET /api/v1/params` - Bulk fetch (Fluxboard initial/refresh load)
 - `PATCH /api/v1/params` - Bulk save (Save All / Save Selected)
-- `GET /export_blotter` - Export trades (future)
+- `GET /api/v1/alerts` - Active alerts feed
+- `DELETE /api/v1/alerts` - Clear alerts
 
 ## Breaking Changes
 
@@ -201,14 +203,14 @@ Fluxboard now consumes only the versioned FluxAPI surface; `/api/v1/*` endpoints
 
 | Legacy Endpoint | Replacement |
 | --- | --- |
-| `/api/market_data` | `/api/v1/market-data/snapshot` |
+| `/api/signals` | `/api/v1/signals` |
+| `/api/balances` | `/api/v1/balances` |
 | `/api/trades` | `/api/v1/trades` |
 | `/api/trades/delta` | `/api/v1/trades/delta` |
-| `/api/fvs` | `/api/v1/fvs` |
 | `/api/strategies` | `/api/v1/strategies` |
 | `/api/strategies/<id>/parameters` (GET/POST) | `/api/v1/strategies/<id>/parameters` (GET/PATCH) |
 | `/api/params` | `/api/v1/params` |
-| `/api/pnl` and `/api/pnl/csv` | `/api/v1/pnl` and `/api/v1/pnl/csv` |
+| `/api/alerts` | `/api/v1/alerts` |
 
 **Migration guidance:** update API clients to prepend `/api/v1`, bump cached route lists, and re-run integration tests before deploying.
 

@@ -130,6 +130,18 @@ def test_parse_args_requires_explicit_config(monkeypatch) -> None:
         _parse_args()
 
 
+def test_parse_args_describes_shared_fluxboard_static_contract(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["run_api.py", "--help"])
+
+    with pytest.raises(SystemExit, match="0"):
+        _parse_args()
+
+    captured = capsys.readouterr()
+    assert "/static/fluxboard/*" in captured.out
+    assert "/tokenmm" in captured.out
+    assert "/lp" in captured.out
+
+
 def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
@@ -180,6 +192,29 @@ def test_attach_fluxboard_routes_serve_neutral_shared_asset_prefix(tmp_path: Pat
 
     response = client.get("/tokenmm/assets/app.js")
     assert response.status_code == 404
+
+
+def test_attach_fluxboard_routes_keep_spa_paths_from_serving_dist_root_files(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    (dist_dir / "index.html").write_text("<html>fluxboard</html>", encoding="utf-8")
+    (dist_dir / "favicon.svg").write_text("<svg>shared-icon</svg>", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/static/fluxboard/favicon.svg")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<svg>shared-icon</svg>"
+
+    response = client.get("/tokenmm/favicon.svg")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<html>fluxboard</html>"
+
+    response = client.get("/lp/favicon.svg")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "<html>fluxboard</html>"
 
 
 def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:

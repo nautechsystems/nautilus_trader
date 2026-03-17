@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from typing import Any
 from typing import cast
 
+from nautilus_trader.flux.strategies.shared.quote_health import evaluate_quote_health
+
 from ._payloads_common import ContractCatalogEntry
 from ._payloads_common import StrategyMetadata
 from ._payloads_common import _is_position_row
@@ -86,12 +88,25 @@ def _first_valid_bool(*values: Any) -> bool | None:
     return None
 
 
+def _first_valid_int(*values: Any) -> int | None:
+    for value in values:
+        parsed = safe_int(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _first_valid_text(*values: Any) -> str | None:
     for value in values:
         parsed = decode_text(value).strip()
         if parsed:
             return parsed
     return None
+
+
+def _first_valid_upper_text(*values: Any) -> str | None:
+    parsed = _first_valid_text(*values)
+    return parsed.upper() if parsed is not None else None
 
 
 def _resolve_role_leg_id(
@@ -653,6 +668,38 @@ def _normalize_v4_leg_snapshot(
     return payload
 
 
+def _apply_quote_health_to_v4_leg(
+    payload: Mapping[str, Any] | None,
+    *,
+    leg_role: str,
+    max_quote_age_ms: int,
+) -> dict[str, Any]:
+    normalized = dict(payload) if isinstance(payload, Mapping) else {}
+    transport_connected = (
+        True
+        if normalized.get("ts_ms") is not None
+        or normalized.get("bid") is not None
+        or normalized.get("ask") is not None
+        else None
+    )
+    quote_health = evaluate_quote_health(
+        leg_role=leg_role,
+        bid=_first_valid_float(normalized.get("bid")),
+        ask=_first_valid_float(normalized.get("ask")),
+        quote_age_ms=safe_int(normalized.get("age_ms")),
+        max_quote_age_ms=max_quote_age_ms,
+        transport_connected=transport_connected,
+        subscription_healthy=transport_connected,
+    )
+    normalized["feed_state"] = quote_health.feed_state
+    normalized["quote_state"] = quote_health.quote_state
+    normalized["pricing_usable"] = quote_health.usable_for_pricing
+    normalized["hedge_usable"] = quote_health.usable_for_hedging
+    if quote_health.reason_code is not None:
+        normalized["reason_code"] = quote_health.reason_code
+    return normalized
+
+
 def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None:
     text = decode_text(instrument_id).strip().upper()
     if "." not in text:
@@ -666,6 +713,7 @@ def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None
 def _derive_quote_snapshot_v4(
     *,
     state: Mapping[str, Any],
+    params: Mapping[str, Any],
     ts_ms: int | None,
     maker_leg: Mapping[str, Any] | None,
     hedge_leg: Mapping[str, Any] | None,
@@ -680,17 +728,29 @@ def _derive_quote_snapshot_v4(
             quote_snapshot = dict(raw_quote_snapshot)
 
     quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
-    quote_snapshot["maker_leg"] = _normalize_v4_leg_snapshot(
-        quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
-        maker_leg,
+    quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
+        _normalize_v4_leg_snapshot(
+            quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
+            maker_leg,
+        ),
+        leg_role="maker",
+        max_quote_age_ms=safe_int(params.get("max_age_ms")) or 10_000,
     )
-    quote_snapshot["hedge_leg"] = _normalize_v4_leg_snapshot(
-        quote_snapshot.get("hedge_leg") if isinstance(quote_snapshot.get("hedge_leg"), Mapping) else None,
-        hedge_leg,
+    quote_snapshot["hedge_leg"] = _apply_quote_health_to_v4_leg(
+        _normalize_v4_leg_snapshot(
+            quote_snapshot.get("hedge_leg") if isinstance(quote_snapshot.get("hedge_leg"), Mapping) else None,
+            hedge_leg,
+        ),
+        leg_role="hedge",
+        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
     )
-    quote_snapshot["ref_leg"] = _normalize_v4_leg_snapshot(
-        quote_snapshot.get("ref_leg") if isinstance(quote_snapshot.get("ref_leg"), Mapping) else None,
-        ref_leg,
+    quote_snapshot["ref_leg"] = _apply_quote_health_to_v4_leg(
+        _normalize_v4_leg_snapshot(
+            quote_snapshot.get("ref_leg") if isinstance(quote_snapshot.get("ref_leg"), Mapping) else None,
+            ref_leg,
+        ),
+        leg_role="reference",
+        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
     )
     hedge_leg_id_text = decode_text(hedge_leg_id).strip()
     if hedge_leg_id_text:
@@ -736,6 +796,141 @@ def _derive_quote_snapshot_v4(
                 if ref_symbol and "symbol" not in hedge_snapshot:
                     hedge_snapshot["symbol"] = ref_symbol
     return quote_snapshot
+
+
+def _derive_makerv4_operator_payload(
+    *,
+    state: Mapping[str, Any],
+    params: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any],
+) -> dict[str, Any]:
+    state_maker_v4 = state.get("maker_v4")
+    state_v4 = state_maker_v4 if isinstance(state_maker_v4, Mapping) else {}
+    hedge_policy = state_v4.get("hedge_policy")
+    hedge_policy_map = hedge_policy if isinstance(hedge_policy, Mapping) else {}
+    pending_hedge = state_v4.get("pending_hedge")
+    pending_hedge_map = pending_hedge if isinstance(pending_hedge, Mapping) else {}
+    hedge_backlog = state_v4.get("hedge_backlog")
+    hedge_backlog_map = hedge_backlog if isinstance(hedge_backlog, Mapping) else {}
+    hedge_leg = quote_snapshot.get("hedge_leg")
+    hedge_leg_map = hedge_leg if isinstance(hedge_leg, Mapping) else {}
+
+    execution_mode = (
+        _first_valid_text(
+            params.get("execution_mode"),
+            state_v4.get("execution_mode"),
+            quote_snapshot.get("execution_mode"),
+        )
+        or "maker_hedge"
+    ).lower()
+    if execution_mode not in {"maker_hedge", "take_take"}:
+        execution_mode = "maker_hedge"
+
+    fee_assumptions = state_v4.get("fee_assumptions")
+    fee_assumptions_map = fee_assumptions if isinstance(fee_assumptions, Mapping) else {}
+    quote_fee_assumptions = quote_snapshot.get("fee_assumptions")
+    quote_fee_assumptions_map = (
+        quote_fee_assumptions if isinstance(quote_fee_assumptions, Mapping) else {}
+    )
+    if "cancel_after_ms" in pending_hedge_map:
+        cancel_after_ms = safe_int(pending_hedge_map.get("cancel_after_ms"))
+    elif "cancel_after_ms" in hedge_policy_map:
+        cancel_after_ms = safe_int(hedge_policy_map.get("cancel_after_ms"))
+    else:
+        cancel_after_ms = _first_valid_int(quote_snapshot.get("cancel_after_ms"))
+
+    return {
+        "execution_mode": execution_mode,
+        "behavior": "take_take" if execution_mode == "take_take" else "maker",
+        "hedge_policy": {
+            "route": _first_valid_upper_text(
+                pending_hedge_map.get("route"),
+                hedge_policy_map.get("route"),
+                quote_snapshot.get("hedge_route"),
+                hedge_leg_map.get("route"),
+            ),
+            "time_in_force": _first_valid_upper_text(
+                pending_hedge_map.get("time_in_force"),
+                hedge_policy_map.get("time_in_force"),
+                quote_snapshot.get("time_in_force"),
+            ),
+            "outside_rth": _first_valid_bool(
+                pending_hedge_map.get("outside_rth"),
+                hedge_policy_map.get("outside_rth"),
+                quote_snapshot.get("outside_rth"),
+            ),
+            "include_overnight": _first_valid_bool(
+                pending_hedge_map.get("include_overnight"),
+                hedge_policy_map.get("include_overnight"),
+                quote_snapshot.get("include_overnight"),
+            ),
+            "cancel_after_ms": cancel_after_ms,
+        },
+        "fee_assumptions": {
+            "ibkr_fee_plan": _first_valid_text(
+                fee_assumptions_map.get("ibkr_fee_plan"),
+                quote_fee_assumptions_map.get("ibkr_fee_plan"),
+            ),
+            "ibkr_fee_min_usd": _first_valid_float(
+                fee_assumptions_map.get("ibkr_fee_min_usd"),
+                quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
+            ),
+            "hl_taker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("hl_taker_fee_bps"),
+                quote_fee_assumptions_map.get("hl_taker_fee_bps"),
+            ),
+            "hl_maker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("hl_maker_fee_bps"),
+                quote_fee_assumptions_map.get("hl_maker_fee_bps"),
+            ),
+            "assumed_hedge_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("assumed_hedge_fee_bps"),
+                quote_fee_assumptions_map.get("assumed_hedge_fee_bps"),
+                quote_snapshot.get("assumed_hedge_fee_bps"),
+            ),
+        },
+        "hedge_backlog": (
+            {
+                "fill_id": _first_valid_text(hedge_backlog_map.get("fill_id")),
+                "side": _first_valid_upper_text(hedge_backlog_map.get("side")),
+                "requested_qty": _first_valid_text(hedge_backlog_map.get("requested_qty")),
+                "blocked_reason": _first_valid_text(hedge_backlog_map.get("blocked_reason")),
+                "fill_ts_ms": _first_valid_int(hedge_backlog_map.get("fill_ts_ms")),
+                "maker_fee_bps": _first_valid_float(hedge_backlog_map.get("maker_fee_bps")),
+            }
+            if hedge_backlog_map
+            else None
+        ),
+    }
+
+
+def _maker_v4_quote_health_blocks_new_risk(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any],
+) -> bool:
+    state_maker_v4 = state.get("maker_v4")
+    state_v4 = state_maker_v4 if isinstance(state_maker_v4, Mapping) else {}
+    hedge_backlog = state_v4.get("hedge_backlog")
+    if isinstance(hedge_backlog, Mapping) and hedge_backlog:
+        return True
+
+    maker_leg = quote_snapshot.get("maker_leg")
+    ref_leg = quote_snapshot.get("ref_leg")
+    hedge_leg = quote_snapshot.get("hedge_leg")
+    maker_leg_map = maker_leg if isinstance(maker_leg, Mapping) else {}
+    ref_leg_map = ref_leg if isinstance(ref_leg, Mapping) else {}
+    hedge_leg_map = hedge_leg if isinstance(hedge_leg, Mapping) else {}
+
+    if _first_valid_bool(maker_leg_map.get("pricing_usable")) is False:
+        return True
+    if _first_valid_bool(ref_leg_map.get("pricing_usable")) is False:
+        return True
+    if _first_valid_bool(ref_leg_map.get("hedge_usable")) is False:
+        return True
+    if _first_valid_bool(hedge_leg_map.get("hedge_usable")) is False:
+        return True
+    return False
 
 
 def _derive_quote_snapshot(
@@ -956,6 +1151,7 @@ def build_signals_payload_impl(
     params: dict[str, Any],
     balances: list[dict[str, Any]],
     legs: dict[str, Any],
+    running: bool | None,
     now_ms_fn: Callable[[], int],
 ) -> dict[str, Any]:
     parsed_bot_on = safe_bool(state.get("bot_on"))
@@ -1082,6 +1278,7 @@ def build_signals_payload_impl(
     quote_snapshot = (
         _derive_quote_snapshot_v4(
             state=state,
+            params=params,
             ts_ms=ts_ms,
             maker_leg=maker_leg,
             hedge_leg=hedge_leg,
@@ -1182,7 +1379,7 @@ def build_signals_payload_impl(
         top_level_age_ms = max(0, leg_clock_ts_ms - top_level_ts_ms)
         md_health["signal_state_age_ms"] = top_level_age_ms
         state_stale = top_level_age_ms >= 30_000
-    elif top_level_ts_ms is not None and not explicit_quote_snapshot:
+    elif top_level_ts_ms is not None:
         top_level_age_ms = max(0, now_ms_fn() - top_level_ts_ms)
         md_health["signal_state_age_ms"] = top_level_age_ms
         state_stale = top_level_age_ms >= 30_000
@@ -1221,9 +1418,30 @@ def build_signals_payload_impl(
             quote_snapshot=quote_snapshot,
         )
 
+    if strategy_family == "maker_v4" and _maker_v4_quote_health_blocks_new_risk(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    ):
+        tradeable = False
+        blocked = True
+
+    maker_v4_payload = (
+        {
+            "quote_snapshot": quote_snapshot,
+            "operator": _derive_makerv4_operator_payload(
+                state=state,
+                params=params,
+                quote_snapshot=quote_snapshot,
+            ),
+        }
+        if strategy_family == "maker_v4"
+        else None
+    )
+
     return {
         "id": strategy_id,
         "meta": metadata.as_payload(strategy_id=strategy_id),
+        "running": running,
         "strategy_family": strategy_family,
         "ts_ms": top_level_ts_ms,
         "mode": top_level_mode,
@@ -1250,11 +1468,8 @@ def build_signals_payload_impl(
         "pricing_adjustments": pricing_adjustments,
         "balance_readiness": balance_readiness,
         **inventory_fields,
-        **(
-            {"maker_v4": {"quote_snapshot": quote_snapshot}}
-            if strategy_family == "maker_v4"
-            else {"maker_v3": {"quote_snapshot": quote_snapshot}}
-        ),
+        **({"maker_v4": maker_v4_payload} if strategy_family == "maker_v4" else {}),
+        **({"maker_v3": {"quote_snapshot": quote_snapshot}} if strategy_family != "maker_v4" else {}),
         "state": state,
         "legs": legs,
         "legs_order": legs_order,

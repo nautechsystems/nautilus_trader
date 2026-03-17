@@ -84,6 +84,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
@@ -1814,25 +1815,12 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
-        exact_entries = tuple(
+        return tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
-        if account_id is None:
-            return exact_entries
-
-        unscoped_entries = tuple(
-            snapshot
-            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
-            self._startup_reconciliation_snapshot.items()
-            if snapshot_instrument_id == instrument_id and snapshot_account_id is None
-        )
-        if not unscoped_entries:
-            return exact_entries
-
-        return (*exact_entries, *unscoped_entries)
 
     def _startup_snapshot_for_instrument(
         self,
@@ -1912,17 +1900,26 @@ class LiveExecutionEngine(ExecutionEngine):
     ) -> ExecutionMassStatus | None:
         from nautilus_trader.live.execution_client import LiveExecutionClient
 
-        scoped_instrument_ids = (
-            list(self.reconciliation_instrument_ids)
-            if self.reconciliation_instrument_ids and len(self._clients) == 1
-            else []
-        )
+        scoped_instrument_ids = self._client_scoped_reconciliation_instrument_ids(client)
         client_generate_mass_status = getattr(type(client), "generate_mass_status", None)
         uses_default_live_mass_status = (
             client_generate_mass_status is LiveExecutionClient.generate_mass_status
         )
-        if not scoped_instrument_ids or not uses_default_live_mass_status:
-            if scoped_instrument_ids and not uses_default_live_mass_status:
+        if not self.reconciliation_instrument_ids:
+            return await client.generate_mass_status(reconciliation_lookback_mins)
+
+        mass_status = ExecutionMassStatus(
+            client_id=client.id,
+            account_id=client.account_id,
+            venue=client.venue,
+            report_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        if not scoped_instrument_ids:
+            return mass_status
+
+        if not uses_default_live_mass_status:
+            if scoped_instrument_ids:
                 self._log.info(
                     f"Using adapter-defined startup ExecutionMassStatus for {client.id}; "
                     "generate_mass_status override preserved",
@@ -1934,14 +1931,6 @@ class LiveExecutionEngine(ExecutionEngine):
             f"Generating scoped startup ExecutionMassStatus for {client.id} on "
             f"{len(scoped_instrument_ids)} instrument(s)",
             LogColor.BLUE,
-        )
-
-        mass_status = ExecutionMassStatus(
-            client_id=client.id,
-            account_id=client.account_id,
-            venue=client.venue,
-            report_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
         )
 
         since: pd.Timestamp | None = None
@@ -2157,6 +2146,11 @@ class LiveExecutionEngine(ExecutionEngine):
                     account_id=client.account_id,
                 ):
                     instrument_id = position.instrument_id
+                    if not self._should_reconcile_instrument_for_client(
+                        client=client,
+                        instrument_id=instrument_id,
+                    ):
+                        continue
                     if instrument_id in mass_status.position_reports:
                         self._log.debug(
                             f"Position {instrument_id} for {client_id} already reconciled",
@@ -2232,6 +2226,121 @@ class LiveExecutionEngine(ExecutionEngine):
             self._clear_startup_reconciliation_snapshot()
             # Always signal completion to prevent continuous loop signal await hang
             self._startup_reconciliation_event.set()
+
+    def _client_routed_venues(self, client: ExecutionClient) -> set[Venue]:
+        routed_venues = {
+            venue for venue, mapped_client in self._routing_map.items() if mapped_client is client
+        }
+        if client.venue is not None:
+            routed_venues.add(client.venue)
+        return routed_venues
+
+    def _client_scoped_reconciliation_instrument_ids(
+        self,
+        client: ExecutionClient,
+    ) -> list[InstrumentId]:
+        if not self.reconciliation_instrument_ids:
+            return []
+        routed_venues = self._client_routed_venues(client)
+        return [
+            instrument_id
+            for instrument_id in self.reconciliation_instrument_ids
+            if instrument_id.venue in routed_venues
+        ]
+
+    def _should_reconcile_instrument_for_client(
+        self,
+        *,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+    ) -> bool:
+        if not self.reconciliation_instrument_ids:
+            return True
+        scoped_ids = self._client_scoped_reconciliation_instrument_ids(client)
+        return instrument_id in scoped_ids
+
+    async def _generate_reconciliation_mass_status_for_client(
+        self,
+        *,
+        client: ExecutionClient,
+        lookback_mins: int | None,
+    ) -> ExecutionMassStatus | None:
+        scoped_ids = self._client_scoped_reconciliation_instrument_ids(client)
+        if not self.reconciliation_instrument_ids:
+            return await client.generate_mass_status(lookback_mins)
+
+        mass_status = ExecutionMassStatus(
+            client_id=client.id,
+            account_id=client.account_id,
+            venue=client.venue,
+            report_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        if not scoped_ids:
+            return mass_status
+
+        since: pd.Timestamp | None = None
+        if lookback_mins is not None:
+            since = self._clock.utc_now() - pd.Timedelta(minutes=lookback_mins)
+
+        order_status_coros = [
+            client.generate_order_status_reports(
+                GenerateOrderStatusReports(
+                    instrument_id=instrument_id,
+                    start=since,
+                    end=None,
+                    open_only=False,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            for instrument_id in scoped_ids
+        ]
+        fill_report_coros = [
+            client.generate_fill_reports(
+                GenerateFillReports(
+                    instrument_id=instrument_id,
+                    venue_order_id=None,
+                    start=since,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            for instrument_id in scoped_ids
+        ]
+        position_report_coros = [
+            client.generate_position_status_reports(
+                GeneratePositionStatusReports(
+                    instrument_id=instrument_id,
+                    start=since,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            for instrument_id in scoped_ids
+        ]
+
+        try:
+            order_results, fill_results, position_results = await asyncio.gather(
+                asyncio.gather(*order_status_coros),
+                asyncio.gather(*fill_report_coros),
+                asyncio.gather(*position_report_coros),
+            )
+        except Exception as e:
+            self._log.error(
+                f"Failed to generate scoped execution mass status for {client.id}: {e}",
+            )
+            return None
+
+        for reports in order_results:
+            mass_status.add_order_reports(reports=reports)
+        for reports in fill_results:
+            mass_status.add_fill_reports(reports=reports)
+        for reports in position_results:
+            mass_status.add_position_reports(reports=reports)
+        return mass_status
 
     def _log_reconciliation_result(self, value: ClientId | InstrumentId, result: bool) -> None:
         if result:
@@ -3084,10 +3193,14 @@ class LiveExecutionEngine(ExecutionEngine):
             )
             return True  # Filtered instrument not loaded
 
-        positions_open: list[Position] = self._cache.positions_open(
-            venue=None,  # Faster query filtering
-            instrument_id=report.instrument_id,
-        )
+        positions_open_kwargs: dict[str, Any] = {
+            "venue": None,  # Faster query filtering
+            "instrument_id": report.instrument_id,
+        }
+        if report.account_id is not None:
+            positions_open_kwargs["account_id"] = report.account_id
+
+        positions_open: list[Position] = self._cache.positions_open(**positions_open_kwargs)
 
         if allow_startup_external_cleanup:
             effective_positions, artifact_positions, position_signed_decimal_qty, raw_position_signed_decimal_qty = (

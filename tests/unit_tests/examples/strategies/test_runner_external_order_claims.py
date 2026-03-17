@@ -110,13 +110,13 @@ def test_equities_build_node_sets_external_order_claims(monkeypatch) -> None:
         {
             "flux": {"namespace": "flux", "schema_version": "v1"},
             "identity": {
-                "strategy_id": "aapl_tradexyz_makerv3",
-                "external_strategy_id": "aapl_tradexyz_makerv3",
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "external_strategy_id": "aapl_tradexyz_makerv4",
                 "trader_id": "EQUITIES-LIVE-NASDAQ",
             },
             "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
             "node": {"enable_execution": True},
-            "strategy": {"strategy_id": "aapl_tradexyz_makerv3", "order_qty": "1000"},
+            "strategy": {"strategy_id": "aapl_tradexyz_makerv4", "order_qty": "1000"},
         },
         mode="live",
         force_enable_execution=False,
