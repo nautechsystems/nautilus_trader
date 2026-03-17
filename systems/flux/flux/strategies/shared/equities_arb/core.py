@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import ROUND_CEILING
+from decimal import ROUND_FLOOR
 from decimal import Decimal
 import importlib
 import sys
@@ -8,6 +10,9 @@ from typing import Any
 
 from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.runners.shared.bootstrap import (
+    resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap,
+)
 from flux.strategies.shared.equities_arb.instruments import (
     hyperliquid_perp_to_ibkr_instrument_id,
 )
@@ -40,10 +45,43 @@ def _strategy_param_set(strategy_spec: Any) -> str:
     return str(getattr(strategy_spec, "param_set", "")).strip().lower()
 
 
+def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
+    return resolve_flux_strategy_id_from_bootstrap(config)
+
+
 def _runtime_params_module(module: Any, *, param_set: str) -> Any:
     if not hasattr(module, "PARAM_SET"):
         setattr(module, "PARAM_SET", param_set)
     return module
+
+
+def _normalize_tick(value: Decimal, *, field_name: str) -> Decimal:
+    if value <= 0:
+        raise ValueError(f"`{field_name}` must be > 0")
+    return value
+
+
+def _normalize_side(side: str) -> str:
+    normalized = str(side).strip().upper()
+    if normalized not in {"BUY", "SELL"}:
+        raise ValueError(f"Unsupported side: {side!r}")
+    return normalized
+
+
+def round_hyperliquid_price(price: Decimal, *, tick_size: Decimal, side: str) -> Decimal:
+    tick = _normalize_tick(tick_size, field_name="tick_size")
+    normalized_side = _normalize_side(side)
+    rounding = ROUND_FLOOR if normalized_side == "BUY" else ROUND_CEILING
+    steps = (price / tick).to_integral_value(rounding=rounding)
+    return steps * tick
+
+
+def round_ibkr_limit_price(price: Decimal, *, tick_size: Decimal, side: str) -> Decimal:
+    tick = _normalize_tick(tick_size, field_name="tick_size")
+    normalized_side = _normalize_side(side)
+    rounding = ROUND_CEILING if normalized_side == "BUY" else ROUND_FLOOR
+    steps = (price / tick).to_integral_value(rounding=rounding)
+    return steps * tick
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,8 +267,6 @@ def build_ibkr_ioc_limit(
     max_quote_age_ms: int | None = None,
     max_spread_bps: Decimal | None = None,
 ) -> Decimal | None:
-    from flux.strategies.makerv4.rounding import round_ibkr_limit_price
-
     invalid_reason = validate_ibkr_quote(
         bid=bid,
         ask=ask,
@@ -277,8 +313,6 @@ def build_maker_quote_price(
     offset_bps: Decimal,
     tick_size: Decimal,
 ) -> Decimal:
-    from flux.strategies.makerv4.rounding import round_hyperliquid_price
-
     if reference_mid <= 0:
         raise ValueError("`reference_mid` must be > 0")
 
@@ -392,7 +426,7 @@ def effective_venue_resolution_config(
         _optional_text(identity_cfg.get("external_strategy_id"))
         if isinstance(identity_cfg, dict)
         else None
-    ) or ""
+    ) or _resolve_flux_strategy_id(config)
     ibkr_scope_overrides: dict[str, Any] = {}
     scope_configs = {
         scope.scope_id: scope

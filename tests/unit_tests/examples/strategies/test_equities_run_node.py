@@ -1739,6 +1739,76 @@ def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for
     assert "ibg_port" not in ibkr_cfg
 
 
+def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_when_external_id_missing() -> None:
+    strategy_spec = SimpleNamespace(
+        param_set="future_equities_arb",
+        capabilities=SimpleNamespace(supports_immediate_hedge=True),
+    )
+    config = {
+        "identity": {
+            "strategy_id": "nvda_tradexyz_makerv4",
+        },
+        "node": {
+            "venues": {
+                "HYPERLIQUID": {
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "execution": True,
+                },
+                "IBKR": {
+                    "adapter": "interactive_brokers",
+                    "instrument_id": "NVDA.NASDAQ",
+                    "execution": False,
+                    "ibg_client_id": "",
+                },
+            },
+        },
+        "strategy": {
+            "ibkr_primary_exchange": "NASDAQ",
+        },
+        "account_scopes": [
+            {
+                "scope_id": "ibkr.hedge.main",
+                "provider": "ibkr",
+                "venue": "IBKR",
+                "ibg_host": "127.0.0.1",
+                "ibg_port": 4002,
+                "ibg_client_id": 108,
+                "account_id": "U10015777",
+                "dockerized_gateway": {
+                    "trading_mode": "live",
+                    "container_name": "ibg-main",
+                },
+            },
+        ],
+        "strategy_contracts": [
+            {
+                "strategy_id": "nvda_tradexyz_makerv4",
+                "portfolio_asset_id": "NVDA",
+                "maker_instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "NVDA.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.hedge.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+        ],
+    }
+
+    effective = run_node._effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
+    )
+
+    ibkr_cfg = effective["node"]["venues"]["IBKR"]
+    assert ibkr_cfg["execution"] is True
+    assert ibkr_cfg["ibg_host"] == "127.0.0.1"
+    assert ibkr_cfg["ibg_client_id"] == 108
+    assert ibkr_cfg["account_id"] == "U10015777"
+    assert ibkr_cfg["dockerized_gateway"] == {
+        "trading_mode": "live",
+        "container_name": "ibg-main",
+    }
+
+
 def test_build_node_keeps_ibkr_reference_balance_snapshot_provider_profile_owned_for_makerv4(
     monkeypatch,
 ) -> None:
