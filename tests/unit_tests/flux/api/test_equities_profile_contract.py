@@ -713,6 +713,7 @@ def test_signals_profile_equities_emits_makerv4_execution_mode_overnight_and_fee
             "hl_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
+        "hedge_backlog": None,
     }
 
 
@@ -896,6 +897,7 @@ def test_signals_profile_equities_surfaces_makerv4_hedge_backlog_in_operator_pay
         {
             "strategy_id": strategy_id,
             "state": "blocked_stale_quote",
+            "bot_on": True,
             "ts_ms": now_ms,
             "maker_v4": {
                 "quote_snapshot": {
@@ -970,6 +972,8 @@ def test_signals_profile_equities_surfaces_makerv4_hedge_backlog_in_operator_pay
 
     assert response.status_code == 200
     row = body["data"]["strategies"][0]
+    assert row["tradeable"] is False
+    assert row["blocked"] is True
     assert row["maker_v4"]["operator"]["hedge_backlog"] == {
         "fill_id": "take_take:order-1",
         "side": "SELL",
@@ -978,6 +982,126 @@ def test_signals_profile_equities_surfaces_makerv4_hedge_backlog_in_operator_pay
         "fill_ts_ms": now_ms - 500,
         "maker_fee_bps": 0.25,
     }
+
+
+def test_signals_profile_equities_makerv4_tradeable_respects_leg_quote_health(
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    strategy_id = "aapl_tradexyz_makerv4"
+    now_ms = int(time.time() * 1000)
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.state(),
+        {
+            "strategy_id": strategy_id,
+            "state": "running",
+            "bot_on": True,
+            "ts_ms": now_ms,
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": now_ms,
+                    "maker_leg": {
+                        "venue": "HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 100.0,
+                        "ask": 100.1,
+                        "age_ms": 12_000,
+                        "feed_state": "ok",
+                        "quote_state": "old",
+                        "pricing_usable": False,
+                        "hedge_usable": False,
+                        "reason_code": "maker_quote_old",
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                },
+            },
+        },
+    )
+    operator_params_schema = dict(params_schema)
+    operator_params_schema["execution_mode"] = {"type": "select"}
+    operator_params_defaults = dict(params_defaults)
+    operator_params_defaults["execution_mode"] = "maker_hedge"
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "execution_mode": "take_take"},
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=operator_params_schema,
+        params_defaults=operator_params_defaults,
+        param_set="makerv4",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["tradeable"] is False
+    assert row["blocked"] is True
+    assert row["maker_v4"]["quote_snapshot"]["maker_leg"]["quote_state"] == "old"
 
 
 def test_signals_profile_equities_reads_ibkr_reference_market_from_listing_venue_alias(

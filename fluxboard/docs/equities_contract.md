@@ -76,3 +76,22 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 7. Future shared IBKR cash rows may carry `source_scope = "shared_account"` and a shared `account_scope_id` when multiple equities strategies project the same IBKR account.
 8. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
 9. Clients should ignore unknown fields and tolerate additional metadata fields.
+
+## Shared Quote Health Semantics
+
+These semantics are shared across Flux strategy families and operator surfaces.
+
+1. `age_ms` is informational only: it is time since the last observed quote update at serialization time.
+2. High `age_ms` does not by itself mean feed failure; quiet overnight books can legitimately hold an unchanged quote.
+3. `feed_state`, when present, reports transport/subscription health:
+   - `ok`
+   - `degraded`
+   - `down`
+   - `unknown`
+4. `quote_state`, when present, reports quote freshness/presence:
+   - `fresh`
+   - `old`
+   - `missing`
+5. Old-but-connected quotes must be represented as `feed_state = ok` and `quote_state = old`; they are not feed-down by default.
+6. `tradeable` and any hedge-eligibility flags are backend policy outputs, not UI heuristics inferred from `age_ms`.
+7. Operator UX should show quote age separately from feed health so “quiet market”, “old quote”, and “broken feed” remain distinct.

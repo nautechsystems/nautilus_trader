@@ -42,11 +42,20 @@ def build_ibkr_hedge_order_policy(
 ) -> IbkrHedgeOrderPolicy:
     _ = str(hedge_mode).strip().lower() or "maker_hedge"
     route = _normalized_route(configured_route)
+    if not is_regular_session:
+        return IbkrHedgeOrderPolicy(
+            route="SMART",
+            time_in_force="DAY",
+            outside_rth=True,
+            include_overnight=True,
+            cancel_after_ms=overnight_cancel_after_ms,
+        )
+
     return IbkrHedgeOrderPolicy(
-        route=route if is_regular_session else "SMART",
+        route=route,
         time_in_force="IOC",
-        outside_rth=bool(outside_rth_enabled) if is_regular_session else True,
-        include_overnight=not is_regular_session,
+        outside_rth=bool(outside_rth_enabled),
+        include_overnight=False,
         cancel_after_ms=None,
     )
 

@@ -18,7 +18,7 @@ def test_build_ibkr_hedge_order_policy_keeps_ioc_during_regular_session() -> Non
     assert policy.cancel_after_ms is None
 
 
-def test_build_ibkr_hedge_order_policy_keeps_immediate_ioc_and_overnight_permissions_outside_regular_session() -> None:
+def test_build_ibkr_hedge_order_policy_uses_day_and_cancel_budget_outside_regular_session() -> None:
     policy = build_ibkr_hedge_order_policy(
         configured_route="BLUEOCEAN",
         outside_rth_enabled=True,
@@ -27,10 +27,10 @@ def test_build_ibkr_hedge_order_policy_keeps_immediate_ioc_and_overnight_permiss
     )
 
     assert policy.route == "SMART"
-    assert policy.time_in_force == "IOC"
+    assert policy.time_in_force == "DAY"
     assert policy.outside_rth is True
     assert policy.include_overnight is True
-    assert policy.cancel_after_ms is None
+    assert policy.cancel_after_ms == 5_000
 
 
 def test_build_ibkr_hedge_order_policy_accepts_take_take_mode_without_symbol_specific_inputs() -> None:

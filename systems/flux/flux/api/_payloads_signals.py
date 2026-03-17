@@ -867,6 +867,35 @@ def _derive_makerv4_operator_payload(
     }
 
 
+def _maker_v4_quote_health_blocks_new_risk(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any],
+) -> bool:
+    state_maker_v4 = state.get("maker_v4")
+    state_v4 = state_maker_v4 if isinstance(state_maker_v4, Mapping) else {}
+    hedge_backlog = state_v4.get("hedge_backlog")
+    if isinstance(hedge_backlog, Mapping) and hedge_backlog:
+        return True
+
+    maker_leg = quote_snapshot.get("maker_leg")
+    ref_leg = quote_snapshot.get("ref_leg")
+    hedge_leg = quote_snapshot.get("hedge_leg")
+    maker_leg_map = maker_leg if isinstance(maker_leg, Mapping) else {}
+    ref_leg_map = ref_leg if isinstance(ref_leg, Mapping) else {}
+    hedge_leg_map = hedge_leg if isinstance(hedge_leg, Mapping) else {}
+
+    if _first_valid_bool(maker_leg_map.get("pricing_usable")) is False:
+        return True
+    if _first_valid_bool(ref_leg_map.get("pricing_usable")) is False:
+        return True
+    if _first_valid_bool(ref_leg_map.get("hedge_usable")) is False:
+        return True
+    if _first_valid_bool(hedge_leg_map.get("hedge_usable")) is False:
+        return True
+    return False
+
+
 def _derive_quote_snapshot(
     *,
     state: Mapping[str, Any],
@@ -1166,6 +1195,13 @@ def build_signals_payload_impl(
                 "ask_blocked": 0,
             }
         md_health["state_stale"] = state_stale
+
+    if strategy_family == "maker_v4" and _maker_v4_quote_health_blocks_new_risk(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    ):
+        tradeable = False
+        blocked = True
 
     maker_v4_payload = (
         {
