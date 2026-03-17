@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import sys
 import sqlite3
 from pathlib import Path
+
+import pytest
 
 from nautilus_trader.persistence.shipper.config import TelemetryPostgresConfig
 from nautilus_trader.persistence.shipper.config import TelemetryShipperConfig
 from nautilus_trader.persistence.shipper.postgres import TABLE_CREATE_SQL
 from nautilus_trader.persistence.shipper.postgres import TABLE_PRIMARY_KEYS
+from nautilus_trader.persistence.shipper import run as shipper_run
 from nautilus_trader.persistence.shipper.service import SQLiteToPostgresTelemetryShipper
 
 
@@ -791,3 +795,33 @@ def test_shipper_resets_cursor_when_source_rowids_restart_after_full_prune(tmp_p
     assert result["quote_cycle"].shipped == 1
     assert sink.insert_calls[-1][0] == "quote_cycle"
     assert sink.insert_calls[-1][1][0]["quote_cycle_id"] == "run-2:1"
+
+
+def test_shipper_run_exits_78_on_missing_postgres_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "tokenmm.live.toml"
+    config_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+orders_db_path = "/tmp/orders.sqlite"
+state_db_path = "/tmp/shipper_state.sqlite"
+""".strip(),
+        encoding="utf-8",
+    )
+    for key in (
+        "NAUTILUS_TELEMETRY_PG_HOST",
+        "NAUTILUS_TELEMETRY_PG_PORT",
+        "NAUTILUS_TELEMETRY_PG_DATABASE",
+        "NAUTILUS_TELEMETRY_PG_SCHEMA",
+        "NAUTILUS_TELEMETRY_PG_USERNAME",
+        "NAUTILUS_TELEMETRY_PG_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["shipper.run", "--config", str(config_path)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        shipper_run.main()
+
+    assert exc_info.value.code == 78
