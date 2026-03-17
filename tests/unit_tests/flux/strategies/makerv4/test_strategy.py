@@ -397,6 +397,10 @@ def test_makerv4_overnight_blueocean_config_normalizes_to_smart_hedge_instrument
 
     assert order is not None
     assert order.route == "SMART"
+    assert order.time_in_force == "IOC"
+    assert order.outside_rth is True
+    assert order.include_overnight is True
+    assert order.cancel_after_ms is None
     assert order.instrument_id == str(strategy.config.reference_instrument_id)
     assert strategy._last_pricing_debug["hedge_instrument_id"] == str(
         strategy.config.reference_instrument_id,
