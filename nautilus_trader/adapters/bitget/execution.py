@@ -45,6 +45,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientId
@@ -159,6 +160,7 @@ class BitgetExecutionClient(LiveExecutionClient):
             reconnect_delay_max_ms=self._config.retry_delay_max_ms or 30_000,
         )
 
+        await self._update_account_state()
         self._ws_client = await nautilus_pyo3.WebSocketClient.connect(
             loop_=self._loop,
             config=ws_config,
@@ -288,7 +290,14 @@ class BitgetExecutionClient(LiveExecutionClient):
             frozen = Decimal(str(entry.get("frozen") or "0"))
             locked_extra = Decimal(str(entry.get("locked") or "0"))
             locked_amount = frozen + locked_extra
-            total_amount = Decimal(str(entry.get("equity") or (free_amount + locked_amount)))
+            balance_raw = entry.get("balance")
+            if balance_raw not in (None, ""):
+                total_amount = Decimal(str(balance_raw))
+                implied_locked = total_amount - free_amount
+                if implied_locked > locked_amount:
+                    locked_amount = implied_locked
+            else:
+                total_amount = Decimal(str(entry.get("equity") or (free_amount + locked_amount)))
             free = Money(free_amount, currency)
             locked = Money(locked_amount, currency)
             total = Money(total_amount, currency)
@@ -313,6 +322,25 @@ class BitgetExecutionClient(LiveExecutionClient):
             margins=[],
             reported=True,
             ts_event=millis_to_nanos(latest_update_ms),
+        )
+
+    async def _update_account_state(self) -> None:
+        request_account_state = getattr(self._http_client, "request_account_state", None)
+        if request_account_state is None:
+            self._log.warning(
+                "Bitget HTTP client does not expose request_account_state; "
+                "skipping explicit startup account refresh",
+            )
+            return
+
+        pyo3_account_state = await request_account_state(self.account_id)
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
         )
 
     @staticmethod
@@ -1069,9 +1097,12 @@ class BitgetExecutionClient(LiveExecutionClient):
                 f"{BitgetExecutionClient._position_payload_debug_summary(payload)}",
             )
 
-        total = Decimal(
-            BitgetExecutionClient._string_value(BitgetExecutionClient._field(payload, "total") or "0"),
+        total_value = (
+            BitgetExecutionClient._field(payload, "total")
+            or BitgetExecutionClient._field(payload, "size")
+            or "0"
         )
+        total = Decimal(BitgetExecutionClient._string_value(total_value))
         ts_event = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "uTime")
             or BitgetExecutionClient._field(payload, "updatedTime"),
@@ -1719,6 +1750,22 @@ class BitgetExecutionClient(LiveExecutionClient):
                     )
                     if report is not None:
                         reports.append(report)
+                if not reports and command.instrument_id is not None:
+                    instrument = self._cache.instrument(command.instrument_id)
+                    if instrument is None and hasattr(self, "_instrument_provider"):
+                        instrument = self._instrument_provider.find(command.instrument_id)
+                    if instrument is not None:
+                        reports.append(
+                            PositionStatusReport(
+                                account_id=self.account_id,
+                                instrument_id=instrument.id,
+                                position_side=PositionSide.FLAT,
+                                quantity=Quantity.zero(instrument.size_precision),
+                                report_id=UUID4(),
+                                ts_last=ts_init,
+                                ts_init=ts_init,
+                            ),
+                        )
         except Exception as e:
             self._log.exception("Failed to generate PositionStatusReports", e)
 
@@ -2019,4 +2066,5 @@ class BitgetExecutionClient(LiveExecutionClient):
                         )
 
     async def _query_account(self, command: QueryAccount) -> None:
-        self._log.debug(f"Query account not implemented: {command}")
+        del command
+        await self._update_account_state()

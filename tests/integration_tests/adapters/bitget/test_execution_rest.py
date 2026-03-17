@@ -911,6 +911,47 @@ async def test_generate_position_status_reports_maps_uta_futures_payload() -> No
 
 
 @pytest.mark.asyncio
+async def test_generate_position_status_reports_returns_flat_for_requested_instrument_when_empty() -> None:
+    instrument = _make_futures_instrument()
+
+    async def request_position_status_reports(**kwargs):
+        assert kwargs["symbol"] == "BTCUSDT"
+        return []
+
+    command = SimpleNamespace(instrument_id=instrument.id, start=None, end=None)
+
+    dummy = SimpleNamespace(
+        account_id=AccountId("BITGET-001"),
+        _product_types=(nautilus_pyo3.BitgetProductType.USDT_FUTURES,),
+        _http_client=SimpleNamespace(request_position_status_reports=request_position_status_reports),
+        _cache=SimpleNamespace(
+            instrument=lambda instrument_id: instrument if instrument_id == instrument.id else None,
+            instrument_ids=lambda venue=None: [instrument.id],
+        ),
+        _instrument_provider=SimpleNamespace(find=lambda instrument_id: instrument),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 999),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    reports = await BitgetExecutionClient.generate_position_status_reports(
+        dummy,  # type: ignore[arg-type]
+        command,
+    )
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert isinstance(report, PositionStatusReport)
+    assert report.instrument_id == instrument.id
+    assert report.position_side == PositionSide.FLAT
+    assert report.quantity == Quantity.zero(instrument.size_precision)
+    assert report.venue_position_id is None
+
+
+@pytest.mark.asyncio
 async def test_batch_cancel_orders_uses_http_batch_endpoint() -> None:
     calls: list[dict] = []
     instrument = _make_spot_instrument()
