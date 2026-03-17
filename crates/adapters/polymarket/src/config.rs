@@ -25,6 +25,10 @@ use crate::common::{enums::SignatureType, urls};
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
+)]
 #[derive(Clone, Debug)]
 pub struct PolymarketDataClientConfig {
     pub base_url_http: Option<String>,
@@ -86,6 +90,10 @@ impl PolymarketDataClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.polymarket",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")
 )]
 #[derive(Clone, Debug)]
 pub struct PolymarketExecClientConfig {

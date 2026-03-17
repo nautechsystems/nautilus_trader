@@ -40,6 +40,7 @@ python = [
   "pyo3",
   "pyo3-async-runtimes",
   "replay",
+  "pyo3-stub-gen",
 ]
 replay = []
 high-precision = ["nautilus-model/high-precision"]
@@ -87,6 +88,7 @@ zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 dotenvy = { workspace = true }

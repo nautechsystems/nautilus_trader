@@ -118,6 +118,7 @@ def run_command(
     Run a command and return the result.
     """
     print(f"Running: {' '.join(cmd)}")
+
     if cwd:
         print(f"  in: {cwd}")
 
@@ -177,12 +178,14 @@ def generate_stubs() -> bool:
     cargo_features = [f for f in maturin_features if f != "extension-module"]
 
     cmd = ["cargo", "run", "--bin", "python-stub-gen"]
+
     if cargo_features:
         cmd.extend(["--features", ",".join(cargo_features)])
 
     result = run_command(cmd, cwd=crates_dir)
 
     print("Stubs generated successfully")
+
     if result.stdout:
         print(f"Output: {result.stdout}")
 
@@ -334,6 +337,7 @@ def _collect_pyclass_name_fixups(source: str, fixups: dict[str, ClassMethodFixup
             (attr for attr in pending_attrs if attr.startswith(PYCLASS_ATTR_PREFIXES)),
             None,
         )
+
         if pyclass_attr is not None:
             name_match = ATTR_NAME_RE.search(pyclass_attr)
             if name_match is not None:
@@ -502,6 +506,7 @@ def register_rust_method_fixup(
         return
 
     fixup.staticmethods.update(method_names)
+
     if python_name not in INJECTABLE_STATICMETHODS:
         return
 
@@ -537,6 +542,7 @@ def render_missing_staticmethod_stub(
     Render a conservative stub for missing deserializer helpers.
     """
     params = params.strip()
+
     if method_name not in INJECTABLE_STATICMETHODS:
         return None
 
@@ -592,6 +598,7 @@ def rename_stub_classes(content: str, class_fixups: dict[str, ClassMethodFixup])
         for rust_name, fixup in class_fixups.items()
         if fixup.python_name and fixup.python_name != rust_name
     }
+
     if not class_renames:
         return content
 
@@ -634,6 +641,7 @@ def apply_class_block_fixups(
         for name in sorted(fixup.injected_staticmethods)
         if name not in seen_methods
     ]
+
     if missing:
         trailing_blank_lines: list[str] = []
         while result and not result[-1].strip():
@@ -643,6 +651,7 @@ def apply_class_block_fixups(
             result.append("")
         for index, method in enumerate(missing):
             result.extend(method.split("\n"))
+
             if index != len(missing) - 1:
                 result.append("")
         result.extend(reversed(trailing_blank_lines))
@@ -777,6 +786,7 @@ def rewrite_stub_method_block(
         or method_name in fixup.classmethods
         or method_name in fixup.renames
     )
+
     if not needs_fixup:
         return method_block
 
@@ -793,10 +803,12 @@ def rewrite_stub_method_block(
 
     if method_name in fixup.staticmethods:
         signature_text = drop_stub_method_receiver(signature_text)
+
         if not _has_decorator(decorators, "@staticmethod"):
             decorators.append("    @staticmethod")
     elif method_name in fixup.classmethods:
         signature_text = replace_self_with_cls(signature_text)
+
         if not _has_decorator(decorators, "@classmethod"):
             decorators.append("    @classmethod")
 
@@ -982,12 +994,14 @@ def merge_stub_content(existing: str, new_blocks: list[str], fixup: StubFixup) -
 
     # Build __all__ if specified
     all_section = ""
+
     if fixup.all_exports:
         all_list = ", ".join(f'"{name}"' for name in sorted(fixup.all_exports))
         all_section = f"__all__ = [{all_list}]\n"
 
     # Combine everything
     parts = [STUB_HEADER, "", "\n".join(sorted_imports), ""]
+
     if all_section:
         parts.append(all_section)
     if existing_body:
@@ -1427,8 +1441,15 @@ def main() -> int:
     print(f"Starting nautilus-trader v2 {args.action}...")
 
     try:
-        if args.action in ["stubs", "all"] and not generate_stubs():
-            return 1
+        if args.action in ["stubs", "all"]:
+            print("Generating PyO3 docstrings...")
+            subprocess.run(
+                [sys.executable, str(Path(__file__).parent / "generate_docstrings.py")],
+                check=True,
+            )
+
+            if not generate_stubs():
+                return 1
 
         if args.action in ["build", "all"] and not build_extension():
             return 1

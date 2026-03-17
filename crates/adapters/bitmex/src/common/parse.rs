@@ -26,7 +26,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     types::{
-        AccountBalance, Currency, Money, Price, Quantity,
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
         quantity::{QUANTITY_RAW_MAX, QuantityRaw},
     },
 };
@@ -348,6 +348,16 @@ pub fn map_bitmex_currency(bitmex_currency: &str) -> Cow<'static, str> {
     }
 }
 
+/// Returns the Decimal divisor for converting BitMEX raw integer units to standard units.
+#[must_use]
+pub fn bitmex_currency_divisor(bitmex_currency: &str) -> Decimal {
+    match bitmex_currency {
+        "XBt" => Decimal::from(100_000_000),
+        "USDt" | "LAMp" | "MAMUSd" | "RLUSd" => Decimal::from(1_000_000),
+        _ => Decimal::ONE,
+    }
+}
+
 /// Parses a BitMEX margin message into a Nautilus account balance.
 pub fn parse_account_balance(margin: &BitmexMarginMsg) -> AccountBalance {
     log::debug!(
@@ -443,9 +453,26 @@ pub fn parse_account_state(
     let balance = parse_account_balance(margin);
     let balances = vec![balance];
 
-    // Skip margin details - BitMEX uses account-level cross-margin which doesn't map
-    // well to Nautilus's per-instrument margin model, we track balances only.
-    let margins = Vec::new();
+    let currency_str = map_bitmex_currency(margin.currency.as_str());
+    let currency = balance.total.currency;
+    let mut margins = Vec::new();
+
+    let divisor = bitmex_currency_divisor(margin.currency.as_str());
+    let initial_dec = Decimal::from(margin.init_margin.unwrap_or(0).max(0)) / divisor;
+    let maintenance_dec = Decimal::from(margin.maint_margin.unwrap_or(0).max(0)) / divisor;
+
+    if !initial_dec.is_zero() || !maintenance_dec.is_zero() {
+        let margin_instrument_id = InstrumentId::new(
+            Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
+            *BITMEX_VENUE,
+        );
+        margins.push(MarginBalance::new(
+            Money::from_decimal(initial_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
+            Money::from_decimal(maintenance_dec, currency)
+                .unwrap_or_else(|_| Money::zero(currency)),
+            margin_instrument_id,
+        ));
+    }
 
     let account_type = AccountType::Margin;
     let is_reported = true;
@@ -640,7 +667,7 @@ mod tests {
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
         assert_eq!(account_state.balances.len(), 1);
-        assert_eq!(account_state.margins.len(), 0); // No margins tracked
+        assert_eq!(account_state.margins.len(), 1);
         assert!(account_state.is_reported);
 
         let xbt_balance = &account_state.balances[0];
@@ -648,6 +675,10 @@ mod tests {
         assert_eq!(xbt_balance.total.as_f64(), 0.05); // 5000000 satoshis = 0.05 XBT wallet balance
         assert_eq!(xbt_balance.free.as_f64(), 0.049); // 4900000 satoshis = 0.049 XBT withdrawable
         assert_eq!(xbt_balance.locked.as_f64(), 0.001); // 100000 satoshis locked
+
+        let xbt_margin = &account_state.margins[0];
+        assert_eq!(xbt_margin.initial.as_f64(), 0.0002); // 20000 satoshis
+        assert_eq!(xbt_margin.maintenance.as_f64(), 0.0001); // 10000 satoshis
     }
 
     #[rstest]
@@ -694,7 +725,10 @@ mod tests {
         assert_eq!(usdt_balance.free.as_f64(), 9500.0);
         assert_eq!(usdt_balance.locked.as_f64(), 500.0);
 
-        assert_eq!(account_state.margins.len(), 0); // No margins tracked
+        assert_eq!(account_state.margins.len(), 1);
+        let usdt_margin = &account_state.margins[0];
+        assert_eq!(usdt_margin.initial.as_f64(), 0.5); // 500000 microunits
+        assert_eq!(usdt_margin.maintenance.as_f64(), 0.25); // 250000 microunits
     }
 
     #[rstest]
@@ -942,7 +976,9 @@ mod tests {
         assert_eq!(balance.free.as_f64(), 0.93);
         assert_eq!(balance.locked.as_f64(), 0.07); // 0.02 + 0.05 = 0.07 total margin
 
-        // No margins tracked
-        assert_eq!(account_state.margins.len(), 0);
+        assert_eq!(account_state.margins.len(), 1);
+        let xbt_margin = &account_state.margins[0];
+        assert_eq!(xbt_margin.initial.as_f64(), 0.02); // 2000000 satoshis
+        assert_eq!(xbt_margin.maintenance.as_f64(), 0.01); // 1000000 satoshis
     }
 }

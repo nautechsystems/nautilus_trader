@@ -209,6 +209,7 @@ fn test_funding_rate_update_with_next_funding_time() {
     let funding_rate = FundingRateUpdate {
         instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
         rate: dec!(0.0001),
+        interval: Some(60),
         next_funding_ns: Some(1234567890.into()),
         ts_event: 1234567890.into(),
         ts_init: 1234567891.into(),
@@ -231,6 +232,7 @@ fn test_funding_rate_update_with_next_funding_time() {
 
     assert_eq!(funding_rate.instrument_id, decoded.instrument_id);
     assert_eq!(funding_rate.rate, decoded.rate);
+    assert_eq!(funding_rate.interval, decoded.interval);
     assert_eq!(funding_rate.next_funding_ns, decoded.next_funding_ns);
     assert_eq!(funding_rate.ts_event, decoded.ts_event);
     assert_eq!(funding_rate.ts_init, decoded.ts_init);
@@ -241,6 +243,7 @@ fn test_funding_rate_update_without_next_funding_time() {
     let funding_rate = FundingRateUpdate {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         rate: dec!(-0.00025),
+        interval: None,
         next_funding_ns: None,
         ts_event: 9876543210.into(),
         ts_init: 9876543211.into(),
@@ -263,6 +266,7 @@ fn test_funding_rate_update_without_next_funding_time() {
 
     assert_eq!(funding_rate.instrument_id, decoded.instrument_id);
     assert_eq!(funding_rate.rate, decoded.rate);
+    assert_eq!(funding_rate.interval, decoded.interval);
     assert_eq!(funding_rate.next_funding_ns, None);
     assert_eq!(funding_rate.ts_event, decoded.ts_event);
     assert_eq!(funding_rate.ts_init, decoded.ts_init);
@@ -273,6 +277,7 @@ fn test_funding_rate_update_with_large_decimal() {
     let funding_rate = FundingRateUpdate {
         instrument_id: InstrumentId::from("SOLUSDT-PERP.BINANCE"),
         rate: dec!(0.123456789012345678),
+        interval: Some(480),
         next_funding_ns: Some(5555555555.into()),
         ts_event: 1111111111.into(),
         ts_init: 1111111112.into(),
@@ -295,6 +300,7 @@ fn test_funding_rate_update_with_large_decimal() {
 
     assert_eq!(funding_rate.instrument_id, decoded.instrument_id);
     assert_eq!(funding_rate.rate, decoded.rate);
+    assert_eq!(funding_rate.interval, decoded.interval);
     assert_eq!(funding_rate.next_funding_ns, decoded.next_funding_ns);
     assert_eq!(funding_rate.ts_event, decoded.ts_event);
     assert_eq!(funding_rate.ts_init, decoded.ts_init);

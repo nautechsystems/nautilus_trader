@@ -367,6 +367,7 @@ class AxExecutionClient(LiveExecutionClient):
             return
 
         pyo3_price = None
+
         if order.has_price:
             pyo3_price = nautilus_pyo3.Price.from_str(str(order.price))
         elif order.order_type == OrderType.MARKET:
@@ -395,6 +396,7 @@ class AxExecutionClient(LiveExecutionClient):
                 return
 
         pyo3_trigger_price = None
+
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 

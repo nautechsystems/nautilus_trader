@@ -60,6 +60,7 @@ class TestCommandStubs:
         order: Order | None = None,
     ) -> ModifyOrder:
         assert price or quantity
+
         if order is not None:
             return ModifyOrder(
                 trader_id=TestIdStubs.trader_id(),

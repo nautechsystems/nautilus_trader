@@ -314,7 +314,7 @@ impl BinanceAccountInfo {
             balances.push(zero_balance);
         }
 
-        let ts_event = UnixNanos::from((self.update_time * 1_000) as u64);
+        let ts_event = UnixNanos::from_micros(self.update_time as u64);
 
         AccountState::new(
             account_id,

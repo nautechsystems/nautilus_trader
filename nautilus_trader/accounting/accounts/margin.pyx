@@ -333,6 +333,26 @@ cdef class MarginAccount(Account):
 
         self._margin_model = margin_model
 
+    cpdef void apply(self, AccountState event):
+        """
+        Apply the given account event to the account.
+
+        Replaces the stored margin balances with the event margins so
+        externally reported account state stays queryable through the account.
+
+        Parameters
+        ----------
+        event : AccountState
+            The account event to apply.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Account.apply(self, event)
+        self._margins = {m.instrument_id: m for m in event.margins}
+
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init):
         """
         Update the initial (order) margin.

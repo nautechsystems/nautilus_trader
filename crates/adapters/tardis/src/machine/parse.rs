@@ -564,6 +564,7 @@ pub fn parse_derivative_ticker_msg(
     Ok(Some(FundingRateUpdate::new(
         instrument_id,
         rate,
+        None,
         next_funding_ns,
         ts_event,
         ts_init,

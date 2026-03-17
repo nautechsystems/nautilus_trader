@@ -514,6 +514,18 @@ When demo mode is enabled:
 Demo API keys are separate from production keys. You must create API keys specifically for demo trading through the Demo Trading interface. Production API keys will not work in demo mode.
 :::
 
+## Funding rates
+
+The adapter receives funding rate data from the
+[Funding Rate Channel](https://www.okx.com/docs-v5/en/#public-data-websocket-funding-rate-channel)
+WebSocket stream. OKX provides both `fundingTime` and `nextFundingTime` in each message,
+and the adapter computes `interval` as the difference between these two values.
+
+For historical funding rate requests, the adapter computes the interval from consecutive
+funding timestamps returned by the
+[Get Funding Rate History](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-funding-rate-history)
+endpoint.
+
 ## Rate limiting
 
 The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults for both REST and WebSocket calls.

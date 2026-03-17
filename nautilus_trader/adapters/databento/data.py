@@ -421,6 +421,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_ids_param: list[InstrumentId] | None = command.params.get(
             "instrument_ids",
         )
+
         if instrument_ids_param:
             instrument_ids = instrument_ids_param
         else:
@@ -430,6 +431,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
@@ -853,6 +855,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 for inst_id in instrument_ids
                 if inst_id not in self._trade_tick_subscriptions
             ]
+
             if not instrument_ids:
                 return
 
@@ -900,6 +903,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
                 for bar_type in bar_types
             }
+
             if len(datasets) > 1:
                 self._log.error(
                     f"Cannot subscribe to bar types from multiple datasets: {datasets}. "
@@ -1248,6 +1252,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request instruments from multiple datasets: {datasets}. "
@@ -1336,6 +1341,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request quotes for instruments from multiple datasets: {datasets}. "
@@ -1404,6 +1410,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request trades for instruments from multiple datasets: {datasets}. "
@@ -1459,6 +1466,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
             for bar_type in bar_types
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request bars for instruments from multiple datasets: {datasets}. "
@@ -1526,6 +1534,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request order book depths for instruments from multiple datasets: {datasets}. "

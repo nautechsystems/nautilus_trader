@@ -215,6 +215,7 @@ class OrderStatusReport(ExecutionReport):
     ) -> None:
         PyCondition.positive(quantity, "quantity")
         PyCondition.not_negative(filled_qty, "filled_qty")
+
         if trigger_price is not None and trigger_price > 0:
             PyCondition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:

@@ -129,6 +129,7 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
 
         for idx, bid in enumerate(self.bids):
             flags = 0
+
             if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
@@ -146,6 +147,7 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
 
         for idx, ask in enumerate(self.asks):
             flags = 0
+
             if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`

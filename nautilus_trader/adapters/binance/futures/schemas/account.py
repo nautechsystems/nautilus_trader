@@ -366,6 +366,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
         venue_order_id = VenueOrderId(venue_order_id_str)
 
         trigger_type = TriggerType.NO_TRIGGER
+
         if self.workingType is not None:
             trigger_type = enum_parser.parse_binance_trigger_type(self.workingType)
         elif self.triggerPrice and Decimal(self.triggerPrice) > 0:
@@ -374,11 +375,13 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
         # Binance sends callbackRate in percent (e.g., 1.0 = 1%), convert to basis points
         trailing_offset = None
         trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+
         if self.callbackRate is not None:
             trailing_offset = Decimal(self.callbackRate) * 100
             trailing_offset_type = TrailingOffsetType.BASIS_POINTS
 
         order_status = OrderStatus.ACCEPTED
+
         if self.algoStatus:
             order_status = _ALGO_STATUS_MAP.get(self.algoStatus.upper(), OrderStatus.ACCEPTED)
 
@@ -393,6 +396,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 
         time_in_force = TimeInForce.GTC
+
         if self.timeInForce:
             binance_tif = BinanceTimeInForce(self.timeInForce)
             time_in_force = enum_parser.parse_binance_time_in_force(binance_tif)

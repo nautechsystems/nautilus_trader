@@ -1346,6 +1346,7 @@ impl DydxDataClient {
                         let funding_rate = FundingRateUpdate {
                             instrument_id,
                             rate,
+                            interval: Some(60),
                             next_funding_ns: None,
                             ts_event: ts_init,
                             ts_init,

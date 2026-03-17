@@ -25,12 +25,14 @@ use pyo3::prelude::*;
 use crate::grpc::DydxGrpcClient;
 
 #[pyclass(name = "DydxGrpcClient", from_py_object)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")]
 #[derive(Debug, Clone)]
 pub struct PyDydxGrpcClient {
     pub(crate) inner: Arc<DydxGrpcClient>,
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyDydxGrpcClient {
     /// Create a new gRPC client.
     ///

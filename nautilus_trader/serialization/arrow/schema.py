@@ -98,6 +98,7 @@ NAUTILUS_ARROW_SCHEMA = {
     FundingRateUpdate: pa.schema(
         [
             pa.field("rate", pa.binary(), False),
+            pa.field("interval", pa.uint16(), True),
             pa.field("next_funding_ns", pa.uint64(), True),
             pa.field("ts_event", pa.uint64(), False),
             pa.field("ts_init", pa.uint64(), False),

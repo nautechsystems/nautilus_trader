@@ -265,6 +265,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
                     "initialClk": None,
                     "clk": None,
                 }
+
                 if self.heartbeat_ms is not None:
                     subscribe_msg["heartbeatMs"] = self.heartbeat_ms
                 await self.send(msgspec.json.encode(self.auth_message()))
@@ -344,6 +345,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         assert any(
             (subscribe_book_updates, subscribe_trade_updates),
         ), "Must subscribe to either book updates or trades"
+
         if market_ids is not None:
             # TODO - Log a warning about inefficiencies of specific market ids - Won't receive any updates for new
             #  markets that fit criteria like when using event type / market type etc
@@ -361,6 +363,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             "raceTypes": race_types,
         }
         data_fields = []
+
         if subscribe_book_updates:
             data_fields.append("EX_ALL_OFFERS")
         if subscribe_trade_updates:
@@ -383,6 +386,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             "clk": clk,
             "segmentationEnabled": segmentation_enabled,
         }
+
         if conflate_ms is not None:
             message["conflateMs"] = conflate_ms
         if heartbeat_ms is not None:

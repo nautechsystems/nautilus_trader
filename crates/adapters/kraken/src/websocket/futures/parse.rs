@@ -15,8 +15,6 @@
 
 //! WebSocket message parsers for converting Kraken Futures streaming data to Nautilus domain models.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
@@ -39,7 +37,7 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::enums::{KrakenFuturesOrderType, KrakenOrderSide};
+use crate::common::enums::{KrakenFillType, KrakenOrderSide};
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -217,12 +215,6 @@ pub fn parse_futures_ws_book_delta(
     ))
 }
 
-fn parse_ws_order_type(order_type_str: &str) -> OrderType {
-    KrakenFuturesOrderType::from_str(order_type_str)
-        .map(OrderType::from)
-        .unwrap_or(OrderType::Limit)
-}
-
 fn parse_ws_direction(direction: i32) -> OrderSide {
     if direction == 0 {
         OrderSide::Buy
@@ -253,7 +245,7 @@ pub fn parse_futures_ws_order_status_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let venue_order_id = VenueOrderId::new(&order.order_id);
     let order_side = parse_ws_direction(order.direction);
-    let order_type = parse_ws_order_type(&order.order_type);
+    let order_type = OrderType::from(order.order_type);
     let order_status = infer_order_status(order, is_cancel);
 
     let price_precision = instrument.price_precision();
@@ -349,10 +341,9 @@ pub fn parse_futures_ws_fill_report(
     let last_px =
         Price::new_checked(fill.price, price_precision).context("Failed to parse fill price")?;
 
-    let liquidity_side = match fill.fill_type.as_str() {
-        "maker" => LiquiditySide::Maker,
-        "taker" => LiquiditySide::Taker,
-        _ => LiquiditySide::NoLiquiditySide,
+    let liquidity_side = match fill.fill_type {
+        KrakenFillType::Maker => LiquiditySide::Maker,
+        KrakenFillType::Taker => LiquiditySide::Taker,
     };
 
     let fee = fill.fee_paid.unwrap_or(0.0);
@@ -431,6 +422,7 @@ pub fn parse_futures_ws_funding_rate(
     Some(FundingRateUpdate::new(
         instrument.id(),
         rate,
+        None,
         next_funding_ns,
         ts_event,
         ts_init,
@@ -448,7 +440,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::KRAKEN_VENUE;
+    use crate::common::{consts::KRAKEN_VENUE, enums::KrakenFuturesOrderType};
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
@@ -571,7 +563,7 @@ mod tests {
             filled: 0.0,
             limit_price: Some(35000.0),
             stop_price: None,
-            order_type: "lmt".to_string(),
+            order_type: KrakenFuturesOrderType::Limit,
             order_id: "abc-123".to_string(),
             cli_ord_id: Some("my-order-1".to_string()),
             direction: 0,
@@ -603,7 +595,7 @@ mod tests {
             filled: 0.0,
             limit_price: Some(35000.0),
             stop_price: None,
-            order_type: "lmt".to_string(),
+            order_type: KrakenFuturesOrderType::Limit,
             order_id: "abc-123".to_string(),
             cli_ord_id: None,
             direction: 1,

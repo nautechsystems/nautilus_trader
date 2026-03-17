@@ -22,6 +22,10 @@ use crate::{data::forward::ForwardPrice, identifiers::InstrumentId};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ForwardPrice {
+    /// Represents a forward/underlying price for a derivatives instrument.
+    ///
+    /// This is a general derivatives concept used for ATM determination in option chains
+    /// and other forward-price dependent calculations.
     #[new]
     #[pyo3(signature = (instrument_id, forward_price, underlying_index=None, ts_event=0, ts_init=0))]
     fn py_new(

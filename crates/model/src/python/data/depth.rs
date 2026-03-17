@@ -47,6 +47,15 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBookDepth10 {
+    /// Represents an aggregated order book update with a fixed depth of 10 levels per side.
+    ///
+    /// This structure is specifically designed for scenarios where a snapshot of the top 10 bid and
+    /// ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
+    /// in its fixed-depth nature and is optimized for cases where a full depth representation is not
+    /// required or practical.
+    ///
+    /// Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
+    /// its specialized structure and limited depth use case.
     #[allow(clippy::too_many_arguments)]
     #[new]
     fn py_new(
@@ -155,6 +164,7 @@ impl OrderBookDepth10 {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDepth10))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -165,6 +175,7 @@ impl OrderBookDepth10 {
         Self::get_metadata(instrument_id, price_precision, size_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {

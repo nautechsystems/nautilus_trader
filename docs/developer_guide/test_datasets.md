@@ -267,6 +267,56 @@ wget -O tests/test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-
 cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture
 ```
 
+## Tutorial test data
+
+Several tutorials load user-provided market data. The `NAUTILUS_DATA_DIR` environment variable
+overrides the base data path used by these tutorials. The test suite sets this variable to
+`tests/test_data/local/` so that tutorials run against small sample files stored locally.
+
+### Directory layout
+
+```text
+tests/test_data/local/
+  Binance/
+    BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv
+    BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv
+  Bybit/
+    2024-12-01_XRPUSDT_ob500.data.zip
+  HISTDATA/
+    DAT_ASCII_EURUSD_T_202001.csv.gz
+```
+
+The `tests/test_data/local/` directory is gitignored. Tests skip when the data is absent.
+
+### Obtaining the data
+
+**Binance depth snapshots** are available from the
+[Binance public data portal](https://data.binance.vision/). Download the BTCUSDT T_DEPTH files
+for 2022-11-01 and place the snap and update CSVs under `tests/test_data/local/Binance/`. For
+testing, a subset of rows (e.g. first 10,000) is sufficient.
+
+**Bybit ob500 orderbook data** is available from the Bybit CDN:
+
+```bash
+curl -L "https://quote-saver.bycsi.com/orderbook/linear/XRPUSDT/2024-12-01_XRPUSDT_ob500.data.zip" \
+  -o tests/test_data/local/Bybit/2024-12-01_XRPUSDT_ob500.data.zip
+```
+
+The full file is ~360 MB. For testing, extract the first few hundred lines and repackage as a
+smaller zip.
+
+**HISTDATA tick data** is available from [histdata.com](https://www.histdata.com/). Download
+EUR/USD ASCII tick data for any month and place the CSV (or `.csv.gz`) under
+`tests/test_data/local/HISTDATA/`.
+
+### Running the tests
+
+```bash
+pytest tests/docs_tests/test_tutorials.py::test_tutorial_with_local_data -v
+```
+
+Tests skip with a message when the corresponding data subdirectory is empty or missing.
+
 ## Legacy datasets
 
 These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)

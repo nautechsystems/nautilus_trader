@@ -32,6 +32,9 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderBookDeltas {
+    /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+    ///
+    /// This type cannot be `repr(C)` due to the `deltas` vec.
     #[new]
     fn py_new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> PyResult<Self> {
         Self::new_checked(instrument_id, deltas).map_err(to_pyvalue_err)

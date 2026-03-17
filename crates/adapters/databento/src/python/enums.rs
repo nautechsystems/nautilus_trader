@@ -21,7 +21,9 @@ use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoStatisticType {
+    /// Represents a Databento statistic type.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -72,7 +74,9 @@ impl DatabentoStatisticType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoStatisticUpdateAction {
+    /// Represents a Databento statistic update action.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

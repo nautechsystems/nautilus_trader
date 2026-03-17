@@ -35,10 +35,10 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AccountType, CurrencyType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
@@ -52,7 +52,7 @@ use ustr::Ustr;
 use super::{models::*, query::*};
 use crate::{
     common::{
-        consts::NAUTILUS_KRAKEN_BROKER_ID,
+        consts::{KRAKEN_VENUE, NAUTILUS_KRAKEN_BROKER_ID},
         credential::KrakenCredential,
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderType, KrakenOrderSide,
@@ -907,6 +907,10 @@ impl KrakenFuturesRawHttpClient {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
+)]
 pub struct KrakenFuturesHttpClient {
     pub(crate) inner: Arc<KrakenFuturesRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
@@ -1334,114 +1338,23 @@ impl KrakenFuturesHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut balances: Vec<AccountBalance> = Vec::new();
+        let mut margins: Vec<MarginBalance> = Vec::new();
 
         for account in accounts_response.accounts.values() {
-            match account.account_type.as_str() {
-                "multiCollateralMarginAccount" => {
-                    for (currency_code, currency_info) in &account.currencies {
-                        if currency_info.quantity == 0.0 {
-                            continue;
-                        }
-
-                        let currency = Currency::new(
-                            currency_code.as_str(),
-                            8,
-                            0,
-                            currency_code.as_str(),
-                            CurrencyType::Crypto,
-                        );
-
-                        let total_amount = currency_info.quantity;
-                        let total = Money::new(total_amount, currency);
-
-                        // Available can exceed quantity with positive PnL, cap to satisfy invariant
-                        let available_amount = currency_info
-                            .available
-                            .unwrap_or(total_amount)
-                            .min(total_amount);
-                        let locked_amount = (total_amount - available_amount).max(0.0);
-                        let locked = Money::new(locked_amount, currency);
-                        // Compute free from total - locked to guarantee the invariant holds
-                        let free = total - locked;
-
-                        balances.push(AccountBalance::new(total, locked, free));
-                    }
-
-                    // Add USD balance from portfolio value for margin calculations.
-                    // Multi-collateral accounts track margin in USD even though the
-                    // actual collateral is held in various crypto currencies.
-                    if let Some(portfolio_value) = account.portfolio_value
-                        && portfolio_value > 0.0
-                    {
-                        let usd_currency = Currency::USD();
-                        let total_usd = Money::new(portfolio_value, usd_currency);
-                        let available_usd = account
-                            .available_margin
-                            .unwrap_or(portfolio_value)
-                            .min(portfolio_value);
-                        // Compute locked = total - available to guarantee the invariant holds
-                        let locked_usd =
-                            Money::new((portfolio_value - available_usd).max(0.0), usd_currency);
-                        let free_usd = total_usd - locked_usd;
-
-                        balances.push(AccountBalance::new(total_usd, locked_usd, free_usd));
-                    }
+            match account.account_type {
+                KrakenFuturesAccountType::MultiCollateralMarginAccount => {
+                    parse_multi_collateral_balances(account, &mut balances);
+                    parse_multi_collateral_margins(account, &mut margins);
                 }
-                "marginAccount" => {
-                    for (currency_code, &amount) in &account.balances {
-                        if amount == 0.0 {
-                            continue;
-                        }
-
-                        let currency = Currency::new(
-                            currency_code.as_str(),
-                            8,
-                            0,
-                            currency_code.as_str(),
-                            CurrencyType::Crypto,
-                        );
-
-                        let total = Money::new(amount, currency);
-
-                        // Available can exceed balance with positive PnL, cap to satisfy invariant
-                        let available = account
-                            .auxiliary
-                            .as_ref()
-                            .and_then(|aux| aux.af)
-                            .unwrap_or(amount)
-                            .min(amount);
-                        let locked = amount - available;
-
-                        balances.push(AccountBalance::new(
-                            total,
-                            Money::new(locked, currency),
-                            Money::new(available, currency),
-                        ));
-                    }
+                KrakenFuturesAccountType::MarginAccount => {
+                    parse_margin_account_balances(account, &mut balances);
+                    parse_margin_account_margins(account, &mut margins);
                 }
-                "cashAccount" => {
-                    for (currency_code, &amount) in &account.balances {
-                        if amount == 0.0 {
-                            continue;
-                        }
-
-                        let currency = Currency::new(
-                            currency_code.as_str(),
-                            8,
-                            0,
-                            currency_code.as_str(),
-                            CurrencyType::Crypto,
-                        );
-
-                        let total = Money::new(amount, currency);
-                        let locked = Money::new(0.0, currency);
-
-                        balances.push(AccountBalance::new(total, locked, total));
-                    }
+                KrakenFuturesAccountType::CashAccount => {
+                    parse_cash_account_balances(account, &mut balances);
                 }
-                _ => {
-                    let account_type = &account.account_type;
-                    log::debug!("Unknown account type: {account_type}");
+                KrakenFuturesAccountType::Unknown => {
+                    log::debug!("Unknown account type: {:?}", account.account_type);
                 }
             }
         }
@@ -1450,7 +1363,7 @@ impl KrakenFuturesHttpClient {
             account_id,
             AccountType::Margin,
             balances,
-            vec![],
+            margins,
             true,
             UUID4::new(),
             ts_init,
@@ -2050,8 +1963,145 @@ impl KrakenFuturesHttpClient {
     }
 }
 
+fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
+    for (currency_code, currency_info) in &account.currencies {
+        if currency_info.quantity == 0.0 {
+            continue;
+        }
+
+        let currency = Currency::new(
+            currency_code.as_str(),
+            8,
+            0,
+            currency_code.as_str(),
+            CurrencyType::Crypto,
+        );
+
+        let total_amount = currency_info.quantity;
+        let total = Money::new(total_amount, currency);
+
+        // Available can exceed quantity with positive PnL, cap to satisfy invariant
+        let available_amount = currency_info
+            .available
+            .unwrap_or(total_amount)
+            .min(total_amount);
+        let locked_amount = (total_amount - available_amount).max(0.0);
+        let locked = Money::new(locked_amount, currency);
+        let free = total - locked;
+
+        balances.push(AccountBalance::new(total, locked, free));
+    }
+
+    // Multi-collateral accounts track margin in USD even though the
+    // actual collateral is held in various crypto currencies.
+    if let Some(portfolio_value) = account.portfolio_value
+        && portfolio_value > 0.0
+    {
+        let usd_currency = Currency::USD();
+        let total_usd = Money::new(portfolio_value, usd_currency);
+        let available_usd = account
+            .available_margin
+            .unwrap_or(portfolio_value)
+            .min(portfolio_value);
+        let locked_usd = Money::new((portfolio_value - available_usd).max(0.0), usd_currency);
+        let free_usd = total_usd - locked_usd;
+
+        balances.push(AccountBalance::new(total_usd, locked_usd, free_usd));
+    }
+}
+
+fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
+    if let Some(initial_margin) = account.initial_margin
+        && initial_margin > 0.0
+    {
+        let usd_currency = Currency::USD();
+        let maintenance = account
+            .margin_requirements
+            .as_ref()
+            .and_then(|mr| mr.mm)
+            .unwrap_or(0.0);
+        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *KRAKEN_VENUE);
+        margins.push(MarginBalance::new(
+            Money::new(initial_margin, usd_currency),
+            Money::new(maintenance, usd_currency),
+            margin_instrument_id,
+        ));
+    }
+}
+
+fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
+    for (currency_code, &amount) in &account.balances {
+        if amount == 0.0 {
+            continue;
+        }
+
+        let currency = Currency::new(
+            currency_code.as_str(),
+            8,
+            0,
+            currency_code.as_str(),
+            CurrencyType::Crypto,
+        );
+
+        let total = Money::new(amount, currency);
+
+        // Available can exceed balance with positive PnL, cap to satisfy invariant
+        let available = account
+            .auxiliary
+            .as_ref()
+            .and_then(|aux| aux.af)
+            .unwrap_or(amount)
+            .min(amount);
+        let locked = amount - available;
+
+        balances.push(AccountBalance::new(
+            total,
+            Money::new(locked, currency),
+            Money::new(available, currency),
+        ));
+    }
+}
+
+fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
+    if let Some(ref mr) = account.margin_requirements {
+        let im = mr.im.unwrap_or(0.0);
+        let mm = mr.mm.unwrap_or(0.0);
+        if im > 0.0 || mm > 0.0 {
+            let usd_currency = Currency::USD();
+            let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *KRAKEN_VENUE);
+            margins.push(MarginBalance::new(
+                Money::new(im, usd_currency),
+                Money::new(mm, usd_currency),
+                margin_instrument_id,
+            ));
+        }
+    }
+}
+
+fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut Vec<AccountBalance>) {
+    for (currency_code, &amount) in &account.balances {
+        if amount == 0.0 {
+            continue;
+        }
+
+        let currency = Currency::new(
+            currency_code.as_str(),
+            8,
+            0,
+            currency_code.as_str(),
+            CurrencyType::Crypto,
+        );
+
+        let total = Money::new(amount, currency);
+        let locked = Money::new(0.0, currency);
+
+        balances.push(AccountBalance::new(total, locked, total));
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use ahash::AHashMap;
     use rstest::rstest;
 
     use super::*;
@@ -2103,5 +2153,162 @@ mod tests {
         )
         .unwrap();
         assert!(client.instruments_cache.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_multi_collateral_margins() {
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            balances: AHashMap::new(),
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: Some(FuturesMarginRequirements {
+                im: Some(500.0),
+                mm: Some(250.0),
+                lt: None,
+                tt: None,
+            }),
+            portfolio_value: Some(10000.0),
+            available_margin: Some(9500.0),
+            initial_margin: Some(500.0),
+            pnl: None,
+        };
+
+        let mut margins = Vec::new();
+        parse_multi_collateral_margins(&account, &mut margins);
+
+        assert_eq!(margins.len(), 1);
+        let margin = &margins[0];
+        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
+        assert_eq!(margin.instrument_id.venue.as_str(), "KRAKEN");
+        assert_eq!(margin.initial.as_f64(), 500.0);
+        assert_eq!(margin.maintenance.as_f64(), 250.0);
+    }
+
+    #[rstest]
+    fn test_parse_multi_collateral_margins_zero_skipped() {
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            balances: AHashMap::new(),
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: Some(0.0),
+            pnl: None,
+        };
+
+        let mut margins = Vec::new();
+        parse_multi_collateral_margins(&account, &mut margins);
+
+        assert_eq!(margins.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_margin_account_margins() {
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: AHashMap::new(),
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: Some(FuturesMarginRequirements {
+                im: Some(100.0),
+                mm: Some(50.0),
+                lt: None,
+                tt: None,
+            }),
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut margins = Vec::new();
+        parse_margin_account_margins(&account, &mut margins);
+
+        assert_eq!(margins.len(), 1);
+        let margin = &margins[0];
+        assert_eq!(margin.initial.as_f64(), 100.0);
+        assert_eq!(margin.maintenance.as_f64(), 50.0);
+    }
+
+    #[rstest]
+    fn test_parse_margin_account_margins_no_requirements() {
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: AHashMap::new(),
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut margins = Vec::new();
+        parse_margin_account_margins(&account, &mut margins);
+
+        assert_eq!(margins.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_multi_collateral_balances() {
+        let mut currencies = AHashMap::new();
+        currencies.insert(
+            "BTC".to_string(),
+            FuturesFlexCurrency {
+                quantity: 1.5,
+                value: None,
+                collateral: None,
+                available: Some(1.2),
+            },
+        );
+
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            balances: AHashMap::new(),
+            currencies,
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: Some(50000.0),
+            available_margin: Some(45000.0),
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut balances = Vec::new();
+        parse_multi_collateral_balances(&account, &mut balances);
+
+        // BTC balance + USD portfolio balance
+        assert_eq!(balances.len(), 2);
+    }
+
+    #[rstest]
+    fn test_parse_cash_account_balances() {
+        let mut bals = AHashMap::new();
+        bals.insert("ETH".to_string(), 10.0);
+        bals.insert("BTC".to_string(), 0.0); // zero, should be skipped
+
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::CashAccount,
+            balances: bals,
+            currencies: AHashMap::new(),
+            auxiliary: None,
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut balances = Vec::new();
+        parse_cash_account_balances(&account, &mut balances);
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        assert_eq!(balance.total.as_f64(), 10.0);
+        assert_eq!(balance.locked.as_f64(), 0.0);
     }
 }

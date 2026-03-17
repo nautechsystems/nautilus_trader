@@ -1124,14 +1124,14 @@ class NautilusKernel:
         if not self.exec_engine.is_disposed:
             self.exec_engine.dispose()
 
-        self._cache.dispose()
-        self._msgbus.dispose()
-
         if not self.trader.is_disposed:
             self.trader.dispose()
 
         if self._writer:
             self._writer.close()
+
+        self._cache.dispose()
+        self._msgbus.dispose()
 
     def cancel_all_tasks(self) -> None:  # noqa: C901 (too complex)
         """

@@ -27,6 +27,7 @@ use crate::enums::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Environment {
+    /// Represents the environment context for a Nautilus system.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -70,6 +71,7 @@ impl Environment {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LogLevel {
+    /// The log level for log messages.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -113,6 +115,7 @@ impl LogLevel {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LogColor {
+    /// The log color for log messages.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

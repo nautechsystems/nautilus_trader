@@ -35,8 +35,17 @@ pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 /// Number of nanoseconds in one minute.
 pub const NANOSECONDS_IN_MINUTE: u64 = 60 * NANOSECONDS_IN_SECOND;
 
+/// Number of nanoseconds in one day.
+pub const NANOSECONDS_IN_DAY: u64 = 24 * 60 * NANOSECONDS_IN_MINUTE;
+
 /// Number of seconds in one minute.
 pub const SECONDS_IN_MINUTE: u64 = 60;
+
+/// Number of seconds in one hour.
+pub const SECONDS_IN_HOUR: u64 = 60 * SECONDS_IN_MINUTE;
+
+/// Number of seconds in one day.
+pub const SECONDS_IN_DAY: u64 = 24 * SECONDS_IN_HOUR;
 
 // Maximum finite seconds input that can be converted to nanoseconds without overflowing `u64`.
 const MAX_SECS_FOR_NANOS: f64 = u64::MAX as f64 / NANOSECONDS_IN_SECOND as f64;
@@ -58,7 +67,10 @@ const _: () = {
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MILLISECOND == 1_000);
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND == 1_000_000);
     assert!(SECONDS_IN_MINUTE == 60);
+    assert!(SECONDS_IN_HOUR == 3_600);
+    assert!(SECONDS_IN_DAY == 86_400);
     assert!(NANOSECONDS_IN_MINUTE == 60 * NANOSECONDS_IN_SECOND);
+    assert!(NANOSECONDS_IN_DAY == 24 * 60 * NANOSECONDS_IN_MINUTE);
 };
 
 #[inline]

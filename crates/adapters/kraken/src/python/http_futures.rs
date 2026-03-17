@@ -32,7 +32,13 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenFuturesHttpClient {
+    /// High-level HTTP client for the Kraken Futures REST API.
+    ///
+    /// This client wraps the raw client and provides Nautilus domain types.
+    /// It maintains an instrument cache and uses it to parse venue responses
+    /// into Nautilus domain objects.
     #[new]
     #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=None))]
     #[allow(clippy::too_many_arguments)]
@@ -107,6 +113,7 @@ impl KrakenFuturesHttpClient {
         self.inner.credential().map(|c| c.api_key_masked())
     }
 
+    /// Caches an instrument for symbol lookup.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
@@ -114,11 +121,13 @@ impl KrakenFuturesHttpClient {
         Ok(())
     }
 
+    /// Cancels all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
+    /// Requests tradable instruments from Kraken Futures.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -169,6 +178,7 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests the mark price for an instrument.
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -232,6 +242,10 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests account state from the Kraken Futures exchange.
+    ///
+    /// This queries the accounts endpoint and converts the response into a
+    /// Nautilus `AccountState` event containing balances and margin info.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -336,6 +350,7 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Submits a new order to the Kraken Futures exchange.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, reduce_only=false, post_only=false))]
     #[allow(clippy::too_many_arguments)]
@@ -378,6 +393,9 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Modifies an existing order on the Kraken Futures exchange.
+    ///
+    /// Returns the new venue order ID assigned to the modified order.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
     #[allow(clippy::too_many_arguments)]
@@ -410,6 +428,7 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Cancels an order on the Kraken Futures exchange.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -451,6 +470,15 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Cancels multiple orders on the Kraken Futures exchange.
+    ///
+    /// Automatically chunks requests into batches of 50 orders.
+    ///
+    /// # Parameters
+    /// - `venue_order_ids` - List of venue order IDs to cancel.
+    ///
+    /// # Returns
+    /// The total number of successfully cancelled orders.
     #[pyo3(name = "cancel_orders_batch")]
     fn py_cancel_orders_batch<'py>(
         &self,

@@ -504,6 +504,7 @@ class ExecTester(Strategy):
         )
 
         entry_order = order_list.first
+
         if order_side == OrderSide.BUY:
             self.buy_order = entry_order
             self.buy_stop_order = None
@@ -569,6 +570,7 @@ class ExecTester(Strategy):
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
         )
+
         if order is None:
             return
 
@@ -694,6 +696,7 @@ class ExecTester(Strategy):
             trigger_price = instrument.make_price(best_ask + stop_offset)
 
         limit_price = None
+
         if self.config.stop_order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
             if self.config.stop_limit_offset_ticks:
                 limit_offset = instrument.price_increment * self.config.stop_limit_offset_ticks
@@ -741,6 +744,7 @@ class ExecTester(Strategy):
             trigger_price = instrument.make_price(best_bid - stop_offset)
 
         limit_price = None
+
         if self.config.stop_order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
             if self.config.stop_limit_offset_ticks:
                 limit_offset = instrument.price_increment * self.config.stop_limit_offset_ticks
@@ -820,6 +824,7 @@ class ExecTester(Strategy):
                     instrument_id=self.config.instrument_id,
                     strategy_id=self.id,
                 )
+
                 if open_orders:
                     self.cancel_orders(open_orders, client_id=self.client_id)
             else:

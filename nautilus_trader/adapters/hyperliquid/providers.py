@@ -53,6 +53,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             if product_types is None
             else frozenset(HyperliquidProductType(pt) for pt in product_types)
         )
+
         if not resolved_types:
             raise ValueError("product_types must contain at least one entry")
 

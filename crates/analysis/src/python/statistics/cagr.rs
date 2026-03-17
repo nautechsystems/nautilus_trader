@@ -21,7 +21,16 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::cagr::CAGR};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CAGR {
+    /// Calculates the Compound Annual Growth Rate (CAGR) for returns.
+    ///
+    /// CAGR represents the mean annual growth rate of an investment over a specified period,
+    /// assuming the profits were reinvested at the end of each period.
+    ///
+    /// Formula: CAGR = (Ending Value / Beginning Value)^(Period/Days) - 1
+    ///
+    /// For returns: CAGR = ((1 + Total Return)^(Period/Days)) - 1
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

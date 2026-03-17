@@ -90,6 +90,7 @@ def get_cached_betfair_client(
         request_rate_per_second,
         order_request_rate_per_second,
     )
+
     if cache_key in _CACHED_BETFAIR_CLIENTS:
         return _CACHED_BETFAIR_CLIENTS[cache_key]
 

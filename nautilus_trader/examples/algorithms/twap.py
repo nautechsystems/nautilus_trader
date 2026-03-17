@@ -215,6 +215,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             return  # Done
 
         scheduled_sizes: list[Quantity] = [qty_per_interval] * num_intervals
+
         if qty_remainder:
             scheduled_sizes.append(instrument.make_qty(qty_remainder))
 

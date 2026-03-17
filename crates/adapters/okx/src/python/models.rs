@@ -18,6 +18,7 @@ use pyo3::prelude::*;
 use crate::http::models::OKXBalanceDetail;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXBalanceDetail {
     #[getter]
     fn ccy(&self) -> String {

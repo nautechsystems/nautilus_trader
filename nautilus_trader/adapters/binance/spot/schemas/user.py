@@ -320,6 +320,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             # Determine commission
             commission_asset = self.N
             commission_amount = self.n
+
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:

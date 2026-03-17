@@ -28,6 +28,10 @@ use crate::common::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
+)]
 pub struct KrakenDataClientConfig {
     pub api_key: Option<String>,
     pub api_secret: Option<String>,
@@ -95,6 +99,10 @@ impl KrakenDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenExecClientConfig {
     pub trader_id: TraderId,

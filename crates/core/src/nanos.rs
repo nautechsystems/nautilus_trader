@@ -67,6 +67,8 @@ use serde::{
     de::{self, Visitor},
 };
 
+use crate::datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND};
+
 /// Represents a duration in nanoseconds.
 pub type DurationNanos = u64;
 
@@ -98,6 +100,32 @@ impl UnixNanos {
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
         self.0
+    }
+
+    /// Creates a new [`UnixNanos`] from a millisecond timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result overflows `u64`.
+    #[must_use]
+    pub const fn from_millis(millis: u64) -> Self {
+        match millis.checked_mul(NANOSECONDS_IN_MILLISECOND) {
+            Some(nanos) => Self(nanos),
+            None => panic!("UnixNanos overflow in from_millis"),
+        }
+    }
+
+    /// Creates a new [`UnixNanos`] from a microsecond timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result overflows `u64`.
+    #[must_use]
+    pub const fn from_micros(micros: u64) -> Self {
+        match micros.checked_mul(NANOSECONDS_IN_MICROSECOND) {
+            Some(nanos) => Self(nanos),
+            None => panic!("UnixNanos overflow in from_micros"),
+        }
     }
 
     /// Returns the underlying value as `i64`.
@@ -1305,5 +1333,133 @@ mod tests {
                 prop_assert!(result.is_err(), "Should error for invalid f64: {}", val);
             }
         }
+    }
+
+    #[rstest]
+    fn test_from_millis_zero() {
+        let nanos = UnixNanos::from_millis(0);
+        assert_eq!(nanos.as_u64(), 0);
+    }
+
+    #[rstest]
+    fn test_from_millis_one() {
+        let nanos = UnixNanos::from_millis(1);
+        assert_eq!(nanos.as_u64(), 1_000_000);
+    }
+
+    #[rstest]
+    fn test_from_millis_one_second() {
+        let nanos = UnixNanos::from_millis(1_000);
+        assert_eq!(nanos.as_u64(), 1_000_000_000);
+    }
+
+    #[rstest]
+    fn test_from_millis_realistic_timestamp() {
+        // 2023-11-14T22:13:20Z = 1700000000000 ms
+        let nanos = UnixNanos::from_millis(1_700_000_000_000);
+        assert_eq!(nanos.as_u64(), 1_700_000_000_000_000_000);
+        assert_eq!(
+            nanos.to_datetime_utc(),
+            Utc.with_ymd_and_hms(2023, 11, 14, 22, 13, 20).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_from_millis_max_safe() {
+        let max_ms = u64::MAX / 1_000_000;
+        let nanos = UnixNanos::from_millis(max_ms);
+        assert_eq!(nanos.as_u64(), max_ms * 1_000_000);
+    }
+
+    #[rstest]
+    fn test_from_millis_matches_manual_conversion() {
+        let ms = 1_625_474_304_765_u64;
+        let expected = ms * 1_000_000;
+        assert_eq!(UnixNanos::from_millis(ms).as_u64(), expected);
+    }
+
+    #[rstest]
+    fn test_from_micros_zero() {
+        let nanos = UnixNanos::from_micros(0);
+        assert_eq!(nanos.as_u64(), 0);
+    }
+
+    #[rstest]
+    fn test_from_micros_one() {
+        let nanos = UnixNanos::from_micros(1);
+        assert_eq!(nanos.as_u64(), 1_000);
+    }
+
+    #[rstest]
+    fn test_from_micros_one_second() {
+        let nanos = UnixNanos::from_micros(1_000_000);
+        assert_eq!(nanos.as_u64(), 1_000_000_000);
+    }
+
+    #[rstest]
+    fn test_from_micros_one_millisecond() {
+        let nanos = UnixNanos::from_micros(1_000);
+        assert_eq!(nanos.as_u64(), 1_000_000);
+        assert_eq!(UnixNanos::from_micros(1_000), UnixNanos::from_millis(1));
+    }
+
+    #[rstest]
+    fn test_from_micros_realistic_timestamp() {
+        let micros = 1_700_000_000_000_000_u64;
+        let nanos = UnixNanos::from_micros(micros);
+        assert_eq!(nanos.as_u64(), 1_700_000_000_000_000_000);
+    }
+
+    #[rstest]
+    fn test_from_micros_max_safe() {
+        let max_us = u64::MAX / 1_000;
+        let nanos = UnixNanos::from_micros(max_us);
+        assert_eq!(nanos.as_u64(), max_us * 1_000);
+    }
+
+    #[rstest]
+    fn test_from_micros_matches_manual_conversion() {
+        let us = 1_000_000_123_456_u64;
+        let expected = us * 1_000;
+        assert_eq!(UnixNanos::from_micros(us).as_u64(), expected);
+    }
+
+    #[rstest]
+    fn test_from_millis_and_micros_consistency() {
+        assert_eq!(
+            UnixNanos::from_millis(1_000),
+            UnixNanos::from_micros(1_000_000)
+        );
+        assert_eq!(
+            UnixNanos::from_millis(60_000),
+            UnixNanos::from_micros(60_000_000)
+        );
+    }
+
+    #[rstest]
+    fn test_from_millis_round_trip_to_datetime() {
+        let ms = 1_707_577_123_456_u64;
+        let nanos = UnixNanos::from_millis(ms);
+        let dt = nanos.to_datetime_utc();
+        assert_eq!(dt.timestamp_millis() as u64, ms);
+    }
+
+    #[rstest]
+    fn test_from_micros_preserves_sub_millisecond() {
+        let micros = 1_700_000_000_000_123_u64;
+        let nanos = UnixNanos::from_micros(micros);
+        assert_eq!(nanos.as_u64() % 1_000_000, 123_000);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "UnixNanos overflow in from_millis")]
+    fn test_from_millis_overflow_panics() {
+        let _ = UnixNanos::from_millis(u64::MAX / 1_000_000 + 1);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "UnixNanos overflow in from_micros")]
+    fn test_from_micros_overflow_panics() {
+        let _ = UnixNanos::from_micros(u64::MAX / 1_000 + 1);
     }
 }

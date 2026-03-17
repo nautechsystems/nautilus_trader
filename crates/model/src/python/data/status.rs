@@ -97,6 +97,7 @@ impl InstrumentStatus {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentStatus {
+    /// Represents an event that indicates a change in an instrument market status.
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (instrument_id, action, ts_event, ts_init, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None))]
@@ -213,6 +214,7 @@ impl InstrumentStatus {
         from_dict_pyo3(py, values)
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(instrument_id: &InstrumentId) -> HashMap<String, String> {

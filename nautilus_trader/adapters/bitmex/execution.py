@@ -564,6 +564,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         trailing_offset = None
         pyo3_trailing_offset_type = None
+
         if order.order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             trailing_offset = (
                 float(order.trailing_offset) if order.trailing_offset is not None else None
@@ -709,6 +710,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         raw_offset = params.get("peg_offset_value")
         peg_offset: float | None = None
+
         if raw_offset is not None:
             try:
                 peg_offset = float(raw_offset)

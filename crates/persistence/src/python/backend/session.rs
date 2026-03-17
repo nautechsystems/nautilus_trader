@@ -28,6 +28,7 @@ use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
 #[pyclass(frozen, eq, eq_int, from_py_object)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
@@ -40,6 +41,7 @@ pub enum NautilusDataType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl NautilusDataType {
     const fn __hash__(&self) -> isize {
         *self as isize
@@ -47,6 +49,7 @@ impl NautilusDataType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataBackendSession {
     #[new]
     #[pyo3(signature=(chunk_size=10_000))]
@@ -54,16 +57,15 @@ impl DataBackendSession {
         Self::new(chunk_size)
     }
 
-    /// Query a file for its records. the caller must specify `T` to indicate
-    /// the kind of data expected from this query.
+    /// Registers a Parquet file and adds a batch stream for decoding.
     ///
-    /// `table_name`: Logical `table_name` assigned to this file. Queries to this file should address the
-    /// file by its table name.
-    /// `file_path`: Path to file
-    /// `sql_query`: A custom sql query to retrieve records from file. If no query is provided a default
-    /// query "SELECT * FROM <`table_name`>" is run.
+    /// The caller must specify `T` to indicate the kind of data expected. `table_name` is
+    /// the logical name for queries; `file_path` is the Parquet path; `sql_query` defaults
+    /// to `SELECT * FROM {table_name} ORDER BY ts_init` if `None`.
     ///
-    /// # Safety
+    /// When `custom_type_name` is `Some`, it is merged into each batch's schema metadata
+    /// before decoding (as `type_name`). Use this for custom data when Parquet/DataFusion
+    /// does not preserve schema metadata so the decoder can look up the type in the registry.
     ///
     /// The file data must be ordered by the `ts_init` in ascending order for this
     /// to work correctly.
@@ -121,6 +123,7 @@ impl DataBackendSession {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataQueryResult {
     /// The reader implements an iterator.
     const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {

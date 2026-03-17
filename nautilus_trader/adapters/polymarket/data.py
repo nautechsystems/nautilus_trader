@@ -240,6 +240,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._create_local_book(command.instrument_id)
 
         token_id = get_polymarket_token_id(command.instrument_id)
+
         if self._ws_client.is_connected():
             await self._ws_client.subscribe(token_id)
         else:
@@ -251,6 +252,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._create_local_book(command.instrument_id)
 
         token_id = get_polymarket_token_id(command.instrument_id)
+
         if self._ws_client.is_connected():
             await self._ws_client.subscribe(token_id)
         else:
@@ -259,6 +261,7 @@ class PolymarketDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
+
         if self._ws_client.is_connected():
             await self._ws_client.subscribe(token_id)
         else:
@@ -401,6 +404,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                 ts_init=now_ns,
                 drop_quotes_missing_side=self._config.drop_quotes_missing_side,
             )
+
             if quote is None:
                 self._log.warning(
                     f"Dropping QuoteTick for {instrument.id}: missing bid or ask prices in snapshot",
@@ -609,6 +613,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                 ts_init=ts_init,
                 drop_quotes_missing_side=self._config.drop_quotes_missing_side,
             )
+
             if quote is not None:
                 self._last_quotes[instrument.id] = quote
                 self._handle_data(quote)

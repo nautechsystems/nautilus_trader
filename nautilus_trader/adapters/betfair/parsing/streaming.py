@@ -108,6 +108,7 @@ def market_change_to_updates(  # noqa: C901
     # Handle market data updates
     book_updates: list[OrderBookDeltas] = []
     bsp_book_updates: list[BSPOrderBookDelta] = []
+
     if mc.rc is not None:
         for rc in mc.rc:
             instrument_id = betfair_instrument_id(
@@ -125,6 +126,7 @@ def market_change_to_updates(  # noqa: C901
                     ts_event,
                     ts_init,
                 )
+
                 if snapshot is not None:
                     updates.append(snapshot)
             else:
@@ -160,6 +162,7 @@ def market_change_to_updates(  # noqa: C901
                 ts_event,
                 ts_init,
             )
+
             if bsp_deltas is not None:
                 bsp_book_updates.extend(bsp_deltas)
 
@@ -433,6 +436,7 @@ def runner_change_to_order_book_deltas(
     if rc.atb is not None:
         for idx, bid in enumerate(rc.atb):
             flags = 0
+
             if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
@@ -454,6 +458,7 @@ def runner_change_to_order_book_deltas(
     if rc.atl is not None:
         for idx, ask in enumerate(rc.atl):
             flags = 0
+
             if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
@@ -490,6 +495,7 @@ def runner_change_to_betfair_ticker(
         None,
         None,
     )
+
     if runner.ltp:
         last_traded_price = runner.ltp
     if runner.tv:
@@ -527,6 +533,7 @@ def runner_change_to_bsp_order_book_deltas(
     if rc.spl is not None:
         for idx, spl in enumerate(rc.spl):
             flags = 0
+
             if idx == bids_len - 1 and asks_len == 0:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
@@ -547,6 +554,7 @@ def runner_change_to_bsp_order_book_deltas(
     if rc.spb is not None:
         for idx, spb in enumerate(rc.spb):
             flags = 0
+
             if idx == asks_len - 1:
                 # F_LAST, 1 << 7
                 # Last message in the book event or packet from the venue for a given `instrument_id`
@@ -594,6 +602,7 @@ async def generate_trades_list(
     filled: list[ClearedOrderSummary] = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
     )
+
     if not filled:
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []

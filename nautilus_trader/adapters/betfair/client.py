@@ -140,6 +140,7 @@ class BetfairHttpClient:
             body=body,
             keys=keys,
         )
+
         if url not in SKIP_LOG_URLS:
             self._log.debug(f"[RESP] {response.body.decode()}")
         return response

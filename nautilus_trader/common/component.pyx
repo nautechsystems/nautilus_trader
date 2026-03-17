@@ -2439,6 +2439,12 @@ cdef class MessageBus:
         """
         self._log.debug("Closing message bus")
 
+        self._endpoints.clear()
+        self._patterns.clear()
+        self._subscriptions.clear()
+        self._correlation_index.clear()
+        self._listeners.clear()
+
         if self._database is not None:
             self._database.close()
 

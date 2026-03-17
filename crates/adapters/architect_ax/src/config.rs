@@ -27,6 +27,10 @@ use crate::common::credential::credential_env_vars;
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
+)]
 #[derive(Clone, Debug)]
 pub struct AxDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
@@ -146,6 +150,10 @@ impl AxDataClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.architect",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
 )]
 #[derive(Clone, Debug)]
 pub struct AxExecClientConfig {

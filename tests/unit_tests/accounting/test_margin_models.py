@@ -199,6 +199,7 @@ class TestCustomMarginModelConfig:
                 use_quote_for_inverse=False,
             ):
                 notional = instrument.notional_value(quantity, price, use_quote_for_inverse)
+
                 if self.use_leverage:
                     adjusted_notional = notional.as_decimal() / leverage
                 else:

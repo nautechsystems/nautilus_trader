@@ -28,6 +28,18 @@ criteria = "safe-to-deploy"
 delta = "1.18.0 -> 1.18.1"
 notes = "SIMD decode optimizations, serde alloc gate removal. No new deps, no build script changes."
 
+[[audits.lz4_flex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.12.0 -> 0.12.1"
+notes = "Decompressor safety: adds offset-zero and offset-OOB checks, removes uninitialized data workaround. No new unsafe."
+
+[[audits.portable-atomic-util]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.5 -> 0.2.6"
+notes = "Repository extraction from portable-atomic monorepo. Inlines version.rs build script, doc/lint updates. No logic changes."
+
 [[audits.sysinfo]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -44,6 +56,12 @@ notes = "Unpins objc2-* deps, fixes Linux disk size (f_frsize vs f_bsize), adapt
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "3.26.0 -> 3.27.0"
+
+[[audits.tinyvec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.10.0 -> 1.11.0"
+notes = "Adds is_full, as_mut_inner, defmt support. Switches serde to serde_core. Delegates Debug to slice. No unsafe changes."
 
 [[audits.tokio-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"

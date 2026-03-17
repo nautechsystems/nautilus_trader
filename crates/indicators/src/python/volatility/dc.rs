@@ -19,7 +19,9 @@ use pyo3::prelude::*;
 use crate::{indicator::Indicator, volatility::dc::DonchianChannel};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DonchianChannel {
+    /// Creates a new `DonchianChannel` instance.
     #[new]
     #[must_use]
     pub fn py_new(period: usize) -> Self {

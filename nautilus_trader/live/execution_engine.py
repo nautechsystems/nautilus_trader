@@ -69,6 +69,7 @@ from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
@@ -83,6 +84,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
@@ -902,11 +904,12 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("No execution clients to check position consistency, early return")
             return
 
-        venue_positions = await self._query_position_status_reports()
+        venue_positions, failed_position_report_venues = await self._query_position_status_reports()
 
         await self._process_cached_position_discrepancies(
             positions_by_instrument,
             venue_positions,
+            failed_position_report_venues,
         )
 
         await self._process_venue_reported_positions(
@@ -920,8 +923,10 @@ class LiveExecutionEngine(ExecutionEngine):
         for iid in stale:
             self._position_recon_retries.pop(iid, None)
 
-    async def _query_position_status_reports(self) -> dict[InstrumentId, PositionStatusReport]:
-        clients = self._clients.values()
+    async def _query_position_status_reports(
+        self,
+    ) -> tuple[dict[InstrumentId, PositionStatusReport], set[Venue | None]]:
+        clients = list(self._clients.values())
 
         tasks = [
             c.generate_position_status_reports(
@@ -941,14 +946,17 @@ class LiveExecutionEngine(ExecutionEngine):
             position_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             self._log.error(f"Failed to gather position status reports: {e}")
-            return {}
+            return {}, {client.venue for client in clients}
 
         # Build mapping: instrument_id -> venue report
         venue_positions: dict[InstrumentId, PositionStatusReport] = {}
-        for reports_or_exception in position_reports_all:
+        failed_venues: set[Venue | None] = set()
+        for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
             if isinstance(reports_or_exception, Exception):
+                failed_venues.add(client.venue)
                 self._log.error(
-                    f"Failed to generate position status reports: {reports_or_exception}",
+                    f"Failed to generate position status reports for venue {client.venue}: "
+                    f"{reports_or_exception}",
                 )
                 continue
 
@@ -956,17 +964,29 @@ class LiveExecutionEngine(ExecutionEngine):
             for report in reports:
                 venue_positions[report.instrument_id] = report
 
-        return venue_positions
+        return venue_positions, failed_venues
 
     async def _process_cached_position_discrepancies(
         self,
         positions_by_instrument: dict[InstrumentId, list[Position]],
         venue_positions: dict[InstrumentId, PositionStatusReport],
+        failed_position_report_venues: set[Venue | None] | None = None,
     ) -> None:
         clients = self._clients.values()
 
         for instrument_id, cached_positions in positions_by_instrument.items():
             venue_report = venue_positions.get(instrument_id)
+
+            if venue_report is None and self._did_position_status_query_fail(
+                instrument_id,
+                failed_position_report_venues,
+            ):
+                self._log.warning(
+                    f"Skipping position reconciliation for {instrument_id}: "
+                    f"failed to query venue position status for {instrument_id.venue}",
+                    LogColor.YELLOW,
+                )
+                continue
 
             has_discrepancy = self._check_position_discrepancy(
                 cached_positions,
@@ -1001,7 +1021,11 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.YELLOW,
             )
 
-            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            missing_fills, had_fill_query_errors = await self._query_and_find_missing_fills(
+                instrument_id,
+                clients,
+            )
+
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-read positions from cache (may have changed during reconciliation)
@@ -1011,7 +1035,29 @@ class LiveExecutionEngine(ExecutionEngine):
                 venue_report,
                 instrument_id,
             )
+
             if still_discrepant:
+                reconciliation_report = venue_report or self._create_flat_position_report(
+                    instrument_id=instrument_id,
+                    account_id=cached_positions[0].account_id,
+                )
+
+                if (
+                    not had_fill_query_errors
+                    and self.generate_missing_orders
+                    and self._reconcile_position_report(reconciliation_report)
+                ):
+                    current_positions = self._cache.positions_open(instrument_id=instrument_id)
+                    still_discrepant = self._check_position_discrepancy(
+                        current_positions,
+                        venue_report,
+                        instrument_id,
+                    )
+
+                if not still_discrepant:
+                    self._position_recon_retries.pop(instrument_id, None)
+                    continue
+
                 self._position_recon_retries[instrument_id] = retries + 1
                 if retries + 1 >= self.position_check_retries:
                     self._log.error(
@@ -1020,7 +1066,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"(cached_qty={cached_qty}, venue_qty={venue_qty}); "
                         f"no further reconciliation attempts will be made",
                     )
-                elif not missing_fills:
+                elif not missing_fills and not had_fill_query_errors:
                     self._log.warning(
                         f"Position discrepancy for {instrument_id} persists but no missing fills found; "
                         f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
@@ -1029,6 +1075,38 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
             else:
                 self._position_recon_retries.pop(instrument_id, None)
+
+    def _did_position_status_query_fail(
+        self,
+        instrument_id: InstrumentId,
+        failed_position_report_venues: set[Venue | None] | None,
+    ) -> bool:
+        if not failed_position_report_venues:
+            return False
+
+        return (
+            None in failed_position_report_venues
+            or instrument_id.venue in failed_position_report_venues
+        )
+
+    def _create_flat_position_report(
+        self,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+    ) -> PositionStatusReport:
+        ts_now = self._clock.timestamp_ns()
+        instrument = self._cache.instrument(instrument_id)
+        quantity = instrument.make_qty(0) if instrument is not None else Quantity.zero()
+
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=PositionSide.FLAT,
+            quantity=quantity,
+            report_id=UUID4(),
+            ts_last=ts_now,
+            ts_init=ts_now,
+        )
 
     def _check_position_discrepancy(
         self,
@@ -1133,7 +1211,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.YELLOW,
             )
 
-            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            missing_fills, had_fill_query_errors = await self._query_and_find_missing_fills(
+                instrument_id,
+                clients,
+            )
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-check using tolerance-aware comparison
@@ -1143,6 +1224,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 venue_report,
                 instrument_id,
             )
+
             if still_discrepant:
                 cached_qty_now = sum(p.signed_decimal_qty() for p in cached_after)
                 self._position_recon_retries[instrument_id] = retries + 1
@@ -1153,7 +1235,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"(cached_qty={cached_qty_now}, venue_qty={venue_qty}); "
                         f"no further reconciliation attempts will be made",
                     )
-                elif not missing_fills:
+                elif not missing_fills and not had_fill_query_errors:
                     self._log.warning(
                         f"Position discrepancy for {instrument_id} persists but no missing fills found; "
                         f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
@@ -1167,7 +1249,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         instrument_id: InstrumentId,
         clients: Iterable[ExecutionClient],
-    ) -> list[FillReport]:
+    ) -> tuple[list[FillReport], bool]:
         fill_lookback_start = self._clock.utc_now() - pd.Timedelta(
             minutes=self.position_check_lookback_mins,
         )
@@ -1189,8 +1271,10 @@ class LiveExecutionEngine(ExecutionEngine):
         fill_reports_all = await asyncio.gather(*fill_tasks, return_exceptions=True)
 
         venue_fills: list[FillReport] = []
+        had_fill_query_errors = False
         for fills_or_exception in fill_reports_all:
             if isinstance(fills_or_exception, Exception):
+                had_fill_query_errors = True
                 self._log.error(
                     f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
                 )
@@ -1213,7 +1297,7 @@ class LiveExecutionEngine(ExecutionEngine):
             and fill.trade_id not in self._recent_fills_cache
         ]
 
-        return missing_fills
+        return missing_fills, had_fill_query_errors
 
     async def _reconcile_missing_fills(
         self,
@@ -1602,6 +1686,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         if report.filled_qty is not None
                         else Quantity.zero(order.quantity.precision)
                     )
+
                     if order.filled_qty != report_filled:
                         should_reconcile = True
                         reconcile_reason = (
@@ -2185,6 +2270,7 @@ class LiveExecutionEngine(ExecutionEngine):
         client_order_id: ClientOrderId | None = self._cache.client_order_id(
             report.venue_order_id,
         )
+
         if client_order_id is None:
             self._log.warning(
                 f"FillReport received before OrderStatusReport for {report.venue_order_id!r}, "
@@ -2203,6 +2289,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     instrument_id=report.instrument_id,
                     order_side=None,  # Don't filter by side to find any matching order
                 )
+
                 if order is not None:
                     self._log.debug(
                         f"Found order {order.client_order_id} by venue_order_id "
@@ -2495,6 +2582,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Calculate current position average price if available (needed for reconciliation)
             current_avg_px = None
+
             if positions_open:
                 # Calculate weighted average price of current positions
                 total_value = Decimal(0)
@@ -2535,11 +2623,13 @@ class LiveExecutionEngine(ExecutionEngine):
                 diff_quantity=diff_quantity,
                 current_avg_px=current_avg_px,
             )
+
             if diff_report:
                 self._reconcile_order_report(diff_report, trades=[], is_external=False)
         elif quantities_match and report.avg_px_open is not None:
             # Quantities match, but verify avg_px_open also matches
             current_avg_px = None
+
             if positions_open:
                 # Calculate weighted average price of current positions
                 total_value = Decimal(0)
@@ -2600,6 +2690,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Use current position average price for closing
         close_price = None
+
         if current_avg_px is not None:
             close_price = instrument.make_price(current_avg_px)
         else:
@@ -2608,6 +2699,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 close_price = quote.ask_price if close_side == OrderSide.BUY else quote.bid_price
 
         close_result = False
+
         if close_price:
             # Fix 2: Check for matching cached order before creating synthetic order
             close_avg_px = close_price.as_decimal()
@@ -2668,6 +2760,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Use venue's reported average price for the new position
         open_price = None
+
         if report.avg_px_open is not None:
             open_price = instrument.make_price(report.avg_px_open)
         else:
@@ -2699,6 +2792,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
 
         open_result = False
+
         if open_price:
             # Fix 2: Check for matching cached order before creating synthetic order
             open_avg_px = open_price.as_decimal()
@@ -2815,6 +2909,7 @@ class LiveExecutionEngine(ExecutionEngine):
             # Only reuse cached orders for netting mode - hedge mode positions are tracked
             # separately and reusing orders could match the wrong position
             matching_diff_order = None
+
             if report.venue_position_id is None:
                 matching_diff_order = self._find_matching_cached_order(
                     instrument_id=report.instrument_id,
@@ -2871,6 +2966,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Only reuse cached orders for netting mode
             matching_diff_order = None
+
             if report.venue_position_id is None:
                 matching_diff_order = self._find_matching_cached_order(
                     instrument_id=report.instrument_id,
@@ -2999,6 +3095,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     instrument_id=report.instrument_id,
                     order_side=report.order_side,
                 )
+
                 if cached_order is not None:
                     client_order_id = cached_order.client_order_id
                     self._log.debug(
@@ -3077,6 +3174,7 @@ class LiveExecutionEngine(ExecutionEngine):
             if order.is_closed:
                 # Use the higher precision for tolerance check
                 precision = max(report.filled_qty.precision, order.filled_qty.precision)
+
                 if is_within_single_unit_tolerance(
                     report.filled_qty.as_decimal(),
                     order.filled_qty.as_decimal(),
@@ -3224,6 +3322,7 @@ class LiveExecutionEngine(ExecutionEngine):
         current_total = sum(
             event.last_qty for event in order.events if isinstance(event, OrderFilled)
         )
+
         if current_total != order.filled_qty:
             self._log.error(
                 f"INCONSISTENCY DETECTED before applying fill: "
@@ -3418,6 +3517,7 @@ class LiveExecutionEngine(ExecutionEngine):
             # All unclaimed reconciliation uses EXTERNAL strategy ID
             # Tags distinguish the source for filtering purposes
             strategy_id = StrategyId("EXTERNAL")
+
             if is_external:
                 # Actual external order found on venue
                 tags = ["VENUE"]

@@ -516,6 +516,7 @@ def bet_to_order_status_report(
         use_cached = False
 
     order_status = determine_order_status(order)
+
     if (
         use_cached
         and fill_qty > Quantity.zero(BETFAIR_QUANTITY_PRECISION)

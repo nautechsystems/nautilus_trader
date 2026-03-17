@@ -21,7 +21,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl RelativeVolatilityIndex {
+    /// An indicator which calculates a Relative Volatility Index (RVI) across a rolling window.
     #[new]
     #[pyo3(signature = (period, scalar=None, ma_type=None))]
     #[must_use]

@@ -37,6 +37,10 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Position {
+    /// Represents a position in a market.
+    ///
+    /// The position ID may be assigned at the trading venue, or can be system
+    /// generated depending on a strategies OMS (Order Management System) settings.
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -83,12 +87,14 @@ impl Position {
         self.id
     }
 
+    /// Returns the instrument symbol.
     #[getter]
     #[pyo3(name = "symbol")]
     fn py_symbol(&self) -> Symbol {
         self.symbol()
     }
 
+    /// Returns the trading venue.
     #[getter]
     #[pyo3(name = "venue")]
     fn py_venue(&self) -> Venue {
@@ -239,106 +245,137 @@ impl Position {
         self.adjustments.clone()
     }
 
+    /// Returns unique client order IDs from all fill events, sorted.
     #[getter]
     #[pyo3(name = "client_order_ids")]
     fn py_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.client_order_ids()
     }
 
+    /// Returns unique venue order IDs from all fill events, sorted.
     #[getter]
     #[pyo3(name = "venue_order_ids")]
     fn py_venue_order_ids(&self) -> Vec<VenueOrderId> {
         self.venue_order_ids()
     }
 
+    /// Returns unique trade IDs from all fill events, sorted.
     #[getter]
     #[pyo3(name = "trade_ids")]
     fn py_trade_ids(&self) -> Vec<TradeId> {
         self.trade_ids()
     }
 
+    /// Returns the last `OrderFilled` event for the position (if any after purging).
     #[getter]
     #[pyo3(name = "last_event")]
     fn py_last_event(&self) -> Option<OrderFilled> {
         self.last_event()
     }
 
+    /// Returns the last `TradeId` for the position (if any after purging).
     #[getter]
     #[pyo3(name = "last_trade_id")]
     fn py_last_trade_id(&self) -> Option<TradeId> {
         self.last_trade_id()
     }
 
+    /// Returns the count of order fill events applied to this position.
     #[getter]
     #[pyo3(name = "event_count")]
     fn py_event_count(&self) -> usize {
         self.events.len()
     }
 
+    /// Returns whether the position is currently open (has quantity and no close timestamp).
     #[getter]
     #[pyo3(name = "is_open")]
     fn py_is_open(&self) -> bool {
         self.is_open()
     }
 
+    /// Returns whether the position is closed (flat with a close timestamp).
     #[getter]
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Returns whether the position is long (positive quantity).
     #[getter]
     #[pyo3(name = "is_long")]
     fn py_is_long(&self) -> bool {
         self.is_long()
     }
 
+    /// Returns whether the position is short (negative quantity).
     #[getter]
     #[pyo3(name = "is_short")]
     fn py_is_short(&self) -> bool {
         self.is_short()
     }
 
+    /// Returns unrealized P&L based on the last price.
     #[pyo3(name = "unrealized_pnl")]
     fn py_unrealized_pnl(&self, last: Price) -> Money {
         self.unrealized_pnl(last)
     }
 
+    /// Returns total P&L (realized + unrealized) based on the last price.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(&self, last: Price) -> Money {
         self.total_pnl(last)
     }
 
+    /// Returns the cumulative commissions for the position as a vector.
     #[pyo3(name = "commissions")]
     fn py_commissions(&self) -> Vec<Money> {
         self.commissions()
     }
 
+    /// Applies an `OrderFilled` event to this position.
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, fill: &OrderFilled) {
         self.apply(fill);
     }
 
+    /// Applies a position adjustment event.
+    ///
+    /// This method handles adjustments to position quantity or realized PnL that occur
+    /// outside of normal order fills, such as:
+    /// - Commission adjustments in base currency (crypto spot markets).
+    /// - Funding payments (perpetual futures).
+    ///
+    /// The adjustment event is stored in the position's adjustment history for full audit trail.
     #[pyo3(name = "apply_adjustment")]
     fn py_apply_adjustment(&mut self, adjustment: PositionAdjusted) {
         self.apply_adjustment(adjustment);
     }
 
+    /// Purges all order fill events for the given client order ID and recalculates derived state.
+    ///
+    /// # Warning
+    ///
+    /// This operation recalculates the entire position from scratch after removing the specified
+    /// order's fills. This is an expensive operation and should be used sparingly.
     #[pyo3(name = "purge_events_for_order")]
     fn py_purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
         self.purge_events_for_order(client_order_id);
     }
 
+    /// Returns whether the given order side is opposite to the position entry side.
     #[pyo3(name = "is_opposite_side")]
     fn py_is_opposite_side(&self, side: OrderSide) -> bool {
         self.is_opposite_side(side)
     }
 
+    /// Calculates profit and loss from the given prices and quantity.
     #[pyo3(name = "calculate_pnl")]
     fn py_calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
         self.calculate_pnl(avg_px_open, avg_px_close, quantity)
     }
 
+    /// Calculates the notional value based on the last price.
     #[pyo3(name = "notional_value")]
     fn py_notional_value(&self, price: Price) -> Money {
         self.notional_value(price)

@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -145,6 +146,43 @@ class TestMarginAccount:
         # Assert
         assert account.margin_maint(AUDUSD_SIM.id) == margin
         assert account.margins_maint() == {AUDUSD_SIM.id: margin}
+
+    def test_apply_replaces_margin_balances_from_account_state(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        event = AccountState(
+            account_id=account.id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12_500, USD),
+                    Money(25_000, USD),
+                    USDJPY_SIM.id,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event)
+
+        # Assert
+        assert account.margin_init(USDJPY_SIM.id) == Money(12_500, USD)
+        assert account.margin_maint(USDJPY_SIM.id) == Money(25_000, USD)
+        assert account.margin_init(AUDUSD_SIM.id) is None
+        assert account.margin_maint(AUDUSD_SIM.id) is None
 
     def test_recalculate_balance_uses_raw_and_clamps(self):
         # Arrange

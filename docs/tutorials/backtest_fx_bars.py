@@ -1,25 +1,17 @@
 # %% [markdown]
-# # Backtest: FX bar data
+# # Backtest with FX Bar Data
 #
-# Tutorial for [NautilusTrader](https://nautilustrader.io/docs/latest/) a high-performance algorithmic trading platform and event-driven backtester.
+# Run an EMA cross strategy on USD/JPY bar data with rollover interest simulation
+# and a probabilistic fill model. This tutorial uses bundled test data, so it
+# runs without any external downloads.
 #
 # [View source on GitHub](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_fx_bars.py).
 
 # %% [markdown]
-# ## Overview
-#
-# This tutorial runs through how to set up a `BacktestEngine` (low-level API) for a single 'one-shot' backtest run using FX bar data.
-
-# %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.12+ installed
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`uv pip install nautilus_trader`)
-
-# %% [markdown]
-# ## Imports
-#
-# We'll start with all of our imports for the remainder of this tutorial.
+# - Python 3.12+
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
 
 # %%
 from decimal import Decimal
@@ -45,7 +37,7 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 # %% [markdown]
-# ## Set up backtest engine
+# ## Set up the engine
 
 # %%
 # Initialize a backtest configuration
@@ -63,7 +55,8 @@ engine = BacktestEngine(config=config)
 # %% [markdown]
 # ## Add simulation module
 #
-# We can optionally plug in a module to simulate rollover interest. The data is available from pre-packaged test data.
+# Plug in a module to simulate FX rollover interest. The interest rate data
+# ships with the test kit.
 
 # %%
 provider = TestDataProvider()
@@ -73,9 +66,9 @@ fx_rollover_interest = FXRolloverInterestModule(config=config)
 
 # %% [markdown]
 # ## Add fill model
-
-# %% [markdown]
-# For this backtest we'll use a simple probabilistic fill model.
+#
+# A probabilistic fill model adds realism by controlling limit order fill rates
+# and slippage. This prevents overly optimistic backtest results.
 
 # %%
 fill_model = FillModel(
@@ -86,9 +79,8 @@ fill_model = FillModel(
 
 # %% [markdown]
 # ## Add venue
-
-# %% [markdown]
-# For this backtest we need a single trading venue which will be a simulated FX ECN.
+#
+# Set up a simulated FX ECN with the fill model and rollover module attached.
 
 # %%
 SIM = Venue("SIM")
@@ -104,9 +96,9 @@ engine.add_venue(
 
 # %% [markdown]
 # ## Add instruments and data
-
-# %% [markdown]
-# Now we can add instruments and data. For this backtest we'll pre-process bid and ask side bar data into quotes using a `QuoteTickDataWrangler`.
+#
+# Pre-process bid and ask side bar data into quote ticks using a
+# `QuoteTickDataWrangler`. The engine builds internal bars from these ticks.
 
 # %%
 # Add instruments
@@ -123,9 +115,8 @@ engine.add_data(ticks)
 
 # %% [markdown]
 # ## Configure strategy
-
-# %% [markdown]
-# Next we'll configure and initialize a simple `EMACross` strategy we'll use for the backtest.
+#
+# Configure an `EMACross` strategy on 5-minute bars.
 
 # %%
 # Configure your strategy
@@ -142,17 +133,16 @@ strategy = EMACross(config=config)
 engine.add_strategy(strategy=strategy)
 
 # %% [markdown]
-# ## Run backtest
+# ## Run the backtest
 #
-# Run the backtest. The engine logs a post-analysis report when it finishes processing all data.
+# The engine processes all data in timestamp order and logs a post-analysis
+# report when complete.
 
 # %%
 engine.run()
 
 # %% [markdown]
-# ## Generating reports
-#
-# Produce reports for post-run analysis.
+# ## Reports
 
 # %%
 engine.trader.generate_account_report(SIM)

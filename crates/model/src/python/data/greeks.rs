@@ -60,13 +60,10 @@ impl BlackScholesGreeksResult {
     }
 }
 
-/// Computes Black-Scholes greeks for given parameters using the fast compute_greeks implementation.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the greeks calculation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+/// Computes Black-Scholes greeks using the fast compute_greeks implementation.
+/// This function uses compute_greeks from black_scholes.rs which is optimized for performance.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "black_scholes_greeks")]
 #[allow(clippy::too_many_arguments)]
 pub fn py_black_scholes_greeks(
@@ -86,8 +83,8 @@ pub fn py_black_scholes_greeks(
 /// # Errors
 ///
 /// Returns a `PyErr` if implied volatility calculation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "imply_vol")]
 pub fn py_imply_vol(
     s: f64,
@@ -102,14 +99,10 @@ pub fn py_imply_vol(
     Ok(vol)
 }
 
-/// Computes implied volatility and option greeks for given parameters and market price.
+/// Computes implied volatility and greeks using the fast implementations.
 /// This function uses compute_greeks after implying volatility.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if calculation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "imply_vol_and_greeks")]
 #[allow(clippy::too_many_arguments)]
 pub fn py_imply_vol_and_greeks(
@@ -127,12 +120,8 @@ pub fn py_imply_vol_and_greeks(
 /// Refines implied volatility using an initial guess and computes greeks.
 /// This function uses compute_iv_and_greeks which performs a Halley iteration
 /// to refine the volatility estimate from an initial guess.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if calculation fails.
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "refine_vol_and_greeks")]
 #[allow(clippy::too_many_arguments)]
 pub fn py_refine_vol_and_greeks(

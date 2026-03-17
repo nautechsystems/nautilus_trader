@@ -385,7 +385,8 @@ pub fn parse_ws_asset_context(
             let funding_rate_update = FundingRateUpdate::new(
                 instrument_id,
                 funding_rate_decimal,
-                None, // Hyperliquid doesn't provide next funding time in this message
+                Some(60), // Hyperliquid exchanges funding hourly
+                None,     // Hyperliquid doesn't provide next funding time in this message
                 ts_init,
                 ts_init,
             );
@@ -625,6 +626,7 @@ mod tests {
         let funding = funding_rate.unwrap();
         assert_eq!(funding.instrument_id, instrument.id());
         assert_eq!(funding.rate.to_string(), "0.0001");
+        assert_eq!(funding.interval, Some(60));
     }
 
     #[rstest]

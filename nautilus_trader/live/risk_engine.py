@@ -214,6 +214,7 @@ class LiveRiskEngine(RiskEngine):
             f"Unexpected exception in {queue_name} queue processing: {e!r}",
             e,
         )
+
         if self.graceful_shutdown_on_exception:
             if not self._shutdown_initiated:
                 self._log.warning(
@@ -269,6 +270,7 @@ class LiveRiskEngine(RiskEngine):
                     self._handle_queue_exception(e, "command")
         finally:
             stopped_msg = "Command message queue stopped"
+
             if not self._cmd_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
@@ -293,6 +295,7 @@ class LiveRiskEngine(RiskEngine):
                     self._handle_queue_exception(e, "event")
         finally:
             stopped_msg = "Event message queue stopped"
+
             if not self._evt_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue")
             else:

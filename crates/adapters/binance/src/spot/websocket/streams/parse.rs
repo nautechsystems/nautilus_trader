@@ -92,7 +92,7 @@ pub fn parse_trades_event(event: &TradesStreamEvent, instrument: &InstrumentAny)
                 event.qty_exponent,
                 size_precision,
             );
-            let ts_event = UnixNanos::from(event.transact_time_us as u64 * 1000); // us to ns
+            let ts_event = UnixNanos::from_micros(event.transact_time_us as u64);
 
             let trade = TradeTick::new(
                 instrument_id,
@@ -138,7 +138,7 @@ pub fn parse_bbo_event(event: &BestBidAskStreamEvent, instrument: &InstrumentAny
         event.qty_exponent,
         size_precision,
     );
-    let ts_event = UnixNanos::from(event.event_time_us as u64 * 1000); // us to ns
+    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
 
     QuoteTick::new(
         instrument_id,
@@ -161,7 +161,7 @@ pub fn parse_depth_snapshot(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from(event.event_time_us as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len() + 1);
 
@@ -249,7 +249,7 @@ pub fn parse_depth_diff(
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let ts_event = UnixNanos::from(event.event_time_us as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(event.event_time_us as u64);
 
     let mut deltas = Vec::with_capacity(event.bids.len() + event.asks.len());
 

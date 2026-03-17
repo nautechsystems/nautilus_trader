@@ -60,6 +60,7 @@ impl HttpClientError {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpMethod {
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
@@ -69,12 +70,12 @@ impl HttpMethod {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpResponse {
-    /// Creates a new [`HttpResponse`] instance.
+    /// Represents the response from an HTTP request.
     ///
-    /// # Errors
-    ///
-    /// Returns an error for an invalid `status` code.
+    /// This struct encapsulates the status, headers, and body of an HTTP response,
+    /// providing easy access to the key components of the response.
     #[new]
     pub fn py_new(status: u16, body: Vec<u8>) -> PyResult<Self> {
         Ok(Self {
@@ -98,34 +99,24 @@ impl HttpResponse {
 
     #[getter]
     #[pyo3(name = "body")]
+    #[gen_stub(override_return_type(type_repr = "bytes"))]
     pub fn py_body(&self) -> &[u8] {
         self.body.as_ref()
     }
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpClient {
-    /// Creates a new `HttpClient`.
+    /// An HTTP client that supports rate limiting and timeouts.
     ///
-    /// Rate limiting can be configured on a per-endpoint basis by passing
-    /// key-value pairs of endpoint URLs and their respective quotas.
+    /// Built on `reqwest` for async I/O. Allows per-endpoint and default quotas
+    /// through a rate limiter.
     ///
-    /// For /foo -> 10 reqs/sec configure limit with ("foo", `Quota.rate_per_second(10)`)
-    ///
-    /// Hierarchical rate limiting can be achieved by configuring the quotas for
-    /// each level.
-    ///
-    /// For /foo/bar -> 10 reqs/sec and /foo -> 20 reqs/sec configure limits for
-    /// keys "foo/bar" and "foo" respectively.
-    ///
-    /// When a request is made the URL should be split into all the keys within it.
-    ///
-    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
-    ///
-    /// # Errors
-    ///
-    /// - Returns `HttpInvalidProxyError` if the proxy URL is malformed.
-    /// - Returns `HttpClientBuildError` if building the HTTP client fails.
+    /// This struct is designed to handle HTTP requests efficiently, providing
+    /// support for rate limiting, timeouts, and custom headers. The client is
+    /// built on top of `reqwest` and can be used for both synchronous and
+    /// asynchronous HTTP requests.
     #[new]
     #[pyo3(signature = (default_headers=HashMap::new(), header_keys=Vec::new(), keyed_quotas=Vec::new(), default_quota=None, timeout_secs=None, proxy_url=None))]
     pub fn py_new(
@@ -147,6 +138,11 @@ impl HttpClient {
         .map_err(HttpClientError::into_py_err)
     }
 
+    /// Sends an HTTP request.
+    ///
+    /// # Examples
+    ///
+    /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "request")]
     #[pyo3(signature = (method, url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -182,6 +178,7 @@ impl HttpClient {
         })
     }
 
+    /// Sends an HTTP GET request.
     #[pyo3(name = "get")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_get<'py>(
@@ -203,6 +200,7 @@ impl HttpClient {
         })
     }
 
+    /// Sends an HTTP POST request.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "post")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -226,6 +224,7 @@ impl HttpClient {
         })
     }
 
+    /// Sends an HTTP PATCH request.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "patch")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
@@ -249,6 +248,7 @@ impl HttpClient {
         })
     }
 
+    /// Sends an HTTP DELETE request.
     #[pyo3(name = "delete")]
     #[pyo3(signature = (url, params=None, headers=None, keys=None, timeout_secs=None))]
     fn py_delete<'py>(
@@ -329,6 +329,7 @@ fn params_to_hashmap(
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_get(
     _py: Python<'_>,
@@ -375,6 +376,7 @@ pub fn http_get(
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_post(
     _py: Python<'_>,
@@ -422,6 +424,7 @@ pub fn http_post(
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
 pub fn http_patch(
     _py: Python<'_>,
@@ -469,6 +472,7 @@ pub fn http_patch(
 ///
 /// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
 pub fn http_delete(
     _py: Python<'_>,
@@ -514,6 +518,7 @@ pub fn http_delete(
 /// - The file cannot be created or written to.
 /// - The params argument is not a dict.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, filepath, params=None, headers=None, timeout_secs=None))]
 pub fn http_download(
     _py: Python<'_>,

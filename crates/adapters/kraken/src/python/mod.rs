@@ -15,6 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -50,6 +55,7 @@ pub mod websocket_spot;
 ///
 /// All other symbols are considered spot.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.kraken")]
 #[pyo3(name = "kraken_product_type_from_symbol")]
 fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
     crate::common::enums::product_type_from_symbol(symbol)

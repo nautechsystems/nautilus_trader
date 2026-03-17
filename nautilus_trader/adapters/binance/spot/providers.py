@@ -168,6 +168,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         try:
             # Get current commission rates (requires authentication)
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
+
             if self._environment.is_sandbox:
                 self._log.warning(
                     f"Not requesting actual trade fees for {self._environment.value}; "
@@ -214,6 +215,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         try:
             # Get current commission rates (requires authentication)
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
+
             if self._environment.is_sandbox:
                 self._log.warning(
                     f"Not requesting actual trade fees for {self._environment.value}; "
@@ -296,6 +298,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
             max_notional = None
             min_notional = None
+
             if min_notional_filter:
                 min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
             elif notional_filter:
@@ -311,6 +314,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             # Parse fees
             maker_fee: Decimal = Decimal(0)
             taker_fee: Decimal = Decimal(0)
+
             if fee:
                 assert fee.symbol == symbol_info.symbol
                 maker_fee = Decimal(fee.makerCommission)

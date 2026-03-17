@@ -21,7 +21,15 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::max_drawdown::MaxDrawdown};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxDrawdown {
+    /// Calculates the Maximum Drawdown for returns.
+    ///
+    /// Maximum Drawdown is the maximum observed loss from a peak to a trough,
+    /// before a new peak is attained. It is an indicator of downside risk over
+    /// a specified time period.
+    ///
+    /// Formula: Max((Peak - Trough) / Peak) for all peak-trough sequences
     #[new]
     fn py_new() -> Self {
         Self::new()

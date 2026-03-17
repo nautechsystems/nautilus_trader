@@ -27,7 +27,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitCurrency {
+    /// Deribit currency.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -78,7 +80,9 @@ impl DeribitCurrency {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitProductType {
+    /// Deribit product type.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -129,7 +133,12 @@ impl DeribitProductType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitUpdateInterval {
+    /// Deribit data stream update intervals.
+    ///
+    /// Controls how frequently updates are sent for subscribed channels.
+    /// Raw updates require authentication while aggregated updates are public.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

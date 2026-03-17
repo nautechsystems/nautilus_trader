@@ -82,6 +82,7 @@ class DeribitInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         all_pyo3_instruments = []
+
         if self._product_types:
             for product_type in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(
@@ -121,6 +122,7 @@ class DeribitInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, DERIBIT_VENUE, "instrument_id.venue", "DERIBIT")
 
         all_pyo3_instruments = []
+
         if self._product_types:
             for product_type in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(

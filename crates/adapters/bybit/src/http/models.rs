@@ -43,6 +43,10 @@ use crate::common::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+)]
 pub struct BybitOrderCursorList {
     /// Collection of orders returned by the endpoint.
     pub list: Vec<BybitOrder>,
@@ -93,6 +97,10 @@ impl BybitOrderCursorList {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitServerTime {
@@ -239,6 +247,10 @@ pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 pub struct BybitTickerData {
     pub symbol: Ustr,
@@ -691,6 +703,10 @@ pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrument
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+)]
 pub struct BybitFeeRate {
     pub symbol: Ustr,
     pub taker_fee_rate: String,
@@ -807,6 +823,10 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitOrder {
@@ -1333,6 +1353,10 @@ pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+)]
 #[serde(rename_all = "PascalCase")]
 pub struct BybitApiKeyPermissions {
     #[serde(default)]
@@ -1362,6 +1386,10 @@ pub struct BybitApiKeyPermissions {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitAccountDetails {

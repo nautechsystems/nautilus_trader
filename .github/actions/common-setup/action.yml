@@ -13,6 +13,14 @@ inputs:
     description: Type of build (pre-commit, test, release)
     required: false
     default: "release"
+  rust-cache-key:
+    description: Extra rust-cache key material to partition cache entries
+    required: false
+    default: ""
+  rust-cache-workspaces:
+    description: Optional rust-cache workspace mapping, e.g. ". -> target-v2/py3.13"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -96,6 +104,8 @@ runs:
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
+        cache-key: ${{ inputs.rust-cache-key }}
+        cache-workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
         override: true
 
     - name: Install cargo-nextest
@@ -106,9 +116,9 @@ runs:
         tool: nextest
 
     # > --------------------------------------------------
-    # > sccache
+    # > sccache (disabled on macOS: causes filesystem corruption on GH runners)
     - name: Set sccache env vars (common)
-      if: inputs.build-type != 'pre-commit'
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
@@ -121,8 +131,8 @@ runs:
 
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
-    - name: Set sccache env vars (non-Windows)
-      if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
+    - name: Set sccache env vars (Linux)
+      if: runner.os == 'Linux' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
         echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.cache/sccache" >> $GITHUB_ENV
@@ -138,7 +148,7 @@ runs:
         echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
 
     - name: Run sccache
-      if: inputs.build-type != 'pre-commit'
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       continue-on-error: true # Build continues without cache if sccache setup fails
@@ -166,15 +176,32 @@ runs:
       run: |
         echo "PRE_COMMIT_VERSION=$(bash scripts/pre-commit-version.sh)" >> $GITHUB_ENV
 
+    - name: Get cache fingerprints
+      shell: bash
+      env:
+        CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-${{ env.PYTHON_VERSION }}
+      run: |
+        echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
+        python - <<'PY' >> "$GITHUB_ENV"
+        import hashlib
+        from pathlib import Path
+
+        print(
+            f"PRE_COMMIT_CONFIG_HASH={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
+        )
+        print(f"UV_LOCK_HASH={hashlib.sha256(Path('uv.lock').read_bytes()).hexdigest()}")
+        PY
+
     - name: Cache Python site-packages
       id: cached-site-packages
       # https://github.com/actions/cache
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
-        key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
+        key: ${{ env.CACHE_SCOPE }}-site-packages-${{ env.PRE_COMMIT_VERSION }}-${{ env.PRE_COMMIT_CONFIG_HASH }}
         restore-keys: |
-          ${{ runner.os }}-site-packages-
+          ${{ env.CACHE_SCOPE }}-site-packages-${{ env.PRE_COMMIT_VERSION }}-
+          ${{ env.CACHE_SCOPE }}-site-packages-
 
     - name: Install pre-commit
       shell: bash
@@ -207,7 +234,9 @@ runs:
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.UV_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
+        key: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}-${{ env.UV_LOCK_HASH }}
+        restore-keys: |
+          ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}-
 
     # > --------------------------------------------------
     # > pre-commit
@@ -220,4 +249,6 @@ runs:
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ~/.cache/pre-commit
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        key: ${{ env.CACHE_SCOPE }}-pre-commit-${{ env.PRE_COMMIT_VERSION }}-${{ env.PRE_COMMIT_CONFIG_HASH }}
+        restore-keys: |
+          ${{ env.CACHE_SCOPE }}-pre-commit-${{ env.PRE_COMMIT_VERSION }}-

@@ -995,6 +995,7 @@ fn test_request_funding_rates(
         audusd_sim.id,
         dec!(0.0001),
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -1186,6 +1187,7 @@ fn test_subscribe_and_receive_funding_rates(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
@@ -1193,6 +1195,7 @@ fn test_subscribe_and_receive_funding_rates(
     let fr2 = FundingRateUpdate::new(
         audusd_sim.id,
         "0.0002".parse().unwrap(),
+        None,
         None,
         UnixNanos::from(3),
         UnixNanos::from(4),
@@ -1492,6 +1495,7 @@ fn test_unsubscribe_funding_rates(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
@@ -1504,6 +1508,7 @@ fn test_unsubscribe_funding_rates(
     let fr2 = FundingRateUpdate::new(
         audusd_sim.id,
         "0.0002".parse().unwrap(),
+        None,
         None,
         UnixNanos::from(3),
         UnixNanos::from(4),

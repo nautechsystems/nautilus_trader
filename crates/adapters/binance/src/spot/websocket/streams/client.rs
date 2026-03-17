@@ -49,7 +49,7 @@ use ustr::Ustr;
 use super::{
     super::error::{BinanceWsError, BinanceWsResult},
     handler::BinanceSpotWsFeedHandler,
-    messages::{BinanceSpotWsMessage, HandlerCommand},
+    messages::{BinanceSpotWsMessage, BinanceSpotWsStreamsCommand},
     subscription::MAX_STREAMS_PER_CONNECTION,
 };
 use crate::common::{
@@ -68,7 +68,8 @@ pub struct BinanceSpotWebSocketClient {
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    cmd_tx:
+        Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceSpotWsStreamsCommand>>>,
     out_rx:
         Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsMessage>>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -233,24 +234,8 @@ impl BinanceSpotWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::SetClient(client))
+            .send(BinanceSpotWsStreamsCommand::SetClient(client))
             .map_err(|e| BinanceWsError::ClientError(format!("Failed to set client: {e}")))?;
-
-        let instruments: Vec<InstrumentAny> = self
-            .instruments_cache
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
-
-        if !instruments.is_empty() {
-            self.cmd_tx
-                .read()
-                .await
-                .send(HandlerCommand::InitializeInstruments(instruments))
-                .map_err(|e| {
-                    BinanceWsError::ClientError(format!("Failed to initialize instruments: {e}"))
-                })?;
-        }
 
         let signal = self.signal.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -277,7 +262,7 @@ impl BinanceSpotWebSocketClient {
                                 // Resubscribe using tracked subscription state
                                 let streams = subscriptions_state.all_topics();
                                 if !streams.is_empty()
-                                    && let Err(e) = cmd_tx.read().await.send(HandlerCommand::Subscribe { streams }) {
+                                    && let Err(e) = cmd_tx.read().await.send(BinanceSpotWsStreamsCommand::Subscribe { streams }) {
                                         log::error!("Failed to resubscribe after reconnect: {e}");
                                     }
 
@@ -325,7 +310,11 @@ impl BinanceSpotWebSocketClient {
         self.signal.store(true, Ordering::Relaxed);
         self.cancellation_token.cancel();
 
-        let _ = self.cmd_tx.read().await.send(HandlerCommand::Disconnect);
+        let _ = self
+            .cmd_tx
+            .read()
+            .await
+            .send(BinanceSpotWsStreamsCommand::Disconnect);
 
         if let Some(handle) = self.task_handle.take()
             && let Ok(handle) = Arc::try_unwrap(handle)
@@ -358,7 +347,7 @@ impl BinanceSpotWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::Subscribe { streams })
+            .send(BinanceSpotWsStreamsCommand::Subscribe { streams })
             .map_err(|e| BinanceWsError::ClientError(format!("Handler not available: {e}")))?;
 
         Ok(())
@@ -373,7 +362,7 @@ impl BinanceSpotWebSocketClient {
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::Unsubscribe { streams })
+            .send(BinanceSpotWsStreamsCommand::Unsubscribe { streams })
             .map_err(|e| BinanceWsError::ClientError(format!("Handler not available: {e}")))?;
 
         Ok(())
@@ -400,41 +389,26 @@ impl BinanceSpotWebSocketClient {
     }
 
     /// Bulk initialize the instrument cache.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in &instruments {
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        for inst in instruments {
             self.instruments_cache
                 .insert(inst.symbol().inner(), inst.clone());
-        }
-
-        if self.is_active() {
-            let cmd_tx = self.cmd_tx.clone();
-            let instruments_clone = instruments;
-            get_runtime().spawn(async move {
-                let _ = cmd_tx
-                    .read()
-                    .await
-                    .send(HandlerCommand::InitializeInstruments(instruments_clone));
-            });
         }
     }
 
     /// Update a single instrument in the cache.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         self.instruments_cache
-            .insert(instrument.symbol().inner(), instrument.clone());
-
-        if self.is_active() {
-            let cmd_tx = self.cmd_tx.clone();
-            get_runtime().spawn(async move {
-                let _ = cmd_tx
-                    .read()
-                    .await
-                    .send(HandlerCommand::UpdateInstrument(instrument));
-            });
-        }
+            .insert(instrument.symbol().inner(), instrument);
     }
 
-    /// Get an instrument from the cache.
+    /// Returns a shared reference to the instruments cache.
+    #[must_use]
+    pub fn instruments_cache(&self) -> Arc<DashMap<Ustr, InstrumentAny>> {
+        self.instruments_cache.clone()
+    }
+
+    /// Returns an instrument from the cache by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &str) -> Option<InstrumentAny> {
         self.instruments_cache

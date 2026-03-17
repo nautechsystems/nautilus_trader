@@ -1,33 +1,17 @@
 # %% [markdown]
-# # Backtest (low-level API)
+# # Backtest (Low-Level API)
 #
-# Tutorial for [NautilusTrader](https://nautilustrader.io/docs/latest/) a high-performance algorithmic trading platform and event-driven backtester.
+# Use `BacktestEngine` for direct component access: load market data, wire up
+# strategies and execution algorithms, and run backtests with full control over
+# every step. This tutorial backtests an EMA cross strategy with a TWAP execution
+# algorithm on a simulated Binance Spot exchange using historical trade tick data.
 #
 # [View source on GitHub](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/backtest_low_level.py).
 
 # %% [markdown]
-# ## Overview
-#
-# This tutorial walks through how to use a `BacktestEngine` to backtest a simple EMA cross strategy
-# with a TWAP execution algorithm on a simulated Binance Spot exchange using historical trade tick data.
-#
-# The following points will be covered:
-# - Load raw data (external to Nautilus) using data loaders and wranglers.
-# - Add this data to a `BacktestEngine`.
-# - Add venues, strategies, and execution algorithms to a `BacktestEngine`.
-# - Run backtests with a `BacktestEngine`.
-# - Perform post-run analysis and repeated runs.
-#
-
-# %% [markdown]
 # ## Prerequisites
-# - Python 3.12+ installed.
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`uv pip install nautilus_trader`).
-
-# %% [markdown]
-# ## Imports
-#
-# We'll start with all of our imports for the remainder of this tutorial.
+# - Python 3.12+
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
 
 # %%
 from decimal import Decimal
@@ -50,14 +34,10 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 # %% [markdown]
-# ## Loading data
+# ## Load data
 #
-# For this tutorial we use stub test data from the NautilusTrader repository (the automated test suite also uses this data to verify platform correctness).
-#
-# First, instantiate a data provider to read raw CSV trade tick data into a `pd.DataFrame`.
-# Next, initialize the matching instrument (`ETHUSDT` spot on Binance).
-# Then wrangle the data into Nautilus `TradeTick` objects to add to the `BacktestEngine`.
-#
+# Load bundled test data (ETHUSDT trades from Binance), initialize the matching
+# instrument, and wrangle the raw CSV into Nautilus `TradeTick` objects.
 
 # %%
 # Load stub test data
@@ -72,15 +52,13 @@ wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
 ticks = wrangler.process(trades_df)
 
 # %% [markdown]
-# See the [Loading External Data](https://nautilustrader.io/docs/latest/concepts/data#loading-data) guide for details on the data processing pipeline.
+# See the [Data](../concepts/data.md) concept guide for details on the data processing pipeline.
 
 # %% [markdown]
-# ## Initialize a backtest engine
+# ## Initialize the engine
 #
-# Create a `BacktestEngine`. Here we pass a `BacktestEngineConfig` with a custom `trader_id` to show the configuration pattern.
-#
-# See the [Configuration](https://nautilustrader.io/docs/api_reference/config) API reference for all available options.
-#
+# Pass a `BacktestEngineConfig` to configure the engine. Here we set a custom
+# `trader_id` to show the pattern.
 
 # %%
 # Configure backtest engine
@@ -90,12 +68,10 @@ config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
 engine = BacktestEngine(config=config)
 
 # %% [markdown]
-# ## Add venues
+# ## Add a venue
 #
-# Create a venue to trade on that matches the market data you add to the engine.
-#
-# In this case we set up a simulated Binance Spot exchange.
-#
+# Set up a simulated venue that matches the market data. Here we configure a
+# Binance Spot exchange with a cash account.
 
 # %%
 # Add a trading venue (multiple venues possible)
@@ -111,10 +87,7 @@ engine.add_venue(
 # %% [markdown]
 # ## Add data
 #
-# Add data to the backtest engine. Start by adding the `Instrument` object we initialized earlier to match the data.
-#
-# Then add the trades we wrangled earlier.
-#
+# Add the instrument and trade ticks to the engine.
 
 # %%
 # Add instrument(s)
@@ -132,10 +105,7 @@ engine.add_data(ticks)
 # %% [markdown]
 # ## Add strategies
 #
-# Add the trading strategies you plan to run as part of the system.
-#
-# Initialize a strategy configuration, then create and add the strategy:
-#
+# Configure and add an EMA cross strategy with TWAP execution parameters.
 
 # %%
 # Configure your strategy
@@ -154,12 +124,12 @@ strategy = EMACrossTWAP(config=strategy_config)
 engine.add_strategy(strategy=strategy)
 
 # %% [markdown]
-# The strategy config above includes TWAP parameters, but we still need to add the `ExecAlgorithm` component.
+# The strategy config references TWAP parameters, but the execution algorithm
+# itself is a separate component.
 #
 # ## Add execution algorithms
 #
-# Add a TWAP execution algorithm to the engine, following the same pattern as strategies.
-#
+# Add a TWAP execution algorithm to the engine.
 
 # %%
 # Instantiate and add your execution algorithm
@@ -167,25 +137,22 @@ exec_algorithm = TWAPExecAlgorithm()  # Using defaults
 engine.add_exec_algorithm(exec_algorithm)
 
 # %% [markdown]
-# ## Run backtest
+# ## Run the backtest
 #
-# After configuring the data, venues, and trading system, run a backtest.
-# Call the `.run(...)` method to process all available data by default.
-#
-# See the [BacktestEngineConfig](https://nautilustrader.io/docs/latest/api_reference/config) API reference for all available options.
-#
+# Call `.run()` to process all available data. The engine replays events in
+# timestamp order with deterministic execution semantics.
 
 # %%
 # Run the engine (from start to end of data)
 engine.run()
 
 # %% [markdown]
-# ## Post-run and analysis
-#
-# The engine logs a post-run tearsheet with default statistics. You can load custom statistics too; see the [Portfolio statistics](../concepts/portfolio.md#portfolio-statistics) guide.
+# ## Post-run analysis
 #
 # The engine retains data and execution objects in memory for generating reports.
-#
+# It also logs a tearsheet with default statistics; see the
+# [Portfolio statistics](../concepts/portfolio.md#portfolio-statistics) guide for
+# custom statistics.
 
 # %%
 engine.trader.generate_account_report(BINANCE)
@@ -199,9 +166,8 @@ engine.trader.generate_positions_report()
 # %% [markdown]
 # ## Repeated runs
 #
-# You can reset the engine for repeated runs with different strategy and component configurations.
-#
-# Instruments and data persist across resets by default, so you don't need to reload them.
+# Reset the engine for repeated runs with different configurations. Instruments
+# and data persist across resets, so you only need to add new components.
 
 # %%
 # For repeated backtest runs, reset the engine

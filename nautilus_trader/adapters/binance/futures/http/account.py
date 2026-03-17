@@ -880,12 +880,14 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             clock=clock,
             account_type=account_type,
         )
+
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"`BinanceAccountType` not USDT_FUTURES or COIN_FUTURES, was {account_type}",  # pragma: no cover
             )
         v2_endpoint_base = self.base_endpoint
         v3_endpoint_base = self.base_endpoint
+
         if account_type == BinanceAccountType.USDT_FUTURES:
             v2_endpoint_base = "/fapi/v2/"
             v3_endpoint_base = "/fapi/v3/"

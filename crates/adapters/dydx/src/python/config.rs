@@ -21,7 +21,9 @@ use pyo3::prelude::*;
 use crate::config::{DydxDataClientConfig, DydxExecClientConfig};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxDataClientConfig {
+    /// Configuration for the dYdX data client.
     #[new]
     fn py_new() -> Self {
         Self::default()
@@ -33,7 +35,9 @@ impl DydxDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxExecClientConfig {
+    /// Configuration for the dYdX execution client.
     #[new]
     fn py_new(trader_id: TraderId, account_id: AccountId) -> Self {
         Self {

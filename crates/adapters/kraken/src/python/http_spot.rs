@@ -35,7 +35,13 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenSpotHttpClient {
+    /// High-level HTTP client for the Kraken Spot REST API.
+    ///
+    /// This client wraps the raw client and provides Nautilus domain types.
+    /// It maintains an instrument cache and uses it to parse venue responses
+    /// into Nautilus domain objects.
     #[new]
     #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=None))]
     #[allow(clippy::too_many_arguments)]
@@ -110,6 +116,7 @@ impl KrakenSpotHttpClient {
         self.inner.credential().map(|c| c.api_key_masked())
     }
 
+    /// Caches an instrument for symbol lookup.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
@@ -117,16 +124,19 @@ impl KrakenSpotHttpClient {
         Ok(())
     }
 
+    /// Cancels all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
+    /// Sets whether to generate position reports from wallet balances for SPOT instruments.
     #[pyo3(name = "set_use_spot_position_reports")]
     fn py_set_use_spot_position_reports(&self, value: bool) {
         self.set_use_spot_position_reports(value);
     }
 
+    /// Sets the quote currency filter for spot position reports.
     #[pyo3(name = "set_spot_positions_quote_currency")]
     fn py_set_spot_positions_quote_currency(&self, currency: &str) {
         self.set_spot_positions_quote_currency(currency);
@@ -150,6 +160,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests tradable instruments from Kraken.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (pairs=None))]
     fn py_request_instruments<'py>(
@@ -176,6 +187,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests historical trades for an instrument.
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trades<'py>(
@@ -205,6 +217,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests historical bars/OHLC data for an instrument.
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
@@ -232,6 +245,9 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests account state (balances) from Kraken.
+    ///
+    /// Returns an `AccountState` containing all currency balances.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -250,6 +266,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests order status reports from Kraken.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=false))]
     fn py_request_order_status_reports<'py>(
@@ -280,6 +297,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests fill/trade reports from Kraken.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
     fn py_request_fill_reports<'py>(
@@ -309,6 +327,10 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests position status reports for SPOT instruments.
+    ///
+    /// Returns wallet balances as position reports if `use_spot_position_reports` is enabled.
+    /// Otherwise returns an empty vector (spot traditionally has no "positions").
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -336,6 +358,9 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Submits a new order to the Kraken Spot exchange.
+    ///
+    /// Returns the venue order ID on success. WebSocket handles all execution events.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, reduce_only=false, post_only=false))]
     #[allow(clippy::too_many_arguments)]
@@ -381,6 +406,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Cancels an order on the Kraken Spot exchange.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -416,7 +442,7 @@ impl KrakenSpotHttpClient {
         })
     }
 
-    /// Cancel multiple orders in a single batch request.
+    /// Cancels multiple orders on the Kraken Spot exchange (batched, max 50 per request).
     #[pyo3(name = "cancel_orders_batch")]
     fn py_cancel_orders_batch<'py>(
         &self,
@@ -433,7 +459,10 @@ impl KrakenSpotHttpClient {
         })
     }
 
-    /// Modify an existing order on the Kraken Spot exchange.
+    /// Modifies an existing order on the Kraken Spot exchange using atomic amend.
+    ///
+    /// Uses the AmendOrder endpoint which modifies the order in-place,
+    /// keeping the same order ID and queue position.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
     #[allow(clippy::too_many_arguments)]

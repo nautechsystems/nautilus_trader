@@ -650,6 +650,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["algoType"] == "CONDITIONAL"
         assert request[1]["payload"]["timeInForce"] == "GTC"
         assert request[1]["payload"]["quantity"] == "10"
+
         if _is_dual_side_position:
             assert "reduceOnly" not in request[1]["payload"]
         else:
@@ -935,6 +936,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["algoType"] == "CONDITIONAL"
         assert request[1]["payload"]["timeInForce"] == "GTC"
         assert request[1]["payload"]["quantity"] == "10"
+
         if _is_dual_side_position:
             assert "reduceOnly" not in request[1]["payload"]
         else:

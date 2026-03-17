@@ -1696,6 +1696,8 @@ impl<'a> ToCapnp<'a> for FundingRateUpdate {
         let rate_builder = builder.reborrow().init_rate();
         self.rate.to_capnp(rate_builder);
 
+        builder.set_interval(self.interval.unwrap_or(0));
+
         let mut next_funding_time_builder = builder.reborrow().init_next_funding_time();
         next_funding_time_builder.set_value(self.next_funding_ns.map_or(0, |ns| *ns));
 
@@ -1717,6 +1719,12 @@ impl<'a> FromCapnp<'a> for FundingRateUpdate {
         let rate_reader = reader.get_rate()?;
         let rate = Decimal::from_capnp(rate_reader)?;
 
+        let interval_raw = reader.get_interval();
+        let interval = match interval_raw {
+            0 => None,
+            _ => Some(interval_raw),
+        };
+
         let next_funding_time_reader = reader.get_next_funding_time()?;
         let next_funding_time_value = next_funding_time_reader.get_value();
         let next_funding_ns = if next_funding_time_value == 0 {
@@ -1734,6 +1742,7 @@ impl<'a> FromCapnp<'a> for FundingRateUpdate {
         Ok(Self {
             instrument_id,
             rate,
+            interval,
             next_funding_ns,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
@@ -5128,6 +5137,7 @@ mod tests {
         FundingRateUpdate::new(
             InstrumentId::from("BTCUSD-PERP.BINANCE"),
             dec!(0.0001),
+            Some(60),
             Some(UnixNanos::from(1_000_000)),
             UnixNanos::from(5),
             UnixNanos::from(6),

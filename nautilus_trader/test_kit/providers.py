@@ -336,6 +336,7 @@ class TestInstrumentProvider:
         """
         if activation is None:
             activation = pd.Timestamp("2021-12-25", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2022-3-25", tz=pytz.utc)
         return CryptoFuture(

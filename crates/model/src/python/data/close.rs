@@ -43,6 +43,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentClose {
+    /// Represents an instrument close at a venue.
     #[new]
     #[pyo3(signature = (instrument_id, close_price, close_type, ts_event, ts_init))]
     fn py_new(
@@ -119,6 +120,7 @@ impl InstrumentClose {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(InstrumentClose))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -128,6 +130,7 @@ impl InstrumentClose {
         Self::get_metadata(instrument_id, price_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {

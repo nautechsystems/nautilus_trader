@@ -800,7 +800,7 @@ impl BinanceFuturesAccountInfo {
 
         let ts_event = self
             .update_time
-            .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
+            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
 
         Ok(AccountState::new(
             account_id,
@@ -939,7 +939,7 @@ impl BinanceFuturesOrder {
     ) -> anyhow::Result<OrderStatusReport> {
         let ts_event = self
             .update_time
-            .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
+            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
 
         let client_order_id = ClientOrderId::new(decode_broker_id(
             &self.client_order_id,
@@ -1049,7 +1049,7 @@ impl BinanceUserTrade {
         size_precision: u8,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let ts_event = UnixNanos::from((self.time * 1_000_000) as u64);
+        let ts_event = UnixNanos::from_millis(self.time as u64);
 
         let venue_order_id = VenueOrderId::new(self.order_id.to_string());
         let trade_id = TradeId::new(self.id.to_string());
@@ -1226,7 +1226,7 @@ impl BinanceFuturesAlgoOrder {
         let ts_event = self
             .update_time
             .or(self.create_time)
-            .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
+            .map_or(ts_init, |t| UnixNanos::from_millis(t as u64));
 
         let client_order_id = ClientOrderId::new(decode_broker_id(
             &self.client_algo_id,
@@ -1342,6 +1342,51 @@ mod tests {
         assert_eq!(account.positions.len(), 1);
         assert_eq!(account.positions[0].symbol.as_str(), "BTCUSDT");
         assert_eq!(account.positions[0].leverage, Some("100".to_string()));
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_zero_margins() {
+        let json = load_fixture_string("futures/http_json/account_info_v2.json");
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(&json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.account_id, account_id);
+        assert_eq!(state.account_type, AccountType::Margin);
+        assert!(!state.balances.is_empty());
+        assert_eq!(state.margins.len(), 0);
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_with_margins() {
+        let json = r#"{
+            "totalInitialMargin": "500.25000000",
+            "totalMaintMargin": "250.75000000",
+            "totalWalletBalance": "10000.00000000",
+            "assets": [{
+                "asset": "USDT",
+                "walletBalance": "10000.00000000",
+                "availableBalance": "9500.00000000",
+                "updateTime": 1617939110373
+            }],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.margins.len(), 1);
+        let margin = &state.margins[0];
+        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
+        assert_eq!(margin.instrument_id.venue.as_str(), "BINANCE");
+        assert_eq!(margin.initial.as_f64(), 500.25);
+        assert_eq!(margin.maintenance.as_f64(), 250.75);
     }
 
     #[rstest]

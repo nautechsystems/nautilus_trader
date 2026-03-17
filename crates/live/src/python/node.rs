@@ -39,6 +39,7 @@ use serde_json;
 
 use crate::{builder::LiveNodeBuilder, node::LiveNode};
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveNode {
     #[staticmethod]
@@ -458,10 +459,12 @@ impl LiveNode {
 /// to work around PyO3's shared ownership model.
 #[derive(Debug)]
 #[pyclass(name = "LiveNodeBuilder", module = "nautilus_trader.live", unsendable)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
 pub struct LiveNodeBuilderPy {
     inner: Rc<RefCell<Option<LiveNodeBuilder>>>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveNodeBuilderPy {
     #[pyo3(name = "with_instance_id")]

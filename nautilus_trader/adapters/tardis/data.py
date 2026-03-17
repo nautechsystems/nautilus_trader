@@ -185,6 +185,7 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
         await asyncio.sleep(delay_secs)
+
         if self._ws_pending_streams:
             future = asyncio.ensure_future(
                 self._ws_client.stream(

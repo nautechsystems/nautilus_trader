@@ -57,6 +57,7 @@ const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the
 #[pymethods]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
 impl DataType {
+    /// Represents a data type including metadata.
     #[new]
     #[pyo3(signature = (type_name, metadata=None, identifier=None))]
     fn py_new(
@@ -72,12 +73,14 @@ impl DataType {
         Ok(Self::new(type_name, params, identifier))
     }
 
+    /// Returns the type name for the data type.
     #[getter]
     #[pyo3(name = "type_name")]
     fn py_type_name(&self) -> &str {
         self.type_name()
     }
 
+    /// Returns the metadata for the data type.
     #[getter]
     #[pyo3(name = "metadata")]
     fn py_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -91,12 +94,14 @@ impl DataType {
         }
     }
 
+    /// Returns the messaging topic for the data type.
     #[getter]
     #[pyo3(name = "topic")]
     fn py_topic(&self) -> &str {
         self.topic()
     }
 
+    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
     #[getter]
     #[pyo3(name = "identifier")]
     fn py_identifier(&self) -> Option<&str> {
@@ -161,8 +166,8 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
 /// This function involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 #[cfg(feature = "ffi")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[allow(unsafe_code)]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     let capsule: &Bound<'_, PyCapsule> = capsule
@@ -175,8 +180,8 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
 }
 
 #[cfg(not(feature = "ffi"))]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 /// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
 ///
 /// # Panics
@@ -517,8 +522,8 @@ fn py_decode_record_batch_to_custom_data(
 /// register_custom_data_class(MarketTickPython)
 /// ```
 #[cfg(feature = "python")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()> {
     use std::sync::Arc;
 

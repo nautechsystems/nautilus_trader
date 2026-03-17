@@ -81,6 +81,7 @@ use crate::{
     name = "BitmexWebSocketClient",
     module = "nautilus_trader.core.nautilus_pyo3.bitmex"
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")]
 pub struct PyBitmexWebSocketClient {
     inner: BitmexWebSocketClient,
     instruments_cache: Arc<tokio::sync::RwLock<AHashMap<Ustr, InstrumentAny>>>,
@@ -96,6 +97,7 @@ impl Debug for PyBitmexWebSocketClient {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyBitmexWebSocketClient {
     #[new]
     #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None, testnet=false))]

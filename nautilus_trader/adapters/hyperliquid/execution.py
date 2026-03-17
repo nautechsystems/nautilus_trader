@@ -157,6 +157,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             eoa_address = self._client.get_user_address()
             self._user_address = config.account_address or config.vault_address or eoa_address
             self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
+
             if config.account_address:
                 self._log.info(
                     f"Account address (agent wallet, WS subscriptions): {config.account_address}",
@@ -532,6 +533,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # TODO: Extract this to Rust
         # Round in the direction that preserves slippage buffer
         quantizer = Decimal(10) ** -instrument.price_precision
+
         if order.side == OrderSide.BUY:
             price = price.quantize(quantizer, rounding=ROUND_CEILING)
         else:
@@ -560,6 +562,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is not None:
             quantizer = Decimal(10) ** -instrument.price_precision
+
             if order.side == OrderSide.BUY:
                 price = price.quantize(quantizer, rounding=ROUND_CEILING)
             else:
@@ -793,6 +796,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
             pyo3_trigger_price = None
+
             if trigger_price is not None:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(trigger_price))
 

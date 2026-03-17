@@ -40,13 +40,12 @@ use nautilus_binance::{
         sbe::stream::mantissa_to_f64,
         websocket::streams::{
             client::BinanceSpotWebSocketClient,
-            messages::{BinanceSpotWsMessage, NautilusSpotDataWsMessage},
+            messages::BinanceSpotWsMessage,
             parse::{MarketDataMessage, decode_market_data},
         },
     },
 };
 use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_model::data::Data;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
         None, // heartbeat
     )?;
 
-    ws_client.cache_instruments(instruments);
+    ws_client.cache_instruments(&instruments);
 
     log::info!("Connecting to Binance Spot SBE WebSocket...");
     ws_client.connect().await?;
@@ -114,63 +113,51 @@ async fn main() -> anyhow::Result<()> {
                 message_count += 1;
 
                 match msg {
-                    BinanceSpotWsMessage::Data(data_msg) => match data_msg {
-                        NautilusSpotDataWsMessage::Data(data_vec) => {
-                            for data in &data_vec {
-                                match data {
-                                    Data::Trade(trade) => {
-                                        trade_count += 1;
-                                        log::info!(
-                                            "Trade: msg={message_count}, instrument={}, price={}, size={}, side={:?}, trade_id={}",
-                                            trade.instrument_id,
-                                            trade.price,
-                                            trade.size,
-                                            trade.aggressor_side,
-                                            trade.trade_id
-                                        );
-                                    }
-                                    Data::Quote(quote) => {
-                                        quote_count += 1;
-                                        log::info!(
-                                            "Quote: msg={message_count}, instrument={}, bid={}, ask={}, bid_size={}, ask_size={}",
-                                            quote.instrument_id,
-                                            quote.bid_price,
-                                            quote.ask_price,
-                                            quote.bid_size,
-                                            quote.ask_size
-                                        );
-                                    }
-                                    _ => {
-                                        log::debug!("Other data: msg={message_count}, data={data:?}");
-                                    }
-                                }
+                    BinanceSpotWsMessage::Trades(event) => {
+                        trade_count += event.trades.len() as u64;
+                        log::info!(
+                            "Trades: msg={message_count}, symbol={}, count={}",
+                            event.symbol,
+                            event.trades.len()
+                        );
+                    }
+                    BinanceSpotWsMessage::BestBidAsk(event) => {
+                        quote_count += 1;
+                        log::info!(
+                            "BBO: msg={message_count}, symbol={}",
+                            event.symbol
+                        );
+                    }
+                    BinanceSpotWsMessage::DepthSnapshot(event) => {
+                        log::info!(
+                            "Depth snapshot: msg={message_count}, symbol={}, bids={}, asks={}",
+                            event.symbol,
+                            event.bids.len(),
+                            event.asks.len()
+                        );
+                    }
+                    BinanceSpotWsMessage::DepthDiff(event) => {
+                        log::info!(
+                            "Depth diff: msg={message_count}, symbol={}, bids={}, asks={}",
+                            event.symbol,
+                            event.bids.len(),
+                            event.asks.len()
+                        );
+                    }
+                    BinanceSpotWsMessage::RawBinary(data) => {
+                        match decode_and_display_sbe(&data) {
+                            Ok(()) => {}
+                            Err(e) => {
+                                log::warn!(
+                                    "Raw binary (decode failed): msg={message_count}, len={}, error={e}",
+                                    data.len()
+                                );
                             }
                         }
-                        NautilusSpotDataWsMessage::Deltas(deltas) => {
-                            log::info!(
-                                "OrderBook deltas: msg={message_count}, instrument={}, num_deltas={}",
-                                deltas.instrument_id,
-                                deltas.deltas.len()
-                            );
-                        }
-                        NautilusSpotDataWsMessage::RawBinary(data) => {
-                            match decode_and_display_sbe(&data) {
-                                Ok(()) => {}
-                                Err(e) => {
-                                    log::warn!(
-                                        "Raw binary (decode failed): msg={message_count}, len={}, error={e}",
-                                        data.len()
-                                    );
-                                }
-                            }
-                        }
-                        NautilusSpotDataWsMessage::RawJson(json) => {
-                            log::debug!("Raw JSON: msg={message_count}, json={json}");
-                        }
-                        NautilusSpotDataWsMessage::Instrument(inst) => {
-                            log::info!("Instrument: {inst:?}");
-                        }
-                    },
+                    }
+                    BinanceSpotWsMessage::RawJson(json) => {
+                        log::debug!("Raw JSON: msg={message_count}, json={json}");
+                    }
                     BinanceSpotWsMessage::Error(err) => {
                         log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);
                     }

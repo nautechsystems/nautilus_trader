@@ -17,12 +17,10 @@
 //!
 //! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance`
 //!
-//! Requires environment variables based on the configured environment
-//! (Ed25519 keys are auto-detected):
-//! - Mainnet: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
-//! - Testnet (Spot): `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
-//! - Testnet (Futures): `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+//! Requires environment variables (Ed25519 keys are auto-detected):
 //! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
+//!
+//! Create demo credentials at <https://www.binance.com/en/demo-trading>.
 
 use nautilus_binance::{
     common::enums::{BinanceEnvironment, BinanceProductType},
@@ -50,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_config = BinanceDataClientConfig {
         product_types: vec![BinanceProductType::UsdM],
-        environment: BinanceEnvironment::Testnet,
+        environment: BinanceEnvironment::Demo,
         api_key: None,
         api_secret: None,
         ..Default::default()
@@ -60,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         product_types: vec![BinanceProductType::UsdM],
-        environment: BinanceEnvironment::Testnet,
+        environment: BinanceEnvironment::Demo,
         ..Default::default()
     };
 

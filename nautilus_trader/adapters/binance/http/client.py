@@ -84,6 +84,7 @@ class BinanceHttpClient:
         self._secret: str | None = api_secret
         self._rsa_private_key: str | None = rsa_private_key
         self._ed25519_private_key: bytes | None = None
+
         if ed25519_private_key:
             # Strip PEM headers/footers if present, then decode base64
             key_data = "".join(
@@ -97,6 +98,7 @@ class BinanceHttpClient:
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
         }
+
         if api_key:
             self._headers["X-MBX-APIKEY"] = api_key
         self._client = HttpClient(

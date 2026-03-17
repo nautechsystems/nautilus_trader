@@ -144,6 +144,7 @@ class DeribitDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
+
         if config.api_key:
             masked_key = mask_api_key(config.api_key)
             self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
@@ -676,6 +677,7 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _request_forward_prices(self, request: RequestForwardPrices) -> None:
         sample_id = request.sample_instrument_id
         pyo3_inst_id = None
+
         if sample_id is not None:
             pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(str(sample_id))
 

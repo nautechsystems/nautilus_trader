@@ -50,6 +50,7 @@ def what_to_show(bar_type: BarType) -> str:
         PriceType.LAST: "TRADES",
         PriceType.MID: "MIDPOINT",
     }
+
     if str(bar_type.instrument_id.venue) == "PAXOS" and bar_type.spec.price_type == PriceType.LAST:
         return "AGGTRADES"
     else:

@@ -49,6 +49,7 @@ def measure_memory_growth(func, iterations: int, label: str) -> dict:
 
     for i in range(iterations):
         func()
+
         if (i + 1) % 1000 == 0:
             gc.collect()
 

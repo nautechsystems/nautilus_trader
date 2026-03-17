@@ -405,6 +405,14 @@ BitMEX uses an `api-expires` header for request authentication to prevent replay
 - Signed requests include an `api-expires` Unix timestamp set `recv_window_ms / 1000` seconds ahead (10 seconds by default).
 - BitMEX rejects any request once that timestamp has passed, so keep latency within your configured window.
 
+## Funding rates
+
+The adapter receives funding rate data from the
+[Funding](https://www.bitmex.com/app/wsAPI#Funding)
+WebSocket stream. BitMEX returns a `fundingInterval` datetime field in each message,
+and the adapter reads the hours and minutes to compute the `interval` field on
+`FundingRateUpdate`.
+
 ## Rate limiting
 
 BitMEX implements a dual-layer rate limiting system:

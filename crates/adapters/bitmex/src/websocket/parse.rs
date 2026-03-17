@@ -18,6 +18,7 @@
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
+use chrono::Timelike;
 use nautilus_core::{UnixNanos, uuid::UUID4};
 #[cfg(test)]
 use nautilus_model::types::Currency;
@@ -63,10 +64,11 @@ use crate::{
             BitmexPegPriceType, BitmexSide,
         },
         parse::{
-            clean_reason, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
-            normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
-            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
-            parse_position_side, parse_signed_contracts_quantity,
+            bitmex_currency_divisor, clean_reason, extract_trigger_type, map_bitmex_currency,
+            normalize_trade_bin_prices, normalize_trade_bin_volume, parse_account_balance,
+            parse_contracts_quantity, parse_fractional_quantity, parse_instrument_id,
+            parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
+            parse_signed_contracts_quantity,
         },
     },
     http::parse::get_currency,
@@ -1095,11 +1097,15 @@ pub fn parse_instrument_msg(
 #[must_use]
 pub fn parse_funding_msg(msg: &BitmexFundingMsg, ts_init: UnixNanos) -> FundingRateUpdate {
     let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol));
+    let interval_hours = msg.funding_interval.hour();
+    let interval_minutes = msg.funding_interval.minute();
+    let interval = Some((interval_hours * 60 + interval_minutes) as u16);
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
 
     FundingRateUpdate::new(
         instrument_id,
         msg.funding_rate,
+        interval,
         None, // Next funding time not provided in this message
         ts_event,
         ts_init,
@@ -1157,27 +1163,51 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
 /// This creates a MarginBalance that can be added to an AccountState.
 #[must_use]
 pub fn parse_margin_msg(msg: &BitmexMarginMsg, instrument_id: InstrumentId) -> MarginBalance {
-    // Map BitMEX currency to standard currency code
     let currency_str = map_bitmex_currency(msg.currency.as_str());
     let currency = get_currency(&currency_str);
 
-    // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
-    let divisor = if msg.currency == "XBt" {
-        100_000_000.0 // Satoshis to BTC
-    } else if msg.currency == "USDt" || msg.currency == "LAMp" {
-        1_000_000.0 // Microunits to units
-    } else {
-        1.0
-    };
-
-    let initial = (msg.init_margin.unwrap_or(0) as f64 / divisor).max(0.0);
-    let maintenance = (msg.maint_margin.unwrap_or(0) as f64 / divisor).max(0.0);
-    let _unrealized = msg.unrealised_pnl.unwrap_or(0) as f64 / divisor;
+    let divisor = bitmex_currency_divisor(msg.currency.as_str());
+    let initial_dec = Decimal::from(msg.init_margin.unwrap_or(0).max(0)) / divisor;
+    let maintenance_dec = Decimal::from(msg.maint_margin.unwrap_or(0).max(0)) / divisor;
 
     MarginBalance::new(
-        Money::new(initial, currency),
-        Money::new(maintenance, currency),
+        Money::from_decimal(initial_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
+        Money::from_decimal(maintenance_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
         instrument_id,
+    )
+}
+
+/// Parses a BitMEX margin message into an [`AccountState`] with balances and margins.
+#[must_use]
+pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> AccountState {
+    let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
+    let balance = parse_account_balance(msg);
+
+    let currency_str = map_bitmex_currency(msg.currency.as_str());
+    let margin_instrument_id = InstrumentId::new(
+        Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
+        *BITMEX_VENUE,
+    );
+    let margin = parse_margin_msg(msg, margin_instrument_id);
+
+    let margins = if !margin.initial.is_zero() || !margin.maintenance.is_zero() {
+        vec![margin]
+    } else {
+        vec![]
+    };
+
+    let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "margin.timestamp");
+
+    AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![balance],
+        margins,
+        true,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        None,
     )
 }
 
@@ -1834,6 +1864,96 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_margin_account_state_includes_margins() {
+        let msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("USDt"),
+            risk_limit: None,
+            amount: Some(5_000_000_000),
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(200_000_000),  // 200 USDT
+            maint_margin: Some(100_000_000), // 100 USDT
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(5_000_000_000), // 5000 USDT
+            margin_balance: None,
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(4_800_000_000), // 4800 USDT
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = parse_margin_account_state(&msg, ts_init);
+
+        assert_eq!(state.account_id.to_string(), "BITMEX-123456");
+        assert_eq!(state.account_type, AccountType::Margin);
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.margins.len(), 1);
+
+        let balance = &state.balances[0];
+        assert_eq!(balance.total.as_f64(), 5000.0);
+
+        let margin = &state.margins[0];
+        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT-USDT");
+        assert_eq!(margin.instrument_id.venue.as_str(), "BITMEX");
+        assert_eq!(margin.initial.as_f64(), 200.0);
+        assert_eq!(margin.maintenance.as_f64(), 100.0);
+    }
+
+    #[rstest]
+    fn test_parse_margin_account_state_zero_margins_excluded() {
+        let msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: None,
+            amount: Some(100_000_000),
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(0),
+            maint_margin: Some(0),
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: Some(100_000_000),
+            margin_balance: None,
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(100_000_000),
+            withdrawable_margin: None,
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let state = parse_margin_account_state(&msg, UnixNanos::from(1_000_000_000u64));
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.margins.len(), 0);
+    }
+
+    #[rstest]
     fn test_parse_instrument_msg_both_prices() {
         let json_data = load_test_json("ws_instrument.json");
         let msg: BitmexInstrumentMsg = serde_json::from_str(&json_data).unwrap();
@@ -2008,6 +2128,7 @@ mod tests {
 
         assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
         assert_eq!(update.rate.to_string(), "0.0001");
+        assert_eq!(update.interval, Some(60 * 8));
         assert!(update.next_funding_ns.is_none());
         assert_eq!(update.ts_event, UnixNanos::from(1732507200000000000));
         assert_eq!(update.ts_init, UnixNanos::from(1));

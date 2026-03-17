@@ -114,6 +114,7 @@ def load_catalog_with_quote_ticks(
     wrangler = QuoteTickDataWrangler(_AUDUSD_SIM)
     ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"))
     ticks.sort(key=lambda x: x.ts_init)
+
     if count is not None:
         ticks = ticks[:count]
 
@@ -137,6 +138,7 @@ def load_catalog_with_large_tardis_quotes(
 
     """
     filepath = get_test_data_large_path() / "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz"
+
     if not filepath.exists():
         pytest.skip(f"Large test data not found: {filepath}")
 

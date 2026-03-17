@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -3172,6 +3173,65 @@ class TestPortfolio:
         # Assert
         assert margins is not None
         # For margin accounts, margins_maint should return a dict (may be empty if no positions)
+
+    def test_update_account_applies_reported_margin_balances(self):
+        # Arrange
+        account_id = AccountId("DERIBIT-001")
+        initial_state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000, USDT),
+                    Money(0, USDT),
+                    Money(100_000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        updated_state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000, USDT),
+                    Money(0, USDT),
+                    Money(100_000, USDT),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12.5, USDT),
+                    Money(7.5, USDT),
+                    BTCUSDT_PERP_BINANCE.id,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        self.portfolio.update_account(initial_state)
+
+        # Act
+        self.portfolio.update_account(updated_state)
+
+        # Assert
+        assert self.portfolio.margins_init(account_id=account_id) == {
+            BTCUSDT_PERP_BINANCE.id: Money(12.5, USDT),
+        }
+        assert self.portfolio.margins_maint(account_id=account_id) == {
+            BTCUSDT_PERP_BINANCE.id: Money(7.5, USDT),
+        }
 
     def test_account_method_raises_when_both_none(self):
         # Arrange & Act & Assert

@@ -43,4 +43,6 @@ pub mod websocket;
 pub use data::BinanceFuturesDataClient;
 pub use execution::BinanceFuturesExecutionClient;
 pub use http::client::BinanceFuturesHttpClient;
-pub use websocket::client::BinanceFuturesWebSocketClient;
+pub use websocket::{
+    streams::client::BinanceFuturesWebSocketClient, trading::BinanceFuturesWsTradingClient,
+};

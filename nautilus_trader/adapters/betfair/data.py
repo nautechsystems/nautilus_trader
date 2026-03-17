@@ -122,6 +122,7 @@ class BetfairDataClient(LiveMarketDataClient):
             certs_dir=config.certs_dir,
         )
         self._race_stream: BetfairRaceStreamClient | None = None
+
         if config.subscribe_race_data:
             self._race_stream = BetfairRaceStreamClient(
                 http_client=self._client,

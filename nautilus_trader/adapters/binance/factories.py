@@ -308,6 +308,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         )
 
         provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
+
         if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -428,6 +429,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         )
 
         provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
+
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(

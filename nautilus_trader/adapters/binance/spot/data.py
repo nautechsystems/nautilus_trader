@@ -125,6 +125,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
+
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

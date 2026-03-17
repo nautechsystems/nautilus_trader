@@ -832,7 +832,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[InstrumentId, Money] or ``None``
 
         """
         cdef Account account = self._get_account(venue, account_id, "initial (order) margins", "'venue' or 'account_id' must be provided")
@@ -854,7 +854,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[InstrumentId, Money] or ``None``
 
         """
         cdef Account account = self._get_account(venue, account_id, "maintenance (position) margins", "'venue' or 'account_id' must be provided")

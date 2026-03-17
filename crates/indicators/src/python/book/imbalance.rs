@@ -19,7 +19,9 @@ use pyo3::prelude::*;
 use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BookImbalanceRatio {
+    /// Creates a new `BookImbalanceRatio` instance.
     #[new]
     const fn py_new() -> Self {
         Self::new()

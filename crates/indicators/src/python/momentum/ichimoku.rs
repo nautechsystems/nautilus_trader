@@ -19,7 +19,14 @@ use pyo3::prelude::*;
 use crate::{indicator::Indicator, momentum::ichimoku::IchimokuCloud};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IchimokuCloud {
+    /// Creates a new `IchimokuCloud` instance.
+    ///
+    /// The indicator becomes `initialized` after `senkou_period` bars,
+    /// at which point `tenkan_sen` and `kijun_sen` are valid. The displaced
+    /// outputs (`senkou_span_a`, `senkou_span_b`, `chikou_span`) require an
+    /// additional `displacement` bars before they become non-zero.
     #[new]
     #[pyo3(signature = (tenkan_period=9, kijun_period=26, senkou_period=52, displacement=26))]
     #[must_use]
@@ -108,6 +115,7 @@ impl IchimokuCloud {
         self.initialized
     }
 
+    /// Updates the indicator with OHLC values.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
         self.update_raw(high, low, close);

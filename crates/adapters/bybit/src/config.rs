@@ -30,6 +30,10 @@ use crate::common::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+)]
 pub struct BybitDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
     pub api_key: Option<String>,
@@ -155,6 +159,10 @@ impl BybitDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
 pub struct BybitExecClientConfig {
     /// API key for authenticated requests.

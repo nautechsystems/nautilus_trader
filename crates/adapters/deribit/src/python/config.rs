@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitDataClientConfig {
+    /// Configuration for the Deribit data client.
     #[new]
     #[pyo3(signature = (
         product_types = None,
@@ -79,7 +81,9 @@ impl DeribitDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitExecClientConfig {
+    /// Configuration for the Deribit execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,

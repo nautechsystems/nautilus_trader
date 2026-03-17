@@ -57,12 +57,39 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ### Runtime hardening
 
-- **Hardened runners**: Most workflows employ `step-security/harden-runner` with `egress-policy: audit` to reduce attack surface and monitor outbound traffic.
+- **Hardened runners**: All workflows employ `step-security/harden-runner` to reduce attack surface and
+  monitor outbound traffic. All workflows default `egress-policy` to `block`. Set
+  `STEP_SECURITY_EGRESS_POLICY=audit` only as a temporary rollback while expanding an allow list. Jobs that
+  declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
+  publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. The
+  `security-audit.yml` workflow also reads its allow list from GitHub Environments so it can validate
+  branch changes before promoting the same settings to scheduled runs on the default branch.
+- **Fork PR handling**: `build.yml` falls back to `egress-policy: audit` for fork PRs. Forks cannot
+  access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
+  run with read-only permissions and no access to secrets, so audit mode is safe.
 
 ### Allowed network endpoints
 
 The `step-security/harden-runner` action restricts network access to approved endpoints.
-Common endpoints are maintained in the variable `COMMON_ALLOWED_ENDPOINTS`:
+All three variables are stored in GitHub as single-line, space-delimited values. The pinned
+`step-security/harden-runner` version does not enforce newline-delimited values correctly
+in `block` mode.
+
+All workflows read these GitHub variables:
+
+- `STEP_SECURITY_EGRESS_POLICY`: StepSecurity egress mode for the job. Workflows default to `block`. Set
+  `audit` only as a temporary override while expanding an allow list.
+- `COMMON_ALLOWED_ENDPOINTS`: Endpoints needed by every job (GitHub API, Ubuntu packages, tooling).
+- `CI_ALLOWED_ENDPOINTS`: Extra endpoints shared by the main CI, nightly, docs, and release workflows.
+- `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints needed by the security audit jobs.
+
+Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
+`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds).
+
+Use the `security-audit` environment for the default branch and `master`. Use `security-audit-test` for
+branch tests such as `test-security`.
+
+#### `COMMON_ALLOWED_ENDPOINTS`
 
 ```
 api.github.com:443                           # GitHub API
@@ -80,10 +107,74 @@ media.githubusercontent.com:443              # GitHub media content
 archive.ubuntu.com:443                       # Ubuntu package archives
 security.ubuntu.com:443                      # Ubuntu security updates
 azure.archive.ubuntu.com:443                 # Azure Ubuntu mirrors
+ports.ubuntu.com:443                         # Ubuntu ports archives
+changelogs.ubuntu.com:443                    # Ubuntu changelogs
+esm.ubuntu.com:443                           # Ubuntu ESM (extended security)
+motd.ubuntu.com:443                          # Ubuntu MOTD updates
 astral.sh:443                                # UV/Ruff tooling
+proxy.golang.org:443                         # Go module proxy (shfmt pre-commit hook)
+sum.golang.org:443                           # Go checksum database
+storage.googleapis.com:443                   # Go module downloads (via proxy)
+registry.npmjs.org:443                       # npm packages (actionlint hook)
+api.snapcraft.io:443                         # Ubuntu snap API (runner infra)
 ```
 
-Job-specific endpoints (e.g., `pypi.org:443` for publishing jobs) are added inline within each workflow.
+#### `CI_ALLOWED_ENDPOINTS`
+
+```
+artifactcache.actions.githubusercontent.com:443              # Actions cache
+github-releases.githubusercontent.com:443                    # GitHub release downloads
+launch.actions.githubusercontent.com:443                     # Actions launch
+results-receiver.actions.githubusercontent.com:443           # Actions results
+release-assets.githubusercontent.com:443                     # Release assets
+hosted-compute-request-orchestrator-prod-iad-01.githubapp.com:443  # Runner orchestration
+hosted-compute-request-orchestrator-prod-iad-02.githubapp.com:443  # Runner orchestration
+hosted-compute-watchdog-prod-iad-01.githubapp.com:443        # Runner watchdog
+hosted-compute-watchdog-prod-iad-02.githubapp.com:443        # Runner watchdog
+packages.microsoft.com:443                                   # Microsoft packages
+sh.rustup.rs:443                                             # Rust toolchain installer
+static.rust-lang.org:443                                     # Rust toolchain downloads
+crates.io:443                                                # Rust crate registry
+index.crates.io:443                                          # Rust crate index
+static.crates.io:443                                         # Rust crate downloads
+pypi.org:443                                                 # Python packages
+files.pythonhosted.org:443                                   # Python package files
+capnproto.org:443                                            # Cap'n Proto compiler
+packages.nautechsystems.io:443                               # Nautech packages
+test-data.nautechsystems.io:443                              # Nautech test data
+formulae.brew.sh:443                                         # Homebrew formulae
+community.chocolatey.org:443                                 # Chocolatey community
+chocolatey.org:443                                           # Chocolatey packages
+packages.chocolatey.org:443                                  # Chocolatey downloads
+archive.ubuntu.com:80                                        # Ubuntu archives (HTTP)
+security.ubuntu.com:80                                       # Ubuntu security (HTTP)
+azure.archive.ubuntu.com:80                                  # Azure Ubuntu (HTTP)
+ports.ubuntu.com:80                                          # Ubuntu ports (HTTP)
+fulcio.sigstore.dev:443                                      # Sigstore certificate authority
+rekor.sigstore.dev:443                                       # Sigstore transparency log
+codspeed.io:443                                              # CodSpeed benchmarking
+```
+
+#### `SECURITY_AUDIT_ALLOWED_ENDPOINTS`
+
+```
+static.rust-lang.org:443                     # Rust toolchain downloads
+crates.io:443                                # Rust crate registry
+index.crates.io:443                          # Rust crate index
+static.crates.io:443                         # Rust crate downloads
+pypi.org:443                                 # Python packages
+files.pythonhosted.org:443                   # Python package files
+api.osv.dev:443                              # OSV vulnerability database
+release-assets.githubusercontent.com:443     # GitHub release assets
+```
+
+#### Azure runner infrastructure
+
+GitHub-hosted runners contact Azure infrastructure at fixed IPs that are allowed by default
+at the VM level and do not need to be in the allow lists:
+
+- `168.63.129.16:80` -- Azure IMDS/wireserver (DHCP, DNS forwarding, health probes)
+- `168.63.129.16:53` -- Azure DNS resolver
 
 **Action Update Policy**: When updating GitHub Actions, only use versions that have been released for at least 2 weeks.
 This allows time for the community to identify potential issues while maintaining security through timely updates.

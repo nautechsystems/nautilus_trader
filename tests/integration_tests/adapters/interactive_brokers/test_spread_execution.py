@@ -384,6 +384,7 @@ class TestSpreadFillCreation:
         """
         try:
             ratio = 1
+
             if is_generic_spread_id(leg_fill.instrument_id):
                 try:
                     leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
@@ -433,6 +434,7 @@ class TestSpreadFillCreation:
                 leg_fill,
                 contract,
             )
+
             if not leg_instrument_id:
                 return None
 

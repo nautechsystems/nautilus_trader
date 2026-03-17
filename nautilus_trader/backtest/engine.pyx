@@ -82,6 +82,7 @@ from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulator_API
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_advance_clock
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_clear
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_peek_next_time
@@ -1224,6 +1225,10 @@ cdef class BacktestEngine:
         for exchange in self._venues.values():
             exchange.reset()
 
+        # Clear accumulated timer events from previous run
+        if self._accumulator._0 != NULL:
+            time_event_accumulator_clear(&self._accumulator)
+
         # Reset run IDs
         self._run_config_id = None
         self._run_id = None
@@ -1295,6 +1300,11 @@ cdef class BacktestEngine:
 
         """
         self.clear_data()
+
+        if self._accumulator._0 != NULL:
+            time_event_accumulator_drop(self._accumulator)
+            self._accumulator._0 = NULL
+
         self._kernel.dispose()
 
     def run(

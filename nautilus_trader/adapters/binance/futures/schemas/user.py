@@ -377,6 +377,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 liq_commission = Money(liq_commission_amount, liq_commission_asset)
 
             liq_venue_position_id: PositionId | None = None
+
             if exec_client.use_position_ids:
                 liq_venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 
@@ -540,6 +541,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 commission = Money(commission_amount, commission_asset)
 
             venue_position_id: PositionId | None = None
+
             if exec_client.use_position_ids:
                 venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 
@@ -959,6 +961,7 @@ class BinanceFuturesAlgoOrderData(msgspec.Struct, kw_only=True, frozen=True):
             return False
 
         venue_position_id: PositionId | None = None
+
         if exec_client.use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 
@@ -1011,6 +1014,7 @@ class BinanceFuturesAlgoOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 f"but order still open - emitting synthetic fill",
             )
             remaining_qty = order.quantity - order.filled_qty
+
             if avg_px is not None:
                 self._emit_synthetic_fill(
                     exec_client,

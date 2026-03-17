@@ -21,7 +21,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PolymarketDataClientConfig {
+    /// Configuration for the Polymarket data client.
     #[new]
     #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None))]
     fn py_new(
@@ -56,7 +58,9 @@ impl PolymarketDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PolymarketExecClientConfig {
+    /// Configuration for the Polymarket execution client.
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None))]

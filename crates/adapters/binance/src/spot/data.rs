@@ -22,6 +22,7 @@ use std::sync::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -50,6 +51,7 @@ use nautilus_model::{
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use crate::{
     common::{
@@ -61,7 +63,8 @@ use crate::{
         http::client::BinanceSpotHttpClient,
         websocket::streams::{
             client::BinanceSpotWebSocketClient,
-            messages::{BinanceSpotWsMessage, NautilusSpotDataWsMessage},
+            messages::BinanceSpotWsMessage,
+            parse::{parse_bbo_event, parse_depth_diff, parse_depth_snapshot, parse_trades_event},
         },
     },
 };
@@ -162,28 +165,47 @@ impl BinanceSpotDataClient {
     fn handle_ws_message(
         msg: BinanceSpotWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        ws_instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
     ) {
         match msg {
-            BinanceSpotWsMessage::Data(data_msg) => match data_msg {
-                NautilusSpotDataWsMessage::Data(payloads) => {
-                    for data in payloads {
+            BinanceSpotWsMessage::Trades(ref event) => {
+                let symbol = Ustr::from(&event.symbol);
+                if let Some(instrument) = ws_instruments.get(&symbol) {
+                    let trades = parse_trades_event(event, instrument.value());
+                    for data in trades {
                         Self::send_data(data_sender, data);
                     }
                 }
-                NautilusSpotDataWsMessage::Deltas(deltas) => {
+            }
+            BinanceSpotWsMessage::BestBidAsk(ref event) => {
+                let symbol = Ustr::from(&event.symbol);
+                if let Some(instrument) = ws_instruments.get(&symbol) {
+                    let quote = parse_bbo_event(event, instrument.value());
+                    Self::send_data(data_sender, Data::from(quote));
+                }
+            }
+            BinanceSpotWsMessage::DepthSnapshot(ref event) => {
+                let symbol = Ustr::from(&event.symbol);
+                if let Some(instrument) = ws_instruments.get(&symbol)
+                    && let Some(deltas) = parse_depth_snapshot(event, instrument.value())
+                {
                     Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
                 }
-                NautilusSpotDataWsMessage::Instrument(instrument) => {
-                    upsert_instrument(instruments, *instrument);
+            }
+            BinanceSpotWsMessage::DepthDiff(ref event) => {
+                let symbol = Ustr::from(&event.symbol);
+                if let Some(instrument) = ws_instruments.get(&symbol)
+                    && let Some(deltas) = parse_depth_diff(event, instrument.value())
+                {
+                    Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
                 }
-                NautilusSpotDataWsMessage::RawBinary(data) => {
-                    log::debug!("Unhandled binary message: {} bytes", data.len());
-                }
-                NautilusSpotDataWsMessage::RawJson(value) => {
-                    log::debug!("Unhandled JSON message: {value:?}");
-                }
-            },
+            }
+            BinanceSpotWsMessage::RawBinary(data) => {
+                log::debug!("Unhandled binary message: {} bytes", data.len());
+            }
+            BinanceSpotWsMessage::RawJson(value) => {
+                log::debug!("Unhandled JSON message: {value:?}");
+            }
             BinanceSpotWsMessage::Error(e) => {
                 log::error!("Binance WebSocket error: code={}, msg={}", e.code, e.msg);
             }
@@ -282,7 +304,7 @@ impl DataClient for BinanceSpotDataClient {
             }
         }
 
-        self.ws_client.cache_instruments(instruments);
+        self.ws_client.cache_instruments(&instruments);
 
         log::info!("Connecting to Binance SBE WebSocket...");
         self.ws_client.connect().await.map_err(|e| {
@@ -293,7 +315,7 @@ impl DataClient for BinanceSpotDataClient {
 
         let stream = self.ws_client.stream();
         let sender = self.data_sender.clone();
-        let insts = self.instruments.clone();
+        let ws_insts = self.ws_client.instruments_cache();
         let cancel = self.cancellation_token.clone();
 
         let handle = get_runtime().spawn(async move {
@@ -301,7 +323,7 @@ impl DataClient for BinanceSpotDataClient {
             loop {
                 tokio::select! {
                     Some(message) = stream.next() => {
-                        Self::handle_ws_message(message, &sender, &insts);
+                        Self::handle_ws_message(message, &sender, &ws_insts);
                     }
                     () = cancel.cancelled() => {
                         log::debug!("WebSocket stream task cancelled");

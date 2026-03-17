@@ -653,7 +653,7 @@ pub fn parse_order_status_report_sbe(
     };
 
     // Parse timestamps (SBE uses microseconds)
-    let ts_event = UnixNanos::from(order.update_time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(order.update_time as u64);
 
     // Build order list ID if present
     let order_list_id = order.order_list_id.and_then(|id| {
@@ -668,7 +668,7 @@ pub fn parse_order_status_report_sbe(
     let post_only = order.order_type == SbeOrderType::LimitMaker;
 
     // Parse order creation time (SBE uses microseconds)
-    let ts_accepted = UnixNanos::from(order.time as u64 * 1000);
+    let ts_accepted = UnixNanos::from_micros(order.time as u64);
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -797,7 +797,7 @@ pub fn parse_new_order_response_sbe(
     };
 
     // SBE uses microseconds; for new orders transact_time is both creation and event time
-    let ts_event = UnixNanos::from(response.transact_time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(response.transact_time as u64);
     let ts_accepted = ts_event;
 
     let order_list_id = response.order_list_id.and_then(|id| {
@@ -902,7 +902,7 @@ pub fn parse_fill_report_sbe(
     };
 
     // Parse timestamp (SBE uses microseconds)
-    let ts_event = UnixNanos::from(trade.time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(trade.time as u64);
 
     Ok(FillReport::new(
         account_id,
@@ -957,7 +957,7 @@ pub fn parse_klines_to_bars(
             Decimal::from_i128_with_scale(volume_mantissa, (-klines.qty_exponent as i32) as u32);
         let volume = Quantity::new(volume_dec.to_f64().unwrap_or(0.0), size_precision);
 
-        let ts_event = UnixNanos::from(kline.open_time as u64 * 1_000_000);
+        let ts_event = UnixNanos::from_millis(kline.open_time as u64);
 
         let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
         bars.push(bar);

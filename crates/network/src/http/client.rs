@@ -51,6 +51,10 @@ const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
+)]
 pub struct HttpClient {
     /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,

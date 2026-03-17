@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::winner_min::MinWinner};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MinWinner {
     #[new]
     fn py_new() -> Self {

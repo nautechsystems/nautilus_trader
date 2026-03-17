@@ -28,143 +28,76 @@ use crate::{
     },
 };
 
-/// Return round nanoseconds (ns) converted from the given seconds.
-///
-/// Parameters
-/// ----------
-/// secs : float
-///     The seconds to convert.
-///
-/// Returns
-/// -------
-/// int
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Converts seconds to nanoseconds (ns).
 #[pyfunction(name = "secs_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_nanos(secs: f64) -> PyResult<u64> {
     secs_to_nanos(secs).map_err(to_pyvalue_err)
 }
 
-/// Return round milliseconds (ms) converted from the given seconds.
-///
-/// Parameters
-/// ----------
-/// secs : float
-///     The seconds to convert.
-///
-/// Returns
-/// -------
-/// int
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Converts seconds to milliseconds (ms).
 #[pyfunction(name = "secs_to_millis")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
     secs_to_millis(secs).map_err(to_pyvalue_err)
 }
 
-/// Return round nanoseconds (ns) converted from the given milliseconds (ms).
+/// Converts milliseconds (ms) to nanoseconds (ns).
 ///
-/// Parameters
-/// ----------
-/// millis : float
-///     The milliseconds to convert.
-///
-/// Returns
-/// -------
-/// int
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
+/// which may lose precision and drop negative values after clamping.
 #[pyfunction(name = "millis_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
     millis_to_nanos(millis).map_err(to_pyvalue_err)
 }
 
-/// Return round nanoseconds (ns) converted from the given microseconds (μs).
+/// Converts microseconds (μs) to nanoseconds (ns).
 ///
-/// Parameters
-/// ----------
-/// micros : float
-///     The microseconds to convert.
-///
-/// Returns
-/// -------
-/// int
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
+/// which may lose precision and drop negative values after clamping.
 #[pyfunction(name = "micros_to_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_micros_to_nanos(micros: f64) -> PyResult<u64> {
     micros_to_nanos(micros).map_err(to_pyvalue_err)
 }
 
-/// Return seconds converted from the given nanoseconds (ns).
+/// Converts nanoseconds (ns) to seconds.
 ///
-/// Parameters
-/// ----------
-/// nanos : int
-///     The nanoseconds to convert.
-///
-/// Returns
-/// -------
-/// float
+/// Casting u64 to f64 may lose precision for large values,
+/// but is acceptable when computing fractional seconds.
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_secs")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_nanos_to_secs(nanos: u64) -> f64 {
     nanos_to_secs(nanos)
 }
 
-/// Return round milliseconds (ms) converted from the given nanoseconds (ns).
-///
-/// Parameters
-/// ----------
-/// nanos : int
-///     The nanoseconds to convert.
-///
-/// Returns
-/// -------
-/// int
+/// Converts nanoseconds (ns) to milliseconds (ms).
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_millis")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub const fn py_nanos_to_millis(nanos: u64) -> u64 {
     nanos_to_millis(nanos)
 }
 
-/// Return round microseconds (μs) converted from the given nanoseconds (ns).
-///
-/// Parameters
-/// ----------
-/// nanos : int
-///     The nanoseconds to convert.
-///
-/// Returns
-/// -------
-/// int
+/// Converts nanoseconds (ns) to microseconds (μs).
 #[must_use]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "nanos_to_micros")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)
 }
 
-/// Return UNIX nanoseconds as an ISO 8601 (RFC 3339) format string.
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
 ///
-/// Parameters
-/// ----------
-/// timestamp_ns : int
-///     The UNIX timestamp (nanoseconds).
-/// nanos_precision : bool, default True
-///     If True, use nanosecond precision. If False, use millisecond precision.
-///
-/// Returns
-/// -------
-/// str
-///
-/// Raises
-/// ------
-/// ValueError
-///     If `timestamp_ns` is invalid.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Returns the raw nanosecond value as a string if it exceeds the representable
+/// datetime range (`i64::MAX`, approximately year 2262).
 #[pyfunction(
     name = "unix_nanos_to_iso8601",
     signature = (timestamp_ns, nanos_precision=Some(true))
 )]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_unix_nanos_to_iso8601(
     timestamp_ns: u64,
     nanos_precision: Option<bool>,
@@ -185,58 +118,26 @@ pub fn py_unix_nanos_to_iso8601(
     Ok(formatted)
 }
 
-/// Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
-///
-/// Parameters
-/// ----------
-/// year : int
-///     The year from the datum date.
-/// month : int
-///     The month from the datum date.
-/// day : int
-///     The day from the datum date.
-///
-/// Returns
-/// -------
-/// int
-///
-/// Raises
-/// ------
-/// `ValueError`
-///     If given an invalid date.
+/// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the provided date is invalid.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Returns an error if the date is invalid.
 #[pyfunction(name = "last_weekday_nanos")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
     Ok(last_weekday_nanos(year, month, day)
         .map_err(to_pyvalue_err)?
         .as_u64())
 }
 
-/// Return whether the given UNIX nanoseconds timestamp is within the last 24 hours.
-///
-/// Parameters
-/// ----------
-/// timestamp_ns : int
-///     The UNIX nanoseconds timestamp datum.
-///
-/// Returns
-/// -------
-/// bool
-///
-/// Raises
-/// ------
-/// ValueError
-///     If `timestamp` is invalid.
+/// Check whether the given UNIX nanoseconds timestamp is within the last 24 hours.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the provided timestamp is invalid.
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+/// Returns an error if the timestamp is invalid.
 #[pyfunction(name = "is_within_last_24_hours")]
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
     is_within_last_24_hours(UnixNanos::from(timestamp_ns)).map_err(to_pyvalue_err)
 }

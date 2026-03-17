@@ -52,6 +52,7 @@ class TestFundingRateUpdate:
         funding_rate = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -60,6 +61,7 @@ class TestFundingRateUpdate:
         # Assert
         assert funding_rate.instrument_id == BTCUSDT_PERP_BINANCE.id
         assert funding_rate.rate == Decimal("0.0001")
+        assert funding_rate.interval == 60
         assert funding_rate.next_funding_ns == 1_640_000_100_000_000_000
         assert funding_rate.ts_event == 1_640_000_000_000_000_000
         assert funding_rate.ts_init == 1_640_000_000_000_000_000
@@ -79,6 +81,7 @@ class TestFundingRateUpdate:
             "FundingRateUpdate("
             "instrument_id=BTCUSDT-PERP.BINANCE, "
             "rate=0.0001, "
+            "interval=None, "
             "next_funding_ns=None, "
             "ts_event=1640000000000000000, "
             "ts_init=1640000000000000000)"
@@ -91,6 +94,7 @@ class TestFundingRateUpdate:
         funding_rate = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -102,6 +106,7 @@ class TestFundingRateUpdate:
             "FundingRateUpdate("
             "instrument_id=BTCUSDT-PERP.BINANCE, "
             "rate=0.0001, "
+            "interval=60, "
             "next_funding_ns=1640000100000000000, "
             "ts_event=1640000000000000000, "
             "ts_init=1640000000000000000)"
@@ -114,6 +119,7 @@ class TestFundingRateUpdate:
         funding_rate1 = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -121,6 +127,7 @@ class TestFundingRateUpdate:
         funding_rate2 = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -128,6 +135,7 @@ class TestFundingRateUpdate:
         funding_rate3 = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0003"),  # Different rate
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -165,6 +173,7 @@ class TestFundingRateUpdate:
         funding_rate = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -178,6 +187,7 @@ class TestFundingRateUpdate:
             "type": "FundingRateUpdate",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
             "rate": Decimal("0.0001"),
+            "interval": 60,
             "next_funding_ns": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
@@ -198,6 +208,7 @@ class TestFundingRateUpdate:
         # Assert
         assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
         assert result.rate == Decimal("0.0001")
+        assert result.interval is None
         assert result.next_funding_ns is None
         assert result.ts_event == 1_640_000_000_000_000_000
         assert result.ts_init == 1_640_000_000_000_000_000
@@ -207,6 +218,7 @@ class TestFundingRateUpdate:
         values = {
             "instrument_id": "BTCUSDT-PERP.BINANCE",
             "rate": Decimal("0.0001"),
+            "interval": 60,
             "next_funding_ns": 1_640_000_100_000_000_000,
             "ts_event": 1_640_000_000_000_000_000,
             "ts_init": 1_640_000_000_000_000_000,
@@ -218,6 +230,7 @@ class TestFundingRateUpdate:
         # Assert
         assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
         assert result.rate == Decimal("0.0001")
+        assert result.interval == 60
         assert result.next_funding_ns == 1_640_000_100_000_000_000
         assert result.ts_event == 1_640_000_000_000_000_000
         assert result.ts_init == 1_640_000_000_000_000_000
@@ -242,6 +255,7 @@ class TestFundingRateUpdate:
         original = FundingRateUpdate(
             instrument_id=BTCUSDT_PERP_BINANCE.id,
             rate=Decimal("0.0001"),
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -344,6 +358,7 @@ class TestFundingRateUpdate:
         pyo3_funding_rate = nautilus_pyo3.FundingRateUpdate(
             instrument_id=nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
             rate="0.0001",
+            interval=60,
             next_funding_ns=1_640_000_100_000_000_000,
             ts_event=1_640_000_000_000_000_000,
             ts_init=1_640_000_000_000_000_000,
@@ -355,6 +370,7 @@ class TestFundingRateUpdate:
         # Assert
         assert result.instrument_id.value == "BTCUSDT-PERP.BINANCE"
         assert result.rate == Decimal("0.0001")
+        assert result.interval == 60
         assert result.next_funding_ns == 1_640_000_100_000_000_000
         assert result.ts_event == 1_640_000_000_000_000_000
         assert result.ts_init == 1_640_000_000_000_000_000
@@ -371,6 +387,7 @@ class TestFundingRateUpdate:
             nautilus_pyo3.FundingRateUpdate(
                 instrument_id=nautilus_pyo3.InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
                 rate="0.0002",
+                interval=60,
                 next_funding_ns=1_640_000_100_000_000_000,
                 ts_event=1_640_000_001_000_000_000,
                 ts_init=1_640_000_001_000_000_000,

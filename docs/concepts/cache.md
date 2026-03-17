@@ -380,25 +380,7 @@ instrument_positions_count = self.cache.positions_total_count(instrument_id=inst
 account = self.cache.account(account_id)       # Retrieve account by ID
 account = self.cache.account_for_venue(venue)  # Retrieve account for a specific venue
 account_id = self.cache.account_id(venue)      # Retrieve account ID for a venue
-accounts = self.cache.accounts()               # Retrieve all accounts in the cache
 ```
-
-#### Purging cached state
-
-The cache exposes explicit maintenance hooks that remove closed or stale objects while preserving safety checks:
-
-- `purge_closed_orders(ts_now, buffer_secs=0, purge_from_database=False)` drops closed orders that have been inactive for at least `buffer_secs`. Linked contingency orders remain until every dependent child is closed.
-- `purge_closed_positions(ts_now, buffer_secs=0, purge_from_database=False)` removes positions that have stayed closed beyond the buffer window and deletes associated indices.
-- `purge_account_events(ts_now, lookback_secs=0, purge_from_database=False)` trims account event history outside the lookback window and can cascade deletes to the backing database.
-
-Key safeguards:
-
-- Open orders and positions are never purged; the cache logs a warning and leaves the item intact.
-- Linked orders keep parents in the cache until all children have closed, preventing premature removal of contingency chains.
-- Indices and reverse lookups are cleaned alongside the primary object to avoid dangling references.
-- Database deletions occur only when `purge_from_database=True` and a cache database is configured, ensuring in-memory purges do not silently erase persisted data.
-
-Use the trading clock (for example, `self.clock.timestamp_ns()`) when supplying `ts_now`. Set `purge_from_database=True` only when you intend to delete persisted records from Redis or PostgreSQL as well. In live trading these methods run automatically when the execution engine is configured with purge intervals; see [Memory management](live.md#memory-management) for the scheduler settings.
 
 #### Instruments and currencies
 
@@ -416,13 +398,6 @@ instruments_by_underlying = self.cache.instruments(underlying="ES")  # Instrumen
 # Get instrument identifiers
 instrument_ids = self.cache.instrument_ids()                   # Get all instrument IDs
 venue_instrument_ids = self.cache.instrument_ids(venue=venue)  # Get instrument IDs for a specific venue
-```
-
-##### Currencies
-
-```python
-# Get currency information
-currency = self.cache.load_currency("USD")  # Loads currency data for USD
 ```
 
 ---

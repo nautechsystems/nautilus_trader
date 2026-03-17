@@ -1348,6 +1348,7 @@ def test_instrument_id_betfair_ids(
     # Assert
     assert market_id == expected_market_id
     assert selection_id == expected_selection_id
+
     if expected_handicap is None:
         assert handicap is None
     else:

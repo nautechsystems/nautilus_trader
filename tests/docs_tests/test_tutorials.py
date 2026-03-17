@@ -17,6 +17,7 @@ import ast
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -38,16 +39,26 @@ CI_SKIPPED_EXECUTABLE_TUTORIALS = {
     TUTORIALS / "backtest_fx_bars.py",
 }
 
-# Tutorials that need external data, API keys, or network access
-NON_EXECUTABLE_TUTORIALS = [
-    GETTING_STARTED / "backtest_high_level.py",
-    TUTORIALS / "backtest_binance_orderbook.py",
-    TUTORIALS / "backtest_bybit_orderbook.py",
-    TUTORIALS / "databento_data_catalog.py",
-    TUTORIALS / "loading_external_data.py",
+LOCAL_DATA = REPO_ROOT / "tests" / "test_data" / "local"
+
+# Tutorials that run when user-fetched data exists under tests/test_data/local/.
+# Each entry is (script, data_subdir) where data_subdir is the subdirectory under
+# LOCAL_DATA that must contain files for the tutorial to run.
+LOCAL_DATA_TUTORIALS = [
+    (GETTING_STARTED / "backtest_high_level.py", "HISTDATA"),
+    (TUTORIALS / "backtest_orderbook_binance.py", "Binance"),
+    (TUTORIALS / "backtest_orderbook_bybit.py", "Bybit"),
+    (TUTORIALS / "loading_external_data.py", "HISTDATA"),
 ]
 
-ALL_TUTORIALS = EXECUTABLE_TUTORIALS + NON_EXECUTABLE_TUTORIALS
+# Tutorials that need API keys or network access and cannot run locally
+NON_EXECUTABLE_TUTORIALS = [
+    TUTORIALS / "data_catalog_databento.py",
+]
+
+ALL_TUTORIALS = (
+    EXECUTABLE_TUTORIALS + [t for t, _ in LOCAL_DATA_TUTORIALS] + NON_EXECUTABLE_TUTORIALS
+)
 
 
 def _tutorial_id(path: Path) -> str:
@@ -61,16 +72,48 @@ def test_tutorial_executes(tutorial: Path) -> None:
             "Uses TestDataProvider fallback, which depends on the GitHub API when CI runs from an installed wheel.",
         )
 
-    result = subprocess.run(  # noqa: S603
-        [sys.executable, str(tutorial)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        cwd=REPO_ROOT,
-        check=False,
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, str(tutorial)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=tmpdir,
+            check=False,
+        )
     assert result.returncode == 0, (
         f"{tutorial.name} failed with exit code {result.returncode}\nstderr:\n{result.stderr}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("tutorial", "data_subdir"),
+    LOCAL_DATA_TUTORIALS,
+    ids=[_tutorial_id(t) for t, _ in LOCAL_DATA_TUTORIALS],
+)
+def test_tutorial_with_local_data(tutorial: Path, data_subdir: str) -> None:
+    data_dir = LOCAL_DATA / data_subdir
+    if not data_dir.exists() or not any(data_dir.iterdir()):
+        pytest.skip(f"User-fetched test data not found: {data_dir}")
+
+    env = os.environ.copy()
+    env["NAUTILUS_DATA_DIR"] = str(LOCAL_DATA)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, str(tutorial)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=tmpdir,
+            env=env,
+            check=False,
+        )
+    assert result.returncode == 0, (
+        f"{tutorial.name} failed with exit code {result.returncode}\nstderr:\n{result.stderr}"
+    )
+    assert "[ERROR]" not in result.stderr, (
+        f"{tutorial.name} logged errors during execution:\n{result.stderr}"
     )
 
 

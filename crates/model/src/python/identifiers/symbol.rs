@@ -31,6 +31,7 @@ use crate::identifiers::symbol::Symbol;
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Symbol {
+    /// Represents a valid ticker symbol ID for a tradable instrument.
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {
         Self::new_checked(value).map_err(to_pyvalue_err)
@@ -101,18 +102,29 @@ impl Symbol {
         self.to_string()
     }
 
+    /// Returns true if the symbol string contains a period (`.`).
     #[getter]
     #[pyo3(name = "is_composite")]
     fn py_is_composite(&self) -> bool {
         self.is_composite()
     }
 
+    /// Returns the symbol root.
+    ///
+    /// The symbol root is the substring that appears before the first period (`.`)
+    /// in the full symbol string. It typically represents the underlying asset for
+    /// futures and options contracts. If no period is found, the entire symbol
+    /// string is considered the root.
     #[getter]
     #[pyo3(name = "root")]
     fn py_root(&self) -> &str {
         self.root()
     }
 
+    /// Returns the symbol topic.
+    ///
+    /// The symbol topic is the root symbol with a wildcard (`*`) appended if the symbol has a root,
+    /// otherwise returns the full symbol string.
     #[getter]
     #[pyo3(name = "topic")]
     fn py_topic(&self) -> String {

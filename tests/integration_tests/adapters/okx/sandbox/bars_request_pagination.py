@@ -66,6 +66,7 @@ async def paginate_bars(
             end=end,
             limit=batch_limit,
         )
+
         if not batch:
             break
 

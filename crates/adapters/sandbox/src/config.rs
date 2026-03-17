@@ -31,6 +31,10 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.sandbox", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.sandbox")
+)]
 pub struct SandboxExecutionClientConfig {
     /// The trader ID for this client.
     pub trader_id: TraderId,

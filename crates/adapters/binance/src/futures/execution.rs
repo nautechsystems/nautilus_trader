@@ -40,19 +40,23 @@ use nautilus_common::{
 };
 use nautilus_core::{
     MUTEX_POISONED, UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        LiquiditySide, OmsType, OrderSide, PositionSideSpecified, TrailingOffsetType, TriggerType,
+        LiquiditySide, OmsType, OrderSide, OrderType, PositionSideSpecified, TrailingOffsetType,
+        TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
         OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId,
+    },
     instruments::Instrument,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -74,25 +78,46 @@ use super::{
         },
     },
     websocket::{
-        client::BinanceFuturesWebSocketClient,
-        messages::{BinanceExecutionType, BinanceFuturesExecWsMessage, NautilusWsMessage},
-        parse_exec::{
-            decode_algo_client_id, parse_futures_account_update,
-            parse_futures_algo_update_to_order_status, parse_futures_order_update_to_fill,
-            parse_futures_order_update_to_order_status,
+        streams::{
+            client::BinanceFuturesWebSocketClient,
+            messages::{BinanceExecutionType, BinanceFuturesWsStreamsMessage},
+            parse_exec::{
+                decode_algo_client_id, parse_futures_account_update,
+                parse_futures_algo_update_to_order_status, parse_futures_order_update_to_fill,
+                parse_futures_order_update_to_order_status,
+            },
+        },
+        trading::{
+            client::BinanceFuturesWsTradingClient, messages::BinanceFuturesWsTradingMessage,
         },
     },
 };
 use crate::{
     common::{
-        consts::{BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE},
+        consts::{
+            BINANCE_FUTURES_USD_WS_API_TESTNET_URL, BINANCE_FUTURES_USD_WS_API_URL,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE,
+        },
         credential::resolve_credentials,
-        dispatch::{OrderIdentity, WsDispatchState, ensure_accepted_emitted},
+        dispatch::{
+            OrderIdentity, PendingOperation, PendingRequest, WsDispatchState,
+            ensure_accepted_emitted,
+        },
         encoder::{decode_broker_id, encode_broker_id},
-        enums::{BinancePositionSide, BinanceProductType, BinanceWorkingType},
+        enums::{
+            BinanceEnvironment, BinancePositionSide, BinanceProductType, BinanceSide,
+            BinanceTimeInForce, BinanceWorkingType,
+        },
+        symbol::format_binance_symbol,
     },
     config::BinanceExecClientConfig,
-    futures::http::models::BinanceFuturesAccountInfo,
+    futures::http::{
+        client::order_type_to_binance_futures,
+        models::BinanceFuturesAccountInfo,
+        query::{
+            BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder, BinanceNewOrderParams,
+        },
+    },
 };
 
 /// Listen key keepalive interval (30 minutes).
@@ -116,6 +141,8 @@ pub struct BinanceFuturesExecutionClient {
     product_type: BinanceProductType,
     http_client: BinanceFuturesHttpClient,
     ws_client: Option<BinanceFuturesWebSocketClient>,
+    ws_trading_client: Option<BinanceFuturesWsTradingClient>,
+    ws_trading_handle: Mutex<Option<JoinHandle<()>>>,
     listen_key: Arc<RwLock<Option<String>>>,
     cancellation_token: CancellationToken,
     triggered_algo_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
@@ -162,6 +189,29 @@ impl BinanceFuturesExecutionClient {
         )
         .context("failed to construct Binance Futures HTTP client")?;
 
+        let ws_trading_client = if config.use_ws_trading && product_type == BinanceProductType::UsdM
+        {
+            let ws_trading_url =
+                config
+                    .base_url_ws_trading
+                    .clone()
+                    .or_else(|| match config.environment {
+                        BinanceEnvironment::Testnet => {
+                            Some(BINANCE_FUTURES_USD_WS_API_TESTNET_URL.to_string())
+                        }
+                        _ => Some(BINANCE_FUTURES_USD_WS_API_URL.to_string()),
+                    });
+
+            Some(BinanceFuturesWsTradingClient::new(
+                ws_trading_url,
+                api_key.clone(),
+                api_secret.clone(),
+                None, // heartbeat
+            ))
+        } else {
+            None
+        };
+
         let ws_client = BinanceFuturesWebSocketClient::new(
             product_type,
             config.environment,
@@ -171,6 +221,7 @@ impl BinanceFuturesExecutionClient {
             Some(20), // Heartbeat interval
         )
         .context("failed to construct Binance Futures WebSocket client")?;
+
         let emitter = ExecutionEventEmitter::new(
             clock,
             core.trader_id,
@@ -188,6 +239,8 @@ impl BinanceFuturesExecutionClient {
             product_type,
             http_client,
             ws_client: Some(ws_client),
+            ws_trading_client,
+            ws_trading_handle: Mutex::new(None),
             listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
             triggered_algo_order_ids: Arc::new(RwLock::new(AHashSet::new())),
@@ -258,9 +311,32 @@ impl BinanceFuturesExecutionClient {
             })
             .collect();
 
-        // Margin balances in futures are position-specific, not account-level,
-        // so we don't create MarginBalance entries here as they require instrument_id.
-        let margins: Vec<MarginBalance> = Vec::new();
+        let mut margins: Vec<MarginBalance> = Vec::new();
+
+        let initial_margin_dec = account_info
+            .total_initial_margin
+            .as_ref()
+            .and_then(|s| Decimal::from_str_exact(s).ok());
+        let maint_margin_dec = account_info
+            .total_maint_margin
+            .as_ref()
+            .and_then(|s| Decimal::from_str_exact(s).ok());
+
+        if let (Some(initial_dec), Some(maint_dec)) = (initial_margin_dec, maint_margin_dec)
+            && (!initial_dec.is_zero() || !maint_dec.is_zero())
+        {
+            let margin_currency = Currency::USDT();
+            let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *BINANCE_VENUE);
+            let initial_margin = Money::from_decimal(initial_dec, margin_currency)
+                .unwrap_or_else(|_| Money::zero(margin_currency));
+            let maintenance_margin = Money::from_decimal(maint_dec, margin_currency)
+                .unwrap_or_else(|_| Money::zero(margin_currency));
+            margins.push(MarginBalance::new(
+                initial_margin,
+                maintenance_margin,
+                margin_instrument_id,
+            ));
+        }
 
         AccountState::new(
             self.core.account_id,
@@ -306,9 +382,14 @@ impl BinanceFuturesExecutionClient {
         Ok(response.dual_side_position)
     }
 
-    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
+    /// Returns whether the WS trading client is connected and active.
+    fn ws_trading_active(&self) -> bool {
+        self.ws_trading_client
+            .as_ref()
+            .is_some_and(|c| c.is_active())
+    }
 
+    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -347,8 +428,6 @@ impl BinanceFuturesExecutionClient {
             },
         );
 
-        // HTTP only generates OrderRejected on failure.
-        // OrderAccepted comes from WebSocket (ORDER_TRADE_UPDATE or ALGO_UPDATE).
         let use_algo_api = is_algo_order_type(order_type);
 
         // Convert trailing offset (basis points) to Binance callback rate (percentage).
@@ -374,6 +453,94 @@ impl BinanceFuturesExecutionClient {
             }
             _ => None,
         };
+
+        // Non-algo orders can route through WS trading API when active
+        if self.ws_trading_active() && !use_algo_api {
+            let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
+            let dispatch_state = self.dispatch_state.clone();
+            let ts_init = clock.get_time_ns();
+
+            let symbol = format_binance_symbol(&instrument_id);
+            let binance_side = BinanceSide::try_from(order_side)?;
+            let binance_order_type = order_type_to_binance_futures(order_type)?;
+            let binance_tif = if post_only {
+                BinanceTimeInForce::Gtx
+            } else {
+                BinanceTimeInForce::try_from(time_in_force)?
+            };
+
+            let requires_time_in_force = matches!(
+                order_type,
+                OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+            );
+
+            let client_id_str =
+                encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+
+            let params = BinanceNewOrderParams {
+                symbol,
+                side: binance_side,
+                order_type: binance_order_type,
+                time_in_force: if requires_time_in_force {
+                    Some(binance_tif)
+                } else {
+                    None
+                },
+                quantity: Some(quantity.to_string()),
+                price: price.map(|p| p.to_string()),
+                new_client_order_id: Some(client_id_str),
+                stop_price: trigger_price.map(|p| p.to_string()),
+                reduce_only: if reduce_only { Some(true) } else { None },
+                position_side,
+                close_position: None,
+                activation_price: activation_price.map(|p| p.to_string()),
+                callback_rate,
+                working_type,
+                price_protect: None,
+                new_order_resp_type: None,
+                good_till_date: None,
+                recv_window: None,
+                price_match: None,
+                self_trade_prevention_mode: None,
+            };
+
+            self.spawn_task("submit_order_ws", async move {
+                match ws_client.place_order(params).await {
+                    Ok(request_id) => {
+                        dispatch_state.pending_requests.insert(
+                            request_id,
+                            PendingRequest {
+                                client_order_id,
+                                venue_order_id: None,
+                                operation: PendingOperation::Place,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        let rejected = OrderRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            account_id,
+                            format!("ws-submit-order-error: {e}").into(),
+                            UUID4::new(),
+                            ts_init,
+                            clock.get_time_ns(),
+                            false,
+                            false,
+                        );
+                        emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                        anyhow::bail!("WS submit order failed: {e}");
+                    }
+                }
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
 
         self.spawn_task("submit_order", async move {
             let result = if use_algo_api {
@@ -454,7 +621,6 @@ impl BinanceFuturesExecutionClient {
     }
 
     fn cancel_order_internal(&self, cmd: &CancelOrder) {
-        let http_client = self.http_client.clone();
         let command = cmd.clone();
 
         // Non-triggered algo orders use algo cancel endpoint, triggered use regular
@@ -478,8 +644,69 @@ impl BinanceFuturesExecutionClient {
         let venue_order_id = command.venue_order_id;
         let client_order_id = command.client_order_id;
 
-        // HTTP only generates OrderCancelRejected on failure.
-        // OrderCanceled comes from WebSocket (ORDER_TRADE_UPDATE or ALGO_UPDATE).
+        // Non-algo cancels can route through WS trading API when active
+        if self.ws_trading_active() && !use_algo_cancel {
+            let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
+            let dispatch_state = self.dispatch_state.clone();
+
+            let mut cancel_builder = BinanceCancelOrderParamsBuilder::default();
+            cancel_builder.symbol(instrument_id.symbol.to_string());
+
+            if let Some(venue_id) = venue_order_id {
+                cancel_builder.order_id(
+                    venue_id
+                        .inner()
+                        .parse::<i64>()
+                        .expect("venue_order_id should be numeric"),
+                );
+            }
+
+            cancel_builder.orig_client_order_id(encode_broker_id(
+                &client_order_id,
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            ));
+
+            let params = cancel_builder.build().expect("valid cancel params");
+
+            self.spawn_task("cancel_order_ws", async move {
+                match ws_client.cancel_order(params).await {
+                    Ok(request_id) => {
+                        dispatch_state.pending_requests.insert(
+                            request_id,
+                            PendingRequest {
+                                client_order_id,
+                                venue_order_id,
+                                operation: PendingOperation::Cancel,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        let ts_now = clock.get_time_ns();
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            client_order_id,
+                            format!("ws-cancel-order-error: {e}").into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                        anyhow::bail!("WS cancel order failed: {e}");
+                    }
+                }
+                Ok(())
+            });
+
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+
         self.spawn_task("cancel_order", async move {
             let result = if use_algo_cancel {
                 // Try algo cancel first; if it fails, the order may have been triggered
@@ -819,6 +1046,41 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         self.await_account_registered(30.0).await?;
 
+        // Connect WS trading client (primary order transport for USD-M)
+        if let Some(ref mut ws_trading) = self.ws_trading_client {
+            match ws_trading.connect().await {
+                Ok(()) => {
+                    log::info!("Connected to Binance Futures WS trading API");
+
+                    let ws_trading_clone = ws_trading.clone();
+                    let emitter = self.emitter.clone();
+                    let account_id = self.core.account_id;
+                    let clock = self.clock;
+                    let dispatch_state = self.dispatch_state.clone();
+
+                    let handle = get_runtime().spawn(async move {
+                        while let Some(msg) = ws_trading_clone.recv().await {
+                            dispatch_ws_trading_message(
+                                msg,
+                                &emitter,
+                                account_id,
+                                clock,
+                                &dispatch_state,
+                            );
+                        }
+                    });
+
+                    *self.ws_trading_handle.lock().expect(MUTEX_POISONED) = Some(handle);
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to connect WS trading API: {e}. \
+                         Order operations will use HTTP fallback"
+                    );
+                }
+            }
+        }
+
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
@@ -831,6 +1093,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         // Cancel all background tasks
         self.cancellation_token.cancel();
+
+        // Abort WS trading task and disconnect
+        if let Some(handle) = self.ws_trading_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
+
+        if let Some(ref mut ws_trading) = self.ws_trading_client {
+            ws_trading.disconnect().await;
+        }
 
         // Wait for WebSocket task to complete
         let ws_task = self.ws_task.lock().expect(MUTEX_POISONED).take();
@@ -1017,8 +1288,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
         } else if let Some(instrument_id) = cmd.instrument_id {
             let symbol = instrument_id.symbol.to_string();
-            let start_time = cmd.start.map(|t| t.as_i64() / 1_000_000); // ns to ms
-            let end_time = cmd.end.map(|t| t.as_i64() / 1_000_000);
+            let start_time = cmd
+                .start
+                .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+            let end_time = cmd
+                .end
+                .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
 
             let mut builder = BinanceAllOrdersParamsBuilder::default();
             builder.symbol(symbol);
@@ -1060,8 +1335,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let symbol = instrument_id.symbol.to_string();
-        let start_time = cmd.start.map(|t| t.as_i64() / 1_000_000);
-        let end_time = cmd.end.map(|t| t.as_i64() / 1_000_000);
+        let start_time = cmd
+            .start
+            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+        let end_time = cmd
+            .end
+            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
 
         let mut builder = BinanceUserTradesParamsBuilder::default();
         builder.symbol(symbol);
@@ -1144,7 +1423,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let ts_now = self.clock.get_time_ns();
 
         let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
+            let lookback_ns = mins_to_nanos(mins);
             UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
         });
 
@@ -1419,6 +1698,73 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
         let clock = self.clock;
 
+        if self.ws_trading_active() {
+            let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
+            let dispatch_state = self.dispatch_state.clone();
+
+            let binance_side = BinanceSide::try_from(order_side)?;
+            let orig_client_order_id =
+                client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
+
+            let mut modify_builder = BinanceModifyOrderParamsBuilder::default();
+            modify_builder
+                .symbol(format_binance_symbol(&instrument_id))
+                .side(binance_side)
+                .quantity(quantity.to_string())
+                .price(price.to_string());
+
+            if let Some(venue_id) = venue_order_id {
+                modify_builder.order_id(
+                    venue_id
+                        .inner()
+                        .parse::<i64>()
+                        .expect("venue_order_id should be numeric"),
+                );
+            }
+
+            if let Some(client_id) = orig_client_order_id {
+                modify_builder.orig_client_order_id(client_id);
+            }
+
+            let params = modify_builder.build().expect("valid modify params");
+
+            self.spawn_task("modify_order_ws", async move {
+                match ws_client.modify_order(params).await {
+                    Ok(request_id) => {
+                        dispatch_state.pending_requests.insert(
+                            request_id,
+                            PendingRequest {
+                                client_order_id: command.client_order_id,
+                                venue_order_id,
+                                operation: PendingOperation::Modify,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        let ts_now = clock.get_time_ns();
+                        let rejected = OrderModifyRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!("ws-modify-order-error: {e}").into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
+                        emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                        anyhow::bail!("WS modify order failed: {e}");
+                    }
+                }
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
         self.spawn_task("modify_order", async move {
             let result = http_client
                 .modify_order(
@@ -1490,18 +1836,35 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
+        let ws_active = self.ws_trading_active();
+        let ws_client_clone = self.ws_trading_client.clone();
 
-        // HTTP only confirms request accepted; OrderCanceled comes from WebSocket
         self.spawn_task("cancel_all_orders", async move {
-            match http_client.cancel_all_orders(instrument_id).await {
-                Ok(_) => {
-                    log::info!("Cancel all regular orders request accepted for {instrument_id}");
+            if ws_active {
+                if let Some(ref ws_client) = ws_client_clone {
+                    let symbol = instrument_id.symbol.to_string();
+                    if let Err(e) = ws_client.cancel_all_orders(symbol).await {
+                        log::error!("WS cancel_all_orders failed: {e}");
+                    } else {
+                        log::info!(
+                            "WS cancel all regular orders request accepted for {instrument_id}"
+                        );
+                    }
                 }
-                Err(e) => {
-                    log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
+            } else {
+                match http_client.cancel_all_orders(instrument_id).await {
+                    Ok(_) => {
+                        log::info!(
+                            "Cancel all regular orders request accepted for {instrument_id}"
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
+                    }
                 }
             }
 
+            // Algo orders always go through HTTP (WS API does not support algo service)
             match http_client.cancel_all_algo_orders(instrument_id).await {
                 Ok(()) => {
                     log::info!("Cancel all algo orders request accepted for {instrument_id}");
@@ -1646,7 +2009,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
 #[allow(clippy::too_many_arguments)]
 fn dispatch_ws_message(
-    msg: NautilusWsMessage,
+    msg: BinanceFuturesWsStreamsMessage,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceFuturesHttpClient,
     account_id: AccountId,
@@ -1657,47 +2020,7 @@ fn dispatch_ws_message(
     algo_client_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
 ) {
     match msg {
-        NautilusWsMessage::ExecRaw(exec_msg) => {
-            dispatch_exec_message(
-                exec_msg,
-                emitter,
-                http_client,
-                account_id,
-                product_type,
-                clock,
-                dispatch_state,
-                triggered_algo_ids,
-                algo_client_ids,
-            );
-        }
-        NautilusWsMessage::Reconnected => {
-            log::info!("User data stream WebSocket reconnected");
-        }
-        NautilusWsMessage::Error(err) => {
-            log::error!(
-                "User data stream WebSocket error: code={}, msg={}",
-                err.code,
-                err.msg
-            );
-        }
-        NautilusWsMessage::Data(_) | NautilusWsMessage::Exec(_) => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn dispatch_exec_message(
-    msg: BinanceFuturesExecWsMessage,
-    emitter: &ExecutionEventEmitter,
-    http_client: &BinanceFuturesHttpClient,
-    account_id: AccountId,
-    product_type: BinanceProductType,
-    clock: &'static AtomicTime,
-    dispatch_state: &WsDispatchState,
-    triggered_algo_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
-    algo_client_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
-) {
-    match msg {
-        BinanceFuturesExecWsMessage::OrderUpdate(update) => {
+        BinanceFuturesWsStreamsMessage::OrderUpdate(update) => {
             dispatch_order_update(
                 &update,
                 emitter,
@@ -1708,7 +2031,7 @@ fn dispatch_exec_message(
                 dispatch_state,
             );
         }
-        BinanceFuturesExecWsMessage::AlgoUpdate(update) => {
+        BinanceFuturesWsStreamsMessage::AlgoUpdate(update) => {
             dispatch_algo_update(
                 &update,
                 emitter,
@@ -1721,20 +2044,20 @@ fn dispatch_exec_message(
                 algo_client_ids,
             );
         }
-        BinanceFuturesExecWsMessage::AccountUpdate(update) => {
+        BinanceFuturesWsStreamsMessage::AccountUpdate(update) => {
             let ts_init = clock.get_time_ns();
             if let Some(state) = parse_futures_account_update(&update, account_id, ts_init) {
                 emitter.send_account_state(state);
             }
         }
-        BinanceFuturesExecWsMessage::MarginCall(mc) => {
+        BinanceFuturesWsStreamsMessage::MarginCall(mc) => {
             log::warn!(
                 "Margin call: cross_wallet_balance={}, positions_at_risk={}",
                 mc.cross_wallet_balance,
                 mc.positions.len()
             );
         }
-        BinanceFuturesExecWsMessage::AccountConfigUpdate(cfg) => {
+        BinanceFuturesWsStreamsMessage::AccountConfigUpdate(cfg) => {
             if let Some(ref lc) = cfg.leverage_config {
                 log::info!(
                     "Account config update: symbol={}, leverage={}",
@@ -1743,9 +2066,28 @@ fn dispatch_exec_message(
                 );
             }
         }
-        BinanceFuturesExecWsMessage::ListenKeyExpired => {
+        BinanceFuturesWsStreamsMessage::ListenKeyExpired => {
             log::warn!("Listen key expired, awaiting reconnection");
         }
+        BinanceFuturesWsStreamsMessage::Reconnected => {
+            log::info!("User data stream WebSocket reconnected");
+        }
+        BinanceFuturesWsStreamsMessage::Error(err) => {
+            log::error!(
+                "User data stream WebSocket error: code={}, msg={}",
+                err.code,
+                err.msg
+            );
+        }
+        // Market data messages ignored by execution client
+        BinanceFuturesWsStreamsMessage::AggTrade(_)
+        | BinanceFuturesWsStreamsMessage::Trade(_)
+        | BinanceFuturesWsStreamsMessage::BookTicker(_)
+        | BinanceFuturesWsStreamsMessage::DepthUpdate(_)
+        | BinanceFuturesWsStreamsMessage::MarkPrice(_)
+        | BinanceFuturesWsStreamsMessage::Kline(_)
+        | BinanceFuturesWsStreamsMessage::ForceOrder(_)
+        | BinanceFuturesWsStreamsMessage::Ticker(_) => {}
     }
 }
 
@@ -1755,7 +2097,7 @@ fn dispatch_exec_message(
 /// to execution reports for reconciliation.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_order_update(
-    msg: &super::websocket::messages::BinanceFuturesOrderUpdateMsg,
+    msg: &super::websocket::streams::messages::BinanceFuturesOrderUpdateMsg,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceFuturesHttpClient,
     account_id: AccountId,
@@ -1766,7 +2108,7 @@ fn dispatch_order_update(
     let order = &msg.order;
     let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);
+    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
 
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
@@ -2002,7 +2344,7 @@ fn dispatch_order_update(
 
 #[allow(clippy::too_many_arguments)]
 fn dispatch_algo_update(
-    msg: &super::websocket::messages::BinanceFuturesAlgoUpdateMsg,
+    msg: &super::websocket::streams::messages::BinanceFuturesAlgoUpdateMsg,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceFuturesHttpClient,
     account_id: AccountId,
@@ -2016,7 +2358,7 @@ fn dispatch_algo_update(
 
     let algo_data = &msg.algo_order;
     let ts_init = clock.get_time_ns();
-    let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);
+    let ts_event = UnixNanos::from_millis(msg.event_time as u64);
     let client_order_id = decode_algo_client_id(algo_data);
 
     let symbol_ustr = ustr::Ustr::from(algo_data.symbol.as_str());
@@ -2179,6 +2521,148 @@ fn dispatch_algo_update(
                 algo_data.client_algo_id,
                 algo_data.algo_id
             );
+        }
+    }
+}
+
+fn dispatch_ws_trading_message(
+    msg: BinanceFuturesWsTradingMessage,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    dispatch_state: &WsDispatchState,
+) {
+    match msg {
+        BinanceFuturesWsTradingMessage::OrderAccepted {
+            request_id,
+            response,
+        } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::debug!(
+                "WS order accepted: request_id={request_id}, order_id={}",
+                response.order_id
+            );
+            // OrderAccepted event comes from user data stream (ORDER_TRADE_UPDATE)
+        }
+        BinanceFuturesWsTradingMessage::OrderRejected {
+            request_id,
+            code,
+            msg,
+        } => {
+            log::warn!("WS order rejected: request_id={request_id}, code={code}, msg={msg}");
+            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id)
+                && let Some(identity) = dispatch_state
+                    .order_identities
+                    .get(&pending.client_order_id)
+            {
+                let ts_now = clock.get_time_ns();
+                let rejected = OrderRejected::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    pending.client_order_id,
+                    account_id,
+                    ustr::Ustr::from(&format!("code={code}: {msg}")),
+                    UUID4::new(),
+                    ts_now,
+                    ts_now,
+                    false,
+                    false,
+                );
+                dispatch_state.cleanup_terminal(pending.client_order_id);
+                emitter.send_order_event(OrderEventAny::Rejected(rejected));
+            }
+        }
+        BinanceFuturesWsTradingMessage::OrderCanceled {
+            request_id,
+            response,
+        } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::debug!(
+                "WS order canceled: request_id={request_id}, order_id={}",
+                response.order_id
+            );
+            // OrderCanceled event comes from user data stream (ORDER_TRADE_UPDATE)
+        }
+        BinanceFuturesWsTradingMessage::CancelRejected {
+            request_id,
+            code,
+            msg,
+        } => {
+            log::warn!("WS cancel rejected: request_id={request_id}, code={code}, msg={msg}");
+            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id)
+                && let Some(identity) = dispatch_state
+                    .order_identities
+                    .get(&pending.client_order_id)
+            {
+                let ts_now = clock.get_time_ns();
+                let rejected = OrderCancelRejected::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    pending.client_order_id,
+                    ustr::Ustr::from(&format!("code={code}: {msg}")),
+                    UUID4::new(),
+                    ts_now,
+                    ts_now,
+                    false,
+                    None,
+                    Some(account_id),
+                );
+                emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+            }
+        }
+        BinanceFuturesWsTradingMessage::OrderModified {
+            request_id,
+            response,
+        } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::debug!(
+                "WS order modified: request_id={request_id}, order_id={}",
+                response.order_id
+            );
+            // OrderUpdated event comes from user data stream (ORDER_TRADE_UPDATE)
+        }
+        BinanceFuturesWsTradingMessage::ModifyRejected {
+            request_id,
+            code,
+            msg,
+        } => {
+            log::warn!("WS modify rejected: request_id={request_id}, code={code}, msg={msg}");
+            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id)
+                && let Some(identity) = dispatch_state
+                    .order_identities
+                    .get(&pending.client_order_id)
+            {
+                let ts_now = clock.get_time_ns();
+                let rejected = OrderModifyRejected::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    pending.client_order_id,
+                    ustr::Ustr::from(&format!("code={code}: {msg}")),
+                    UUID4::new(),
+                    ts_now,
+                    ts_now,
+                    false,
+                    None,
+                    Some(account_id),
+                );
+                emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+            }
+        }
+        BinanceFuturesWsTradingMessage::AllOrdersCanceled { request_id } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::debug!("WS all orders canceled: request_id={request_id}");
+        }
+        BinanceFuturesWsTradingMessage::Connected => {
+            log::info!("WS trading API connected");
+        }
+        BinanceFuturesWsTradingMessage::Reconnected => {
+            log::info!("WS trading API reconnected");
+        }
+        BinanceFuturesWsTradingMessage::Error(err) => {
+            log::error!("WS trading API error: {err}");
         }
     }
 }

@@ -340,6 +340,7 @@ class DydxExecutionClient(LiveExecutionClient):
     def _handle_block_height(self, msg: dict) -> None:
         height = msg.get("height")
         time_str = msg.get("time")
+
         if height is not None and self._order_submitter is not None:
             try:
                 self._order_submitter.record_block(height, time_str)
@@ -827,6 +828,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -875,6 +877,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -919,6 +922,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,

@@ -70,6 +70,10 @@ pub(super) enum AssetContextDataType {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+)]
 pub struct HyperliquidWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,

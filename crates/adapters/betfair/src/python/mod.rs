@@ -15,6 +15,11 @@
 
 //! Python bindings for the Betfair adapter.
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod config;
 pub mod factories;
 

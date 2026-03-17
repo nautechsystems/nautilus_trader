@@ -138,6 +138,7 @@ impl OKXDataClient {
             None,
             None,
             Some(20), // Heartbeat
+            None,
         )
         .context("failed to construct OKX public websocket client")?;
 
@@ -150,6 +151,7 @@ impl OKXDataClient {
                     config.api_passphrase.clone(),
                     None,
                     Some(20), // Heartbeat
+                    None,
                 )
                 .context("failed to construct OKX business websocket client")?,
             )

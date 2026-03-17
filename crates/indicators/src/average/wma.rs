@@ -33,6 +33,10 @@ const MAX_PERIOD: usize = 8_192;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct WeightedMovingAverage {
     /// The rolling window period for the indicator (> 0).
     pub period: usize,

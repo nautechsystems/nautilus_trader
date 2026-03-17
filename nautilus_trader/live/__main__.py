@@ -38,6 +38,7 @@ def main(
     config: TradingNodeConfig = msgspec.json.decode(raw, type=TradingNodeConfig)
     node = TradingNode(config=config)
     node.build()
+
     if start:
         try:
             node.run()

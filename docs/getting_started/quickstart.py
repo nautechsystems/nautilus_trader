@@ -94,9 +94,11 @@ class EMACross(Strategy):
 # then enters or reverses a position based on the crossover signal.
 
 # %% [markdown]
-# ## Set up the backtest
+# ## Generate synthetic data
 #
-# Generate synthetic EUR/USD 1-minute bars, configure a `BacktestEngine`, and run.
+# To keep the quickstart self-contained, we generate 10,000 synthetic EUR/USD
+# 1-minute bars using a random walk. In practice you would load real market data
+# from a vendor or the Parquet data catalog.
 
 # %%
 import numpy as np
@@ -141,8 +143,14 @@ bars = BarDataWrangler(bar_type, EURUSD).process(bars_df)
 # `Bar` objects. The bar type string encodes the instrument, aggregation period,
 # price source, and data origin.
 
+# %% [markdown]
+# ## Configure and run the engine
+#
+# Create a `BacktestEngine`, add a simulated FX venue with a margin account, wire
+# up the instrument, data, and strategy, then run. The engine processes all bars
+# in timestamp order with deterministic execution semantics.
+
 # %%
-# Configure the engine
 engine = BacktestEngine(
     config=BacktestEngineConfig(
         logging=LoggingConfig(log_level="ERROR"),
@@ -182,11 +190,11 @@ engine.run()
 # market orders at the current price.
 
 # %% [markdown]
-# ## See results
+# ## Review results
 #
 # The engine generates reports from the completed backtest. The account report
-# shows balance changes over time. The positions report lists each round-trip
-# trade with its realized PnL.
+# shows balance changes over time, the positions report lists each round-trip
+# trade with its realized PnL, and the order fills report shows every execution.
 
 # %%
 engine.trader.generate_account_report(SIM)
@@ -204,8 +212,8 @@ engine.trader.generate_order_fills_report()
 #   with real market data and execution algorithms.
 # - [Backtest (high-level API)](backtest_high_level) for config-driven backtesting
 #   with `BacktestNode` and the Parquet data catalog.
-# - [Tutorials](../tutorials/) for venue-specific walkthroughs covering Binance,
-#   Bybit, Databento, and more.
+# - [Tutorials](../tutorials/) for strategy pattern walkthroughs covering
+#   market making, mean reversion, order book imbalance, and more.
 
 # %%
 engine.dispose()

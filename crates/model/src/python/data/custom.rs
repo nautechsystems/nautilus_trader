@@ -27,6 +27,11 @@ use crate::data::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CustomData {
+    /// A wrapper for custom data including its data type.
+    ///
+    /// The `data` field holds an `Arc` to a `CustomDataTrait` implementation,
+    /// enabling cheap cloning when passing to Python (Arc clone is O(1)).
+    /// Custom data is always Rust-defined (optionally with PyO3 bindings).
     #[new]
     #[pyo3(signature = (data_type, data))]
     #[allow(clippy::needless_pass_by_value)]
@@ -110,8 +115,8 @@ impl CustomData {
     }
 }
 
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn custom_data_backend_kind(custom: &CustomData) -> &'static str {
     if custom
         .data

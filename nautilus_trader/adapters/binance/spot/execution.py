@@ -148,6 +148,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
                 recv_window=str(5000),
             )
         )
+
         if account_info.canTrade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
             self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")

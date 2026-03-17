@@ -142,10 +142,10 @@ class OKXDataClient(LiveMarketDataClient):
             masked_key = mask_api_key(self._http_client.api_key)
             self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
-        # WebSocket API (using public endpoint for market data - no auth needed)
+        # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
             url=config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(config.is_demo),
-            api_key=None,  # Public endpoints don't need authentication
+            api_key=None,
             api_secret=None,
             api_passphrase=None,
             heartbeat=20,
@@ -153,9 +153,10 @@ class OKXDataClient(LiveMarketDataClient):
         self._ws_client_futures: set[asyncio.Future] = set()
 
         # WebSocket API for business data (bars/candlesticks)
+        _public_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(config.is_demo)
         self._ws_business_client = nautilus_pyo3.OKXWebSocketClient(
-            url=nautilus_pyo3.get_okx_ws_url_business(config.is_demo),
-            api_key=config.api_key,  # Business endpoint requires authentication
+            url=nautilus_pyo3.derive_okx_ws_url(_public_url, "business"),
+            api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
             heartbeat=20,

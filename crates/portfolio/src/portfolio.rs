@@ -369,7 +369,7 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            if let Some(pnl) = self.calculate_unrealized_pnl(&instrument_id) {
+            if let Some(pnl) = self.calculate_unrealized_pnl(&instrument_id, None) {
                 *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
@@ -409,7 +409,7 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            if let Some(pnl) = self.calculate_realized_pnl(&instrument_id) {
+            if let Some(pnl) = self.calculate_realized_pnl(&instrument_id, None) {
                 *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
@@ -421,16 +421,27 @@ impl Portfolio {
     }
 
     #[must_use]
-    pub fn net_exposures(&self, venue: &Venue) -> Option<AHashMap<Currency, Money>> {
+    pub fn net_exposures(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> Option<AHashMap<Currency, Money>> {
         let cache = self.cache.borrow();
-        let account = if let Some(account) = cache.account_for_venue(venue) {
+        let account = if let Some(id) = account_id {
+            if let Some(account) = cache.account(id) {
+                account
+            } else {
+                log::error!("Cannot calculate net exposures: no account for {id}");
+                return None;
+            }
+        } else if let Some(account) = cache.account_for_venue(venue) {
             account
         } else {
             log::error!("Cannot calculate net exposures: no account registered for {venue}");
-            return None; // Cannot calculate
+            return None;
         };
 
-        let positions_open = cache.positions_open(Some(venue), None, None, None, None);
+        let positions_open = cache.positions_open(Some(venue), None, None, account_id, None);
         if positions_open.is_empty() {
             return Some(AHashMap::new()); // Nothing to calculate
         }
@@ -507,7 +518,7 @@ impl Portfolio {
             return Some(pnl);
         }
 
-        let pnl = self.calculate_unrealized_pnl(instrument_id)?;
+        let pnl = self.calculate_unrealized_pnl(instrument_id, None)?;
         self.inner
             .borrow_mut()
             .unrealized_pnls
@@ -527,7 +538,7 @@ impl Portfolio {
             return Some(pnl);
         }
 
-        let pnl = self.calculate_realized_pnl(instrument_id)?;
+        let pnl = self.calculate_realized_pnl(instrument_id, None)?;
         self.inner
             .borrow_mut()
             .realized_pnls
@@ -589,7 +600,11 @@ impl Portfolio {
     }
 
     #[must_use]
-    pub fn net_exposure(&self, instrument_id: &InstrumentId) -> Option<Money> {
+    pub fn net_exposure(
+        &self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
         let cache = self.cache.borrow();
 
         let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
@@ -599,13 +614,8 @@ impl Portfolio {
             return None;
         };
 
-        let positions_open = cache.positions_open(
-            None, // Faster query filtering
-            Some(instrument_id),
-            None,
-            None,
-            None,
-        );
+        let positions_open =
+            cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
         if positions_open.is_empty() {
             return Some(Money::new(0.0, instrument.settlement_currency()));
@@ -840,7 +850,9 @@ impl Portfolio {
 
             self.update_net_position(&instrument_id, &positions_open);
 
-            if let Some(calculated_unrealized_pnl) = self.calculate_unrealized_pnl(&instrument_id) {
+            if let Some(calculated_unrealized_pnl) =
+                self.calculate_unrealized_pnl(&instrument_id, None)
+            {
                 self.inner
                     .borrow_mut()
                     .unrealized_pnls
@@ -852,7 +864,8 @@ impl Portfolio {
                 self.inner.borrow_mut().pending_calcs.insert(instrument_id);
             }
 
-            if let Some(calculated_realized_pnl) = self.calculate_realized_pnl(&instrument_id) {
+            if let Some(calculated_realized_pnl) = self.calculate_realized_pnl(&instrument_id, None)
+            {
                 self.inner
                     .borrow_mut()
                     .realized_pnls
@@ -974,7 +987,11 @@ impl Portfolio {
         }
     }
 
-    fn calculate_unrealized_pnl(&self, instrument_id: &InstrumentId) -> Option<Money> {
+    fn calculate_unrealized_pnl(
+        &self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
         let cache = self.cache.borrow();
         let account = if let Some(account) = cache.account_for_venue(&instrument_id.venue) {
             account
@@ -997,13 +1014,8 @@ impl Portfolio {
             .base_currency()
             .unwrap_or_else(|| instrument.settlement_currency());
 
-        let positions_open = cache.positions_open(
-            None, // Faster query filtering
-            Some(instrument_id),
-            None,
-            None,
-            None,
-        );
+        let positions_open =
+            cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
         if positions_open.is_empty() {
             return Some(Money::new(0.0, currency));
@@ -1275,7 +1287,11 @@ impl Portfolio {
         }
     }
 
-    fn calculate_realized_pnl(&self, instrument_id: &InstrumentId) -> Option<Money> {
+    fn calculate_realized_pnl(
+        &self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
         // Ensure snapshot PnLs are cached for this instrument
         self.ensure_snapshot_pnls_cached_for(instrument_id);
 
@@ -1301,13 +1317,7 @@ impl Portfolio {
             .base_currency()
             .unwrap_or_else(|| instrument.settlement_currency());
 
-        let positions = cache.positions(
-            None, // Faster query filtering
-            Some(instrument_id),
-            None,
-            None,
-            None,
-        );
+        let positions = cache.positions(None, Some(instrument_id), None, account_id, None);
 
         let snapshot_position_ids = cache.position_snapshot_ids(instrument_id);
 
@@ -1679,7 +1689,7 @@ fn update_instrument_id(
     };
 
     let result_unrealized_pnl: Option<Money> =
-        portfolio_clone.calculate_unrealized_pnl(instrument_id);
+        portfolio_clone.calculate_unrealized_pnl(instrument_id, None);
 
     if result_init.is_some()
         && (matches!(account, AccountAny::Cash(_))
@@ -1776,7 +1786,7 @@ fn update_order(
             config: PortfolioConfig::default(), // TODO: TBD
         };
 
-        match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id) {
+        match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id, None) {
             Some(unrealized_pnl) => {
                 inner
                     .borrow_mut()
@@ -1848,7 +1858,7 @@ fn update_position(
     portfolio_clone.update_net_position(&instrument_id, &positions_open);
 
     if let Some(calculated_unrealized_pnl) =
-        portfolio_clone.calculate_unrealized_pnl(&instrument_id)
+        portfolio_clone.calculate_unrealized_pnl(&instrument_id, None)
     {
         inner
             .borrow_mut()
@@ -1865,7 +1875,9 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
-    if let Some(calculated_realized_pnl) = portfolio_clone.calculate_realized_pnl(&instrument_id) {
+    if let Some(calculated_realized_pnl) =
+        portfolio_clone.calculate_realized_pnl(&instrument_id, None)
+    {
         inner
             .borrow_mut()
             .realized_pnls

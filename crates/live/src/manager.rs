@@ -1924,7 +1924,8 @@ impl ExecutionManager {
 
         let (cached_signed_qty, cached_avg_px) = {
             let cache = self.cache.borrow();
-            let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+            let positions =
+                cache.positions_open(None, Some(&instrument_id), None, Some(account_id), None);
 
             if positions.is_empty() {
                 (Decimal::ZERO, None)

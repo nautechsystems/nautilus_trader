@@ -40,6 +40,7 @@ def snapshot_memory(runs):
 
                 # Register snapshots and measure memory
                 snapshot = tracemalloc.take_snapshot()
+
                 if i == 0:
                     initial_snapshot = snapshot
 

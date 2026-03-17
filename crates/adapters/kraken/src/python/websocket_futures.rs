@@ -66,7 +66,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenFuturesWebSocketClient {
+    /// WebSocket client for the Kraken Futures v1 streaming API.
     #[new]
     #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
     fn py_new(
@@ -86,6 +88,7 @@ impl KrakenFuturesWebSocketClient {
         Self::with_credentials(url, heartbeat_secs, credential)
     }
 
+    /// Returns true if the client has API credentials set.
     #[getter]
     #[pyo3(name = "has_credentials")]
     #[must_use]
@@ -93,6 +96,7 @@ impl KrakenFuturesWebSocketClient {
         self.has_credentials()
     }
 
+    /// Returns the WebSocket URL.
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
@@ -100,16 +104,19 @@ impl KrakenFuturesWebSocketClient {
         self.url()
     }
 
+    /// Returns true if the connection is closed.
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Returns true if the connection is active.
     #[pyo3(name = "is_active")]
     fn py_is_active(&self) -> bool {
         self.is_active()
     }
 
+    /// Waits until the WebSocket connection is active or timeout.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -127,6 +134,10 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Authenticates the WebSocket connection for private feeds.
+    ///
+    /// This sends a challenge request, waits for the response, signs it,
+    /// and stores the credentials for use in private subscriptions.
     #[pyo3(name = "authenticate")]
     fn py_authenticate<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -137,6 +148,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Connects to the WebSocket server.
     #[pyo3(name = "connect")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -272,11 +284,13 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Sets the account ID for execution report parsing.
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
+    /// Caches an instrument for execution report parsing.
     #[pyo3(name = "cache_instrument")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
@@ -285,6 +299,7 @@ impl KrakenFuturesWebSocketClient {
         Ok(())
     }
 
+    /// Caches multiple instruments for execution report parsing.
     #[pyo3(name = "cache_instruments")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instruments(&self, py: Python, instruments: Vec<Py<PyAny>>) -> PyResult<()> {
@@ -296,6 +311,11 @@ impl KrakenFuturesWebSocketClient {
         Ok(())
     }
 
+    /// Caches a client order for truncated ID resolution and instrument lookup.
+    ///
+    /// Kraken Futures limits client order IDs to 18 characters, so orders with
+    /// longer IDs are truncated. This method stores the mapping from truncated
+    /// to full ID, and from venue order ID to instrument ID for cancel messages.
     #[pyo3(name = "cache_client_order")]
     fn py_cache_client_order(
         &self,
@@ -314,6 +334,7 @@ impl KrakenFuturesWebSocketClient {
         );
     }
 
+    /// Disconnects from the WebSocket server.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -324,6 +345,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Closes the WebSocket connection.
     #[pyo3(name = "close")]
     fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -334,6 +356,10 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to order book updates for the given instrument.
+    ///
+    /// Note: The `depth` parameter is accepted for API compatibility with spot client but is
+    /// not used by Kraken Futures (full book is always returned).
     #[pyo3(name = "subscribe_book")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_subscribe_book<'py>(
@@ -353,6 +379,9 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to quote updates for the given instrument.
+    ///
+    /// Uses the order book channel for low-latency top-of-book quotes.
     #[pyo3(name = "subscribe_quotes")]
     fn py_subscribe_quotes<'py>(
         &self,
@@ -370,6 +399,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to trade updates for the given instrument.
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
         &self,
@@ -387,6 +417,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to mark price updates for the given instrument.
     #[pyo3(name = "subscribe_mark_price")]
     fn py_subscribe_mark_price<'py>(
         &self,
@@ -404,6 +435,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to index price updates for the given instrument.
     #[pyo3(name = "subscribe_index_price")]
     fn py_subscribe_index_price<'py>(
         &self,
@@ -421,6 +453,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to funding rate updates for the given instrument.
     #[pyo3(name = "subscribe_funding_rate")]
     fn py_subscribe_funding_rate<'py>(
         &self,
@@ -438,6 +471,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from order book updates for the given instrument.
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -455,6 +489,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from quote updates for the given instrument.
     #[pyo3(name = "unsubscribe_quotes")]
     fn py_unsubscribe_quotes<'py>(
         &self,
@@ -472,6 +507,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from trade updates for the given instrument.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -489,6 +525,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from mark price updates for the given instrument.
     #[pyo3(name = "unsubscribe_mark_price")]
     fn py_unsubscribe_mark_price<'py>(
         &self,
@@ -506,6 +543,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from index price updates for the given instrument.
     #[pyo3(name = "unsubscribe_index_price")]
     fn py_unsubscribe_index_price<'py>(
         &self,
@@ -523,6 +561,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Unsubscribes from funding rate updates for the given instrument.
     #[pyo3(name = "unsubscribe_funding_rate")]
     fn py_unsubscribe_funding_rate<'py>(
         &self,
@@ -540,11 +579,15 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Sign a challenge with the API credentials.
+    ///
+    /// Returns the signed challenge on success.
     #[pyo3(name = "sign_challenge")]
     fn py_sign_challenge(&self, challenge: &str) -> PyResult<String> {
         self.sign_challenge(challenge).map_err(to_pyruntime_err)
     }
 
+    /// Complete authentication with a received challenge.
     #[pyo3(name = "authenticate_with_challenge")]
     fn py_authenticate_with_challenge<'py>(
         &self,
@@ -562,6 +605,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Set authentication credentials directly (for when challenge is obtained externally).
     #[pyo3(name = "set_auth_credentials")]
     fn py_set_auth_credentials<'py>(
         &self,
@@ -580,6 +624,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to open orders feed (private, requires authentication).
     #[pyo3(name = "subscribe_open_orders")]
     fn py_subscribe_open_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -593,6 +638,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to fills feed (private, requires authentication).
     #[pyo3(name = "subscribe_fills")]
     fn py_subscribe_fills<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -603,6 +649,7 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Subscribes to both open orders and fills (convenience method).
     #[pyo3(name = "subscribe_executions")]
     fn py_subscribe_executions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

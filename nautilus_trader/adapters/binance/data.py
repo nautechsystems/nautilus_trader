@@ -297,6 +297,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _subscribe(self, command: SubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
+
         if (
             instrument_id is None
             and command.data_type.type not in self._subscribe_allow_no_instrument_id
@@ -324,6 +325,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
+
         if (
             instrument_id is None
             and command.data_type.type not in self._subscribe_allow_no_instrument_id
@@ -368,6 +370,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
 
         valid_speeds = [100, 1000]
+
         if self._binance_account_type.is_futures:
             if update_speed is None:
                 update_speed = 0  # Default 0 ms for futures
@@ -467,6 +470,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(
             command.bar_type.spec.aggregation,
         )
+
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot subscribe to {command.bar_type}. "
@@ -513,6 +517,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(
             command.bar_type.spec.aggregation,
         )
+
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot unsubscribe from {command.bar_type}. "
@@ -615,6 +620,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(
                 request.bar_type.spec.aggregation,
             )
+
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
                     f"Cannot request {request.bar_type} bars: "
@@ -743,6 +749,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         quantize_value = Decimal(f"1e-{instrument.size_precision}")
 
         bars: list[Bar] = []
+
         if bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -832,6 +839,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
             close_size = size
+
             if i == binance_bar.count - 1:
                 close_size = Quantity(size_part + remainder, instrument.size_precision)
 
@@ -874,6 +882,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
 
         bars: list[Bar] = []
+
         if bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -959,6 +968,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
+
         if book_buffer is not None:
             book_buffer.append(book_deltas)
             return

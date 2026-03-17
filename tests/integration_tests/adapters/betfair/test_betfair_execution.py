@@ -130,6 +130,7 @@ async def _setup_order_state(
                     order_id = str(order_update.id)
                     venue_order_id = VenueOrderId(order_id)
                     client_order_id = ClientOrderId(order_id)
+
                     if not cache.instrument(instrument_id):
                         instrument = betting_instrument(
                             market_id=oc.id,

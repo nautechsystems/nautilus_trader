@@ -20,7 +20,7 @@ use serde_json::Value;
 use strum::{AsRefStr, EnumString};
 use ustr::Ustr;
 
-use crate::common::enums::KrakenOrderSide;
+use crate::common::enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide};
 
 /// Output message types from the Futures WebSocket handler.
 #[derive(Clone, Debug)]
@@ -350,7 +350,7 @@ pub struct KrakenFuturesOpenOrder {
     #[serde(default)]
     pub stop_price: Option<f64>,
     #[serde(rename = "type")]
-    pub order_type: String,
+    pub order_type: KrakenFuturesOrderType,
     pub order_id: String,
     #[serde(default)]
     pub cli_ord_id: Option<String>,
@@ -406,7 +406,7 @@ pub struct KrakenFuturesFill {
     #[serde(default)]
     pub cli_ord_id: Option<String>,
     pub fill_id: String,
-    pub fill_type: String,
+    pub fill_type: KrakenFillType,
     /// true = buy, false = sell
     pub buy: bool,
     #[serde(default)]
@@ -558,7 +558,10 @@ mod tests {
         assert_eq!(snapshot.orders.len(), 1);
         assert_eq!(snapshot.orders[0].instrument, Ustr::from("PI_XBTUSD"));
         assert_eq!(snapshot.orders[0].qty, 1000.0);
-        assert_eq!(snapshot.orders[0].order_type, "stop");
+        assert_eq!(
+            snapshot.orders[0].order_type,
+            KrakenFuturesOrderType::StopLower
+        );
     }
 
     #[rstest]
@@ -597,7 +600,7 @@ mod tests {
             Some(Ustr::from("FI_XBTUSD_200925"))
         );
         assert!(snapshot.fills[0].buy);
-        assert_eq!(snapshot.fills[0].fill_type, "maker");
+        assert_eq!(snapshot.fills[0].fill_type, KrakenFillType::Maker);
     }
 
     #[rstest]

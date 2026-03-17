@@ -101,6 +101,7 @@ impl QuoteTick {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl QuoteTick {
+    /// Represents a quote tick in a market.
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
@@ -257,6 +258,7 @@ impl QuoteTick {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(QuoteTick))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -267,6 +269,7 @@ impl QuoteTick {
         Self::get_metadata(instrument_id, price_precision, size_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
@@ -313,11 +316,13 @@ impl QuoteTick {
         from_dict_pyo3(py, values)
     }
 
+    /// Returns the `Price` for this quote depending on the given `price_type`.
     #[pyo3(name = "extract_price")]
     fn py_extract_price(&self, price_type: PriceType) -> Price {
         self.extract_price(price_type)
     }
 
+    /// Returns the `Quantity` for this quote depending on the given `price_type`.
     #[pyo3(name = "extract_size")]
     fn py_extract_size(&self, price_type: PriceType) -> Quantity {
         self.extract_size(price_type)

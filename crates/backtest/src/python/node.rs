@@ -28,23 +28,46 @@ use pyo3::{prelude::*, types::PyDict};
 
 use crate::{config::BacktestRunConfig, node::BacktestNode, result::BacktestResult};
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl BacktestNode {
+    /// Orchestrates catalog-driven backtests from run configurations.
+    ///
+    /// `BacktestNode` connects the `ParquetDataCatalog` with `BacktestEngine` to load
+    /// historical data and run backtests. Supports both oneshot and streaming modes.
     #[new]
     fn py_new(configs: Vec<BacktestRunConfig>) -> PyResult<Self> {
         Self::new(configs).map_err(to_pyruntime_err)
     }
 
+    /// Builds backtest engines from the run configurations.
+    ///
+    /// For each config, creates a `BacktestEngine`, adds venues, and loads
+    /// instruments from the catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if engine creation, venue setup, or instrument loading fails.
     #[pyo3(name = "build")]
     fn py_build(&mut self) -> PyResult<()> {
         self.build().map_err(to_pyruntime_err)
     }
 
+    /// Runs all configured backtests and returns results.
+    ///
+    /// Automatically calls `build()` if engines have not been created yet.
+    /// For each run config, loads data from the catalog and runs the engine.
+    /// Supports both oneshot (`chunk_size = None`) and streaming modes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if building, data loading, or engine execution fails.
     #[pyo3(name = "run")]
     fn py_run(&mut self) -> PyResult<Vec<BacktestResult>> {
         self.run().map_err(to_pyruntime_err)
     }
 
+    /// Disposes all engines and releases resources.
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();

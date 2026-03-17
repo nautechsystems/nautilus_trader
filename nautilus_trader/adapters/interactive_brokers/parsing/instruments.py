@@ -457,6 +457,7 @@ def parse_option_contract(
 
     # Add ^ prefix for index underlyings to match IB simplified symbology
     underlying = contract_details.underSymbol
+
     if (
         symbology_method == SymbologyMethod.IB_SIMPLIFIED
         and contract_details.underSecType == "IND"

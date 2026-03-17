@@ -21,7 +21,16 @@ use pyo3::prelude::*;
 use crate::models::latency::StaticLatencyModel;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl StaticLatencyModel {
+    /// Static latency model with fixed latency values.
+    ///
+    /// Models the latency for different order operations including base network latency
+    /// and specific operation latencies for insert, update, and delete operations.
+    ///
+    /// The base latency is automatically added to each operation latency, matching
+    /// Python's behavior. For example, if `base_latency_nanos = 100ms` and
+    /// `insert_latency_nanos = 200ms`, the effective insert latency will be 300ms.
     #[new]
     #[pyo3(signature = (
         base_latency_nanos = 0,

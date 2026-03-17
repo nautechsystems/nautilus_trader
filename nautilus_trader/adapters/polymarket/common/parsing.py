@@ -97,6 +97,7 @@ def determine_order_side(
 
     """
     order_side = parse_order_side(trade_side)
+
     if trader_side == PolymarketLiquiditySide.TAKER:
         return order_side
 

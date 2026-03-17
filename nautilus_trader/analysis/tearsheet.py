@@ -49,6 +49,7 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
+
     if not TYPE_CHECKING:
         # Define dummy types for when plotly is not installed
         go = None  # type: ignore
@@ -319,7 +320,11 @@ def create_tearsheet(  # noqa: C901
     analyzer = engine.portfolio.analyzer
     stats_returns = analyzer.get_performance_stats_returns()
     stats_general = analyzer.get_performance_stats_general()
-    returns = analyzer.returns()
+    returns = _resolve_tearsheet_returns(
+        analyzer=analyzer,
+        engine=engine,
+        currency=currency,
+    )
 
     # Build title with strategy name(s) and run time
     if title == "NautilusTrader Backtest Results":
@@ -339,10 +344,12 @@ def create_tearsheet(  # noqa: C901
     total_positions = f"{len(positions):_}"
 
     elapsed_time = "N/A"
+
     if engine.run_finished and engine.run_started:
         elapsed_time = str(engine.run_finished - engine.run_started)
 
     backtest_range = "N/A"
+
     if engine.backtest_start and engine.backtest_end:
         backtest_range = str(engine.backtest_end - engine.backtest_start)
 
@@ -362,6 +369,7 @@ def create_tearsheet(  # noqa: C901
 
     # Determine which currencies to display
     all_currencies = analyzer.currencies
+
     if currency is not None:
         # User specified a currency, only show that one
         currencies = [currency] if currency in all_currencies else []
@@ -371,6 +379,7 @@ def create_tearsheet(  # noqa: C901
 
     # Extract account information per currency
     account_info = {}
+
     if currencies:
         for curr in currencies:
             starting = analyzer._account_balances_starting.get(curr)
@@ -381,6 +390,7 @@ def create_tearsheet(  # noqa: C901
 
     # Get PnL stats for selected currencies
     all_stats_pnls = {}
+
     if currencies:
         for curr in currencies:
             curr_stats = analyzer.get_performance_stats_pnls(currency=curr)
@@ -402,6 +412,145 @@ def create_tearsheet(  # noqa: C901
         benchmark_name=benchmark_name,
         engine=engine,
     )
+
+
+def _resolve_tearsheet_returns(
+    analyzer,
+    engine: BacktestEngine,
+    currency=None,
+) -> pd.Series:
+    """
+    Pick the best available returns series for the tearsheet.
+
+    Preference order:
+    1. ``analyzer.portfolio_returns()`` -- daily returns the analyzer already
+       computed from a single-venue account.
+    2. ``_calculate_account_returns()`` -- aggregates across *all* cached
+       accounts (covers multi-venue backtests where the analyzer is
+       recalculated per venue in ``engine.pyx``).
+    3. ``analyzer.returns()`` -- per-position returns as a last resort.
+
+    """
+    portfolio_returns = getattr(analyzer, "portfolio_returns", None)
+    if callable(portfolio_returns):
+        resolved_returns = portfolio_returns()
+        if resolved_returns is not None and not resolved_returns.empty:
+            return resolved_returns
+
+    account_returns = _calculate_account_returns(engine=engine, currency=currency)
+
+    if account_returns is not None and not account_returns.empty:
+        return account_returns
+
+    return analyzer.returns()
+
+
+def _calculate_account_returns(
+    engine: BacktestEngine,
+    currency=None,
+) -> pd.Series | None:
+    """
+    Compute daily portfolio returns by aggregating all cached accounts.
+
+    This is separate from ``PortfolioAnalyzer._calculate_portfolio_returns``
+    because the backtest engine recalculates the analyzer per venue
+    (``engine.pyx:2140``). This function walks *every* cached account so it
+    can produce a single combined return series for multi-venue backtests.
+
+    Returns ``None`` when accounts use mixed currencies without an explicit
+    ``currency`` filter, falling back to per-position returns in the
+    tearsheet.
+
+    """
+    if engine is None:
+        return None
+
+    accounts = engine.kernel.cache.accounts()
+    if not accounts:
+        return None
+
+    from nautilus_trader.analysis.reporter import ReportProvider
+
+    target_currency = getattr(currency, "code", str(currency)) if currency is not None else None
+    observed_currencies = set()
+    balance_series: list[pd.Series] = []
+
+    for account in accounts:
+        report = ReportProvider.generate_account_report(account)
+        try:
+            totals, observed_currency = _extract_account_balance_series(
+                report=report,
+                target_currency=target_currency,
+            )
+        except ValueError:
+            return None
+
+        if observed_currency is not None:
+            observed_currencies.add(observed_currency)
+
+        if totals is None:
+            continue
+
+        balance_series.append(totals.rename(f"account_{len(balance_series)}"))
+
+    if not balance_series:
+        return None
+
+    if target_currency is None and len(observed_currencies) != 1:
+        return None
+
+    combined = pd.concat(balance_series, axis=1).sort_index().ffill().dropna()
+    if combined.empty:
+        return None
+
+    return _calculate_daily_balance_returns(combined.sum(axis=1))
+
+
+def _extract_account_balance_series(
+    report: pd.DataFrame,
+    target_currency: str | None,
+) -> tuple[pd.Series | None, str | None]:
+    if report.empty or "currency" not in report or "total" not in report:
+        return None, None
+
+    observed_currency: str | None = None
+
+    if target_currency is None:
+        account_currencies = set(report["currency"].dropna())
+        if len(account_currencies) != 1:
+            raise ValueError("account report contains multiple currencies")
+        observed_currency = next(iter(account_currencies))
+    else:
+        report = report[report["currency"] == target_currency]
+
+    if report.empty:
+        return None, observed_currency
+
+    totals = pd.to_numeric(report["total"], errors="coerce")
+    totals.index = report.index
+    totals = totals.dropna().sort_index()
+    if totals.empty:
+        return None, observed_currency
+
+    return totals.groupby(level=0).last(), observed_currency
+
+
+def _calculate_daily_balance_returns(total_balance: pd.Series) -> pd.Series | None:
+    account_returns = (
+        total_balance.resample("D")
+        .last()
+        .ffill()
+        .pct_change()
+        .replace(
+            [float("inf"), float("-inf")],
+            float("nan"),
+        )
+    ).dropna()
+
+    if account_returns.empty:
+        return None
+
+    return account_returns
 
 
 def create_tearsheet_from_stats(
@@ -1292,6 +1441,7 @@ def _render_run_info(
         for key, value in section_data.items():
             metrics.append(key)
             values.append(str(value))
+
             if len(fill_colors) % 2 == 0:
                 fill_colors.append(theme_config["colors"]["table_row_odd"])
             else:

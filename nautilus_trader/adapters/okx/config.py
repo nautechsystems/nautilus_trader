@@ -157,6 +157,8 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         (borrowing) as SHORT positions. This may lead to unintended liquidation of wallet assets
         if strategies are not designed to handle SPOT positions properly.
         If False, SPOT instruments return FLAT position reports (default behavior).
+    ws_auth_timeout_secs : PositiveInt, default 30
+        The timeout (seconds) for WebSocket authentication.
 
     """
 
@@ -180,3 +182,4 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     use_fills_channel: bool = False
     use_mm_mass_cancel: bool = False
     use_spot_cash_position_reports: bool = False
+    ws_auth_timeout_secs: PositiveInt | None = 30

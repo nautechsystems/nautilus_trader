@@ -27,6 +27,7 @@ use crate::models::fill::{
 macro_rules! impl_fill_model_pymethods {
     ($type:ty) => {
         #[pymethods]
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         impl $type {
             #[new]
             #[pyo3(signature = (prob_fill_on_limit=1.0, prob_slippage=0.0, random_seed=None))]
@@ -57,7 +58,9 @@ impl_fill_model_pymethods!(VolumeSensitiveFillModel);
 impl_fill_model_pymethods!(MarketHoursFillModel);
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CompetitionAwareFillModel {
+    /// Fill model that reduces available liquidity by a factor to simulate market competition.
     #[new]
     #[pyo3(signature = (
         prob_fill_on_limit=1.0,

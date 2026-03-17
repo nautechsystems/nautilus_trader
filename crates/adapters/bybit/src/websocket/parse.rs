@@ -30,10 +30,10 @@ use nautilus_model::{
         PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Money, Price, Quantity},
+    types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -43,7 +43,7 @@ use super::messages::{
     BybitWsTickerOptionMsg, BybitWsTrade,
 };
 use crate::common::{
-    consts::BYBIT_TOPIC_KLINE,
+    consts::{BYBIT_TOPIC_KLINE, BYBIT_VENUE},
     enums::{
         BybitOrderStatus, BybitOrderType, BybitStopOrderType, BybitTimeInForce,
         BybitTriggerDirection,
@@ -330,7 +330,7 @@ pub fn parse_ticker_option_quote(
 ///
 /// # Errors
 ///
-/// Returns an error if funding rate or next funding time fields are missing or cannot be parsed.
+/// Returns an error if funding rate, funding interval or next funding time fields are missing or cannot be parsed.
 pub fn parse_ticker_linear_funding(
     data: &BybitWsTickerLinear,
     instrument_id: InstrumentId,
@@ -347,6 +347,20 @@ pub fn parse_ticker_linear_funding(
         .parse::<Decimal>()
         .context("invalid funding_rate value")?;
 
+    let funding_interval = if let Some(funding_interval_hour) = &data.funding_interval_hour {
+        let funding_interval_hour = funding_interval_hour
+            .as_str()
+            .parse::<u16>()
+            .context("invalid funding_interval_hour value")?;
+        Some(
+            funding_interval_hour
+                .checked_mul(60)
+                .ok_or_else(|| anyhow::anyhow!("funding_interval_hour out of bounds"))?,
+        )
+    } else {
+        None
+    };
+
     let next_funding_ns = if let Some(next_funding_time) = &data.next_funding_time {
         let next_funding_millis = next_funding_time
             .as_str()
@@ -360,6 +374,7 @@ pub fn parse_ticker_linear_funding(
     Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
+        funding_interval,
         next_funding_ns,
         ts_event,
         ts_init,
@@ -913,6 +928,7 @@ pub fn parse_ws_account_state(
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
+    let mut margins = Vec::new();
 
     for coin_data in &wallet.coin {
         let currency = get_currency(coin_data.coin.as_str());
@@ -923,16 +939,33 @@ pub fn parse_ws_account_state(
         let locked = Money::from_decimal(locked_dec, currency)?;
         let free = Money::from_raw(total.raw - locked.raw, currency);
 
-        let balance = AccountBalance::new(total, locked, free);
-        balances.push(balance);
+        balances.push(AccountBalance::new(total, locked, free));
+
+        let initial_margin_dec = coin_data.total_position_im;
+        let maintenance_margin_dec = match &coin_data.total_position_mm {
+            Some(mm) if !mm.is_empty() => mm.parse::<Decimal>()?,
+            _ => Decimal::ZERO,
+        };
+
+        if !initial_margin_dec.is_zero() || !maintenance_margin_dec.is_zero() {
+            let margin_instrument_id = InstrumentId::new(
+                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin_data.coin)),
+                *BYBIT_VENUE,
+            );
+            margins.push(MarginBalance::new(
+                Money::from_decimal(initial_margin_dec, currency)?,
+                Money::from_decimal(maintenance_margin_dec, currency)?,
+                margin_instrument_id,
+            ));
+        }
     }
 
     Ok(AccountState::new(
         account_id,
         AccountType::Margin, // Bybit unified account
         balances,
-        vec![], // margins - Bybit doesn't provide per-instrument margin in wallet updates
-        true,   // is_reported
+        margins,
+        true, // is_reported
         UUID4::new(),
         ts_event,
         ts_init,
@@ -1342,6 +1375,14 @@ mod tests {
         assert!((usdt_balance.free.as_f64() - 9519.89806037).abs() < 1e-6);
         assert!((usdt_balance.locked.as_f64() - 127.8573161).abs() < 1e-6);
 
+        // BTC has zero position margins, USDT has non-zero
+        assert_eq!(state.margins.len(), 1);
+        let usdt_margin = &state.margins[0];
+        assert_eq!(usdt_margin.instrument_id.symbol.as_str(), "ACCOUNT-USDT");
+        assert_eq!(usdt_margin.instrument_id.venue.as_str(), "BYBIT");
+        assert!((usdt_margin.initial.as_f64() - 127.8573161).abs() < 1e-6);
+        assert!((usdt_margin.maintenance.as_f64() - 12.78573161).abs() < 1e-6);
+
         assert_eq!(state.ts_event, ts_event);
         assert_eq!(state.ts_init, TS);
     }
@@ -1378,6 +1419,9 @@ mod tests {
 
         // The bug would have calculated: locked = total - availableToWithdraw = 51,333.82 - 0 = 51,333.82 (all locked!)
         // This test verifies that we now correctly use totalOrderIM instead of deriving from availableToWithdraw
+
+        // No position margins in this fixture
+        assert_eq!(state.margins.len(), 0);
     }
 
     #[rstest]
@@ -1393,6 +1437,7 @@ mod tests {
 
         assert_eq!(funding.instrument_id, instrument.id());
         assert_eq!(funding.rate, dec!(-0.000212)); // -0.000212
+        assert_eq!(funding.interval, Some(8 * 60));
         assert_eq!(
             funding.next_funding_ns,
             Some(UnixNanos::new(1_673_280_000_000_000_000))

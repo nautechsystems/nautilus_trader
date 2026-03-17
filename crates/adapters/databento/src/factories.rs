@@ -40,6 +40,10 @@ use crate::{
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
 pub struct DatabentoLiveClientConfig {
     /// Databento API credential.
     credential: Credential,
@@ -106,6 +110,10 @@ impl ClientConfig for DatabentoLiveClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.databento",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
 )]
 pub struct DatabentoDataClientFactory;
 
@@ -327,7 +335,7 @@ mod tests {
 
     #[rstest]
     fn test_historical_client_factory() {
-        let api_key = "db-test0000000000000000000000000".to_string();
+        let api_key = "test-000000000000000000000000000".to_string();
         let publishers_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
         let clock = get_atomic_clock_realtime();
 

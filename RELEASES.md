@@ -6,8 +6,13 @@ Released on TBD (UTC).
 - Added option chains and greeks in Rust (#3637), thanks @filipmacek
 - Added option chains and greeks in Python (#3677), thanks @filipmacek
 - Added custom data registration, persistence, and routing in Rust (#3542), thanks @faysou
+- Added `interval` field to `FundingRateUpdate` (#3694), thanks @dxwil
 - Added Databento Arrow serialization for imbalance and statistics (#3689), thanks for reporting @GianC0
 - Added Hyperliquid agent wallet support (#3668), thanks @oh92
+- Added OKX support for bracket order submission with attached TP/SL (#3701), thanks @Nickonomic
+- Added OKX configurable `ws_auth_timeout_secs` for WebSocket authentication (#3727), thanks for reporting @Stamppot82
+- Added Polymarket instrument provider and filters in Rust (#3708), thanks @filipmacek
+- Added `TieredTickScheme` and `TickScheme::Tiered` in Rust for price-dependent tick sizes
 
 ### Breaking Changes
 - Renamed `OrderEvent.kind()` to `type_name()` in Rust
@@ -15,6 +20,7 @@ Released on TBD (UTC).
 
 ### Security
 - Hardened Docker Compose to bind all ports to localhost and add `no-new-privileges` to all services
+- Hardened CI egress policy to block by default and fall back to `audit` mode for fork pull requests
 - Upgraded all `nautilustrader.io` URLs from HTTP to HTTPS (#3686), thanks @04cb
 
 ### Fixes
@@ -24,14 +30,22 @@ Released on TBD (UTC).
 - Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
 - Fixed time bar historical event deferral (#3698), thanks @faysou
 - Fixed `SimulatedExchange` account balance adjustment mutation (#3704), thanks for reporting @thaning0
+- Fixed analyzer and tearsheet returns to prefer portfolio-level daily returns when they can be derived from account balances
+- Fixed backtest analyzer to include position snapshots in Rust (#3710), thanks @necofx
 - Fixed Sandbox reconciliation missing `account_id` (#3705), thanks for reporting @eliotOrderson
+- Fixed Rust `Portfolio` account-scoped `net_exposure`, `net_exposures`, and balance updates in multi-account mode
+- Fixed reported `MarginAccount` updates dropping initial and maintenance margins (#3725), thanks for reporting @marco-rigoni
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
 - Fixed Databento price precision truncation for fractional tick sizes (#3696), thanks @pandashark
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Interactive Brokers docs `request_ticks` API and add contract example (#3699), thanks @faysou
+- Fixed Interactive Brokers live-session synchronization and reconciliation (#3715), thanks @faysou
+- Fixed Interactive Brokers shared historical request dedup for concurrent warmup (#3719), thanks @Johnkhk
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
+- Fixed OKX `base_url_ws` ignored for private and business WebSocket channels (#3727), thanks for reporting @Stamppot82
+- Fixed Polymarket WebSocket initial vs incremental subscribe (#3717), thanks @Javdu10
 
 ### Internal Improvements
 - Added `SpreadQuoteAggregator` (#3698), thanks @faysou
@@ -42,6 +56,7 @@ Released on TBD (UTC).
 - Improved socket clients reconnect and shutdown reliability
 - Improved Databento live price precision handling with maps populated from instrument definitions
 - Refined `AtomicTime` mode switching and datetime panics
+- Refined base catalog interface (#3703), thanks @faysou
 - Standardized `type_name()` across order events and instruments
 - Optimized network client performance and add benchmarks
 - Upgraded Rust (MSRV) to 1.94.0
@@ -313,6 +328,7 @@ Released on 21st February 2026 (UTC).
 - Fixed Interactive Brokers parsing options for Stoxx50 (#3562), thanks @davidsblom
 - Fixed Interactive Brokers contract details for FESX futures (#3575), thanks @davidsblom
 - Fixed Interactive Brokers `ibapi` 10.43 protobuf compatibility: `IBContract.strike` default and `ContractDetails.underConId` field typo (#3599), thanks @shzhng
+- Fixed Interactive Brokers `track_option_exercise_from_position_update` not generating FLAT reports for expired options (zero-quantity position updates were silently skipped), thanks @shzhng
 - Fixed Interactive Brokers bar unsubscribe (#3588), thanks for reporting @pandashark
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0

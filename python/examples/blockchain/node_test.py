@@ -67,6 +67,7 @@ def main() -> None:
 
     # PostgreSQL configuration (optional, for caching blockchain data)
     postgres_config = None
+
     if os.getenv("USE_POSTGRES_CACHE"):
         postgres_config = PostgresConnectOptions(
             host=os.getenv("POSTGRES_HOST", "localhost"),

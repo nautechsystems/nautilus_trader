@@ -21,7 +21,15 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::risk_return_ratio::RiskReturnRatio};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl RiskReturnRatio {
+    /// Calculates the risk-return ratio (mean/std) for portfolio returns.
+    ///
+    /// This is a non-annualized ratio of mean return to standard deviation.
+    /// For an annualized version, use `SharpeRatio`.
+    ///
+    /// Downsamples high-frequency returns to daily bins before calculation
+    /// for consistency with other ratio-based statistics.
     #[new]
     fn py_new() -> Self {
         Self {}

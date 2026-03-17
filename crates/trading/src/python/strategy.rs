@@ -72,7 +72,9 @@ use ustr::Ustr;
 use crate::strategy::{ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore};
 
 #[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl StrategyConfig {
+    /// The base model for all trading strategy configurations.
     #[new]
     #[pyo3(signature = (
         strategy_id=None,
@@ -183,7 +185,9 @@ impl StrategyConfig {
 }
 
 #[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ImportableStrategyConfig {
+    /// Configuration for creating strategies from importable paths.
     #[new]
     #[allow(clippy::needless_pass_by_value)]
     fn py_new(strategy_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
@@ -842,6 +846,7 @@ impl DataActor for PyStrategyInner {
     unsendable,
     subclass
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
 pub struct PyStrategy {
     inner: Rc<UnsafeCell<PyStrategyInner>>,
 }
@@ -982,6 +987,7 @@ impl PyStrategy {
 }
 
 #[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyStrategy {
     /// Creates a new [`PyStrategy`] instance.
     ///

@@ -57,6 +57,10 @@ impl ClientConfig for HyperliquidExecClientConfig {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+)]
 pub struct HyperliquidDataClientFactory;
 
 impl HyperliquidDataClientFactory {
@@ -117,6 +121,10 @@ impl DataClientFactory for HyperliquidDataClientFactory {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+)]
 pub struct HyperliquidExecFactoryConfig {
     /// The trader ID for the execution client.
     pub trader_id: TraderId,
@@ -140,6 +148,10 @@ impl ClientConfig for HyperliquidExecFactoryConfig {
         module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidExecutionClientFactory;
 

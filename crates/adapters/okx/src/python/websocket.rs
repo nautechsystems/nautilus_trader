@@ -66,12 +66,10 @@ use nautilus_model::{
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyDict};
 use ustr::Ustr;
 
+use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
     common::{
-        enums::{
-            OKXBookAction, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode, OKXTriggerType,
-            OKXVipLevel,
-        },
+        enums::{OKXBookAction, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode, OKXVipLevel},
         models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
@@ -92,25 +90,6 @@ use crate::{
         },
     },
 };
-
-fn extract_optional_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
-    dict.get_item(key)?
-        .map(|value| value.extract::<String>())
-        .transpose()
-}
-
-fn extract_optional_trigger_type(
-    dict: &Bound<'_, PyDict>,
-    key: &str,
-) -> PyResult<Option<OKXTriggerType>> {
-    extract_optional_string(dict, key)?
-        .map(|value| {
-            OKXTriggerType::from_str(&value).map_err(|_| {
-                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
-            })
-        })
-        .transpose()
-}
 
 fn parse_attach_algo_ords(
     py: Python<'_>,
@@ -192,9 +171,11 @@ impl OKXWebSocketError {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXWebSocketClient {
+    /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
@@ -202,6 +183,7 @@ impl OKXWebSocketClient {
         api_passphrase: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
+        auth_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         Self::new(
             url,
@@ -210,13 +192,14 @@ impl OKXWebSocketClient {
             api_passphrase,
             account_id,
             heartbeat,
+            auth_timeout_secs,
         )
         .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None))]
     fn py_with_credentials(
         url: Option<String>,
         api_key: Option<String>,
@@ -224,6 +207,7 @@ impl OKXWebSocketClient {
         api_passphrase: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
+        auth_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         Self::with_credentials(
             url,
@@ -232,6 +216,7 @@ impl OKXWebSocketClient {
             api_passphrase,
             account_id,
             heartbeat,
+            auth_timeout_secs,
         )
         .map_err(to_pyvalue_err)
     }

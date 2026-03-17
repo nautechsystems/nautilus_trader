@@ -115,6 +115,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(20), // Heartbeat
+            None,
         )
         .context("failed to construct OKX private websocket client")?;
 
@@ -125,6 +126,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(20), // Heartbeat
+            None,
         )
         .context("failed to construct OKX business websocket client")?;
 

@@ -64,6 +64,7 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
 
     """
     params: dict[str, Any] = {}
+
     if not filters:
         return params
 
@@ -126,6 +127,7 @@ async def _request_markets_page(
         params=effective_params,
         timeout_secs=max(1, ceil(timeout)),
     )
+
     if resp.status != 200:
         body = resp.body.decode("utf-8", errors="replace")
         raise RuntimeError(
@@ -164,6 +166,7 @@ async def iter_markets(
             limit=limit,
             timeout=timeout,
         )
+
         if not markets:
             break
         for market in markets:
@@ -193,6 +196,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
     """
     rewards = gamma_market.get("clobRewards", [])
     rewards_dict = None
+
     if rewards and len(rewards) > 0:
         reward = rewards[0]
         rewards_dict = {

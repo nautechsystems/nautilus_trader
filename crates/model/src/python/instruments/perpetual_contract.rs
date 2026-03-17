@@ -36,6 +36,10 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PerpetualContract {
+    /// Represents a perpetual contract instrument (perpetual swap).
+    ///
+    /// Supports perpetuals on any asset class including FX, equities,
+    /// commodities, indexes, and cryptocurrencies.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, underlying, asset_class, quote_currency, settlement_currency, is_inverse, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, base_currency=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]

@@ -1,0 +1,18 @@
+{
+  "fixture": {
+    "name": "web_socket_response_1",
+    "category": "user_data",
+    "docs_url": "https://developers.binance.com/docs/binance-spot-api-docs/user-data-stream",
+    "parser_functions": [],
+    "payload_path": "web_socket_response_1.sbe",
+    "metadata_path": "web_socket_response_1.metadata.json",
+    "bytes": 288,
+    "sbe_header": {
+      "block_length": 3,
+      "template_id": 50,
+      "schema_id": 3,
+      "version": 2
+    }
+  },
+  "captured_at": "2026-01-01T00:00:00+00:00"
+}

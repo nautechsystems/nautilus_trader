@@ -371,6 +371,17 @@ def on_data(self, data: Data):
         # Do something with the data
 ```
 
+## Funding rates
+
+The adapter subscribes to funding rate data through the
+[Mark Price Stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream)
+WebSocket endpoint, which provides the current funding rate and next funding time.
+
+The `interval` field on `FundingRateUpdate` is `None` for Binance because the Mark Price Stream
+does not include a funding interval field. Binance exposes `fundingIntervalHours` through the
+[Get Funding Rate Info](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-Info)
+REST endpoint, but this is not currently consumed by the adapter.
+
 ## Rate limiting
 
 Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (every minute, resetting at :00 seconds). Each API endpoint has an assigned weight cost, and your total weight usage is tracked per IP address.
@@ -641,17 +652,19 @@ should behave identically to standard Binance.
 
 ### Environments
 
-Binance provides three trading environments, configured via the `environment` option:
+Binance provides three trading environments. Each has separate API credentials
+and endpoints. The `environment` config option selects which one to use.
 
-| Environment  | Config                   | Description                                                         |
-|--------------|--------------------------|---------------------------------------------------------------------|
-| **Live**     | `environment="LIVE"`     | Production trading with real funds (default).                       |
-| **Demo**     | `environment="DEMO"`     | Practice trading with simulated funds on production infrastructure. |
-| **Testnet**  | `environment="TESTNET"`  | Separate test network for development and integration testing.      |
+| Environment | Config                  | Description                                                            |
+|-------------|-------------------------|------------------------------------------------------------------------|
+| **Live**    | `environment="LIVE"`    | Production trading with real funds (default).                          |
+| **Demo**    | `environment="DEMO"`    | Simulated funds on production infrastructure. Recommended for testing. |
+| **Testnet** | `environment="TESTNET"` | Separate test network (Spot only). Limited futures support.            |
 
 #### Live (production)
 
-The default environment for live trading with real funds.
+The default environment for live trading with real funds. Uses your main
+Binance account credentials.
 
 ```python
 config = BinanceExecClientConfig(
@@ -662,34 +675,64 @@ config = BinanceExecClientConfig(
 )
 ```
 
-Environment variables: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+| Variable             | Description         |
+|----------------------|---------------------|
+| `BINANCE_API_KEY`    | Mainnet API key.    |
+| `BINANCE_API_SECRET` | Mainnet API secret. |
 
 #### Demo trading
 
-Practice trading with simulated funds. Spot demo uses `demo-api.binance.com`, USD-M Futures demo uses `demo-fapi.binance.com`, and COIN-M Futures demo shares testnet endpoints. Create demo API keys from the [Binance Demo Trading page](https://www.binance.com/en/demo-trading).
+Practice trading with simulated funds on production infrastructure. Demo
+accounts use the same Binance login as your live account but trade with
+virtual balances. This is the recommended environment for integration testing,
+especially for futures.
+
+**How to get demo credentials:**
+
+1. Log in at [binance.com/en/demo-trading](https://www.binance.com/en/demo-trading).
+2. Go to **API Management** and create a demo API key.
+3. Demo keys work for both Spot and Futures on demo endpoints.
+
+| Endpoint       | URL                          |
+|----------------|------------------------------|
+| Spot HTTP      | `demo-api.binance.com`       |
+| Spot WS        | `demo-stream.binance.com`    |
+| USD-M HTTP     | `demo-fapi.binance.com`      |
 
 ```python
 config = BinanceExecClientConfig(
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
-    account_type=BinanceAccountType.SPOT,
+    account_type=BinanceAccountType.USDT_FUTURES,
     environment=BinanceEnvironment.DEMO,
 )
 ```
 
-Environment variables: `BINANCE_DEMO_API_KEY`, `BINANCE_DEMO_API_SECRET` (shared across Spot and Futures)
+| Variable              | Description                                        |
+|-----------------------|----------------------------------------------------|
+| `BINANCE_DEMO_API_KEY`    | Demo API key (shared across Spot and Futures). |
+| `BINANCE_DEMO_API_SECRET` | Demo API secret.                               |
 
 :::warning
-**Demo environment limitations:**
-
-- COIN-M Futures are **not supported** in demo mode.
-- Futures demo shares testnet infrastructure, so market data and liquidity may differ from production.
-
+COIN-M Futures are not supported in demo mode.
 :::
 
 #### Testnet
 
-A separate test network for development and integration testing. Spot testnet is at `testnet.binance.vision`, Futures testnet at `testnet.binancefuture.com`.
+A separate test network with its own user accounts, balances, and order books.
+Spot testnet is at `testnet.binance.vision`. The futures testnet at
+`testnet.binancefuture.com` now redirects to demo; use `environment="DEMO"`
+for futures testing instead.
+
+**How to get Spot testnet credentials:**
+
+1. Go to [testnet.binance.vision](https://testnet.binance.vision/).
+2. Log in with GitHub.
+3. Generate an API key (HMAC, RSA, or Ed25519).
+
+**Futures testnet:** Binance has merged the futures testnet into the demo
+environment. If you need to test futures, use `environment="DEMO"` with
+demo credentials instead.
 
 ```python
 config = BinanceExecClientConfig(
@@ -700,11 +743,16 @@ config = BinanceExecClientConfig(
 )
 ```
 
-Environment variables (Spot/Margin): `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_API_SECRET`
-Environment variables (Futures): `BINANCE_FUTURES_TESTNET_API_KEY`, `BINANCE_FUTURES_TESTNET_API_SECRET`
+| Variable                             | Description                      |
+|--------------------------------------|----------------------------------|
+| `BINANCE_TESTNET_API_KEY`            | Spot testnet API key.            |
+| `BINANCE_TESTNET_API_SECRET`         | Spot testnet API secret.         |
+| `BINANCE_FUTURES_TESTNET_API_KEY`    | Futures testnet API key (deprecated, use demo). |
+| `BINANCE_FUTURES_TESTNET_API_SECRET` | Futures testnet API secret (deprecated, use demo). |
 
 :::note
-Testnet uses completely separate infrastructure from production. Market data and liquidity differ significantly from live.
+Testnet credentials are completely separate from your live account. Market
+data and liquidity differ from production.
 :::
 
 :::warning

@@ -28,6 +28,7 @@ python = [
   "nautilus-model/python",
   "nautilus-system/python",
   "pyo3",
+  "pyo3-stub-gen",
 ]
 
 [package.metadata.docs.rs]
@@ -50,6 +51,7 @@ arrow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
+flate2 = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -64,6 +66,7 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-execution = { workspace = true }
@@ -82,4 +85,9 @@ doc = false
 [[example]]
 name = "betfair-exec-tester"
 path = "examples/node_exec_tester.rs"
+doc = false
+
+[[example]]
+name = "betfair-load-file"
+path = "examples/load_betfair_file.rs"
 doc = false

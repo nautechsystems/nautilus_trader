@@ -27,7 +27,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidDataClientFactory {
+    /// Factory for creating Hyperliquid data clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -40,7 +42,9 @@ impl HyperliquidDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidExecutionClientFactory {
+    /// Factory for creating Hyperliquid execution clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -53,7 +57,12 @@ impl HyperliquidExecutionClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidExecFactoryConfig {
+    /// Configuration for creating Hyperliquid execution clients via factory.
+    ///
+    /// This wraps `HyperliquidExecClientConfig` with the additional trader and account
+    /// identifiers required by the `ExecutionClientCore`.
     #[new]
     fn py_new(
         trader_id: TraderId,

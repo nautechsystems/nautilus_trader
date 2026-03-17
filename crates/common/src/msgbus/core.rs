@@ -375,6 +375,58 @@ impl MessageBus {
             .expect("EndpointMap type mismatch - this is a bug")
     }
 
+    /// Disposes of the message bus, clearing all subscriptions, endpoints,
+    /// and handler references.
+    pub fn dispose(&mut self) {
+        self.subscriptions.clear();
+        self.topics.clear();
+        self.endpoints.clear();
+        self.correlation_index.clear();
+
+        self.router_quotes.clear();
+        self.router_trades.clear();
+        self.router_bars.clear();
+        self.router_deltas.clear();
+        self.router_depth10.clear();
+        self.router_book_snapshots.clear();
+        self.router_mark_prices.clear();
+        self.router_index_prices.clear();
+        self.router_funding_rates.clear();
+        self.router_order_events.clear();
+        self.router_position_events.clear();
+        self.router_account_state.clear();
+        self.router_orders.clear();
+        self.router_positions.clear();
+        self.router_greeks.clear();
+        self.router_option_greeks.clear();
+        self.router_option_chain.clear();
+
+        #[cfg(feature = "defi")]
+        {
+            self.router_defi_blocks.clear();
+            self.router_defi_pools.clear();
+            self.router_defi_swaps.clear();
+            self.router_defi_liquidity.clear();
+            self.router_defi_collects.clear();
+            self.router_defi_flash.clear();
+            self.endpoints_defi_data.clear();
+        }
+
+        self.endpoints_quotes.clear();
+        self.endpoints_trades.clear();
+        self.endpoints_bars.clear();
+        self.endpoints_account_state.clear();
+        self.endpoints_trading_commands.clear();
+        self.endpoints_data_commands.clear();
+        self.endpoints_data_responses.clear();
+        self.endpoints_exec_reports.clear();
+        self.endpoints_order_events.clear();
+        self.endpoints_data.clear();
+
+        self.routers_typed.clear();
+        self.endpoints_typed.clear();
+    }
+
     /// Returns the memory address of this instance as a hexadecimal string.
     #[must_use]
     pub fn mem_address(&self) -> String {

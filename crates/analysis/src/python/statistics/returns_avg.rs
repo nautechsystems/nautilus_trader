@@ -21,6 +21,7 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::returns_avg::ReturnsAverage};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ReturnsAverage {
     #[new]
     fn py_new() -> Self {

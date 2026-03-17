@@ -75,10 +75,16 @@ pub struct MarginAccount {
 impl MarginAccount {
     /// Creates a new [`MarginAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
+        let margins = event
+            .margins
+            .iter()
+            .map(|margin| (margin.instrument_id, *margin))
+            .collect();
+
         Self {
             base: BaseAccount::new(event, calculate_account_state),
             leverages: AHashMap::new(),
-            margins: AHashMap::new(),
+            margins,
             default_leverage: Decimal::ONE,
             margin_model: MarginModelAny::default(),
         }
@@ -442,7 +448,13 @@ impl Account for MarginAccount {
     }
 
     fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
+        let margins = event
+            .margins
+            .iter()
+            .map(|margin| (margin.instrument_id, *margin))
+            .collect();
         self.base_apply(event);
+        self.margins = margins;
         Ok(())
     }
 
@@ -563,7 +575,7 @@ mod tests {
 
     use crate::{
         accounts::{Account, MarginAccount, stubs::*},
-        enums::{LiquiditySide, OrderSide, OrderType},
+        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, OrderFilled, account::stubs::*},
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
@@ -597,7 +609,7 @@ mod tests {
             margin_account.last_event(),
             Some(margin_account_state.clone())
         );
-        assert_eq!(margin_account.events(), vec![margin_account_state]);
+        assert_eq!(margin_account.events(), vec![margin_account_state.clone()]);
         assert_eq!(margin_account.event_count(), 1);
         assert_eq!(
             margin_account.balance_total(None),
@@ -620,6 +632,17 @@ mod tests {
         let mut balances_locked_expected = AHashMap::new();
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(margin_account.balances_locked(), balances_locked_expected);
+        let margin_balance = margin_account_state.margins[0];
+        let mut initial_margins_expected = AHashMap::new();
+        initial_margins_expected.insert(margin_balance.instrument_id, margin_balance.initial);
+        assert_eq!(margin_account.initial_margins(), initial_margins_expected);
+        let mut maintenance_margins_expected = AHashMap::new();
+        maintenance_margins_expected
+            .insert(margin_balance.instrument_id, margin_balance.maintenance);
+        assert_eq!(
+            margin_account.maintenance_margins(),
+            maintenance_margins_expected
+        );
     }
 
     #[rstest]
@@ -685,19 +708,22 @@ mod tests {
         mut margin_account: MarginAccount,
         instrument_id_aud_usd_sim: InstrumentId,
     ) {
-        assert_eq!(margin_account.margins.len(), 0);
+        assert_eq!(margin_account.margins.len(), 1);
         let margin = Money::from("10000 USD");
         margin_account.update_initial_margin(instrument_id_aud_usd_sim, margin);
         assert_eq!(
             margin_account.initial_margin(instrument_id_aud_usd_sim),
             margin
         );
-        let margins: Vec<Money> = margin_account
-            .margins
-            .values()
-            .map(|margin_balance| margin_balance.initial)
-            .collect();
-        assert_eq!(margins, vec![margin]);
+        assert_eq!(margin_account.margins.len(), 2);
+        assert_eq!(
+            margin_account
+                .margins
+                .get(&instrument_id_aud_usd_sim)
+                .expect("AUD/USD margin should exist")
+                .initial,
+            margin
+        );
     }
 
     #[rstest]
@@ -711,12 +737,51 @@ mod tests {
             margin_account.maintenance_margin(instrument_id_aud_usd_sim),
             margin
         );
-        let margins: Vec<Money> = margin_account
-            .margins
-            .values()
-            .map(|margin_balance| margin_balance.maintenance)
-            .collect();
-        assert_eq!(margins, vec![margin]);
+        assert_eq!(margin_account.margins.len(), 2);
+        assert_eq!(
+            margin_account
+                .margins
+                .get(&instrument_id_aud_usd_sim)
+                .expect("AUD/USD margin should exist")
+                .maintenance,
+            margin
+        );
+    }
+
+    #[rstest]
+    fn test_apply_replaces_margin_balances_from_event(
+        mut margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        let old_instrument_id = margin_account_state.margins[0].instrument_id;
+        let new_instrument_id = InstrumentId::from("USDJPY.SIM");
+        let event = AccountState::new(
+            margin_account_state.account_id,
+            AccountType::Margin,
+            margin_account_state.balances.clone(),
+            vec![MarginBalance::new(
+                Money::from("12500 USD"),
+                Money::from("25000 USD"),
+                new_instrument_id,
+            )],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            margin_account_state.base_currency,
+        );
+
+        margin_account.apply(event).unwrap();
+
+        assert_eq!(
+            margin_account.initial_margin(new_instrument_id),
+            Money::from("12500 USD")
+        );
+        assert_eq!(
+            margin_account.maintenance_margin(new_instrument_id),
+            Money::from("25000 USD")
+        );
+        assert!(margin_account.margin(&old_instrument_id).is_none());
     }
 
     #[rstest]

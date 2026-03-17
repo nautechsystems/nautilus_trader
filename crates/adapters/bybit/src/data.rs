@@ -217,6 +217,10 @@ fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data)
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Cached funding state per symbol: (funding_rate, next_funding_time, funding_interval_hour).
+type FundingCacheEntry = (Option<String>, Option<String>, Option<String>);
+
+#[allow(clippy::too_many_arguments)]
 fn handle_ws_message(
     message: &BybitWsMessage,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -228,7 +232,7 @@ fn handle_ws_message(
     option_greeks_subs: &Arc<DashSet<InstrumentId>>,
     bar_types_cache: &Arc<DashMap<String, BarType>>,
     quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
-    funding_cache: &mut AHashMap<Ustr, (Option<String>, Option<String>)>,
+    funding_cache: &mut AHashMap<Ustr, FundingCacheEntry>,
     clock: &AtomicTime,
 ) {
     let ts_init = clock.get_time_ns();
@@ -350,7 +354,9 @@ fn handle_ws_message(
             };
 
             if sub_set.is_some_and(|s| s.contains("funding")) {
-                let cache_entry = funding_cache.entry(msg.data.symbol).or_insert((None, None));
+                let cache_entry = funding_cache
+                    .entry(msg.data.symbol)
+                    .or_insert((None, None, None));
                 let mut changed = false;
 
                 if let Some(rate) = &msg.data.funding_rate
@@ -367,8 +373,26 @@ fn handle_ws_message(
                     changed = true;
                 }
 
+                if let Some(interval) = &msg.data.funding_interval_hour {
+                    cache_entry.2 = Some(interval.clone());
+                }
+
                 if changed {
-                    match parse_ticker_linear_funding(&msg.data, instrument_id, ts_event, ts_init) {
+                    let mut merged = msg.data.clone();
+
+                    if merged.funding_rate.is_none() {
+                        merged.funding_rate.clone_from(&cache_entry.0);
+                    }
+
+                    if merged.next_funding_time.is_none() {
+                        merged.next_funding_time.clone_from(&cache_entry.1);
+                    }
+
+                    if merged.funding_interval_hour.is_none() {
+                        merged.funding_interval_hour.clone_from(&cache_entry.2);
+                    }
+
+                    match parse_ticker_linear_funding(&merged, instrument_id, ts_event, ts_init) {
                         Ok(update) => {
                             if let Err(e) = data_sender.send(DataEvent::FundingRate(update)) {
                                 log::error!("Failed to emit funding rate event: {e}");
@@ -590,8 +614,7 @@ impl DataClient for BybitDataClient {
             let cancel = self.cancellation_token.clone();
             let handle = get_runtime().spawn(async move {
                 let mut quote_cache: AHashMap<InstrumentId, QuoteTick> = AHashMap::new();
-                let mut funding_cache: AHashMap<Ustr, (Option<String>, Option<String>)> =
-                    AHashMap::new();
+                let mut funding_cache: AHashMap<Ustr, FundingCacheEntry> = AHashMap::new();
 
                 pin_mut!(stream);
                 loop {
@@ -2089,7 +2112,11 @@ mod tests {
         );
         funding_cache.insert(
             Ustr::from("BTCUSDT"),
-            (Some("-0.001".to_string()), Some("1000".to_string())),
+            (
+                Some("-0.001".to_string()),
+                Some("1000".to_string()),
+                Some("8".to_string()),
+            ),
         );
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();

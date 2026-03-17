@@ -79,6 +79,10 @@ impl FromStr for NautilusDataType {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
+)]
 pub struct BacktestEngineConfig {
     /// The kernel environment context.
     pub environment: Environment,
@@ -287,6 +291,10 @@ impl Default for BacktestEngineConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
 )]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
@@ -539,6 +547,10 @@ impl BacktestVenueConfig {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
+)]
 pub struct BacktestDataConfig {
     /// The type of data to query from the catalog.
     data_type: NautilusDataType,
@@ -758,6 +770,10 @@ impl BacktestDataConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")
 )]
 pub struct BacktestRunConfig {
     /// The unique identifier for this run configuration.

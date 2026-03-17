@@ -26,6 +26,10 @@ use crate::common::consts::{info_url, ws_url};
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+)]
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
     pub private_key: Option<String>,
@@ -106,6 +110,10 @@ impl HyperliquidDataClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidExecClientConfig {
     /// Private key for signing transactions.

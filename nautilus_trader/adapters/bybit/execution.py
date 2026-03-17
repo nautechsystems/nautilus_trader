@@ -419,6 +419,7 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             # Extract instrument_id if provided
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -553,6 +554,7 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             for product_type in self._product_types:
                 pyo3_instrument_id = None
+
                 if command.instrument_id:
                     pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                         command.instrument_id.value,
@@ -560,6 +562,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
                 start_ms = None
                 end_ms = None
+
                 if command.start:
                     start_dt = ensure_pydatetime_utc(command.start)
                     if start_dt:
@@ -889,6 +892,7 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
 
         pyo3_trigger_price = None
+
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
@@ -991,6 +995,7 @@ class BybitExecutionClient(LiveExecutionClient):
             )
 
             pyo3_trigger_price = None
+
             if order.has_trigger_price:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
@@ -1076,6 +1081,7 @@ class BybitExecutionClient(LiveExecutionClient):
             pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
 
             pyo3_trigger_price = None
+
             if order.has_trigger_price:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
@@ -1566,6 +1572,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 product_type = nautilus_pyo3.bybit_product_type_from_symbol(
                     order.instrument_id.symbol.value,
                 )
+
                 if product_type != BybitProductType.SPOT:
                     return
 

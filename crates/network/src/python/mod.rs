@@ -20,6 +20,10 @@
 // memory leak), so the compiler raises an error about an unknown cfg feature.
 // This attribute prevents those errors without actually enabling `gil-refs`.
 #![allow(unexpected_cfgs)]
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
 
 pub mod http;
 pub mod socket;
@@ -39,6 +43,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Quota {
     /// Construct a quota for a number of requests per second.
     ///

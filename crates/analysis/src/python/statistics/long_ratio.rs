@@ -23,6 +23,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::long_ratio::LongRatio};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LongRatio {
     #[new]
     #[pyo3(signature = (precision=None))]

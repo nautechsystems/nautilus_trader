@@ -129,17 +129,17 @@ aws-lc-rs = { version = "1.16.1", default-features = false, features = [
 ] }
 base64 = "0.22.1"
 bytes = { version = "1.11.1", features = ["serde"] }
-capnp = "0.25.1"
+capnp = "0.25.2"
 chrono = { version = "0.4.44", default-features = false, features = [
   "serde",
   "std",
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.60", features = ["derive", "env"] }
+clap = { version = "4.6.0", features = ["derive", "env"] }
 ctrlc = "3.5.2"
 dashmap = "6.1.0"
-datafusion = { version = "52.2.0", default-features = false, features = [
+datafusion = { version = "52.3.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -279,7 +279,7 @@ toml = { version = "1.0.6", default-features = false, features = [
   "serde",
 ] }
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
-tracing-subscriber = { version = "0.3.22", default-features = false, features = [
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "std",
   "env-filter",
   "fmt",
@@ -319,7 +319,7 @@ itoa = "1.0.17"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.23"
 serde_repr = "0.1.20"
-serde_with = "3.17.0"
+serde_with = "3.18.0"
 time = { version = "0.3.47", default-features = false, features = [
   "macros",
   "parsing",

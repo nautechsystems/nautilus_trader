@@ -31,6 +31,8 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ExecutionMassStatus {
+    /// Represents an execution mass status report for an execution client - including
+    /// status of all orders, trades for those orders and open positions.
     #[new]
     #[pyo3(signature = (client_id, account_id, venue, ts_init, report_id=None))]
     fn py_new(
@@ -89,34 +91,40 @@ impl ExecutionMassStatus {
         self.ts_init.as_u64()
     }
 
+    /// Get a copy of the order reports map.
     #[getter]
     #[pyo3(name = "order_reports")]
     fn py_order_reports(&self) -> IndexMap<VenueOrderId, OrderStatusReport> {
         self.order_reports()
     }
 
+    /// Get a copy of the fill reports map.
     #[getter]
     #[pyo3(name = "fill_reports")]
     fn py_fill_reports(&self) -> IndexMap<VenueOrderId, Vec<FillReport>> {
         self.fill_reports()
     }
 
+    /// Get a copy of the position reports map.
     #[getter]
     #[pyo3(name = "position_reports")]
     fn py_position_reports(&self) -> IndexMap<InstrumentId, Vec<PositionStatusReport>> {
         self.position_reports()
     }
 
+    /// Add order reports to the mass status.
     #[pyo3(name = "add_order_reports")]
     fn py_add_order_reports(&mut self, reports: Vec<OrderStatusReport>) {
         self.add_order_reports(reports);
     }
 
+    /// Add fill reports to the mass status.
     #[pyo3(name = "add_fill_reports")]
     fn py_add_fill_reports(&mut self, reports: Vec<FillReport>) {
         self.add_fill_reports(reports);
     }
 
+    /// Add position reports to the mass status.
     #[pyo3(name = "add_position_reports")]
     fn py_add_position_reports(&mut self, reports: Vec<PositionStatusReport>) {
         self.add_position_reports(reports);

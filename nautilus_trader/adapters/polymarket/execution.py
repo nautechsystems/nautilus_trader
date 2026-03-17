@@ -369,6 +369,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_orders,
                 params=params,
             )
+
             if response:
                 # Uncomment for development
                 # self._log.info(f"Processing {len(response)} orders", LogColor.MAGENTA)
@@ -551,6 +552,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_order,
                 order_id=venue_order_id.value,
             )
+
             if not response:
                 return None
             # Uncomment for development
@@ -586,6 +588,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         reports: list[FillReport] = []
 
         params = TradeParams()
+
         if command.instrument_id:
             condition_id = get_polymarket_condition_id(command.instrument_id)
             params.market = condition_id
@@ -599,6 +602,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params.before = int(command.end.timestamp())
 
         details = []
+
         if command.instrument_id:
             details.append(command.instrument_id)
 
@@ -612,6 +616,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_trades,
                 params=params,
             )
+
             if response:
                 # Uncomment for development
                 # self._log.info(f"Processing {len(response)} trades", LogColor.MAGENTA)
@@ -867,6 +872,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.cancel,
                 order_id=order.venue_order_id.value,
             )
+
             if not response or not retry_manager.result:
                 reason = retry_manager.message
             else:
@@ -917,6 +923,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.cancel_orders,
                 order_ids=order_ids,
             )
+
             if not response or not retry_manager.result:
                 reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
@@ -952,6 +959,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
         )
+
         if not open_orders_strategy:
             self._log.warning(f"No open orders to cancel for strategy {command.strategy_id}")
             return
@@ -966,6 +974,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.cancel_orders,
                 order_ids=order_ids,
             )
+
             if not response or not retry_manager.result:
                 reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
@@ -1010,6 +1019,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 asyncio.to_thread,
                 self._http_client.cancel_all,
             )
+
             if not response or not retry_manager.result:
                 self._log.error(f"Failed to cancel all orders: {retry_manager.message}")
             else:
@@ -1048,8 +1058,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         """
         market = ""
+
         if instrument_id is not None:
             market = get_polymarket_condition_id(instrument_id)
+
             if not asset_id:
                 asset_id = get_polymarket_token_id(instrument_id)
 
@@ -1067,6 +1079,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 market,
                 asset_id,
             )
+
             if not response or not retry_manager.result:
                 self._log.error(f"Failed to cancel market orders: {retry_manager.message}")
             else:
@@ -1547,6 +1560,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 convert_tif_to_polymarket_order_type(order.time_in_force),
                 post_only,
             )
+
             if not response or not response.get("success"):
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
@@ -1683,6 +1697,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug(f"Processing order update for {client_order_id!r}")
 
         strategy_id = None
+
         if client_order_id:
             strategy_id = self._cache.strategy_id_for_order(client_order_id)
 
@@ -1790,6 +1805,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Handle status transitions (e.g., MATCHED -> MINED -> CONFIRMED)
         previous_status = self._processed_trades.get(trade_id)
+
         if (
             previous_status is not None
             and msg.status in POLYMARKET_FINALIZED_TRADE_STATUSES

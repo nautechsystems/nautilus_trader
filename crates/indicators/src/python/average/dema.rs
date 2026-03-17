@@ -25,7 +25,10 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DoubleExponentialMovingAverage {
+    /// The Double Exponential Moving Average attempts to a smoother average with less
+    /// lag than the normal Exponential Moving Average (EMA)
     #[new]
     #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: usize, price_type: Option<PriceType>) -> Self {

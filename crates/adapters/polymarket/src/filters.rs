@@ -217,7 +217,7 @@ impl PredicateFilter {
 
     /// Convenience: keep only instruments with a matching outcome value.
     ///
-    /// Only [`BinaryOption`] instruments are checked; all other variants are rejected.
+    /// Only [`InstrumentAny::BinaryOption`] instruments are checked; all other variants are rejected.
     pub fn outcome(value: impl Into<String>) -> Self {
         let value: String = value.into();
         let label = format!("outcome={value}");
@@ -234,7 +234,7 @@ impl PredicateFilter {
     ///
     /// The caller provides the current time as [`UnixNanos`] so the filter
     /// works correctly with both real-time and simulated (backtest) clocks.
-    /// Only [`BinaryOption`] instruments are checked; non-binary variants are accepted.
+    /// Only [`InstrumentAny::BinaryOption`] instruments are checked; non-binary variants are accepted.
     pub fn not_expired(now_ns: UnixNanos) -> Self {
         Self::new("not_expired", move |instrument| {
             if let Some(expiration_ns) = Instrument::expiration_ns(instrument) {

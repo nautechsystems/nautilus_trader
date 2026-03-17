@@ -470,6 +470,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         selection_id=o.selection_id,
                         selection_handicap=o.handicap if o.handicap not in (None, 0) else None,
                     )
+
                     if order_instrument_id == command.instrument_id:
                         matching_orders.append(o)
                 except Exception:
@@ -525,6 +526,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 orders = await self._client.list_current_orders(
                     customer_order_refs={customer_order_ref},
                 )
+
                 if not orders:
                     legacy_ref = make_customer_order_ref_legacy(command.client_order_id)
                     if legacy_ref != customer_order_ref:
@@ -1112,6 +1114,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             # Ensure we remove pending key on exception
             self._pending_update_keys.discard(pending_key)
+
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
 
@@ -1319,6 +1322,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         for report in result.instruction_reports:
             venue_order_id = VenueOrderId(str(report.instruction.bet_id))
+
             if (
                 report.status == InstructionReportStatus.FAILURE
                 and report.error_code != InstructionReportErrorCode.BET_TAKEN_OR_LAPSED
@@ -1628,6 +1632,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Guard on venue_order_id not yet cached to avoid duplicate acceptance
         # when the HTTP response path has already emitted one.
         order = self._cache.order(client_order_id)
+
         if (
             order is not None
             and order.status == OrderStatus.SUBMITTED
@@ -1667,6 +1672,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"Skipping external order: bet_id={unmatched_order.id}, "
             f"rfo={unmatched_order.rfo!r}, instrument_id={instrument_id}"
         )
+
         if self.config.ignore_external_orders:
             self._log.debug(msg)
         else:
@@ -2163,6 +2169,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _format_error_reason(self, error_code, result_error_code=None) -> str:
         parts = []
+
         if error_code is not None:
             parts.append(f"{error_code.name} ({error_code.__doc__})")
         if result_error_code is not None and result_error_code != error_code:

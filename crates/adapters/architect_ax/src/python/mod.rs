@@ -15,6 +15,11 @@
 
 //! Python bindings for the Ax adapter.
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod config;
 pub mod http;
 pub mod websocket;
@@ -31,6 +36,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxEnvironment {
     fn __repr__(&self) -> String {
         format!(
@@ -67,6 +73,7 @@ impl AxEnvironment {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AxMarketDataLevel {
     fn __repr__(&self) -> String {
         format!(

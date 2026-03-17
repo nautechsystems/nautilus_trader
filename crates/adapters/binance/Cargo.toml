@@ -39,6 +39,7 @@ python = [
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
 ]
 
 [package.metadata.docs.rs]
@@ -80,6 +81,7 @@ zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
@@ -109,6 +111,11 @@ doc = false
 [[bin]]
 name = "binance-spot-http-capture-fixtures"
 path = "bin/capture_spot_http_fixtures.rs"
+doc = false
+
+[[bin]]
+name = "binance-spot-ws-user-data-capture"
+path = "bin/capture_spot_ws_user_data.rs"
 doc = false
 
 # Run with `cargo run --example binance-spot-data-tester --package nautilus-binance`

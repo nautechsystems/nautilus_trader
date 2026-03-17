@@ -99,6 +99,7 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
         use_position_ids: bool = True,
     ) -> FillReport:
         venue_position_id: PositionId | None = None
+
         if self.positionSide is not None and use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
 
@@ -225,6 +226,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
 
         trigger_price = Decimal(self.stopPrice) if self.stopPrice is not None else Decimal()
         trigger_type = TriggerType.NO_TRIGGER
+
         if self.workingType is not None:
             trigger_type = enum_parser.parse_binance_trigger_type(self.workingType)
         elif trigger_price > 0:
@@ -232,6 +234,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
 
         trailing_offset = None
         trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+
         if self.priceRate is not None:
             trailing_offset = Decimal(self.priceRate)
             trailing_offset_type = TrailingOffsetType.BASIS_POINTS

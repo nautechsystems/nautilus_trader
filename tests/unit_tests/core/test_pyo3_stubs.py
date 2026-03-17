@@ -101,6 +101,7 @@ def parse_stub_file() -> dict:
                     isinstance(dec, ast.Name) and dec.id == "property"
                     for dec in item.decorator_list
                 )
+
                 if is_property:
                     members["properties"].append(name)
                 else:

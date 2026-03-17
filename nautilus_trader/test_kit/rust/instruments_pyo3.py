@@ -286,6 +286,7 @@ class TestInstrumentProviderPyo3:
     ) -> CryptoFuture:
         if activation is None:
             activation = pd.Timestamp("2021-12-25", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2022-3-25", tz=pytz.utc)
         symbol = f"BTCUSDT_{expiration.strftime('%y%m%d')}"
@@ -401,6 +402,7 @@ class TestInstrumentProviderPyo3:
     ) -> OptionContract:
         if activation is None:
             activation = pd.Timestamp("2021-9-17", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return OptionContract(
@@ -433,6 +435,7 @@ class TestInstrumentProviderPyo3:
     ) -> FuturesContract:
         if activation is None:
             activation = pd.Timestamp("2021-9-17", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return FuturesContract(
@@ -463,6 +466,7 @@ class TestInstrumentProviderPyo3:
     ) -> FuturesSpread:
         if activation is None:
             activation = pd.Timestamp("2022-6-21T13:30:00", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2024-6-21T13:30:00", tz=pytz.utc)
         return FuturesSpread(
@@ -494,6 +498,7 @@ class TestInstrumentProviderPyo3:
     ) -> OptionSpread:
         if activation is None:
             activation = pd.Timestamp("2023-11-06T20:54:07", tz=pytz.utc)
+
         if expiration is None:
             expiration = pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc)
         return OptionSpread(

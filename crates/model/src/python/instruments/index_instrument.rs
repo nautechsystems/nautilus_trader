@@ -33,6 +33,9 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IndexInstrument {
+    /// Represents a generic index instrument.
+    ///
+    /// An index is typically not directly tradable.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, info=None))]

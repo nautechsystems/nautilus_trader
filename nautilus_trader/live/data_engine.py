@@ -349,6 +349,7 @@ class LiveDataEngine(DataEngine):
             f"Unexpected exception in {queue_name} queue processing: {e!r}",
             e,
         )
+
         if self.graceful_shutdown_on_exception:
             if not self._shutdown_initiated:
                 self._log.warning(
@@ -417,6 +418,7 @@ class LiveDataEngine(DataEngine):
                     self._handle_queue_exception(e, "DataCommand")
         finally:
             stopped_msg = "DataCommand message queue stopped"
+
             if not self._cmd_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
@@ -441,6 +443,7 @@ class LiveDataEngine(DataEngine):
                     self._handle_queue_exception(e, "RequestData")
         finally:
             stopped_msg = "RequestData message queue stopped"
+
             if not self._req_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue")
             else:
@@ -465,6 +468,7 @@ class LiveDataEngine(DataEngine):
                     self._handle_queue_exception(e, "DataResponse")
         finally:
             stopped_msg = "DataResponse message queue stopped"
+
             if not self._res_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.res_qsize()} message(s) on queue")
             else:
@@ -487,6 +491,7 @@ class LiveDataEngine(DataEngine):
                     self._handle_queue_exception(e, "Data")
         finally:
             stopped_msg = "Data message queue stopped"
+
             if not self._data_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.data_qsize()} message(s) on queue")
             else:

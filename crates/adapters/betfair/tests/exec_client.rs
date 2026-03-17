@@ -33,19 +33,27 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     live::runner::{set_data_event_sender, set_exec_event_sender},
-    messages::{DataEvent, ExecutionEvent, execution::cancel::CancelOrder},
+    messages::{
+        DataEvent, ExecutionEvent,
+        execution::{
+            cancel::{CancelAllOrders, CancelOrder},
+            modify::ModifyOrder,
+            submit::SubmitOrder,
+        },
+    },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     data::Data,
-    enums::{AccountType, OmsType},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
-    types::Currency,
+    orders::{OrderAny, builder::OrderTestBuilder},
+    types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -469,6 +477,456 @@ async fn test_cancel_order_success_no_rejected_event() {
         event.is_err(),
         "Successful cancel should not emit rejected event, found: {event:?}"
     );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+fn make_test_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    price: &str,
+    quantity: &str,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Sell)
+        .price(Price::from(price))
+        .quantity(Quantity::from(quantity))
+        .time_in_force(TimeInForce::Gtc)
+        .build()
+}
+
+fn add_order_to_cache(cache: &Rc<RefCell<Cache>>, order: OrderAny) {
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(ClientId::from("BETFAIR")), false)
+        .unwrap();
+}
+
+fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
+    SubmitOrder::from_order(
+        order,
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BETFAIR")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_success_emits_accepted() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.181005744-86362-0.BETFAIR", "O-SUBMIT-001", "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    let cmd = make_submit_order_cmd(&order);
+    client.submit_order(&cmd).unwrap();
+
+    // First event should be OrderSubmitted (emitted synchronously)
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for submitted event")
+        .expect("channel closed");
+
+    assert!(
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "Expected OrderSubmitted event, found: {event:?}"
+    );
+
+    // Second event should be OrderAccepted (emitted after HTTP response)
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for accepted event")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) => {
+            assert_eq!(accepted.venue_order_id, VenueOrderId::from("228302937743"));
+        }
+        other => panic!("Expected OrderAccepted event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_error_emits_rejected() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_place_order_error.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/placeOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.181106170-235-0.BETFAIR", "O-SUBMIT-002", "1.80", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    let cmd = make_submit_order_cmd(&order);
+    client.submit_order(&cmd).unwrap();
+
+    let _ = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for submitted")
+        .expect("channel closed");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for rejected event")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) => {
+            assert_eq!(
+                rejected.client_order_id,
+                ClientOrderId::from("O-SUBMIT-002")
+            );
+        }
+        other => panic!("Expected OrderRejected event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_price_and_quantity_rejects() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.179082386-235-0.BETFAIR", "O-MOD-001", "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BETFAIR")),
+        StrategyId::from("S-001"),
+        InstrumentId::from("1.179082386-235-0.BETFAIR"),
+        ClientOrderId::from("O-MOD-001"),
+        Some(VenueOrderId::from("123")),
+        Some(Quantity::from("5")),
+        Some(Price::from("3.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.modify_order(&cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for modify rejected")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
+            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-MOD-001"));
+            assert!(
+                rejected
+                    .reason
+                    .as_str()
+                    .contains("cannot modify price and quantity simultaneously"),
+                "Expected simultaneous modify reason, found: {}",
+                rejected.reason,
+            );
+        }
+        other => panic!("Expected ModifyRejected event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_no_effective_change_rejects() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.179082386-235-0.BETFAIR", "O-MOD-002", "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BETFAIR")),
+        StrategyId::from("S-001"),
+        InstrumentId::from("1.179082386-235-0.BETFAIR"),
+        ClientOrderId::from("O-MOD-002"),
+        Some(VenueOrderId::from("123")),
+        None,
+        Some(Price::from("2.58")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.modify_order(&cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for modify rejected")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
+            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-MOD-002"));
+            assert!(
+                rejected.reason.as_str().contains("no effective change"),
+                "Expected no effective change reason, found: {}",
+                rejected.reason,
+            );
+        }
+        other => panic!("Expected ModifyRejected event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_sends_request() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BETFAIR")),
+        StrategyId::from("S-001"),
+        InstrumentId::from("1.179082386-235-0.BETFAIR"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.cancel_all_orders(&cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == "SportsAPING/v1.0/cancelOrders")
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let event = rx.try_recv();
+    assert!(
+        event.is_err(),
+        "Cancel all should not emit rejected events on success, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_handler_emits_cancel_event() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_CANCEL.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for OCM cancel event")
+        .expect("channel closed");
+
+    assert!(
+        matches!(event, ExecutionEvent::Report(_)),
+        "Expected Report event from OCM cancel, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_handler_handles_mixed_updates() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_MIXED.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let mut report_count = 0;
+    for _ in 0..10 {
+        match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(_))) => {
+                report_count += 1;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+
+    assert!(
+        report_count >= 2,
+        "Expected at least 2 Report events from MIXED OCM, found: {report_count}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_handler_handles_full_image() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_FULL_IMAGE.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let mut found_report = false;
+    for _ in 0..10 {
+        match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(_))) => {
+                found_report = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+
+    assert!(found_report, "Expected Report event from FULL_IMAGE OCM");
 
     client.disconnect().await.unwrap();
     let _ = server.await;

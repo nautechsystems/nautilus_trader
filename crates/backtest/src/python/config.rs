@@ -32,8 +32,10 @@ use crate::config::{
     NautilusDataType,
 };
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl BacktestEngineConfig {
+    /// Configuration for ``BacktestEngine`` instances.
     #[new]
     #[pyo3(signature = (
         trader_id = None,
@@ -126,8 +128,10 @@ impl BacktestEngineConfig {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl BacktestVenueConfig {
+    /// Represents a venue configuration for one specific backtest engine.
     #[new]
     #[pyo3(signature = (
         name,
@@ -261,8 +265,10 @@ impl BacktestVenueConfig {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl BacktestDataConfig {
+    /// Represents the data configuration for one specific backtest run.
     #[new]
     #[pyo3(signature = (
         data_type,
@@ -344,8 +350,11 @@ impl BacktestDataConfig {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl BacktestRunConfig {
+    /// Represents the configuration for one specific backtest run.
+    /// This includes a backtest engine with its actors and strategies, with the external inputs of venues and data.
     #[new]
     #[pyo3(signature = (
         venues,

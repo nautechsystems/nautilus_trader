@@ -75,15 +75,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from("0.0001"); // Small quantity for testing
     let mut tester_config = ExecTesterConfig::new(
         StrategyId::from("EXEC_TESTER-001"),
         instrument_id,
         client_id,
-        Quantity::from("0.0001"), // Small quantity for testing
+        order_qty,
     )
     .with_log_data(false)
     .with_enable_limit_sells(false)
-    .with_close_positions_on_stop(false);
+    .with_open_position_on_start(order_qty.as_decimal())
+    .with_cancel_orders_on_stop(true)
+    .with_close_positions_on_stop(true);
 
     // Use UUIDs for unique client order IDs across restarts
     tester_config.base.use_uuid_client_order_ids = true;

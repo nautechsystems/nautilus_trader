@@ -22,7 +22,9 @@ use crate::common::types::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitMarginBorrowResult {
+    /// Result from a Bybit borrow operation for strategy consumption.
     #[new]
     #[must_use]
     pub fn py_new(
@@ -88,7 +90,9 @@ impl BybitMarginBorrowResult {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitMarginRepayResult {
+    /// Result from a Bybit repay operation for strategy consumption.
     #[new]
     #[pyo3(signature = (coin, amount, success, result_status, message, ts_event, ts_init))]
     #[must_use]
@@ -163,7 +167,9 @@ impl BybitMarginRepayResult {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitMarginStatusResult {
+    /// Result with current borrowed amount on Bybit.
     #[new]
     #[must_use]
     pub fn py_new(coin: String, borrow_amount: String, ts_event: u64, ts_init: u64) -> Self {

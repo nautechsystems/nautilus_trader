@@ -30,7 +30,12 @@ use crate::websocket::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidWebSocketClient {
+    /// Hyperliquid WebSocket client following the BitMEX pattern.
+    ///
+    /// Orchestrates WebSocket connection and subscriptions using a command-based architecture,
+    /// where the inner FeedHandler owns the WebSocketClient and handles all I/O.
     #[new]
     #[pyo3(signature = (url=None, testnet=false, account_id=None))]
     fn py_new(url: Option<String>, testnet: bool, account_id: Option<String>) -> Self {
@@ -38,6 +43,7 @@ impl HyperliquidWebSocketClient {
         Self::new(url, testnet, account_id)
     }
 
+    /// Returns the URL of this WebSocket client.
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
@@ -45,6 +51,7 @@ impl HyperliquidWebSocketClient {
         self.url().to_string()
     }
 
+    /// Returns true if the WebSocket is actively connected.
     #[pyo3(name = "is_active")]
     fn py_is_active(&self) -> bool {
         self.is_active()
@@ -55,6 +62,11 @@ impl HyperliquidWebSocketClient {
         !self.is_active()
     }
 
+    /// Caches spot fill coin mappings for instrument lookup.
+    ///
+    /// Hyperliquid WebSocket fills for spot use `@{pair_index}` format (e.g., `@107`),
+    /// while instruments are identified by full symbols (e.g., `HYPE-USDC-SPOT`).
+    /// This mapping allows the handler to look up instruments from spot fills.
     #[pyo3(name = "cache_spot_fill_coins")]
     fn py_cache_spot_fill_coins(&self, mapping: std::collections::HashMap<String, String>) {
         let ahash_mapping: ahash::AHashMap<ustr::Ustr, ustr::Ustr> = mapping
@@ -64,31 +76,51 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
+    /// Caches a cloid (hex hash) to client_order_id mapping for order/fill resolution.
+    ///
+    /// The cloid is a keccak256 hash of the client_order_id that Hyperliquid uses internally.
+    /// This mapping allows WebSocket order status and fill reports to be resolved back to
+    /// the original client_order_id.
+    ///
+    /// This writes directly to a shared cache that the handler reads from, avoiding any
+    /// race conditions between caching and WebSocket message processing.
     #[pyo3(name = "cache_cloid_mapping")]
     fn py_cache_cloid_mapping(&self, cloid: &str, client_order_id: ClientOrderId) {
         self.cache_cloid_mapping(ustr::Ustr::from(cloid), client_order_id);
     }
 
+    /// Removes a cloid mapping from the cache.
+    ///
+    /// Should be called when an order reaches a terminal state (filled, canceled, expired)
+    /// to prevent unbounded memory growth in long-running sessions.
     #[pyo3(name = "remove_cloid_mapping")]
     fn py_remove_cloid_mapping(&self, cloid: &str) {
         self.remove_cloid_mapping(&ustr::Ustr::from(cloid));
     }
 
+    /// Clears all cloid mappings from the cache.
+    ///
+    /// Useful for cleanup during reconnection or shutdown.
     #[pyo3(name = "clear_cloid_cache")]
     fn py_clear_cloid_cache(&self) {
         self.clear_cloid_cache();
     }
 
+    /// Returns the number of cloid mappings in the cache.
     #[pyo3(name = "cloid_cache_len")]
     fn py_cloid_cache_len(&self) -> usize {
         self.cloid_cache_len()
     }
 
+    /// Looks up a client_order_id by its cloid hash.
+    ///
+    /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[pyo3(name = "get_cloid_mapping")]
     fn py_get_cloid_mapping(&self, cloid: &str) -> Option<ClientOrderId> {
         self.get_cloid_mapping(&ustr::Ustr::from(cloid))
     }
 
+    /// Establishes WebSocket connection and spawns the message handler.
     #[pyo3(name = "connect")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -268,6 +300,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to trades for an instrument.
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
         &self,
@@ -285,6 +318,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from trades for an instrument.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -302,6 +336,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to L2 order book for an instrument.
     #[pyo3(name = "subscribe_book")]
     fn py_subscribe_book<'py>(
         &self,
@@ -319,6 +354,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from L2 order book for an instrument.
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -391,6 +427,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to best bid/offer (BBO) quotes for an instrument.
     #[pyo3(name = "subscribe_quotes")]
     fn py_subscribe_quotes<'py>(
         &self,
@@ -408,6 +445,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from quote ticks for an instrument.
     #[pyo3(name = "unsubscribe_quotes")]
     fn py_unsubscribe_quotes<'py>(
         &self,
@@ -425,6 +463,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to candle/bar data for a specific coin and interval.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -442,6 +481,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from candle/bar data.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,
@@ -459,6 +499,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to order updates for a specific user address.
     #[pyo3(name = "subscribe_order_updates")]
     fn py_subscribe_order_updates<'py>(
         &self,
@@ -476,6 +517,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to user events (fills, funding, liquidations) for a specific user address.
     #[pyo3(name = "subscribe_user_events")]
     fn py_subscribe_user_events<'py>(
         &self,
@@ -493,6 +535,10 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to user fills for a specific user address.
+    ///
+    /// Note: This channel is redundant with `userEvents` which already includes fills.
+    /// Prefer using `subscribe_user_events` or `subscribe_all_user_channels` instead.
     #[pyo3(name = "subscribe_user_fills")]
     fn py_subscribe_user_fills<'py>(
         &self,
@@ -510,6 +556,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to mark price updates for an instrument.
     #[pyo3(name = "subscribe_mark_prices")]
     fn py_subscribe_mark_prices<'py>(
         &self,
@@ -527,6 +574,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from mark price updates for an instrument.
     #[pyo3(name = "unsubscribe_mark_prices")]
     fn py_unsubscribe_mark_prices<'py>(
         &self,
@@ -544,6 +592,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to index/oracle price updates for an instrument.
     #[pyo3(name = "subscribe_index_prices")]
     fn py_subscribe_index_prices<'py>(
         &self,
@@ -561,6 +610,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from index/oracle price updates for an instrument.
     #[pyo3(name = "unsubscribe_index_prices")]
     fn py_unsubscribe_index_prices<'py>(
         &self,
@@ -578,6 +628,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to funding rate updates for an instrument.
     #[pyo3(name = "subscribe_funding_rates")]
     fn py_subscribe_funding_rates<'py>(
         &self,
@@ -595,6 +646,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Unsubscribe from funding rate updates for an instrument.
     #[pyo3(name = "unsubscribe_funding_rates")]
     fn py_unsubscribe_funding_rates<'py>(
         &self,

@@ -310,6 +310,7 @@ class PolymarketWebSocketClient:
                 return
 
             self._subscriptions.remove(subscription)
+
             if (
                 client_id in self._client_subscriptions
                 and subscription in self._client_subscriptions[client_id]

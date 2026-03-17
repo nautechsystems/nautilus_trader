@@ -132,6 +132,7 @@ def _print_no_updown_found(markets: list[dict]) -> None:
     for market in markets:
         slug = market.get("slug", "").lower()
         question = market.get("question", "").lower()
+
         if any(
             term in slug or term in question for term in ["bitcoin", "btc", "ethereum", "eth"]
         ) and any(price_term in question for price_term in ["reach", "hit", "dip", "$"]):

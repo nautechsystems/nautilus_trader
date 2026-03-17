@@ -29,7 +29,7 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
-    msgbus::{MessageBus, set_message_bus},
+    msgbus::{MessageBus, get_message_bus, set_message_bus},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
@@ -479,6 +479,8 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().dispose();
         self.exec_engine.borrow_mut().dispose();
         self.risk_engine.borrow_mut().dispose();
+        self.cache.borrow_mut().dispose();
+        get_message_bus().borrow_mut().dispose();
 
         log::info!("Disposed");
     }

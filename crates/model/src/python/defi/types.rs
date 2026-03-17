@@ -33,6 +33,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Chain {
+    /// Defines a blockchain with its unique identifiers and connection details for network interaction.
     #[new]
     fn py_new(name: Blockchain, chain_id: u32) -> Self {
         Self::new(name, chain_id)
@@ -90,11 +91,15 @@ impl Chain {
         self.native_currency_decimals
     }
 
+    /// Sets the RPC URL endpoint.
     #[pyo3(name = "set_rpc_url")]
     fn py_set_rpc_url(&mut self, rpc_url: String) {
         self.set_rpc_url(rpc_url);
     }
 
+    /// Returns a reference to the `Chain` corresponding to the given chain name, or `None` if it is not found.
+    ///
+    /// String matching is case-insensitive.
     #[staticmethod]
     #[pyo3(name = "from_chain_name")]
     fn py_from_chain_name(chain_name: &str) -> PyResult<Self> {
@@ -103,6 +108,7 @@ impl Chain {
         })
     }
 
+    /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
     #[staticmethod]
     #[pyo3(name = "from_chain_id")]
     fn py_from_chain_id(chain_id: u32) -> Option<Self> {
@@ -119,6 +125,7 @@ impl Chain {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Token {
+    /// Represents a cryptocurrency token on a blockchain network.
     #[new]
     #[allow(clippy::needless_pass_by_value)]
     fn py_new(
@@ -189,6 +196,7 @@ impl Token {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Dex {
+    /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
@@ -302,6 +310,30 @@ impl Dex {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Pool {
+    /// Represents a liquidity pool in a decentralized exchange.
+    ///
+    /// ## Pool Identification Architecture
+    ///
+    /// Pools are identified differently depending on the DEX protocol version:
+    ///
+    /// **UniswapV2/V3**: Each pool has its own smart contract deployed at a unique address.
+    /// - `address` = pool contract address
+    /// - `pool_identifier` = same as address (hex string)
+    ///
+    /// **UniswapV4**: All pools share a singleton PoolManager contract. Pools are distinguished
+    /// by a unique Pool ID (keccak256 hash of currencies, fee, tick spacing, and hooks).
+    /// - `address` = PoolManager contract address (shared by all pools)
+    /// - `pool_identifier` = Pool ID (bytes32 as hex string)
+    ///
+    /// ## Instrument ID Format
+    ///
+    /// The instrument ID encodes with the following components:
+    /// - `symbol` – The pool identifier (address for V2/V3, Pool ID for V4)
+    /// - `venue`  – The chain name plus DEX ID
+    ///
+    /// String representation: `<POOL_IDENTIFIER>.<CHAIN_NAME>:<DEX_ID>`
+    ///
+    /// Example: `0x11b815efB8f581194ae79006d24E0d814B7697F6.Ethereum:UniswapV3`
     #[new]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(

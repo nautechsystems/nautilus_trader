@@ -21,7 +21,17 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::calmar_ratio::CalmarRatio};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CalmarRatio {
+    /// Calculates the Calmar Ratio for returns.
+    ///
+    /// The Calmar Ratio is a function of the fund's average compounded annual rate
+    /// of return versus its maximum drawdown. The higher the Calmar ratio, the better
+    /// it performed on a risk-adjusted basis during the given time frame.
+    ///
+    /// Formula: Calmar Ratio = CAGR / |Max Drawdown|
+    ///
+    /// Reference: Young, T. W. (1991). "Calmar Ratio: A Smoother Tool". Futures, 20(1).
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {

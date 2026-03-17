@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenDataClientConfig {
+    /// Configuration for the Kraken data client.
     #[new]
     #[pyo3(signature = (
         product_type = None,
@@ -76,7 +78,9 @@ impl KrakenDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenExecClientConfig {
+    /// Configuration for the Kraken execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,

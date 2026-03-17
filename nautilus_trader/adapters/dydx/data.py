@@ -337,6 +337,7 @@ class DydxDataClient(LiveMarketDataClient):
             ):
                 # Deduplicate: only emit if top-of-book changed from last quote
                 last_quote = self._last_quotes.get(instrument_id)
+
                 if (
                     last_quote is None
                     or last_quote.bid_price != bid_price

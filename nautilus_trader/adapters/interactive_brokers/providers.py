@@ -279,6 +279,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 instrument_id,
                 filters,
             )
+
             if loaded_ids:
                 loaded_instrument_ids.extend(loaded_ids)
 
@@ -303,6 +304,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         contract_details: list | None = None
+
         if isinstance(instrument_id, InstrumentId):
             venue = instrument_id.venue.value
 
@@ -324,6 +326,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         force_instrument_update = (
             filters.get("force_instrument_update", False) if filters else False
         )
+
         if contract_details:
             return self._process_contract_details(contract_details, venue, force_instrument_update)
         else:

@@ -20,7 +20,9 @@ use pyo3::prelude::*;
 use crate::factories::{DeribitDataClientFactory, DeribitExecutionClientFactory};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitDataClientFactory {
+    /// Factory for creating Deribit data clients.
     #[new]
     fn py_new() -> Self {
         Self
@@ -33,7 +35,9 @@ impl DeribitDataClientFactory {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitExecutionClientFactory {
+    /// Factory for creating Deribit execution clients.
     #[new]
     fn py_new() -> Self {
         Self

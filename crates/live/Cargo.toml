@@ -43,6 +43,7 @@ python = [
   "nautilus-system/python",
   "nautilus-trading/python",
   "pyo3",
+  "pyo3-stub-gen",
   "streaming",
 ]
 defi = ["nautilus-common/defi", "nautilus-data/defi"]
@@ -75,6 +76,7 @@ tokio = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }

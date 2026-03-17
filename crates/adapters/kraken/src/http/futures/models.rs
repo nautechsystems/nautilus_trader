@@ -15,6 +15,7 @@
 
 //! Data models for Kraken Futures HTTP API responses.
 
+use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{
@@ -593,11 +594,26 @@ pub struct FuturesPublicOrder {
 pub struct FuturesAccountsResponse {
     pub result: KrakenApiResult,
     #[serde(default)]
-    pub accounts: std::collections::HashMap<String, FuturesAccount>,
+    pub accounts: AHashMap<String, FuturesAccount>,
     #[serde(default)]
     pub error: Option<String>,
     #[serde(default)]
     pub server_time: Option<String>,
+}
+
+/// Kraken Futures account type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum KrakenFuturesAccountType {
+    /// Multi-collateral margin account (flex).
+    MultiCollateralMarginAccount,
+    /// Single-collateral margin account.
+    MarginAccount,
+    /// Cash account (no margin).
+    CashAccount,
+    /// Unknown account type.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A Kraken Futures account (margin or multi-collateral).
@@ -605,13 +621,13 @@ pub struct FuturesAccountsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesAccount {
     #[serde(rename = "type")]
-    pub account_type: String,
+    pub account_type: KrakenFuturesAccountType,
     /// Balances for margin accounts (symbol -> amount).
     #[serde(default)]
-    pub balances: std::collections::HashMap<String, f64>,
+    pub balances: AHashMap<String, f64>,
     /// Currencies for flex/multi-collateral accounts.
     #[serde(default)]
-    pub currencies: std::collections::HashMap<String, FuturesFlexCurrency>,
+    pub currencies: AHashMap<String, FuturesFlexCurrency>,
     /// Auxiliary info for margin accounts.
     #[serde(default)]
     pub auxiliary: Option<FuturesAuxiliary>,

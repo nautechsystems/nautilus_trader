@@ -73,6 +73,10 @@ pub enum NautilusWsMessage {
 /// Represents an OKX WebSocket error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
+)]
 pub struct OKXWebSocketError {
     /// Error code from OKX (e.g., "50101").
     pub code: String,
@@ -609,9 +613,12 @@ pub struct OKXFundingRateMsg {
     pub funding_rate: Ustr,
     /// Predicted next funding rate.
     pub next_funding_rate: Ustr,
-    /// Next funding time, Unix timestamp format in milliseconds.
+    /// Funding time, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub funding_time: u64,
+    /// Next funding time, Unix timestamp format in milliseconds (used to determine funding interval).
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub next_funding_time: u64,
     /// Message timestamp, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
@@ -783,35 +790,7 @@ pub struct OKXStatusMsg {
     pub ts: u64,
 }
 
-/// Order update message from WebSocket orders channel.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OKXAttachedAlgoOrd {
-    /// Attached algo order ID, if assigned by OKX.
-    #[serde(default)]
-    pub attach_algo_id: String,
-    /// Attached child client order ID.
-    #[serde(default)]
-    pub attach_algo_cl_ord_id: String,
-    /// Stop-loss trigger price.
-    #[serde(default)]
-    pub sl_trigger_px: String,
-    /// Stop-loss order price.
-    #[serde(default)]
-    pub sl_ord_px: String,
-    /// Stop-loss trigger price type.
-    #[serde(default)]
-    pub sl_trigger_px_type: Option<OKXTriggerType>,
-    /// Take-profit trigger price.
-    #[serde(default)]
-    pub tp_trigger_px: String,
-    /// Take-profit order price.
-    #[serde(default)]
-    pub tp_ord_px: String,
-    /// Take-profit trigger price type.
-    #[serde(default)]
-    pub tp_trigger_px_type: Option<OKXTriggerType>,
-}
+pub use crate::common::models::OKXAttachedAlgoOrd;
 
 /// Order update message from WebSocket orders channel.
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1087,6 +1087,7 @@ mod tests {
             instrument_id,
             Decimal::new(1, 4),
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1105,12 +1106,14 @@ mod tests {
                 instrument_id,
                 Decimal::new(1, 4),
                 None,
+                None,
                 UnixNanos::default(),
                 UnixNanos::default(),
             ),
             FundingRateUpdate::new(
                 instrument_id,
                 Decimal::new(2, 4),
+                None,
                 None,
                 UnixNanos::default(),
                 UnixNanos::default(),

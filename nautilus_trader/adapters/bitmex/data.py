@@ -402,6 +402,7 @@ class BitmexDataClient(LiveMarketDataClient):
             or (spec.aggregation == BarAggregation.HOUR and spec.step == 1)
             or (spec.aggregation == BarAggregation.DAY and spec.step == 1)
         )
+
         if not supported:
             self._log.error(
                 f"Cannot request {bar_type} bars: unsupported BitMEX specification",

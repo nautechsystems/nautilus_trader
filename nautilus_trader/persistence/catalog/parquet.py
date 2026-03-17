@@ -293,6 +293,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         skip_disjoint_check: bool = kwargs.pop("skip_disjoint_check", False)
+
         if len(data) == 0 and start is not None and end is not None and data_cls is not None:
             self.extend_file_name(
                 data_cls=data_cls,
@@ -2510,6 +2511,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             use_ts_event_for_ts_init=use_ts_event_for_ts_init,
             convert_bar_type_to_external=True,
         )
+
         if table is None or len(table) == 0:
             return
 
@@ -2596,6 +2598,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         is_sorted = pc.all(
             pc.greater_equal(ts_col.slice(1), ts_col.slice(0, len(ts_col) - 1)),
         ).as_py()
+
         if not is_sorted:
             sort_indices = pc.sort_indices(
                 table,
@@ -2671,6 +2674,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "TradeTick": TradeTick,
                 "Bar": Bar,
             }.get(data_cls.__name__)
+
             if cython_cls is not None:
                 data = cython_cls.from_pyo3_list(data)
 

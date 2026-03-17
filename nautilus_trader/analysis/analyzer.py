@@ -30,6 +30,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.position import Position
 
 
+_NAUTILUS_PYO3_MODULE = ("nautilus_trader", "core", "nautilus_pyo3")
+
+
 class PortfolioAnalyzer:
     """
     Provides a portfolio performance analyzer for tracking and generating performance
@@ -44,7 +47,9 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
-        self._returns: pd.Series = pd.Series(dtype=float64)
+        self._position_returns: pd.Series = self._empty_returns()
+        self._portfolio_returns: pd.Series = self._empty_returns()
+        self._returns: pd.Series = self._empty_returns()
 
     def register_statistic(self, statistic: PortfolioStatistic) -> None:
         """
@@ -83,7 +88,9 @@ class PortfolioAnalyzer:
         self._account_balances = {}
         self._positions = []
         self._realized_pnls = {}
-        self._returns = pd.Series(dtype=float64)
+        self._position_returns = self._empty_returns()
+        self._portfolio_returns = self._empty_returns()
+        self._returns = self._empty_returns()
 
     def _get_max_length_name(self) -> int:
         max_length = 0
@@ -117,7 +124,10 @@ class PortfolioAnalyzer:
 
     def returns(self) -> pd.Series:
         """
-        Return raw the returns data.
+        Return the primary returns series for backward compatibility.
+
+        This returns portfolio returns when available, otherwise it falls back
+        to position returns.
 
         Returns
         -------
@@ -125,6 +135,28 @@ class PortfolioAnalyzer:
 
         """
         return self._returns
+
+    def position_returns(self) -> pd.Series:
+        """
+        Return the per-position returns series.
+
+        Returns
+        -------
+        pd.Series
+
+        """
+        return self._position_returns
+
+    def portfolio_returns(self) -> pd.Series:
+        """
+        Return the portfolio returns series derived from account balances.
+
+        Returns
+        -------
+        pd.Series
+
+        """
+        return self._portfolio_returns
 
     def calculate_statistics(self, account: Account, positions: list[Position]) -> None:
         """
@@ -142,10 +174,14 @@ class PortfolioAnalyzer:
         self._account_balances = account.balances_total()
         self._positions = []
         self._realized_pnls = {}
-        self._returns = pd.Series(dtype=float64)
+        self._position_returns = self._empty_returns()
+        self._portfolio_returns = self._empty_returns()
+        self._returns = self._empty_returns()
 
         self.add_positions(positions)
-        self._returns = self._returns.sort_index()
+        self._position_returns = self._position_returns.sort_index()
+        self._portfolio_returns = self._calculate_portfolio_returns(account)
+        self._sync_returns_alias()
 
     def add_positions(self, positions: list[Position]) -> None:
         """
@@ -166,7 +202,10 @@ class PortfolioAnalyzer:
             self.add_trade(position.id, position.realized_pnl)
 
             if position.ts_closed > 0:
-                self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
+                self.add_position_return(
+                    unix_nanos_to_dt(position.ts_closed),
+                    position.realized_return,
+                )
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
@@ -185,21 +224,39 @@ class PortfolioAnalyzer:
         realized_pnls.loc[position_id.value] = realized_pnl.as_double()
         self._realized_pnls[currency] = realized_pnls
 
-    def add_return(self, timestamp: datetime, value: float) -> None:
+    def add_position_return(self, timestamp: datetime, value: float) -> None:
         """
-        Add return data to the analyzer.
+        Add position return data to the analyzer.
 
         Parameters
         ----------
         timestamp : datetime
-            The timestamp for the returns entry.
+            The timestamp for the position returns entry.
         value : double
-            The return value to add.
+            The position return value to add.
 
         """
-        if timestamp not in self._returns:
-            self._returns.loc[timestamp] = 0.0
-        self._returns.loc[timestamp] += float(value)
+        if timestamp not in self._position_returns:
+            self._position_returns.loc[timestamp] = 0.0
+        self._position_returns.loc[timestamp] += float(value)
+
+        self._sync_returns_alias()
+
+    def add_return(self, timestamp: datetime, value: float) -> None:
+        """
+        Add return data to the analyzer.
+
+        This is a backward-compatible alias for adding position returns.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp for the position returns entry.
+        value : double
+            The position return value to add.
+
+        """
+        self.add_position_return(timestamp, value)
 
     def realized_pnls(self, currency: Currency | None = None) -> pd.Series | None:
         """
@@ -374,60 +431,57 @@ class PortfolioAnalyzer:
         }
 
         for name, stat in self._statistics.items():
-            # Check if this is a Rust statistic (requires list) or Python statistic (expects Series)
-            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
-
-            if is_rust_stat:
-                # Convert pandas Series to list for Rust statistics
+            if _is_pyo3_statistic(stat):
                 pnls_list = realized_pnls.tolist() if realized_pnls is not None else []
                 value = stat.calculate_from_realized_pnls(pnls_list)
             else:
-                # Pass Series directly for Python statistics (backward compatibility)
                 value = stat.calculate_from_realized_pnls(realized_pnls)
 
             if value is None:
                 continue  # Not implemented
+
             if not isinstance(value, int | float | str | bool):
                 value = str(value)
+
             output[name] = value
 
         return output
 
     def get_performance_stats_returns(self) -> dict[str, Any]:
         """
-        Return the `return` performance statistics values.
+        Return the primary `returns` performance statistics values.
+
+        This uses portfolio returns when available, otherwise it falls back
+        to position returns.
 
         Returns
         -------
         dict[str, Any]
 
         """
-        output = {}
+        return self._calculate_returns_stats(self._returns)
 
-        for name, stat in self._statistics.items():
-            # Check if this is a Rust statistic (requires dict) or Python statistic (expects Series)
-            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
+    def get_performance_stats_position_returns(self) -> dict[str, Any]:
+        """
+        Return the per-position returns performance statistics values.
 
-            if is_rust_stat:
-                # Convert pandas Series with datetime index to dict with unix timestamps for Rust statistics
-                returns_dict = {}
-                if not self._returns.empty:
-                    for timestamp, value in self._returns.items():
-                        # Convert datetime to unix nanoseconds (use .value to avoid float precision loss)
-                        unix_nanos = timestamp.value
-                        returns_dict[unix_nanos] = float(value)
-                value = stat.calculate_from_returns(returns_dict)
-            else:
-                # Pass Series directly for Python statistics (backward compatibility)
-                value = stat.calculate_from_returns(self._returns)
+        Returns
+        -------
+        dict[str, Any]
 
-            if value is None:
-                continue  # Not implemented
-            if not isinstance(value, int | float | str | bool):
-                value = str(value)
-            output[name] = value
+        """
+        return self._calculate_returns_stats(self._position_returns)
 
-        return output
+    def get_performance_stats_portfolio_returns(self) -> dict[str, Any]:
+        """
+        Return the portfolio returns performance statistics values.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return self._calculate_returns_stats(self._portfolio_returns)
 
     def get_performance_stats_general(self) -> dict[str, Any]:
         """
@@ -438,16 +492,16 @@ class PortfolioAnalyzer:
         dict[str, Any]
 
         """
-        output = {}
+        output: dict[str, Any] = {}
 
         for name, stat in self._statistics.items():
-            # Positions are passed as-is to both Rust and Python statistics
-            # (list[Position] works for both)
             value = stat.calculate_from_positions(self._positions)
             if value is None:
                 continue  # Not implemented
+
             if not isinstance(value, int | float | str | bool):
                 value = str(value)
+
             output[name] = value
 
         return output
@@ -476,7 +530,8 @@ class PortfolioAnalyzer:
         max_length: int = self._get_max_length_name()
         stats = self.get_performance_stats_pnls(currency, unrealized_pnl)
 
-        output = []
+        output: list[str] = []
+
         for k, v in stats.items():
             padding = max_length - len(k) + 1
             output.append(f"{k}: {' ' * padding}{v:_}")
@@ -485,7 +540,7 @@ class PortfolioAnalyzer:
 
     def get_stats_returns_formatted(self) -> list[str]:
         """
-        Return the performance statistics for returns from the last backtest run
+        Return the performance statistics for primary returns from the last backtest run
         formatted for printing in the backtest run footer.
 
         Returns
@@ -493,15 +548,31 @@ class PortfolioAnalyzer:
         list[str]
 
         """
-        max_length: int = self._get_max_length_name()
-        stats = self.get_performance_stats_returns()
+        return self._format_stats(self.get_performance_stats_returns())
 
-        output = []
-        for k, v in stats.items():
-            padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v:_}")
+    def get_stats_position_returns_formatted(self) -> list[str]:
+        """
+        Return the performance statistics for per-position returns from the last
+        backtest run formatted for printing in the backtest run footer.
 
-        return output
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._format_stats(self.get_performance_stats_position_returns())
+
+    def get_stats_portfolio_returns_formatted(self) -> list[str]:
+        """
+        Return the performance statistics for portfolio returns from the last backtest
+        run formatted for printing in the backtest run footer.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._format_stats(self.get_performance_stats_portfolio_returns())
 
     def get_stats_general_formatted(self) -> list[str]:
         """
@@ -516,10 +587,117 @@ class PortfolioAnalyzer:
         max_length: int = self._get_max_length_name()
         stats = self.get_performance_stats_general()
 
-        output = []
+        output: list[str] = []
+
         for k, v in stats.items():
             padding = max_length - len(k) + 1
             v_formatted = f"{v:_}" if isinstance(v, int | float | Decimal) else str(v)
             output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output
+
+    def _calculate_portfolio_returns(self, account: Account) -> pd.Series:
+        """
+        Compute daily portfolio returns from account balance snapshots.
+
+        Returns an empty series (falling back to per-position returns) when:
+        - Fewer than two account state events exist.
+        - Any event carries multiple balance currencies.
+        - The balance currency changes between events.
+        - Fewer than two distinct calendar days have balance data.
+
+        Multi-currency accounts are not yet supported; the caller silently
+        receives per-position returns in that case.
+
+        """
+        states = sorted(account.events, key=lambda state: state.ts_event)
+        if len(states) < 2:
+            return self._empty_returns()
+
+        currency = None
+        daily_balances: dict[pd.Timestamp, float] = {}
+
+        for state in states:
+            if len(state.balances) != 1:
+                return self._empty_returns()
+
+            balance = state.balances[0]
+            if currency is not None and balance.currency != currency:
+                return self._empty_returns()
+            currency = balance.currency
+
+            day = pd.Timestamp(unix_nanos_to_dt(state.ts_event)).normalize()
+            daily_balances[day] = balance.total.as_double()
+
+        if len(daily_balances) < 2:
+            return self._empty_returns()
+
+        total_balance = pd.Series(daily_balances, dtype=float64).sort_index()
+        account_returns = (
+            total_balance.resample("D")
+            .last()
+            .ffill()
+            .pct_change()
+            .replace(
+                [float("inf"), float("-inf")],
+                float("nan"),
+            )
+        ).dropna()
+
+        if account_returns.empty:
+            return self._empty_returns()
+
+        return account_returns.astype(float64)
+
+    def _calculate_returns_stats(self, returns: pd.Series) -> dict[str, Any]:
+        output: dict[str, Any] = {}
+
+        for name, stat in self._statistics.items():
+            if _is_pyo3_statistic(stat):
+                returns_dict: dict[int, float] = {}
+
+                if not returns.empty:
+                    for timestamp, value in returns.items():
+                        returns_dict[timestamp.value] = float(value)
+
+                value = stat.calculate_from_returns(returns_dict)
+            else:
+                value = stat.calculate_from_returns(returns)
+
+            if value is None:
+                continue
+
+            if not isinstance(value, int | float | str | bool):
+                value = str(value)
+
+            output[name] = value
+
+        return output
+
+    def _format_stats(self, stats: dict[str, Any]) -> list[str]:
+        max_length: int = self._get_max_length_name()
+        output: list[str] = []
+
+        for key, value in stats.items():
+            padding = max_length - len(key) + 1
+            output.append(f"{key}: {' ' * padding}{value:_}")
+
+        return output
+
+    def _sync_returns_alias(self) -> None:
+        if not self._portfolio_returns.empty:
+            self._returns = self._portfolio_returns
+            return
+
+        self._returns = self._position_returns
+
+    def _empty_returns(self) -> pd.Series:
+        return pd.Series(dtype=float64)
+
+
+def _is_pyo3_statistic(stat: Any) -> bool:
+    module = getattr(type(stat), "__module__", None)
+    if not isinstance(module, str):
+        return False
+
+    return tuple(module.split(".")[: len(_NAUTILUS_PYO3_MODULE)]) == _NAUTILUS_PYO3_MODULE

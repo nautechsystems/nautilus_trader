@@ -45,11 +45,11 @@ use ustr::Ustr;
 
 use super::{
     error::{BinanceWsApiError, BinanceWsApiResult},
-    handler::BinanceSpotWsApiHandler,
-    messages::{HandlerCommand, NautilusWsApiMessage},
+    handler::BinanceSpotWsTradingHandler,
+    messages::{BinanceSpotWsTradingCommand, BinanceSpotWsTradingMessage},
 };
 use crate::{
-    common::{consts::BINANCE_SPOT_SBE_WS_API_URL, credential::Credential},
+    common::{consts::BINANCE_SPOT_SBE_WS_API_URL, credential::SigningCredential},
     spot::http::query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
 };
 
@@ -82,12 +82,13 @@ pub fn binance_ws_order_quota() -> Quota {
 #[derive(Clone)]
 pub struct BinanceSpotWsTradingClient {
     url: String,
-    credential: Arc<Credential>,
+    credential: Arc<SigningCredential>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsApiMessage>>>>,
+    cmd_tx:
+        Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingCommand>>>,
+    out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingMessage>>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
@@ -113,7 +114,7 @@ impl BinanceSpotWsTradingClient {
         heartbeat: Option<u64>,
     ) -> Self {
         let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
-        let credential = Arc::new(Credential::new(api_key, api_secret));
+        let credential = Arc::new(SigningCredential::new(api_key, api_secret));
 
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -253,12 +254,13 @@ impl BinanceSpotWsTradingClient {
 
         let signal = self.signal.clone();
         let credential = self.credential.clone();
-        let mut handler = BinanceSpotWsApiHandler::new(signal, cmd_rx, raw_rx, out_tx, credential);
+        let mut handler =
+            BinanceSpotWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential);
 
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::SetClient(client))
+            .send(BinanceSpotWsTradingCommand::SetClient(client))
             .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))?;
 
         let cancellation_token = self.cancellation_token.clone();
@@ -282,7 +284,12 @@ impl BinanceSpotWsTradingClient {
     pub async fn disconnect(&mut self) {
         self.signal.store(true, Ordering::Relaxed);
 
-        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
+        if let Err(e) = self
+            .cmd_tx
+            .read()
+            .await
+            .send(BinanceSpotWsTradingCommand::Disconnect)
+        {
             log::warn!("Failed to send disconnect command: {e}");
         }
 
@@ -302,7 +309,7 @@ impl BinanceSpotWsTradingClient {
     /// Returns an error if the handler is unavailable.
     pub async fn place_order(&self, params: NewOrderParams) -> BinanceWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = HandlerCommand::PlaceOrder {
+        let cmd = BinanceSpotWsTradingCommand::PlaceOrder {
             id: id.clone(),
             params,
         };
@@ -317,7 +324,7 @@ impl BinanceSpotWsTradingClient {
     /// Returns an error if the handler is unavailable.
     pub async fn cancel_order(&self, params: CancelOrderParams) -> BinanceWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = HandlerCommand::CancelOrder {
+        let cmd = BinanceSpotWsTradingCommand::CancelOrder {
             id: id.clone(),
             params,
         };
@@ -335,7 +342,7 @@ impl BinanceSpotWsTradingClient {
         params: CancelReplaceOrderParams,
     ) -> BinanceWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = HandlerCommand::CancelReplaceOrder {
+        let cmd = BinanceSpotWsTradingCommand::CancelReplaceOrder {
             id: id.clone(),
             params,
         };
@@ -350,7 +357,7 @@ impl BinanceSpotWsTradingClient {
     /// Returns an error if the handler is unavailable.
     pub async fn cancel_all_orders(&self, symbol: impl Into<String>) -> BinanceWsApiResult<String> {
         let id = self.next_request_id();
-        let cmd = HandlerCommand::CancelAllOrders {
+        let cmd = BinanceSpotWsTradingCommand::CancelAllOrders {
             id: id.clone(),
             symbol: symbol.into(),
         };
@@ -365,7 +372,7 @@ impl BinanceSpotWsTradingClient {
     /// # Panics
     ///
     /// Panics if the internal output receiver mutex is poisoned.
-    pub async fn recv(&self) -> Option<NautilusWsApiMessage> {
+    pub async fn recv(&self) -> Option<BinanceSpotWsTradingMessage> {
         // Take the receiver out of the mutex to avoid holding it across await
         let rx_opt = {
             let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
@@ -383,7 +390,27 @@ impl BinanceSpotWsTradingClient {
         }
     }
 
-    async fn send_cmd(&self, cmd: HandlerCommand) -> BinanceWsApiResult<()> {
+    /// Authenticates the WebSocket session via `session.logon`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler is unavailable.
+    pub async fn session_logon(&self) -> BinanceWsApiResult<()> {
+        self.send_cmd(BinanceSpotWsTradingCommand::SessionLogon)
+            .await
+    }
+
+    /// Subscribes to the user data stream via `userDataStream.subscribe`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler is unavailable.
+    pub async fn subscribe_user_data(&self) -> BinanceWsApiResult<()> {
+        self.send_cmd(BinanceSpotWsTradingCommand::SubscribeUserData)
+            .await
+    }
+
+    async fn send_cmd(&self, cmd: BinanceSpotWsTradingCommand) -> BinanceWsApiResult<()> {
         self.cmd_tx
             .read()
             .await

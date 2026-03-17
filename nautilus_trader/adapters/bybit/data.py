@@ -749,6 +749,7 @@ class BybitDataClient(LiveMarketDataClient):
     async def _request_forward_prices(self, request: RequestForwardPrices) -> None:
         sample_id = request.sample_instrument_id
         pyo3_inst_id = None
+
         if sample_id is not None:
             pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(str(sample_id))
 

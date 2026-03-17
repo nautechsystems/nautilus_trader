@@ -57,6 +57,7 @@ use crate::{
 /// submitter.submit_market_order(instrument_id, ...)  # no wallet param
 /// ```
 #[pyclass(name = "DydxOrderSubmitter")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")]
 #[derive(Debug)]
 pub struct PyDydxOrderSubmitter {
     pub(crate) inner: Arc<OrderSubmitter>,
@@ -65,6 +66,7 @@ pub struct PyDydxOrderSubmitter {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyDydxOrderSubmitter {
     /// Create a new order submitter with wallet owned internally.
     ///

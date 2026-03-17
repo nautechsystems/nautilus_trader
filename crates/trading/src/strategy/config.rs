@@ -28,6 +28,10 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
+)]
 pub struct StrategyConfig {
     /// The unique ID for the strategy. Will become the strategy ID if not None.
     pub strategy_id: Option<StrategyId>,
@@ -103,6 +107,10 @@ const fn default_market_exit_time_in_force() -> TimeInForce {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 )]
 pub struct ImportableStrategyConfig {
     /// The fully qualified name of the Strategy class.

@@ -218,6 +218,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Futures events arrive on a separate stream (different endpoint)
         stream_base_url: str | None = None
+
         if account_type.is_futures:
             stream_base_url = config.base_url_ws_stream or get_ws_base_url(
                 account_type=account_type,
@@ -235,6 +236,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # (Binance Futures WS API session.logon only accepts Ed25519)
         http_client_for_ws: BinanceHttpClient | None = None
         account_type_for_ws: BinanceAccountType | None = None
+
         if account_type.is_futures and not is_ed25519:
             http_client_for_ws = client
             account_type_for_ws = account_type
@@ -712,6 +714,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return None
 
         good_till_date = nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None
+
         if self._binance_account_type.is_spot_or_margin:
             good_till_date = None
             self._log.warning("Cannot set GTD time in force with `expiry_time` for Binance Spot")
@@ -808,6 +811,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 position_side,
                 price_match,
             )
+
             if not retry_manager.result:
                 # Determine if the rejection was specifically due to a POST-ONLY order
                 # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
@@ -1221,6 +1225,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 quantity=str(command.quantity) if command.quantity else str(order.quantity),
                 price=str(command.price) if command.price else str(order.price),
             )
+
             if not retry_manager.result:
                 self.generate_order_modify_rejected(
                     command.strategy_id,
@@ -1244,6 +1249,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
             )
+
             if not retry_manager.result:
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
@@ -1269,6 +1275,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._http_account.cancel_all_open_orders,
                 symbol=instrument_id.symbol.value,
             )
+
             if not retry_manager.result:
                 if (
                     retry_manager.message is not None
@@ -1306,6 +1313,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._http_account.cancel_all_open_algo_orders,  # type: ignore [attr-defined]
                 symbol=instrument_id.symbol.value,
             )
+
             if not retry_manager.result:
                 if (
                     retry_manager.message is not None
@@ -1460,6 +1468,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                 )
+
                 if not retry_manager.result:
                     self.generate_order_cancel_rejected(
                         order.strategy_id,

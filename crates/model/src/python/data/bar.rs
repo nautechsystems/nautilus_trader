@@ -50,6 +50,8 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BarSpecification {
+    /// Represents a bar aggregation specification including a step, aggregation
+    /// method/rule and price type.
     #[new]
     fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> PyResult<Self> {
         Self::new_checked(step, aggregation, price_type).map_err(to_pyvalue_err)
@@ -101,6 +103,13 @@ impl BarSpecification {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BarSpecification))
     }
 
+    /// Returns the `TimeDelta` interval for this bar specification.
+    ///
+    /// # Notes
+    ///
+    /// For `BarAggregation.Month` and `BarAggregation.Year`, proxy values are used
+    /// (30 days for months, 365 days for years) to estimate their respective durations,
+    /// since months and years have variable lengths.
     #[getter]
     #[pyo3(name = "timedelta")]
     fn py_timedelta(&self) -> PyResult<chrono::TimeDelta> {
@@ -121,6 +130,8 @@ impl BarSpecification {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BarType {
+    /// Represents a bar type including the instrument ID, bar specification and
+    /// aggregation source.
     #[new]
     #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External)
     )]
@@ -166,6 +177,7 @@ impl BarType {
         Self::from_str(value).map_err(to_pyvalue_err)
     }
 
+    /// Creates a new composite `BarType` instance.
     #[staticmethod]
     #[pyo3(name = "new_composite")]
     fn py_new_composite(
@@ -186,26 +198,35 @@ impl BarType {
         )
     }
 
+    /// Returns whether this instance is a standard bar type.
     #[pyo3(name = "is_standard")]
     fn py_is_standard(&self) -> bool {
         self.is_standard()
     }
 
+    /// Returns whether this instance is a composite bar type.
     #[pyo3(name = "is_composite")]
     fn py_is_composite(&self) -> bool {
         self.is_composite()
     }
 
+    /// Returns the standard bar type component.
     #[pyo3(name = "standard")]
     fn py_standard(&self) -> Self {
         self.standard()
     }
 
+    /// Returns any composite bar type component.
     #[pyo3(name = "composite")]
     fn py_composite(&self) -> Self {
         self.composite()
     }
 
+    /// Returns the instrument ID and bar specification as a tuple key.
+    ///
+    /// Useful as a hashmap key when aggregation source should be ignored,
+    /// such as for indicator registration where INTERNAL and EXTERNAL bars
+    /// should trigger the same indicators.
     #[pyo3(name = "id_spec_key")]
     fn py_id_spec_key(&self) -> (InstrumentId, BarSpecification) {
         self.id_spec_key()
@@ -265,6 +286,7 @@ impl Bar {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[allow(clippy::too_many_arguments)]
 impl Bar {
+    /// Represents an aggregated bar.
     #[new]
     fn py_new(
         bar_type: BarType,
@@ -365,6 +387,7 @@ impl Bar {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(Bar))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -375,6 +398,7 @@ impl Bar {
         Self::get_metadata(bar_type, price_precision, size_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {

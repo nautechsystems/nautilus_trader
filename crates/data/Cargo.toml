@@ -41,6 +41,7 @@ python = [
   "nautilus-model/python",
   "nautilus-persistence?/python",
   "pyo3",
+  "pyo3-stub-gen",
 ]
 defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
@@ -65,6 +66,7 @@ ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

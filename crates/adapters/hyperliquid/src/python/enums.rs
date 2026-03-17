@@ -27,7 +27,9 @@ use crate::common::enums::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidTpSl {
+    /// Represents the take profit / stop loss type.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -78,7 +80,12 @@ impl HyperliquidTpSl {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidConditionalOrderType {
+    /// Represents conditional/trigger order types.
+    ///
+    /// Hyperliquid supports various conditional order types that trigger
+    /// based on market conditions. These map to Nautilus OrderType variants.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -129,7 +136,14 @@ impl HyperliquidConditionalOrderType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidTrailingOffsetType {
+    /// Represents trailing offset types for trailing stop orders.
+    ///
+    /// Trailing stops adjust dynamically based on market movement:
+    /// - Price: Fixed price offset (e.g., $100)
+    /// - Percentage: Percentage offset (e.g., 5%)
+    /// - BasisPoints: Basis points offset (e.g., 250 bps = 2.5%)
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -180,7 +194,9 @@ impl HyperliquidTrailingOffsetType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidProductType {
+    /// Hyperliquid product type.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

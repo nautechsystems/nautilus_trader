@@ -15,6 +15,11 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod registry;
 
 // Re-exports

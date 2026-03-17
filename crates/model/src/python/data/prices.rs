@@ -77,6 +77,7 @@ impl MarkPriceUpdate {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarkPriceUpdate {
+    /// Represents a mark price update.
     #[new]
     fn py_new(instrument_id: InstrumentId, value: Price, ts_event: u64, ts_init: u64) -> Self {
         Self::new(instrument_id, value, ts_event.into(), ts_init.into())
@@ -182,6 +183,7 @@ impl MarkPriceUpdate {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(MarkPriceUpdate))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -191,6 +193,7 @@ impl MarkPriceUpdate {
         Self::get_metadata(instrument_id, price_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
@@ -275,6 +278,7 @@ impl IndexPriceUpdate {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IndexPriceUpdate {
+    /// Represents an index price update.
     #[new]
     fn py_new(instrument_id: InstrumentId, value: Price, ts_event: u64, ts_init: u64) -> Self {
         Self::new(instrument_id, value, ts_event.into(), ts_init.into())
@@ -380,6 +384,7 @@ impl IndexPriceUpdate {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(IndexPriceUpdate))
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -389,6 +394,7 @@ impl IndexPriceUpdate {
         Self::get_metadata(instrument_id, price_precision)
     }
 
+    /// Returns the field map for the type, for use with Arrow schemas.
     #[staticmethod]
     #[pyo3(name = "get_fields")]
     fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {

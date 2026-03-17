@@ -44,6 +44,7 @@ impl RedisMessageBusDatabase {
         self.publish(Ustr::from(topic), Bytes::from(payload));
     }
 
+    /// Streams messages arriving on the stream receiver channel.
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &mut self,

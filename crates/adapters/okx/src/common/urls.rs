@@ -26,6 +26,10 @@ const OKX_DEMO_WS_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business"
 /// OKX endpoint types for determining URL and authentication requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+)]
 pub enum OKXEndpointType {
     Public,
     Private,
@@ -76,6 +80,22 @@ pub const fn get_ws_base_url_business(is_demo: bool) -> &'static str {
     }
 }
 
+/// Derives a WebSocket URL for a given channel from a base URL.
+///
+/// Replaces the last path segment (`/public`, `/private`, or `/business`)
+/// with the target channel. If no recognized segment is found, appends
+/// `/{channel}` to the path.
+#[must_use]
+pub fn derive_ws_url(base_url: &str, channel: &str) -> String {
+    let url = base_url.trim_end_matches('/');
+    for suffix in ["/public", "/private", "/business"] {
+        if let Some(base) = url.strip_suffix(suffix) {
+            return format!("{base}/{channel}");
+        }
+    }
+    format!("{url}/{channel}")
+}
+
 /// Returns WebSocket URL by endpoint type.
 #[must_use]
 pub const fn get_ws_url(endpoint_type: OKXEndpointType, is_demo: bool) -> &'static str {
@@ -116,6 +136,36 @@ mod tests {
         assert_eq!(get_ws_base_url_public(true), OKX_DEMO_WS_PUBLIC_URL);
         assert_eq!(get_ws_base_url_private(true), OKX_DEMO_WS_PRIVATE_URL);
         assert_eq!(get_ws_base_url_business(true), OKX_DEMO_WS_BUSINESS_URL);
+    }
+
+    #[rstest]
+    #[case(
+        "wss://ws.okx.com:8443/ws/v5/public",
+        "business",
+        "wss://ws.okx.com:8443/ws/v5/business"
+    )]
+    #[case(
+        "wss://wseea.okx.com:8443/ws/v5/public",
+        "private",
+        "wss://wseea.okx.com:8443/ws/v5/private"
+    )]
+    #[case(
+        "wss://wseea.okx.com:8443/ws/v5/private",
+        "business",
+        "wss://wseea.okx.com:8443/ws/v5/business"
+    )]
+    #[case(
+        "wss://wseea.okx.com:8443/ws/v5/private/",
+        "business",
+        "wss://wseea.okx.com:8443/ws/v5/business"
+    )]
+    #[case(
+        "wss://custom.proxy:8443/ws/v5",
+        "business",
+        "wss://custom.proxy:8443/ws/v5/business"
+    )]
+    fn test_derive_ws_url(#[case] base_url: &str, #[case] channel: &str, #[case] expected: &str) {
+        assert_eq!(derive_ws_url(base_url, channel), expected);
     }
 
     #[rstest]

@@ -199,6 +199,7 @@ class InteractiveBrokersClient(
         while not self._is_ib_connected.is_set():
             try:
                 self._connection_attempts += 1
+
                 if (
                     not self._indefinite_reconnect
                     and self._connection_attempts > self._max_connection_attempts
@@ -588,6 +589,7 @@ class InteractiveBrokersClient(
                 request.future.set_result(request.result)
             else:
                 request.cancel()
+
                 if exception:
                     request.future.set_exception(exception)
 

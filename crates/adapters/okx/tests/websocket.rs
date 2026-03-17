@@ -444,6 +444,7 @@ async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
         Some("passphrase".to_string()),
         Some(AccountId::from("OKX-TEST")),
         Some(30),
+        None,
     )
     .expect("failed to construct okx websocket client")
 }
@@ -490,6 +491,7 @@ async fn test_wait_until_active_timeout() {
         Some("passphrase".to_string()),
         Some(AccountId::from("OKX-TEST")),
         Some(30),
+        None,
     )
     .expect("construct client");
 
@@ -590,6 +592,7 @@ async fn test_heartbeat_timeout_reconnection() {
         Some("passphrase".to_string()),
         Some(AccountId::from("OKX-TEST")),
         Some(1),
+        None,
     )
     .expect("construct client");
 
@@ -1502,6 +1505,7 @@ async fn test_unauthenticated_private_channel_rejection() {
         None,
         Some(AccountId::from("OKX-TEST")),
         Some(30),
+        None,
     )
     .expect("construct client");
 

@@ -1286,6 +1286,8 @@ impl Cache {
     ///
     /// If closing the database connection fails, an error is logged.
     pub fn dispose(&mut self) {
+        self.reset();
+
         if let Some(database) = &mut self.database
             && let Err(e) = database.close()
         {
@@ -3431,12 +3433,32 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
+    /// Gets a reference to the quote at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recent.
+    #[must_use]
+    pub fn quote_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&QuoteTick> {
+        self.quotes
+            .get(instrument_id)
+            .and_then(|quotes| quotes.get(index))
+    }
+
     /// Gets a reference to the latest trade for the `instrument_id`.
     #[must_use]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
             .get(instrument_id)
             .and_then(|trades| trades.front())
+    }
+
+    /// Gets a reference to the trade at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recent.
+    #[must_use]
+    pub fn trade_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&TradeTick> {
+        self.trades
+            .get(instrument_id)
+            .and_then(|trades| trades.get(index))
     }
 
     /// Gets a reference to the latest mark price update for the `instrument_id`.
@@ -3467,6 +3489,14 @@ impl Cache {
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
+    }
+
+    /// Gets a reference to the bar at `index` for the `bar_type`.
+    ///
+    /// Index 0 is the most recent.
+    #[must_use]
+    pub fn bar_at_index(&self, bar_type: &BarType, index: usize) -> Option<&Bar> {
+        self.bars.get(bar_type).and_then(|bars| bars.get(index))
     }
 
     /// Gets the order book update count for the `instrument_id`.

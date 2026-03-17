@@ -15,12 +15,18 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 use pyo3::pymethods;
 
 use crate::config::PortfolioConfig;
 
 #[pymethods]
 impl PortfolioConfig {
+    /// Configuration for `Portfolio` instances.
     #[new]
     #[pyo3(signature = (use_mark_prices=None, use_mark_xrates=None, bar_updates=None, convert_to_account_base_currency=None, min_account_state_logging_interval_ms=None, debug=None))]
     fn py_new(

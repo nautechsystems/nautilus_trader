@@ -27,7 +27,9 @@ use crate::common::enums::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXInstrumentType {
+    /// Represents instrument types on OKX.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -78,7 +80,9 @@ impl OKXInstrumentType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXContractType {
+    /// Represents an instrument contract type on OKX.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -129,7 +133,15 @@ impl OKXContractType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXMarginMode {
+    /// Represents the margin mode for OKX accounts.
+    ///
+    /// # Reference
+    ///
+    /// - <https://www.okx.com/en-au/help/iv-isolated-margin-mode>
+    /// - <https://www.okx.com/en-au/help/iii-single-currency-margin-cross-margin-trading>
+    /// - <https://www.okx.com/en-au/help/iv-multi-currency-margin-mode-cross-margin-trading>
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -180,7 +192,9 @@ impl OKXMarginMode {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXTradeMode {
+    /// Represents the trading mode for OKX orders.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -231,7 +245,13 @@ impl OKXTradeMode {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXPositionMode {
+    /// Represents the position mode for OKX accounts.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-position-mode>
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -282,7 +302,9 @@ impl OKXPositionMode {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXOrderStatus {
+    /// Represents the possible states of an order throughout its lifecycle.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -333,7 +355,21 @@ impl OKXOrderStatus {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXVipLevel {
+    /// Represents OKX VIP level tiers for trading fee structure and API limits.
+    ///
+    /// VIP levels determine:
+    /// - Trading fee discounts.
+    /// - API rate limits.
+    /// - Access to advanced order book channels (L2/L3 depth).
+    ///
+    /// Higher VIP levels (VIP4+) get access to:
+    /// - "books50-l2-tbt" channel (50 depth, 10ms updates).
+    /// - "bbo-tbt" channel (1 depth, 10ms updates).
+    ///
+    /// VIP5+ get access to:
+    /// - "books-l2-tbt" channel (400 depth, 10ms updates).
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

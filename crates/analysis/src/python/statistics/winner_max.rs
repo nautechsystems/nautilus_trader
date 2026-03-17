@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::winner_max::MaxWinner};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxWinner {
     #[new]
     fn py_new() -> Self {

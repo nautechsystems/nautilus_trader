@@ -459,6 +459,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         since: pd.Timestamp | None = None
+
         if lookback_mins is not None:
             since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 

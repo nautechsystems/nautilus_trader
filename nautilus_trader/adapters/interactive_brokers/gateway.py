@@ -49,6 +49,7 @@ class DockerizedIBGateway:
         self.username = config.username or os.getenv("TWS_USERNAME")
 
         password = config.password or os.getenv("TWS_PASSWORD")
+
         if self.username is None:
             self.log.error("`username` not set nor available in env `TWS_USERNAME`")
             raise ValueError("`username` not set nor available in env `TWS_USERNAME`")

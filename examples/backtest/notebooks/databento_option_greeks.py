@@ -156,6 +156,7 @@ spread_id2 = new_generic_spread_id(
 
 def get_mid_price_rounded(tick, instrument, round_up=True, num_ticks=0):
     mid_price = tick.extract_price(PriceType.MID)
+
     if round_up:
         return instrument.next_ask_price(mid_price.as_double(), num_ticks=num_ticks)
     else:

@@ -43,8 +43,8 @@ use crate::{
         enums::BitmexAction,
         messages::{BitmexExecutionMsg, BitmexTableMessage, BitmexWsMessage, OrderData},
         parse::{
-            ParsedOrderEvent, parse_execution_msg, parse_order_event, parse_order_msg,
-            parse_order_update_msg, parse_position_msg, parse_wallet_msg,
+            ParsedOrderEvent, parse_execution_msg, parse_margin_account_state, parse_order_event,
+            parse_order_msg, parse_order_update_msg, parse_position_msg, parse_wallet_msg,
         },
     },
 };
@@ -76,6 +76,7 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
+    pub margin_subscribed: AtomicBool,
     clearing: AtomicBool,
 }
 
@@ -86,6 +87,7 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
+            margin_subscribed: AtomicBool::new(false),
             clearing: AtomicBool::new(false),
         }
     }
@@ -171,12 +173,20 @@ pub fn dispatch_ws_message(
                 }
             }
             BitmexTableMessage::Wallet { data, .. } => {
-                for wallet_msg in data {
-                    let state = parse_wallet_msg(&wallet_msg, ts_init);
-                    emitter.send_account_state(state);
+                if !state.margin_subscribed.load(Ordering::Relaxed) {
+                    for wallet_msg in data {
+                        let acct_state = parse_wallet_msg(&wallet_msg, ts_init);
+                        emitter.send_account_state(acct_state);
+                    }
                 }
             }
-            BitmexTableMessage::Margin { .. } => {}
+            BitmexTableMessage::Margin { data, .. } => {
+                state.margin_subscribed.store(true, Ordering::Relaxed);
+                for margin_msg in data {
+                    let acct_state = parse_margin_account_state(&margin_msg, ts_init);
+                    emitter.send_account_state(acct_state);
+                }
+            }
             BitmexTableMessage::Instrument { action, data } => {
                 if matches!(action, BitmexAction::Partial | BitmexAction::Insert) {
                     for msg in data {

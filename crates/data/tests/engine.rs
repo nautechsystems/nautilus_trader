@@ -1883,6 +1883,7 @@ fn test_process_funding_rate_through_any(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
@@ -1932,6 +1933,7 @@ fn test_process_funding_rate(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
@@ -1980,6 +1982,7 @@ fn test_process_funding_rate_updates_existing(
         audusd_sim.id,
         "0.0001".parse().unwrap(),
         None,
+        None,
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
@@ -1987,6 +1990,7 @@ fn test_process_funding_rate_updates_existing(
     let funding_rate2 = FundingRateUpdate::new(
         audusd_sim.id,
         "0.0002".parse().unwrap(),
+        None,
         None,
         UnixNanos::from(3),
         UnixNanos::from(4),

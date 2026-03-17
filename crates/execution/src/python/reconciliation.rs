@@ -43,6 +43,7 @@ use crate::reconciliation::{
 ///
 /// Returns an error if instrument conversion or reconciliation fails.
 #[pyfunction(name = "adjust_fills_for_partial_window")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
 pub fn py_adjust_fills_for_partial_window(
     py: Python<'_>,
@@ -79,7 +80,24 @@ pub fn py_adjust_fills_for_partial_window(
 }
 
 /// Calculate the price needed for a reconciliation order to achieve target position.
+///
+/// This is a pure function that calculates what price a fill would need to have
+/// to move from the current position state to the target position state with the
+/// correct average price, accounting for the netting simulation logic.
+///
+/// # Returns
+///
+/// Returns `Some(Decimal)` if a valid reconciliation price can be calculated, `None` otherwise.
+///
+/// # Notes
+///
+/// The function handles four scenarios:
+/// 1. Position to flat: reconciliation_px = current_avg_px (close at current average)
+/// 2. Flat to position: reconciliation_px = target_avg_px
+/// 3. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
+/// 4. Accumulation/reduction: weighted average formula
 #[pyfunction(name = "calculate_reconciliation_price")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (current_position_qty, current_position_avg_px, target_position_qty, target_position_avg_px))]
 pub fn py_calculate_reconciliation_price(
     current_position_qty: Decimal,

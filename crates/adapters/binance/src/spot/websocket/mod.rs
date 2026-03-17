@@ -27,19 +27,13 @@
 //! ## Trading API (`trading`)
 //!
 //! Request/response pattern for order management via `ws-api.binance.com`:
-//! - Order placement
-//! - Order cancellation
-//! - Cancel-replace operations
-//!
-//! ## Execution (`execution`)
-//!
-//! User Data Stream for real-time order and account updates via listenKey.
+//! - Order placement, cancellation, cancel-replace operations
+//! - Session authentication (`session.logon`)
+//! - Inline user data stream (`userDataStream.subscribe`)
 
 pub mod error;
-pub mod execution;
 pub mod streams;
 pub mod trading;
 
-pub use execution::BinanceSpotUdsClient;
 pub use streams::BinanceSpotWebSocketClient;
 pub use trading::BinanceSpotWsTradingClient;

@@ -117,6 +117,10 @@ impl TryFrom<u16> for HttpStatus {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
+)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -145,6 +149,10 @@ impl From<HttpMethod> for Method {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
 )]
 pub struct HttpResponse {
     /// The HTTP status code.

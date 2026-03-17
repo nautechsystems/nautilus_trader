@@ -183,6 +183,7 @@ class KrakenExecutionClient(LiveExecutionClient):
         # WebSocket API - Spot (Kraken v2 API)
         # Uses private/authenticated WebSocket endpoint for execution events
         self._ws_client_spot: nautilus_pyo3.KrakenSpotWebSocketClient | None = None
+
         if KrakenProductType.SPOT in product_types:
             self._ws_client_spot = nautilus_pyo3.KrakenSpotWebSocketClient(
                 environment=environment,
@@ -196,6 +197,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         # WebSocket API - Futures
         self._ws_client_futures: nautilus_pyo3.KrakenFuturesWebSocketClient | None = None
+
         if KrakenProductType.FUTURES in product_types:
             self._ws_client_futures = nautilus_pyo3.KrakenFuturesWebSocketClient(
                 environment=environment,
@@ -381,6 +383,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -515,6 +518,7 @@ class KrakenExecutionClient(LiveExecutionClient):
             # Filter for the specific order we're looking for
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
+
                 if (
                     command.client_order_id and report.client_order_id == command.client_order_id
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
@@ -541,6 +545,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -592,6 +597,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,

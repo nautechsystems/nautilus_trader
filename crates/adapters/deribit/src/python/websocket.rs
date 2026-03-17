@@ -70,7 +70,9 @@ where
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitWebSocketClient {
+    /// WebSocket client for connecting to Deribit.
     #[new]
     #[pyo3(signature = (
         url=None,
@@ -89,12 +91,28 @@ impl DeribitWebSocketClient {
         Self::new(url, api_key, api_secret, heartbeat_interval, is_testnet).map_err(to_pyvalue_err)
     }
 
+    /// Creates a new public (unauthenticated) client.
+    ///
+    /// Does NOT fall back to environment variables for credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails.
     #[staticmethod]
     #[pyo3(name = "new_public")]
     fn py_new_public(is_testnet: bool) -> PyResult<Self> {
         Self::new_public(is_testnet).map_err(to_pyvalue_err)
     }
 
+    /// Creates an authenticated client with credentials.
+    ///
+    /// Uses environment variables to load credentials:
+    /// - Testnet: `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are not found in environment variables.
     #[staticmethod]
     #[pyo3(name = "with_credentials", signature = (is_testnet, account_id = None))]
     fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
@@ -106,6 +124,7 @@ impl DeribitWebSocketClient {
         Ok(client)
     }
 
+    /// Returns the WebSocket URL.
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
@@ -121,38 +140,41 @@ impl DeribitWebSocketClient {
         self.url().contains("test")
     }
 
+    /// Returns whether the client is actively connected.
     #[pyo3(name = "is_active")]
     #[must_use]
     fn py_is_active(&self) -> bool {
         self.is_active()
     }
 
+    /// Returns whether the client is closed.
     #[pyo3(name = "is_closed")]
     #[must_use]
     fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
+    /// Returns whether the client has credentials configured.
     #[pyo3(name = "has_credentials")]
     #[must_use]
     fn py_has_credentials(&self) -> bool {
         self.has_credentials()
     }
 
+    /// Returns whether the client is authenticated.
     #[pyo3(name = "is_authenticated")]
     #[must_use]
     fn py_is_authenticated(&self) -> bool {
         self.is_authenticated()
     }
 
+    /// Cancel all pending WebSocket requests.
     #[pyo3(name = "cancel_all_requests")]
     pub fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
-    /// # Errors
-    ///
-    /// Returns an error if instrument conversion fails.
+    /// Caches instruments for use during message parsing.
     #[pyo3(name = "cache_instruments")]
     pub fn py_cache_instruments(
         &self,
@@ -167,9 +189,7 @@ impl DeribitWebSocketClient {
         Ok(())
     }
 
-    /// # Errors
-    ///
-    /// Returns an error if instrument conversion fails.
+    /// Caches a single instrument.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         let inst = pyobject_to_instrument_any(py, instrument)?;
@@ -177,16 +197,21 @@ impl DeribitWebSocketClient {
         Ok(())
     }
 
+    /// Sets the account ID for order/fill reports.
     #[pyo3(name = "set_account_id")]
     pub fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);
     }
 
+    /// Sets whether bar timestamps should use the close time.
+    ///
+    /// When `true` (default), bar `ts_event` is set to the bar's close time.
     #[pyo3(name = "set_bars_timestamp_on_close")]
     pub fn py_set_bars_timestamp_on_close(&mut self, value: bool) {
         self.set_bars_timestamp_on_close(value);
     }
 
+    /// Connects to the Deribit WebSocket API.
     #[pyo3(name = "connect")]
     #[allow(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -337,6 +362,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Waits until the client is active or timeout expires.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -354,6 +380,11 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Closes the WebSocket connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the close operation fails.
     #[pyo3(name = "close")]
     fn py_close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -366,6 +397,17 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Authenticates the WebSocket session with Deribit.
+    ///
+    /// Uses the `client_signature` grant type with HMAC-SHA256 signature.
+    /// This must be called before subscribing to raw data streams.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_name` - Optional session name for session-scoped authentication.
+    ///   When provided, uses `session:<name>` scope which allows skipping `access_token`
+    ///   in subsequent private requests. When `None`, uses default `connection` scope.
+    ///   Recommended to use session scope for order execution compatibility.
     #[pyo3(name = "authenticate")]
     #[pyo3(signature = (session_name=None))]
     fn py_authenticate<'py>(
@@ -384,6 +426,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Authenticates with session scope using the provided session name.
+    ///
+    /// Use `DERIBIT_DATA_SESSION_NAME` for data clients and
+    /// `DERIBIT_EXECUTION_SESSION_NAME` for execution clients.
     #[pyo3(name = "authenticate_session")]
     fn py_authenticate_session<'py>(
         &self,
@@ -405,6 +451,12 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to trade updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
     #[pyo3(name = "subscribe_trades")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_subscribe_trades<'py>(
@@ -423,6 +475,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from trade updates for an instrument.
     #[pyo3(name = "unsubscribe_trades")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_unsubscribe_trades<'py>(
@@ -441,6 +494,12 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to order book updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
     #[pyo3(name = "subscribe_book")]
     #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_subscribe_book<'py>(
@@ -467,6 +526,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from order book updates for an instrument.
     #[pyo3(name = "unsubscribe_book")]
     #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_unsubscribe_book<'py>(
@@ -493,6 +553,11 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to grouped (depth-limited) order book updates for an instrument.
+    ///
+    /// Uses the Deribit grouped book channel format: `book.{instrument}.{group}.{depth}.{interval}`
+    ///
+    /// Depth is normalized to Deribit supported values: 1, 10, or 20.
     #[pyo3(name = "subscribe_book_grouped")]
     #[pyo3(signature = (instrument_id, group, depth, interval=None))]
     fn py_subscribe_book_grouped<'py>(
@@ -513,6 +578,9 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from grouped (depth-limited) order book updates for an instrument.
+    ///
+    /// Depth is normalized to Deribit supported values: 1, 10, or 20.
     #[pyo3(name = "unsubscribe_book_grouped")]
     #[pyo3(signature = (instrument_id, group, depth, interval=None))]
     fn py_unsubscribe_book_grouped<'py>(
@@ -533,6 +601,12 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to ticker updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
     #[pyo3(name = "subscribe_ticker")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_subscribe_ticker<'py>(
@@ -551,6 +625,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from ticker updates for an instrument.
     #[pyo3(name = "unsubscribe_ticker")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_unsubscribe_ticker<'py>(
@@ -615,6 +690,9 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to quote (best bid/ask) updates for an instrument.
+    ///
+    /// Note: Quote channel does not support interval parameter.
     #[pyo3(name = "subscribe_quotes")]
     fn py_subscribe_quotes<'py>(
         &self,
@@ -631,6 +709,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from quote updates for an instrument.
     #[pyo3(name = "unsubscribe_quotes")]
     fn py_unsubscribe_quotes<'py>(
         &self,
@@ -647,6 +726,13 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to user order updates for all instruments.
+    ///
+    /// Requires authentication. Subscribes to `user.orders.any.any.raw` channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
     #[pyo3(name = "subscribe_user_orders")]
     fn py_subscribe_user_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -656,6 +742,11 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from user order updates for all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_user_orders")]
     fn py_unsubscribe_user_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -668,6 +759,13 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to user trade/fill updates for all instruments.
+    ///
+    /// Requires authentication. Subscribes to `user.trades.any.any.raw` channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
     #[pyo3(name = "subscribe_user_trades")]
     fn py_subscribe_user_trades<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -677,6 +775,11 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from user trade/fill updates for all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_user_trades")]
     fn py_unsubscribe_user_trades<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -689,6 +792,15 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to user portfolio updates for all currencies.
+    ///
+    /// Requires authentication. Subscribes to `user.portfolio.any` channel which
+    /// provides real-time account balance and margin updates for all currencies
+    /// (BTC, ETH, USDC, USDT, etc.).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
     #[pyo3(name = "subscribe_user_portfolio")]
     fn py_subscribe_user_portfolio<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -701,6 +813,11 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from user portfolio updates for all currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_user_portfolio")]
     fn py_unsubscribe_user_portfolio<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -713,6 +830,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to multiple channels at once.
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
         &self,
@@ -726,6 +844,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from multiple channels at once.
     #[pyo3(name = "unsubscribe")]
     fn py_unsubscribe<'py>(
         &self,
@@ -775,6 +894,9 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to instrument status changes for lifecycle notifications.
+    ///
+    /// Channel format: `instrument.state.{kind}.{currency}`
     #[pyo3(name = "subscribe_instrument_status")]
     fn py_subscribe_instrument_status<'py>(
         &self,
@@ -792,6 +914,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from instrument status changes.
     #[pyo3(name = "unsubscribe_instrument_status")]
     fn py_unsubscribe_instrument_status<'py>(
         &self,
@@ -809,6 +932,13 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to chart/OHLC bar updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `resolution` - Bar resolution: "1", "3", "5", "10", "15", "30", "60", "120", "180",
+    ///   "360", "720", "1D" (minutes or 1D for daily)
     #[pyo3(name = "subscribe_chart")]
     fn py_subscribe_chart<'py>(
         &self,
@@ -826,6 +956,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from chart/OHLC bar updates.
     #[pyo3(name = "unsubscribe_chart")]
     fn py_unsubscribe_chart<'py>(
         &self,
@@ -843,6 +974,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to bar updates for an instrument using a BarType specification.
+    ///
+    /// Converts the BarType to the nearest supported Deribit resolution and subscribes
+    /// to the chart channel.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -859,6 +994,7 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Unsubscribes from bar updates for an instrument using a BarType specification.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,
@@ -875,6 +1011,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Submits an order to Deribit via WebSocket.
+    ///
+    /// Routes to `private/buy` or `private/sell` JSON-RPC method based on order side.
+    /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         order_side,
@@ -953,6 +1093,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Modifies an existing order on Deribit via WebSocket.
+    ///
+    /// The order parameters are sent using the `private/edit` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "modify_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -985,6 +1129,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Cancels an existing order on Deribit via WebSocket.
+    ///
+    /// The order is cancelled using the `private/cancel` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "cancel_order")]
     fn py_cancel_order<'py>(
         &self,
@@ -1012,6 +1160,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Cancels all orders for a specific instrument on Deribit via WebSocket.
+    ///
+    /// Uses the `private/cancel_all_by_instrument` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "cancel_all_orders")]
     #[pyo3(signature = (instrument_id, order_type=None))]
     fn py_cancel_all_orders<'py>(
@@ -1031,6 +1183,10 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Queries the state of an order on Deribit via WebSocket.
+    ///
+    /// Uses the `private/get_order_state` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "query_order")]
     fn py_query_order<'py>(
         &self,
