@@ -3,9 +3,9 @@
 > **For the execution agent:** REQUIRED SUB-SKILL: Before implementing this plan, choose exactly one execution mode and use the matching skill: `superpowers:subagent-driven-development` for same-session execution or `superpowers:executing-plans` for a separate-session handoff.
 > **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
 
-**Goal:** Replace the current single `makerv4` equities arb family with two explicit live strategy families, `equities_make_take` and `equities_take_take`, that can run concurrently per symbol while sharing the same equities portfolio/book and Fluxboard surface.
+**Goal:** Replace the current single `makerv4` equities arb family with two explicit live strategy families, `equities_maker` and `equities_taker`, that can run concurrently per symbol while sharing the same equities portfolio/book and Fluxboard surface.
 
-**Architecture:** Extract the current shared `MakerV4` hedge, fee, quote-health, and observability behavior into a reusable equities-arb shared core, then implement two family-specific strategies on top of it. `equities_make_take` can stay relatively thin after extraction; `equities_take_take` is likely a more substantial extraction because its current behavior is interleaved into the `makerv4` state machine. Keep the equities deploy topology on the current one-strategy-per-node model for now, but update the control plane so two strategy IDs can exist for the same `portfolio_asset_id` and still roll into the same shared equities portfolio and `/equities` UI.
+**Architecture:** Extract the current shared `MakerV4` hedge, fee, quote-health, and observability behavior into a reusable equities-arb shared core, then implement two family-specific strategies on top of it. `equities_maker` can stay relatively thin after extraction; `equities_taker` is likely a more substantial extraction because its current behavior is interleaved into the `makerv4` state machine. Keep the equities deploy topology on the current one-strategy-per-node model for now, but update the control plane so two strategy IDs can exist for the same `portfolio_asset_id` and still roll into the same shared equities portfolio and `/equities` UI.
 
 **Tech Stack:** Python 3, Nautilus Trader strategies/runners, Flux strategy registry and API payload builders, Redis-backed params, equities deploy TOMLs and readiness checks, Fluxboard React/TypeScript signal and params surfaces, pytest, vitest.
 
@@ -16,16 +16,77 @@
 | Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Overall | in_progress | main | none | `systems/flux/flux/strategies`, `systems/flux/flux/api`, `systems/flux/flux/runners/equities`, `deploy/equities`, `ops/scripts/deploy`, `fluxboard`, `tests`, `docs/plans` | `shared` | `shared` | `929dad49a0` + bootstrap tracker update | `git diff --check` pass; baseline smoke pending first-run build | Implementation branch initialized from planning branch |
+| Task 0: Align Approved `equities_maker` / `equities_taker` Naming | in_progress | main | Task 1: Lock Split Contract In Docs And Execution Matrix | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `GitHub PR #64 title/body` | `shared` | `shared` | none | not_run | 2026-03-17 UTC controller took ownership after stalled implementer lanes; naming alignment in progress |
 | Task 1: Lock Split Contract In Docs And Execution Matrix | completed | main | none | `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `shared` | `shared` | `929dad49a0` | `git diff --check` pass | Completed on planning branch before implementation bootstrap |
 | Task 2: Extract Shared Equities-Arb Core From MakerV4 | not_started | unassigned | Task 1: Lock Split Contract In Docs And Execution Matrix | `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/makerv4`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared`, `tests/unit_tests/flux/strategies/makerv4`, `tests/unit_tests/examples/strategies` | `shared` | `shared` | none | not_run | Plan created |
-| Task 3: Add `equities_make_take` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_make_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_make_take`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 4: Add `equities_take_take` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_take_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_take_take`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | not_started | unassigned | Task 3: Add `equities_make_take` Strategy Family, Task 4: Add `equities_take_take` Strategy Family | `systems/flux/flux/api`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 3: Add `equities_maker` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_maker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_maker`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 4: Add `equities_taker` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_taker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_taker`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | not_started | unassigned | Task 3: Add `equities_maker` Strategy Family, Task 4: Add `equities_taker` Strategy Family | `systems/flux/flux/api`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py` | `shared` | `shared` | none | not_run | Plan created |
 | Task 6: Update Fluxboard To A Shared Equities-Arb Surface | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `fluxboard/api.ts`, `fluxboard/components/domain/signal`, `fluxboard/config`, `fluxboard/types.ts`, `fluxboard/Params.tsx`, `fluxboard/stores.ts`, `fluxboard/tests/signal`, `fluxboard/__tests__`, `fluxboard/api.flux.test.ts`, `fluxboard/Signal.delta-pass-through.test.tsx` | `lanes/task-6-fluxboard` | `.worktrees/task-6-fluxboard` | none | not_run | Plan created |
 | Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `deploy/equities`, `deploy/equities/systemd`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/api/test_equities_profile_contract.py` | `shared` | `shared` | none | not_run | Plan created |
 | Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification | not_started | unassigned | Task 6: Update Fluxboard To A Shared Equities-Arb Surface, Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | `deploy/equities`, `fluxboard`, `tests`, `docs/plans` | `shared` | `shared` | none | not_run | Plan created |
 
 ---
+
+### Task 0: Align Approved `equities_maker` / `equities_taker` Naming
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- Modify: `GitHub PR #64 title/body`
+
+**Dependencies:** `Task 1: Lock Split Contract In Docs And Execution Matrix`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `GitHub PR #64 title/body`
+
+**Verification Commands:**
+- `git diff --check`
+
+**Step 1: Replace stale split-family naming in the execution source of truth**
+
+Update the implementation plan and design doc so the approved naming contract is used consistently:
+
+- `equities_make_take` -> `equities_maker`
+- `equities_take_take` -> `equities_taker`
+- `<symbol>_tradexyz_make_take` -> `<symbol>_tradexyz_maker`
+- `<symbol>_tradexyz_take_take` -> `<symbol>_tradexyz_taker`
+- operator labels `Make-Take` / `Take-Take` -> `Maker` / `Taker`
+- strategy family / param set / class examples align to the new names
+
+Preserve the already-approved product semantics exactly while making the naming contract current.
+
+**Step 2: Align downstream task text**
+
+Update later task titles, file paths, verification commands, fixture examples, and prose references so Tasks 3 through 8 consistently target `equities_maker` / `equities_taker` and the `maker` / `taker` strategy IDs.
+
+**Step 3: Update PR metadata**
+
+Update draft implementation PR 64 title/body so the implementation lane matches the approved naming contract without changing its stacked-PR semantics.
+
+**Step 4: Run doc hygiene**
+
+Run:
+
+```bash
+git diff --check
+```
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  docs/plans/2026-03-17-equities-makerv4-split.md
+git commit -m "docs: align maker taker naming"
+```
+
+**Step 6: Update the Progress Tracker**
+
+Mark Task 0 complete after the naming alignment, PR metadata update, and verification are recorded.
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
 ### Task 1: Lock Split Contract In Docs And Execution Matrix
 
@@ -48,12 +109,12 @@
 Document all of the following explicitly:
 
 - `makerv4` is replaced, not preserved as the live equities family
-- `make_take` and `take_take` can both run for the same symbol
+- `maker` and `taker` can both run for the same symbol
 - both share the same equities portfolio/book and asset-level risk view
 - the exact current RTH / outside-RTH hedge semantics are preserved in wave 1
 - local inventory/risk ownership knobs such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` do not survive into the split families
-- `/equities/params` uses separate params schemas for make-take and take-take selected from the strategy dropdown, not one blended contract
-- `take_take` is defined as a taker-on-both-venues strategy family
+- `/equities/params` uses separate params schemas for maker and taker selected from the strategy dropdown, not one blended contract
+- `taker` is defined as a taker-on-both-venues strategy family
 - no cross-strategy arbitration is part of this wave
 
 **Step 2: Lock the execution matrix instead of landing a red shared branch**
@@ -197,15 +258,15 @@ git commit -m "refactor: extract shared equities arb core"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 3: Add `equities_make_take` Strategy Family
+### Task 3: Add `equities_maker` Strategy Family
 
 **Files:**
-- Create: `systems/flux/flux/strategies/equities_make_take/__init__.py`
-- Create: `systems/flux/flux/strategies/equities_make_take/constants.py`
-- Create: `systems/flux/flux/strategies/equities_make_take/runtime_params.py`
-- Create: `systems/flux/flux/strategies/equities_make_take/strategy.py`
-- Create: `tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py`
-- Create: `tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py`
+- Create: `systems/flux/flux/strategies/equities_maker/__init__.py`
+- Create: `systems/flux/flux/strategies/equities_maker/constants.py`
+- Create: `systems/flux/flux/strategies/equities_maker/runtime_params.py`
+- Create: `systems/flux/flux/strategies/equities_maker/strategy.py`
+- Create: `tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py`
+- Create: `tests/unit_tests/flux/strategies/equities_maker/test_strategy.py`
 - Modify: `systems/flux/flux/strategies/registry.py`
 - Modify: `systems/flux/flux/strategies/__init__.py`
 - Modify: `systems/flux/flux/runners/equities/run_node.py`
@@ -213,40 +274,40 @@ git commit -m "refactor: extract shared equities arb core"
 
 **Dependencies:** `Task 2: Extract Shared Equities-Arb Core From MakerV4`
 
-**Write Scope:** `systems/flux/flux/strategies/equities_make_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+**Write Scope:** `systems/flux/flux/strategies/equities_maker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_maker/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py -q`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q`
 
-**Step 1: Write the failing `make_take` family tests**
+**Step 1: Write the failing `maker` family tests**
 
 Pin:
 
 - registry identity
-- suffix-based strategy-id resolution for `<symbol>_tradexyz_make_take`
-- runtime param surface without `take_take`-only knobs or local inventory/risk ownership knobs
+- suffix-based strategy-id resolution for `<symbol>_tradexyz_maker`
+- runtime param surface without `taker`-only knobs or local inventory/risk ownership knobs
 - exact preservation of the current RTH / outside-RTH hedge semantics
 - maker quote lifecycle uses the shared equities-arb core
 - shared portfolio/book risk is still the only asset-level risk source
-- `run_node.py` resolves the `equities_make_take` runtime params/config surface without falling back through `makerv4`-specific branches
+- `run_node.py` resolves the `equities_maker` runtime params/config surface without falling back through `makerv4`-specific branches
 
 **Step 2: Run tests to verify failure**
 
-Expected: FAIL because `equities_make_take` does not exist.
+Expected: FAIL because `equities_maker` does not exist.
 
-**Step 3: Implement the relatively thin `make_take` family**
+**Step 3: Implement the relatively thin `maker` family**
 
-Create `EquitiesMakeTakeStrategy` and config/runtime modules that:
+Create `EquitiesMakerStrategy` and config/runtime modules that:
 
 - consume the shared core
-- expose only the common plus make-take-specific runtime params
+- expose only the common plus maker-specific runtime params
 - keep the existing session-aware hedge contract unchanged
 - omit `des_qty_local`, `max_qty_local`, `max_skew_bps_local`, and equivalent local-inventory controls
 - preserve current maker-side quote behavior
-- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_make_take` behavior
+- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_maker` behavior
 
-**Step 4: Re-run the focused `make_take` tests**
+**Step 4: Re-run the focused `maker` tests**
 
 Expected: PASS.
 
@@ -254,27 +315,27 @@ Expected: PASS.
 
 ```bash
 git add \
-  systems/flux/flux/strategies/equities_make_take \
+  systems/flux/flux/strategies/equities_maker \
   systems/flux/flux/strategies/registry.py \
   systems/flux/flux/strategies/__init__.py \
   systems/flux/flux/runners/equities/run_node.py \
-  tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py \
-  tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py \
+  tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py \
+  tests/unit_tests/flux/strategies/equities_maker/test_strategy.py \
   tests/unit_tests/examples/strategies/test_equities_run_node.py
-git commit -m "feat: add equities make-take strategy family"
+git commit -m "feat: add equities maker strategy family"
 ```
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 4: Add `equities_take_take` Strategy Family
+### Task 4: Add `equities_taker` Strategy Family
 
 **Files:**
-- Create: `systems/flux/flux/strategies/equities_take_take/__init__.py`
-- Create: `systems/flux/flux/strategies/equities_take_take/constants.py`
-- Create: `systems/flux/flux/strategies/equities_take_take/runtime_params.py`
-- Create: `systems/flux/flux/strategies/equities_take_take/strategy.py`
-- Create: `tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py`
-- Create: `tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py`
+- Create: `systems/flux/flux/strategies/equities_taker/__init__.py`
+- Create: `systems/flux/flux/strategies/equities_taker/constants.py`
+- Create: `systems/flux/flux/strategies/equities_taker/runtime_params.py`
+- Create: `systems/flux/flux/strategies/equities_taker/strategy.py`
+- Create: `tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py`
+- Create: `tests/unit_tests/flux/strategies/equities_taker/test_strategy.py`
 - Modify: `systems/flux/flux/strategies/registry.py`
 - Modify: `systems/flux/flux/strategies/__init__.py`
 - Modify: `systems/flux/flux/runners/equities/run_node.py`
@@ -282,42 +343,42 @@ git commit -m "feat: add equities make-take strategy family"
 
 **Dependencies:** `Task 2: Extract Shared Equities-Arb Core From MakerV4`
 
-**Write Scope:** `systems/flux/flux/strategies/equities_take_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+**Write Scope:** `systems/flux/flux/strategies/equities_taker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_taker/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py -q`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q`
 
-**Step 1: Write the failing `take_take` family tests**
+**Step 1: Write the failing `taker` family tests**
 
 Pin:
 
 - registry identity
-- suffix-based strategy-id resolution for `<symbol>_tradexyz_take_take`
-- runtime params keep only take-take-relevant knobs and omit local inventory/risk ownership knobs
-- `take_take` signal generation and execution are family-owned, not hidden behind `execution_mode`
-- `take_take` is pinned as a taker-on-both-venues strategy rather than a maker quote loop
+- suffix-based strategy-id resolution for `<symbol>_tradexyz_taker`
+- runtime params keep only taker-relevant knobs and omit local inventory/risk ownership knobs
+- `taker` signal generation and execution are family-owned, not hidden behind `execution_mode`
+- `taker` is pinned as a taker-on-both-venues strategy rather than a maker quote loop
 - exact preservation of the current RTH / outside-RTH hedge semantics
 - hedge backlog and shared portfolio-risk reads still work through the shared core
-- `run_node.py` resolves the `equities_take_take` runtime params/config surface without relying on `makerv4`-specific fallback paths
+- `run_node.py` resolves the `equities_taker` runtime params/config surface without relying on `makerv4`-specific fallback paths
 
 **Step 2: Run tests to verify failure**
 
-Expected: FAIL because `equities_take_take` does not exist.
+Expected: FAIL because `equities_taker` does not exist.
 
-**Step 3: Implement the extracted `take_take` family**
+**Step 3: Implement the extracted `taker` family**
 
-Create `EquitiesTakeTakeStrategy` and config/runtime modules that:
+Create `EquitiesTakerStrategy` and config/runtime modules that:
 
 - consume the shared core
-- expose take-take-specific params such as threshold and cooldown knobs
+- expose taker-specific params such as threshold and cooldown knobs
 - keep the current aggressive outside-band behavior and shared hedge path
 - implement a taker-on-both-venues execution model instead of reusing the maker quote loop
 - perform the non-trivial extraction currently hidden inside `makerv4.execution_mode` branches
 - omit `des_qty_local`, `max_qty_local`, `max_skew_bps_local`, and equivalent local-inventory controls
-- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_take_take` behavior
+- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_taker` behavior
 
-**Step 4: Re-run the focused `take_take` tests**
+**Step 4: Re-run the focused `taker` tests**
 
 Expected: PASS.
 
@@ -325,14 +386,14 @@ Expected: PASS.
 
 ```bash
 git add \
-  systems/flux/flux/strategies/equities_take_take \
+  systems/flux/flux/strategies/equities_taker \
   systems/flux/flux/strategies/registry.py \
   systems/flux/flux/strategies/__init__.py \
   systems/flux/flux/runners/equities/run_node.py \
-  tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py \
-  tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py \
+  tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py \
+  tests/unit_tests/flux/strategies/equities_taker/test_strategy.py \
   tests/unit_tests/examples/strategies/test_equities_run_node.py
-git commit -m "feat: add equities take-take strategy family"
+git commit -m "feat: add equities taker strategy family"
 ```
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
@@ -353,7 +414,7 @@ git commit -m "feat: add equities take-take strategy family"
 - Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
 - Modify: `tests/unit_tests/flux/api/test_payloads.py`
 
-**Dependencies:** `Task 3: Add \`equities_make_take\` Strategy Family`, `Task 4: Add \`equities_take_take\` Strategy Family`
+**Dependencies:** `Task 3: Add \`equities_maker\` Strategy Family`, `Task 4: Add \`equities_taker\` Strategy Family`
 
 **Write Scope:** `systems/flux/flux/api/app.py`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `systems/flux/flux/api/_payloads_signals.py`, `fluxboard/types.ts`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `tests/unit_tests/flux/api/test_payloads.py`
 
@@ -364,7 +425,7 @@ git commit -m "feat: add equities take-take strategy family"
 
 Require:
 
-- strategy metadata recognizes `aapl_tradexyz_make_take` and `aapl_tradexyz_take_take`
+- strategy metadata recognizes `aapl_tradexyz_maker` and `aapl_tradexyz_taker`
 - the params API can serve separate make-take and take-take `params_schema`, `params_defaults`, and `param_set` contracts keyed off the selected strategy/family, for example via `GET /api/v1/param-schema?strategy=<strategy_id>`, rather than a single global equities schema
 - `GET /api/v1/params` can load mixed make-take and take-take rows in one response without one family rejecting the other family's keys
 - bulk `POST/PATCH /api/v1/params` accepts mixed-family updates in one request and validates each strategy against its own param contract
@@ -535,8 +596,8 @@ Require:
 
 - two active strategy IDs per symbol are allowed in `equities.live.toml`
 - `strategy_contracts` may repeat `portfolio_asset_id`
-- `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py` must include a true same-symbol fixture such as `aapl_tradexyz_make_take` plus `aapl_tradexyz_take_take` sharing `portfolio_asset_id="AAPL"`; duplicated copies of the same strategy ID do not count
-- `tests/unit_tests/examples/strategies/test_equities_readiness.py` must include the same `make_take` plus `take_take` same-asset fixture and prove readiness expects both strategy IDs while evaluating one shared asset-level portfolio state
+- `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py` must include a true same-symbol fixture such as `aapl_tradexyz_maker` plus `aapl_tradexyz_taker` sharing `portfolio_asset_id="AAPL"`; duplicated copies of the same strategy ID do not count
+- `tests/unit_tests/examples/strategies/test_equities_readiness.py` must include the same `maker` plus `taker` same-asset fixture and prove readiness expects both strategy IDs while evaluating one shared asset-level portfolio state
 - `tests/unit_tests/examples/strategies/test_equities_stack_contract.py` must stop hard-rejecting duplicate `portfolio_asset_id` values and instead assert uniqueness at the strategy-id level while allowing repeated asset IDs for the split variants
 - readiness expects both enrolled strategies while still checking shared asset-level portfolio health
 - the template and README use the new naming pattern
@@ -603,7 +664,7 @@ git commit -m "feat: add dual-strategy equities deploy contract"
 **Write Scope:** `deploy/equities`, `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `tests`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
 - `pnpm --dir fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts`
 - `git diff --check`
 

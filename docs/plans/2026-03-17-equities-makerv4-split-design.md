@@ -4,8 +4,8 @@
 
 Replace the current single `MakerV4` equities strategy family with two explicit, concurrently deployable Nautilus strategy families:
 
-- `make_take`: quote the Hyperliquid strategy market and hedge/take against IBKR after fills
-- `take_take`: trade outside arb bounds by taking on both venues
+- `maker`: quote the Hyperliquid strategy market and hedge/take against IBKR after fills
+- `taker`: trade outside arb bounds by taking on both venues
 
 Both variants must remain on the shared equities control plane:
 
@@ -20,15 +20,15 @@ No backward-compatibility path is required for the live equities `makerv4` contr
 
 Use two explicit strategy families with a shared equities-arb core:
 
-- `equities_make_take`
-- `equities_take_take`
+- `equities_maker`
+- `equities_taker`
 
 Keep them as separate strategy IDs, separate node configs, and separate runtime param registries, but make them read the same shared portfolio/book for asset-level risk. Do not add cross-strategy arbitration in this wave. If both variants on `AAPL` are live, both may trade as long as the shared asset-level risk gate permits it.
 
 This gives the cleanest operator model:
 
 - the variant is visible in the strategy ID and family metadata
-- runtime params can stay explicitly separate for `make_take` and `take_take`
+- runtime params can stay explicitly separate for `maker` and `taker`
 - shared logic moves into reusable modules instead of remaining hidden behind `execution_mode`
 
 ## Naming
@@ -37,29 +37,29 @@ This gives the cleanest operator model:
 
 Recommended live strategy ID pattern:
 
-- `<symbol>_tradexyz_make_take`
-- `<symbol>_tradexyz_take_take`
+- `<symbol>_tradexyz_maker`
+- `<symbol>_tradexyz_taker`
 
 Examples:
 
-- `aapl_tradexyz_make_take`
-- `aapl_tradexyz_take_take`
+- `aapl_tradexyz_maker`
+- `aapl_tradexyz_taker`
 
 ### Strategy Metadata
 
 Recommended strategy metadata:
 
-- `strategy_family = "equities_make_take"` / `"equities_take_take"`
+- `strategy_family = "equities_maker"` / `"equities_taker"`
 - `strategy_version = "v1"`
-- `param_set = "equities_make_take"` / `"equities_take_take"`
-- `class = "equity_perp_make_take"` / `"equity_perp_take_take"`
+- `param_set = "equities_maker"` / `"equities_taker"`
+- `class = "equity_perp_maker"` / `"equity_perp_taker"`
 
 ### Operator Params Profiles
 
 `/equities/params` stays one shared route, but the params contract should be separate for the two strategy families and keyed off the selected strategy in the operator dropdown:
 
-- `params_profile = "equities_make_take"` for a selected make-take row
-- `params_profile = "equities_take_take"` for a selected take-take row
+- `params_profile = "equities_maker"` for a selected maker row
+- `params_profile = "equities_taker"` for a selected taker row
 - `GET /api/v1/param-schema` and related Fluxboard schema caching must become strategy-aware, for example via a `strategy=<strategy_id>` selector, rather than assuming one page-global schema
 - the generic params API must resolve schema/defaults/validation per strategy across `GET /api/v1/params`, bulk `POST/PATCH /api/v1/params`, and `GET/POST/PATCH /api/v1/strategies/<id>/parameters`; one app-global schema/default bundle is not sufficient for the split
 - the live `run_api.main()` path must bind per-strategy family and asset metadata from merged config plus `strategy_contracts`, not only helper-unit tests that inject contracts into an isolated `[api]` table
@@ -70,8 +70,8 @@ Recommended strategy metadata:
 
 Use operator-facing labels exactly as:
 
-- `Make-Take`
-- `Take-Take`
+- `Maker`
+- `Taker`
 
 That keeps the GUI aligned with the trading behavior the desk already uses in conversation.
 
@@ -97,18 +97,18 @@ Strategy-local state remains limited to execution mechanics:
 
 Strategy-local inventory ownership is not introduced in this split, and the split families should not expose legacy local inventory/risk knobs such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` or new equivalents that imply strategy-owned asset risk.
 
-### Make-Take
+### Maker
 
-`make_take` is the inside-bounds strategy:
+`maker` is the inside-bounds strategy:
 
 - quotes the Hyperliquid strategy market
 - publishes maker-side quote targets and maker-specific observability
 - hedges against IBKR after fills using the shared hedge path
 - keeps the existing immediate-hedge and outside-RTH hedge behavior unchanged in this wave
 
-### Take-Take
+### Taker
 
-`take_take` is the outside-bounds strategy:
+`taker` is the outside-bounds strategy:
 
 - computes fee-aware outside-band opportunities
 - is defined as a taker-on-both-venues strategy rather than a maker-quote strategy with a different threshold
@@ -122,8 +122,8 @@ Split the current `makerv4` code into:
 
 1. Shared equities-arb core under `systems/flux/flux/strategies/shared/equities_arb/`
 2. Family-specific strategy modules under:
-   - `systems/flux/flux/strategies/equities_make_take/`
-   - `systems/flux/flux/strategies/equities_take_take/`
+   - `systems/flux/flux/strategies/equities_maker/`
+   - `systems/flux/flux/strategies/equities_taker/`
 
 Recommended shared-core responsibilities:
 
@@ -137,14 +137,14 @@ Recommended shared-core responsibilities:
 
 Family-specific responsibilities:
 
-- `make_take`: quote generation and quote lifecycle
-- `take_take`: outside-band opportunity detection and two-sided taker execution logic
+- `maker`: quote generation and quote lifecycle
+- `taker`: outside-band opportunity detection and two-sided taker execution logic
 - family-specific runtime params and defaults
 
 Implementation note:
 
-- `make_take` can remain relatively thin after the shared-core extraction
-- `take_take` is expected to be a more substantial extraction because its current `execution_mode` behavior is interleaved into the `makerv4` state machine
+- `maker` can remain relatively thin after the shared-core extraction
+- `taker` is expected to be a more substantial extraction because its current taker behavior is interleaved into the `makerv4` state machine
 
 ## Fluxboard Design
 
@@ -153,7 +153,7 @@ Replace the dedicated `MakerV4SignalTable` contract with a shared equities-arb s
 That table should:
 
 - show one row per strategy instance, not one row per symbol
-- include a visible `Variant` column (`Make-Take` / `Take-Take`)
+- include a visible `Variant` column (`Maker` / `Taker`)
 - sort naturally by symbol then variant
 - keep the shared maker/hedge/ref leg presentation where relevant
 - show fee assumptions, hedge policy, and quote-health with consistent semantics across both families
@@ -197,7 +197,7 @@ The shared portfolio/book remains canonical for:
 
 Wave-1 policy:
 
-- no new arbitration or stand-down rules between `make_take` and `take_take`
+- no new arbitration or stand-down rules between `maker` and `taker`
 - no new “inside regime owns the symbol” behavior
 - preserve fail-closed hedge behavior when the hedge side is invalid
 - preserve retryable hedge backlog behavior where already present
