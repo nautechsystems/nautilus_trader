@@ -1,0 +1,209 @@
+# Equities MakerV4 Split Design
+
+## Goal
+
+Replace the current single `MakerV4` equities strategy family with two explicit, concurrently deployable Nautilus strategy families:
+
+- `make_take`: quote the Hyperliquid strategy market and hedge/take against IBKR after fills
+- `take_take`: trade outside arb bounds by taking on both venues
+
+Both variants must remain on the shared equities control plane:
+
+- shared `portfolio=equities`
+- shared per-asset risk/book view
+- shared `/equities` Fluxboard surface
+- shared deploy stack and readiness model
+
+No backward-compatibility path is required for `makerv4`; the new families become the only supported equities arb contract.
+
+## Recommendation
+
+Use two explicit strategy families with a shared equities-arb core:
+
+- `equities_make_take`
+- `equities_take_take`
+
+Keep them as separate strategy IDs, separate node configs, and separate runtime param sets, but make them read the same shared portfolio/book for asset-level risk. Do not add cross-strategy arbitration in this wave. If both variants on `AAPL` are live, both may trade as long as the shared asset-level risk gate permits it.
+
+This gives the cleanest operator model:
+
+- the variant is visible in the strategy ID and family metadata
+- params can be tailored to the actual behavior instead of one overloaded schema
+- shared logic moves into reusable modules instead of remaining hidden behind `execution_mode`
+
+## Naming
+
+### Strategy IDs
+
+Recommended live strategy ID pattern:
+
+- `<symbol>_tradexyz_make_take`
+- `<symbol>_tradexyz_take_take`
+
+Examples:
+
+- `aapl_tradexyz_make_take`
+- `aapl_tradexyz_take_take`
+
+### Strategy Metadata
+
+Recommended strategy metadata:
+
+- `strategy_family = "equities_make_take"` / `"equities_take_take"`
+- `strategy_version = "v1"`
+- `param_set = "equities_make_take"` / `"equities_take_take"`
+- `class = "equity_perp_make_take"` / `"equity_perp_take_take"`
+
+### Operator Labels
+
+Use operator-facing labels exactly as:
+
+- `Make-Take`
+- `Take-Take`
+
+That keeps the GUI aligned with the trading behavior the desk already uses in conversation.
+
+## Strategy Semantics
+
+### Shared Semantics
+
+Both strategies:
+
+- trade the same underlying HL-vs-IBKR arb
+- are fee-aware
+- publish fee and pricing assumptions into signal/operator payloads
+- preserve the existing `makerv4` RTH vs outside-RTH hedge semantics exactly, including the current `outside_rth_hedge_enabled` behavior and the existing deploy contract that keeps IBKR reference data available outside regular-session hours
+- use the same shared quote-health, hedge-policy, pending-hedge, and hedge-backlog concepts
+- read the same shared equities portfolio/book for asset-level risk and inventory checks
+
+Strategy-local state remains limited to execution mechanics:
+
+- managed maker/taker orders
+- cooldowns
+- pending hedge state
+- hedge backlog / retry state
+
+Strategy-local inventory ownership is not introduced in this split, and the split families should not expose legacy local inventory/risk knobs such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` or new equivalents that imply strategy-owned asset risk.
+
+### Make-Take
+
+`make_take` is the inside-bounds strategy:
+
+- quotes the Hyperliquid strategy market
+- publishes maker-side quote targets and maker-specific observability
+- hedges against IBKR after fills using the shared hedge path
+- keeps the existing immediate-hedge and outside-RTH hedge behavior unchanged in this wave
+
+### Take-Take
+
+`take_take` is the outside-bounds strategy:
+
+- computes fee-aware outside-band opportunities
+- is defined as a taker-on-both-venues strategy rather than a maker-quote strategy with a different threshold
+- owns aggressive entry logic on the strategy market and aggressive hedge/take logic on the IBKR side using the shared hedge path
+- does not reuse the maker quote lifecycle as its primary execution model
+- keeps the current backlog/fail-closed behavior when the hedge side is not usable
+
+## Shared Core Design
+
+Split the current `makerv4` code into:
+
+1. Shared equities-arb core under `systems/flux/flux/strategies/shared/equities_arb/`
+2. Thin family-specific wrappers under:
+   - `systems/flux/flux/strategies/equities_make_take/`
+   - `systems/flux/flux/strategies/equities_take_take/`
+
+Recommended shared-core responsibilities:
+
+- shared quote-health evaluation and quote snapshot assembly
+- shared fee assumptions and fee-aware observability fields
+- shared hedge/take order intent and pending-hedge/backlog lifecycle
+- shared portfolio-risk reads against the `portfolio=equities` aggregate
+- shared signal/operator payload helpers
+
+Family-specific responsibilities:
+
+- `make_take`: quote generation and quote lifecycle
+- `take_take`: outside-band opportunity detection and two-sided taker execution logic
+- family-specific runtime params and defaults
+
+## Fluxboard Design
+
+Replace the dedicated `MakerV4SignalTable` contract with a shared equities-arb signal table, for example `EquitiesArbSignalTable`.
+
+That table should:
+
+- show one row per strategy instance, not one row per symbol
+- include a visible `Variant` column (`Make-Take` / `Take-Take`)
+- sort naturally by symbol then variant
+- keep the shared maker/hedge/ref leg presentation where relevant
+- show fee assumptions, hedge policy, and quote-health with consistent semantics across both families
+
+Shared equities operator model:
+
+- same `/equities/signal`
+- same `/equities/params`
+- same `/equities/balances`
+- same `/equities/trades`
+- no separate app surface for each family
+
+Params UX should expose:
+
+- common controls first
+- session and shared-risk controls before family-specific execution knobs
+- family-specific fields grouped after the common block
+- rows ordered in an operator-friendly sequence by symbol then variant
+- no local-inventory/local-risk ownership controls
+
+## Deploy And Portfolio Design
+
+Keep the current “one strategy instance per node” deploy shape for this wave, but allow two strategy instances per symbol.
+
+Implications:
+
+- `strategy_contracts` may now contain two rows with the same `portfolio_asset_id`
+- `api.equities_strategy_ids` and `api.equities_required_strategy_ids` must allow both rows
+- portfolio aggregation must group multiple strategy IDs under the same asset without assuming one strategy per asset
+- readiness must validate shared asset-level state while still expecting both strategy processes to be present when enrolled
+
+The shared portfolio/book remains canonical for:
+
+- max long / max short per asset
+- shared inventory exposure per asset
+- any later shared asset gate added to equities
+
+## Error Handling
+
+Wave-1 policy:
+
+- no new arbitration or stand-down rules between `make_take` and `take_take`
+- no new “inside regime owns the symbol” behavior
+- preserve fail-closed hedge behavior when the hedge side is invalid
+- preserve retryable hedge backlog behavior where already present
+
+If concurrent variants exhibit undesirable interaction in live trading, add an explicit cross-strategy coordination layer later rather than hiding it in this split.
+
+## Testing Strategy
+
+The split needs contract coverage at four levels:
+
+1. Strategy-family registry and runner wiring
+2. Shared portfolio/deploy/readiness contracts for dual strategies per asset
+3. API payload and Fluxboard family-aware rendering
+4. Shared-core hedge, fee, and quote-health behavior reused by both families
+
+The migration is complete when:
+
+- no active equities deploy or API contract depends on `makerv4`
+- both families can be represented under the same equities stack
+- the shared UI and params surfaces remain operator-friendly
+
+## Open Decisions Closed By This Design
+
+The design below assumes:
+
+- both variants can run concurrently for the same stock
+- both share the same equities portfolio/book and shared asset-level risk view
+- node topology is not redesigned in this wave
+- no compatibility layer for legacy `makerv4` is required
+- no cross-strategy arbitration is added in this wave
