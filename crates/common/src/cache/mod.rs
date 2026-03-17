@@ -2573,6 +2573,8 @@ impl Cache {
     }
 
     /// Returns the `ClientOrderId`s of all locally active orders.
+    /// 
+    /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state.
     #[must_use]
     pub fn client_order_ids_active_local(
         &self,
