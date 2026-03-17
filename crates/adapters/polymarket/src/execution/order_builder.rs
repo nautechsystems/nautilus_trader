@@ -30,9 +30,11 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::parse::{compute_maker_taker_amounts, compute_market_maker_taker_amounts};
 use crate::{
-    common::enums::{PolymarketOrderSide, PolymarketOrderType, SignatureType},
+    common::{
+        consts::{LOT_SIZE_SCALE, USDC_DECIMALS},
+        enums::{PolymarketOrderSide, PolymarketOrderType, SignatureType},
+    },
     http::models::PolymarketOrder,
     signing::eip712::OrderSigner,
 };
@@ -63,6 +65,7 @@ impl PolymarketOrderBuilder {
     }
 
     /// Builds and signs a limit order for submission.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_limit_order(
         &self,
         token_id: &str,
@@ -71,8 +74,10 @@ impl PolymarketOrderBuilder {
         quantity: Decimal,
         expiration: &str,
         neg_risk: bool,
+        tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
-        let (maker_amount, taker_amount) = compute_maker_taker_amounts(price, quantity, side);
+        let (maker_amount, taker_amount) =
+            compute_maker_taker_amounts(price, quantity, side, tick_decimals);
         self.build_and_sign(
             token_id,
             side,
@@ -95,8 +100,10 @@ impl PolymarketOrderBuilder {
         price: Decimal,
         amount: Decimal,
         neg_risk: bool,
+        tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
-        let (maker_amount, taker_amount) = compute_market_maker_taker_amounts(price, amount, side);
+        let (maker_amount, taker_amount) =
+            compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
         // Market orders never expire
         self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
     }
@@ -215,6 +222,76 @@ impl PolymarketOrderBuilder {
     }
 }
 
+/// Converts a human-readable decimal to on-chain base units (USDC 10^6 / CTF shares 10^6).
+///
+/// Truncates to `USDC_DECIMALS` (6) decimal places, then extracts the mantissa
+/// to produce an integer Decimal (scale 0).
+fn to_fixed_decimal(d: Decimal) -> Decimal {
+    let mantissa = d.normalize().trunc_with_scale(USDC_DECIMALS).mantissa();
+    Decimal::from(mantissa)
+}
+
+/// Builds the maker/taker amounts for a Polymarket CLOB limit order.
+///
+/// The CLOB enforces precision constraints on both amounts:
+/// - Direct amounts (quantity passed through): max `LOT_SIZE_SCALE` (2) decimal places
+/// - Computed amounts (quantity * price): max `tick_decimals + LOT_SIZE_SCALE` decimal places
+///
+/// For BUY: paying USDC (maker, computed) to receive CTF shares (taker, direct)
+/// For SELL: paying CTF shares (maker, direct) to receive USDC (taker, computed)
+pub fn compute_maker_taker_amounts(
+    price: Decimal,
+    quantity: Decimal,
+    side: PolymarketOrderSide,
+    tick_decimals: u32,
+) -> (Decimal, Decimal) {
+    let precision = tick_decimals + LOT_SIZE_SCALE;
+    let qty = quantity.trunc_with_scale(LOT_SIZE_SCALE);
+    match side {
+        PolymarketOrderSide::Buy => {
+            let maker_amount = to_fixed_decimal((qty * price).trunc_with_scale(precision));
+            let taker_amount = to_fixed_decimal(qty);
+            (maker_amount, taker_amount)
+        }
+        PolymarketOrderSide::Sell => {
+            let maker_amount = to_fixed_decimal(qty);
+            let taker_amount = to_fixed_decimal((qty * price).trunc_with_scale(precision));
+            (maker_amount, taker_amount)
+        }
+    }
+}
+
+/// Builds maker/taker amounts for a Polymarket market order.
+///
+/// Same precision constraints as limit orders. The direct amount is truncated to
+/// `LOT_SIZE_SCALE` decimal places before conversion (market order amounts like
+/// position sizes from fills may have more decimal places than the CLOB allows).
+///
+/// Unlike limit orders where quantity always means shares, market order semantics differ by side:
+/// - BUY: `amount` is USDC to spend, compute shares received
+/// - SELL: `amount` is shares to sell, compute USDC received
+pub fn compute_market_maker_taker_amounts(
+    price: Decimal,
+    amount: Decimal,
+    side: PolymarketOrderSide,
+    tick_decimals: u32,
+) -> (Decimal, Decimal) {
+    let precision = tick_decimals + LOT_SIZE_SCALE;
+    let amt = amount.trunc_with_scale(LOT_SIZE_SCALE);
+    match side {
+        PolymarketOrderSide::Buy => {
+            let maker_amount = to_fixed_decimal(amt);
+            let taker_amount = to_fixed_decimal((amt / price).trunc_with_scale(precision));
+            (maker_amount, taker_amount)
+        }
+        PolymarketOrderSide::Sell => {
+            let maker_amount = to_fixed_decimal(amt);
+            let taker_amount = to_fixed_decimal((amt * price).trunc_with_scale(precision));
+            (maker_amount, taker_amount)
+        }
+    }
+}
+
 /// Generates a random salt for order construction.
 ///
 /// # Panics
@@ -235,8 +312,11 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::common::enums::PolymarketOrderSide;
 
     fn make_limit(
         reduce_only: bool,
@@ -382,5 +462,119 @@ mod tests {
             let s = generate_salt();
             assert!(s < (1u64 << 53));
         }
+    }
+
+    // Limit order amount tests
+    // qty truncated to LOT_SIZE_SCALE=2 first, then computed side truncated to precision
+    #[rstest]
+    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Buy, 2, dec!(50_000_000), dec!(100_000_000))]
+    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Sell, 2, dec!(100_000_000), dec!(50_000_000))]
+    #[case(dec!(0.75), dec!(200), PolymarketOrderSide::Buy, 2, dec!(150_000_000), dec!(200_000_000))]
+    // qty=23.456 → trunc(2)=23.45, maker=(23.45*0.567).trunc(5)=13.29615→13_296_150
+    #[case(dec!(0.567), dec!(23.456), PolymarketOrderSide::Buy, 3, dec!(13_296_150), dec!(23_450_000))]
+    #[case(dec!(0.55), dec!(10), PolymarketOrderSide::Buy, 1, dec!(5_500_000), dec!(10_000_000))]
+    fn test_compute_maker_taker_amounts(
+        #[case] price: Decimal,
+        #[case] quantity: Decimal,
+        #[case] side: PolymarketOrderSide,
+        #[case] tick_decimals: u32,
+        #[case] expected_maker: Decimal,
+        #[case] expected_taker: Decimal,
+    ) {
+        let (maker, taker) = compute_maker_taker_amounts(price, quantity, side, tick_decimals);
+        assert_eq!(maker, expected_maker);
+        assert_eq!(taker, expected_taker);
+    }
+
+    // Market order amount tests
+    // amount truncated to LOT_SIZE_SCALE=2 first, then computed side truncated to precision
+    #[rstest]
+    #[case(dec!(0.50), dec!(50), PolymarketOrderSide::Buy, 2, dec!(50_000_000), dec!(100_000_000))]
+    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Sell, 2, dec!(100_000_000), dec!(50_000_000))]
+    #[case(dec!(0.75), dec!(150), PolymarketOrderSide::Buy, 2, dec!(150_000_000), dec!(200_000_000))]
+    // amt=23.696681 → trunc(2)=23.69, taker=(23.69*0.211).trunc(5)=4.99859→4_998_590
+    #[case(dec!(0.211), dec!(23.696681), PolymarketOrderSide::Sell, 3, dec!(23_690_000), dec!(4_998_590))]
+    fn test_compute_market_maker_taker_amounts(
+        #[case] price: Decimal,
+        #[case] amount: Decimal,
+        #[case] side: PolymarketOrderSide,
+        #[case] tick_decimals: u32,
+        #[case] expected_maker: Decimal,
+        #[case] expected_taker: Decimal,
+    ) {
+        let (maker, taker) = compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
+        assert_eq!(maker, expected_maker);
+        assert_eq!(taker, expected_taker);
+    }
+
+    #[rstest]
+    fn test_compute_maker_taker_qty_truncated_to_lot_size() {
+        // qty=23.456 → trunc(2)=23.45, tick_decimals=3 → precision=5
+        // BUY: maker=(23.45*0.567).trunc(5)=13.29615→13_296_150, taker=23.45→23_450_000
+        let (maker, taker) =
+            compute_maker_taker_amounts(dec!(0.567), dec!(23.456), PolymarketOrderSide::Buy, 3);
+        assert_eq!(maker, dec!(13_296_150));
+        assert_eq!(taker, dec!(23_450_000));
+    }
+
+    #[rstest]
+    fn test_compute_maker_taker_zero_amounts() {
+        let (maker, taker) =
+            compute_maker_taker_amounts(dec!(0.50), dec!(0), PolymarketOrderSide::Buy, 2);
+        assert_eq!(maker, dec!(0));
+        assert_eq!(taker, dec!(0));
+    }
+
+    #[rstest]
+    fn test_compute_maker_taker_tick_decimals_1() {
+        let (maker, taker) =
+            compute_maker_taker_amounts(dec!(0.3), dec!(50), PolymarketOrderSide::Buy, 1);
+        assert_eq!(maker, dec!(15_000_000));
+        assert_eq!(taker, dec!(50_000_000));
+    }
+
+    #[rstest]
+    fn test_compute_maker_taker_tick_decimals_3_sell() {
+        // qty=15.123 → trunc(2)=15.12
+        // SELL: maker=15.12→15_120_000, taker=(15.12*0.789).trunc(5)=11.92968→11_929_680
+        let (maker, taker) =
+            compute_maker_taker_amounts(dec!(0.789), dec!(15.123), PolymarketOrderSide::Sell, 3);
+        assert_eq!(maker, dec!(15_120_000));
+        assert_eq!(taker, dec!(11_929_680));
+    }
+
+    #[rstest]
+    fn test_compute_market_maker_taker_zero_amount() {
+        let (maker, taker) =
+            compute_market_maker_taker_amounts(dec!(0.50), dec!(0), PolymarketOrderSide::Buy, 2);
+        assert_eq!(maker, dec!(0));
+        assert_eq!(taker, dec!(0));
+    }
+
+    #[rstest]
+    fn test_compute_market_sell_position_close() {
+        // Reproduces the live bug: position=23.696681 shares, price=0.211, tick_decimals=3
+        // Without truncation: maker=23_696_681 (6 decimals) → rejected by CLOB
+        // With truncation: amt=23.69 → maker=23_690_000 (2 decimals) → accepted
+        let (maker, taker) = compute_market_maker_taker_amounts(
+            dec!(0.211),
+            dec!(23.696681),
+            PolymarketOrderSide::Sell,
+            3,
+        );
+        assert_eq!(maker, dec!(23_690_000));
+        // 23.69 * 0.211 = 4.99859, trunc(5) = 4.99859
+        assert_eq!(taker, dec!(4_998_590));
+        // Verify maker has max 2 decimal precision: 23_690_000 / 1_000_000 = 23.69
+        assert_eq!(maker % dec!(10_000), dec!(0));
+        // Verify taker has max 5 decimal precision: 4_998_590 / 1_000_000 = 4.99859
+        assert_eq!(taker % dec!(10), dec!(0));
+    }
+
+    #[rstest]
+    fn test_to_fixed_decimal_basic() {
+        assert_eq!(to_fixed_decimal(dec!(13.29955)), dec!(13_299_550));
+        assert_eq!(to_fixed_decimal(dec!(100)), dec!(100_000_000));
+        assert_eq!(to_fixed_decimal(dec!(0)), dec!(0));
     }
 }

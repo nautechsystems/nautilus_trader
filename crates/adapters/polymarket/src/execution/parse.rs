@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing functions for Polymarket execution reports and order building.
+//! Parsing functions for Polymarket execution reports.
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -26,7 +26,6 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::{MAX_PRECISION_MAKER, MAX_PRECISION_TAKER},
         enums::{PolymarketLiquiditySide, PolymarketOrderSide},
         models::PolymarketMakerOrder,
     },
@@ -279,76 +278,6 @@ pub fn parse_balance_allowance(
     Ok(AccountBalance::new(total, locked, free))
 }
 
-/// Builds the maker/taker amounts for a Polymarket CLOB order.
-///
-/// Returns `(maker_amount, taker_amount)` in on-chain base units (USDC 10^6 / CTF shares 10^6).
-///
-/// For BUY: paying USDC (maker) to receive CTF shares (taker)
-///   - `maker_amount = qty * price * 10^6`
-///   - `taker_amount = qty * 10^6`
-///
-/// For SELL: paying CTF shares (maker) to receive USDC (taker)
-///   - `maker_amount = qty * 10^6`
-///   - `taker_amount = qty * price * 10^6`
-pub fn compute_maker_taker_amounts(
-    price: Decimal,
-    quantity: Decimal,
-    side: PolymarketOrderSide,
-) -> (Decimal, Decimal) {
-    let scale = Decimal::new(1_000_000, 0);
-    match side {
-        PolymarketOrderSide::Buy => {
-            let maker_amount = (quantity * price * scale).trunc();
-            let taker_amount = (quantity * scale).trunc();
-            (maker_amount, taker_amount)
-        }
-        PolymarketOrderSide::Sell => {
-            let maker_amount = (quantity * scale).trunc();
-            let taker_amount = (quantity * price * scale).trunc();
-            (maker_amount, taker_amount)
-        }
-    }
-}
-
-/// Builds maker/taker amounts for a Polymarket market order.
-///
-/// Unlike limit orders where quantity always means shares, market order semantics differ by side:
-/// - BUY: `amount` is USDC to spend → maker_amount = amount * scale, taker_amount = (amount / price) * scale
-/// - SELL: `amount` is shares to sell → maker_amount = amount * scale, taker_amount = (amount * price) * scale
-///
-/// The CLOB enforces precision limits on human-readable amounts (base_units / 10^6):
-/// - USDC amounts: max `MAX_PRECISION_TAKER` (2) decimal places
-/// - Share amounts: max `MAX_PRECISION_MAKER` (5) decimal places
-///
-/// Base unit granularity = 10^(6 - max_precision) to enforce the limit.
-pub fn compute_market_maker_taker_amounts(
-    price: Decimal,
-    amount: Decimal,
-    side: PolymarketOrderSide,
-) -> (Decimal, Decimal) {
-    let scale = Decimal::new(1_000_000, 0);
-    // USDC: max MAX_PRECISION_TAKER decimals → granularity = 10^(6 - 2) = 10^4
-    let usdc_granularity = Decimal::new(10i64.pow(6 - MAX_PRECISION_TAKER as u32), 0);
-    // Shares: max MAX_PRECISION_MAKER decimals → granularity = 10^(6 - 5) = 10^1
-    let share_granularity = Decimal::new(10i64.pow(6 - MAX_PRECISION_MAKER as u32), 0);
-    match side {
-        PolymarketOrderSide::Buy => {
-            // maker = USDC, taker = shares
-            let maker_amount = ((amount * scale) / usdc_granularity).trunc() * usdc_granularity;
-            let taker_amount =
-                ((amount / price * scale) / share_granularity).trunc() * share_granularity;
-            (maker_amount, taker_amount)
-        }
-        PolymarketOrderSide::Sell => {
-            // maker = shares, taker = USDC
-            let maker_amount = ((amount * scale) / share_granularity).trunc() * share_granularity;
-            let taker_amount =
-                ((amount * price * scale) / usdc_granularity).trunc() * usdc_granularity;
-            (maker_amount, taker_amount)
-        }
-    }
-}
-
 /// Calculates the market-crossing price by walking the order book.
 ///
 /// For BUY: walks asks (best-first), accumulates `size * price` until >= amount (USDC).
@@ -432,22 +361,6 @@ mod tests {
             "expected {expected}, was {total_f64}"
         );
         assert_eq!(balance.free, balance.total);
-    }
-
-    #[rstest]
-    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Buy, dec!(50_000_000), dec!(100_000_000))]
-    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Sell, dec!(100_000_000), dec!(50_000_000))]
-    #[case(dec!(0.75), dec!(200), PolymarketOrderSide::Buy, dec!(150_000_000), dec!(200_000_000))]
-    fn test_compute_maker_taker_amounts(
-        #[case] price: Decimal,
-        #[case] quantity: Decimal,
-        #[case] side: PolymarketOrderSide,
-        #[case] expected_maker: Decimal,
-        #[case] expected_taker: Decimal,
-    ) {
-        let (maker, taker) = compute_maker_taker_amounts(price, quantity, side);
-        assert_eq!(maker, expected_maker);
-        assert_eq!(taker, expected_taker);
     }
 
     #[rstest]
@@ -629,22 +542,6 @@ mod tests {
         let id_a = make_composite_trade_id("same-trade", "order-aaa");
         let id_b = make_composite_trade_id("same-trade", "order-bbb");
         assert_ne!(id_a, id_b);
-    }
-
-    #[rstest]
-    #[case(dec!(0.50), dec!(50), PolymarketOrderSide::Buy, dec!(50_000_000), dec!(100_000_000))]
-    #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Sell, dec!(100_000_000), dec!(50_000_000))]
-    #[case(dec!(0.75), dec!(150), PolymarketOrderSide::Buy, dec!(150_000_000), dec!(200_000_000))]
-    fn test_compute_market_maker_taker_amounts(
-        #[case] price: Decimal,
-        #[case] amount: Decimal,
-        #[case] side: PolymarketOrderSide,
-        #[case] expected_maker: Decimal,
-        #[case] expected_taker: Decimal,
-    ) {
-        let (maker, taker) = compute_market_maker_taker_amounts(price, amount, side);
-        assert_eq!(maker, expected_maker);
-        assert_eq!(taker, expected_taker);
     }
 
     #[rstest]

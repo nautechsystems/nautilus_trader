@@ -82,6 +82,7 @@ impl OrderSubmitter {
         post_only: bool,
         neg_risk: bool,
         expire_time: Option<UnixNanos>,
+        tick_decimals: u32,
     ) -> anyhow::Result<OrderResponse> {
         let poly_order_type = PolymarketOrderType::try_from(time_in_force)
             .map_err(|e| anyhow::anyhow!("Unsupported time in force: {e}"))?;
@@ -105,6 +106,7 @@ impl OrderSubmitter {
                 quantity.as_decimal(),
                 &expiration,
                 neg_risk,
+                tick_decimals,
             )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -139,6 +141,7 @@ impl OrderSubmitter {
         side: OrderSide,
         amount: Quantity,
         neg_risk: bool,
+        tick_decimals: u32,
     ) -> anyhow::Result<OrderResponse> {
         let poly_side = PolymarketOrderSide::try_from(side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
@@ -160,7 +163,14 @@ impl OrderSubmitter {
 
         let poly_order = self
             .order_builder
-            .build_market_order(token_id, poly_side, price, amount_dec, neg_risk)
+            .build_market_order(
+                token_id,
+                poly_side,
+                price,
+                amount_dec,
+                neg_risk,
+                tick_decimals,
+            )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
         let http_client = self.http_client.clone();
