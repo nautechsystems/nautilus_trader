@@ -158,7 +158,10 @@ def apply_inventory_skew_to_edges(
     total_skew_bps: Decimal,
 ) -> tuple[Decimal, Decimal]:
     """
-    Apply total inventory skew to bid/ask edge basis points.
+    Apply a signed quoted-FV shift to bid/ask edge basis points.
+
+    Positive skew moves our quoted market up: bid edge tightens and ask edge
+    widens by the same amount. Negative skew moves our quoted market down.
     """
     skew_abs = abs(total_skew_bps)
     if total_skew_bps > 0:

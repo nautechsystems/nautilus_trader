@@ -583,6 +583,9 @@ def refresh_quotes(  # noqa: C901
     skew_ctx = strategy._cached_inventory_skew(now_ns=now_ns, runtime_params=runtime_params)
     total_skew_bps = _to_decimal(skew_ctx.get("total_skew_bps", Decimal(0)))
 
+    # `total_skew_bps` is the signed quoted-FV adjustment relative to the
+    # reference anchor. Positive means quote richer / higher; negative means
+    # quote cheaper / lower.
     bid_edge1_eff_bps, ask_edge1_eff_bps = _apply_inventory_skew_to_edges(
         bid_edge_bps=_to_decimal(runtime_params["bid_edge1"]),
         ask_edge_bps=_to_decimal(runtime_params["ask_edge1"]),
