@@ -528,17 +528,10 @@ def _normalize_inventory_skew_adjustment(adjustment: Mapping[str, Any] | dict[st
         normalized["skew_bps_signed"] = legacy_skew
         normalized["inv_skew"] = legacy_skew
 
-    linear_offset_bps = _first_valid_float(normalized.get("linear_offset_bps"))
-    if linear_offset_bps is not None:
-        normalized["linear_offset_bps"] = linear_offset_bps
-
-    global_skew = _first_valid_float(normalized.get("inv_skew_global"))
-    if global_skew is not None:
-        normalized["inv_skew_global"] = global_skew
-
-    local_skew = _first_valid_float(normalized.get("inv_skew_local"))
-    if local_skew is not None:
-        normalized["inv_skew_local"] = local_skew
+    for key in ("linear_offset_bps", "inv_skew_global", "inv_skew_local"):
+        value = _first_valid_float(normalized.get(key))
+        if value is not None:
+            normalized[key] = value
 
     return normalized
 
