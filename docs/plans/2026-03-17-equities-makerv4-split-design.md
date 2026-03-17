@@ -14,7 +14,7 @@ Both variants must remain on the shared equities control plane:
 - shared `/equities` Fluxboard surface
 - shared deploy stack and readiness model
 
-No backward-compatibility path is required for `makerv4`; the new families become the only supported equities arb contract.
+No backward-compatibility path is required for the live equities `makerv4` control-plane contract; the new families become the only supported equities arb deploy/API/UI contract.
 
 ## Recommendation
 
@@ -23,12 +23,12 @@ Use two explicit strategy families with a shared equities-arb core:
 - `equities_make_take`
 - `equities_take_take`
 
-Keep them as separate strategy IDs, separate node configs, and separate runtime param sets, but make them read the same shared portfolio/book for asset-level risk. Do not add cross-strategy arbitration in this wave. If both variants on `AAPL` are live, both may trade as long as the shared asset-level risk gate permits it.
+Keep them as separate strategy IDs, separate node configs, and separate runtime param registries, but make them read the same shared portfolio/book for asset-level risk. Do not add cross-strategy arbitration in this wave. If both variants on `AAPL` are live, both may trade as long as the shared asset-level risk gate permits it.
 
 This gives the cleanest operator model:
 
 - the variant is visible in the strategy ID and family metadata
-- params can be tailored to the actual behavior instead of one overloaded schema
+- runtime params can stay explicitly separate for `make_take` and `take_take`
 - shared logic moves into reusable modules instead of remaining hidden behind `execution_mode`
 
 ## Naming
@@ -53,6 +53,16 @@ Recommended strategy metadata:
 - `strategy_version = "v1"`
 - `param_set = "equities_make_take"` / `"equities_take_take"`
 - `class = "equity_perp_make_take"` / `"equity_perp_take_take"`
+
+### Operator Params Profiles
+
+`/equities/params` stays one shared route, but the params contract should be separate for the two strategy families and keyed off the selected strategy in the operator dropdown:
+
+- `params_profile = "equities_make_take"` for a selected make-take row
+- `params_profile = "equities_take_take"` for a selected take-take row
+- `GET /api/v1/param-schema` and related Fluxboard schema caching must become strategy-aware, for example via a `strategy=<strategy_id>` selector, rather than assuming one page-global schema
+- row metadata still carries family-specific `param_set` / `strategy_family`
+- persisted Fluxboard `maker_v4` params preferences should migrate into the new split profiles
 
 ### Operator Labels
 
@@ -109,7 +119,7 @@ Strategy-local inventory ownership is not introduced in this split, and the spli
 Split the current `makerv4` code into:
 
 1. Shared equities-arb core under `systems/flux/flux/strategies/shared/equities_arb/`
-2. Thin family-specific wrappers under:
+2. Family-specific strategy modules under:
    - `systems/flux/flux/strategies/equities_make_take/`
    - `systems/flux/flux/strategies/equities_take_take/`
 
@@ -126,6 +136,11 @@ Family-specific responsibilities:
 - `make_take`: quote generation and quote lifecycle
 - `take_take`: outside-band opportunity detection and two-sided taker execution logic
 - family-specific runtime params and defaults
+
+Implementation note:
+
+- `make_take` can remain relatively thin after the shared-core extraction
+- `take_take` is expected to be a more substantial extraction because its current `execution_mode` behavior is interleaved into the `makerv4` state machine
 
 ## Fluxboard Design
 
@@ -146,6 +161,7 @@ Shared equities operator model:
 - same `/equities/balances`
 - same `/equities/trades`
 - no separate app surface for each family
+- params schema/profile switches by the selected strategy/family on the shared `/equities/params` page
 
 Params UX should expose:
 
@@ -154,6 +170,7 @@ Params UX should expose:
 - family-specific fields grouped after the common block
 - rows ordered in an operator-friendly sequence by symbol then variant
 - no local-inventory/local-risk ownership controls
+- migrated stored `maker_v4` params preferences into the new split params profiles
 
 ## Deploy And Portfolio Design
 

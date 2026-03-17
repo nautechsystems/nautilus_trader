@@ -5,7 +5,7 @@
 
 **Goal:** Replace the current single `makerv4` equities arb family with two explicit live strategy families, `equities_make_take` and `equities_take_take`, that can run concurrently per symbol while sharing the same equities portfolio/book and Fluxboard surface.
 
-**Architecture:** Extract the current shared `MakerV4` hedge, fee, quote-health, and observability behavior into a reusable equities-arb shared core, then implement two thin strategy families on top of it. Keep the equities deploy topology on the current one-strategy-per-node model for now, but update the control plane so two strategy IDs can exist for the same `portfolio_asset_id` and still roll into the same shared equities portfolio and `/equities` UI.
+**Architecture:** Extract the current shared `MakerV4` hedge, fee, quote-health, and observability behavior into a reusable equities-arb shared core, then implement two family-specific strategies on top of it. `equities_make_take` can stay relatively thin after extraction; `equities_take_take` is likely a more substantial extraction because its current behavior is interleaved into the `makerv4` state machine. Keep the equities deploy topology on the current one-strategy-per-node model for now, but update the control plane so two strategy IDs can exist for the same `portfolio_asset_id` and still roll into the same shared equities portfolio and `/equities` UI.
 
 **Tech Stack:** Python 3, Nautilus Trader strategies/runners, Flux strategy registry and API payload builders, Redis-backed params, equities deploy TOMLs and readiness checks, Fluxboard React/TypeScript signal and params surfaces, pytest, vitest.
 
@@ -17,13 +17,13 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Overall | not_started | main | none | `systems/flux/flux/strategies`, `systems/flux/flux/api`, `systems/flux/flux/runners/equities`, `deploy/equities`, `ops/scripts/deploy`, `fluxboard`, `tests`, `docs/plans` | `shared` | `shared` | none | not_run | Plan created |
 | Task 1: Lock Split Contract In Docs And Control-Plane Tests | not_started | unassigned | none | `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `fluxboard/docs/equities_contract.md`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/api` | `shared` | `shared` | none | not_run | Plan created |
-| Task 2: Extract Shared Equities-Arb Core From MakerV4 | not_started | unassigned | Task 1: Lock Split Contract In Docs And Control-Plane Tests | `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/makerv4`, `tests/unit_tests/flux/strategies/shared`, `tests/unit_tests/flux/strategies/makerv4` | `shared` | `shared` | none | not_run | Plan created |
+| Task 2: Extract Shared Equities-Arb Core From MakerV4 | not_started | unassigned | Task 1: Lock Split Contract In Docs And Control-Plane Tests | `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/makerv4`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared`, `tests/unit_tests/flux/strategies/makerv4`, `tests/unit_tests/examples/strategies` | `shared` | `shared` | none | not_run | Plan created |
 | Task 3: Add `equities_make_take` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_make_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_make_take`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
 | Task 4: Add `equities_take_take` Strategy Family | not_started | unassigned | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_take_take`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_take_take`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts | not_started | unassigned | Task 3: Add `equities_make_take` Strategy Family, Task 4: Add `equities_take_take` Strategy Family | `systems/flux/flux/api`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 6: Update Fluxboard To A Shared Equities-Arb Surface | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts | `fluxboard/components/domain/signal`, `fluxboard/config`, `fluxboard/types.ts`, `fluxboard/Params.tsx`, `fluxboard/stores.ts`, `fluxboard/tests/signal`, `fluxboard/__tests__`, `fluxboard/api.flux.test.ts` | `lanes/task-6-fluxboard` | `.worktrees/task-6-fluxboard` | none | not_run | Plan created |
-| Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts | `deploy/equities`, `deploy/equities/systemd`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/api/test_equities_profile_contract.py` | `lanes/task-7-deploy` | `.worktrees/task-7-deploy` | none | not_run | Plan created |
-| Task 8: Remove Legacy MakerV4 Equities Contract And Run Final Verification | not_started | unassigned | Task 6: Update Fluxboard To A Shared Equities-Arb Surface, Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | `systems/flux/flux/strategies`, `deploy/equities`, `fluxboard`, `tests`, `docs/plans` | `shared` | `shared` | none | not_run | Plan created |
+| Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | not_started | unassigned | Task 3: Add `equities_make_take` Strategy Family, Task 4: Add `equities_take_take` Strategy Family | `systems/flux/flux/api`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 6: Update Fluxboard To A Shared Equities-Arb Surface | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `fluxboard/api.ts`, `fluxboard/components/domain/signal`, `fluxboard/config`, `fluxboard/types.ts`, `fluxboard/Params.tsx`, `fluxboard/stores.ts`, `fluxboard/tests/signal`, `fluxboard/__tests__`, `fluxboard/api.flux.test.ts` | `lanes/task-6-fluxboard` | `.worktrees/task-6-fluxboard` | none | not_run | Plan created |
+| Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | not_started | unassigned | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `deploy/equities`, `deploy/equities/systemd`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/api/test_equities_profile_contract.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification | not_started | unassigned | Task 6: Update Fluxboard To A Shared Equities-Arb Surface, Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | `deploy/equities`, `fluxboard`, `tests`, `docs/plans` | `shared` | `shared` | none | not_run | Plan created |
 
 ---
 
@@ -35,16 +35,17 @@
 - Modify: `fluxboard/docs/equities_contract.md`
 - Modify: `deploy/equities/strategies/README.md`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_run_api.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_node.py`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`
 - Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
 
 **Dependencies:** `none`
 
-**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `fluxboard/docs/equities_contract.md`, `deploy/equities/strategies/README.md`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `fluxboard/docs/equities_contract.md`, `deploy/equities/strategies/README.md`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py -q`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q`
 
 **Step 1: Write the failing control-plane tests**
@@ -57,6 +58,7 @@ Add tests that require:
 - the new strategy-id suffixes resolve cleanly through the registry/run-node contract
 - the split preserves the existing RTH vs outside-RTH hedge semantics and deploy knobs
 - the split families do not reintroduce strategy-local inventory/risk ownership
+- `/equities/params` uses separate make-take and take-take params contracts selected from the operator strategy dropdown
 - `take_take` is pinned as a taker-on-both-venues family, not a renamed maker-hedge mode
 - the equities contract docs no longer describe one active `makerv4` row per stock
 
@@ -100,6 +102,7 @@ Document all of the following explicitly:
 - both share the same equities portfolio/book
 - the exact current RTH / outside-RTH hedge semantics are preserved in wave 1
 - local inventory/risk ownership knobs such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` do not survive into the split families
+- `/equities/params` uses separate params schemas for make-take and take-take selected from the strategy dropdown, not one blended contract
 - `take_take` is defined as a taker-on-both-venues strategy family
 - no cross-strategy arbitration is part of this wave
 
@@ -114,6 +117,7 @@ git add \
   fluxboard/docs/equities_contract.md \
   deploy/equities/strategies/README.md \
   tests/unit_tests/examples/strategies/test_equities_run_api.py \
+  tests/unit_tests/examples/strategies/test_equities_run_node.py \
   tests/unit_tests/examples/strategies/test_equities_run_portfolio.py \
   tests/unit_tests/examples/strategies/test_equities_stack_contract.py \
   tests/unit_tests/flux/api/test_equities_profile_contract.py
@@ -135,22 +139,26 @@ Mark Task 1 complete after the contract docs and failing/updated tests are commi
 - Create: `systems/flux/flux/strategies/shared/equities_arb/hedging.py`
 - Create: `systems/flux/flux/strategies/shared/equities_arb/observability.py`
 - Create: `systems/flux/flux/strategies/shared/equities_arb/reference_balances.py`
+- Modify: `systems/flux/flux/runners/equities/run_node.py`
+- Modify: `systems/flux/flux/runners/shared/profile_accounts.py`
 - Create: `tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py`
 - Modify: `systems/flux/flux/strategies/makerv4/instruments.py`
 - Modify: `systems/flux/flux/strategies/makerv4/strategy.py`
 - Modify: `systems/flux/flux/strategies/makerv4/managed_orders.py`
 - Modify: `systems/flux/flux/strategies/makerv4/publisher.py`
 - Modify: `systems/flux/flux/strategies/makerv4/reference_balances.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`
 - Modify: `tests/unit_tests/flux/strategies/makerv4/test_instruments.py`
 - Modify: `tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py`
 
 **Dependencies:** `Task 1: Lock Split Contract In Docs And Control-Plane Tests`
 
-**Write Scope:** `systems/flux/flux/strategies/shared/equities_arb`, `tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py`, `systems/flux/flux/strategies/makerv4/instruments.py`, `systems/flux/flux/strategies/makerv4/strategy.py`, `systems/flux/flux/strategies/makerv4/managed_orders.py`, `systems/flux/flux/strategies/makerv4/publisher.py`, `systems/flux/flux/strategies/makerv4/reference_balances.py`, `tests/unit_tests/flux/strategies/makerv4/test_instruments.py`, `tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py`
+**Write Scope:** `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py`, `systems/flux/flux/strategies/makerv4/instruments.py`, `systems/flux/flux/strategies/makerv4/strategy.py`, `systems/flux/flux/strategies/makerv4/managed_orders.py`, `systems/flux/flux/strategies/makerv4/publisher.py`, `systems/flux/flux/strategies/makerv4/reference_balances.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/flux/strategies/makerv4/test_instruments.py`, `tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py`
 
 **Verification Commands:**
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py -q`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py -q`
 
 **Step 1: Write failing shared-core tests**
 
@@ -183,6 +191,7 @@ Move the reusable pieces out of `makerv4`:
 - shared leg/quote snapshot assembly
 - session-aware hedge policy helpers
 - instrument mapping and reference-balance helpers used by the equities runner
+- runner and shared-profile-account imports moved off `flux.strategies.makerv4.*` onto the shared equities-arb seam
 
 Do not rename the live family yet. This task is only about isolating the reusable seam.
 
@@ -195,12 +204,16 @@ Expected: PASS with no behavior drift.
 ```bash
 git add \
   systems/flux/flux/strategies/shared/equities_arb \
+  systems/flux/flux/runners/equities/run_node.py \
+  systems/flux/flux/runners/shared/profile_accounts.py \
   tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py \
   systems/flux/flux/strategies/makerv4/instruments.py \
   systems/flux/flux/strategies/makerv4/strategy.py \
   systems/flux/flux/strategies/makerv4/managed_orders.py \
   systems/flux/flux/strategies/makerv4/publisher.py \
   systems/flux/flux/strategies/makerv4/reference_balances.py \
+  tests/unit_tests/examples/strategies/test_equities_run_node.py \
+  tests/unit_tests/examples/strategies/test_equities_run_portfolio.py \
   tests/unit_tests/flux/strategies/makerv4/test_instruments.py \
   tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py
 git commit -m "refactor: extract shared equities arb core"
@@ -245,7 +258,7 @@ Pin:
 
 Expected: FAIL because `equities_make_take` does not exist.
 
-**Step 3: Implement the thin family wrapper**
+**Step 3: Implement the relatively thin `make_take` family**
 
 Create `EquitiesMakeTakeStrategy` and config/runtime modules that:
 
@@ -313,7 +326,7 @@ Pin:
 
 Expected: FAIL because `equities_take_take` does not exist.
 
-**Step 3: Implement the thin family wrapper**
+**Step 3: Implement the extracted `take_take` family**
 
 Create `EquitiesTakeTakeStrategy` and config/runtime modules that:
 
@@ -321,6 +334,7 @@ Create `EquitiesTakeTakeStrategy` and config/runtime modules that:
 - expose take-take-specific params such as threshold and cooldown knobs
 - keep the current aggressive outside-band behavior and shared hedge path
 - implement a taker-on-both-venues execution model instead of reusing the maker quote loop
+- perform the non-trivial extraction currently hidden inside `makerv4.execution_mode` branches
 - omit `des_qty_local`, `max_qty_local`, `max_skew_bps_local`, and equivalent local-inventory controls
 
 **Step 4: Re-run the focused `take_take` tests**
@@ -343,36 +357,39 @@ git commit -m "feat: add equities take-take strategy family"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts
+### Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts
 
 **Files:**
 - Modify: `systems/flux/flux/api/app.py`
 - Modify: `systems/flux/flux/runners/equities/run_api.py`
 - Modify: `systems/flux/flux/runners/equities/run_bridge.py`
+- Modify: `systems/flux/flux/runners/equities/readiness.py`
 - Modify: `systems/flux/flux/api/_payloads_signals.py`
 - Modify: `fluxboard/types.ts`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_run_api.py`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_readiness.py`
 - Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
 - Modify: `tests/unit_tests/flux/api/test_payloads.py`
 
 **Dependencies:** `Task 3: Add \`equities_make_take\` Strategy Family`, `Task 4: Add \`equities_take_take\` Strategy Family`
 
-**Write Scope:** `systems/flux/flux/api/app.py`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/api/_payloads_signals.py`, `fluxboard/types.ts`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `tests/unit_tests/flux/api/test_payloads.py`
+**Write Scope:** `systems/flux/flux/api/app.py`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `systems/flux/flux/api/_payloads_signals.py`, `fluxboard/types.ts`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `tests/unit_tests/flux/api/test_payloads.py`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
 
 **Step 1: Write the failing API and payload tests**
 
 Require:
 
 - strategy metadata recognizes `aapl_tradexyz_make_take` and `aapl_tradexyz_take_take`
-- the params API can serve genuinely different `params_schema`, `params_defaults`, and `param_set` contracts for the two families
+- the params API can serve separate make-take and take-take `params_schema`, `params_defaults`, and `param_set` contracts keyed off the selected strategy/family, for example via `GET /api/v1/param-schema?strategy=<strategy_id>`, rather than a single global equities schema
 - signal payloads expose one shared equities-arb operator contract
 - fee assumptions and pricing fields remain visible for both variants
 - family-specific rows still share common leg/quote-health semantics
 - bridge allowlist and explicit strategy-id resolution accept both variants cleanly
+- readiness quote-snapshot parsing works against the new shared signal contract instead of hard-coding `payload["maker_v4"]`
 
 **Step 2: Run tests to verify failure**
 
@@ -382,10 +399,11 @@ Expected: FAIL because the API currently recognizes `maker_v4`-specific semantic
 
 Implement:
 
-- family-aware params schema/default selection in `flux.api.app`
+- strategy-aware params schema/default selection in `flux.api.app` and `run_api.py`, exposed through an explicit strategy-scoped selector rather than only a page-global profile query
 - new strategy-id-to-spec resolution
 - family-aware metadata emission
 - shared equities-arb payload shape replacing the hard-coded MakerV4 contract
+- readiness payload parsing updated in the same task so the API/signal contract change cannot break live gating between commits
 
 **Step 4: Re-run the focused API suite**
 
@@ -398,10 +416,12 @@ git add \
   systems/flux/flux/api/app.py \
   systems/flux/flux/runners/equities/run_api.py \
   systems/flux/flux/runners/equities/run_bridge.py \
+  systems/flux/flux/runners/equities/readiness.py \
   systems/flux/flux/api/_payloads_signals.py \
   fluxboard/types.ts \
   tests/unit_tests/examples/strategies/test_equities_run_api.py \
   tests/unit_tests/examples/strategies/test_equities_run_bridge.py \
+  tests/unit_tests/examples/strategies/test_equities_readiness.py \
   tests/unit_tests/flux/api/test_equities_profile_contract.py \
   tests/unit_tests/flux/api/test_payloads.py
 git commit -m "feat: add dual equities arb api contract"
@@ -412,6 +432,7 @@ git commit -m "feat: add dual equities arb api contract"
 ### Task 6: Update Fluxboard To A Shared Equities-Arb Surface
 
 **Files:**
+- Modify: `fluxboard/api.ts`
 - Create: `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`
 - Modify: `fluxboard/components/domain/signal/SignalTable.tsx`
 - Modify: `fluxboard/Params.tsx`
@@ -426,9 +447,9 @@ git commit -m "feat: add dual equities arb api contract"
 - Modify: `fluxboard/__tests__/Params.short-headers.test.tsx`
 - Modify: `fluxboard/__tests__/config/paramsProfiles.test.ts`
 
-**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts`
+**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts`
 
-**Write Scope:** `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/panels/ParamsPanel.tsx`, `fluxboard/stores.ts`, `fluxboard/api.flux.test.ts`, `fluxboard/tests/signal/EquitiesArbSignalTable.test.tsx`, `fluxboard/tests/signal/MakerV4SignalTable.test.tsx`, `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`, `fluxboard/__tests__/components/ParamsProfileColumns.test.tsx`, `fluxboard/__tests__/Params.short-headers.test.tsx`, `fluxboard/__tests__/config/paramsProfiles.test.ts`
+**Write Scope:** `fluxboard/api.ts`, `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/panels/ParamsPanel.tsx`, `fluxboard/stores.ts`, `fluxboard/api.flux.test.ts`, `fluxboard/tests/signal/EquitiesArbSignalTable.test.tsx`, `fluxboard/tests/signal/MakerV4SignalTable.test.tsx`, `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`, `fluxboard/__tests__/components/ParamsProfileColumns.test.tsx`, `fluxboard/__tests__/Params.short-headers.test.tsx`, `fluxboard/__tests__/config/paramsProfiles.test.ts`
 
 **Verification Commands:**
 - `pnpm --dir fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx api.flux.test.ts`
@@ -442,10 +463,11 @@ Require:
 - rows include a visible variant label
 - the family filter and params profile logic no longer assume `maker_v4`
 - rows sort/group by symbol then variant
-- the params route shows common controls first, then session/shared-risk controls, then family-specific controls
+- the params route uses separate make-take and take-take schemas chosen from the selected strategy/family in the dropdown
+- the params route shows common controls first, then session/shared-risk controls, then family-specific controls for the active family
 - local inventory/risk controls such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` are absent from the split equities profiles
 - API client metadata normalization still recognizes the split families and param sets
-- persisted UI state and params selection logic handle the split families cleanly
+- persisted UI state migrates prior `maker_v4` prefs onto the new split profiles cleanly, with an explicit params-store version bump and migration path
 
 **Step 2: Run tests to verify failure**
 
@@ -458,7 +480,8 @@ Build a shared table that:
 - reuses the existing leg and operator affordances where possible
 - adds explicit variant labeling
 - keeps fee and hedge-policy observability visible for both variants
-- updates Params profile routing, canonical ordering, and persisted store state for the shared `/equities/params` workflow
+- updates Params profile routing, strategy-driven schema fetching/caching, canonical ordering, and persisted store migration for the shared `/equities/params` workflow
+- bumps the persisted params-store version and maps legacy `maker_v4` active-profile/column-pref state onto the new split profiles
 
 **Step 4: Re-run the focused Fluxboard suite**
 
@@ -468,6 +491,7 @@ Expected: PASS.
 
 ```bash
 git add \
+  fluxboard/api.ts \
   fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx \
   fluxboard/components/domain/signal/SignalTable.tsx \
   fluxboard/Params.tsx \
@@ -504,7 +528,7 @@ git commit -m "feat: add shared equities arb fluxboard surface"
 - Modify: `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`
 - Modify: `tests/unit_tests/examples/strategies/test_equities_readiness.py`
 
-**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Params, And Signal Payload Contracts`
+**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts`
 
 **Write Scope:** `deploy/equities/equities.live.toml`, `deploy/equities/README.md`, `deploy/equities/systemd/flux-equities.target`, `deploy/equities/systemd/flux-pulse.sudoers`, `deploy/equities/strategies/equities.strategy.template.toml`, `deploy/equities/strategies/*.toml`, `deploy/equities/strategies/README.md`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py`
 
@@ -566,27 +590,22 @@ git commit -m "feat: add dual-strategy equities deploy contract"
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
 
-### Task 8: Remove Legacy MakerV4 Equities Contract And Run Final Verification
+### Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification
 
 **Files:**
-- Modify: `systems/flux/flux/strategies/makerv4/__init__.py`
-- Modify: `systems/flux/flux/strategies/makerv4/constants.py`
-- Modify: `systems/flux/flux/strategies/__init__.py`
-- Modify: `systems/flux/flux/strategies/registry.py`
 - Modify: `deploy/equities/equities.live.toml`
 - Modify: `deploy/equities/strategies/*.toml`
 - Modify: `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`
 - Modify: `fluxboard/docs/equities_contract.md`
 - Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
 - Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
-- Modify: `tests/unit_tests/flux/strategies/makerv4/test_observability_and_exports.py`
 
 **Dependencies:** `Task 6: Update Fluxboard To A Shared Equities-Arb Surface`, `Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset`
 
-**Write Scope:** `systems/flux/flux/strategies`, `deploy/equities`, `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `tests`
+**Write Scope:** `deploy/equities`, `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `tests`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_observability_and_exports.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_make_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_make_take/test_strategy.py tests/unit_tests/flux/strategies/equities_take_take/test_runtime_params.py tests/unit_tests/flux/strategies/equities_take_take/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
 - `pnpm --dir fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts`
 - `git diff --check`
 
@@ -610,11 +629,10 @@ Clean up:
 
 - active deploy references
 - live docs
-- stale family-specific assumptions that are no longer exercised by equities
-- registry/export assumptions that still treat `makerv4` as the active equities family
+- stale family-specific assumptions that are no longer exercised by active equities control-plane paths
 - the dedicated MakerV4 Fluxboard surface if it is no longer used by any active route
 
-Keep any generic shared code still used by the new families.
+Do not delete dormant/internal `makerv4` strategy package code, registry identity, or compatibility tests in this wave unless they are proven unused after the shared-core extraction. The requirement here is to remove `makerv4` from active equities deploy/API/UI paths, not to force repo-wide historical cleanup.
 
 **Step 4: Re-run the final verification bundle**
 
@@ -624,7 +642,6 @@ Expected: PASS.
 
 ```bash
 git add \
-  systems/flux/flux/strategies \
   deploy/equities \
   fluxboard/components/domain/signal/MakerV4SignalTable.tsx \
   fluxboard/docs/equities_contract.md \
