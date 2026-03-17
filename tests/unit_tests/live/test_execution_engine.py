@@ -1629,6 +1629,23 @@ class TestLiveExecutionEngine:
             price=AUDUSD_SIM.make_price("1.00000"),
         )
         self.cache.add_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_submitted(
+                cached_order,
+                account_id=self.client.account_id,
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_accepted(
+                cached_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-CACHED-ORDER"),
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
 
         order_commands = []
 
@@ -2068,6 +2085,132 @@ class TestLiveExecutionEngine:
         assert len(position_reports) == 1
         assert position_reports[0].signed_decimal_qty == Decimal("100")
         assert position_reports[0].ts_last == 20
+
+    @pytest.mark.asyncio
+    async def test_generate_startup_mass_status_synthesizes_flat_report_for_empty_netting_query(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        netting_client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=self.client.id,
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=self.instrument_provider,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+
+        netting_client.generate_order_status_reports = AsyncMock(return_value=[])
+        netting_client.generate_fill_reports = AsyncMock(return_value=[])
+        netting_client.generate_position_status_reports = AsyncMock(return_value=[])
+
+        mass_status = await self.exec_engine._generate_startup_mass_status(netting_client, 60)
+
+        assert mass_status is not None
+        position_reports = mass_status.position_reports[AUDUSD_SIM.id]
+        assert len(position_reports) == 1
+        assert position_reports[0].position_side == PositionSide.FLAT
+        assert position_reports[0].signed_decimal_qty == Decimal("0")
+        assert position_reports[0].venue_position_id is None
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_follow_up_synthesizes_flat_once_per_instrument(
+        self,
+    ):
+        requested_position_reports: list[InstrumentId | None] = []
+        reconciled_mass_statuses: list[ExecutionMassStatus] = []
+        netting_client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=self.client.id,
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=self.instrument_provider,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+
+        def _add_open_position(instrument, *, suffix: str):
+            order = self.order_factory.market(
+                instrument_id=instrument.id,
+                order_side=OrderSide.BUY,
+                quantity=instrument.make_qty(100_000),
+            )
+            self.cache.add_order(order)
+            order.apply(TestEventStubs.order_submitted(order, ts_event=0))
+            self.cache.update_order(order)
+            order.apply(
+                TestEventStubs.order_accepted(
+                    order,
+                    account_id=netting_client.account_id,
+                    venue_order_id=VenueOrderId(f"V-{suffix}"),
+                    ts_event=0,
+                ),
+            )
+            self.cache.update_order(order)
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=instrument,
+                position_id=PositionId(f"P-{suffix}"),
+                trade_id=TradeId(f"T-{suffix}"),
+                ts_event=0,
+            )
+            order.apply(fill)
+            self.cache.update_order(order)
+            self.cache.add_position(Position(instrument=instrument, fill=fill), OmsType.NETTING)
+
+        _add_open_position(AUDUSD_SIM, suffix="AUD-1")
+        _add_open_position(AUDUSD_SIM, suffix="AUD-2")
+
+        async def _unexpected_generate_mass_status(_lookback_mins):
+            raise AssertionError("full generate_mass_status should not be used for scoped recon")
+
+        async def _generate_order_status_reports(_command):
+            return []
+
+        async def _generate_fill_reports(_command):
+            return []
+
+        async def _generate_position_status_reports(command):
+            requested_position_reports.append(command.instrument_id)
+            return []
+
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        original_clients = dict(self.exec_engine._clients)
+
+        netting_client.generate_mass_status = _unexpected_generate_mass_status
+        netting_client.generate_order_status_reports = _generate_order_status_reports
+        netting_client.generate_fill_reports = _generate_fill_reports
+        netting_client.generate_position_status_reports = _generate_position_status_reports
+        self.exec_engine._clients.clear()
+        self.exec_engine._clients[netting_client.id] = netting_client
+        self.exec_engine._reconcile_execution_mass_status = (
+            lambda mass_status, allow_startup_external_cleanup=False: (
+                reconciled_mass_statuses.append(mass_status) or True
+            )
+        )
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await self.exec_engine.reconcile_execution_state(timeout_secs=0.1)
+        finally:
+            self.exec_engine._clients.clear()
+            self.exec_engine._clients.update(original_clients)
+
+        assert result is True
+        assert requested_position_reports == [AUDUSD_SIM.id]
+        assert len(reconciled_mass_statuses) == 1
+        position_reports = reconciled_mass_statuses[0].position_reports[AUDUSD_SIM.id]
+        assert len(position_reports) == 1
+        assert position_reports[0].instrument_id == AUDUSD_SIM.id
+        assert position_reports[0].position_side == PositionSide.FLAT
+        assert position_reports[0].signed_decimal_qty == Decimal("0")
 
     @pytest.mark.asyncio
     async def test_generate_startup_mass_status_keeps_nonzero_netting_report_when_newer_flat_duplicate_exists(

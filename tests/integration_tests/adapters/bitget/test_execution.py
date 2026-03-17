@@ -308,6 +308,26 @@ async def test_query_account_refreshes_account_state() -> None:
     assert refreshed == ["account"]
 
 
+@pytest.mark.asyncio
+async def test_update_account_state_skips_when_http_client_lacks_request_account_state() -> None:
+    warnings: list[str] = []
+    generated: list[object] = []
+
+    dummy = SimpleNamespace(
+        _http_client=SimpleNamespace(),
+        account_id="BITGET-001",
+        _log=SimpleNamespace(warning=lambda message, *_args, **_kwargs: warnings.append(message)),
+        generate_account_state=lambda **kwargs: generated.append(kwargs),
+    )
+
+    await BitgetExecutionClient._update_account_state(dummy)  # type: ignore[arg-type]
+
+    assert generated == []
+    assert warnings == [
+        "Bitget HTTP client does not expose request_account_state; skipping explicit startup account refresh",
+    ]
+
+
 def test_generate_mass_status_uses_live_execution_client_default() -> None:
     assert BitgetExecutionClient.generate_mass_status is LiveExecutionClient.generate_mass_status
 

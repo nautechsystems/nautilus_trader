@@ -325,7 +325,15 @@ class BitgetExecutionClient(LiveExecutionClient):
         )
 
     async def _update_account_state(self) -> None:
-        pyo3_account_state = await self._http_client.request_account_state(self.account_id)
+        request_account_state = getattr(self._http_client, "request_account_state", None)
+        if request_account_state is None:
+            self._log.warning(
+                "Bitget HTTP client does not expose request_account_state; "
+                "skipping explicit startup account refresh",
+            )
+            return
+
+        pyo3_account_state = await request_account_state(self.account_id)
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
         self.generate_account_state(

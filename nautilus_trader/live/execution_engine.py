@@ -65,6 +65,7 @@ from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
@@ -1980,9 +1981,12 @@ class LiveExecutionEngine(ExecutionEngine):
                     if use_open_orders_only
                     else []
                 )
-                position_reports = self._normalize_netting_position_reports(
+                position_reports = self._normalize_startup_position_reports_for_instrument(
+                    client=client,
+                    instrument_id=instrument_id,
                     reports=cast("list[PositionStatusReport]", reports[2]),
                     log_prefix="Startup position report normalization",
+                    ts_ns=self._clock.timestamp_ns(),
                 )
 
                 mass_status.add_order_reports(
@@ -2041,6 +2045,69 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.BLUE,
             )
         return collapsed_reports
+
+    def _startup_synthetic_flat_position_report(
+        self,
+        *,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+        ts_ns: int,
+        log_prefix: str,
+    ) -> PositionStatusReport | None:
+        if client.oms_type != OmsType.NETTING:
+            return None
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            instrument_provider = getattr(client, "_instrument_provider", None)
+            if instrument_provider is not None:
+                instrument = instrument_provider.find(instrument_id)
+
+        if instrument is None:
+            self._log.warning(
+                f"{log_prefix}: position query returned no reports for {instrument_id}, "
+                "but the instrument is unavailable so a synthetic flat report cannot be created",
+            )
+            return None
+
+        self._log.info(
+            f"{log_prefix}: position query returned no reports for {instrument_id}; "
+            "synthesizing FLAT PositionStatusReport for NETTING reconciliation",
+            LogColor.BLUE,
+        )
+        return PositionStatusReport(
+            account_id=client.account_id,
+            instrument_id=instrument_id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(instrument.size_precision),
+            report_id=UUID4(),
+            ts_last=ts_ns,
+            ts_init=ts_ns,
+        )
+
+    def _normalize_startup_position_reports_for_instrument(
+        self,
+        *,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+        reports: list[PositionStatusReport],
+        log_prefix: str,
+        ts_ns: int,
+    ) -> list[PositionStatusReport]:
+        normalized_reports = self._normalize_netting_position_reports(
+            reports=reports,
+            log_prefix=log_prefix,
+        )
+        if normalized_reports:
+            return normalized_reports
+
+        synthetic_report = self._startup_synthetic_flat_position_report(
+            client=client,
+            instrument_id=instrument_id,
+            ts_ns=ts_ns,
+            log_prefix=log_prefix,
+        )
+        return [synthetic_report] if synthetic_report is not None else []
 
     async def reconcile_execution_state(
         self,
@@ -2137,7 +2204,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 client = self._clients[client_id]
 
                 # Check internal and external position reconciliation
-                report_tasks: list[asyncio.Task] = []
+                pending_position_commands: dict[InstrumentId, GeneratePositionStatusReports] = {}
 
                 # For routing brokers, venue may differ from instrument venue (e.g., IB client venue
                 # vs NYSE instrument venue), so filter by account_id instead of venue
@@ -2157,17 +2224,28 @@ class LiveExecutionEngine(ExecutionEngine):
                         )
                         continue  # Already reconciled
 
+                    if instrument_id in pending_position_commands:
+                        self._log.debug(
+                            f"Position {instrument_id} for {client_id} already queued for "
+                            "startup follow-up reconciliation",
+                        )
+                        continue
+
                     self._log.info(f"{position} pending reconciliation")
-                    position_status_command = GeneratePositionStatusReports(
+                    pending_position_commands[instrument_id] = GeneratePositionStatusReports(
                         instrument_id=instrument_id,
                         start=None,
                         end=None,
                         command_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )
-                    report_tasks.append(
+                report_tasks = [
+                    (
+                        instrument_id,
                         client.generate_position_status_reports(position_status_command),
                     )
+                    for instrument_id, position_status_command in pending_position_commands.items()
+                ]
 
                 if report_tasks:
                     # Reconcile specific internal open positions
@@ -2183,7 +2261,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     try:
                         position_report_results = await asyncio.wait_for(
                             asyncio.gather(
-                                *report_tasks,
+                                *(task for _, task in report_tasks),
                                 return_exceptions=True,
                             ),
                             timeout=position_reports_timeout,
@@ -2194,7 +2272,11 @@ class LiveExecutionEngine(ExecutionEngine):
                         )
                         return False
 
-                    for task_result_or_exception in position_report_results:
+                    for (instrument_id, _), task_result_or_exception in zip(
+                        report_tasks,
+                        position_report_results,
+                        strict=False,
+                    ):
                         if isinstance(task_result_or_exception, Exception):
                             self._log.error(
                                 f"Failed to generate position status reports: {task_result_or_exception}",
@@ -2203,6 +2285,13 @@ class LiveExecutionEngine(ExecutionEngine):
                             continue
 
                         task_result = cast("list[PositionStatusReport]", task_result_or_exception)
+                        task_result = self._normalize_startup_position_reports_for_instrument(
+                            client=client,
+                            instrument_id=instrument_id,
+                            reports=task_result,
+                            log_prefix="Startup follow-up position query",
+                            ts_ns=self._clock.timestamp_ns(),
+                        )
                         for report in task_result:
                             position_result = self._reconcile_position_report(
                                 report,
