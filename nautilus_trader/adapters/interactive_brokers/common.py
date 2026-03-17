@@ -309,7 +309,8 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
         """
         if not isinstance(contract_details.contract, IBContract):
-            contract_details.contract = IBContract(**contract_details.contract.__dict__)
+            contract_dict = contract_details.contract.__dict__.copy()
+            contract_details.contract = IBContract(**contract_dict)
 
         d = contract_details.__dict__.copy()
         if "underConid" in d:

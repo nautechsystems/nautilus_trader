@@ -19,6 +19,13 @@ import pytest
 from ibapi.contract import ContractDetails
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
@@ -228,6 +235,99 @@ async def test_bag_contract_venue_determination(instrument_provider):
     # Assert
     assert venue_smart == "CME"  # Should use primaryExchange when exchange is SMART
     assert venue_direct == "ARCA"  # Should use exchange directly
+
+
+@pytest.mark.asyncio
+async def test_determine_venue_from_contract_opt_smart_uses_symbol_to_mic_venue(ib_client):
+    """
+    When _symbol_to_mic_venue is configured, OPT contract with exchange SMART returns
+    the symbol-specific MIC venue (e.g. SPX -> XCBO).
+    """
+    from nautilus_trader.common.component import LiveClock
+
+    config = InteractiveBrokersInstrumentProviderConfig(
+        symbol_to_mic_venue={"SPX": "XCBO"},
+    )
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=config,
+    )
+    contract = IBContract(
+        secType="OPT",
+        symbol="SPX",
+        exchange="SMART",
+        localSymbol="SPXW  260120P06835000",
+        currency="USD",
+    )
+    venue = provider.determine_venue_from_contract(contract)
+    assert venue == "XCBO"
+
+
+@pytest.mark.asyncio
+async def test_determine_venue_from_contract_opt_smart_uses_first_non_smart_from_details(
+    instrument_provider,
+):
+    """
+    When OPT has exchange SMART and no primaryExchange, passing contract_details with
+    validExchanges (e.g. SMART,CBOE) yields first non-SMART as exchange, then venue CBOE
+    when convert_exchange_to_mic_venue is False.
+    """
+    contract = IBContract(
+        secType="OPT",
+        symbol="SPX",
+        exchange="SMART",
+        localSymbol="SPXW  260120P06835000",
+        currency="USD",
+    )
+    details = IBContractDetails(
+        contract=contract,
+        validExchanges="SMART,CBOE",
+        minTick=0.01,
+    )
+    venue = instrument_provider.determine_venue_from_contract(
+        contract,
+        contract_details=details,
+    )
+    assert venue == "CBOE"
+
+
+@pytest.mark.asyncio
+async def test_determine_venue_from_contract_opt_smart_maps_to_mic_when_convert_enabled(
+    ib_client,
+):
+    """
+    When convert_exchange_to_mic_venue is True and OPT SMART gets exchange from
+    validExchanges (first non-SMART), venue is mapped to MIC via VENUE_MEMBERS (e.g.
+    CBOE -> XCBO).
+    """
+    from nautilus_trader.common.component import LiveClock
+
+    config = InteractiveBrokersInstrumentProviderConfig(
+        convert_exchange_to_mic_venue=True,
+    )
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=config,
+    )
+    contract = IBContract(
+        secType="OPT",
+        symbol="SPX",
+        exchange="SMART",
+        localSymbol="SPXW  260120P06835000",
+        currency="USD",
+    )
+    details = IBContractDetails(
+        contract=contract,
+        validExchanges="SMART,CBOE",
+        minTick=0.01,
+    )
+    venue = provider.determine_venue_from_contract(
+        contract,
+        contract_details=details,
+    )
+    assert venue == "XCBO"
 
 
 @pytest.mark.asyncio

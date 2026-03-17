@@ -317,8 +317,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             contract_details = await self.get_contract_details(contract)
             if contract_details:
-                full_contract = contract_details[0].contract
-                venue = self.determine_venue_from_contract(full_contract)
+                first_detail = IBContractDetails.from_contract_details(contract_details[0])
+                venue = self.determine_venue_from_contract(
+                    first_detail.contract,
+                    contract_details=first_detail,
+                )
         else:
             self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
             return None
@@ -696,15 +699,24 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         return option_details
 
-    def determine_venue_from_contract(self, contract: IBContract) -> str:  # noqa: C901
+    def determine_venue_from_contract(  # noqa: C901
+        self,
+        contract: IBContract,
+        contract_details: IBContractDetails | None = None,
+    ) -> str:
         """
         Determine the venue for a contract using the instrument provider configuration
-        logic.
+        logic. For OPT contracts with exchange SMART we avoid using SMART as the final
+        venue when possible: prefer _symbol_to_mic_venue, then a non-SMART exchange
+        from primaryExchange, contract_details.validExchanges, or cached details.
 
         Parameters
         ----------
         contract : IBContract
             The contract to determine the venue for.
+        contract_details : IBContractDetails | None, optional
+            When provided (e.g. from get_contract_details), used to resolve a
+            non-SMART exchange from validExchanges for OPT contracts.
 
         Returns
         -------
@@ -718,29 +730,53 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         if contract.secType == "CMDTY":
             return "IBCMDTY"
 
-        # Use the exchange from the contract
-        if contract.exchange == "SMART" and contract.primaryExchange:
-            exchange = contract.primaryExchange
-        else:
-            exchange = contract.exchange
         venue = None
 
+        # 1) Prefer symbol-specific MIC venue when configured (most precise for options)
+        if self._symbol_to_mic_venue:
+            for symbol_prefix, symbol_venue in self._symbol_to_mic_venue.items():
+                if contract.symbol.startswith(symbol_prefix):
+                    venue = symbol_venue
+                    break
+
+        if venue:
+            return venue
+
+        # 2) Resolve exchange: for OPT with SMART use non-SMART source when available
+        if (
+            contract.exchange == "SMART"
+            and contract.primaryExchange
+            and contract.primaryExchange != "SMART"
+        ):
+            exchange = contract.primaryExchange
+        elif contract.exchange != "SMART":
+            exchange = contract.exchange
+        else:
+            # OPT or other SMART: try to get a non-SMART exchange from validExchanges
+            exchange = contract.exchange
+            valid_exchanges_str = None
+
+            if contract_details and contract_details.validExchanges:
+                valid_exchanges_str = contract_details.validExchanges
+            elif contract.secType == "OPT" and contract.conId:
+                instrument_id = self.contract_id_to_instrument_id.get(contract.conId)
+                details = self.contract_details.get(instrument_id) if instrument_id else None
+                if details:
+                    valid_exchanges_str = details.validExchanges or ""
+            if valid_exchanges_str:
+                parts = [p.strip() for p in valid_exchanges_str.split(",") if p.strip()]
+                chosen = next((p for p in parts if p != "SMART"), parts[0] if parts else None)
+                if chosen:
+                    exchange = chosen
+
+        # 3) Map exchange to MIC venue when conversion is enabled
         if self._convert_exchange_to_mic_venue:
-            # Check symbol-specific venue mapping first
-            if self._symbol_to_mic_venue:
-                for symbol_prefix, symbol_venue in self._symbol_to_mic_venue.items():
-                    if contract.symbol.startswith(symbol_prefix):
-                        venue = symbol_venue
-                        break
+            for venue_member, exchanges in VENUE_MEMBERS.items():
+                if exchange in exchanges:
+                    venue = venue_member
+                    break
 
-            # If no symbol-specific mapping found, use VENUE_MEMBERS mapping
-            if not venue:
-                for venue_member, exchanges in VENUE_MEMBERS.items():
-                    if exchange in exchanges:
-                        venue = venue_member
-                        break
-
-        # Fall back to using the exchange as venue
+        # 4) Fall back to exchange as venue (SMART only when no non-SMART source found)
         if not venue:
             venue = exchange
 
