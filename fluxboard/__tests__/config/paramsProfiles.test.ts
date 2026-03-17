@@ -49,9 +49,20 @@ describe('paramsProfiles', () => {
 
     expect(
       deriveStrategyProfile({
-        hot_params: ['qty', 'bid_edge1', 'ask_edge1', 'strategy_take_enabled'],
+        hot_params: ['qty', 'bid_edge1', 'ask_edge1', 'execution_mode'],
       })
     ).toBe('maker_v3');
+
+    expect(
+      deriveStrategyProfile({
+        params: {
+          qty: '1',
+          instant_hedge_enabled: '1',
+          execution_mode: 'maker_hedge',
+          hl_taker_fee_bps: '0',
+        },
+      })
+    ).toBe('maker_v4');
   });
 
   it('builds profile-priority order and appends remaining schema keys', () => {
@@ -209,47 +220,152 @@ describe('paramsProfiles', () => {
     expect(index('hedge_reduce_only')).toBeLessThan(index('hedge_touch_at_max_qty'));
   });
 
-  it('orders maker_v4 hedge and fee controls ahead of shared quote controls', () => {
+  it('hides maker_v4 params that do not affect live equities behavior', () => {
     const schema = {
       params: {
         bot_on: { key: 'bot_on' },
+        max_age_ms: { key: 'max_age_ms' },
+        execution_mode: { key: 'execution_mode' },
+        qty: { key: 'qty' },
+        bid_edge1: { key: 'bid_edge1' },
+        max_skew_bps_global: { key: 'max_skew_bps_global' },
+        distance1: { key: 'distance1' },
+        n_orders2: { key: 'n_orders2' },
+        bid_edge2: { key: 'bid_edge2' },
+        order_reject_alert_after_count: { key: 'order_reject_alert_after_count' },
+        pending_cancel_grace_ms: { key: 'pending_cancel_grace_ms' },
+        quote_liveness_stall_after_ms: { key: 'quote_liveness_stall_after_ms' },
+        quote_fail_critical_after_count: { key: 'quote_fail_critical_after_count' },
+      },
+      deprecated: {},
+    } as any;
+
+    expect(getProfileHiddenKeys('maker_v4')).toEqual(
+      expect.arrayContaining([
+        'distance1',
+        'n_orders2',
+        'bid_edge2',
+        'order_reject_alert_after_count',
+        'pending_cancel_grace_ms',
+        'quote_liveness_stall_after_ms',
+        'quote_fail_critical_after_count',
+      ])
+    );
+    expect(buildProfileDefaultColumnOrder(schema, 'maker_v4')).toEqual([
+      'bot_on',
+      'max_age_ms',
+      'execution_mode',
+      'qty',
+      'bid_edge1',
+      'max_skew_bps_global',
+    ]);
+  });
+
+  it('orders maker_v4 params in an operator-centric live equities layout', () => {
+    const schema = {
+      params: {
+        bot_on: { key: 'bot_on' },
+        max_age_ms: { key: 'max_age_ms' },
+        execution_mode: { key: 'execution_mode' },
         instant_hedge_enabled: { key: 'instant_hedge_enabled' },
+        qty: { key: 'qty' },
+        bid_edge1: { key: 'bid_edge1' },
+        ask_edge1: { key: 'ask_edge1' },
+        place_edge1: { key: 'place_edge1' },
+        n_orders1: { key: 'n_orders1' },
+        des_qty_global: { key: 'des_qty_global' },
+        max_qty_global: { key: 'max_qty_global' },
+        max_skew_bps_global: { key: 'max_skew_bps_global' },
+        des_qty_local: { key: 'des_qty_local' },
+        max_qty_local: { key: 'max_qty_local' },
+        max_skew_bps_local: { key: 'max_skew_bps_local' },
+        linear_offset_bps: { key: 'linear_offset_bps' },
         hedge_style: { key: 'hedge_style' },
         hedge_ioc_cross_mid_bps: { key: 'hedge_ioc_cross_mid_bps' },
         hedge_ioc_max_cross_bps: { key: 'hedge_ioc_max_cross_bps' },
+        ibkr_fee_plan: { key: 'ibkr_fee_plan' },
+        ibkr_fee_min_usd: { key: 'ibkr_fee_min_usd' },
+        hl_taker_fee_bps: { key: 'hl_taker_fee_bps' },
+        hl_maker_fee_bps: { key: 'hl_maker_fee_bps' },
+        assumed_hedge_fee_bps: { key: 'assumed_hedge_fee_bps' },
         maker_fee_source: { key: 'maker_fee_source' },
         hedge_fee_source: { key: 'hedge_fee_source' },
-        assumed_hedge_fee_bps: { key: 'assumed_hedge_fee_bps' },
-        qty: { key: 'qty' },
-        bid_edge1: { key: 'bid_edge1' },
+        hedge_fee_plan: { key: 'hedge_fee_plan' },
+        bid_edge_take_bps: { key: 'bid_edge_take_bps' },
+        ask_edge_take_bps: { key: 'ask_edge_take_bps' },
+        take_cooldown_ms: { key: 'take_cooldown_ms' },
       },
       deprecated: {},
     } as any;
 
     expect(buildProfileDefaultColumnOrder(schema, 'maker_v4')).toEqual([
       'bot_on',
+      'max_age_ms',
+      'execution_mode',
       'instant_hedge_enabled',
+      'qty',
+      'bid_edge1',
+      'ask_edge1',
+      'place_edge1',
+      'n_orders1',
+      'des_qty_global',
+      'max_qty_global',
+      'max_skew_bps_global',
+      'des_qty_local',
+      'max_qty_local',
+      'max_skew_bps_local',
+      'linear_offset_bps',
       'hedge_style',
       'hedge_ioc_cross_mid_bps',
       'hedge_ioc_max_cross_bps',
+      'ibkr_fee_plan',
+      'ibkr_fee_min_usd',
+      'hl_taker_fee_bps',
+      'hl_maker_fee_bps',
+      'assumed_hedge_fee_bps',
       'maker_fee_source',
       'hedge_fee_source',
-      'assumed_hedge_fee_bps',
-      'qty',
-      'bid_edge1',
+      'hedge_fee_plan',
+      'bid_edge_take_bps',
+      'ask_edge_take_bps',
+      'take_cooldown_ms',
     ]);
   });
 
   it('keeps maker_v4-only controls aligned with the supported runtime surface', () => {
-    expect(getProfilePriorityKeys('maker_v4').slice(0, 8)).toEqual([
+    expect(getProfilePriorityKeys('maker_v4').slice(0, 12)).toEqual([
       'bot_on',
+      'max_age_ms',
+      'execution_mode',
       'instant_hedge_enabled',
-      'hedge_style',
-      'hedge_ioc_cross_mid_bps',
-      'hedge_ioc_max_cross_bps',
-      'maker_fee_source',
-      'hedge_fee_source',
-      'assumed_hedge_fee_bps',
+      'qty',
+      'bid_edge1',
+      'ask_edge1',
+      'place_edge1',
+      'n_orders1',
+      'des_qty_global',
+      'max_qty_global',
+      'max_skew_bps_global',
     ]);
+    expect(getProfilePriorityKeys('maker_v4')).toEqual(
+      expect.arrayContaining([
+        'des_qty_local',
+        'max_qty_local',
+        'max_skew_bps_local',
+        'linear_offset_bps',
+        'hedge_style',
+        'hedge_ioc_cross_mid_bps',
+        'hedge_ioc_max_cross_bps',
+        'ibkr_fee_plan',
+        'ibkr_fee_min_usd',
+        'maker_fee_source',
+        'hedge_fee_source',
+        'hedge_fee_plan',
+        'assumed_hedge_fee_bps',
+        'bid_edge_take_bps',
+        'ask_edge_take_bps',
+        'take_cooldown_ms',
+      ])
+    );
   });
 });

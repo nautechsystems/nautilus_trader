@@ -46,7 +46,25 @@ const MAKER_V3_SIGNATURE_KEYS = new Set<string>([
   'place_edge1',
   'bid_edge_hedge',
   'ask_edge_hedge',
-  'strategy_take_enabled',
+  'execution_mode',
+]);
+
+const MAKER_V4_SIGNATURE_KEYS = new Set<string>([
+  'instant_hedge_enabled',
+  'hedge_style',
+  'hedge_ioc_cross_mid_bps',
+  'hedge_ioc_max_cross_bps',
+  'maker_fee_source',
+  'hedge_fee_source',
+  'hedge_fee_plan',
+  'ibkr_fee_plan',
+  'ibkr_fee_min_usd',
+  'hl_taker_fee_bps',
+  'hl_maker_fee_bps',
+  'bid_edge_take_bps',
+  'ask_edge_take_bps',
+  'take_cooldown_ms',
+  'assumed_hedge_fee_bps',
 ]);
 
 const MAKER_V2_SIGNATURE_KEYS = new Set<string>([
@@ -72,6 +90,30 @@ const MAKER_V3_LEGACY_ALIAS_KEYS = new Set<string>([
   'inv_mult',
   'max_delta',
   'slippage_bps',
+]);
+
+// MakerV4 still inherits the full MakerV3 runtime schema, but several of those
+// knobs no longer affect live equities behavior and only add operator noise.
+const MAKER_V4_UNUSED_RUNTIME_KEYS = new Set<string>([
+  'distance1',
+  'n_orders2',
+  'distance2',
+  'bid_edge2',
+  'ask_edge2',
+  'place_edge2',
+  'n_orders3',
+  'distance3',
+  'bid_edge3',
+  'ask_edge3',
+  'place_edge3',
+  'order_reject_alert_after_count',
+  'order_reject_alert_after_s',
+  'pending_cancel_grace_ms',
+  'pending_cancel_block_after_ms',
+  'quote_liveness_stall_after_ms',
+  'quote_liveness_recover_after_ms',
+  'quote_fail_critical_after_count',
+  'quote_fail_critical_after_s',
 ]);
 
 const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
@@ -158,17 +200,14 @@ const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
   ],
   maker_v4: [
     'bot_on',
-    'instant_hedge_enabled',
-    'hedge_style',
-    'hedge_ioc_cross_mid_bps',
-    'hedge_ioc_max_cross_bps',
-    'maker_fee_source',
-    'hedge_fee_source',
-    'assumed_hedge_fee_bps',
     'max_age_ms',
-    'cooldown',
+    'execution_mode',
+    'instant_hedge_enabled',
     'qty',
-    'hedge_qty',
+    'bid_edge1',
+    'ask_edge1',
+    'place_edge1',
+    'n_orders1',
     'des_qty_global',
     'max_qty_global',
     'max_skew_bps_global',
@@ -176,37 +215,20 @@ const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
     'max_qty_local',
     'max_skew_bps_local',
     'linear_offset_bps',
-    'n_orders1',
-    'distance1',
-    'bid_edge1',
-    'ask_edge1',
-    'place_edge1',
-    'n_orders2',
-    'distance2',
-    'bid_edge2',
-    'ask_edge2',
-    'place_edge2',
-    'n_orders3',
-    'distance3',
-    'bid_edge3',
-    'ask_edge3',
-    'place_edge3',
-    'n_orders_hedge',
-    'distance_hedge',
-    'bid_edge_hedge',
-    'ask_edge_hedge',
-    'place_edge_hedge',
-    'hedge_reduce_only',
-    'hedge_touch_at_max_qty',
-    'strategy_take_enabled',
-    'bid_edge_take',
-    'ask_edge_take',
-    'take_qty',
-    'take_cooldown',
-    'quote_fail_critical_after_count',
-    'quote_fail_critical_after_s',
-    'allow_cex_margin_sell',
-    'max_cex_margin_sell_notional_usd',
+    'hedge_style',
+    'hedge_ioc_cross_mid_bps',
+    'hedge_ioc_max_cross_bps',
+    'ibkr_fee_plan',
+    'ibkr_fee_min_usd',
+    'hl_taker_fee_bps',
+    'hl_maker_fee_bps',
+    'assumed_hedge_fee_bps',
+    'maker_fee_source',
+    'hedge_fee_source',
+    'hedge_fee_plan',
+    'bid_edge_take_bps',
+    'ask_edge_take_bps',
+    'take_cooldown_ms',
   ],
 };
 
@@ -275,6 +297,9 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
   Object.keys(row.params || {}).forEach((key) => keySet.add(key));
   (row.hot_params || []).forEach((key) => keySet.add(key));
 
+  for (const key of MAKER_V4_SIGNATURE_KEYS) {
+    if (keySet.has(key)) return 'maker_v4';
+  }
   for (const key of MAKER_V3_SIGNATURE_KEYS) {
     if (keySet.has(key)) return 'maker_v3';
   }
@@ -286,12 +311,20 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
 }
 
 export function getProfileHiddenKeys(profile: ParamsProfileId): string[] {
-  if (profile === 'maker_v3' || profile === 'maker_v4') return Array.from(MAKER_V3_LEGACY_ALIAS_KEYS);
+  if (profile === 'maker_v4') {
+    return Array.from(
+      new Set([...MAKER_V3_LEGACY_ALIAS_KEYS, ...MAKER_V4_UNUSED_RUNTIME_KEYS])
+    );
+  }
+  if (profile === 'maker_v3') return Array.from(MAKER_V3_LEGACY_ALIAS_KEYS);
   return [];
 }
 
 export function isProfileHiddenKey(profile: ParamsProfileId, key: string): boolean {
-  if (profile === 'maker_v3' || profile === 'maker_v4') return MAKER_V3_LEGACY_ALIAS_KEYS.has(key);
+  if (profile === 'maker_v4') {
+    return MAKER_V3_LEGACY_ALIAS_KEYS.has(key) || MAKER_V4_UNUSED_RUNTIME_KEYS.has(key);
+  }
+  if (profile === 'maker_v3') return MAKER_V3_LEGACY_ALIAS_KEYS.has(key);
   return false;
 }
 
