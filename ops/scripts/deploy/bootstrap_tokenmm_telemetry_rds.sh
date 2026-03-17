@@ -8,7 +8,7 @@ DB_NAME="${NAUTILUS_TELEMETRY_PG_DATABASE:-nautilus_telemetry}"
 DB_SCHEMA="${NAUTILUS_TELEMETRY_PG_SCHEMA:-telemetry}"
 DB_PORT="${NAUTILUS_TELEMETRY_PG_PORT:-5432}"
 DB_ENGINE="${TOKENMM_TELEMETRY_DB_ENGINE:-postgres}"
-DB_VERSION="${TOKENMM_TELEMETRY_DB_ENGINE_VERSION:-16.4}"
+DB_VERSION="${TOKENMM_TELEMETRY_DB_ENGINE_VERSION:-16.13}"
 DB_INSTANCE_CLASS="${TOKENMM_TELEMETRY_DB_INSTANCE_CLASS:-db.t4g.medium}"
 ALLOCATED_STORAGE="${TOKENMM_TELEMETRY_DB_ALLOCATED_STORAGE:-100}"
 MAX_ALLOCATED_STORAGE="${TOKENMM_TELEMETRY_DB_MAX_ALLOCATED_STORAGE:-500}"
@@ -143,10 +143,14 @@ main() {
       --subnet-ids "${subnet_ids[@]}" > /dev/null
   fi
 
-  local secret_json secret_password secret_username
+  local secret_json secret_payload secret_password secret_username
   secret_json="$(read_secret_json)"
-  secret_username="$(printf '%s' "${secret_json:-{}}" | jq -r '.username // "nautilus_tokenmm"')"
-  secret_password="$(printf '%s' "${secret_json:-{}}" | jq -r '.password // empty')"
+  secret_payload="${secret_json}"
+  if [[ -z "${secret_payload}" ]]; then
+    secret_payload='{}'
+  fi
+  secret_username="$(printf '%s' "${secret_payload}" | jq -r '.username // "nautilus_tokenmm"')"
+  secret_password="$(printf '%s' "${secret_payload}" | jq -r '.password // empty')"
   if [[ -z "${secret_password}" ]]; then
     secret_password="$(openssl rand -base64 30 | tr -d '\n' | tr '/+' 'AZ')"
   fi
