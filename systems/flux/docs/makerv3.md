@@ -50,9 +50,12 @@ MakerV3 runtime params are backed by the canonical registry:
 
 Operational expectations:
 
+- Raw/reference FV remains the market-derived anchor used by the strategy.
+- Signed skew and offsets do not mutate that raw/reference FV estimator; they adjust quoted FV / quote placement relative to the reference market.
 - Signed skew convention is canonical across strategy, API, and UI:
-  - positive values shift our quoted market up,
-  - negative values shift our quoted market down,
+  - positive values raise our quoted FV / quote richer,
+  - negative values lower our quoted FV / quote cheaper,
+  - short inventory relative to target should therefore produce positive skew,
   - `linear_offset_bps`, `global_skew_bps`, `local_skew_bps`, and `total_skew_bps` all use that convention.
 - Unknown keys are rejected (fail-fast).
 - Updates are coerced and applied atomically.

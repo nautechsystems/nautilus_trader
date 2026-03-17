@@ -129,6 +129,23 @@ def test_runtime_param_coercion_accepts_negative_linear_offset_bps() -> None:
     )
 
 
+def test_runtime_param_schema_describes_linear_offset_as_quoted_fv_adjustment() -> None:
+    description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["linear_offset_bps"]["description"]
+
+    assert "quoted fv" in description.lower()
+    assert "reference market" in description.lower()
+
+
+def test_runtime_param_schema_describes_skew_caps_as_inventory_driven_quoted_fv_components() -> None:
+    global_description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["max_skew_bps_global"]["description"]
+    local_description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["max_skew_bps_local"]["description"]
+
+    assert "inventory-driven" in global_description.lower()
+    assert "quoted fv" in global_description.lower()
+    assert "inventory-driven" in local_description.lower()
+    assert "quoted fv" in local_description.lower()
+
+
 def test_initial_runtime_params_seed_pending_cancel_budgets_from_config() -> None:
     config = MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
