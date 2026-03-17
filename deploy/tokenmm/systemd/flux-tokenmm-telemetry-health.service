@@ -1,0 +1,15 @@
+[Unit]
+Description=TokenMM telemetry health guardrail
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=-/etc/flux/common.env
+ExecStart=/bin/bash -lc 'cd "${WORKDIR:?}" && exec ./.venv/bin/python ops/scripts/deploy/tokenmm_telemetry_healthcheck.py --telemetry-dir "${TOKENMM_TELEMETRY_DIR:-/var/lib/nautilus/telemetry/tokenmm}" --state-db-path "${TOKENMM_TELEMETRY_DIR:-/var/lib/nautilus/telemetry/tokenmm}/shipper_state.sqlite" --max-telemetry-dir-gb 120 --max-root-usage-pct 92 --max-shipper-lag-minutes 30'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flux-tokenmm-telemetry-health
+

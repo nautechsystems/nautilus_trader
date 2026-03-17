@@ -8,6 +8,8 @@ COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 DEPLOY_ROOT_OVERRIDE="${TOKENMM_DEPLOY_ROOT:-}"
 TOKENMM_API_HOST="${TOKENMM_API_HOST:-}"
+TELEMETRY_HEALTH_SERVICE_PATH="${SYSTEMD_DIR}/flux-tokenmm-telemetry-health.service"
+TELEMETRY_HEALTH_TIMER_PATH="${SYSTEMD_DIR}/flux-tokenmm-telemetry-health.timer"
 
 read_env_value() {
   local env_path="$1"
@@ -142,6 +144,7 @@ build_service_ids() {
     "tokenmm-api"
     "tokenmm-portfolio"
     "tokenmm-bridge"
+    "tokenmm-telemetry-shipper"
   )
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
@@ -156,6 +159,16 @@ install_units() {
     "${ENV_DIR}" \
     "${DEPLOY_ROOT}/deploy/tokenmm/systemd/common.env.example" \
     "${COMMON_ENV_PATH}"
+  # flux-tokenmm-telemetry-health.service executes ops/scripts/deploy/tokenmm_telemetry_healthcheck.py.
+  install -m 0644 \
+    "${DEPLOY_ROOT}/deploy/tokenmm/systemd/flux-tokenmm-telemetry-health.service" \
+    "${TELEMETRY_HEALTH_SERVICE_PATH}"
+  install -m 0644 \
+    "${DEPLOY_ROOT}/deploy/tokenmm/systemd/flux-tokenmm-telemetry-health.timer" \
+    "${TELEMETRY_HEALTH_TIMER_PATH}"
+  install -m 0640 \
+    "${DEPLOY_ROOT}/deploy/tokenmm/systemd/tokenmm-telemetry-rds.env.example" \
+    "${ENV_DIR}/tokenmm-telemetry-rds.env.example"
 }
 
 append_deploy_root_env_overrides() {
@@ -215,14 +228,14 @@ render_bridge_env() {
 }
 
 render_telemetry_shipper_env() {
-  cat > "${ENV_DIR}/tokenmm-telemetry-shipper.env" << EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM telemetry shipper
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.persistence.shipper.run --config ${SHARED_CONFIG}"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-telemetry-shipper.env" \
+    "TokenMM telemetry shipper" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${DEPLOY_ROOT}/ops/scripts/deploy/run_tokenmm_telemetry_shipper.sh --config ${SHARED_CONFIG}"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-telemetry-shipper.env"
 }
 
 render_node_envs() {
@@ -255,6 +268,7 @@ render_jupyter_env() {
 enable_stack() {
   systemctl daemon-reload
   systemctl enable flux-tokenmm.target
+  systemctl enable flux-tokenmm-telemetry-health.timer
 }
 
 main() {

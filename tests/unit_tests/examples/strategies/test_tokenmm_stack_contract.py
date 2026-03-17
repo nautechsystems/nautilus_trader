@@ -360,6 +360,10 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
 
     assert "TOKENMM_TELEMETRY_DIR" in deploy_readme
     assert "tokenmm-jupyter.env.example" in deploy_readme
+    assert "bootstrap_tokenmm_telemetry_rds.sh" in deploy_readme
+    assert "run_tokenmm_telemetry_shipper.sh" in deploy_readme
+    assert "tokenmm_telemetry_cutover.py" in deploy_readme
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID" in deploy_readme
     assert "pnpm --dir fluxboard install --frozen-lockfile" in deploy_readme
     assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in deploy_readme
     assert "pnpm --dir fluxboard build" in deploy_readme
@@ -378,6 +382,9 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "telemetry" in telemetry_runbook
     assert "psql" in telemetry_runbook
     assert 'export POSTGRES_URL="postgresql://' in telemetry_runbook
+    assert "bootstrap_tokenmm_telemetry_rds.sh" in telemetry_runbook
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID" in telemetry_runbook
+    assert "tokenmm_telemetry_cutover.py" in telemetry_runbook
 
     assert "cutover" in design_doc
     assert "localhost-only JupyterLab" in design_doc
@@ -389,6 +396,7 @@ def test_tokenmm_live_config_enables_local_telemetry_persistence_paths() -> None
 
     assert "[telemetry_shipper]" in shared_config
     assert "enable_local_persistence = true" in shared_config
+    assert "prune_retention_hours = 48" in shared_config
     assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in shared_config
     assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in shared_config
     assert (
@@ -695,7 +703,13 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "tokenmm-api" in install_script
     assert "--strategy-id ${strategy_id}" in install_script
     assert "--all-strategies" not in install_script
+    assert "run_tokenmm_telemetry_shipper.sh" in install_script
+    assert "tokenmm-telemetry-rds.env.example" in install_script
+    assert "flux-tokenmm-telemetry-health.service" in install_script
+    assert "flux-tokenmm-telemetry-health.timer" in install_script
 
+    assert "TOKENMM_AWS_REGION=ap-southeast-1" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID=" in common_env
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env

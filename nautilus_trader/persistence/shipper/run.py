@@ -9,6 +9,8 @@ from nautilus_trader.persistence.shipper.config import build_telemetry_shipper_c
 from nautilus_trader.persistence.shipper.postgres import TelemetryPostgresSink
 from nautilus_trader.persistence.shipper.service import SQLiteToPostgresTelemetryShipper
 
+STARTUP_FAILURE_EXIT_CODE = 78
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ship local SQLite telemetry into Postgres.")
@@ -27,9 +29,9 @@ def _load_shipper_config(path: Path):
     return build_telemetry_shipper_config(payload)
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    args = _parse_args()
+def _bootstrap_runtime(
+    args: argparse.Namespace,
+) -> tuple[TelemetryPostgresSink, SQLiteToPostgresTelemetryShipper | None]:
     config = _load_shipper_config(args.config)
     if not config.enabled:
         raise RuntimeError("Telemetry shipper is disabled in config")
@@ -38,20 +40,41 @@ def main() -> None:
     try:
         if args.bootstrap_postgres:
             sink.ensure_schema()
-            return
+            return sink, None
 
         shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink)
-        try:
-            sink.validate_tables(shipper.configured_table_names())
-            if args.once:
-                shipper.ship_once()
-            else:
-                shipper.run_forever()
-        finally:
-            shipper.close()
-    finally:
+        sink.validate_tables(shipper.configured_table_names())
+        return sink, shipper
+    except Exception:
         sink.close()
+        raise
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO)
+    args = _parse_args()
+    try:
+        sink, shipper = _bootstrap_runtime(args)
+    except KeyboardInterrupt:  # pragma: no cover
+        raise
+    except Exception:
+        logging.getLogger("nautilus.telemetry.shipper").exception(
+            "Telemetry shipper startup failed",
+        )
+        raise SystemExit(STARTUP_FAILURE_EXIT_CODE)
+    if shipper is None:
+        sink.close()
+        return 0
+    try:
+        if args.once:
+            shipper.ship_once()
+        else:
+            shipper.run_forever()
+    finally:
+        shipper.close()
+        sink.close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

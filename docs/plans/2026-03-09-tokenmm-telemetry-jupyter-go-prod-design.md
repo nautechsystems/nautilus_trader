@@ -23,10 +23,11 @@ The JupyterLab service is intentionally separate from `flux-tokenmm.target`.
 
 ## Cutover
 
-1. Install or refresh the systemd artifacts with `sudo ops/scripts/deploy/install_tokenmm_systemd.sh`.
-2. Create `/var/lib/nautilus/telemetry/tokenmm`.
-3. Restart the managed services in production order: portfolio, bridge, API, then the seven nodes.
-4. Verify local SQLite row growth and Pulse health before declaring the cutover complete.
+1. Bootstrap the managed sink with `sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/bootstrap_tokenmm_telemetry_rds.sh --apply-host-env`.
+2. Install or refresh the systemd artifacts with `sudo ops/scripts/deploy/install_tokenmm_systemd.sh`.
+3. Create `/var/lib/nautilus/telemetry/tokenmm`.
+4. Run `ops/scripts/deploy/tokenmm_telemetry_cutover.py` once the telemetry shipper is healthy.
+5. Verify local SQLite row growth and Pulse health before declaring the cutover complete.
 
 ## Operator Notes
 

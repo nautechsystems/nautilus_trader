@@ -205,10 +205,12 @@ pnpm --dir fluxboard build
 pnpm --dir pulse-ui install --frozen-lockfile
 pnpm --dir pulse-ui build
 .venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py
+sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" \
+  ops/scripts/deploy/bootstrap_tokenmm_telemetry_rds.sh --apply-host-env
 sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/install_tokenmm_systemd.sh
-sudoedit /etc/flux/common.env
 sudo systemctl daemon-reload
 sudo systemctl start flux-tokenmm.target
+sudo systemctl start flux@tokenmm-telemetry-shipper.service
 ```
 
 On an already-managed host, leave `TOKENMM_DEPLOY_ROOT` unset if `/etc/flux/common.env` already points at the intended root.
@@ -216,8 +218,9 @@ On an already-managed host, leave `TOKENMM_DEPLOY_ROOT` unset if `/etc/flux/comm
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
-- `install_tokenmm_systemd.sh` pins each TokenMM env file to the resolved deploy root by writing
-  `WORKDIR`, `PYTHONPATH`, and the root `.venv/bin/python` into `/etc/flux/tokenmm*.env`.
+- `install_tokenmm_systemd.sh` pins each TokenMM env file to the resolved deploy root.
+- `install_tokenmm_systemd.sh` writes the resolved `WORKDIR` and `PYTHONPATH` into `/etc/flux/tokenmm*.env`
+  so reruns keep the live host anchored to the intended checkout.
 - Re-running the installer from a worktree does not change the live deploy root when `/etc/flux/common.env`
   already points at a stable checkout, and the installer refuses worktree roots for fresh bootstrap/cutover.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
@@ -258,8 +261,21 @@ Primary operator surfaces:
 
 - Run the rollout preflight before changing systemd envs:
   - `.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py`
+- Bootstrap or refresh the managed sink and write the host env automatically:
+  - `sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/bootstrap_tokenmm_telemetry_rds.sh --apply-host-env`
+- The host bootstrap writes `TOKENMM_AWS_REGION`, `NAUTILUS_TELEMETRY_PG_SECRET_ID`, and the current endpoint metadata
+  into `/etc/flux/common.env`. The shipper reads the secret at runtime via
+  `ops/scripts/deploy/run_tokenmm_telemetry_shipper.sh`.
+- Reference env fragment:
+  - `deploy/tokenmm/systemd/tokenmm-telemetry-rds.env.example`
 - Create the local telemetry directory before restarting live services:
   - `sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm`
+- The live shipper keeps local SQLite as a short spool only:
+  - `deploy/tokenmm/tokenmm.live.toml` sets `prune_retention_hours = 48`
+- Guardrail health runs every 15 minutes through `flux-tokenmm-telemetry-health.timer` and checks disk usage,
+  telemetry directory size, and shipper lag.
+- Production cutover helper:
+  - `sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py --wait-for-catchup --delete-local-after-cutover`
 - Local SQLite verification:
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite 'SELECT COUNT(*) FROM order_action;'`
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite 'SELECT COUNT(*) FROM execution_fill;'`

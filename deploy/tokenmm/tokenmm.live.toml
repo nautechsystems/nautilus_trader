@@ -150,7 +150,7 @@ portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inv
 state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
 poll_interval_ms = 1000
 max_batch_size = 500
-prune_retention_hours = 168
+prune_retention_hours = 48
 
 [portfolio]
 portfolio_id = "tokenmm"
