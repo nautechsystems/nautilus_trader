@@ -330,6 +330,30 @@ async def test_determine_venue_from_contract_opt_smart_maps_to_mic_when_convert_
     assert venue == "XCBO"
 
 
+def test_process_contract_details_resolves_venue_per_detail_when_not_provided(ib_client):
+    from nautilus_trader.common.component import LiveClock
+
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=InteractiveBrokersInstrumentProviderConfig(
+            convert_exchange_to_mic_venue=True,
+        ),
+    )
+
+    processed_ids = provider._process_contract_details(
+        [
+            IBTestContractStubs.aapl_equity_contract_details(),
+            IBTestContractStubs.cl_future_contract_details(),
+        ],
+    )
+
+    assert processed_ids == [
+        InstrumentId.from_str("AAPL.XNAS"),
+        InstrumentId.from_str("CLZ3.XNYM"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_create_bag_contract_with_explicit_exchange(instrument_provider):
     """

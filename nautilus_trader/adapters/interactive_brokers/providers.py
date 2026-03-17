@@ -26,7 +26,7 @@ from nautilus_trader.adapters.interactive_brokers.common import dict_to_contract
 from nautilus_trader.adapters.interactive_brokers.config import (
     InteractiveBrokersInstrumentProviderConfig,
 )
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUE_MEMBERS
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import exchange_to_mic_venue
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
     instrument_id_to_ib_contract,
 )
@@ -36,6 +36,9 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
     parse_option_spread_instrument_id,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    possible_exchanges_for_venue,
 )
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.providers import InstrumentProvider
@@ -213,7 +216,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> IBContract | None:
         venue = instrument_id.venue.value
 
-        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
+        possible_exchanges = possible_exchanges_for_venue(venue)
         if len(possible_exchanges) == 1:
             return instrument_id_to_ib_contract(
                 instrument_id,
@@ -304,6 +307,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         contract_details: list | None = None
+        venue: str | None = None
 
         if isinstance(instrument_id, InstrumentId):
             venue = instrument_id.venue.value
@@ -316,12 +320,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             contract = instrument_id
 
             contract_details = await self.get_contract_details(contract)
-            if contract_details:
-                first_detail = IBContractDetails.from_contract_details(contract_details[0])
-                venue = self.determine_venue_from_contract(
-                    first_detail.contract,
-                    contract_details=first_detail,
-                )
         else:
             self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
             return None
@@ -369,8 +367,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             return bool(processed_ids)  # Return True if any instruments were processed
 
-        # VENUE_MEMBERS associates a MIC venue to several possible IB exchanges
-        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
+        # MIC venues can map to several concrete IB exchanges, so try each candidate.
+        possible_exchanges = possible_exchanges_for_venue(venue)
         try:
             for exchange in possible_exchanges:
                 contract = instrument_id_to_ib_contract(
@@ -699,7 +697,83 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         return option_details
 
-    def determine_venue_from_contract(  # noqa: C901
+    def _process_contract_details(
+        self,
+        contract_details: list[ContractDetails],
+        venue: str | None = None,
+        force_instrument_update: bool = False,
+    ) -> list[InstrumentId]:
+        """
+        Process contract details and return the instrument IDs of successfully processed
+        contracts.
+
+        Parameters
+        ----------
+        contract_details : list[ContractDetails]
+            The contract details to process.
+        venue : str | None
+            The venue for the contracts. If ``None``, resolve per contract detail.
+        force_instrument_update : bool, optional
+            Whether to force update existing instruments.
+
+        Returns
+        -------
+        list[InstrumentId]
+            The instrument IDs of successfully processed contracts.
+
+        """
+        processed_instrument_ids = []
+        for details in copy.deepcopy(contract_details):
+            if not isinstance(details, IBContractDetails):
+                details = IBContractDetails.from_contract_details(details)
+            elif not isinstance(details.contract, IBContract):
+                details.contract = IBContract(**details.contract.__dict__)
+
+            sec_type = details.contract.secType
+            if self._is_filtered_sec_type(sec_type):
+                self._log.warning(
+                    f"Skipping filtered {sec_type=} for contract {details.contract}",
+                )
+                continue
+
+            self._log.debug(f"Attempting to create instrument from {details}")
+            resolved_venue = venue or self.determine_venue_from_contract(
+                details.contract,
+                contract_details=details,
+            )
+
+            try:
+                instrument: Instrument = parse_instrument(
+                    details,
+                    resolved_venue,
+                    self.config.symbology_method,
+                )
+            except ValueError as e:
+                self._log.error(f"{self.config.symbology_method=} failed to parse {details=}, {e}")
+                continue
+
+            if self.config.filter_callable is not None:
+                filter_callable = resolve_path(self.config.filter_callable)
+                if not filter_callable(instrument):
+                    continue
+
+            self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
+
+            self.add(instrument)
+
+            if not self._client._cache.instrument(instrument.id) or force_instrument_update:
+                self._client._cache.add_instrument(instrument)
+
+            self.contract[instrument.id] = details.contract
+            self.contract_details[instrument.id] = details
+            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
+
+            # Add to the list of successfully processed instrument IDs
+            processed_instrument_ids.append(instrument.id)
+
+        return processed_instrument_ids
+
+    def determine_venue_from_contract(
         self,
         contract: IBContract,
         contract_details: IBContractDetails | None = None,
@@ -730,126 +804,67 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         if contract.secType == "CMDTY":
             return "IBCMDTY"
 
-        venue = None
-
-        # 1) Prefer symbol-specific MIC venue when configured (most precise for options)
-        if self._symbol_to_mic_venue:
-            for symbol_prefix, symbol_venue in self._symbol_to_mic_venue.items():
-                if contract.symbol.startswith(symbol_prefix):
-                    venue = symbol_venue
-                    break
-
-        if venue:
+        if venue := self._resolve_symbol_specific_venue(contract):
             return venue
 
-        # 2) Resolve exchange: for OPT with SMART use non-SMART source when available
+        exchange = self._resolve_exchange_from_contract(contract, contract_details)
+
+        return self._resolve_venue_from_exchange(exchange)
+
+    def _resolve_symbol_specific_venue(self, contract: IBContract) -> str | None:
+        if not self._symbol_to_mic_venue:
+            return None
+
+        for symbol_prefix, symbol_venue in self._symbol_to_mic_venue.items():
+            if contract.symbol.startswith(symbol_prefix):
+                return symbol_venue
+
+        return None
+
+    def _resolve_exchange_from_contract(
+        self,
+        contract: IBContract,
+        contract_details: IBContractDetails | None = None,
+    ) -> str:
         if (
             contract.exchange == "SMART"
             and contract.primaryExchange
             and contract.primaryExchange != "SMART"
         ):
-            exchange = contract.primaryExchange
-        elif contract.exchange != "SMART":
-            exchange = contract.exchange
-        else:
-            # OPT or other SMART: try to get a non-SMART exchange from validExchanges
-            exchange = contract.exchange
-            valid_exchanges_str = None
+            return contract.primaryExchange
 
-            if contract_details and contract_details.validExchanges:
-                valid_exchanges_str = contract_details.validExchanges
-            elif contract.secType == "OPT" and contract.conId:
-                instrument_id = self.contract_id_to_instrument_id.get(contract.conId)
-                details = self.contract_details.get(instrument_id) if instrument_id else None
-                if details:
-                    valid_exchanges_str = details.validExchanges or ""
-            if valid_exchanges_str:
-                parts = [p.strip() for p in valid_exchanges_str.split(",") if p.strip()]
-                chosen = next((p for p in parts if p != "SMART"), parts[0] if parts else None)
-                if chosen:
-                    exchange = chosen
+        if contract.exchange != "SMART":
+            return contract.exchange
 
-        # 3) Map exchange to MIC venue when conversion is enabled
-        if self._convert_exchange_to_mic_venue:
-            for venue_member, exchanges in VENUE_MEMBERS.items():
-                if exchange in exchanges:
-                    venue = venue_member
-                    break
+        valid_exchanges = self._resolve_valid_exchanges(contract, contract_details)
+        if valid_exchanges:
+            parts = [part.strip() for part in valid_exchanges.split(",") if part.strip()]
+            chosen = next((part for part in parts if part != "SMART"), parts[0] if parts else None)
+            if chosen:
+                return chosen
 
-        # 4) Fall back to exchange as venue (SMART only when no non-SMART source found)
-        if not venue:
-            venue = exchange
+        return contract.exchange
 
-        return venue
-
-    def _process_contract_details(
+    def _resolve_valid_exchanges(
         self,
-        contract_details: list[ContractDetails],
-        venue: str,
-        force_instrument_update: bool = False,
-    ) -> list[InstrumentId]:
-        """
-        Process contract details and return the instrument IDs of successfully processed
-        contracts.
+        contract: IBContract,
+        contract_details: IBContractDetails | None = None,
+    ) -> str | None:
+        if contract_details and contract_details.validExchanges:
+            return contract_details.validExchanges
 
-        Parameters
-        ----------
-        contract_details : list[ContractDetails]
-            The contract details to process.
-        venue : str
-            The venue for the contracts.
-        force_instrument_update : bool, optional
-            Whether to force update existing instruments.
+        if contract.secType == "OPT" and contract.conId:
+            instrument_id = self.contract_id_to_instrument_id.get(contract.conId)
+            details = self.contract_details.get(instrument_id) if instrument_id else None
+            if details:
+                return details.validExchanges or ""
 
-        Returns
-        -------
-        list[InstrumentId]
-            The instrument IDs of successfully processed contracts.
+        return None
 
-        """
-        processed_instrument_ids = []
-        for details in copy.deepcopy(contract_details):
-            if not isinstance(details, IBContractDetails):
-                details = IBContractDetails.from_contract_details(details)
-            elif not isinstance(details.contract, IBContract):
-                details.contract = IBContract(**details.contract.__dict__)
+    def _resolve_venue_from_exchange(self, exchange: str) -> str:
+        if self._convert_exchange_to_mic_venue:
+            venue = exchange_to_mic_venue(exchange)
+            if venue:
+                return venue
 
-            sec_type = details.contract.secType
-            if self._is_filtered_sec_type(sec_type):
-                self._log.warning(
-                    f"Skipping filtered {sec_type=} for contract {details.contract}",
-                )
-                continue
-
-            self._log.debug(f"Attempting to create instrument from {details}")
-
-            try:
-                instrument: Instrument = parse_instrument(
-                    details,
-                    venue,
-                    self.config.symbology_method,
-                )
-            except ValueError as e:
-                self._log.error(f"{self.config.symbology_method=} failed to parse {details=}, {e}")
-                continue
-
-            if self.config.filter_callable is not None:
-                filter_callable = resolve_path(self.config.filter_callable)
-                if not filter_callable(instrument):
-                    continue
-
-            self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
-
-            self.add(instrument)
-
-            if not self._client._cache.instrument(instrument.id) or force_instrument_update:
-                self._client._cache.add_instrument(instrument)
-
-            self.contract[instrument.id] = details.contract
-            self.contract_details[instrument.id] = details
-            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
-
-            # Add to the list of successfully processed instrument IDs
-            processed_instrument_ids.append(instrument.id)
-
-        return processed_instrument_ids
+        return exchange
