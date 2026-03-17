@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime
 from datetime import time
-from datetime import timezone
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -53,7 +54,7 @@ def build_ibkr_hedge_order_policy(
 def is_us_equities_regular_session(now_ms: int) -> bool:
     if ZoneInfo is None:
         return True
-    local_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).astimezone(
+    local_dt = datetime.fromtimestamp(now_ms / 1000, tz=UTC).astimezone(
         ZoneInfo(US_EQUITIES_REGULAR_TZ),
     )
     if local_dt.weekday() >= 5:
