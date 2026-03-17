@@ -382,6 +382,74 @@ describe('api.patchStrategyParams', () => {
 
     await expect(api.patchStrategyParams('makerv3', { qty: '-1' })).rejects.toThrow(/qty must be >= 0/i);
   });
+
+  it('appends profile to params writes on equities routes', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
+        failed: [],
+        errors: [],
+      },
+    });
+
+    await api.patchStrategyParams('aapl_tradexyz_makerv4', { qty: '1' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+});
+
+describe('api.updateParams', () => {
+  beforeEach(() => {
+    fetchJSONMock.mockReset();
+    setPathname('/equities/params');
+  });
+
+  it('appends profile to bulk params writes on equities routes', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
+        failed: [],
+        errors: [],
+      },
+    });
+
+    await api.updateParams([
+      { strategy_id: 'aapl_tradexyz_makerv4', params: { qty: '1' } },
+    ]);
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+});
+
+describe('api.getStrategyConfig', () => {
+  beforeEach(() => {
+    fetchJSONMock.mockReset();
+    setPathname('/equities/params');
+  });
+
+  it('appends profile to strategy config requests on equities routes', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        strategies_ini: '',
+        relations_ini: '',
+        catalog_excerpts: '',
+      },
+    });
+
+    await api.getStrategyConfig('aapl_tradexyz_makerv4');
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/strategies/aapl_tradexyz_makerv4/config-files?');
+    expect(path).toContain('profile=equities');
+  });
 });
 
 describe('profile-scoped read APIs', () => {
@@ -651,6 +719,39 @@ describe('profile-scoped read APIs', () => {
       bot_on: '0',
       qty: '1000',
       max_age_ms: '10000',
+    });
+  });
+
+  it('normalizes non-bot boolean params and preserves params metadata for maker_v4 rows', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          strategy_id: 'aapl_tradexyz_makerv4',
+          meta: {
+            class: 'maker_v4',
+            param_set: 'makerv4',
+            strategy_family: 'maker_v4',
+            strategy_version: 'v4',
+          },
+          schema: {
+            instant_hedge_enabled: { type: 'boolean' },
+          },
+          params: {
+            instant_hedge_enabled: true,
+            execution_mode: 'maker_hedge',
+          },
+        },
+      ],
+    });
+
+    const rows = await api.getParams();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].meta?.param_set).toBe('makerv4');
+    expect(rows[0].params).toMatchObject({
+      instant_hedge_enabled: '1',
+      execution_mode: 'maker_hedge',
     });
   });
 

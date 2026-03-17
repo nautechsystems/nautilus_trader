@@ -53,6 +53,7 @@ from flux.strategies.makerv3.constants import TOPIC_TRADE
 from flux.strategies.shared.account_projection_positions import (
     read_matching_shared_account_position_row,
 )
+from flux.strategies.shared.trades import publish_trade as publish_shared_trade
 from flux.strategies.makerv3.wire import QuoteCycleContext
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
@@ -617,7 +618,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return
 
             max_age_ms = self._runtime_int("max_age_ms")
-            max_age_ns = max_age_ms * 1_000_000
 
             maker_ts_ns = int(self._last_bbo_ts_ns.get(self.config.maker_instrument_id, 0) or 0)
             if maker_ts_ns <= 0:
@@ -633,9 +633,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     ),
                 )
                 return
-            maker_age_ns = now_ns - maker_ts_ns
-            if maker_age_ns >= max_age_ns:
-                age_ms = int(maker_age_ns / 1_000_000)
+            maker_health = self._quote_health(
+                instrument_id=self.config.maker_instrument_id,
+                leg_role="maker",
+                now_ns=now_ns,
+                max_quote_age_ms=max_age_ms,
+            )
+            if not maker_health.usable_for_pricing:
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_maker_md",
@@ -645,7 +649,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     warning_message=(
                         "Quoting blocked (maker data stale) "
                         f"strategy_id={self._external_strategy_id} "
-                        f"age_ms={age_ms} max_age_ms={max_age_ms}"
+                        f"age_ms={maker_health.quote_age_ms} max_age_ms={max_age_ms}"
                     ),
                 )
                 return
@@ -653,11 +657,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
             reference_ts_ns = int(
                 self._last_bbo_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
             )
-            reference_age_ns = now_ns - reference_ts_ns if reference_ts_ns > 0 else None
-            if reference_age_ns is None or reference_age_ns >= max_age_ns:
-                reference_age_ms = (
-                    int(reference_age_ns / 1_000_000) if reference_age_ns is not None else None
-                )
+            reference_health = self._quote_health(
+                instrument_id=self.config.reference_instrument_id,
+                leg_role="reference",
+                now_ns=now_ns,
+                max_quote_age_ms=max_age_ms,
+            )
+            if reference_ts_ns <= 0 or not reference_health.usable_for_pricing:
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_reference_md",
@@ -667,7 +673,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     warning_message=(
                         "Quoting blocked (reference data stale) "
                         f"strategy_id={self._external_strategy_id} "
-                        f"age_ms={reference_age_ms} max_age_ms={max_age_ms}"
+                        f"age_ms={reference_health.quote_age_ms} max_age_ms={max_age_ms}"
                     ),
                 )
 
@@ -695,13 +701,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
             max_age_ms: int | None = None,
         ) -> bool:
             max_age_value = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
-            max_age_ns = max(1, max_age_value) * 1_000_000
-            for instrument_id in (
-                self.config.maker_instrument_id,
-                self.config.reference_instrument_id,
+            for leg_role, instrument_id in (
+                ("maker", self.config.maker_instrument_id),
+                ("reference", self.config.reference_instrument_id),
             ):
-                ts_ns = int(self._last_bbo_ts_ns.get(instrument_id, 0) or 0)
-                if ts_ns <= 0 or now_ns - ts_ns >= max_age_ns:
+                health = self._quote_health(
+                    instrument_id=instrument_id,
+                    leg_role=leg_role,
+                    now_ns=now_ns,
+                    max_quote_age_ms=max_age_value,
+                )
+                if not health.usable_for_pricing:
                     return False
             return True
 
@@ -1066,22 +1076,20 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 state=self._last_state_name or "running",
                 now_ms_value=int(int(event.ts_event) // 1_000_000),
             )
-            trade_payload = {
-                "strategy_id": self._external_strategy_id,
-                "event": "order_filled",
-                "instrument_id": str(event.instrument_id),
-                "client_order_id": str(event.client_order_id),
-                "trade_id": str(event.trade_id),
-                "side": str(event.order_side),
-                "qty": str(event.last_qty),
-                "price": str(event.last_px),
-                "ts_event": int(event.ts_event),
-            }
+            trade_context: dict[str, Any] = {}
             if place_intent is not None:
                 for key in ("run_id", "quote_cycle_id", "reason_code", "level_index"):
                     if place_intent.get(key) is not None:
-                        trade_payload[key] = place_intent[key]
-            self._publish_json(TOPIC_TRADE, trade_payload)
+                        trade_context[key] = place_intent[key]
+            publish_shared_trade(
+                self._publish_json,
+                strategy_id=self._external_strategy_id,
+                event=event,
+                instrument_lookup=self._resolve_instrument,
+                trade_role="maker",
+                extra_fields=trade_context,
+                topic=TOPIC_TRADE,
+            )
             self._record_maker_position_activity(event)
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
             self._publish_current_state_snapshot()
@@ -2733,6 +2741,61 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if bid is None or ask is None:
                 return None
             return bid.as_decimal(), ask.as_decimal()
+
+        def _quote_health(
+            self,
+            *,
+            instrument_id: InstrumentId,
+            leg_role: str,
+            now_ns: int,
+            max_quote_age_ms: int | None = None,
+        ) -> Any:
+            bbo = self._best_bid_ask(instrument_id)
+            bid: Decimal | None = None
+            ask: Decimal | None = None
+            if bbo is not None:
+                bid, ask = bbo
+            ts_ns = int(self._last_bbo_ts_ns.get(instrument_id, 0) or 0)
+            quote_age_ms = max(0, (int(now_ns) - ts_ns) // 1_000_000) if ts_ns > 0 else None
+            transport_connected = True if (bbo is not None or ts_ns > 0) else None
+            subscription_healthy = True if (bbo is not None or ts_ns > 0) else None
+            max_age_value = (
+                self._runtime_int("max_age_ms")
+                if max_quote_age_ms is None
+                else int(max_quote_age_ms)
+            )
+            return quote_engine_mod.evaluate_quote_health(
+                leg_role=leg_role,
+                bid=bid,
+                ask=ask,
+                quote_age_ms=quote_age_ms,
+                max_quote_age_ms=max(0, max_age_value - 1),
+                transport_connected=transport_connected,
+                subscription_healthy=subscription_healthy,
+            )
+
+        def _quote_health_payload(self, *, now_ns: int) -> dict[str, Any]:
+            payload: dict[str, Any] = {}
+            for leg_role, instrument_id in (
+                ("maker", self.config.maker_instrument_id),
+                ("reference", self.config.reference_instrument_id),
+            ):
+                health = self._quote_health(
+                    instrument_id=instrument_id,
+                    leg_role=leg_role,
+                    now_ns=now_ns,
+                )
+                leg_payload: dict[str, Any] = {
+                    "feed_state": health.feed_state,
+                    "quote_state": health.quote_state,
+                    "quote_age_ms": health.quote_age_ms,
+                    "pricing_usable": health.usable_for_pricing,
+                    "hedge_usable": health.usable_for_hedging,
+                }
+                if health.reason_code is not None:
+                    leg_payload["reason_code"] = health.reason_code
+                payload[leg_role] = leg_payload
+            return payload
 
         def _best_mid(self, instrument_id: InstrumentId) -> Decimal | None:
             bbo = self._best_bid_ask(instrument_id)

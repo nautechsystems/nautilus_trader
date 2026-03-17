@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+import nautilus_trader.flux.strategies.makerv3.quote_engine as quote_engine_mod
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
@@ -20,6 +21,24 @@ class _FakeRedis:
     def set(self, key: str, value: str | bytes) -> bool:
         self.values[key] = value.encode() if isinstance(value, str) else value
         return True
+
+
+def test_shared_quote_health_distinguishes_old_quote_from_feed_down() -> None:
+    from nautilus_trader.flux.strategies.shared.quote_health import evaluate_quote_health
+
+    health = evaluate_quote_health(
+        leg_role="maker",
+        bid=Decimal("100"),
+        ask=Decimal("101"),
+        quote_age_ms=12_000,
+        max_quote_age_ms=10_000,
+        transport_connected=True,
+        subscription_healthy=True,
+    )
+
+    assert health.feed_state == "ok"
+    assert health.quote_state == "old"
+    assert health.usable_for_pricing is False
 
 
 def test_refresh_quotes_blocks_when_maker_market_data_is_stale(strategy_factory) -> None:
@@ -83,6 +102,62 @@ def test_refresh_quotes_treats_age_equal_to_max_age_ms_as_stale(strategy_factory
 
     strategy._refresh_quotes(now_ns=now_ns)
 
+    assert cancels == ["maker_md_stale:False"]
+    assert states == ["blocked_maker_md"]
+
+
+def test_refresh_quotes_uses_shared_quote_health_for_maker_stale_block(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory()
+
+    cancels: list[str] = []
+    states: list[str] = []
+    health_calls: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+
+    def _fake_quote_health(**kwargs: object) -> SimpleNamespace:
+        health_calls.append(dict(kwargs))
+        return SimpleNamespace(
+            leg_role=kwargs["leg_role"],
+            feed_state="ok",
+            quote_state="old" if kwargs["leg_role"] == "maker" else "fresh",
+            quote_age_ms=kwargs["quote_age_ms"],
+            usable_for_pricing=kwargs["leg_role"] != "maker",
+            usable_for_hedging=kwargs["leg_role"] != "maker",
+            reason_code="maker_quote_old" if kwargs["leg_role"] == "maker" else None,
+            alert_level="warning" if kwargs["leg_role"] == "maker" else None,
+        )
+
+    monkeypatch.setattr(
+        quote_engine_mod,
+        "evaluate_quote_health",
+        _fake_quote_health,
+        raising=False,
+    )
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert health_calls == [
+        {
+            "leg_role": "maker",
+            "bid": Decimal("100"),
+            "ask": Decimal("101"),
+            "quote_age_ms": 10,
+            "max_quote_age_ms": 99,
+            "transport_connected": True,
+            "subscription_healthy": True,
+        },
+    ]
     assert cancels == ["maker_md_stale:False"]
     assert states == ["blocked_maker_md"]
 
@@ -519,6 +594,90 @@ def test_refresh_quotes_allows_partial_shared_portfolio_inventory_when_enabled(
         namespace="flux",
         schema_version="v1",
         allow_partial_global_risk=True,
+    )
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    alerts: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == []
+    assert states == []
+    assert alerts == []
+
+
+def test_refresh_quotes_uses_canonical_portfolio_asset_id_for_shared_inventory_gate(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("xyz:AMD-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AMD.NASDAQ")
+    strategy = clocked_strategy_factory(
+        [1_500_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+        portfolio_asset_id="AMD",
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="XYZ:AMD"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=maker_instrument_id,
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="AMD"),
+            id=reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._refresh_quotes_to_target = lambda *_args, **_kwargs: None
+    strategy._compute_fv = lambda *_args, **_kwargs: Decimal("100.5")
+    strategy._managed_orders = lambda: []
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    fake_redis = _FakeRedis()
+    aggregate_key = FluxRedisKeys.portfolio_inventory(
+        portfolio_id="equities",
+        base_currency="AMD",
+    )
+    fake_redis.set(
+        aggregate_key,
+        encode_portfolio_inventory(
+            {
+                "portfolio_id": "equities",
+                "base_currency": "AMD",
+                "global_qty": "0",
+                "global_qty_base": "0",
+                "global_qty_complete": True,
+                "global_qty_base_complete": True,
+                "ts_ms": 1_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+                "missing_required": [],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": False,
+            },
+        ),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
     )
 
     now_ns = 1_500_000_000

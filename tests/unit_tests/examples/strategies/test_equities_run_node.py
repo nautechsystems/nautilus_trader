@@ -823,7 +823,7 @@ def test_build_node_rejects_invalid_qty_unit(monkeypatch) -> None:
         )
 
 
-def test_build_node_defaults_manage_stop_graceful_shutdown_and_allowed_submit_instrument_ids(
+def test_build_node_defaults_non_flattening_manage_stop_graceful_shutdown_and_allowed_submit_instrument_ids(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -903,7 +903,7 @@ def test_build_node_defaults_manage_stop_graceful_shutdown_and_allowed_submit_in
     assert node_config.data_engine.graceful_shutdown_on_exception is True
     assert node_config.risk_engine.graceful_shutdown_on_exception is True
     assert node_config.exec_engine.graceful_shutdown_on_exception is True
-    assert strategy.config.manage_stop is True
+    assert strategy.config.manage_stop is False
     assert strategy.config.cancel_all_instrument_orders is False
     assert strategy.config.allowed_submit_instrument_ids == [maker_instrument_id]
 
@@ -1073,12 +1073,17 @@ def test_build_node_makerv4_authorizes_maker_and_hedge_instruments(monkeypatch) 
     )
 
     strategy = captured["strategy"]
+    node_config = captured["node_config"]
 
     assert strategy.config.allowed_submit_instrument_ids == [
         maker_instrument_id,
         hedge_instrument_id,
     ]
     assert strategy.config.external_order_claims == [
+        maker_instrument_id,
+        hedge_instrument_id,
+    ]
+    assert node_config.exec_engine.reconciliation_instrument_ids == [
         maker_instrument_id,
         hedge_instrument_id,
     ]
@@ -1604,6 +1609,125 @@ def test_build_node_force_enable_execution_overrides_explicit_false_for_makerv4(
     assert captured["enable_execution"] is True
 
 
+def test_effective_venue_resolution_config_promotes_ibkr_execution_for_makerv4() -> None:
+    strategy_spec = SimpleNamespace(
+        param_set="makerv4",
+        capabilities=SimpleNamespace(supports_immediate_hedge=True),
+    )
+    config = {
+        "node": {
+            "venues": {
+                "HYPERLIQUID": {
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "execution": True,
+                },
+                "IBKR": {
+                    "adapter": "interactive_brokers",
+                    "instrument_id": "NVDA.NASDAQ",
+                    "execution": False,
+                    "ibg_client_id": 23,
+                },
+            },
+        },
+        "strategy": {
+            "ibkr_primary_exchange": "NASDAQ",
+        },
+    }
+
+    effective = run_node._effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
+    )
+
+    assert effective["node"]["venues"]["IBKR"]["instrument_id"] == "NVDA.NASDAQ"
+    assert effective["node"]["venues"]["IBKR"]["execution"] is True
+    assert config["node"]["venues"]["IBKR"]["execution"] is False
+
+
+def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for_makerv4() -> None:
+    strategy_spec = SimpleNamespace(
+        param_set="makerv4",
+        capabilities=SimpleNamespace(supports_immediate_hedge=True),
+    )
+    config = {
+        "identity": {
+            "strategy_id": "nvda_tradexyz_makerv4",
+            "external_strategy_id": "nvda_tradexyz_makerv4",
+        },
+        "node": {
+            "venues": {
+                "HYPERLIQUID": {
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "execution": True,
+                },
+                "IBKR": {
+                    "adapter": "interactive_brokers",
+                    "instrument_id": "NVDA.NASDAQ",
+                    "execution": False,
+                    "ibg_client_id": 23,
+                },
+            },
+        },
+        "strategy": {
+            "ibkr_primary_exchange": "NASDAQ",
+        },
+        "account_scopes": [
+            {
+                "scope_id": "ibkr.reference.main",
+                "provider": "ibkr",
+                "venue": "IBKR",
+                "ibg_host": "127.0.0.1",
+                "ibg_port": 4002,
+                "ibg_client_id": 107,
+                "account_id": "U10015777",
+                "dockerized_gateway": {
+                    "trading_mode": "live",
+                    "manage_container": False,
+                },
+            },
+            {
+                "scope_id": "ibkr.hedge.main",
+                "provider": "ibkr",
+                "venue": "IBKR",
+                "ibg_host": "127.0.0.1",
+                "ibg_port": 4002,
+                "ibg_client_id": 108,
+                "account_id": "U10015777",
+                "dockerized_gateway": {
+                    "trading_mode": "live",
+                    "manage_container": False,
+                },
+            },
+        ],
+        "strategy_contracts": [
+            {
+                "strategy_id": "nvda_tradexyz_makerv4",
+                "portfolio_asset_id": "NVDA",
+                "maker_instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "NVDA.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+        ],
+    }
+
+    effective = run_node._effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
+    )
+
+    ibkr_cfg = effective["node"]["venues"]["IBKR"]
+    assert ibkr_cfg["ibg_host"] == "127.0.0.1"
+    assert ibkr_cfg["ibg_client_id"] == 23
+    assert ibkr_cfg["account_id"] == "U10015777"
+    assert ibkr_cfg["dockerized_gateway"] == {
+        "trading_mode": "live",
+        "manage_container": False,
+    }
+    assert "ibg_port" not in ibkr_cfg
+
+
 def test_build_node_keeps_ibkr_reference_balance_snapshot_provider_profile_owned_for_makerv4(
     monkeypatch,
 ) -> None:
@@ -1814,6 +1938,81 @@ def test_build_node_real_makerv4_strategy_satisfies_trader_registration_contract
     assert registered["is_disposed"] is False
     assert str(registered["id"]).startswith("aapl_tradexyz_makerv4-")
     assert callable(registered["register"])
+
+
+def test_build_node_real_makerv4_strategy_receives_profile_account_projection_feed(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    projection_redis = SimpleNamespace(client_name="projection-redis")
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node.redis, "Redis", lambda **_kwargs: projection_redis)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "external_strategy_id": "aapl_tradexyz_makerv4",
+                "trader_id": "EQUITIES-LIVE-AAPL-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "param_set": "makerv4",
+                "order_qty": "1",
+            },
+            "strategy_contracts": [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv4",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+            ],
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    assert strategy._profile_account_projection_client is projection_redis
+    assert strategy._profile_account_projection_profile_id == "equities"
+    assert strategy._profile_account_projection_account_scope_id == "hyperliquid.xyz.main"
 
 
 def test_main_exits_with_fatal_code_without_restartable_success(monkeypatch, tmp_path: Path) -> None:

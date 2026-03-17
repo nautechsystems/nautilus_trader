@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.common.account_projection import encode_profile_account_snapshot
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import decode_component
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
@@ -40,10 +41,10 @@ class _FakeRedis:
         return True
 
 
-def _identity_instrument(*, raw_symbol: str) -> SimpleNamespace:
+def _identity_instrument(*, raw_symbol: str, base_currency_code: str = "AAPL") -> SimpleNamespace:
     return SimpleNamespace(
         raw_symbol=raw_symbol,
-        base_currency=SimpleNamespace(code="AAPL"),
+        base_currency=SimpleNamespace(code=base_currency_code),
         quote_currency=SimpleNamespace(code="USD"),
         settlement_currency=SimpleNamespace(code="USD"),
         multiplier=Decimal("1"),
@@ -269,6 +270,60 @@ def test_makerv4_state_snapshot_publishes_portfolio_inventory_component() -> Non
     assert component.qty_conversion_source == "generic:multiplier=1"
 
 
+def test_makerv4_portfolio_inventory_component_uses_canonical_portfolio_asset_id() -> None:
+    redis_client = _FakeRedis()
+    strategy = MakerV4Strategy(
+        config=_config(
+            portfolio_asset_id="AAPL",
+            execution_account_scope_id="hyperliquid.xyz.main",
+        ),
+    )
+    strategy.register(
+        trader_id=TestIdStubs.trader_id(),
+        portfolio=TestComponentStubs.portfolio(),
+        msgbus=TestComponentStubs.msgbus(),
+        cache=TestComponentStubs.cache(),
+        clock=TestComponentStubs.clock(),
+    )
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    strategy._instruments = {
+        maker_id: _identity_instrument(raw_symbol="AAPL/USD", base_currency_code="XYZ:AAPL"),
+        ref_id: _identity_instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=redis_client,
+        portfolio_id="equities",
+        namespace="flux",
+        schema_version="v1",
+        stale_after_ms=3_000,
+        allow_partial_global_risk=True,
+    )
+    strategy._publish_state_snapshot(now_ns=2_500_000_000)
+
+    component = decode_component(redis_client.get(_component_key()))
+    assert component is not None
+    assert component.base_currency == "AAPL"
+
+    legacy_component = decode_component(
+        redis_client.get(
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="aapl_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="XYZ:AAPL",
+                namespace="flux",
+                schema_version="v1",
+            ),
+        ),
+    )
+    assert legacy_component is None
+
+
 def test_makerv4_on_stop_publishes_terminal_inventory_component() -> None:
     redis_client = _FakeRedis()
     strategy, published = _inventory_strategy(redis_client=redis_client)
@@ -283,3 +338,71 @@ def test_makerv4_on_stop_publishes_terminal_inventory_component() -> None:
     state_payloads = [payload for topic, payload in published if topic == TOPIC_STATE]
     assert state_payloads
     assert state_payloads[-1]["state"] == "on_stop"
+
+
+def test_makerv4_state_snapshot_uses_shared_account_projection_when_local_cache_is_flat() -> None:
+    maker_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    ref_id = InstrumentId.from_str("AAPL.NASDAQ")
+    redis_client = _FakeRedis(
+        {
+            FluxRedisKeys.profile_account_projection(
+                profile_id="equities",
+                account_scope_id="hyperliquid.xyz.main",
+            ): encode_profile_account_snapshot(
+                {
+                    "profile_id": "equities",
+                    "account_scope_ids": ["hyperliquid.xyz.main"],
+                    "rows": [
+                        {
+                            "kind": "position",
+                            "account_scope_id": "hyperliquid.xyz.main",
+                            "instrument_id": str(maker_id),
+                            "signed_qty_venue": "-6",
+                            "signed_qty_base": "-6",
+                            "ts_ms": 2_100,
+                        },
+                    ],
+                    "totals": {},
+                    "server_ts_ms": 2_500,
+                },
+            ),
+        },
+    )
+    strategy = MakerV4Strategy(
+        config=_config(execution_account_scope_id="hyperliquid.xyz.main"),
+    )
+    strategy.register(
+        trader_id=TestIdStubs.trader_id(),
+        portfolio=TestComponentStubs.portfolio(),
+        msgbus=TestComponentStubs.msgbus(),
+        cache=TestComponentStubs.cache(),
+        clock=TestComponentStubs.clock(),
+    )
+    strategy._instruments = {
+        maker_id: _identity_instrument(raw_symbol="AAPL/USD"),
+        ref_id: _identity_instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+    )
+    published: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: published.append((topic, payload))  # type: ignore[assignment]
+
+    strategy.configure_profile_account_projection_feed(
+        redis_client=redis_client,
+        profile_id="equities",
+        account_scope_id="hyperliquid.xyz.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy._publish_state_snapshot(now_ns=2_600_000_000)
+
+    state_payloads = [payload for topic, payload in published if topic == TOPIC_STATE]
+    assert state_payloads
+    payload = state_payloads[-1]
+    assert payload["position_qty_venue"] == "-6"
+    assert payload["position_qty_base"] == "-6"
+    assert payload["local_qty_base"] == "-6"
+    assert payload["pricing_debug"]["skew"]["local_inventory_source"] == "shared_account_projection"

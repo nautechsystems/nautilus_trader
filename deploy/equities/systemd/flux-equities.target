@@ -3,16 +3,16 @@ Description=Flux Equities Stack
 Wants=flux@equities-api.service
 Wants=flux@equities-portfolio.service
 Wants=flux@equities-bridge.service
-Wants=flux@equities-node-aapl_tradexyz_makerv3.service
-Wants=flux@equities-node-amd_tradexyz_makerv3.service
-Wants=flux@equities-node-amzn_tradexyz_makerv3.service
-Wants=flux@equities-node-googl_tradexyz_makerv3.service
-Wants=flux@equities-node-meta_tradexyz_makerv3.service
-Wants=flux@equities-node-msft_tradexyz_makerv3.service
-Wants=flux@equities-node-nvda_tradexyz_makerv3.service
-Wants=flux@equities-node-orcl_tradexyz_makerv3.service
-Wants=flux@equities-node-pltr_tradexyz_makerv3.service
-Wants=flux@equities-node-tsla_tradexyz_makerv3.service
+Wants=flux@equities-node-aapl_tradexyz_makerv4.service
+Wants=flux@equities-node-amd_tradexyz_makerv4.service
+Wants=flux@equities-node-amzn_tradexyz_makerv4.service
+Wants=flux@equities-node-googl_tradexyz_makerv4.service
+Wants=flux@equities-node-meta_tradexyz_makerv4.service
+Wants=flux@equities-node-msft_tradexyz_makerv4.service
+Wants=flux@equities-node-nvda_tradexyz_makerv4.service
+Wants=flux@equities-node-orcl_tradexyz_makerv4.service
+Wants=flux@equities-node-pltr_tradexyz_makerv4.service
+Wants=flux@equities-node-tsla_tradexyz_makerv4.service
 After=network-online.target
 
 [Install]

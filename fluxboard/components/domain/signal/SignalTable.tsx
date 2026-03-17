@@ -270,6 +270,17 @@ function getLegDisplayLabel(leg: SignalLeg | null | undefined): string {
   ).trim() || 'N/A';
 }
 
+function getConfiguredSignalSourceLabel(leg: SignalLeg | null | undefined): string | null {
+  if (!leg) return null;
+  const explicitRoute = String(leg.route ?? '').trim();
+  if (explicitRoute) return explicitRoute.toUpperCase();
+  const instrumentId = String(leg.instrument_id ?? '').trim();
+  if (!instrumentId.includes('.')) return null;
+  const source = instrumentId.split('.').at(-1)?.trim();
+  if (!source) return null;
+  return source.toUpperCase();
+}
+
 function getLegUnderlying(leg: SignalLeg | null | undefined): string {
   return String(leg?.inventory_asset ?? leg?.base_asset ?? leg?.coin ?? '').trim();
 }
@@ -873,6 +884,7 @@ interface LegCellProps {
   showQuoted: boolean;
   tooltipBehavior?: 'cell' | 'icon';
   contextHint?: string;
+  sourceLabel?: string | null;
 }
 
 interface FrozenState {
@@ -914,7 +926,7 @@ function KvGrid({
  * @param leg - Signal leg data (may be null)
  * @param showQuoted - Whether to show quoted prices (with edge bias) vs decision prices
  */
-const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'cell', contextHint }) => {
+const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'cell', contextHint, sourceLabel }) => {
   const [isHovered, setIsHovered] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const frozenRef = useRef<FrozenState>({ fxBadgeVisible: false });
@@ -1081,6 +1093,16 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
         >
           <div className="text-text-muted text-xs flex items-center">
             {getLegDisplayLabel(leg)}
+            {sourceLabel ? (
+              <Badge
+                variant="neutral"
+                size="xs"
+                className="ml-1 h-[16px] px-1 py-0 text-[9px] tracking-wide"
+                aria-label={`Configured source ${sourceLabel}`}
+              >
+                {sourceLabel}
+              </Badge>
+            ) : null}
             {fxBadge}
             {tooltipBehavior === 'icon' ? advancedIcon : null}
           </div>
@@ -1110,6 +1132,7 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
     && prevProps.showQuoted === nextProps.showQuoted
     && prevProps.tooltipBehavior === nextProps.tooltipBehavior
     && prevProps.contextHint === nextProps.contextHint
+    && prevProps.sourceLabel === nextProps.sourceLabel
   );
 });
 LegCell.displayName = 'LegCell';
@@ -1574,18 +1597,22 @@ const MakerTruthRow: FC<{ row: EnrichedRow; legKey: LegKey; quoteSnapshot: Maker
 });
 MakerTruthRow.displayName = 'MakerTruthRow';
 
-const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: boolean; nowMs: number }> = memo(({
+const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: boolean; nowMs: number; pathProfile: PathProfile }> = memo(({
   row,
   legKey,
   showQuoted,
   nowMs,
+  pathProfile,
 }) => {
   const quoteSnapshot = resolveQuoteSnapshot(row);
   const hasMakerOverlay = !!quoteSnapshot;
   const leg = resolveDisplayedLeg(row, legKey);
+  const sourceLabel = pathProfile === 'equities' && legKey === 'B'
+    ? getConfiguredSignalSourceLabel(leg)
+    : null;
 
   if (!hasMakerOverlay) {
-    return <LegCell leg={leg} showQuoted={showQuoted} />;
+    return <LegCell leg={leg} showQuoted={showQuoted} sourceLabel={sourceLabel} />;
   }
 
   return (
@@ -1595,6 +1622,7 @@ const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: bool
         showQuoted={showQuoted}
         tooltipBehavior="icon"
         contextHint="Maker: quoting truth = Row 2 (Our / Ref used)"
+        sourceLabel={sourceLabel}
       />
       {quoteSnapshot ? (
         <MakerTruthRow row={row} legKey={legKey} quoteSnapshot={quoteSnapshot} nowMs={nowMs} />
@@ -2592,7 +2620,7 @@ export default function SignalTable({
         ),
         enableSorting: false,
         cell: ({ row }) => (
-          <MakerAwareLegCell row={row.original} legKey="A" showQuoted={showQuoted} nowMs={getServerNowMs()} />
+          <MakerAwareLegCell row={row.original} legKey="A" showQuoted={showQuoted} nowMs={getServerNowMs()} pathProfile={pathProfile} />
         ),
       },
       {
@@ -2611,7 +2639,7 @@ export default function SignalTable({
         ),
         enableSorting: false,
         cell: ({ row }) => (
-          <MakerAwareLegCell row={row.original} legKey="B" showQuoted={showQuoted} nowMs={getServerNowMs()} />
+          <MakerAwareLegCell row={row.original} legKey="B" showQuoted={showQuoted} nowMs={getServerNowMs()} pathProfile={pathProfile} />
         ),
       },
       {
@@ -3008,11 +3036,11 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
         <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-3">
           <div>
             <span className="text-[10px] uppercase text-zinc-500">Strategy market</span>
-            <MakerAwareLegCell row={row} legKey="A" showQuoted={showQuoted} nowMs={nowMs} />
+            <MakerAwareLegCell row={row} legKey="A" showQuoted={showQuoted} nowMs={nowMs} pathProfile={pathProfile} />
           </div>
           <div>
             <span className="text-[10px] uppercase text-zinc-500">FV market</span>
-            <MakerAwareLegCell row={row} legKey="B" showQuoted={showQuoted} nowMs={nowMs} />
+            <MakerAwareLegCell row={row} legKey="B" showQuoted={showQuoted} nowMs={nowMs} pathProfile={pathProfile} />
           </div>
         </div>
       )}

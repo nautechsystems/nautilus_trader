@@ -19,7 +19,7 @@ def _read(path: Path) -> str:
 def _strategy_contracts() -> tuple[StrategyContractEntry, ...]:
     return (
         StrategyContractEntry(
-            strategy_id="aapl_tradexyz_makerv3",
+            strategy_id="aapl_tradexyz_makerv4",
             portfolio_asset_id="AAPL",
             maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             reference_instrument_id="AAPL.NASDAQ",
@@ -28,7 +28,7 @@ def _strategy_contracts() -> tuple[StrategyContractEntry, ...]:
             hedge_account_scope_id="ibkr.hedge.main",
         ),
         StrategyContractEntry(
-            strategy_id="msft_tradexyz_makerv3",
+            strategy_id="msft_tradexyz_makerv4",
             portfolio_asset_id="MSFT",
             maker_instrument_id="xyz:MSFT-USD-PERP.HYPERLIQUID",
             reference_instrument_id="MSFT.NASDAQ",
@@ -64,7 +64,7 @@ def _healthy_signal_payload() -> dict[str, object]:
         "server_ts_ms": 1_700_000_000_500,
         "strategies": [
             {
-                "id": "aapl_tradexyz_makerv3",
+                "id": "aapl_tradexyz_makerv4",
                 "params": {"max_age_ms": "10000"},
                 "maker_role_map": {
                     "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
@@ -89,7 +89,7 @@ def _healthy_signal_payload() -> dict[str, object]:
                 },
             },
             {
-                "id": "msft_tradexyz_makerv3",
+                "id": "msft_tradexyz_makerv4",
                 "params": {"max_age_ms": "10000"},
                 "maker_role_map": {
                     "maker_leg": "hyperliquid:XYZ:MSFT-USD-PERP.HYPERLIQUID",
@@ -134,15 +134,15 @@ def _healthy_projection_payloads() -> dict[str, dict[str, object]]:
 
 def _healthy_component_payloads() -> dict[str, dict[str, object]]:
     return {
-        "aapl_tradexyz_makerv3": {
-            "strategy_id": "aapl_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4": {
+            "strategy_id": "aapl_tradexyz_makerv4",
             "portfolio_id": "equities",
             "base_currency": "AAPL",
             "local_qty_base": "10",
             "ts_ms": 1_700_000_000_000,
         },
-        "msft_tradexyz_makerv3": {
-            "strategy_id": "msft_tradexyz_makerv3",
+        "msft_tradexyz_makerv4": {
+            "strategy_id": "msft_tradexyz_makerv4",
             "portfolio_id": "equities",
             "base_currency": "MSFT",
             "local_qty_base": "5",
@@ -163,7 +163,7 @@ def test_evaluate_equities_readiness_passes_when_contract_surfaces_are_healthy()
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -196,17 +196,17 @@ def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": True,
-            "missing_required": ["msft_tradexyz_makerv3"],
+            "missing_required": ["msft_tradexyz_makerv4"],
         },
         signals_payload={
             "server_ts_ms": 1_700_000_000_500,
             "strategies": [
                 {
-                    "id": "aapl_tradexyz_makerv3",
+                    "id": "aapl_tradexyz_makerv4",
                     "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
@@ -216,7 +216,7 @@ def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
                     "debug": {"md_health": {"stale_legs": [], "state_stale": False}},
                 },
                 {
-                    "id": "msft_tradexyz_makerv3",
+                    "id": "msft_tradexyz_makerv4",
                     "state": {"state": "blocked_reference_md"},
                     "legs": {},
                     "debug": {
@@ -236,14 +236,14 @@ def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
             },
         },
         component_payloads_by_strategy_id={
-            "aapl_tradexyz_makerv3": _healthy_component_payloads()["aapl_tradexyz_makerv3"],
-            "msft_tradexyz_makerv3": None,
+            "aapl_tradexyz_makerv4": _healthy_component_payloads()["aapl_tradexyz_makerv4"],
+            "msft_tradexyz_makerv4": None,
         },
         now_ms_value=1_700_000_000_500,
     )
 
     assert result.ok is False
-    assert result.checks["balances"].details["missing_required"] == ["msft_tradexyz_makerv3"]
+    assert result.checks["balances"].details["missing_required"] == ["msft_tradexyz_makerv4"]
     assert result.checks["profile_account_projections"].details["missing_scope_ids"] == [
         "ibkr.hedge.main",
     ]
@@ -251,14 +251,14 @@ def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
         "ibkr.reference.main",
     ]
     assert result.checks["component_keys"].details["missing_strategy_ids"] == [
-        "msft_tradexyz_makerv3",
+        "msft_tradexyz_makerv4",
     ]
     assert result.checks["signals"].details["stale_signal_legs"] == ["ibkr:MSFT.NASDAQ"]
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "msft_tradexyz_makerv3",
+        "msft_tradexyz_makerv4",
     ]
     assert result.checks["ibkr_auth"].details["unhealthy_strategy_ids"] == [
-        "msft_tradexyz_makerv3",
+        "msft_tradexyz_makerv4",
     ]
 
 
@@ -271,7 +271,7 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -281,7 +281,7 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
             "server_ts_ms": 1_700_000_000_500,
             "strategies": [
                 {
-                    "id": "aapl_tradexyz_makerv3",
+                    "id": "aapl_tradexyz_makerv4",
                     "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
@@ -291,7 +291,7 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
                     "debug": {"md_health": {"stale_legs": [], "state_stale": False}},
                 },
                 {
-                    "id": "msft_tradexyz_makerv3",
+                    "id": "msft_tradexyz_makerv4",
                     "params": {"max_age_ms": "10000"},
                     "state": {"state": "bot_off"},
                     "legs": {
@@ -319,8 +319,157 @@ def test_evaluate_equities_readiness_thresholds_are_overridable() -> None:
     assert result.ok is True
     assert result.checks["signals"].details["stale_signal_leg_count"] == 1
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "msft_tradexyz_makerv3",
+        "msft_tradexyz_makerv4",
     ]
+
+
+def test_evaluate_equities_readiness_uses_explicit_old_quote_state_from_signal_snapshot() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["maker_v4"] = {
+        "quote_snapshot": {
+            "maker_leg": {
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+            },
+            "ref_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "ok",
+                "quote_state": "old",
+                "pricing_usable": False,
+                "hedge_usable": False,
+            },
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["old_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv4",
+    ]
+    assert result.checks["ibkr_auth"].ok is False
+
+
+def test_evaluate_equities_readiness_uses_explicit_missing_quote_state_from_signal_snapshot() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["maker_v4"] = {
+        "quote_snapshot": {
+            "maker_leg": {
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+            },
+            "ref_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "ok",
+                "quote_state": "missing",
+                "pricing_usable": False,
+                "hedge_usable": False,
+            },
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["missing_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv4",
+    ]
+    assert result.checks["ibkr_auth"].ok is False
+
+
+def test_evaluate_equities_readiness_uses_explicit_feed_down_state_from_signal_snapshot() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["maker_v4"] = {
+        "quote_snapshot": {
+            "maker_leg": {
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+            },
+            "ref_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "down",
+                "quote_state": "fresh",
+                "pricing_usable": False,
+                "hedge_usable": False,
+            },
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["feed_down_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv4",
+    ]
+    assert result.checks["ibkr_auth"].ok is False
 
 
 def test_evaluate_equities_readiness_fails_when_referenced_ibkr_scopes_are_missing_from_config() -> (
@@ -333,7 +482,7 @@ def test_evaluate_equities_readiness_fails_when_referenced_ibkr_scopes_are_missi
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -373,7 +522,7 @@ def test_evaluate_equities_readiness_fails_for_over_age_reference_legs() -> None
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -388,10 +537,10 @@ def test_evaluate_equities_readiness_fails_for_over_age_reference_legs() -> None
     assert result.ok is False
     assert result.checks["signals"].details["over_age_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "aapl_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4",
     ]
     assert result.checks["ibkr_auth"].details["unhealthy_strategy_ids"] == [
-        "aapl_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4",
     ]
 
 
@@ -414,7 +563,7 @@ def test_evaluate_equities_readiness_ignores_reference_age_outside_regular_sessi
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -454,7 +603,7 @@ def test_evaluate_equities_readiness_still_enforces_reference_age_during_regular
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -474,7 +623,7 @@ def test_evaluate_equities_readiness_still_enforces_reference_age_during_regular
     assert result.checks["signals"].details["regular_session_active"] is True
     assert result.checks["signals"].details["over_age_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "aapl_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4",
     ]
 
 
@@ -490,7 +639,7 @@ def test_evaluate_equities_readiness_fails_closed_at_age_equals_max_age_ms_bound
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -505,7 +654,7 @@ def test_evaluate_equities_readiness_fails_closed_at_age_equals_max_age_ms_bound
     assert result.ok is False
     assert result.checks["signals"].details["over_age_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "aapl_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4",
     ]
 
 
@@ -522,7 +671,7 @@ def test_evaluate_equities_readiness_accepts_live_shaped_maker_leg_key() -> None
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -553,7 +702,7 @@ def test_evaluate_equities_readiness_ignores_unrelated_stale_legs_in_live_rows()
         portfolio_id="equities",
         strategy_contracts=_strategy_contracts(),
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,
@@ -580,7 +729,7 @@ def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None
 
     mismatched_contracts = (
         StrategyContractEntry(
-            strategy_id="aapl_tradexyz_makerv3",
+            strategy_id="aapl_tradexyz_makerv4",
             portfolio_asset_id="AAPL",
             maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             reference_instrument_id="AAPL.SMART",
@@ -596,7 +745,7 @@ def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None
         portfolio_id="equities",
         strategy_contracts=mismatched_contracts,
         account_scopes=_account_scopes(),
-        required_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
         balances_payload={
             "source": "portfolio_snapshot_v2",
             "degraded": False,

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.bridge.stream_consumer import FluxBridgeStreamConsumer
 from nautilus_trader.flux.bridge.stream_consumer import build_parser
 
@@ -18,6 +19,31 @@ def _consumer() -> FluxBridgeStreamConsumer:
         redis_client=_FakeRedis(),
         environment="paper",
     )
+
+
+class _TrackStreamRedis:
+    def __init__(
+        self,
+        *,
+        stream_types: dict[str, str] | None = None,
+        stream_sizes: dict[str, int] | None = None,
+        latest_entries: dict[str, str] | None = None,
+    ) -> None:
+        self._stream_types = dict(stream_types or {})
+        self._stream_sizes = dict(stream_sizes or {})
+        self._latest_entries = dict(latest_entries or {})
+
+    def type(self, key: str) -> str:
+        return self._stream_types.get(key, "none")
+
+    def xlen(self, key: str) -> int:
+        return int(self._stream_sizes.get(key, 0))
+
+    def xrevrange(self, key: str, _max: str, _min: str, *, count: int = 1):
+        latest_entry = self._latest_entries.get(key)
+        if latest_entry is None or count <= 0:
+            return []
+        return [(latest_entry.encode(), {b"payload": b"{}"})]
 
 
 def test_decode_entry_unwraps_flux_bus_payload_and_extracts_topic() -> None:
@@ -40,6 +66,60 @@ def test_decode_entry_unwraps_flux_bus_payload_and_extracts_topic() -> None:
     assert payload == {"trade_id": "t-1", "ts_event": "1700000001"}
     assert context.topic == "trade"
     assert context.ts_ms == 1700000001000
+
+
+def test_track_stream_key_backfills_trade_stream_when_materialized_stream_empty() -> None:
+    stream_key = "flux:v1:in:stream:live:msft_tradexyz_makerv4:flux.makerv3.trade"
+    target_stream_key = "flux:v1:trades:stream:msft_tradexyz_makerv4"
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_TrackStreamRedis(
+            stream_types={stream_key: "stream"},
+            stream_sizes={target_stream_key: 0},
+        ),
+        environment="live",
+        handlers={"flux.makerv3.trade": lambda payload, context: []},
+        topics=["flux.makerv3.trade"],
+    )
+
+    consumer._track_stream_key(stream_key)
+
+    assert consumer._stream_ids[stream_key] == "0-0"
+
+
+def test_track_stream_key_pins_latest_source_entry_when_trade_stream_already_materialized() -> None:
+    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.trade"
+    target_stream_key = "flux:v1:trades:stream:nvda_tradexyz_makerv4"
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_TrackStreamRedis(
+            stream_types={stream_key: "stream"},
+            stream_sizes={target_stream_key: 4},
+            latest_entries={stream_key: "1700000001000-9"},
+        ),
+        environment="live",
+        handlers={"flux.makerv3.trade": lambda payload, context: []},
+        topics=["flux.makerv3.trade"],
+    )
+
+    consumer._track_stream_key(stream_key)
+
+    assert consumer._stream_ids[stream_key] == "1700000001000-9"
+
+
+def test_track_stream_key_pins_latest_source_entry_for_non_trade_topics() -> None:
+    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.state"
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_TrackStreamRedis(
+            stream_types={stream_key: "stream"},
+            latest_entries={stream_key: "1700000001001-4"},
+        ),
+        environment="live",
+        handlers={"flux.makerv3.state": lambda payload, context: []},
+        topics=["flux.makerv3.state"],
+    )
+
+    consumer._track_stream_key(stream_key)
+
+    assert consumer._stream_ids[stream_key] == "1700000001001-4"
 
 
 def test_decode_entry_uses_ts_event_fallback_for_ts_ms() -> None:
@@ -114,6 +194,8 @@ class _RunLoopRedis:
     ) -> None:
         self._stream_key = stream_key
         self._entries = entries or [(entry_id, fields)]
+        self.streams: dict[str, list[tuple[str, dict[Any, Any]]]] = {}
+        self._xadd_counter = 0
 
     def xread(
         self,
@@ -130,6 +212,20 @@ class _RunLoopRedis:
                 encoded_entries,
             ),
         ]
+
+    def xadd(
+        self,
+        key: str,
+        fields: dict[Any, Any],
+        *,
+        maxlen: int | None = None,
+        approximate: bool = True,
+    ) -> str:
+        _ = maxlen, approximate
+        self._xadd_counter += 1
+        entry_id = f"{self._xadd_counter}-0"
+        self.streams.setdefault(key, []).append((entry_id, dict(fields)))
+        return entry_id
 
 
 class _LegacyDisconnectPool:
@@ -203,6 +299,14 @@ def test_run_does_not_advance_stream_offset_on_handler_failure() -> None:
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == "$"
+    alert_key = FluxRedisKeys(strategy_id="strategy_01").alerts()
+    assert len(consumer._redis.streams[alert_key]) == 1
+    alert_payload = json.loads(consumer._redis.streams[alert_key][0][1]["payload"])
+    assert alert_payload["alert_key"] == "bridge_handler_failed"
+    assert alert_payload["strategy_id"] == "strategy_01"
+    assert alert_payload["source"] == "bridge"
+    assert alert_payload["actionable"] is True
+    assert alert_payload["source_topic"] == "event"
 
 
 def test_run_does_not_advance_stream_offset_on_write_failure() -> None:
@@ -220,6 +324,13 @@ def test_run_does_not_advance_stream_offset_on_write_failure() -> None:
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == "$"
+    alert_key = FluxRedisKeys(strategy_id="strategy_01").alerts()
+    assert len(consumer._redis.streams[alert_key]) == 1
+    alert_payload = json.loads(consumer._redis.streams[alert_key][0][1]["payload"])
+    assert alert_payload["alert_key"] == "bridge_write_failed"
+    assert alert_payload["strategy_id"] == "strategy_01"
+    assert alert_payload["source"] == "bridge"
+    assert alert_payload["source_topic"] == "event"
 
 
 def test_run_advances_stream_offset_after_successful_write() -> None:

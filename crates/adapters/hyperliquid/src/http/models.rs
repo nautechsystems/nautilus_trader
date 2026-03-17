@@ -927,6 +927,13 @@ pub enum HyperliquidExecAction {
     /// No-operation to invalidate pending nonces.
     #[serde(rename = "noop")]
     Noop,
+
+    /// Reserve additional address-based request weight.
+    #[serde(rename = "reserveRequestWeight")]
+    ReserveRequestWeight {
+        /// Number of additional requests to reserve.
+        weight: u64,
+    },
 }
 
 /// Exchange request envelope for the `/exchange` endpoint.

@@ -38,10 +38,10 @@ use nautilus_hyperliquid::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientId, TraderId, Venue},
-    types::{AccountBalance, Money},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TraderId, Venue},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -113,6 +113,14 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         .unwrap_or("");
 
     match request_type {
+        "perpDexs" => Json(json!([
+            null,
+            {
+                "name": "xyz",
+                "fullName": "XYZ"
+            }
+        ]))
+        .into_response(),
         "meta" => {
             let meta = if request_body.get("dex").and_then(|v| v.as_str()) == Some("xyz") {
                 json!({
@@ -158,6 +166,13 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         "userFees" => Json(json!({
             "userCrossRate": "0.00045",
             "userAddRate": "0.00015"
+        }))
+        .into_response(),
+        "userRateLimit" => Json(json!({
+            "cumVlm": "5856.56",
+            "nRequestsUsed": 16113,
+            "nRequestsCap": 15856,
+            "nRequestsSurplus": 0
         }))
         .into_response(),
         "clearinghouseState" => {
@@ -369,6 +384,13 @@ async fn handle_exchange(
             "response": {
                 "type": "updateLeverage",
                 "data": {}
+            }
+        }))
+        .into_response(),
+        Some("reserveRequestWeight") => Json(json!({
+            "status": "ok",
+            "response": {
+                "type": "default"
             }
         }))
         .into_response(),
@@ -916,6 +938,49 @@ async fn test_http_client_request_account_state_with_explicit_dex() {
 
 #[rstest]
 #[tokio::test]
+async fn test_http_client_info_user_rate_limit_uses_account_address() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_account_address(Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()));
+
+    let response = client.info_user_rate_limit().await.unwrap();
+
+    assert_eq!(response["cumVlm"], "5856.56");
+    assert_eq!(response["nRequestsUsed"], 16113);
+    assert_eq!(response["nRequestsCap"], 15856);
+    assert_eq!(response["nRequestsSurplus"], 0);
+
+    let request_body = state.last_info_request.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "userRateLimit");
+    assert_eq!(
+        request_body["user"],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_reserve_request_weight_posts_default_action() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+    client.reserve_request_weight(20_000).await.unwrap();
+
+    let action = state.last_exchange_action.lock().await.clone().unwrap();
+    assert_eq!(action["type"], "reserveRequestWeight");
+    assert_eq!(action["weight"], 20_000);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_client_request_position_status_reports_with_explicit_dex_returns_builder_positions(
 ) {
     let state = TestServerState::default();
@@ -959,6 +1024,89 @@ async fn test_http_client_request_position_status_reports_with_explicit_dex_retu
             .iter()
             .any(|body| body["type"] == "meta" && body["dex"] == "xyz")
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_request_instruments_with_explicit_dex_uses_builder_asset_ids() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+
+    let instruments = client
+        .request_instruments_with_dex(Some("xyz"))
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    assert_eq!(
+        client.get_asset_index("xyz:NVDA-USD-PERP"),
+        Some(110_000),
+    );
+    assert_eq!(
+        client.get_asset_index("xyz:COIN-USD-PERP"),
+        Some(110_001),
+    );
+    assert_eq!(
+        client.get_asset_index("xyz:GOOGL-USD-PERP"),
+        Some(110_002),
+    );
+
+    let info_requests = state.info_requests.lock().await.clone();
+    assert!(info_requests.iter().any(|body| body["type"] == "perpDexs"));
+    assert!(
+        info_requests
+            .iter()
+            .any(|body| body["type"] == "meta" && body["dex"] == "xyz")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_client_submit_order_with_explicit_dex_uses_builder_asset_id() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client =
+        HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+    client.set_dex(Some("xyz".to_string()));
+
+    let instruments = client
+        .request_instruments_with_dex(Some("xyz"))
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("xyz:NVDA-USD-PERP.HYPERLIQUID");
+    let _ = client
+        .submit_order(
+            instrument_id,
+            ClientOrderId::from("O-TEST-XYZ-0001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            Some(Price::from("184.69")),
+            None,
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+
+    let action = state.last_exchange_action.lock().await.clone().unwrap();
+    assert_eq!(action["type"], "order");
+    assert_eq!(action["orders"][0]["a"], 110_000);
 }
 
 #[rstest]

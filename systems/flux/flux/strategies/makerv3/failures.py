@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import suppress
 from decimal import Decimal
-import re
 from typing import TYPE_CHECKING
 
 from flux.strategies.makerv3.constants import (
@@ -18,28 +17,13 @@ from flux.strategies.makerv3.constants import (
     ALERT_KEY_VENUE_PROTECTION_CIRCUIT_BREAKER,
 )
 from flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_FAIL_CIRCUIT_BREAKER
+from flux.strategies.shared.venue_protection import extract_hyperliquid_request_quota
+from flux.strategies.shared.venue_protection import is_venue_protection_reason
+from flux.strategies.shared.venue_protection import normalize_reason_text
 
 
 if TYPE_CHECKING:
     from flux.strategies.makerv3.strategy import MakerV3Strategy
-
-
-_VENUE_PROTECTION_REASON_PHRASES: tuple[str, ...] = (
-    "number of active orders great than limit",
-    "number of active orders greater than limit",
-    "active order limit",
-    "too many visits",
-    "api rate limit",
-    "too many requests",
-)
-
-
-def normalize_reason_text(reason: object) -> str:
-    """
-    Normalize a venue reason string for coarse safety classification.
-    """
-    normalized = f" {str(reason or '').strip().lower()} "
-    return " ".join(normalized.split())
 
 
 def is_terminal_order_denial_reason(reason: object) -> bool:
@@ -51,35 +35,6 @@ def is_terminal_order_denial_reason(reason: object) -> bool:
     if not normalized:
         return False
     return normalized.startswith("unsupported_account_mode")
-
-
-def _normalized_reason_tokens(normalized_reason: str) -> set[str]:
-    return {
-        token
-        for token in re.split(r"[^a-z0-9]+", normalized_reason)
-        if token
-    }
-
-
-def is_venue_protection_reason(reason: object) -> bool:
-    """
-    Return True when `reason` signals an exchange order-limit or API-limit condition.
-    """
-    normalized = normalize_reason_text(reason)
-    if not normalized:
-        return False
-    if any(fragment in normalized for fragment in _VENUE_PROTECTION_REASON_PHRASES):
-        return True
-
-    tokens = _normalized_reason_tokens(normalized)
-    if normalized == "429":
-        return True
-    if "429" in tokens and tokens.intersection(
-        {"api", "code", "http", "limit", "rate", "request", "requests", "status"},
-    ):
-        return True
-    return False
-
 
 def handle_quote_failure(
     strategy: MakerV3Strategy,
@@ -197,6 +152,7 @@ def handle_venue_protection(
     normalized_reason = normalize_reason_text(reason) or "unknown"
     raw_reason = str(reason or "")
     client_order_id_text = str(client_order_id or "")
+    quota_fields = extract_hyperliquid_request_quota(reason)
 
     def _safe(effect: Callable[[], None]) -> None:
         with suppress(Exception):
@@ -227,6 +183,7 @@ def handle_venue_protection(
                 source_event=source_event,
                 raw_reason=raw_reason,
                 client_order_id=client_order_id_text,
+                **quota_fields,
             ),
         )
         _safe(
@@ -236,6 +193,7 @@ def handle_venue_protection(
                 reason=normalized_reason,
                 raw_reason=raw_reason,
                 client_order_id=client_order_id_text,
+                **quota_fields,
             ),
         )
         _safe(
@@ -243,7 +201,15 @@ def handle_venue_protection(
                 "Venue protection circuit breaker triggered "
                 f"strategy_id={strategy._external_strategy_id} "
                 f"source_event={source_event} client_order_id={client_order_id_text or 'unknown'} "
-                f"reason={raw_reason}",
+                f"reason={raw_reason}"
+                + (
+                    " "
+                    f"quota_requests_used={quota_fields['quota_requests_used']} "
+                    f"quota_requests_cap={quota_fields['quota_requests_cap']} "
+                    f"quota_cumulative_volume_traded={quota_fields['quota_cumulative_volume_traded']}"
+                    if quota_fields
+                    else ""
+                ),
             ),
         )
     finally:

@@ -204,7 +204,7 @@ describe('Params profile column filtering', () => {
     } as any);
     vi.mocked(api.api.getParams).mockResolvedValue([
       {
-        strategy_id: 'aapl_tradexyz_makerv3',
+        strategy_id: 'aapl_tradexyz_makerv4',
         running: true,
         meta: { class: 'maker_v3' },
         hot_params: ['bot_on', 'bid_edge1', 'ask_edge1'],
@@ -219,7 +219,7 @@ describe('Params profile column filtering', () => {
     render(<Params />);
 
     await waitFor(() => {
-      expect(screen.getByText('aapl_tradexyz_makerv3')).toBeInTheDocument();
+      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
     });
 
     await waitFor(() => {

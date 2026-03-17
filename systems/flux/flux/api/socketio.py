@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import sys
 from collections.abc import Callable
@@ -49,7 +50,15 @@ _LOG = logging.getLogger(__name__)
 
 
 class FluxSocketStoreProtocol(Protocol):
-    def load_signals_payload(self, strategy_id: str, metadata: Any) -> dict[str, Any]: ...
+    def load_signals_payload(
+        self,
+        strategy_id: str,
+        metadata: Any,
+        *,
+        running: bool | None = None,
+    ) -> dict[str, Any]: ...
+
+    def load_running_states(self, strategy_ids: Sequence[str]) -> dict[str, bool | None]: ...
 
     def load_trades_rows(
         self,
@@ -463,11 +472,25 @@ class FluxSocketEmitter:
         room: str,
     ) -> None:
         signal_payloads_by_strategy: dict[str, dict[str, Any]] = {}
+        load_running_states = getattr(self._store, "load_running_states", None)
+        running_states = (
+            load_running_states(strategy_ids)
+            if callable(load_running_states)
+            else {strategy_id: None for strategy_id in strategy_ids}
+        )
+        load_signals_parameters = inspect.signature(self._store.load_signals_payload).parameters
+        supports_running = "running" in load_signals_parameters
         for current_strategy_id in strategy_ids:
             metadata = self._metadata_resolver(current_strategy_id)
-            signal_payloads_by_strategy[current_strategy_id] = build_stable_signal_view(
-                self._store.load_signals_payload(current_strategy_id, metadata),
-            )
+            if supports_running:
+                signal_payload = self._store.load_signals_payload(
+                    current_strategy_id,
+                    metadata,
+                    running=running_states.get(current_strategy_id),
+                )
+            else:
+                signal_payload = self._store.load_signals_payload(current_strategy_id, metadata)
+            signal_payloads_by_strategy[current_strategy_id] = build_stable_signal_view(signal_payload)
 
         with self._lock:
             trade_cursors = dict(self._trade_cursor_by_profile.get(profile, {}))

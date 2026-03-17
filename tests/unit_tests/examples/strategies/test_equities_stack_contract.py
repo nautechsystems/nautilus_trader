@@ -4,25 +4,25 @@ import re
 import tomllib
 from pathlib import Path
 
-ACTIVE_STRATEGY_CLASS = "maker_v3"
-ACTIVE_PARAM_SET = "makerv3"
-ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv4"
+ACTIVE_STRATEGY_CLASS = "maker_v4"
+ACTIVE_PARAM_SET = "makerv4"
+ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv3"
 ACTIVE_STRATEGIES = (
     {
         "symbol": "AAPL",
-        "strategy_id": "aapl_tradexyz_makerv3",
+        "strategy_id": "aapl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AAPL.NASDAQ",
     },
     {
         "symbol": "AMD",
-        "strategy_id": "amd_tradexyz_makerv3",
+        "strategy_id": "amd_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AMD.NASDAQ",
     },
     {
         "symbol": "AMZN",
-        "strategy_id": "amzn_tradexyz_makerv3",
+        "strategy_id": "amzn_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AMZN-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AMZN.NASDAQ",
     },
@@ -52,7 +52,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "GOOGL",
-        "strategy_id": "googl_tradexyz_makerv3",
+        "strategy_id": "googl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "GOOGL.NASDAQ",
     },
@@ -70,7 +70,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "META",
-        "strategy_id": "meta_tradexyz_makerv3",
+        "strategy_id": "meta_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:META-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "META.NASDAQ",
     },
@@ -82,7 +82,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "MSFT",
-        "strategy_id": "msft_tradexyz_makerv3",
+        "strategy_id": "msft_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:MSFT-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "MSFT.NASDAQ",
     },
@@ -100,19 +100,19 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "NVDA",
-        "strategy_id": "nvda_tradexyz_makerv3",
+        "strategy_id": "nvda_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "NVDA.NASDAQ",
     },
     {
         "symbol": "ORCL",
-        "strategy_id": "orcl_tradexyz_makerv3",
+        "strategy_id": "orcl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:ORCL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "ORCL.NYSE",
     },
     {
         "symbol": "PLTR",
-        "strategy_id": "pltr_tradexyz_makerv3",
+        "strategy_id": "pltr_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "PLTR.NASDAQ",
     },
@@ -136,7 +136,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "TSLA",
-        "strategy_id": "tsla_tradexyz_makerv3",
+        "strategy_id": "tsla_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:TSLA-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "TSLA.NASDAQ",
     },
@@ -157,16 +157,16 @@ ACTIVE_IBKR_INSTRUMENT_IDS = {
     for entry in ACTIVE_STRATEGIES
 }
 CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv3",
-    "amd_tradexyz_makerv3",
-    "amzn_tradexyz_makerv3",
-    "googl_tradexyz_makerv3",
-    "meta_tradexyz_makerv3",
-    "msft_tradexyz_makerv3",
-    "nvda_tradexyz_makerv3",
-    "orcl_tradexyz_makerv3",
-    "pltr_tradexyz_makerv3",
-    "tsla_tradexyz_makerv3",
+    "aapl_tradexyz_makerv4",
+    "amd_tradexyz_makerv4",
+    "amzn_tradexyz_makerv4",
+    "googl_tradexyz_makerv4",
+    "meta_tradexyz_makerv4",
+    "msft_tradexyz_makerv4",
+    "nvda_tradexyz_makerv4",
+    "orcl_tradexyz_makerv4",
+    "pltr_tradexyz_makerv4",
+    "tsla_tradexyz_makerv4",
 )
 SECOND_WAVE_DISABLED_STRATEGY_IDS = (
     "coin_tradexyz_makerv3",
@@ -316,9 +316,9 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert 'read_only_api = true' in template
     assert "manage_container = false" in template
     assert 'twofa_timeout_action = "exit"' not in template
-    assert identity["strategy_id"] == "symbol_tradexyz_makerv3"
-    assert identity["strategy_instance_id"] == "symbol_tradexyz_makerv3"
-    assert identity["external_strategy_id"] == "symbol_tradexyz_makerv3"
+    assert identity["strategy_id"] == "symbol_tradexyz_makerv4"
+    assert identity["strategy_instance_id"] == "symbol_tradexyz_makerv4"
+    assert identity["external_strategy_id"] == "symbol_tradexyz_makerv4"
     assert hyperliquid["private_key_env"] == "TRADE_XYZ_AGENT_PK"
     assert hyperliquid["account_address_env"] == "TRADE_XYZ_ACCOUNT_ADDRESS"
     assert hyperliquid["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
@@ -327,6 +327,7 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert strategy["strategy_groups"] == "equities"
     assert strategy["order_qty"] == "1"
     assert strategy["qty"] == "1"
+    assert strategy["manage_stop"] is False
     assert strategy.get("param_set") in {None, ACTIVE_PARAM_SET}
     assert strategy["max_qty_global"] == 100.0
     assert strategy["max_skew_bps_global"] == 10.0
@@ -372,7 +373,7 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     }
 
 
-def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
+def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_ids() -> None:
     repo_root = _repo_root()
     disabled_rollback_path = repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml.disabled"
 
@@ -387,7 +388,11 @@ def test_equities_active_strategy_contracts_are_makerv3_only() -> None:
         assert config["identity"]["external_strategy_id"] == entry["strategy_id"]
         assert config["strategy"]["strategy_id"] == entry["strategy_id"]
         assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
-        assert config["strategy"]["reference_use_quote_ticks"] is True
+        assert config["strategy"]["manage_stop"] is False
+        assert config["strategy"]["force_bot_off_on_start"] is True
+        assert config["strategy"]["outside_rth_hedge_enabled"] is True
+        expected_primary_exchange = entry["ibkr_instrument_id"].rsplit(".", 1)[1]
+        assert config["strategy"]["ibkr_primary_exchange"] == expected_primary_exchange
         assert config["node"]["enable_execution"] is False
         assert (
             config["node"]["venues"]["HYPERLIQUID"]["instrument_id"]
@@ -476,7 +481,7 @@ def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() ->
 def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_ids() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     contracts = config["strategy_contracts"]
-    aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_makerv3")
+    aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_makerv4")
 
     assert aapl["portfolio_asset_id"] == "AAPL"
     assert aapl["maker_instrument_id"] == "xyz:AAPL-USD-PERP.HYPERLIQUID"
@@ -497,12 +502,14 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
+    assert scopes["ibkr.reference.main"]["account_id"] == "U10015777"
     assert reference_gateway["manage_container"] is True
     assert reference_gateway["relogin_after_twofa_timeout"] is False
     assert reference_gateway["twofa_timeout_action"] == "exit"
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
     assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
-    assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 108
+    assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 208
+    assert scopes["ibkr.hedge.main"]["account_id"] == "U10015777"
     assert hedge_gateway["manage_container"] is False
     assert "twofa_timeout_action" not in hedge_gateway
 
@@ -763,7 +770,7 @@ def test_equities_prod_admission_policy_baskets_are_exhaustive_and_disjoint() ->
 def test_equities_deploy_readme_freezes_prod_baskets_and_readd_policy() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
 
-    assert "current checked-in live config still carries the broad 23-name MakerV3 basket" in readme
+    assert "current checked-in live config still carries the broad 23-name equities basket" in readme
     assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
     assert (
         _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
@@ -913,8 +920,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
     assert 'twofa_timeout_action = "exit"' in readme
 
-    assert "<stock>_tradexyz_makerv3.toml" in strategies_readme
-    assert "aapl_tradexyz_makerv4.toml.disabled" in strategies_readme
+    assert "<stock>_tradexyz_makerv4.toml" in strategies_readme
+    assert "aapl_tradexyz_makerv3.toml.disabled" in strategies_readme
     assert "AAPL.NASDAQ" in strategies_readme
     assert "use_regular_trading_hours = false" in strategies_readme
     assert "manage_container = false" in strategies_readme
@@ -955,4 +962,4 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "/api/v1/params?profile=equities" in contract
     assert "trade[XYZ]" in contract
     assert "AAPL.NASDAQ" in contract
-    assert "MakerV3" in contract
+    assert "MakerV4" in contract

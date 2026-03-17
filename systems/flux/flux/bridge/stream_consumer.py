@@ -25,6 +25,7 @@ from flux.bridge.handlers.utils import first_text
 from flux.bridge.handlers.utils import load_json_payload
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.common.keys import FluxRedisKeys
 from flux.common.config import validate_identifier_part
 from flux.common.config import validate_schema_version
 
@@ -47,6 +48,8 @@ class StreamCoordinates:
 
 
 class FluxBridgeStreamConsumer:
+    BRIDGE_ALERTS_MAXLEN = 2_000
+
     def __init__(
         self,
         *,
@@ -229,8 +232,56 @@ class FluxBridgeStreamConsumer:
             self._stream_ids.pop(key, None)
             return
         if key not in self._stream_ids:
-            self._stream_ids[key] = self._start_id
+            self._stream_ids[key] = self._initial_stream_id_for_discovered_stream(
+                stream_key=key,
+                coordinates=coordinates,
+            )
             self._logger.info("Discovered inbound stream %s", key)
+
+    def _latest_stream_entry_id(self, stream_key: str) -> str | None:
+        xrevrange_fn = getattr(self._redis, "xrevrange", None)
+        if not callable(xrevrange_fn):
+            return None
+        try:
+            rows = xrevrange_fn(stream_key, "+", "-", count=1)
+        except Exception:
+            return None
+        if not rows:
+            return None
+        first_row = rows[0]
+        if not isinstance(first_row, tuple | list) or not first_row:
+            return None
+        entry_id = decode_text(first_row[0]).strip()
+        return entry_id or None
+
+    def _initial_stream_id_for_discovered_stream(
+        self,
+        *,
+        stream_key: str,
+        coordinates: StreamCoordinates,
+    ) -> str:
+        if self._start_id != "$":
+            return self._start_id
+
+        topic_suffix = coordinates.topic.rsplit(".", maxsplit=1)[-1]
+        if topic_suffix != "trade":
+            return self._latest_stream_entry_id(stream_key) or self._start_id
+
+        xlen_fn = getattr(self._redis, "xlen", None)
+        if not callable(xlen_fn):
+            return self._latest_stream_entry_id(stream_key) or self._start_id
+
+        target_stream_key = FluxRedisKeys(
+            strategy_id=coordinates.strategy_id,
+            namespace=self._namespace,
+            schema_version=self._schema_version,
+        ).trades_stream()
+        try:
+            if int(xlen_fn(target_stream_key) or 0) == 0:
+                return "0-0"
+        except Exception:
+            return self._latest_stream_entry_id(stream_key) or self._start_id
+        return self._latest_stream_entry_id(stream_key) or self._start_id
 
     def _refresh_streams(self, *, force: bool = False) -> None:
         now = time.time()
@@ -360,6 +411,64 @@ class FluxBridgeStreamConsumer:
         )
         return payload, context
 
+    def _emit_bridge_alert(
+        self,
+        *,
+        stream_key: str,
+        entry_id: str,
+        topic: str,
+        alert_key: str,
+        message: str,
+        ts_ms: int | None = None,
+        **extra_fields: Any,
+    ) -> None:
+        coordinates = self._parse_stream_key(stream_key)
+        if coordinates is None:
+            return
+        ts_ms_int = max(0, int(ts_ms if ts_ms is not None else time.time() * 1_000))
+        payload: dict[str, Any] = {
+            "strategy_id": coordinates.strategy_id,
+            "level": "error",
+            "message": message,
+            "alert_key": alert_key,
+            "reason_code": alert_key,
+            "actionable": True,
+            "source": "bridge",
+            "event_type": type(self).__name__,
+            "stream_key": stream_key,
+            "source_topic": topic,
+            "entry_id": entry_id,
+            "ts_ms": ts_ms_int,
+            "ts_event": ts_ms_int * 1_000_000,
+            "row_id": f"{coordinates.strategy_id}:alert:entry:{entry_id}:{alert_key}",
+        }
+        payload.update(extra_fields)
+        fields = {
+            "strategy_id": coordinates.strategy_id,
+            "topic": "alert",
+            "entry_id": entry_id,
+            "ts_ms": str(ts_ms_int),
+            "payload": _to_json(payload),
+        }
+        try:
+            self._redis.xadd(
+                FluxRedisKeys(
+                    strategy_id=coordinates.strategy_id,
+                    namespace=self._namespace,
+                    schema_version=self._schema_version,
+                ).alerts(),
+                fields,
+                maxlen=self.BRIDGE_ALERTS_MAXLEN,
+                approximate=True,
+            )
+        except Exception as exc:
+            self._logger.warning(
+                "Failed to emit bridge alert stream=%s id=%s err=%s",
+                stream_key,
+                entry_id,
+                exc,
+            )
+
     def _apply_write_ops(self, ops: list[WriteOp]) -> None:  # noqa: C901
         if not ops:
             return
@@ -450,6 +559,18 @@ class FluxBridgeStreamConsumer:
                                 fields=fields,
                             )
                         except Exception as e:
+                            self._emit_bridge_alert(
+                                stream_key=stream_key,
+                                entry_id=entry_id,
+                                topic="decode",
+                                alert_key="bridge_decode_failed",
+                                message=(
+                                    "bridge_decode_failed "
+                                    f"stream={stream_key} entry_id={entry_id}"
+                                ),
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                            )
                             self._logger.error(
                                 "Rejected stream entry stream=%s id=%s err=%s",
                                 stream_key,
@@ -459,6 +580,17 @@ class FluxBridgeStreamConsumer:
                             batch_failed = True
                             break
                         if decoded is None:
+                            self._emit_bridge_alert(
+                                stream_key=stream_key,
+                                entry_id=entry_id,
+                                topic="decode",
+                                alert_key="bridge_decode_failed",
+                                message=(
+                                    "bridge_decode_failed "
+                                    f"stream={stream_key} entry_id={entry_id}"
+                                ),
+                                error_message="decode returned no payload",
+                            )
                             self._logger.error(
                                 "Rejected stream entry stream=%s id=%s err=%s",
                                 stream_key,
@@ -471,6 +603,17 @@ class FluxBridgeStreamConsumer:
 
                         handler = self._handlers.get(context.topic)
                         if handler is None:
+                            self._emit_bridge_alert(
+                                stream_key=stream_key,
+                                entry_id=entry_id,
+                                topic=context.topic,
+                                alert_key="bridge_missing_handler",
+                                message=(
+                                    "bridge_missing_handler "
+                                    f"topic={context.topic} stream={stream_key}"
+                                ),
+                                ts_ms=context.ts_ms,
+                            )
                             self._logger.error(
                                 "Rejected stream entry stream=%s id=%s err=%s",
                                 stream_key,
@@ -483,6 +626,19 @@ class FluxBridgeStreamConsumer:
                         try:
                             ops = handler(payload, context)
                         except Exception as e:
+                            self._emit_bridge_alert(
+                                stream_key=stream_key,
+                                entry_id=entry_id,
+                                topic=context.topic,
+                                alert_key="bridge_handler_failed",
+                                message=(
+                                    "bridge_handler_failed "
+                                    f"topic={context.topic} stream={stream_key}"
+                                ),
+                                ts_ms=context.ts_ms,
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                            )
                             self._logger.exception(
                                 "Handler failed topic=%s stream=%s id=%s err=%s",
                                 context.topic,
@@ -496,6 +652,19 @@ class FluxBridgeStreamConsumer:
                         try:
                             self._apply_write_ops(ops)
                         except Exception as e:
+                            self._emit_bridge_alert(
+                                stream_key=stream_key,
+                                entry_id=entry_id,
+                                topic=context.topic,
+                                alert_key="bridge_write_failed",
+                                message=(
+                                    "bridge_write_failed "
+                                    f"topic={context.topic} stream={stream_key}"
+                                ),
+                                ts_ms=context.ts_ms,
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                            )
                             current = (stream_key, entry_id)
                             if self._write_failure_entry != current:
                                 self._write_failure_entry = current

@@ -27,28 +27,28 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.core import nautilus_pyo3
 
 CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv3",
-    "amd_tradexyz_makerv3",
-    "amzn_tradexyz_makerv3",
-    "googl_tradexyz_makerv3",
-    "meta_tradexyz_makerv3",
-    "msft_tradexyz_makerv3",
-    "nvda_tradexyz_makerv3",
-    "orcl_tradexyz_makerv3",
-    "pltr_tradexyz_makerv3",
-    "tsla_tradexyz_makerv3",
+    "aapl_tradexyz_makerv4",
+    "amd_tradexyz_makerv4",
+    "amzn_tradexyz_makerv4",
+    "googl_tradexyz_makerv4",
+    "meta_tradexyz_makerv4",
+    "msft_tradexyz_makerv4",
+    "nvda_tradexyz_makerv4",
+    "orcl_tradexyz_makerv4",
+    "pltr_tradexyz_makerv4",
+    "tsla_tradexyz_makerv4",
 )
 CORE_PROD_STRATEGY_IDS_BY_ASSET = {
-    "AAPL": ("aapl_tradexyz_makerv3",),
-    "AMD": ("amd_tradexyz_makerv3",),
-    "AMZN": ("amzn_tradexyz_makerv3",),
-    "GOOGL": ("googl_tradexyz_makerv3",),
-    "META": ("meta_tradexyz_makerv3",),
-    "MSFT": ("msft_tradexyz_makerv3",),
-    "NVDA": ("nvda_tradexyz_makerv3",),
-    "ORCL": ("orcl_tradexyz_makerv3",),
-    "PLTR": ("pltr_tradexyz_makerv3",),
-    "TSLA": ("tsla_tradexyz_makerv3",),
+    "AAPL": ("aapl_tradexyz_makerv4",),
+    "AMD": ("amd_tradexyz_makerv4",),
+    "AMZN": ("amzn_tradexyz_makerv4",),
+    "GOOGL": ("googl_tradexyz_makerv4",),
+    "META": ("meta_tradexyz_makerv4",),
+    "MSFT": ("msft_tradexyz_makerv4",),
+    "NVDA": ("nvda_tradexyz_makerv4",),
+    "ORCL": ("orcl_tradexyz_makerv4",),
+    "PLTR": ("pltr_tradexyz_makerv4",),
+    "TSLA": ("tsla_tradexyz_makerv4",),
 }
 
 
@@ -190,7 +190,7 @@ def test_equities_strategy_ids_requires_non_empty_allowlist() -> None:
 
 
 def test_required_strategy_ids_falls_back_to_allowlist() -> None:
-    allowlist = ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]
+    allowlist = ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]
 
     assert _required_strategy_ids({}, fallback=allowlist) == allowlist
 
@@ -199,14 +199,14 @@ def test_equities_portfolio_allowlist_uses_shared_parser() -> None:
     descriptor = get_strategy_set_descriptor("equities")
 
     assert parse_strategy_ids(
-        {"equities_strategy_ids": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]},
+        {"equities_strategy_ids": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]},
         descriptor=descriptor,
-    ) == ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]
+    ) == ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]
     assert parse_required_strategy_ids(
-        {"equities_required_strategy_ids": ["aapl_tradexyz_makerv3"]},
+        {"equities_required_strategy_ids": ["aapl_tradexyz_makerv4"]},
         descriptor=descriptor,
-        fallback=["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
-    ) == ["aapl_tradexyz_makerv3"]
+        fallback=["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
+    ) == ["aapl_tradexyz_makerv4"]
 
 
 def test_equities_live_config_prunes_shared_portfolio_contracts_to_core_prod_basket() -> None:
@@ -237,7 +237,7 @@ def test_strategy_ids_by_asset_groups_allowlisted_strategy_contracts() -> None:
         {
             "strategy_contracts": [
                 _strategy_contract(
-                    "aapl_tradexyz_makerv3",
+                    "aapl_tradexyz_makerv4",
                     reference_account_scope_id="ibkr.reference.main",
                 ),
                 _strategy_contract(
@@ -245,15 +245,15 @@ def test_strategy_ids_by_asset_groups_allowlisted_strategy_contracts() -> None:
                     reference_account_scope_id="ibkr.reference.main",
                 ),
                 _strategy_contract(
-                    "msft_tradexyz_makerv3",
+                    "msft_tradexyz_makerv4",
                     reference_account_scope_id="ibkr.reference.main",
                 ),
             ],
         },
-        allowlist=["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
+        allowlist=["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
     ) == {
-        "AAPL": ("aapl_tradexyz_makerv3",),
-        "MSFT": ("msft_tradexyz_makerv3",),
+        "AAPL": ("aapl_tradexyz_makerv4",),
+        "MSFT": ("msft_tradexyz_makerv4",),
     }
 
 
@@ -262,12 +262,12 @@ def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
     fake_redis = _FakeRedis(
         {
             FluxRedisKeys.portfolio_inventory_component(
-                strategy_id="aapl_tradexyz_makerv3",
+                strategy_id="aapl_tradexyz_makerv4",
                 portfolio_id="equities",
                 base_currency="AAPL",
             ): encode_component(
                 StrategyInventoryComponent(
-                    strategy_id="aapl_tradexyz_makerv3",
+                    strategy_id="aapl_tradexyz_makerv4",
                     portfolio_id="equities",
                     base_currency="AAPL",
                     local_qty_base=15,
@@ -276,12 +276,12 @@ def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
                 ),
             ).encode(),
             FluxRedisKeys.portfolio_inventory_component(
-                strategy_id="msft_tradexyz_makerv3",
+                strategy_id="msft_tradexyz_makerv4",
                 portfolio_id="equities",
                 base_currency="AAPL",
             ): encode_component(
                 StrategyInventoryComponent(
-                    strategy_id="msft_tradexyz_makerv3",
+                    strategy_id="msft_tradexyz_makerv4",
                     portfolio_id="equities",
                     base_currency="AAPL",
                     local_qty_base=-5,
@@ -297,7 +297,7 @@ def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
     aggregator._mode = "live"
     aggregator._portfolio_id = "equities"
     aggregator._stale_after_ms = 3_000
-    aggregator._strategy_ids = ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]
     aggregator._required_strategy_ids = set(aggregator._strategy_ids)
     aggregator._base_assets = ["AAPL"]
     aggregator._redis = fake_redis
@@ -336,11 +336,11 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
             "account_scopes": _account_scopes(),
             "strategy_contracts": [
                 _strategy_contract(
-                    "aapl_tradexyz_makerv3",
+                    "aapl_tradexyz_makerv4",
                     reference_account_scope_id="ibkr.reference.main",
                 ),
                 _strategy_contract(
-                    "msft_tradexyz_makerv3",
+                    "msft_tradexyz_makerv4",
                     reference_account_scope_id="ibkr.reference.main",
                 ),
             ],
@@ -360,8 +360,8 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert reference_binding.provider is not None
     assert hedge_binding.provider is not None
     assert reference_binding.source_strategy_ids == (
-        "aapl_tradexyz_makerv3",
-        "msft_tradexyz_makerv3",
+        "aapl_tradexyz_makerv4",
+        "msft_tradexyz_makerv4",
     )
     assert len(captured_provider_configs) == 2
     assert captured_provider_configs[0].dockerized_gateway is not None
@@ -413,7 +413,7 @@ def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_cl
             ],
             "strategy_contracts": [
                 _strategy_contract(
-                    "aapl_tradexyz_makerv3",
+                    "aapl_tradexyz_makerv4",
                     reference_account_scope_id="ibkr.reference.main",
                 ),
             ],
@@ -437,7 +437,7 @@ def test_build_profile_account_provider_bindings_rejects_missing_shared_scope() 
                 ],
                 "strategy_contracts": [
                     _strategy_contract(
-                        "aapl_tradexyz_makerv3",
+                        "aapl_tradexyz_makerv4",
                         reference_account_scope_id="ibkr.reference.main",
                     ),
                 ],
@@ -468,17 +468,17 @@ def test_equities_portfolio_runner_collects_shared_account_snapshots_once_per_sc
         "venues": {"reference_venue": "IBKR"},
         "account_scopes": _account_scopes(),
         "api": {
-            "equities_strategy_ids": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
+            "equities_strategy_ids": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
         },
         "portfolio": {"portfolio_id": "equities"},
         "contracts": [{"exchange": "hyperliquid", "symbol": "AAPL/USD"}],
         "strategy_contracts": [
             _strategy_contract(
-                "aapl_tradexyz_makerv3",
+                "aapl_tradexyz_makerv4",
                 reference_account_scope_id="ibkr.reference.main",
             ),
             _strategy_contract(
-                "msft_tradexyz_makerv3",
+                "msft_tradexyz_makerv4",
                 reference_account_scope_id="ibkr.reference.main",
             ),
         ],
@@ -644,13 +644,13 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
         "venues": {"reference_venue": "IBKR"},
         "account_scopes": _account_scopes(),
         "api": {
-            "equities_strategy_ids": ["aapl_tradexyz_makerv3"],
+            "equities_strategy_ids": ["aapl_tradexyz_makerv4"],
         },
         "portfolio": {"portfolio_id": "equities"},
         "contracts": [{"exchange": "hyperliquid", "symbol": "AAPL/USD"}],
         "strategy_contracts": [
             _strategy_contract(
-                "aapl_tradexyz_makerv3",
+                "aapl_tradexyz_makerv4",
                 reference_account_scope_id="ibkr.reference.main",
             ),
         ],
@@ -738,7 +738,7 @@ def test_equities_portfolio_aggregator_publishes_account_projection_once_per_sco
     aggregator._profile_account_bindings = (
         ProfileAccountProviderBinding(
             account_scope_id="ibkr.reference.main",
-            source_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+            source_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
             provider=provider,
         ),
     )
@@ -783,12 +783,12 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     fake_redis = _FakeRedis(
         {
             FluxRedisKeys.portfolio_inventory_component(
-                strategy_id="aapl_tradexyz_makerv3",
+                strategy_id="aapl_tradexyz_makerv4",
                 portfolio_id="equities",
                 base_currency="AAPL",
             ): encode_component(
                 StrategyInventoryComponent(
-                    strategy_id="aapl_tradexyz_makerv3",
+                    strategy_id="aapl_tradexyz_makerv4",
                     portfolio_id="equities",
                     base_currency="AAPL",
                     local_qty_base=10,
@@ -797,12 +797,12 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
                 ),
             ).encode(),
             FluxRedisKeys.portfolio_inventory_component(
-                strategy_id="msft_tradexyz_makerv3",
+                strategy_id="msft_tradexyz_makerv4",
                 portfolio_id="equities",
                 base_currency="MSFT",
             ): encode_component(
                 StrategyInventoryComponent(
-                    strategy_id="msft_tradexyz_makerv3",
+                    strategy_id="msft_tradexyz_makerv4",
                     portfolio_id="equities",
                     base_currency="MSFT",
                     local_qty_base=5,
@@ -810,10 +810,10 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
                     state="running",
                 ),
             ).encode(),
-            FluxRedisKeys(strategy_id="aapl_tradexyz_makerv3").balances_snapshot(): json.dumps(
+            FluxRedisKeys(strategy_id="aapl_tradexyz_makerv4").balances_snapshot(): json.dumps(
                 [
                     {
-                        "strategy_id": "aapl_tradexyz_makerv3",
+                        "strategy_id": "aapl_tradexyz_makerv4",
                         "exchange": "hyperliquid",
                         "asset": "USD",
                         "account": "trading",
@@ -822,10 +822,10 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
                     },
                 ],
             ).encode(),
-            FluxRedisKeys(strategy_id="msft_tradexyz_makerv3").balances_snapshot(): json.dumps(
+            FluxRedisKeys(strategy_id="msft_tradexyz_makerv4").balances_snapshot(): json.dumps(
                 [
                     {
-                        "strategy_id": "msft_tradexyz_makerv3",
+                        "strategy_id": "msft_tradexyz_makerv4",
                         "exchange": "hyperliquid",
                         "asset": "USD",
                         "account": "trading",
@@ -844,12 +844,12 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     aggregator._portfolio_id = "equities"
     aggregator._stale_after_ms = 3_000
     aggregator._aggregation_mode = "strict"
-    aggregator._strategy_ids = ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]
     aggregator._required_strategy_ids = set(aggregator._strategy_ids)
     aggregator._base_assets = ["AAPL", "MSFT"]
     aggregator._strategy_ids_by_asset = {
-        "AAPL": ("aapl_tradexyz_makerv3",),
-        "MSFT": ("msft_tradexyz_makerv3",),
+        "AAPL": ("aapl_tradexyz_makerv4",),
+        "MSFT": ("msft_tradexyz_makerv4",),
     }
     aggregator._redis = fake_redis
     aggregator._log = MagicMock()
@@ -857,7 +857,7 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     aggregator._profile_account_bindings = (
         ProfileAccountProviderBinding(
             account_scope_id="ibkr.reference.main",
-            source_strategy_ids=("aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"),
+            source_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
             provider=provider,
         ),
     )
@@ -915,11 +915,11 @@ def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positio
     aggregator._portfolio_id = "equities"
     aggregator._stale_after_ms = 3_000
     aggregator._aggregation_mode = "strict"
-    aggregator._strategy_ids = ["aapl_tradexyz_makerv3"]
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv4"]
     aggregator._required_strategy_ids = set(aggregator._strategy_ids)
     aggregator._base_assets = ["AAPL"]
     aggregator._strategy_ids_by_asset = {
-        "AAPL": ("aapl_tradexyz_makerv3",),
+        "AAPL": ("aapl_tradexyz_makerv4",),
     }
     aggregator._redis = fake_redis
     aggregator._log = MagicMock()
@@ -927,7 +927,7 @@ def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positio
     aggregator._profile_account_bindings = (
         ProfileAccountProviderBinding(
             account_scope_id="hyperliquid.xyz.main",
-            source_strategy_ids=("aapl_tradexyz_makerv3",),
+            source_strategy_ids=("aapl_tradexyz_makerv4",),
             provider=provider,
         ),
     )
@@ -955,7 +955,7 @@ def test_equities_portfolio_aggregator_run_closes_redis_on_exit_with_legacy_disc
     aggregator._portfolio_id = "equities"
     aggregator._mode = "paper"
     aggregator._base_assets = ["AAPL"]
-    aggregator._strategy_ids = ["aapl_tradexyz_makerv3"]
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv4"]
     aggregator._redis = _LegacyDisconnectRedis()
     aggregator._log = MagicMock()
     aggregator._running = True

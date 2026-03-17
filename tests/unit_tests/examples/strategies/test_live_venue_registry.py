@@ -260,6 +260,57 @@ def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
     )
 
 
+def test_resolve_strategy_venues_supports_ibkr_reference_exec_client() -> None:
+    interactive_brokers_config = pytest.importorskip(
+        "nautilus_trader.adapters.interactive_brokers.config",
+    )
+    InteractiveBrokersDataClientConfig = (
+        interactive_brokers_config.InteractiveBrokersDataClientConfig
+    )
+    InteractiveBrokersExecClientConfig = (
+        interactive_brokers_config.InteractiveBrokersExecClientConfig
+    )
+
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "HYPERLIQUID": {
+                        "adapter": "hyperliquid",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4001,
+                        "ibg_client_id": 23,
+                        "account_id": "U1234567",
+                        "execution": True,
+                    },
+                },
+            },
+        },
+        mode="live",
+        enable_execution=True,
+    )
+
+    assert set(resolved.data_clients) == {HYPERLIQUID, "IBKR"}
+    assert set(resolved.exec_clients) == {HYPERLIQUID, "IBKR"}
+    assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
+    assert isinstance(resolved.exec_clients["IBKR"], InteractiveBrokersExecClientConfig)
+    assert resolved.exec_clients[HYPERLIQUID].routing.default is False
+    assert resolved.exec_clients["IBKR"].routing.default is False
+    assert resolved.exec_clients["IBKR"].ibg_port == 4001
+    assert resolved.exec_clients["IBKR"].ibg_client_id == 23
+    assert resolved.exec_clients["IBKR"].account_id == "U1234567"
+
+
 def test_resolve_strategy_venues_coerces_ibkr_dockerized_gateway_config() -> None:
     interactive_brokers_config = pytest.importorskip(
         "nautilus_trader.adapters.interactive_brokers.config",

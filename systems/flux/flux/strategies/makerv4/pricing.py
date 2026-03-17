@@ -1,9 +1,113 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from flux.strategies.makerv4.rounding import round_hyperliquid_price
 from flux.strategies.makerv4.rounding import round_ibkr_limit_price
+
+
+@dataclass(frozen=True, slots=True)
+class FeeAssumptions:
+    ibkr_fee_plan: str
+    ibkr_fee_min_usd: Decimal
+    hl_taker_fee_bps: Decimal
+    hl_maker_fee_bps: Decimal
+    assumed_hedge_fee_bps: Decimal
+
+
+def _to_decimal(value: Any, *, field_name: str) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        raise ValueError(f"Invalid decimal value for {field_name}: {value!r}") from exc
+
+
+def build_fee_assumptions(
+    *,
+    ibkr_fee_plan: str,
+    ibkr_fee_min_usd: Any,
+    hl_taker_fee_bps: Any,
+    hl_maker_fee_bps: Any,
+    assumed_hedge_fee_bps: Any,
+) -> FeeAssumptions:
+    normalized_ibkr_fee_plan = str(ibkr_fee_plan).strip().lower()
+    if normalized_ibkr_fee_plan not in {"fixed", "tiered"}:
+        raise ValueError(f"Unsupported ibkr fee plan: {ibkr_fee_plan!r}")
+    return FeeAssumptions(
+        ibkr_fee_plan=normalized_ibkr_fee_plan,
+        ibkr_fee_min_usd=_to_decimal(ibkr_fee_min_usd, field_name="ibkr_fee_min_usd"),
+        hl_taker_fee_bps=_to_decimal(hl_taker_fee_bps, field_name="hl_taker_fee_bps"),
+        hl_maker_fee_bps=_to_decimal(hl_maker_fee_bps, field_name="hl_maker_fee_bps"),
+        assumed_hedge_fee_bps=_to_decimal(
+            assumed_hedge_fee_bps,
+            field_name="assumed_hedge_fee_bps",
+        ),
+    )
+
+
+def build_fee_aware_threshold_bps(
+    *,
+    target_edge_bps: Decimal,
+    hl_fee_bps: Decimal,
+    ibkr_fee_bps: Decimal,
+    offset_bps: Decimal = Decimal("0"),
+) -> Decimal:
+    return target_edge_bps + hl_fee_bps + ibkr_fee_bps + offset_bps
+
+
+def build_effective_ibkr_fee_bps(
+    *,
+    fee_assumptions: FeeAssumptions,
+    hedge_notional_usd: Decimal,
+) -> Decimal:
+    normalized_notional = abs(hedge_notional_usd)
+    if normalized_notional <= 0:
+        return fee_assumptions.assumed_hedge_fee_bps
+
+    min_fee_bps = (
+        fee_assumptions.ibkr_fee_min_usd / normalized_notional
+    ) * Decimal("10000")
+    if fee_assumptions.ibkr_fee_plan == "fixed":
+        return fee_assumptions.assumed_hedge_fee_bps + min_fee_bps
+    return max(fee_assumptions.assumed_hedge_fee_bps, min_fee_bps)
+
+
+def build_take_take_limit_price(
+    *,
+    side: str,
+    maker_bid: Decimal | None,
+    maker_ask: Decimal | None,
+    reference_bid: Decimal | None,
+    reference_ask: Decimal | None,
+    target_edge_bps: Decimal,
+    hl_taker_fee_bps: Decimal,
+    hedge_fee_bps: Decimal,
+) -> Decimal | None:
+    normalized_side = str(side).strip().upper()
+    if normalized_side not in {"BUY", "SELL"}:
+        raise ValueError(f"Unsupported side: {side!r}")
+    if maker_bid is None or maker_ask is None or reference_bid is None or reference_ask is None:
+        return None
+    if maker_ask <= maker_bid or reference_ask <= reference_bid:
+        return None
+
+    reference_mid = (reference_bid + reference_ask) / Decimal("2")
+    if reference_mid <= 0:
+        return None
+
+    required_threshold_bps = build_fee_aware_threshold_bps(
+        target_edge_bps=target_edge_bps,
+        hl_fee_bps=hl_taker_fee_bps,
+        ibkr_fee_bps=hedge_fee_bps,
+    )
+    if normalized_side == "BUY":
+        available_edge_bps = ((reference_bid - maker_ask) / reference_mid) * Decimal("10000")
+        return maker_ask if available_edge_bps >= required_threshold_bps else None
+
+    available_edge_bps = ((maker_bid - reference_ask) / reference_mid) * Decimal("10000")
+    return maker_bid if available_edge_bps >= required_threshold_bps else None
 
 
 def validate_ibkr_quote(
@@ -98,7 +202,12 @@ def build_maker_quote_price(
     if normalized_side not in {"BUY", "SELL"}:
         raise ValueError(f"Unsupported side: {side!r}")
 
-    total_bps = target_edge_bps + maker_fee_bps + hedge_fee_bps + offset_bps
+    total_bps = build_fee_aware_threshold_bps(
+        target_edge_bps=target_edge_bps,
+        hl_fee_bps=maker_fee_bps,
+        ibkr_fee_bps=hedge_fee_bps,
+        offset_bps=offset_bps,
+    )
     ratio = total_bps / Decimal("10000")
     raw_price = (
         reference_mid * (Decimal("1") - ratio)
@@ -109,7 +218,12 @@ def build_maker_quote_price(
 
 
 __all__ = [
+    "FeeAssumptions",
+    "build_fee_assumptions",
+    "build_fee_aware_threshold_bps",
+    "build_effective_ibkr_fee_bps",
     "build_ibkr_ioc_limit",
     "build_maker_quote_price",
+    "build_take_take_limit_price",
     "validate_ibkr_quote",
 ]

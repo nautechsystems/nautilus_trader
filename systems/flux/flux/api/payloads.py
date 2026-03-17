@@ -101,6 +101,7 @@ def build_signals_payload(
     params: dict[str, Any],
     balances: list[dict[str, Any]],
     legs: dict[str, Any],
+    running: bool | None = None,
 ) -> dict[str, Any]:
     """Build the API signal payload for a strategy from state, params, balances, and legs."""
 
@@ -112,5 +113,6 @@ def build_signals_payload(
         params=params,
         balances=balances,
         legs=legs,
+        running=running,
         now_ms_fn=now_ms,
     )

@@ -956,7 +956,10 @@ def _normalize_portfolio_snapshot_row(
 
 def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
     exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
-    account = decode_text(row.get("account") or row.get("account_id")).strip().upper()
+    account = _canonical_portfolio_snapshot_account(
+        exchange=exchange,
+        account=row.get("account") or row.get("account_id"),
+    )
     if _is_position_row(dict(row)):
         instrument = decode_text(
             row.get("instrument_id")
@@ -983,6 +986,19 @@ def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] 
     return (kind, exchange, account, asset)
 
 
+def _canonical_portfolio_snapshot_account(*, exchange: str, account: Any) -> str:
+    normalized = decode_text(account).strip().upper()
+    if exchange != "ibkr" or not normalized:
+        return normalized
+
+    for prefix in ("IBKR-", "IBKR:", "INTERACTIVE_BROKERS-", "INTERACTIVE_BROKERS:", "IB-", "IB:"):
+        if normalized.startswith(prefix):
+            stripped = normalized.removeprefix(prefix).strip()
+            if stripped:
+                return stripped
+    return normalized
+
+
 def _portfolio_snapshot_row_priority(row: Mapping[str, Any]) -> tuple[int, int, int, int]:
     scope = decode_text(row.get("source_scope")).strip().lower()
     scope_rank = {
@@ -996,10 +1012,32 @@ def _portfolio_snapshot_row_priority(row: Mapping[str, Any]) -> tuple[int, int, 
     return (scope_rank, has_account_scope_id, ts_ms, has_mark)
 
 
+def _default_portfolio_snapshot_row_id(
+    *,
+    portfolio_id: str,
+    identity: tuple[Any, ...],
+) -> str | None:
+    if not portfolio_id:
+        return None
+    row_kind = identity[0]
+    if row_kind == "row_id":
+        return None
+    if row_kind == "position" and len(identity) == 4:
+        _kind, exchange, account, instrument = identity
+        return f"{portfolio_id}:pos:{exchange}:{account}:{instrument}"
+    if len(identity) != 4:
+        return None
+    kind, exchange, account, asset = identity
+    if kind == "cash":
+        return _portfolio_cash_row_id(portfolio_id, (exchange, account, asset, ""))
+    return f"{portfolio_id}:{kind}:{exchange}:{account}:{asset}"
+
+
 def combine_portfolio_snapshot_rows(
     *,
     balance_rows: Sequence[Mapping[str, Any]],
     account_rows: Sequence[Mapping[str, Any]],
+    portfolio_id: str = "",
 ) -> list[dict[str, Any]]:
     combined_by_identity: dict[tuple[Any, ...], dict[str, Any]] = {}
     passthrough_rows: list[dict[str, Any]] = []
@@ -1019,6 +1057,13 @@ def combine_portfolio_snapshot_rows(
             if identity is None:
                 passthrough_rows.append(normalized)
                 continue
+            if not decode_text(normalized.get("row_id")).strip():
+                row_id = _default_portfolio_snapshot_row_id(
+                    portfolio_id=portfolio_id,
+                    identity=identity,
+                )
+                if row_id:
+                    normalized["row_id"] = row_id
             previous = combined_by_identity.get(identity)
             if previous is None or _portfolio_snapshot_row_priority(normalized) >= (
                 _portfolio_snapshot_row_priority(previous)

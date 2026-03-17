@@ -487,6 +487,57 @@ def test_on_order_pending_cancel_state_exports_quote_blocker_metadata(
     assert state_payload["quote_blockers"][0]["oldest_pending_cancel_age_ms"] == 0
 
 
+def test_publish_state_exports_explicit_quote_health_reason_codes(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._quote_health_payload = lambda *, now_ns: {
+        "maker": {
+            "feed_state": "ok",
+            "quote_state": "old",
+            "quote_age_ms": 125,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "maker_quote_old",
+        },
+        "reference": {
+            "feed_state": "unknown",
+            "quote_state": "missing",
+            "quote_age_ms": None,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "reference_feed_unknown",
+        },
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("blocked_reference_md")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_health"] == {
+        "maker": {
+            "feed_state": "ok",
+            "quote_state": "old",
+            "quote_age_ms": 125,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "maker_quote_old",
+        },
+        "reference": {
+            "feed_state": "unknown",
+            "quote_state": "missing",
+            "quote_age_ms": None,
+            "pricing_usable": False,
+            "hedge_usable": False,
+            "reason_code": "reference_feed_unknown",
+        },
+    }
+
+
 def test_publish_state_exports_last_completed_quote_progress(
     clocked_strategy_factory,
 ) -> None:

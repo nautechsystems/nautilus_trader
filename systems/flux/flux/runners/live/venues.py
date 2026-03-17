@@ -67,6 +67,7 @@ class VenueAdapterSpec:
     secret_fields: tuple[tuple[str, str], ...]
     mode_defaults: dict[str, Callable[[str], Any]]
     instrument_provider_factory: Callable[[InstrumentId], Any] | None = None
+    multi_venue_execution: bool = False
 
 
 @dataclass(frozen=True)
@@ -247,11 +248,17 @@ def _load_interactive_brokers_spec() -> VenueAdapterSpec:
         InteractiveBrokersDataClientConfig,
     )
     from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersExecClientConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
         InteractiveBrokersInstrumentProviderConfig,
     )
     from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
     from nautilus_trader.adapters.interactive_brokers.factories import (
         InteractiveBrokersLiveDataClientFactory,
+    )
+    from nautilus_trader.adapters.interactive_brokers.factories import (
+        InteractiveBrokersLiveExecClientFactory,
     )
 
     def _coerce_ibg_client_id(raw_value: Any, venue_name: str) -> int:
@@ -277,8 +284,8 @@ def _load_interactive_brokers_spec() -> VenueAdapterSpec:
         venue_key=IB_VENUE,
         data_config_cls=InteractiveBrokersDataClientConfig,
         data_factory_cls=InteractiveBrokersLiveDataClientFactory,
-        exec_config_cls=None,
-        exec_factory_cls=None,
+        exec_config_cls=InteractiveBrokersExecClientConfig,
+        exec_factory_cls=InteractiveBrokersLiveExecClientFactory,
         field_aliases={},
         field_coercers={
             "ibg_client_id": _coerce_ibg_client_id,
@@ -287,6 +294,7 @@ def _load_interactive_brokers_spec() -> VenueAdapterSpec:
         secret_fields=(),
         mode_defaults={},
         instrument_provider_factory=_build_instrument_provider,
+        multi_venue_execution=True,
     )
 
 
@@ -559,6 +567,7 @@ def resolve_strategy_venues(
     instrument_ids: dict[str, InstrumentId] = {}
     data_enabled_venues: set[str] = set()
     exec_enabled_venues: set[str] = set()
+    venue_records: list[tuple[str, dict[str, Any], VenueAdapterSpec, InstrumentId, bool]] = []
 
     for venue_name, venue_cfg in venue_entries.items():
         adapter_id = (_optional_text(venue_cfg.get("adapter")) or venue_name.lower()).lower()
@@ -576,6 +585,21 @@ def resolve_strategy_venues(
         )
         instrument_ids[venue_name] = instrument_id
 
+        venue_execution_enabled = _bool_value(
+            venue_cfg.get("execution"),
+            default=venue_name == execution_venue_name,
+        )
+        venue_records.append((venue_name, venue_cfg, spec, instrument_id, venue_execution_enabled))
+
+    suppress_primary_exec_default_routing = any(
+        enable_execution
+        and venue_execution_enabled
+        and venue_name != execution_venue_name
+        and spec.multi_venue_execution
+        for venue_name, _venue_cfg, spec, _instrument_id, venue_execution_enabled in venue_records
+    )
+
+    for venue_name, venue_cfg, spec, instrument_id, venue_execution_enabled in venue_records:
         if _bool_value(venue_cfg.get("data"), default=True):
             data_clients[venue_name] = _build_client_config(
                 spec=spec,
@@ -589,10 +613,6 @@ def resolve_strategy_venues(
             data_factories[venue_name] = spec.data_factory_cls
             data_enabled_venues.add(venue_name)
 
-        venue_execution_enabled = _bool_value(
-            venue_cfg.get("execution"),
-            default=venue_name == execution_venue_name,
-        )
         if enable_execution and venue_execution_enabled:
             if spec.exec_config_cls is None or spec.exec_factory_cls is None:
                 raise ValueError(
@@ -605,7 +625,9 @@ def resolve_strategy_venues(
                 venue_cfg=venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
-                default_routing=venue_name == execution_venue_name,
+                default_routing=(
+                    venue_name == execution_venue_name and not suppress_primary_exec_default_routing
+                ),
             )
             exec_factories[venue_name] = spec.exec_factory_cls
             exec_enabled_venues.add(venue_name)

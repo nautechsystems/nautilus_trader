@@ -94,6 +94,12 @@ pub struct UserFillsParams {
     pub dex: Option<String>,
 }
 
+/// Parameters for user-scoped requests without DEX selection.
+#[derive(Debug, Clone, Serialize)]
+pub struct UserOnlyParams {
+    pub user: String,
+}
+
 /// Parameters for order status request.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +156,7 @@ pub struct CandleSnapshotParams {
 pub enum InfoRequestParams {
     L2Book(L2BookParams),
     UserFills(UserFillsParams),
+    UserOnly(UserOnlyParams),
     OrderStatus(OrderStatusParams),
     OpenOrders(OpenOrdersParams),
     ClearinghouseState(ClearinghouseStateParams),
@@ -177,6 +184,14 @@ impl InfoRequest {
                     dex: dex.to_string(),
                 })
             }),
+        }
+    }
+
+    /// Creates a request to get registered perp DEX metadata.
+    pub fn perp_dexs() -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::PerpDexs,
+            params: InfoRequestParams::None,
         }
     }
 
@@ -281,6 +296,16 @@ impl InfoRequest {
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
                 dex: dex.map(str::to_string),
+            }),
+        }
+    }
+
+    /// Creates a request to get user request-quota state.
+    pub fn user_rate_limit(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserRateLimit,
+            params: InfoRequestParams::UserOnly(UserOnlyParams {
+                user: user.to_string(),
             }),
         }
     }

@@ -755,7 +755,7 @@ def test_params_profile_tokenmm_uses_explicit_allowlist_without_discovery(
     assert [row["strategy_id"] for row in rows] == ["strategy_02"]
 
 
-def test_params_includes_running_from_fresh_state_heartbeat(
+def test_params_uses_explicit_service_running_state_over_stale_strategy_timestamp(
     monkeypatch,
     flux_config,
     redis_client,
@@ -781,7 +781,7 @@ def test_params_includes_running_from_fresh_state_heartbeat(
     )
     redis_client.set_json(
         primary_keys.state(),
-        {"state": "running", "bot_on": False, "managed_orders": 0, "ts_ms": 1_700_000_009_500},
+        {"state": "running", "bot_on": False, "managed_orders": 0, "ts_ms": 1_700_000_000_000},
     )
     redis_client.set_json(
         secondary_keys.state(),
@@ -795,6 +795,10 @@ def test_params_includes_running_from_fresh_state_heartbeat(
         profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id, "strategy_02"]},
         params_schema=params_schema,
         params_defaults=params_defaults,
+        strategy_running_resolver=lambda strategy_ids: {
+            strategy_id: (strategy_id == flux_config.identity.strategy_id)
+            for strategy_id in strategy_ids
+        },
     )
 
     with app.test_client() as client:
@@ -805,6 +809,56 @@ def test_params_includes_running_from_fresh_state_heartbeat(
     by_id = {row["strategy_id"]: row for row in body["data"]}
     assert by_id[flux_config.identity.strategy_id]["running"] is True
     assert by_id["strategy_02"]["running"] is False
+
+
+def test_signals_include_explicit_service_running_state_while_preserving_stale_state_gates(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_040_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {"state": "running", "bot_on": True, "managed_orders": 0, "ts_ms": 1_700_000_000_000},
+    )
+    redis_client.set_json(primary_keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        primary_keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        strategy_running_resolver=lambda strategy_ids: {
+            strategy_id: True for strategy_id in strategy_ids
+        },
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    assert row["running"] is True
+    assert row["tradeable"] is False
+    assert row["blocked"] is True
+    assert row["debug"]["md_health"]["state_stale"] is True
 
 
 def test_balances_profile_tokenmm_honors_explicit_required_subset(

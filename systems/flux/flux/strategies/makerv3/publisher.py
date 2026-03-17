@@ -693,6 +693,11 @@ def publish_state(
         quote_blockers = quote_blockers_fn(state=state)
         if quote_blockers:
             payload["quote_blockers"] = quote_blockers
+    quote_health_fn = getattr(strategy, "_quote_health_payload", None)
+    if callable(quote_health_fn):
+        quote_health = quote_health_fn(now_ns=now_ns)
+        if quote_health:
+            payload["quote_health"] = quote_health
     maker_role_map = _maker_role_map_payload(strategy)
     if maker_role_map:
         payload["maker_role_map"] = maker_role_map

@@ -1482,6 +1482,137 @@ class TestLiveExecutionEngine:
         assert self.exec_engine._startup_reconciliation_event.is_set() is True
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_scopes_mass_status_generation_to_filtered_instruments(
+        self,
+    ):
+        """
+        Test startup reconciliation uses per-instrument report generation when a scoped
+        reconciliation instrument set is configured.
+        """
+
+        order_requests: list[InstrumentId | None] = []
+        fill_requests: list[InstrumentId | None] = []
+        position_requests: list[InstrumentId | None] = []
+
+        async def _unexpected_generate_mass_status(_lookback_mins):
+            raise AssertionError("full generate_mass_status should not be used for scoped recon")
+
+        async def _generate_order_status_reports(command):
+            order_requests.append(command.instrument_id)
+            return []
+
+        async def _generate_fill_reports(command):
+            fill_requests.append(command.instrument_id)
+            return []
+
+        async def _generate_position_status_reports(command):
+            position_requests.append(command.instrument_id)
+            return []
+
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        original_client = self.exec_engine._clients[self.client.id]
+        self.exec_engine._clients[self.client.id] = SimpleNamespace(
+            id=self.client.id,
+            venue=self.client.venue,
+            account_id=self.client.account_id,
+            generate_mass_status=_unexpected_generate_mass_status,
+            generate_order_status_reports=_generate_order_status_reports,
+            generate_fill_reports=_generate_fill_reports,
+            generate_position_status_reports=_generate_position_status_reports,
+        )
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await self.exec_engine.reconcile_execution_state(timeout_secs=0.1)
+        finally:
+            self.exec_engine._clients[self.client.id] = original_client
+
+        assert result is True
+        assert order_requests == [AUDUSD_SIM.id]
+        assert fill_requests == [AUDUSD_SIM.id]
+        assert position_requests == [AUDUSD_SIM.id]
+        assert self.exec_engine._startup_reconciliation_event.is_set() is True
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_filters_follow_up_positions_to_scoped_instruments(
+        self,
+    ):
+        """
+        Test follow-up position reconciliation only requests reports for instruments
+        included in the configured reconciliation scope.
+        """
+
+        requested_position_reports: list[InstrumentId | None] = []
+
+        def _add_open_position(instrument, *, suffix: str):
+            order = self.order_factory.market(
+                instrument_id=instrument.id,
+                order_side=OrderSide.BUY,
+                quantity=instrument.make_qty(100_000),
+            )
+            self.cache.add_order(order)
+            order.apply(TestEventStubs.order_submitted(order, ts_event=0))
+            self.cache.update_order(order)
+            order.apply(
+                TestEventStubs.order_accepted(
+                    order,
+                    account_id=self.client.account_id,
+                    venue_order_id=VenueOrderId(f"V-{suffix}"),
+                    ts_event=0,
+                ),
+            )
+            self.cache.update_order(order)
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=instrument,
+                position_id=PositionId(f"P-{suffix}"),
+                trade_id=TradeId(f"T-{suffix}"),
+                ts_event=0,
+            )
+            order.apply(fill)
+            self.cache.update_order(order)
+            self.cache.add_position(Position(instrument=instrument, fill=fill), OmsType.NETTING)
+
+        _add_open_position(AUDUSD_SIM, suffix="AUD")
+        _add_open_position(GBPUSD_SIM, suffix="GBP")
+
+        async def _unexpected_generate_mass_status(_lookback_mins):
+            raise AssertionError("full generate_mass_status should not be used for scoped recon")
+
+        async def _generate_order_status_reports(_command):
+            return []
+
+        async def _generate_fill_reports(_command):
+            return []
+
+        async def _generate_position_status_reports(command):
+            requested_position_reports.append(command.instrument_id)
+            return []
+
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        original_client = self.exec_engine._clients[self.client.id]
+        self.exec_engine._clients[self.client.id] = SimpleNamespace(
+            id=self.client.id,
+            venue=self.client.venue,
+            account_id=self.client.account_id,
+            generate_mass_status=_unexpected_generate_mass_status,
+            generate_order_status_reports=_generate_order_status_reports,
+            generate_fill_reports=_generate_fill_reports,
+            generate_position_status_reports=_generate_position_status_reports,
+        )
+        self.exec_engine._reconcile_execution_mass_status = lambda _mass_status: True
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await self.exec_engine.reconcile_execution_state(timeout_secs=0.1)
+        finally:
+            self.exec_engine._clients[self.client.id] = original_client
+
+        assert result is True
+        assert requested_position_reports == [AUDUSD_SIM.id]
+        assert self.exec_engine._startup_reconciliation_event.is_set() is True
+
+    @pytest.mark.asyncio
     async def test_filled_qty_mismatch_with_zero_report(self):
         """
         Test that filled_qty mismatch is detected when report.filled_qty is less than

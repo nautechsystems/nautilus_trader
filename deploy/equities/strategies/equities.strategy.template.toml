@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "symbol_tradexyz_makerv3"
-strategy_instance_id = "symbol_tradexyz_makerv3"
+strategy_id = "symbol_tradexyz_makerv4"
+strategy_instance_id = "symbol_tradexyz_makerv4"
 trader_id = "EQUITIES-LIVE-SYMBOL-TRADEXYZ"
-external_strategy_id = "symbol_tradexyz_makerv3"
+external_strategy_id = "symbol_tradexyz_makerv4"
 
 [venues]
 execution_venue = "HYPERLIQUID"
@@ -22,7 +22,7 @@ reference_symbol = "AAPL/USD"
 enable_execution = false
 log_level = "INFO"
 timeout_connection = 60.0
-timeout_reconciliation = 30.0
+timeout_reconciliation = 90.0
 timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
@@ -62,15 +62,17 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "symbol_tradexyz_makerv3"
+strategy_id = "symbol_tradexyz_makerv4"
 strategy_groups = "equities"
-param_set = "makerv3"
+param_set = "makerv4"
 force_bot_off_on_start = true
-reference_use_quote_ticks = true
 order_qty = "1"
 qty = "1"
 qty_unit = "base"
 bot_on = false
+manage_stop = false
+outside_rth_hedge_enabled = true
+ibkr_primary_exchange = "NASDAQ"
 max_age_ms = 10000
 des_qty_global = 0.0
 max_qty_global = 100.0

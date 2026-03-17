@@ -131,6 +131,46 @@ async def test_transform_order_to_ib_order_limit(
 
 
 @pytest.mark.asyncio
+async def test_transform_order_to_ib_order_limit_with_outside_rth_tag(exec_client):
+    # Arrange
+    instrument = _AAPL
+    await exec_client._instrument_provider.load_async(instrument.id)
+    order_tags = IBOrderTags(outsideRth=True)
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        time_in_force=TimeInForce.IOC,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.outsideRth is True
+
+
+@pytest.mark.asyncio
+async def test_transform_order_to_ib_order_limit_with_include_overnight_tag(exec_client):
+    # Arrange
+    instrument = _AAPL
+    await exec_client._instrument_provider.load_async(instrument.id)
+    order_tags = IBOrderTags(outsideRth=True, includeOvernight=True)
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        time_in_force=TimeInForce.DAY,
+        tags=[order_tags.value],
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order)
+
+    # Assert
+    assert ib_order.tif == "DAY"
+    assert ib_order.outsideRth is True
+    assert ib_order.includeOvernight is True
+
+
+@pytest.mark.asyncio
 async def test_transform_order_to_ib_order_oco_orders(exec_client):
     """
     Test that OCO orders with explicit OCA tags are properly transformed.

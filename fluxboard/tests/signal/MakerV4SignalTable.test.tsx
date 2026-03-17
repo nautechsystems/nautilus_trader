@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -101,8 +101,29 @@ function buildMakerV4Strategy(): SignalStrategy {
       },
     },
     maker_v4: {
+      operator: {
+        execution_mode: 'take_take',
+        behavior: 'take_take',
+        hedge_policy: {
+          route: 'SMART',
+          time_in_force: 'DAY',
+          outside_rth: true,
+          include_overnight: true,
+          cancel_after_ms: 5000,
+        },
+        fee_assumptions: {
+          ibkr_fee_plan: 'tiered',
+          ibkr_fee_min_usd: 0.35,
+          hl_taker_fee_bps: 4.5,
+          hl_maker_fee_bps: 0.25,
+          assumed_hedge_fee_bps: 1.0,
+        },
+      },
       quote_snapshot: {
         ts_ms: 1_700_000_000_500,
+        mid_spread_bps: 2.0,
+        arb_bid_spread_bps: 14.0,
+        arb_ask_spread_bps: -11.0,
         effective_spread_bps: 6.5,
         quoted_spread_bps: 8.0,
         expected_maker_fee_bps: 0.25,
@@ -116,15 +137,29 @@ function buildMakerV4Strategy(): SignalStrategy {
         maker_leg: {
           venue: 'HYPERLIQUID',
           instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
+          feed_state: 'ok',
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'maker_quote_old',
         },
         hedge_leg: {
           venue: 'IBKR',
           instrument_id: 'AAPL.BLUEOCEAN',
           route: 'BLUEOCEAN',
+          feed_state: 'ok',
+          quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
         },
         ref_leg: {
           venue: 'IBKR',
           instrument_id: 'AAPL.NASDAQ',
+          feed_state: 'ok',
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'stale_quote',
         },
       },
     },
@@ -136,7 +171,7 @@ function buildMakerV4Strategy(): SignalStrategy {
 }
 
 describe('MakerV4SignalTable', () => {
-  it('renders a dedicated maker v4 signal table with both venue legs, route, and effective spread', () => {
+  it('renders a dedicated maker v4 signal table with both venue legs, route, and strategy-published spreads', () => {
     render(
       <MakerV4SignalTable
         rows={[buildMakerV4Strategy()]}
@@ -145,11 +180,16 @@ describe('MakerV4SignalTable', () => {
 
     expect(screen.getByText('Maker Market')).toBeInTheDocument();
     expect(screen.getByText('Hedge Market')).toBeInTheDocument();
-    expect(screen.getByText('Effective Spread')).toBeInTheDocument();
+    expect(screen.getByText('Mode')).toBeInTheDocument();
+    expect(screen.getByText('Mid Spread')).toBeInTheDocument();
+    expect(screen.getByText('Arb Spread')).toBeInTheDocument();
     expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
     expect(screen.getByText(/Hyperliquid/i)).toBeInTheDocument();
     expect(screen.getByText(/IBKR/i)).toBeInTheDocument();
-    expect(screen.getByText('6.5 bps')).toBeInTheDocument();
+    expect(screen.getByText('2.0 bps')).toBeInTheDocument();
+    expect(screen.getByText('B 14.0')).toBeInTheDocument();
+    expect(screen.getByText('A -11.0')).toBeInTheDocument();
+    expect(screen.getByText('Take-Take')).toBeInTheDocument();
     expect(screen.getAllByText(/BLUEOCEAN/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Paused')).toBeInTheDocument();
   });
@@ -165,7 +205,48 @@ describe('MakerV4SignalTable', () => {
     expect(screen.getByText(/45 ms/i)).toBeInTheDocument();
   });
 
-  it('switches the equities signal route to the dedicated maker v4 table', async () => {
+  it('shows quote health separately from age and surfaces hedge backlog state', () => {
+    const strategy = buildMakerV4Strategy();
+    strategy.maker_v4 = {
+      ...strategy.maker_v4,
+      operator: {
+        ...strategy.maker_v4?.operator,
+        hedge_backlog: {
+          fill_id: 'take_take:order-1',
+          side: 'SELL',
+          requested_qty: '1',
+          blocked_reason: 'stale_quote',
+          fill_ts_ms: 1_700_000_000_450,
+          maker_fee_bps: 0.25,
+        },
+      },
+    } as any;
+
+    render(
+      <MakerV4SignalTable
+        rows={[strategy]}
+      />,
+    );
+
+    expect(screen.getByText('Feed ok · Quote old')).toBeInTheDocument();
+    expect(screen.getByText('Backlog')).toBeInTheDocument();
+    expect(screen.getByText(/SELL 1/)).toBeInTheDocument();
+  });
+
+  it('shows fee assumptions when hovering the strategy id', async () => {
+    render(
+      <MakerV4SignalTable
+        rows={[buildMakerV4Strategy()]}
+      />,
+    );
+
+    const strategyId = screen.getByText('aapl_tradexyz_makerv4');
+    expect(strategyId).toHaveAttribute('title', expect.stringContaining('IBKR fee plan: tiered'));
+    expect(strategyId).toHaveAttribute('title', expect.stringContaining('HL taker fee: 4.50 bps'));
+    expect(strategyId).toHaveAttribute('title', expect.stringContaining('Assumed hedge fee: 1.00 bps'));
+  });
+
+  it('switches the equities signal route to the dedicated maker v4 table while filters stay available', async () => {
     vi.clearAllMocks();
     (api.getSignalStrategies as any).mockResolvedValue({
       strategies: [buildMakerV4Strategy()],
@@ -194,7 +275,11 @@ describe('MakerV4SignalTable', () => {
 
     expect(screen.getByText('Maker Market')).toBeInTheDocument();
     expect(screen.getByText('Hedge Market')).toBeInTheDocument();
-    expect(screen.getByText('Effective Spread')).toBeInTheDocument();
+    expect(screen.getByText('Mid Spread')).toBeInTheDocument();
+    expect(screen.getByText('Arb Spread')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Filters'));
+    expect(screen.getByPlaceholderText(/Strategy ID/i)).toBeInTheDocument();
+    expect(screen.getByTestId('maker-v4-signal-table')).toBeInTheDocument();
     expect(screen.queryByText('FV market')).not.toBeInTheDocument();
   });
 });

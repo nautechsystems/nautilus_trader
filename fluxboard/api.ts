@@ -105,6 +105,13 @@ function appendProfileQuery(qs: URLSearchParams): void {
   if (profile !== 'default') qs.set('profile', profile);
 }
 
+function buildProfileScopedPath(path: string): string {
+  const qs = new URLSearchParams();
+  appendProfileQuery(qs);
+  const query = qs.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 function routePrefersKeyLabel(profile: PathProfile): boolean {
   return profile === 'tokenmm' || profile === 'equities';
 }
@@ -504,12 +511,21 @@ function normalizeParamSchemaPayloadWithOptions(
   return { params, deprecated };
 }
 
-function normalizeParamsMap(raw: unknown): Record<string, string> {
+function normalizeParamsMap(
+  raw: unknown,
+  schema?: Record<string, unknown> | null,
+): Record<string, string> {
   if (!raw || typeof raw !== 'object') return {};
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (value == null) continue;
-    if (key === 'bot_on') {
+    const schemaEntry =
+      schema && typeof schema === 'object' ? (schema as Record<string, unknown>)[key] : undefined;
+    const schemaType =
+      schemaEntry && typeof schemaEntry === 'object'
+        ? String((schemaEntry as Record<string, unknown>).type ?? '').trim().toLowerCase()
+        : '';
+    if (key === 'bot_on' || typeof value === 'boolean' || schemaType === 'boolean' || schemaType === 'bool') {
       out[key] = normalizeTradingFlag(value) ?? String(value);
       continue;
     }
@@ -1817,7 +1833,8 @@ export const api = {
   },
 
   getStrategyParams: async (id: string) => {
-    const response = await fetchJSON<FluxEnvelope<{ params?: Record<string, any>; parameters?: Record<string, any> }>>(`/api/v1/strategies/${id}/parameters`);
+    const path = buildProfileScopedPath(`/api/v1/strategies/${id}/parameters`);
+    const response = await fetchJSON<FluxEnvelope<{ params?: Record<string, any>; parameters?: Record<string, any> }>>(path);
     const payload = unwrapFluxEnvelope(response);
     const params = payload?.params || payload?.parameters || {};
     const normalized: Record<string, string> = {};
@@ -1831,11 +1848,12 @@ export const api = {
   saveStrategyParams: async (id: string, params: StrategyParams) => {
     try {
       const payload = { updates: [{ strategy_id: id, params }], source: 'fluxboard' };
+      const path = buildProfileScopedPath(BULK_PARAMS_PATH);
       const extra = await signedJsonHeaders(payload, {
         method: 'PATCH',
-        path: '/api/v1/params',
+        path,
       });
-      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>('/api/v1/params', {
+      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...extra },
         body: JSON.stringify(payload)
@@ -1853,11 +1871,12 @@ export const api = {
   // Update strategy parameters without toast (for custom error handling)
   updateStrategyParams: async (id: string, params: StrategyParams) => {
     const payload = { updates: [{ strategy_id: id, params }], source: 'fluxboard' };
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, {
       method: 'PATCH',
-      path: BULK_PARAMS_PATH,
+      path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1869,11 +1888,12 @@ export const api = {
   // PATCH strategy parameters (partial update with source field)
   patchStrategyParams: async (id: string, params: StrategyParams, source = 'fluxboard') => {
     const payload = { updates: [{ strategy_id: id, params }], source };
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, {
       method: 'PATCH',
-      path: BULK_PARAMS_PATH,
+      path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1917,7 +1937,10 @@ export const api = {
     return rows.map((row) => {
       const candidate = row as Record<string, unknown>;
       const strategyId = String(candidate.strategy_id ?? '').trim();
-      const params = normalizeParamsMap(candidate.params);
+      const schema = candidate.schema && typeof candidate.schema === 'object'
+        ? (candidate.schema as Record<string, unknown>)
+        : null;
+      const params = normalizeParamsMap(candidate.params, schema);
       const runningCandidate = candidate.running;
       const runningFlag = normalizeTradingFlag(runningCandidate);
       const running =
@@ -1941,8 +1964,9 @@ export const api = {
     source = 'fluxboard'
   ) => {
     const payload = { updates, source };
-    const extra = await signedJsonHeaders(payload, { method: 'PATCH', path: BULK_PARAMS_PATH });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(BULK_PARAMS_PATH, {
+    const path = buildProfileScopedPath(BULK_PARAMS_PATH);
+    const extra = await signedJsonHeaders(payload, { method: 'PATCH', path });
+    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1952,7 +1976,8 @@ export const api = {
 
   // Get config files for a strategy
   getStrategyConfig: async (id: string) => {
-    const response = await fetchJSON<import('./types').ConfigResponse | FluxEnvelope<import('./types').ConfigResponse>>(`/api/v1/strategies/${id}/config-files`);
+    const path = buildProfileScopedPath(`/api/v1/strategies/${id}/config-files`);
+    const response = await fetchJSON<import('./types').ConfigResponse | FluxEnvelope<import('./types').ConfigResponse>>(path);
     return unwrapFluxEnvelope(response);
   },
 

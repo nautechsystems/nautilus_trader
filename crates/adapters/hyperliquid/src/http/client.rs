@@ -441,6 +441,12 @@ impl HyperliquidRawHttpClient {
         self.send_info_request(&request).await
     }
 
+    /// Get user address-based request-quota state.
+    pub async fn info_user_rate_limit(&self, user: &str) -> Result<Value> {
+        let request = InfoRequest::user_rate_limit(user);
+        self.send_info_request(&request).await
+    }
+
     /// Get candle/bar data for a coin.
     pub async fn info_candle_snapshot(
         &self,
@@ -675,6 +681,7 @@ impl HyperliquidRawHttpClient {
             HyperliquidExecAction::Cancel { cancels } => 1 + (cancels.len() as u32 / 40),
             HyperliquidExecAction::CancelByCloid { cancels } => 1 + (cancels.len() as u32 / 40),
             HyperliquidExecAction::BatchModify { modifies } => 1 + (modifies.len() as u32 / 40),
+            HyperliquidExecAction::ReserveRequestWeight { .. } => 1,
             _ => 1,
         };
         self.rest_limiter.acquire(w).await;
@@ -1252,6 +1259,45 @@ impl HyperliquidHttpClient {
         self.account_id = Some(account_id);
     }
 
+    async fn resolve_perp_dex_index(&self, dex: &str) -> Result<u32> {
+        const BUILDER_PERP_ASSET_BASE: u32 = 100_000;
+        let response = self.inner.send_info_request(&InfoRequest::perp_dexs()).await?;
+        let dexs = response
+            .as_array()
+            .ok_or_else(|| Error::bad_request("perpDexs response was not an array"))?;
+
+        dexs.iter()
+            .position(|entry| entry.get("name").and_then(|value| value.as_str()) == Some(dex))
+            .map(|index| index as u32)
+            .ok_or_else(|| Error::bad_request(format!("DEX not found in perpDexs response: {dex}")))
+            .and_then(|index| {
+                if index == 0 {
+                    Err(Error::bad_request(format!(
+                        "Invalid perp DEX index 0 for builder DEX: {dex}"
+                    )))
+                } else if BUILDER_PERP_ASSET_BASE + index * 10_000 < BUILDER_PERP_ASSET_BASE {
+                    Err(Error::bad_request(format!(
+                        "Builder perp asset index overflow for DEX: {dex}"
+                    )))
+                } else {
+                    Ok(index)
+                }
+            })
+    }
+
+    fn remap_builder_perp_asset_indices(
+        perp_defs: &mut [HyperliquidInstrumentDef],
+        perp_dex_index: u32,
+    ) {
+        const BUILDER_PERP_ASSET_BASE: u32 = 100_000;
+        const BUILDER_PERP_DEX_STRIDE: u32 = 10_000;
+
+        for def in perp_defs {
+            def.asset_index =
+                BUILDER_PERP_ASSET_BASE + perp_dex_index * BUILDER_PERP_DEX_STRIDE + def.asset_index;
+        }
+    }
+
     /// Fetch and parse all available instrument definitions from Hyperliquid.
     // Mutex/RwLock poisoning is not documented individually
     #[allow(clippy::missing_panics_doc)]
@@ -1267,10 +1313,17 @@ impl HyperliquidHttpClient {
     ) -> Result<Vec<InstrumentAny>> {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
         let dex = dex.or(self.inner.dex.as_deref());
+        let perp_dex_index = match dex {
+            Some(dex_name) => Some(self.resolve_perp_dex_index(dex_name).await?),
+            None => None,
+        };
 
         match self.load_perp_meta_with_dex(dex).await {
             Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
-                Ok(perp_defs) => {
+                Ok(mut perp_defs) => {
+                    if let Some(index) = perp_dex_index {
+                        Self::remap_builder_perp_asset_indices(&mut perp_defs, index);
+                    }
                     log::debug!(
                         "Loaded Hyperliquid perp definitions: count={}",
                         perp_defs.len(),
@@ -1497,6 +1550,12 @@ impl HyperliquidHttpClient {
         self.inner.info_user_fees_with_dex(user, dex).await
     }
 
+    /// Get address-based request-quota state for the configured query account.
+    pub async fn info_user_rate_limit(&self) -> Result<Value> {
+        let account_address = self.get_account_address()?;
+        self.inner.info_user_rate_limit(&account_address).await
+    }
+
     /// Get candle/bar data for a coin.
     pub async fn info_candle_snapshot(
         &self,
@@ -1529,6 +1588,25 @@ impl HyperliquidHttpClient {
     /// Get metadata about available markets (low-level delegation).
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
         self.inner.info_meta().await
+    }
+
+    /// Reserve additional address-based request weight on Hyperliquid.
+    pub async fn reserve_request_weight(&self, weight: u64) -> Result<()> {
+        let action = HyperliquidExecAction::ReserveRequestWeight { weight };
+        let response = self.inner.post_action_exec(&action).await?;
+
+        match response {
+            ref r @ HyperliquidExchangeResponse::Status { .. } if r.is_ok() => Ok(()),
+            HyperliquidExchangeResponse::Status {
+                status,
+                response: error_data,
+            } => Err(Error::bad_request(format!(
+                "Reserve request weight failed: status={status}, error={error_data}"
+            ))),
+            HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
+                "Reserve request weight error: {error}"
+            ))),
+        }
     }
 
     /// Cancel an order on the Hyperliquid exchange.

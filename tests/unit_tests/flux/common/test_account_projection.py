@@ -45,7 +45,7 @@ def test_profile_account_projection_publishes_ibkr_positions_without_strategy_sn
         bindings=[
             ProfileAccountProviderBinding(
                 account_scope_id="ibkr.reference.main",
-                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
                 provider=provider,
             ),
         ],
@@ -56,7 +56,7 @@ def test_profile_account_projection_publishes_ibkr_positions_without_strategy_sn
     assert snapshot["rows"][0]["exchange"] == "ibkr"
     assert snapshot["rows"][0]["source_scope"] == "shared_account"
     assert snapshot["rows"][0]["account_scope_id"] == "ibkr.reference.main"
-    assert snapshot["rows"][0]["source_strategy_ids"] == ["aapl_tradexyz_makerv3"]
+    assert snapshot["rows"][0]["source_strategy_ids"] == ["aapl_tradexyz_makerv4"]
 
 
 def test_profile_account_projection_assigns_scope_stable_row_ids() -> None:
@@ -67,7 +67,7 @@ def test_profile_account_projection_assigns_scope_stable_row_ids() -> None:
         bindings=[
             ProfileAccountProviderBinding(
                 account_scope_id="hyperliquid.xyz.main",
-                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
                 provider=_FakeAccountProjectionProvider(
                     rows=[
                         {
@@ -82,7 +82,7 @@ def test_profile_account_projection_assigns_scope_stable_row_ids() -> None:
             ),
             ProfileAccountProviderBinding(
                 account_scope_id="ibkr.reference.main",
-                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
                 provider=_FakeAccountProjectionProvider(
                     rows=[
                         {
@@ -115,7 +115,7 @@ def test_profile_account_projection_assigns_scope_stable_row_ids_for_hyperliquid
         bindings=[
             ProfileAccountProviderBinding(
                 account_scope_id="hyperliquid.xyz.main",
-                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
                 provider=_FakeAccountProjectionProvider(
                     rows=[
                         {
@@ -163,7 +163,7 @@ def test_profile_account_projection_round_trip_preserves_rows_and_scope_keys() -
         bindings=[
             ProfileAccountProviderBinding(
                 account_scope_id="ibkr.reference.main",
-                source_strategy_ids=("aapl_tradexyz_makerv3",),
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
                 provider=_FakeAccountProjectionProvider(
                     rows=[
                         {

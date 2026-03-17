@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import time as dt_time
 from datetime import timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -36,6 +37,7 @@ from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.strategies.shared.quote_health import evaluate_quote_health
 
 
 DEFAULT_REQUEST_TIMEOUT_SECS = 5.0
@@ -229,6 +231,73 @@ def _signal_max_age_ms(payload: Mapping[str, Any]) -> int:
     return _safe_int(params.get("max_age_ms")) or DEFAULT_SIGNAL_MAX_AGE_MS
 
 
+def _normalize_feed_state(value: Any) -> str | None:
+    text = (_optional_text(value) or "").lower()
+    return text if text in {"ok", "degraded", "down", "unknown"} else None
+
+
+def _normalize_quote_state(value: Any) -> str | None:
+    text = (_optional_text(value) or "").lower()
+    return text if text in {"fresh", "old", "missing"} else None
+
+
+def _safe_decimal(value: Any) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def _signal_quote_snapshot_leg(payload: Mapping[str, Any], *, role: str) -> Mapping[str, Any]:
+    maker_v4 = _mapping(payload.get("maker_v4"))
+    quote_snapshot = _mapping(maker_v4.get("quote_snapshot"))
+    leg_key = {
+        "maker": "maker_leg",
+        "reference": "ref_leg",
+    }.get(role)
+    return _mapping(quote_snapshot.get(leg_key))
+
+
+def _signal_leg_health(
+    *,
+    explicit_leg: Mapping[str, Any],
+    fallback_leg: Mapping[str, Any],
+    leg_role: str,
+    max_age_ms: int,
+) -> tuple[str | None, str | None]:
+    explicit_feed_state = _normalize_feed_state(explicit_leg.get("feed_state"))
+    explicit_quote_state = _normalize_quote_state(explicit_leg.get("quote_state"))
+    if explicit_feed_state is not None or explicit_quote_state is not None:
+        return explicit_feed_state, explicit_quote_state
+
+    candidate_leg = explicit_leg if explicit_leg else fallback_leg
+    has_transport_hint = (
+        candidate_leg.get("ts_ms") is not None
+        or candidate_leg.get("bid") is not None
+        or candidate_leg.get("ask") is not None
+        or _normalize_feed_state(candidate_leg.get("feed_state")) is not None
+        or _normalize_quote_state(candidate_leg.get("quote_state")) is not None
+    )
+    if has_transport_hint:
+        health = evaluate_quote_health(
+            leg_role=leg_role,
+            bid=_safe_decimal(candidate_leg.get("bid")),
+            ask=_safe_decimal(candidate_leg.get("ask")),
+            quote_age_ms=_safe_int(candidate_leg.get("age_ms")),
+            max_quote_age_ms=max_age_ms,
+            transport_connected=True if has_transport_hint else None,
+            subscription_healthy=True if has_transport_hint else None,
+        )
+        return health.feed_state, health.quote_state
+
+    age_ms = _safe_int(fallback_leg.get("age_ms"))
+    if age_ms is None or age_ms >= max_age_ms:
+        return None, "old"
+    return None, "fresh"
+
+
 def _is_us_equities_regular_session(now_ms_value: int) -> bool:
     if ZoneInfo is None:
         return True
@@ -384,6 +453,9 @@ def _build_signal_health_snapshot(
     }
     stale_signal_legs: set[str] = set()
     over_age_signal_legs: set[str] = set()
+    missing_signal_legs: set[str] = set()
+    feed_down_signal_legs: set[str] = set()
+    feed_degraded_signal_legs: set[str] = set()
     unhealthy_strategy_ids: list[str] = []
     missing_signal_strategy_ids: list[str] = []
     reference_unhealthy_strategy_ids: list[str] = []
@@ -420,6 +492,20 @@ def _build_signal_health_snapshot(
             fallback_exchange="ibkr",
             fallback_instrument_id=contract.reference_instrument_id if contract is not None else None,
         )
+        maker_snapshot_leg = _signal_quote_snapshot_leg(signal_row, role="maker")
+        reference_snapshot_leg = _signal_quote_snapshot_leg(signal_row, role="reference")
+        maker_feed_state, maker_quote_state = _signal_leg_health(
+            explicit_leg=maker_snapshot_leg,
+            fallback_leg=maker_leg,
+            leg_role="maker",
+            max_age_ms=max_age_ms,
+        )
+        reference_feed_state, reference_quote_state = _signal_leg_health(
+            explicit_leg=reference_snapshot_leg,
+            fallback_leg=reference_leg,
+            leg_role="reference",
+            max_age_ms=max_age_ms,
+        )
         candidate_stale_leg_ids = {maker_leg_id}
         if reference_freshness_enforced:
             candidate_stale_leg_ids.add(reference_leg_id)
@@ -429,42 +515,62 @@ def _build_signal_health_snapshot(
             if leg_id is not None and leg_id in stale_legs
         )
         stale_signal_legs.update(relevant_stale_legs)
-        over_age_legs_for_strategy: list[str] = []
-        for leg_role, resolved_leg_id, resolved_leg, exchange, instrument_id in (
+        old_legs_for_strategy: list[str] = []
+        missing_legs_for_strategy: list[str] = []
+        feed_down_legs_for_strategy: list[str] = []
+        feed_degraded_legs_for_strategy: list[str] = []
+        for leg_role, resolved_leg_id, feed_state, quote_state, exchange, instrument_id in (
             (
                 "maker",
                 maker_leg_id,
-                maker_leg,
+                maker_feed_state,
+                maker_quote_state,
                 "hyperliquid",
                 contract.maker_instrument_id if contract is not None else None,
             ),
             (
                 "reference",
                 reference_leg_id,
-                reference_leg,
+                reference_feed_state,
+                reference_quote_state,
                 "ibkr",
                 contract.reference_instrument_id if contract is not None else None,
             ),
         ):
+            leg_id = resolved_leg_id
+            instrument_text = _optional_text(instrument_id)
+            if leg_id is None and instrument_text is not None:
+                leg_id = contract_id_for_leg(
+                    exchange=exchange,
+                    symbol=instrument_text,
+                    instrument_id=instrument_text,
+                )
+            if leg_id is None:
+                continue
+            if feed_state == "down":
+                feed_down_legs_for_strategy.append(leg_id)
+            elif feed_state in {"degraded", "unknown"}:
+                feed_degraded_legs_for_strategy.append(leg_id)
             if leg_role == "reference" and not reference_freshness_enforced:
                 continue
-            age_ms = _safe_int(resolved_leg.get("age_ms"))
-            if age_ms is None or age_ms >= max_age_ms:
-                fallback_leg_id = resolved_leg_id
-                instrument_text = _optional_text(instrument_id)
-                if fallback_leg_id is None and instrument_text is not None:
-                    fallback_leg_id = contract_id_for_leg(
-                        exchange=exchange,
-                        symbol=instrument_text,
-                        instrument_id=instrument_text,
-                    )
-                if fallback_leg_id is not None:
-                    over_age_legs_for_strategy.append(fallback_leg_id)
-        over_age_signal_legs.update(over_age_legs_for_strategy)
+            if quote_state == "old":
+                old_legs_for_strategy.append(leg_id)
+            elif quote_state == "missing":
+                missing_legs_for_strategy.append(leg_id)
+        over_age_signal_legs.update(old_legs_for_strategy)
+        missing_signal_legs.update(missing_legs_for_strategy)
+        feed_down_signal_legs.update(feed_down_legs_for_strategy)
+        feed_degraded_signal_legs.update(feed_degraded_legs_for_strategy)
+        unhealthy_leg_ids = (
+            set(relevant_stale_legs)
+            | set(old_legs_for_strategy)
+            | set(missing_legs_for_strategy)
+            | set(feed_down_legs_for_strategy)
+            | set(feed_degraded_legs_for_strategy)
+        )
         unhealthy = (
             state_stale
-            or bool(relevant_stale_legs)
-            or bool(over_age_legs_for_strategy)
+            or bool(unhealthy_leg_ids)
             or state_name.startswith("blocked_")
         )
         if unhealthy:
@@ -473,22 +579,38 @@ def _build_signal_health_snapshot(
         reference_unhealthy = (
             state_name.startswith("blocked_reference")
             or (
-                reference_freshness_enforced
+                reference_leg_id is not None
                 and (
-                    reference_leg_id is None
-                    or reference_leg_id in relevant_stale_legs
-                    or reference_leg_id in over_age_legs_for_strategy
-                    or not reference_leg
-                    or _safe_int(reference_leg.get("age_ms")) is None
+                    reference_leg_id in relevant_stale_legs
+                    or reference_leg_id in feed_down_legs_for_strategy
+                    or reference_leg_id in feed_degraded_legs_for_strategy
+                    or (
+                        reference_freshness_enforced
+                        and (
+                            reference_leg_id in old_legs_for_strategy
+                            or reference_leg_id in missing_legs_for_strategy
+                        )
+                    )
                 )
             )
         )
+        if reference_leg_id is None and reference_freshness_enforced:
+            reference_unhealthy = True
         if reference_unhealthy:
             reference_unhealthy_strategy_ids.append(strategy_id)
 
     stale_signal_legs_list = sorted(stale_signal_legs)
     over_age_signal_legs_list = sorted(over_age_signal_legs)
-    failing_signal_legs = sorted(stale_signal_legs.union(over_age_signal_legs))
+    missing_signal_legs_list = sorted(missing_signal_legs)
+    feed_down_signal_legs_list = sorted(feed_down_signal_legs)
+    feed_degraded_signal_legs_list = sorted(feed_degraded_signal_legs)
+    failing_signal_legs = sorted(
+        stale_signal_legs
+        .union(over_age_signal_legs)
+        .union(missing_signal_legs)
+        .union(feed_down_signal_legs)
+        .union(feed_degraded_signal_legs),
+    )
     healthy_strategy_count = max(0, len(required_strategy_ids) - len(unhealthy_strategy_ids))
     return SignalHealthSnapshot(
         check=ReadinessCheck(
@@ -507,6 +629,10 @@ def _build_signal_health_snapshot(
                 "missing_strategy_ids": missing_signal_strategy_ids,
                 "stale_signal_legs": stale_signal_legs_list,
                 "over_age_signal_legs": over_age_signal_legs_list,
+                "old_signal_legs": over_age_signal_legs_list,
+                "missing_signal_legs": missing_signal_legs_list,
+                "feed_down_signal_legs": feed_down_signal_legs_list,
+                "feed_degraded_signal_legs": feed_degraded_signal_legs_list,
                 "stale_signal_leg_count": len(failing_signal_legs),
                 "unhealthy_strategy_ids": unhealthy_strategy_ids,
                 "healthy_strategy_count": healthy_strategy_count,

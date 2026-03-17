@@ -9,7 +9,10 @@ from flask import Flask
 
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
+from flux.runners.equities.run_api import _build_contract_catalog
+from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
 from flux.runners.equities.run_api import _build_profile_strategy_maps
+from flux.runners.equities.run_api import _build_strategy_running_resolver
 from flux.runners.equities.run_api import _equities_profile_summary
 from flux.runners.equities.run_api import _load_config
 from flux.runners.equities.run_api import _parse_args
@@ -19,16 +22,16 @@ from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
 CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv3",
-    "amd_tradexyz_makerv3",
-    "amzn_tradexyz_makerv3",
-    "googl_tradexyz_makerv3",
-    "meta_tradexyz_makerv3",
-    "msft_tradexyz_makerv3",
-    "nvda_tradexyz_makerv3",
-    "orcl_tradexyz_makerv3",
-    "pltr_tradexyz_makerv3",
-    "tsla_tradexyz_makerv3",
+    "aapl_tradexyz_makerv4",
+    "amd_tradexyz_makerv4",
+    "amzn_tradexyz_makerv4",
+    "googl_tradexyz_makerv4",
+    "meta_tradexyz_makerv4",
+    "msft_tradexyz_makerv4",
+    "nvda_tradexyz_makerv4",
+    "orcl_tradexyz_makerv4",
+    "pltr_tradexyz_makerv4",
+    "tsla_tradexyz_makerv4",
 )
 
 
@@ -43,15 +46,15 @@ def _load_toml(path: Path) -> dict:
 def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subset() -> None:
     strategy_map, required_map = _build_profile_strategy_maps(
         {
-            "equities_strategy_ids": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
-            "equities_required_strategy_ids": ["aapl_tradexyz_makerv3"],
+            "equities_strategy_ids": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
+            "equities_required_strategy_ids": ["aapl_tradexyz_makerv4"],
         },
     )
 
     assert strategy_map == {
-        "equities": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"],
+        "equities": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
     }
-    assert required_map == {"equities": ["aapl_tradexyz_makerv3"]}
+    assert required_map == {"equities": ["aapl_tradexyz_makerv4"]}
 
 
 def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config() -> None:
@@ -83,21 +86,21 @@ def test_build_profile_strategy_maps_rejects_required_ids_outside_allowlist() ->
     with pytest.raises(ValueError, match="subset"):
         _build_profile_strategy_maps(
             {
-                "equities_strategy_ids": ["aapl_tradexyz_makerv3"],
-                "equities_required_strategy_ids": ["msft_tradexyz_makerv3"],
+                "equities_strategy_ids": ["aapl_tradexyz_makerv4"],
+                "equities_required_strategy_ids": ["msft_tradexyz_makerv4"],
             },
         )
 
 
 def test_equities_profile_summary_reports_effective_strategy_sets() -> None:
     summary = _equities_profile_summary(
-        {"equities": ["aapl_tradexyz_makerv3", "msft_tradexyz_makerv3"]},
-        {"equities": ["aapl_tradexyz_makerv3"]},
+        {"equities": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]},
+        {"equities": ["aapl_tradexyz_makerv4"]},
     )
 
     assert "equities_strategy_count=2" in summary
-    assert "equities_strategy_ids=['aapl_tradexyz_makerv3', 'msft_tradexyz_makerv3']" in summary
-    assert "equities_required_strategy_ids=['aapl_tradexyz_makerv3']" in summary
+    assert "equities_strategy_ids=['aapl_tradexyz_makerv4', 'msft_tradexyz_makerv4']" in summary
+    assert "equities_required_strategy_ids=['aapl_tradexyz_makerv4']" in summary
 
 
 def test_equities_run_api_uses_makerv4_metadata_when_strategy_spec_is_makerv4() -> None:
@@ -142,11 +145,100 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
     assert metadata["aapl_tradexyz_makerv4"].strategy_family == "maker_v4"
 
 
+def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
+    config = {
+        "contracts": [
+            {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+            },
+            {
+                "exchange": "hyperliquid",
+                "symbol": "AMD/USD",
+                "instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "AMD/USD",
+                "instrument_id": "AMD.NASDAQ",
+            },
+        ],
+    }
+    api_cfg = {
+        "strategy_contracts": [
+            {
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "amd_tradexyz_makerv4",
+                "portfolio_asset_id": "AMD",
+                "maker_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AMD.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    }
+
+    contracts = _build_contract_catalog(config)
+    contracts_by_strategy = _build_contract_catalog_by_strategy(
+        api_cfg,
+        contract_catalog=contracts,
+    )
+
+    assert [entry.instrument_id for entry in contracts_by_strategy["aapl_tradexyz_makerv4"]] == [
+        "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+        "AAPL.NASDAQ",
+    ]
+    assert [entry.instrument_id for entry in contracts_by_strategy["amd_tradexyz_makerv4"]] == [
+        "XYZ:AMD-USD-PERP.HYPERLIQUID",
+        "AMD.NASDAQ",
+    ]
+
+
 def test_equities_run_api_defaults_makerv3_qty_to_one() -> None:
     schema, defaults = _resolve_runtime_params_payloads("makerv3")
 
     assert schema["qty"]["type"] == "number"
     assert defaults["qty"] == pytest.approx(1.0)
+
+
+def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_ids() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_status(self, job_id: str) -> str:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz_makerv4": "active",
+                "equities-node-meta_tradexyz_makerv4": "failed",
+            }.get(job_id, "unknown")
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_running_resolver(pulse_control=pulse, cache_ttl_s=60.0)
+
+    running = resolver(["aapl_tradexyz_makerv4", "meta_tradexyz_makerv4"])
+
+    assert running == {
+        "aapl_tradexyz_makerv4": True,
+        "meta_tradexyz_makerv4": False,
+    }
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz_makerv4",
+        "equities-node-meta_tradexyz_makerv4",
+    ]
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

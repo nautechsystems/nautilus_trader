@@ -18,6 +18,7 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
@@ -390,14 +391,48 @@ def _effective_venue_resolution_config(
         maker_instrument_id,
         primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     )
-    if _optional_text(ibkr_cfg.get("instrument_id")) == derived_reference_instrument_id:
+    identity_cfg = config.get("identity")
+    external_strategy_id = (
+        _optional_text(identity_cfg.get("external_strategy_id"))
+        if isinstance(identity_cfg, dict)
+        else None
+    ) or _resolve_flux_strategy_id(config)
+    ibkr_scope_overrides: dict[str, Any] = {}
+    scope_configs = {
+        scope.scope_id: scope
+        for scope in decode_account_scopes(config.get("account_scopes") or [])
+    }
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id != external_strategy_id:
+            continue
+        scope_id = contract.hedge_account_scope_id or contract.reference_account_scope_id
+        scope = scope_configs.get(scope_id)
+        if scope is None or scope.provider.lower() != "ibkr":
+            break
+        if scope.ibg_host is not None:
+            ibkr_scope_overrides["ibg_host"] = scope.ibg_host
+        if scope.ibg_port is not None and scope.dockerized_gateway is None:
+            ibkr_scope_overrides["ibg_port"] = scope.ibg_port
+        if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
+            ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
+        if scope.account_id is not None:
+            ibkr_scope_overrides["account_id"] = scope.account_id
+        if scope.dockerized_gateway is not None:
+            ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
+        break
+    needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != derived_reference_instrument_id
+    needs_execution_promotion = not bool(ibkr_cfg.get("execution", False))
+    needs_scope_overlay = bool(ibkr_scope_overrides)
+    if not needs_reference_rewrite and not needs_execution_promotion and not needs_scope_overlay:
         return config
 
     effective_node_cfg = dict(node_cfg)
     effective_venue_entries = dict(venue_entries)
     effective_venue_entries["IBKR"] = {
         **ibkr_cfg,
+        **ibkr_scope_overrides,
         "instrument_id": derived_reference_instrument_id,
+        "execution": True,
     }
     effective_node_cfg["venues"] = effective_venue_entries
     return {
@@ -536,7 +571,7 @@ def build_node(
         exec_engine=LiveExecEngineConfig(
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
             reconciliation_lookback_mins=reconciliation_lookback_mins,
-            reconciliation_instrument_ids=[maker_instrument_id],
+            reconciliation_instrument_ids=allowed_instrument_ids,
             reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,
             filter_unclaimed_external_orders=filter_unclaimed_external_orders,
             filter_position_reports=filter_position_reports,
@@ -608,7 +643,7 @@ def build_node(
             external_strategy_id=external_strategy_id,
             allowed_submit_instrument_ids=allowed_instrument_ids,
             external_order_claims=allowed_instrument_ids,
-            manage_stop=bool(strategy_cfg.get("manage_stop", mode == "live")),
+            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
             order_qty=order_qty,
             qty_unit=qty_unit,
             qty=qty,

@@ -677,6 +677,7 @@ def build_params_payload(
     params: dict[str, Any],
     schema: Mapping[str, Mapping[str, Any]],
     running: bool | None = None,
+    metadata: StrategyMetadata | None = None,
 ) -> dict[str, Any]:
     """Build the params response payload for a strategy."""
 
@@ -686,6 +687,8 @@ def build_params_payload(
         "schema": {str(name): dict(spec) for name, spec in schema.items()},
     }
     payload["running"] = running
+    if metadata is not None:
+        payload["meta"] = metadata.as_payload(strategy_id=strategy_id)
     return payload
 
 

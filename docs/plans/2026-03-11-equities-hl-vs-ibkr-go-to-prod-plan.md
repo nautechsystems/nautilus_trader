@@ -83,7 +83,7 @@ This is the cleanest design because it fixes the actual architectural bug: share
 | Task 6: Add Strategy Capabilities And Mixed-Family Equities Metadata | completed | main | Completed: added explicit `FluxStrategyCapabilities`, per-strategy equities metadata resolution from `strategy_contracts`, capability-driven equities node wiring with backward-compatible fallbacks for monkeypatched specs, API metadata-resolver fallback for stable defaults, Task 6 plan pytest slices passed with `-p no:rerunfailures` (`3 passed, 59 deselected`; `1 passed, 14 deselected`) because the environment blocks the rerun plugin socket, full targeted three-file slice passed (`62 passed`), and `git diff --check` is clean. |
 | Task 7: Update Fluxboard And Operator Contracts For Shared Equities Balances | not_started | unassigned | Plan created |
 | Task 8: Harden Deploy/Runtime Orchestration And Readiness Gates | not_started | unassigned | Plan created |
-| Task 9: Canary MakerV4 HL-vs-IBKR Trading On The New Control Plane | not_started | unassigned | Plan created |
+| Task 9: Canary MakerV4 HL-vs-IBKR Trading On The New Control Plane | not_started | unassigned | Superseded by the focused follow-on plan `docs/plans/2026-03-13-makerv4-hl-ibkr-prod-cutover.md` after March 13 review found that MakerV4 still lacks a live maker quote path and real hedge submission wiring. |
 
 ---
 
