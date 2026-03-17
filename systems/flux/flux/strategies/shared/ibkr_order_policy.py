@@ -40,17 +40,9 @@ def build_ibkr_hedge_order_policy(
     hedge_mode: str = "maker_hedge",
     overnight_cancel_after_ms: int = 5_000,
 ) -> IbkrHedgeOrderPolicy:
-    normalized_hedge_mode = str(hedge_mode).strip().lower() or "maker_hedge"
+    _ = str(hedge_mode).strip().lower() or "maker_hedge"
     route = _normalized_route(configured_route)
     if not is_regular_session:
-        if normalized_hedge_mode != "take_take":
-            return IbkrHedgeOrderPolicy(
-                route="SMART",
-                time_in_force="IOC",
-                outside_rth=True,
-                include_overnight=True,
-                cancel_after_ms=None,
-            )
         return IbkrHedgeOrderPolicy(
             route="SMART",
             time_in_force="DAY",
