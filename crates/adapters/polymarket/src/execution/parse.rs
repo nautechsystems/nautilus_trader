@@ -26,6 +26,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
+        consts::{MAX_PRECISION_MAKER, MAX_PRECISION_TAKER},
         enums::{PolymarketLiquiditySide, PolymarketOrderSide},
         models::PolymarketMakerOrder,
     },
@@ -314,21 +315,35 @@ pub fn compute_maker_taker_amounts(
 /// Unlike limit orders where quantity always means shares, market order semantics differ by side:
 /// - BUY: `amount` is USDC to spend → maker_amount = amount * scale, taker_amount = (amount / price) * scale
 /// - SELL: `amount` is shares to sell → maker_amount = amount * scale, taker_amount = (amount * price) * scale
+///
+/// The CLOB enforces precision limits on human-readable amounts (base_units / 10^6):
+/// - USDC amounts: max `MAX_PRECISION_TAKER` (2) decimal places
+/// - Share amounts: max `MAX_PRECISION_MAKER` (5) decimal places
+///
+/// Base unit granularity = 10^(6 - max_precision) to enforce the limit.
 pub fn compute_market_maker_taker_amounts(
     price: Decimal,
     amount: Decimal,
     side: PolymarketOrderSide,
 ) -> (Decimal, Decimal) {
     let scale = Decimal::new(1_000_000, 0);
+    // USDC: max MAX_PRECISION_TAKER decimals → granularity = 10^(6 - 2) = 10^4
+    let usdc_granularity = Decimal::new(10i64.pow(6 - MAX_PRECISION_TAKER as u32), 0);
+    // Shares: max MAX_PRECISION_MAKER decimals → granularity = 10^(6 - 5) = 10^1
+    let share_granularity = Decimal::new(10i64.pow(6 - MAX_PRECISION_MAKER as u32), 0);
     match side {
         PolymarketOrderSide::Buy => {
-            let maker_amount = (amount * scale).trunc();
-            let taker_amount = (amount / price * scale).trunc();
+            // maker = USDC, taker = shares
+            let maker_amount = ((amount * scale) / usdc_granularity).trunc() * usdc_granularity;
+            let taker_amount =
+                ((amount / price * scale) / share_granularity).trunc() * share_granularity;
             (maker_amount, taker_amount)
         }
         PolymarketOrderSide::Sell => {
-            let maker_amount = (amount * scale).trunc();
-            let taker_amount = (amount * price * scale).trunc();
+            // maker = shares, taker = USDC
+            let maker_amount = ((amount * scale) / share_granularity).trunc() * share_granularity;
+            let taker_amount =
+                ((amount * price * scale) / usdc_granularity).trunc() * usdc_granularity;
             (maker_amount, taker_amount)
         }
     }
@@ -343,7 +358,7 @@ pub fn compute_market_maker_taker_amounts(
 /// returns the worst available level. If the book side is empty, returns an error.
 pub fn calculate_market_price(
     book_levels: &[ClobBookLevel],
-    amount: f64,
+    amount: Decimal,
     side: PolymarketOrderSide,
 ) -> anyhow::Result<Decimal> {
     if book_levels.is_empty() {
@@ -354,11 +369,11 @@ pub fn calculate_market_price(
     let mut last_price = Decimal::ZERO;
 
     for level in book_levels {
-        let price: f64 = level.price.parse().unwrap_or(0.0);
-        let size: f64 = level.size.parse().unwrap_or(0.0);
-        last_price = Decimal::try_from(price).unwrap_or(Decimal::ZERO);
+        let price = Decimal::from_str_exact(&level.price).unwrap_or(Decimal::ZERO);
+        let size = Decimal::from_str_exact(&level.size).unwrap_or(Decimal::ZERO);
+        last_price = price;
 
-        if price <= 0.0 || size <= 0.0 {
+        if price.is_zero() || size.is_zero() {
             continue;
         }
 
@@ -368,7 +383,7 @@ pub fn calculate_market_price(
         };
 
         remaining -= consumed;
-        if remaining <= 0.0 {
+        if remaining <= Decimal::ZERO {
             return Ok(last_price);
         }
     }
@@ -638,8 +653,8 @@ mod tests {
             price: "0.55".to_string(),
             size: "200.0".to_string(),
         }];
-        let price = calculate_market_price(&levels, 50.0, PolymarketOrderSide::Buy).unwrap();
-        assert_eq!(price, Decimal::try_from(0.55).unwrap());
+        let price = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
+        assert_eq!(price, dec!(0.55));
     }
 
     #[rstest]
@@ -659,8 +674,8 @@ mod tests {
             },
         ];
         // 10*0.50 = 5 USDC from first level, need 15 more → second level has 100*0.55 = 55 USDC → fills
-        let price = calculate_market_price(&levels, 20.0, PolymarketOrderSide::Buy).unwrap();
-        assert_eq!(price, Decimal::try_from(0.55).unwrap());
+        let price = calculate_market_price(&levels, dec!(20), PolymarketOrderSide::Buy).unwrap();
+        assert_eq!(price, dec!(0.55));
     }
 
     #[rstest]
@@ -676,14 +691,14 @@ mod tests {
             },
         ];
         // Need 80 shares: first level gives 50, second gives 100 → fills at second
-        let price = calculate_market_price(&levels, 80.0, PolymarketOrderSide::Sell).unwrap();
-        assert_eq!(price, Decimal::try_from(0.48).unwrap());
+        let price = calculate_market_price(&levels, dec!(80), PolymarketOrderSide::Sell).unwrap();
+        assert_eq!(price, dec!(0.48));
     }
 
     #[rstest]
     fn test_calculate_market_price_empty_book() {
         let levels: Vec<ClobBookLevel> = vec![];
-        let result = calculate_market_price(&levels, 50.0, PolymarketOrderSide::Buy);
+        let result = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy);
         assert!(result.is_err());
     }
 
@@ -694,7 +709,7 @@ mod tests {
             size: "10.0".to_string(),
         }];
         // 10 * 0.55 = 5.5 USDC < 50 USDC needed, but returns worst price
-        let price = calculate_market_price(&levels, 50.0, PolymarketOrderSide::Buy).unwrap();
-        assert_eq!(price, Decimal::try_from(0.55).unwrap());
+        let price = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
+        assert_eq!(price, dec!(0.55));
     }
 }

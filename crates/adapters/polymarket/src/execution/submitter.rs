@@ -155,8 +155,7 @@ impl OrderSubmitter {
             PolymarketOrderSide::Sell => &book.bids,
         };
 
-        let amount_f64: f64 = amount_dec.to_string().parse().unwrap_or(0.0);
-        let price = calculate_market_price(levels, amount_f64, poly_side)
+        let price = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
 
         let poly_order = self
