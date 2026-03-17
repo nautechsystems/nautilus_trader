@@ -99,6 +99,8 @@ class MakerV4Strategy(Strategy):
 
     BALANCES_PUBLISH_INTERVAL_MS = 10_000
     PARAMS_REFRESH_INTERVAL_MS = 500
+    TAKE_TAKE_ORDER_TRACK_LIMIT = 64
+    TAKE_TAKE_ORDER_TTL_NS = 5 * 60 * 1_000_000_000
 
     def __init__(self, config: MakerV4StrategyConfig) -> None:
         super().__init__(config)
@@ -148,6 +150,7 @@ class MakerV4Strategy(Strategy):
         self._seen_fill_ids: set[str] = set()
         self._fill_ids_head: list[str] = []
         self._last_take_submission_ns = 0
+        self._recent_take_take_order_ids: dict[str, int] = {}
         self._take_take_fill_accumulators: dict[str, dict[str, Any]] = {}
         self._take_take_residual_base_fill: dict[str, Any] | None = None
         self._last_runtime_params_refresh_ns = 0
@@ -1556,6 +1559,34 @@ class MakerV4Strategy(Strategy):
             return None
         return self._managed_maker_orders.get(side)
 
+    def _prune_recent_take_take_order_ids(self, *, now_ns: int) -> None:
+        cutoff_ns = max(0, int(now_ns)) - self.TAKE_TAKE_ORDER_TTL_NS
+        expired = [
+            client_order_id
+            for client_order_id, seen_ns in self._recent_take_take_order_ids.items()
+            if seen_ns < cutoff_ns
+        ]
+        for client_order_id in expired:
+            self._recent_take_take_order_ids.pop(client_order_id, None)
+        while len(self._recent_take_take_order_ids) > self.TAKE_TAKE_ORDER_TRACK_LIMIT:
+            oldest = next(iter(self._recent_take_take_order_ids))
+            self._recent_take_take_order_ids.pop(oldest, None)
+
+    def _remember_recent_take_take_order_id(self, client_order_id: Any, *, now_ns: int) -> None:
+        order_id = str(client_order_id or "").strip()
+        if not order_id:
+            return
+        self._prune_recent_take_take_order_ids(now_ns=now_ns)
+        self._recent_take_take_order_ids.pop(order_id, None)
+        self._recent_take_take_order_ids[order_id] = max(0, int(now_ns))
+
+    def _is_recent_take_take_order_id(self, client_order_id: Any, *, now_ns: int) -> bool:
+        order_id = str(client_order_id or "").strip()
+        if not order_id:
+            return False
+        self._prune_recent_take_take_order_ids(now_ns=now_ns)
+        return order_id in self._recent_take_take_order_ids
+
     def _cache_order_is_closed(self, client_order_id: Any) -> bool:
         order_id = str(client_order_id or "").strip()
         if not order_id:
@@ -1715,6 +1746,11 @@ class MakerV4Strategy(Strategy):
                     post_only=bool(getattr(order, "post_only", True)),
                     pending_cancel=False,
                 )
+                if not reclaimed[side].post_only:
+                    self._remember_recent_take_take_order_id(
+                        reclaimed[side].client_order_id,
+                        now_ns=order_ts_init,
+                    )
                 latest_ts_init_by_side[side] = order_ts_init
             if reclaimed:
                 self._managed_maker_orders = reclaimed
@@ -1768,6 +1804,10 @@ class MakerV4Strategy(Strategy):
             quantity=base_qty,
             price=self._required_decimal(getattr(order, "price", target_price), field_name="price"),
             post_only=False,
+        )
+        self._remember_recent_take_take_order_id(
+            self._managed_maker_orders[side].client_order_id,
+            now_ns=now_ns,
         )
         self._last_take_submission_ns = max(0, int(now_ns))
 
@@ -2564,12 +2604,25 @@ class MakerV4Strategy(Strategy):
         reason = getattr(event, "reason", None)
         if not is_venue_protection_reason(reason):
             return False
+        instrument_id = getattr(event, "instrument_id", None)
+        maker_order_event = (
+            instrument_id is not None
+            and self._instrument_id_matches(instrument_id, self.config.maker_instrument_id)
+        ) or (
+            self._managed_maker_state_for_client_order_id(
+                getattr(event, "client_order_id", None),
+            )
+            is not None
+        )
         self._reconcile_managed_maker_order(event)
         self._record_venue_protection(
             reason=reason,
             source_event=source_event,
             client_order_id=getattr(event, "client_order_id", None),
         )
+        if maker_order_event:
+            self._publish_state_snapshot(now_ns=self._quote_ts_ns(getattr(event, "ts_event", 0)))
+            return True
         self._disable_hedging("venue_protection")
         self._publish_state_snapshot(now_ns=self._quote_ts_ns(getattr(event, "ts_event", 0)))
         return True
@@ -2750,6 +2803,12 @@ class MakerV4Strategy(Strategy):
             maker_state = self._managed_maker_state_for_client_order_id(
                 getattr(event, "client_order_id", None),
             )
+            is_take_take_fill = maker_state is not None and not maker_state.post_only
+            if not is_take_take_fill:
+                is_take_take_fill = self._is_recent_take_take_order_id(
+                    getattr(event, "client_order_id", None),
+                    now_ns=now_ns,
+                )
             if maker_state is not None:
                 publish_shared_trade(
                     self._publish_json,
@@ -2759,7 +2818,7 @@ class MakerV4Strategy(Strategy):
                     trade_role="maker",
                 )
             self._apply_maker_fill_to_managed_order(event)
-            if maker_state is not None and not maker_state.post_only:
+            if is_take_take_fill:
                 if self._cache_order_is_closed(getattr(event, "client_order_id", None)):
                     self._reconcile_managed_maker_order(event)
                 self._handle_take_take_fill_event(event, now_ns=now_ns)

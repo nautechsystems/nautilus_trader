@@ -1879,6 +1879,103 @@ def test_makerv4_take_take_reconciles_closed_partial_ioc_orders_without_terminal
     assert strategy._take_take_residual_base_fill is None
 
 
+def test_makerv4_take_take_late_fill_after_cache_reconcile_keeps_recoverable_stale_quote_backlog(
+    monkeypatch,
+) -> None:
+    strategy = MakerV4Strategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quoting(strategy)
+    closed_orders: set[str] = set()
+
+    class _FakeClock:
+        def __init__(self) -> None:
+            self.now = 2_000_000_000
+
+        def timestamp_ns(self) -> int:
+            return self.now
+
+    fake_clock = _FakeClock()
+    submitted: list[SimpleNamespace] = []
+
+    strategy._runtime_params.update(
+        {
+            "execution_mode": "take_take",
+            "bid_edge_take_bps": 5.0,
+            "ask_edge_take_bps": 50.0,
+            "take_cooldown_ms": 0,
+            "qty": Decimal("1"),
+        }
+    )
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy.submit_order = lambda order, **_kwargs: submitted.append(order)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    _install_limit_order_factory(strategy, monkeypatch)
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+        order=lambda client_order_id: SimpleNamespace(
+            is_closed=lambda: client_order_id in closed_orders,
+        ),
+    )
+
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=maker_id,
+            bid="189.18",
+            ask="189.20",
+            ts_event=2_000_000_000,
+        )
+    )
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=ref_id,
+            bid="190.00",
+            ask="190.04",
+            ts_event=2_001_000_000,
+        )
+    )
+
+    assert len(submitted) == 1
+    assert submitted[0].client_order_id == "order-1"
+
+    closed_orders.add("order-1")
+    fake_clock.now = 2_003_000_000
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=maker_id,
+            bid="189.17",
+            ask="189.19",
+            ts_event=2_003_000_000,
+        )
+    )
+
+    assert "BUY" in strategy._managed_maker_orders
+    assert strategy._managed_maker_orders["BUY"].client_order_id == "order-2"
+    assert strategy._pending_hedge is None
+    assert strategy._hedge_backlog is None
+
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-late-1",
+            client_order_id="order-1",
+            side="BUY",
+            qty="1",
+            px="189.20",
+            ts_event=4_500_000_000,
+        )
+    )
+
+    assert [order.client_order_id for order in submitted] == ["order-1", "order-2"]
+    assert strategy._pending_hedge is None
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "stale_quote"
+    assert strategy._hedge_backlog is not None
+    assert strategy._hedge_backlog.blocked_reason == "stale_quote"
+
+
 def test_makerv4_take_take_cooldown_suppresses_immediate_refire(monkeypatch) -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id, ref_id = _configure_strategy_for_quoting(strategy)
@@ -2522,7 +2619,7 @@ def test_makerv4_maker_order_reject_reconciles_managed_order_state(monkeypatch) 
     ]
 
 
-def test_makerv4_maker_order_quota_reject_fails_closed_with_quota_diagnostics(
+def test_makerv4_maker_order_quota_reject_records_diagnostics_without_latching_blocked(
     monkeypatch,
 ) -> None:
     strategy = MakerV4Strategy(config=_config())
@@ -2587,12 +2684,14 @@ def test_makerv4_maker_order_quota_reject_fails_closed_with_quota_diagnostics(
         )
     )
 
-    assert strategy.tradeable is False
-    assert strategy.hedge_disabled_reason == "venue_protection"
+    assert strategy.tradeable is True
+    assert strategy.hedge_disabled_reason is None
     state_payloads = [payload for topic, payload in published if topic == TOPIC_STATE]
     assert state_payloads
     payload = state_payloads[-1]
-    assert payload["state"] == "blocked_venue_protection"
+    assert payload["state"] == "running"
+    assert payload["maker_quote_status"]["bid_open"] == 0
+    assert payload["maker_quote_status"]["ask_open"] == 1
     assert payload["pricing_debug"]["venue_protection"]["source_event"] == "order_rejected"
     assert payload["pricing_debug"]["venue_protection"]["quota_requests_used"] == 15965
     assert payload["pricing_debug"]["venue_protection"]["quota_requests_cap"] == 15855
