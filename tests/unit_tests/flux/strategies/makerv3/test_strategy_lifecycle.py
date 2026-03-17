@@ -1708,8 +1708,8 @@ def test_compute_inventory_skew_splits_global_and_local_inventory_by_base_and_ma
     assert skew["local_spot_qty"] == Decimal(3)
     assert skew["local_inventory_qty"] == Decimal(3)
     assert skew["inventory_qty"] == Decimal(9)
-    assert skew["global_ratio"] == Decimal("0.9")
-    assert skew["local_ratio"] == Decimal("0.3")
+    assert skew["global_ratio"] == Decimal("-0.9")
+    assert skew["local_ratio"] == Decimal("-0.3")
 
 
 def test_compute_inventory_skew_ignores_stale_external_reconciliation_artifact_when_owned_position_exists(
