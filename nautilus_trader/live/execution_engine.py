@@ -3137,6 +3137,7 @@ class LiveExecutionEngine(ExecutionEngine):
         artifact_positions: list[Position],
         raw_qty: Decimal,
         effective_qty: Decimal,
+        publish_startup_alert: bool = False,
     ) -> bool:
         stale_position_ids = [position.id.value for position in artifact_positions]
         self._log.info(
@@ -3146,6 +3147,20 @@ class LiveExecutionEngine(ExecutionEngine):
             f"position_ids={stale_position_ids}",
             LogColor.BLUE,
         )
+
+        if publish_startup_alert:
+            self._publish_startup_position_reconciliation_alert(
+                report=report,
+                message=(
+                    f"Startup reconciliation removed stale EXTERNAL cached positions for "
+                    f"{report.instrument_id}"
+                ),
+                cached_qty=raw_qty,
+                venue_qty=report.signed_decimal_qty,
+                position_ids=stale_position_ids,
+                raw_qty=raw_qty,
+                effective_qty=effective_qty,
+            )
 
         for position in artifact_positions:
             position_qty = position.signed_decimal_qty()
@@ -3232,12 +3247,23 @@ class LiveExecutionEngine(ExecutionEngine):
                 artifact_positions=artifact_positions,
                 raw_qty=raw_position_signed_decimal_qty,
                 effective_qty=position_signed_decimal_qty,
+                publish_startup_alert=allow_startup_external_cleanup,
             )
 
         # Check if quantities match
         quantities_match = position_signed_decimal_qty == report.signed_decimal_qty
 
         if not quantities_match:
+            if allow_startup_external_cleanup and raw_position_signed_decimal_qty != 0:
+                self._publish_startup_position_reconciliation_alert(
+                    report=report,
+                    message=(
+                        f"Startup reconciliation detected stale cached position for "
+                        f"{report.instrument_id}"
+                    ),
+                    cached_qty=raw_position_signed_decimal_qty,
+                    venue_qty=report.signed_decimal_qty,
+                )
             if not self.generate_missing_orders:
                 self._log.error(
                     f"Cannot reconcile {report.instrument_id}: "
@@ -3311,6 +3337,51 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
 
         return True  # Reconciled
+
+    def _publish_startup_position_reconciliation_alert(
+        self,
+        *,
+        report: PositionStatusReport,
+        message: str,
+        cached_qty: Decimal,
+        venue_qty: Decimal,
+        position_ids: list[str] | None = None,
+        raw_qty: Decimal | None = None,
+        effective_qty: Decimal | None = None,
+    ) -> None:
+        snapshot = self._startup_snapshot_for_instrument(report.account_id, report.instrument_id)
+        strategy_ids = [
+            snapshot_entry.strategy_id
+            for snapshot_entry in snapshot.strategy_snapshots
+            if snapshot_entry.strategy_id.value != "EXTERNAL"
+        ] or [StrategyId("EXTERNAL")]
+
+        ts_event = int(report.ts_last or report.ts_init or self._clock.timestamp_ns())
+        for strategy_id in strategy_ids:
+            payload: dict[str, Any] = {
+                "strategy_id": strategy_id.value,
+                "level": "error",
+                "message": message,
+                "alert_key": "startup_position_reconciliation",
+                "actionable": True,
+                "source": "execution",
+                "event_type": "StartupPositionReconciliation",
+                "venue": report.instrument_id.venue.value,
+                "instrument_id": report.instrument_id.value,
+                "ts_event": ts_event,
+                "ts_ms": ts_event // 1_000_000,
+                "cached_qty": str(cached_qty),
+                "venue_qty": str(venue_qty),
+            }
+            if report.account_id is not None:
+                payload["account_id"] = report.account_id.value
+            if position_ids:
+                payload["position_ids"] = position_ids
+            if raw_qty is not None:
+                payload["raw_qty"] = str(raw_qty)
+            if effective_qty is not None:
+                payload["effective_qty"] = str(effective_qty)
+            self._publish_execution_alert(payload)
 
     def _reconcile_cross_zero_position(
         self,

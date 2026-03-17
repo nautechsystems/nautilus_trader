@@ -1742,37 +1742,54 @@ class TestLiveExecutionEngine:
     def test_reconcile_position_report_netting_startup_cleanup_uses_matching_account_scope(
         self,
     ):
-        class StubPosition:
-            def __init__(self, position_id: str, qty: str) -> None:
-                self.id = PositionId(position_id)
-                self.strategy_id = StrategyId("S-OWNED")
-                self.avg_px_open = "1.00000"
-                self._qty = Decimal(qty)
-
-            def signed_decimal_qty(self) -> Decimal:
-                return self._qty
-
-        owned_position = StubPosition("P-OWNED-ACCOUNT", "100")
-
-        def positions_open(*, venue=None, instrument_id=None, account_id=None):
-            assert venue is None
-            assert instrument_id == AUDUSD_SIM.id
-            assert account_id == self.client.account_id
-            return [owned_position]
-
-        self.exec_engine._cache = SimpleNamespace(
-            instrument=lambda instrument_id: AUDUSD_SIM if instrument_id == AUDUSD_SIM.id else None,
-            positions_open=positions_open,
-            orders_for_position=lambda _position_id: [],
+        owned_order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
         )
-        self.exec_engine._startup_effective_netting_positions_for_venue_qty = (
-            lambda positions_open, account_id, instrument_id, venue_qty: (
-                positions_open,
-                [],
-                Decimal("100"),
-                Decimal("100"),
-            )
+        self.cache.add_order(owned_order)
+        owned_order.apply(
+            TestEventStubs.order_accepted(
+                owned_order,
+                account_id=self.client.account_id,
+            ),
         )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            position_id=PositionId("P-OWNED-ACCOUNT"),
+            last_qty=Quantity.from_int(100),
+        )
+        owned_order.apply(owned_fill)
+        self.cache.update_order(owned_order)
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        other_account_id = AccountId("OTHER-001")
+        other_order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50),
+        )
+        self.cache.add_order(other_order)
+        other_order.apply(
+            TestEventStubs.order_accepted(
+                other_order,
+                account_id=other_account_id,
+            ),
+        )
+        other_fill = TestEventStubs.order_filled(
+            other_order,
+            instrument=AUDUSD_SIM,
+            account_id=other_account_id,
+            position_id=PositionId("P-OTHER-ACCOUNT"),
+            last_qty=Quantity.from_int(50),
+        )
+        other_order.apply(other_fill)
+        self.cache.update_order(other_order)
+        other_position = Position(instrument=AUDUSD_SIM, fill=other_fill)
+        self.cache.add_position(other_position, OmsType.NETTING)
 
         report = PositionStatusReport(
             account_id=self.client.account_id,
@@ -1784,12 +1801,99 @@ class TestLiveExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        result = self.exec_engine._reconcile_position_report_netting(
-            report,
-            allow_startup_external_cleanup=True,
-        )
+        captured_positions: list[Position] = []
+
+        with patch.object(
+            self.exec_engine,
+            "_startup_effective_netting_positions_for_venue_qty",
+            side_effect=lambda positions_open, account_id, instrument_id, venue_qty: (
+                captured_positions.extend(positions_open) or positions_open,
+                [],
+                Decimal("100"),
+                Decimal("100"),
+            ),
+        ):
+            result = self.exec_engine._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=True,
+            )
 
         assert result is True
+        assert [position.id for position in captured_positions] == [owned_position.id]
+
+    def test_reconcile_position_report_netting_startup_flattening_publishes_execution_alert(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+        )
+
+        class StubPosition:
+            id = PositionId("P-STARTUP-ALERT")
+            avg_px_open = "1.00000"
+
+            @staticmethod
+            def signed_decimal_qty() -> Decimal:
+                return Decimal("100")
+
+        position = StubPosition()
+
+        self.exec_engine._startup_reconciliation_snapshot = {
+            (
+                self.client.account_id,
+                AUDUSD_SIM.id,
+                order.strategy_id,
+            ): StartupStrategyCacheSnapshot(
+                account_id=self.client.account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=order.strategy_id,
+                open_position_ids=(position.id,),
+                open_position_qty=Decimal("100"),
+                open_order_refs=(),
+                cached_order_count=0,
+            ),
+        }
+        report = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(AUDUSD_SIM.size_precision),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        with patch.object(
+            self.exec_engine,
+            "_startup_effective_netting_positions_for_venue_qty",
+            return_value=([position], [], Decimal("100"), Decimal("100")),
+        ), patch.object(
+            self.exec_engine,
+            "_create_position_reconciliation_report",
+            return_value=object(),
+        ), patch.object(
+            self.exec_engine,
+            "_reconcile_order_report",
+            return_value=True,
+        ):
+            result = self.exec_engine._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=True,
+            )
+
+        assert result is True
+        assert len(published) == 1
+        payload = json.loads(published[0].payload)
+        assert payload["alert_key"] == "startup_position_reconciliation"
+        assert payload["strategy_id"] == order.strategy_id.value
+        assert payload["instrument_id"] == AUDUSD_SIM.id.value
+        assert payload["cached_qty"] == "100"
+        assert payload["venue_qty"] == "0"
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_preserves_client_generate_mass_status_overrides(
