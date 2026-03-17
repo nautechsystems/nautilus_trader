@@ -159,10 +159,11 @@ def _parse_commission_value(commission: Any) -> tuple[Decimal | None, str]:
     if match is None:
         return None, currency_code
 
-    with suppress(Exception):
+    try:
         amount = Decimal(match.group(1))
-    if amount is None:
+    except Exception:
         return None, currency_code
+
 
     parsed_currency = _currency_code(match.group(2))
     return amount, currency_code or parsed_currency
