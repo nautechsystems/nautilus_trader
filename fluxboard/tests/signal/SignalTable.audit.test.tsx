@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SignalTable, {
   buildBalanceTooltip,
+  buildInventorySkewTooltip,
   buildStrategyParamTooltip,
 } from '@/components/domain/signal/SignalTable';
 import { useSignalStore } from '@/stores';
@@ -289,5 +290,40 @@ describe('SignalTable audit coverage', () => {
 
     expect(screen.getByText('+2.0')).toBeInTheDocument();
     expect(screen.getByText('-2.0')).toBeInTheDocument();
+  });
+
+  it('describes quoted-FV skew breakdown separately from the actual bid and ask edges', () => {
+    const tooltip = buildInventorySkewTooltip(
+      {
+        type: 'inventory_skew',
+        skew_bps_signed: 2,
+        inv_skew: 2,
+        inv_ratio: 0.4,
+        inv_ratio_global: 0.5,
+        inv_skew_global: 2.5,
+        inv_ratio_local: -0.1,
+        inv_skew_local: -0.5,
+        base_bid_edge_bps: 10,
+        base_ask_edge_bps: 10,
+        eff_bid_edge_bps: 8,
+        eff_ask_edge_bps: 12,
+        delta_bid_edge_bps: -2,
+        delta_ask_edge_bps: 2,
+      } as any,
+      {
+        linear_offset_bps: '0',
+        des_qty_global: '0',
+        max_qty_global: '40000',
+        max_skew_bps_global: '5',
+        des_qty_local: '0',
+        max_qty_local: '25000',
+        max_skew_bps_local: '5',
+      }
+    );
+
+    expect(tooltip).toContain('quoted FV shift');
+    expect(tooltip).toContain('linear + global + local = total');
+    expect(tooltip).toContain('actual bid edge / ask edge');
+    expect(tooltip).not.toContain('eff bid/ask');
   });
 });

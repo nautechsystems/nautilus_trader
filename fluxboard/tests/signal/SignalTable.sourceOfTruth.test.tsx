@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import SignalTable from '@/components/domain/signal/SignalTable';
+import SignalTable, { buildInventorySkewTooltip } from '@/components/domain/signal/SignalTable';
 import * as apiModule from '@/api';
 import { useSignalStore } from '@/stores';
 import type { SignalStrategy } from '@/types';
@@ -146,7 +146,7 @@ describe('SignalTable source-of-truth contract', () => {
         {
           type: 'inventory_skew',
           skew_bps_signed: -3.86,
-          inv_skew: 999,
+          inv_skew: -3.86,
           base_bid_edge_bps: 10,
           base_ask_edge_bps: 10,
           eff_bid_edge_bps: 8,
@@ -183,5 +183,31 @@ describe('SignalTable source-of-truth contract', () => {
     await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
     expect(screen.getByText('-3.9')).toBeInTheDocument();
     expect(screen.queryByText('+2.0')).not.toBeInTheDocument();
+  });
+
+  it('treats linear plus global plus local as the quoted-FV skew source of truth', () => {
+    const tooltip = buildInventorySkewTooltip(
+      {
+        type: 'inventory_skew',
+        skew_bps_signed: 4,
+        inv_skew: 4,
+        inv_skew_global: 2.5,
+        inv_skew_local: 0.5,
+        eff_bid_edge_bps: 8,
+        eff_ask_edge_bps: 12,
+      } as any,
+      {
+        linear_offset_bps: '1',
+        des_qty_global: '0',
+        max_qty_global: '40000',
+        max_skew_bps_global: '5',
+        des_qty_local: '0',
+        max_qty_local: '25000',
+        max_skew_bps_local: '5',
+      }
+    );
+
+    expect(tooltip).toContain('linear + global + local = total');
+    expect(tooltip).toContain('+1.0 + +2.5 + +0.5 = +4.0');
   });
 });
