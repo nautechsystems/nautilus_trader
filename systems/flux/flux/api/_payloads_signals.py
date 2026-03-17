@@ -525,6 +525,7 @@ def _normalize_inventory_skew_adjustment(adjustment: Mapping[str, Any] | dict[st
         normalized["skew_bps_signed"] = signed_skew
         normalized["inv_skew"] = signed_skew
     elif legacy_skew is not None:
+        normalized["skew_bps_signed"] = legacy_skew
         normalized["inv_skew"] = legacy_skew
 
     linear_offset_bps = _first_valid_float(normalized.get("linear_offset_bps"))

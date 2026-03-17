@@ -1429,6 +1429,47 @@ def test_build_signals_payload_keeps_legacy_inv_skew_alias_in_sync_with_canonica
     assert skew["inv_skew"] == -3.86
 
 
+def test_build_signals_payload_promotes_legacy_inv_skew_when_signed_skew_is_missing(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=1_700_000_001_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="plumeusdt_okx_perp_makerv3",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                    "inv_skew": 4.25,
+                }
+            ],
+        },
+        fv_row={"fv": 0.012285},
+        params={"qty": 10.0},
+        balances=[],
+        legs=legs,
+    )
+
+    skew = payload["pricing_adjustments"][0]
+    assert skew["skew_bps_signed"] == 4.25
+    assert skew["inv_skew"] == 4.25
+
+
 def test_build_signals_payload_fallback_keeps_short_inventory_as_positive_quoted_fv_shift(
     contract_catalog,
 ) -> None:
