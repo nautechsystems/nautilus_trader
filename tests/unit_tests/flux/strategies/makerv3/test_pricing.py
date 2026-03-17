@@ -174,6 +174,8 @@ def test_build_ladder_place_cancel_levels_from_bps_rejects_negative_place_edges(
 
 
 def test_apply_inventory_skew_to_edges_handles_positive_negative_and_zero() -> None:
+    # Skew and edge are separate concepts: positive skew means quoted FV up /
+    # quotes richer, which reduces bid edge and increases ask edge.
     bid_up, ask_up = apply_inventory_skew_to_edges(
         bid_edge_bps=Decimal(10),
         ask_edge_bps=Decimal(20),

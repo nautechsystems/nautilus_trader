@@ -187,7 +187,9 @@ def test_build_signals_payload_exposes_canonical_signed_skew_from_strategy_state
     adjustment = payload["pricing_adjustments"][0]
     assert adjustment["type"] == "inventory_skew"
     assert adjustment["skew_bps_signed"] == -3.86
-    assert adjustment["inv_skew"] == 999.0
+    # `inv_skew` is a legacy alias; it must never contradict the canonical
+    # signed quoted-FV adjustment exported as `skew_bps_signed`.
+    assert adjustment["inv_skew"] == -3.86
 
 
 def test_build_signals_payload_keeps_spread_contract_aligned_with_makerv3_quote_snapshot(
