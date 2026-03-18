@@ -1749,6 +1749,7 @@ def test_build_node_passes_equities_taker_family_config_fields(monkeypatch) -> N
                 "hedge_min_share_increment": "1",
                 "max_ibkr_quote_age_ms": 2500,
                 "max_ibkr_spread_bps": "45",
+                "ibkr_hedge_route": "BLUEOCEAN",
                 "ibkr_primary_exchange": "NASDAQ",
             },
         },
@@ -1764,6 +1765,7 @@ def test_build_node_passes_equities_taker_family_config_fields(monkeypatch) -> N
     assert strategy.config.hedge_price_tick_size == Decimal("0.05")
     assert strategy.config.max_ibkr_quote_age_ms == 2500
     assert strategy.config.max_ibkr_spread_bps == Decimal(45)
+    assert strategy.config.ibkr_hedge_route == "BLUEOCEAN"
     assert strategy.config.ibkr_primary_exchange == "NASDAQ"
 
 

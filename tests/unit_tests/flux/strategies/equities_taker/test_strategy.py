@@ -297,6 +297,101 @@ def test_equities_taker_submits_aggressive_hl_order_and_hedges_on_fill(monkeypat
     assert strategy._pending_hedge.order_id == "order-2"
 
 
+def test_equities_taker_quote_tick_uses_family_owned_dispatch(monkeypatch) -> None:
+    strategy = EquitiesTakerStrategy(config=_config())
+    maker_id, _ref_id = _configure_strategy_for_quoting(strategy)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        strategy,
+        "_reconcile_closed_take_take_orders_from_cache",
+        lambda **_kwargs: calls.append("legacy_reconcile"),
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_reconcile_closed_taker_orders_from_cache",
+        lambda **_kwargs: calls.append("family_reconcile"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_refresh_taker_orders",
+        lambda **_kwargs: calls.append("family_refresh"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_retry_hedge_backlog",
+        lambda **_kwargs: calls.append("retry"),
+    )
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=maker_id,
+            bid="189.18",
+            ask="189.20",
+            ts_event=2_000_000_000,
+        )
+    )
+
+    assert "family_reconcile" in calls
+    assert "family_refresh" in calls
+    assert "legacy_reconcile" not in calls
+
+
+def test_equities_taker_fill_dispatch_uses_family_owned_handler(monkeypatch) -> None:
+    strategy = EquitiesTakerStrategy(config=_config())
+    maker_id, _ref_id = _configure_strategy_for_quoting(strategy)
+    calls: list[str] = []
+
+    monkeypatch.setattr(strategy, "_event_has_market_exit_tag", lambda _event: False)
+    monkeypatch.setattr(
+        strategy,
+        "_managed_maker_state_for_client_order_id",
+        lambda _client_order_id: SimpleNamespace(post_only=False),
+    )
+    monkeypatch.setattr(strategy, "_apply_maker_fill_to_managed_order", lambda _event: None)
+    monkeypatch.setattr(strategy, "_cache_order_is_closed", lambda _client_order_id: False)
+    monkeypatch.setattr(strategy, "_reconcile_managed_maker_order", lambda _event: None)
+    monkeypatch.setattr(
+        strategy,
+        "_handle_take_take_fill_event",
+        lambda _event, *, now_ns: calls.append("legacy_fill"),
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_handle_taker_fill_event",
+        lambda _event, *, now_ns: calls.append("family_fill"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_handle_maker_fill_event",
+        lambda _event, *, now_ns: calls.append("maker_fill"),
+    )
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy._publish_json = lambda *_args, **_kwargs: None
+
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-owned-1",
+            client_order_id="order-1",
+            side="BUY",
+            qty="1",
+            px="189.20",
+            ts_event=2_002_000_000,
+        )
+    )
+
+    assert "family_fill" in calls
+    assert "legacy_fill" not in calls
+    assert "maker_fill" not in calls
+
+
 def test_equities_taker_stale_reference_quote_creates_recoverable_hedge_backlog(
     monkeypatch,
 ) -> None:

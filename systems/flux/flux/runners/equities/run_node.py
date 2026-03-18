@@ -414,6 +414,7 @@ def _optional_strategy_config_kwargs(
         ),
         "max_ibkr_quote_age_ms": int(strategy_cfg.get("max_ibkr_quote_age_ms", 1_000)),
         "max_ibkr_spread_bps": Decimal(str(strategy_cfg.get("max_ibkr_spread_bps", "25"))),
+        "ibkr_hedge_route": str(strategy_cfg.get("ibkr_hedge_route", "")),
         "ibkr_primary_exchange": str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     }
     for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
