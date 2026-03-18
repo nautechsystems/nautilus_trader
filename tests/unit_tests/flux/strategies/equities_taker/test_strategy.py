@@ -237,6 +237,47 @@ def test_equities_taker_forces_taker_mode_and_preserves_overnight_hedge_policy()
     assert order.cancel_after_ms == 5_000
 
 
+def test_equities_taker_seeds_runtime_params_from_config() -> None:
+    strategy = EquitiesTakerStrategy(
+        config=_config(
+            bot_on=True,
+            qty=Decimal("2"),
+            des_qty_global=3.0,
+            max_qty_global=4.0,
+            max_skew_bps_global=5.0,
+            bid_edge_take_bps=6.0,
+            ask_edge_take_bps=7.0,
+            take_cooldown_ms=2_500,
+        )
+    )
+
+    assert strategy._runtime_params["bot_on"] is True
+    assert Decimal(str(strategy._runtime_params["qty"])) == Decimal("2")
+    assert strategy._runtime_params["des_qty_global"] == 3.0
+    assert strategy._runtime_params["max_qty_global"] == 4.0
+    assert strategy._runtime_params["max_skew_bps_global"] == 5.0
+    assert strategy._runtime_params["bid_edge_take_bps"] == 6.0
+    assert strategy._runtime_params["ask_edge_take_bps"] == 7.0
+    assert strategy._runtime_params["take_cooldown_ms"] == 2_500
+
+
+def test_equities_taker_record_maker_fill_preserves_pricing_debug_observability() -> None:
+    strategy = EquitiesTakerStrategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
+
+    order = strategy.record_maker_fill(
+        fill=_fill(fill_id="fill-pricing-debug"),
+        quote=_quote(),
+        maker_fee_bps=Decimal("0.25"),
+    )
+
+    assert order is not None
+    assert strategy._last_pricing_debug["expected_maker_fee_bps"] == 0.25
+    assert strategy._last_pricing_debug["assumed_hedge_fee_bps"] == 1.0
+    assert strategy._last_pricing_debug["hedge_route"] == "SMART"
+    assert strategy._last_pricing_debug["hedge_instrument_id"] == "AAPL.NASDAQ"
+    assert strategy._last_pricing_debug["hedge_submit_ts_ms"] == _OVERNIGHT_TS_MS
+
+
 def test_equities_taker_submits_aggressive_hl_order_and_hedges_on_fill(monkeypatch) -> None:
     strategy = EquitiesTakerStrategy(config=_config())
     maker_id, ref_id = _configure_strategy_for_quoting(strategy)

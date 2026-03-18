@@ -89,7 +89,19 @@ class EquitiesTakerStrategy(MakerV4Strategy):
 
     def __init__(self, config: EquitiesTakerStrategyConfig) -> None:
         super().__init__(config)
-        self._runtime_params = dict(runtime_params_mod.EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS)
+        self._runtime_params = self._seed_runtime_params_from_config(config)
+
+    @staticmethod
+    def _seed_runtime_params_from_config(config: EquitiesTakerStrategyConfig) -> dict[str, Any]:
+        seeded = dict(runtime_params_mod.EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS)
+        for name in runtime_params_mod.EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.names:
+            if not hasattr(config, name):
+                continue
+            value = getattr(config, name)
+            if value is None:
+                continue
+            seeded[name] = value
+        return seeded
 
     def _execution_mode(self) -> str:
         return "take_take"
@@ -297,7 +309,20 @@ class EquitiesTakerStrategy(MakerV4Strategy):
             include_overnight=bool(policy["include_overnight"]),
             cancel_after_ms=policy["cancel_after_ms"],
         )
-        _ = fee_rules
+        self._last_pricing_debug.update(
+            {
+                "expected_maker_fee_bps": float(fee_rules.maker_fee_bps),
+                "assumed_hedge_fee_bps": float(fee_rules.hedge_fee_bps),
+                "fee_snapshot_age_s": (
+                    None
+                    if fee_rules.fee_snapshot_age_s is None
+                    else float(fee_rules.fee_snapshot_age_s)
+                ),
+                "hedge_route": effective_hedge_route,
+                "hedge_instrument_id": str(hedge_instrument_id),
+                "hedge_submit_ts_ms": int(fill_ts_ms),
+            }
+        )
         return order, pending
 
     def on_quote_tick(self, tick: Any) -> None:
