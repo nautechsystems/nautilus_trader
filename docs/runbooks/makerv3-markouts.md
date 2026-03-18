@@ -62,7 +62,9 @@ The v0 deployment change is narrow:
 
 - add `markouts_db_path` under `[telemetry_shipper]` in
   `deploy/tokenmm/tokenmm.live.toml`
-- keep `markout_horizons_s = [30, 60, 120]`
+- set `markout_horizons_s = [0, 30, 60, 120]`
+- configure both persisted markout benchmarks:
+  `fv_market_mid` from `fv` and `local_mkt_mid` from `maker_mid`
 - keep `enable_local_persistence = true`
 - restart the existing TokenMM node services so the new actor is enrolled
 
@@ -89,7 +91,7 @@ The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
   as aggregate Prometheus gauges
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
   for the operator dashboard focused on markout performance by strategy,
-  horizon, and side
+  side, benchmark, and horizon progression
 - `ops/scripts/exporters/tokenmm_metrics_exporter.py` and
   `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json` handle the separate
   liquidity and uptime metrics surface
@@ -105,6 +107,7 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
   --env prod \
   --profile tokenmm \
   --port 9094 \
+  --benchmark-name fv_market_mid,local_mkt_mid \
   --poll-interval-s 30 \
   --window-hours 24
 ```

@@ -11,6 +11,7 @@ from contextlib import suppress
 from decimal import Decimal
 import logging
 from pathlib import Path
+import re
 from typing import Any
 
 import redis
@@ -68,6 +69,54 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _markout_component_id(benchmark_name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", benchmark_name).strip("-").upper()
+    return f"MARKOUT-DB-{slug or 'DEFAULT'}"
+
+
+def _build_markout_actor_configs(
+    *,
+    telemetry: dict[str, Any],
+    markouts_db_path: str,
+) -> list[dict[str, Any]]:
+    base_config: dict[str, Any] = {"db_path": markouts_db_path}
+    raw_horizons = telemetry.get("markout_horizons_s")
+    if isinstance(raw_horizons, list | tuple):
+        base_config["horizons_s"] = [int(value) for value in raw_horizons]
+
+    raw_benchmarks = telemetry.get("markout_benchmarks")
+    if isinstance(raw_benchmarks, list) and raw_benchmarks:
+        actor_configs: list[dict[str, Any]] = []
+        for raw_benchmark in raw_benchmarks:
+            if not isinstance(raw_benchmark, dict):
+                continue
+            benchmark_name = _optional_text(raw_benchmark.get("benchmark_name"))
+            if benchmark_name is None:
+                continue
+            benchmark_field = _optional_text(raw_benchmark.get("benchmark_field")) or "fv"
+            actor_config = dict(base_config)
+            actor_config.update(
+                {
+                    "component_id": _markout_component_id(benchmark_name),
+                    "benchmark_name": benchmark_name,
+                    "benchmark_field": benchmark_field,
+                },
+            )
+            actor_configs.append(actor_config)
+        if actor_configs:
+            return actor_configs
+
+    actor_config = dict(base_config)
+    actor_config.update(
+        {
+            "component_id": _markout_component_id("fv_market_mid"),
+            "benchmark_name": "fv_market_mid",
+            "benchmark_field": "fv",
+        },
+    )
+    return [actor_config]
 
 
 def _client_order_id_config(instrument_id: InstrumentId) -> dict[str, Any]:
@@ -308,23 +357,23 @@ def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableAct
 
     markouts_db_path = _optional_text(telemetry.get("markouts_db_path"))
     if markouts_db_path is not None:
-        actor_config: dict[str, Any] = {"db_path": markouts_db_path}
-        raw_horizons = telemetry.get("markout_horizons_s")
-        if isinstance(raw_horizons, list | tuple):
-            actor_config["horizons_s"] = [int(value) for value in raw_horizons]
-        actors.append(
-            ImportableActorConfig(
-                actor_path=(
-                    "nautilus_trader.flux.persistence.markouts.actor:"
-                    "ExecutionMarkoutPersistenceActor"
+        for actor_config in _build_markout_actor_configs(
+            telemetry=telemetry,
+            markouts_db_path=markouts_db_path,
+        ):
+            actors.append(
+                ImportableActorConfig(
+                    actor_path=(
+                        "nautilus_trader.flux.persistence.markouts.actor:"
+                        "ExecutionMarkoutPersistenceActor"
+                    ),
+                    config_path=(
+                        "nautilus_trader.flux.persistence.markouts.config:"
+                        "ExecutionMarkoutPersistenceActorConfig"
+                    ),
+                    config=actor_config,
                 ),
-                config_path=(
-                    "nautilus_trader.flux.persistence.markouts.config:"
-                    "ExecutionMarkoutPersistenceActorConfig"
-                ),
-                config=actor_config,
-            ),
-        )
+            )
 
     return actors
 

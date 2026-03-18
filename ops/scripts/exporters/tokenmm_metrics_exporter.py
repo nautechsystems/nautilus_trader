@@ -5,17 +5,20 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import importlib.util
 import json
 import logging
 import os
 import signal
 import sys
 import time
+import tomllib
 from dataclasses import dataclass
 from decimal import Decimal
 from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import redis
 from prometheus_client import CollectorRegistry
@@ -26,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from flux.common.keys import FluxRedisKeys
 from ops.scripts.exporters.common import poll_interval_seconds_arg
 
 LOGGER = logging.getLogger("tokenmm_metrics_exporter")
@@ -55,11 +59,91 @@ KNOWN_MARKET_VENUES = {
     "okx_perp",
     "okx_spot",
 }
+STRATEGY_PARAM_KEYS = (
+    "order_qty",
+    "qty",
+    "qty_unit",
+    "bid_edge1",
+    "ask_edge1",
+    "place_edge1",
+    "distance1",
+    "n_orders1",
+    "bid_edge2",
+    "ask_edge2",
+    "place_edge2",
+    "distance2",
+    "n_orders2",
+    "bid_edge3",
+    "ask_edge3",
+    "place_edge3",
+    "distance3",
+    "n_orders3",
+)
+
+
+def _load_pricing_helper(name: str) -> Any:
+    pricing_path = REPO_ROOT / "flux/strategies/makerv3/pricing.py"
+    spec = importlib.util.spec_from_file_location("tokenmm_metrics_exporter_pricing", pricing_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"unable to load pricing helpers from {pricing_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, name)
+
+
+apply_inventory_skew_to_edges = _load_pricing_helper("apply_inventory_skew_to_edges")
+build_ladder_place_cancel_levels_from_bps = _load_pricing_helper(
+    "build_ladder_place_cancel_levels_from_bps",
+)
 
 
 def _env(name: str, default: str) -> str:
     value = os.getenv(name)
     return value if value else default
+
+
+def _env_optional(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _env_bool(name: str) -> bool | None:
+    value = _env_optional(name)
+    if value is None:
+        return None
+    lowered = value.lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"`{name}` must be a boolean-like value")
+
+
+def _default_redis_url() -> str:
+    explicit = _env_optional("REDIS_URL")
+    if explicit is not None:
+        return explicit
+
+    host = _env_optional("TOKENMM_REDIS_HOST")
+    if host is None:
+        return "redis://localhost:6379/0"
+
+    scheme = "rediss" if _env_bool("TOKENMM_REDIS_SSL") else "redis"
+    port = _env_optional("TOKENMM_REDIS_PORT") or "6379"
+    db = _env_optional("TOKENMM_REDIS_DB") or "0"
+    username = _env_optional("TOKENMM_REDIS_USERNAME")
+    password = os.getenv("TOKENMM_REDIS_PASSWORD")
+
+    auth = ""
+    if username is not None or password is not None:
+        encoded_user = quote(username or "", safe="")
+        encoded_password = quote(password or "", safe="")
+        auth = f"{encoded_user}:{encoded_password}@"
+
+    return f"{scheme}://{auth}{host}:{port}/{db}"
 
 
 def _to_int(value: Any) -> int | None:
@@ -82,6 +166,14 @@ def _to_decimal(value: Any) -> Decimal | None:
     if not parsed.is_finite():
         return None
     return parsed
+
+
+def _decode_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _non_negative_int(value: str) -> int:
@@ -138,10 +230,10 @@ def normalize_symbol(value: Any) -> str:
         if len(parts) >= 2:
             return f"{parts[0]}/{parts[1]}"
     compact = text.replace("/", "")
-    for quote in KNOWN_QUOTES:
-        if compact.endswith(quote) and len(compact) > len(quote):
-            base = compact[: -len(quote)]
-            return f"{base}/{quote}"
+    for quote_name in KNOWN_QUOTES:
+        if compact.endswith(quote_name) and len(compact) > len(quote_name):
+            base = compact[: -len(quote_name)]
+            return f"{base}/{quote_name}"
     return text
 
 
@@ -150,7 +242,7 @@ def _symbol_base(symbol: str) -> str:
 
 
 def compute_quote_up(mode: Any, state_ts_ms: Any, now_ms: int, state_stale_ms: int) -> int:
-    if str(mode or "").strip().upper() != "QUOTING":
+    if str(mode or "").strip().upper() not in {"QUOTING", "ON"}:
         return 0
     ts_ms = _to_int(state_ts_ms)
     if ts_ms is None:
@@ -197,6 +289,116 @@ def compute_depth_usd_within_bps(
             if distance_bps <= limit:
                 total_depth += px * rem_qty
     return total_depth
+
+
+def _int_or_zero(value: Any) -> int:
+    parsed = _to_int(value)
+    return max(0, parsed or 0)
+
+
+def _quote_snapshot_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    quote_snapshot: dict[str, Any] = {}
+    raw_top_level = state.get("quote_snapshot")
+    if isinstance(raw_top_level, dict):
+        quote_snapshot.update(raw_top_level)
+    maker_v3 = state.get("maker_v3")
+    if isinstance(maker_v3, dict):
+        nested = maker_v3.get("quote_snapshot")
+        if isinstance(nested, dict):
+            quote_snapshot.update(nested)
+    return quote_snapshot
+
+
+def _parse_params_payload(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    payload: dict[str, Any] = {}
+    for key, value in raw.items():
+        text_key = _decode_text(key).strip()
+        if not text_key:
+            continue
+        payload[text_key] = _decode_text(value)
+    return payload
+
+
+def _apply_skewed_edges(
+    *,
+    params: dict[str, Any],
+    total_skew_bps: Decimal,
+) -> tuple[tuple[Decimal, Decimal, Decimal], tuple[Decimal, Decimal, Decimal]]:
+    bid_edges: list[Decimal] = []
+    ask_edges: list[Decimal] = []
+    for idx in range(1, 4):
+        bid_edge = _to_decimal(params.get(f"bid_edge{idx}")) or Decimal("0")
+        ask_edge = _to_decimal(params.get(f"ask_edge{idx}")) or Decimal("0")
+        bid_eff, ask_eff = apply_inventory_skew_to_edges(
+            bid_edge_bps=bid_edge,
+            ask_edge_bps=ask_edge,
+            total_skew_bps=total_skew_bps,
+        )
+        bid_edges.append(bid_eff)
+        ask_edges.append(ask_eff)
+    return (
+        (bid_edges[0], bid_edges[1], bid_edges[2]),
+        (ask_edges[0], ask_edges[1], ask_edges[2]),
+    )
+
+
+def _project_depth_usd_from_quote_status(
+    *,
+    quote_status: dict[str, Any],
+    params: dict[str, Any],
+    quote_snapshot: dict[str, Any],
+    top_bid: Decimal,
+    top_ask: Decimal,
+    bps_limit: int,
+) -> Decimal:
+    qty_unit = str(params.get("qty_unit") or "base").strip().lower()
+    if qty_unit not in {"", "base"}:
+        return Decimal("0")
+    qty = _to_decimal(params.get("qty") or params.get("order_qty"))
+    if qty is None or qty <= 0:
+        return Decimal("0")
+
+    total_skew_bps = _to_decimal(quote_snapshot.get("skew_bps_signed")) or Decimal("0")
+    bid_edges, ask_edges = _apply_skewed_edges(params=params, total_skew_bps=total_skew_bps)
+    place_edges = tuple(
+        _to_decimal(params.get(f"place_edge{idx}")) or Decimal("0")
+        for idx in range(1, 4)
+    )
+    distances = tuple(
+        _to_decimal(params.get(f"distance{idx}")) or Decimal("0")
+        for idx in range(1, 4)
+    )
+    n_orders = tuple(_int_or_zero(params.get(f"n_orders{idx}")) for idx in range(1, 4))
+
+    bid_levels, ask_levels = build_ladder_place_cancel_levels_from_bps(
+        anchor_bid=top_bid,
+        anchor_ask=top_ask,
+        bid_edges_bps=bid_edges,
+        ask_edges_bps=ask_edges,
+        place_edges_bps=place_edges,
+        distances_bps=distances,
+        n_orders=n_orders,
+        tick=Decimal("0"),
+    )
+    mid = (top_bid + top_ask) / Decimal("2")
+    if mid <= 0:
+        return Decimal("0")
+    limit = Decimal(str(bps_limit))
+    total = Decimal("0")
+
+    bid_open = min(_int_or_zero(quote_status.get("bid_open")), len(bid_levels))
+    ask_open = min(_int_or_zero(quote_status.get("ask_open")), len(ask_levels))
+    for place_px, _cancel_px in bid_levels[:bid_open]:
+        distance_bps = (abs(place_px - mid) / mid) * Decimal("10000")
+        if distance_bps <= limit:
+            total += place_px * qty
+    for place_px, _cancel_px in ask_levels[:ask_open]:
+        distance_bps = (abs(place_px - mid) / mid) * Decimal("10000")
+        if distance_bps <= limit:
+            total += place_px * qty
+    return total
 
 
 @dataclass
@@ -313,6 +515,38 @@ def discover_strategy_contexts(
     return contexts
 
 
+def discover_strategy_param_defaults(
+    *,
+    strategy_ids: list[str] | tuple[str, ...],
+    strategy_config_dir: str = "deploy/tokenmm/strategies",
+) -> dict[str, dict[str, Any]]:
+    defaults: dict[str, dict[str, Any]] = {}
+    base_dir = Path(strategy_config_dir)
+    for raw_strategy_id in strategy_ids:
+        strategy_id = str(raw_strategy_id or "").strip()
+        if not strategy_id:
+            continue
+        config_path = base_dir / f"{strategy_id}.toml"
+        try:
+            config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, tomllib.TOMLDecodeError):
+            LOGGER.exception("failed to read strategy config defaults: %s", config_path)
+            continue
+        strategy_section = config_data.get("strategy")
+        if not isinstance(strategy_section, dict):
+            continue
+        params: dict[str, Any] = {}
+        for key in STRATEGY_PARAM_KEYS:
+            value = strategy_section.get(key)
+            if value is not None:
+                params[key] = value
+        if params:
+            defaults[strategy_id] = params
+    return defaults
+
+
 class TokenMMMetricsExporter:
     def __init__(
         self,
@@ -322,11 +556,16 @@ class TokenMMMetricsExporter:
         strategy_ids: list[str] | tuple[str, ...],
         state_stale_ms: int = 30_000,
         strategy_context_overrides: dict[str, StrategyContext] | None = None,
+        strategy_param_defaults: dict[str, dict[str, Any]] | None = None,
         registry: CollectorRegistry | None = None,
     ) -> None:
         self.redis = redis_client
         self.env = str(env or "prod")
         self.state_stale_ms = int(state_stale_ms)
+        self._param_defaults = {
+            str(strategy_id): dict(values)
+            for strategy_id, values in (strategy_param_defaults or {}).items()
+        }
 
         overrides = strategy_context_overrides or {}
         self._contexts: dict[str, StrategyContext] = {}
@@ -437,15 +676,52 @@ class TokenMMMetricsExporter:
     def _update_context_from_state(self, strategy_id: str, state: dict[str, Any]) -> None:
         context = self._contexts[strategy_id]
         maker_leg = state.get("maker_leg")
-        if not isinstance(maker_leg, dict):
-            return
-        venue = normalize_venue(maker_leg.get("exchange"))
-        symbol = normalize_symbol(maker_leg.get("symbol"))
+        quote_snapshot = _quote_snapshot_from_state(state)
+        venue = "unknown"
+        symbol = "UNKNOWN/UNKNOWN"
+        if isinstance(maker_leg, dict):
+            venue = normalize_venue(maker_leg.get("exchange"))
+            symbol = normalize_symbol(maker_leg.get("symbol"))
+        if venue == "unknown":
+            venue = normalize_venue(
+                quote_snapshot.get("maker_exchange")
+                or quote_snapshot.get("exchange"),
+            )
+        if symbol == "UNKNOWN/UNKNOWN":
+            symbol = normalize_symbol(
+                quote_snapshot.get("maker_symbol")
+                or quote_snapshot.get("symbol"),
+            )
         if venue != "unknown":
             context.venue = venue
         if symbol and symbol != "UNKNOWN/UNKNOWN":
             context.symbol = symbol
             context.token = _symbol_base(symbol)
+
+    def _state_key(self, strategy_id: str) -> str:
+        return FluxRedisKeys(strategy_id=strategy_id).state()
+
+    def _params_key(self, strategy_id: str) -> str:
+        return FluxRedisKeys(strategy_id=strategy_id).params_hash_key()
+
+    def _load_state(self, strategy_id: str) -> dict[str, Any]:
+        primary_raw = self.redis.get(self._state_key(strategy_id))
+        primary = self._parse_state_payload(primary_raw)
+        if primary:
+            return primary
+        legacy_raw = self.redis.get(f"maker_arb:{strategy_id}:state")
+        return self._parse_state_payload(legacy_raw) or {}
+
+    def _load_params(self, strategy_id: str) -> dict[str, Any]:
+        params = dict(self._param_defaults.get(strategy_id, {}))
+        hgetall = getattr(self.redis, "hgetall", None)
+        if not callable(hgetall):
+            return params
+        try:
+            params.update(_parse_params_payload(hgetall(self._params_key(strategy_id))))
+        except Exception:
+            LOGGER.exception("failed to read params for %s", strategy_id)
+        return params
 
     def poll_quote_states(self, *, now_ms: int) -> None:
         quote_up_values: dict[tuple[str, ...], float] = {}
@@ -454,28 +730,41 @@ class TokenMMMetricsExporter:
         for strategy_id in self._contexts:
             previous_labels = self._labels(strategy_id)
             try:
-                state_raw = self.redis.get(f"maker_arb:{strategy_id}:state")
-                state = self._parse_state_payload(state_raw) or {}
+                state = self._load_state(strategy_id)
                 self._update_context_from_state(strategy_id, state)
+                params = self._load_params(strategy_id)
 
                 labels = self._labels(strategy_id)
                 label_values = self._label_values(labels)
+                quote_snapshot = _quote_snapshot_from_state(state)
+                effective_bot_on = state.get("effective_bot_on")
+                quote_mode = quote_snapshot.get("mode") or state.get("mode")
+                if quote_mode in (None, "") and effective_bot_on is not None:
+                    quote_mode = "ON" if bool(effective_bot_on) else "OFF"
                 quote_up = compute_quote_up(
-                    state.get("mode"),
-                    state.get("ts_ms"),
+                    quote_mode,
+                    quote_snapshot.get("ts_ms") or state.get("ts_ms"),
                     now_ms,
                     self.state_stale_ms,
                 )
                 quote_up_values[label_values] = float(quote_up)
 
-                snapshot = state.get("quote_snapshot") if isinstance(state.get("quote_snapshot"), dict) else {}
-                top_bid = _to_decimal(snapshot.get("maker_top_bid")) or _to_decimal(state.get("maker_top_bid"))
-                top_ask = _to_decimal(snapshot.get("maker_top_ask")) or _to_decimal(state.get("maker_top_ask"))
+                top_bid = _to_decimal(quote_snapshot.get("maker_top_bid")) or _to_decimal(
+                    state.get("maker_top_bid"),
+                )
+                top_ask = _to_decimal(quote_snapshot.get("maker_top_ask")) or _to_decimal(
+                    state.get("maker_top_ask"),
+                )
                 maker_orders = state.get("maker_orders") if isinstance(state.get("maker_orders"), dict) else {}
+                quote_status = (
+                    state.get("maker_quote_status")
+                    if isinstance(state.get("maker_quote_status"), dict)
+                    else {}
+                )
                 if top_bid is None or top_ask is None:
                     depth_100 = Decimal("0")
                     depth_200 = Decimal("0")
-                else:
+                elif maker_orders:
                     depth_100 = compute_depth_usd_within_bps(
                         maker_orders=maker_orders,
                         top_bid=top_bid,
@@ -484,6 +773,23 @@ class TokenMMMetricsExporter:
                     )
                     depth_200 = compute_depth_usd_within_bps(
                         maker_orders=maker_orders,
+                        top_bid=top_bid,
+                        top_ask=top_ask,
+                        bps_limit=200,
+                    )
+                else:
+                    depth_100 = _project_depth_usd_from_quote_status(
+                        quote_status=quote_status,
+                        params=params,
+                        quote_snapshot=quote_snapshot,
+                        top_bid=top_bid,
+                        top_ask=top_ask,
+                        bps_limit=100,
+                    )
+                    depth_200 = _project_depth_usd_from_quote_status(
+                        quote_status=quote_status,
+                        params=params,
+                        quote_snapshot=quote_snapshot,
                         top_bid=top_bid,
                         top_ask=top_ask,
                         bps_limit=200,
@@ -546,6 +852,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Config directory containing strategies.ini for strategy discovery.",
     )
     parser.add_argument(
+        "--strategy-config-dir",
+        default="deploy/tokenmm/strategies",
+        help="Directory containing per-strategy TOML configs for quote ladder defaults.",
+    )
+    parser.add_argument(
         "--strategy-group",
         default="tokenmm",
         help="Strategy group used when discovering ids from strategies.ini.",
@@ -557,7 +868,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--redis-url",
-        default=_env("REDIS_URL", "redis://localhost:6379/0"),
+        default=_default_redis_url(),
         help="Redis URL for reading existing maker state.",
     )
     parser.add_argument(
@@ -616,6 +927,10 @@ def main(argv: list[str] | None = None) -> int:
         strategy_context_overrides=discover_strategy_contexts(
             config_dir=str(args.config_dir),
             strategy_group=str(args.strategy_group),
+        ),
+        strategy_param_defaults=discover_strategy_param_defaults(
+            strategy_ids=strategy_ids,
+            strategy_config_dir=str(args.strategy_config_dir),
         ),
     )
 

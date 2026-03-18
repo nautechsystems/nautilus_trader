@@ -33,6 +33,8 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
   the current `plumeusdt_<venue>_<product>_makerv3` allowlist.
 - Markouts sidecar: `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help`
   Provides markout performance metrics from existing `fills.sqlite` and `markouts.sqlite`.
+  Supports multiple benchmarks in one sidecar process, including
+  `fv_market_mid` and `local_mkt_mid`.
 
 Both sidecars stay off the trading hotpath. They poll existing Redis state and
 durable SQLite telemetry out of band instead of emitting metrics inline from
@@ -50,6 +52,7 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
   --env prod \
   --profile tokenmm \
   --port 9094 \
+  --benchmark-name fv_market_mid,local_mkt_mid \
   --poll-interval-s 30 \
   --window-hours 24
 ```
@@ -57,6 +60,8 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
 Operational notes:
 
 - both exporters reject `--poll-interval-s` values below `0.5`
+- the markouts sidecar can expose `0s`, `30s`, `60s`, and `120s` horizons from
+  the same persisted `execution_markout` surface
 - the markouts exporter rejects non-positive `--window-hours` values so the
   bounded trailing-window contract cannot silently turn into a full-table scan
 - the liquidity exporter keeps polling healthy strategies even if one Redis key

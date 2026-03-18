@@ -88,6 +88,102 @@ def test_markouts_dashboard_uses_tokenmm_markout_metric_names() -> None:
     assert any("tokenmm_markout_resolved_rows" in expr for expr in expressions)
 
 
+def test_markouts_snapshot_table_pivots_horizons_into_ordered_columns() -> None:
+    path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    snapshot_panel = next(panel for panel in payload["panels"] if panel["id"] == 1)
+    assert snapshot_panel["title"] == "Strategy + Side Snapshot"
+    assert len(snapshot_panel["targets"]) == 12
+
+    expressions = [target["expr"] for target in snapshot_panel["targets"]]
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+
+    avg_override = next(
+        override
+        for override in snapshot_panel["fieldConfig"]["overrides"]
+        if override["matcher"]["options"] == ".* Avg$"
+    )
+    avg_unit = next(
+        prop["value"] for prop in avg_override["properties"] if prop["id"] == "unit"
+    )
+    assert avg_unit == "none"
+
+    organize = next(
+        transformation
+        for transformation in snapshot_panel["transformations"]
+        if transformation["id"] == "organize"
+    )
+    rename_by_name = organize["options"]["renameByName"]
+    index_by_name = organize["options"]["indexByName"]
+
+    assert rename_by_name["series_key"] == "Strategy | Side"
+    assert rename_by_name["Value #A"] == "0s Avg"
+    assert rename_by_name["Value #B"] == "30s Avg"
+    assert rename_by_name["Value #C"] == "60s Avg"
+    assert rename_by_name["Value #D"] == "120s Avg"
+    assert rename_by_name["Value #E"] == "0s N"
+    assert rename_by_name["Value #F"] == "30s N"
+    assert rename_by_name["Value #G"] == "60s N"
+    assert rename_by_name["Value #H"] == "120s N"
+    assert rename_by_name["Value #I"] == "0s Res%"
+    assert rename_by_name["Value #J"] == "30s Res%"
+    assert rename_by_name["Value #K"] == "60s Res%"
+    assert rename_by_name["Value #L"] == "120s Res%"
+
+    assert index_by_name["series_key"] == 0
+    assert index_by_name["Value #A"] == 1
+    assert index_by_name["Value #B"] == 2
+    assert index_by_name["Value #C"] == 3
+    assert index_by_name["Value #D"] == 4
+    assert index_by_name["Value #E"] == 5
+    assert index_by_name["Value #F"] == 6
+    assert index_by_name["Value #G"] == 7
+    assert index_by_name["Value #H"] == 8
+    assert index_by_name["Value #I"] == 9
+    assert index_by_name["Value #J"] == 10
+    assert index_by_name["Value #K"] == 11
+    assert index_by_name["Value #L"] == 12
+
+    strategy_override = next(
+        override
+        for override in snapshot_panel["fieldConfig"]["overrides"]
+        if override["matcher"] == {"id": "byName", "options": "Strategy | Side"}
+    )
+    strategy_width = next(
+        prop["value"] for prop in strategy_override["properties"] if prop["id"] == "custom.width"
+    )
+    assert strategy_width >= 360
+
+
+def test_markouts_dashboard_benchmark_selector_offers_fv_and_local_mid() -> None:
+    path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    benchmark_var = next(
+        variable
+        for variable in payload["templating"]["list"]
+        if variable["name"] == "benchmark_name"
+    )
+
+    assert benchmark_var["query"] == "fv_market_mid,local_mkt_mid"
+    assert [option["value"] for option in benchmark_var["options"]] == [
+        "fv_market_mid",
+        "local_mkt_mid",
+    ]
+
+
 def test_markouts_runbook_mentions_grafana_sidecars() -> None:
     runbook = (_repo_root() / "docs/runbooks/makerv3-markouts.md").read_text(encoding="utf-8")
     catalog = (_repo_root() / "monitoring/DASHBOARDS.md").read_text(encoding="utf-8")

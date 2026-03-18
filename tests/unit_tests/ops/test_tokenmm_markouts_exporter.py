@@ -373,3 +373,194 @@ def test_markouts_exporter_aggregates_existing_sqlite_rows_without_new_schema_fi
     assert registry.get_sample_value("tokenmm_markout_resolution_rate", sell_labels) == 0.0
     assert registry.get_sample_value("tokenmm_markout_avg_bps", sell_labels) is None
     assert registry.get_sample_value("tokenmm_markout_nw_bps", sell_labels) is None
+
+
+def test_markouts_exporter_emits_multiple_benchmarks_from_one_process(tmp_path: Path) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+    markouts_path = tmp_path / "markouts.sqlite"
+
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            fill_ts_ms INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-PERP.BYBIT",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "fill_ts_ms": 1_700_000_000_000,
+            },
+        ],
+    )
+    _create_table(
+        markouts_path,
+        "execution_markout",
+        """
+        CREATE TABLE execution_markout (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            benchmark_name TEXT NOT NULL,
+            horizon_s INTEGER NOT NULL,
+            target_ts_ms INTEGER NOT NULL,
+            markout_bps TEXT,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            resolution_status TEXT NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 30,
+                "target_ts_ms": 1_700_000_030_000,
+                "markout_bps": "10",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "local_mkt_mid",
+                "horizon_s": 30,
+                "target_ts_ms": 1_700_000_030_000,
+                "markout_bps": "4",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+        ],
+    )
+
+    registry = CollectorRegistry(auto_describe=True)
+    exporter = TokenMMMarkoutsExporter(
+        fills_path=fills_path,
+        markouts_path=markouts_path,
+        env="prod",
+        profile="tokenmm",
+        benchmark_name="fv_market_mid,local_mkt_mid",
+        window_hours=24.0,
+        registry=registry,
+    )
+
+    exporter.poll_once(now_ms=1_700_000_200_000)
+
+    common_labels = {
+        "env": "prod",
+        "profile": "tokenmm",
+        "strategy_id": "plumeusdt_bybit_perp_makerv3",
+        "venue": "BYBIT",
+        "symbol": "PLUMEUSDT",
+        "order_side": "BUY",
+        "horizon_s": "30",
+    }
+    assert registry.get_sample_value(
+        "tokenmm_markout_avg_bps",
+        {**common_labels, "benchmark_name": "fv_market_mid"},
+    ) == 10.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_avg_bps",
+        {**common_labels, "benchmark_name": "local_mkt_mid"},
+    ) == 4.0
+
+
+def test_load_markout_snapshot_supports_live_fill_schema_columns(tmp_path: Path) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+    markouts_path = tmp_path / "markouts.sqlite"
+
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            last_px TEXT NOT NULL,
+            last_qty TEXT NOT NULL,
+            ts_event INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_spot_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                "last_px": "0.01325",
+                "last_qty": "1000",
+                "ts_event": 1_700_000_000_000_000_000,
+            },
+        ],
+    )
+    _create_table(
+        markouts_path,
+        "execution_markout",
+        """
+        CREATE TABLE execution_markout (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            benchmark_name TEXT NOT NULL,
+            horizon_s INTEGER NOT NULL,
+            target_ts_ms INTEGER NOT NULL,
+            markout_bps TEXT,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            resolution_status TEXT NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_spot_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 30,
+                "target_ts_ms": 1_700_000_000_030,
+                "markout_bps": "8.5",
+                "fill_px": "0.01325",
+                "fill_qty": "1000",
+                "resolution_status": "resolved",
+            },
+        ],
+    )
+
+    rows = markouts_exporter.load_markout_snapshot(
+        fills_path=fills_path,
+        markouts_path=markouts_path,
+        benchmark_name="fv_market_mid",
+        window_hours=24.0,
+        now_ms=1_700_000_000_100,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["strategy_id"] == "plumeusdt_bybit_spot_makerv3"
+    assert rows[0]["venue"] == "BYBIT"
+    assert rows[0]["symbol"] == "PLUMEUSDT"
+    assert rows[0]["order_side"] == "BUY"
+    assert rows[0]["fill_count"] == 1
+    assert rows[0]["avg_bps"] == 8.5

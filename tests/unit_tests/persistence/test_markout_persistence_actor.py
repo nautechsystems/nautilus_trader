@@ -54,6 +54,8 @@ def _make_actor(
     *,
     horizons_s: tuple[int, ...] = (30, 60, 120),
     max_pending_ms: int = 180_000,
+    benchmark_name: str = "fv_market_mid",
+    benchmark_field: str = "fv",
 ):
     from nautilus_trader.flux.persistence.markouts.actor import ExecutionMarkoutPersistenceActor
     from nautilus_trader.flux.persistence.markouts.config import (
@@ -80,6 +82,8 @@ def _make_actor(
         fv_topic=FV_TOPIC,
         action_intent_topic=ACTION_INTENT_TOPIC,
         horizons_s=horizons_s,
+        benchmark_name=benchmark_name,
+        benchmark_field=benchmark_field,
         max_pending_ms=max_pending_ms,
         flush_interval_ms=10,
         max_batch_size=1000,
@@ -271,6 +275,98 @@ def test_markout_actor_persists_positive_sell_markout_when_fv_falls(tmp_path) ->
         for row in rows
     ] == [
         (30, "99", "1", "100", "resolved"),
+    ]
+
+
+def test_markout_actor_uses_configured_benchmark_field_for_local_market_mid(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(
+        tmp_path,
+        horizons_s=(30,),
+        benchmark_name="local_mkt_mid",
+        benchmark_field="maker_mid",
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(
+        instrument,
+        side="BUY",
+        last_px="100",
+        ts_event=1_000_000_000,
+        client_order_id="O-LOCAL-001",
+        trade_id="E-LOCAL-001",
+    )
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    msgbus.publish(
+        topic=FV_TOPIC,
+        msg='{"strategy_id":"MAKERV3-001","fv":"101","maker_mid":"100.5","ts_ms":31000}',
+    )
+    actor.flush()
+    actor.stop()
+
+    rows = _fetch_rows(
+        db_path,
+        """
+        SELECT benchmark_name, horizon_s, benchmark_px, markout_abs, resolution_status
+        FROM execution_markout
+        ORDER BY horizon_s
+        """,
+    )
+
+    assert [
+        (
+            row["benchmark_name"],
+            row["horizon_s"],
+            row["benchmark_px"],
+            row["markout_abs"],
+            row["resolution_status"],
+        )
+        for row in rows
+    ] == [
+        ("local_mkt_mid", 30, "100.5", "0.5", "resolved"),
+    ]
+
+
+def test_markout_actor_resolves_zero_second_edge_from_latest_cached_benchmark(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(tmp_path, horizons_s=(0, 30))
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(
+        instrument,
+        side="BUY",
+        last_px="100",
+        ts_event=1_000_000_000,
+        client_order_id="O-ZERO-001",
+        trade_id="E-ZERO-001",
+    )
+
+    actor.start()
+    msgbus.publish(topic=FV_TOPIC, msg='{"strategy_id":"MAKERV3-001","fv":"100.25","ts_ms":1000}')
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    msgbus.publish(topic=FV_TOPIC, msg='{"strategy_id":"MAKERV3-001","fv":"101","ts_ms":31000}')
+    actor.flush()
+    actor.stop()
+
+    rows = _fetch_rows(
+        db_path,
+        """
+        SELECT horizon_s, benchmark_ts_ms, benchmark_px, markout_abs, resolution_status
+        FROM execution_markout
+        ORDER BY horizon_s
+        """,
+    )
+
+    assert [
+        (
+            row["horizon_s"],
+            row["benchmark_ts_ms"],
+            row["benchmark_px"],
+            row["markout_abs"],
+            row["resolution_status"],
+        )
+        for row in rows
+    ] == [
+        (0, 1000, "100.25", "0.25", "resolved"),
+        (30, 31000, "101", "1", "resolved"),
     ]
 
 

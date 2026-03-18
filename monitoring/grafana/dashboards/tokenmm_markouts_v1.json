@@ -27,7 +27,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Snapshot of average resolved markout, resolution rate, and resolved row count by strategy, horizon, and side.",
+      "description": "Snapshot of average resolved markout, fill count, and resolution rate by strategy side, pivoted across 0s, 30s, 60s, and 120s horizons.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -48,28 +48,74 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Resolution Rate"
-            },
+      "overrides": [
+        {
+          "matcher": {
+            "id": "byName",
+            "options": "Strategy | Side"
+          },
+          "properties": [
+            {
+              "id": "custom.width",
+              "value": 360
+            }
+          ]
+        },
+        {
+          "matcher": {
+            "id": "byRegexp",
+            "options": ".* Avg$"
+          },
             "properties": [
               {
                 "id": "unit",
-                "value": "percentunit"
+                "value": "none"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
               }
             ]
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Resolved Rows"
+              "id": "byRegexp",
+              "options": ".* N$"
             },
             "properties": [
               {
                 "id": "unit",
                 "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* Res%$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
               }
             ]
           }
@@ -101,10 +147,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,horizon_s,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
-          "legendFormat": "Average Markout Bps",
+          "legendFormat": "0s Avg",
           "refId": "A"
         },
         {
@@ -112,10 +158,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,horizon_s,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
-          "legendFormat": "Resolution Rate",
+          "legendFormat": "30s Avg",
           "refId": "B"
         },
         {
@@ -123,14 +169,113 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(max by (strategy_id,horizon_s,order_side) (tokenmm_markout_resolved_rows{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}), \"series_key\", \" | \", \"strategy_id\", \"horizon_s\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
-          "legendFormat": "Resolved Rows",
+          "legendFormat": "60s Avg",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "120s Avg",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "0s N",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "30s N",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "60s N",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "120s N",
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "0s Res%",
+          "refId": "I"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "30s Res%",
+          "refId": "J"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "60s Res%",
+          "refId": "K"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "120s Res%",
+          "refId": "L"
         }
       ],
-      "title": "Strategy + Horizon Snapshot",
+      "title": "Strategy + Side Snapshot",
       "transformations": [
         {
           "id": "joinByField",
@@ -144,29 +289,83 @@
           "options": {
             "excludeByName": {
               "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "Time 8": true,
+              "Time 9": true,
+              "Time 10": true,
+              "Time 11": true,
               "__name__": true,
-              "benchmark_name": true,
-              "benchmark_name 1": true,
-              "benchmark_name 2": true,
-              "env": true,
-              "horizon_s": true,
-              "horizon_s 1": true,
-              "horizon_s 2": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "__name__ 4": true,
+              "__name__ 5": true,
+              "__name__ 6": true,
+              "__name__ 7": true,
+              "__name__ 8": true,
+              "__name__ 9": true,
+              "__name__ 10": true,
+              "__name__ 11": true,
               "order_side": true,
               "order_side 1": true,
               "order_side 2": true,
-              "profile": true,
-              "profile 1": true,
-              "profile 2": true,
+              "order_side 3": true,
+              "order_side 4": true,
+              "order_side 5": true,
+              "order_side 6": true,
+              "order_side 7": true,
+              "order_side 8": true,
+              "order_side 9": true,
+              "order_side 10": true,
+              "order_side 11": true,
               "strategy_id": true,
               "strategy_id 1": true,
-              "strategy_id 2": true
+              "strategy_id 2": true,
+              "strategy_id 3": true,
+              "strategy_id 4": true,
+              "strategy_id 5": true,
+              "strategy_id 6": true,
+              "strategy_id 7": true,
+              "strategy_id 8": true,
+              "strategy_id 9": true,
+              "strategy_id 10": true,
+              "strategy_id 11": true
+            },
+            "indexByName": {
+              "series_key": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7,
+              "Value #H": 8,
+              "Value #I": 9,
+              "Value #J": 10,
+              "Value #K": 11,
+              "Value #L": 12
             },
             "renameByName": {
-              "Value #A": "Average Markout Bps",
-              "Value #B": "Resolution Rate",
-              "Value #C": "Resolved Rows",
-              "series_key": "Strategy | Horizon | Side"
+              "Value #A": "0s Avg",
+              "Value #B": "30s Avg",
+              "Value #C": "60s Avg",
+              "Value #D": "120s Avg",
+              "Value #E": "0s N",
+              "Value #F": "30s N",
+              "Value #G": "60s N",
+              "Value #H": "120s N",
+              "Value #I": "0s Res%",
+              "Value #J": "30s Res%",
+              "Value #K": "60s Res%",
+              "Value #L": "120s Res%",
+              "series_key": "Strategy | Side"
             }
           }
         }
@@ -490,9 +689,14 @@
             "selected": true,
             "text": "fv_market_mid",
             "value": "fv_market_mid"
+          },
+          {
+            "selected": false,
+            "text": "local_mkt_mid",
+            "value": "local_mkt_mid"
           }
         ],
-        "query": "fv_market_mid",
+        "query": "fv_market_mid,local_mkt_mid",
         "type": "custom"
       },
       {
