@@ -25,6 +25,7 @@ import pandas as pd
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.common import IB
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import (
@@ -77,52 +78,48 @@ class DemoStrategy(Strategy):
         Handle strategy start event.
         """
         self.request_instrument(self.config.instrument_id)
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": [
-        #             {
-        #                 "secType": "IND",
-        #                 "symbol": "SPX",
-        #                 "exchange": "CBOE",
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 5,
-        #             },
-        #         ],
-        #     },
-        # )
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": (
-        #             {
-        #                 "secType": "CONTFUT",
-        #                 "exchange": "CME",
-        #                 "symbol": "ES",
-        #                 "build_futures_chain": True,
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 2,
-        #             },
-        #         ),
-        #     },
-        # )
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": (
-        #             {
-        #                 "secType": "IND",
-        #                 "exchange": "EUREX",
-        #                 "symbol": "ESTX50",
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 2,
-        #             },
-        #         ),
-        #     },
-        # )
+        # self.request_instrument(InstrumentId.from_str("SPXW  260319C06750000.XCBO"))
+        self.request_instruments(
+            venue=IB_VENUE,
+            params={
+                "ib_contracts": [
+                    {
+                        "secType": "STK",
+                        "symbol": "SPY",
+                        "exchange": "SMART",
+                        "primaryExchange": "CBOE",
+                        "build_options_chain": True,
+                        "min_expiry_days": 0,
+                        "max_expiry_days": 3,
+                    },
+                    # {
+                    #     "secType": "IND",
+                    #     "symbol": "SPX",
+                    #     "exchange": "CBOE",
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 5,
+                    # },
+                    # {
+                    #     "secType": "CONTFUT",
+                    #     "exchange": "CME",
+                    #     "symbol": "ES",
+                    #     "build_futures_chain": True,
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 2,
+                    # },
+                    # {
+                    #     "secType": "IND",
+                    #     "exchange": "EUREX",
+                    #     "symbol": "ESTX50",
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 2,
+                    # },
+                ],
+            },
+        )
 
     def on_instrument(self, instrument):
         self.log.info(f"Instrument ID: {instrument.id}")
