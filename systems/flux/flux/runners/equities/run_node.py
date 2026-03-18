@@ -36,6 +36,7 @@ from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
+from flux.strategies import resolve_strategy_spec_for_strategy_id
 from flux.strategies.shared.equities_arb.core import (
     effective_venue_resolution_config as shared_effective_venue_resolution_config,
 )
@@ -334,7 +335,16 @@ def _resolve_strategy_param_set(config: dict[str, Any]) -> str:
 
 
 def _resolve_strategy_spec(config: dict[str, Any]) -> FluxStrategySpec:
-    return get_strategy_spec(_resolve_strategy_param_set(config))
+    strategy_cfg = _table(config, "strategy")
+    explicit_param_set = _optional_text(strategy_cfg.get("param_set"))
+    if explicit_param_set is not None:
+        return get_strategy_spec(explicit_param_set)
+
+    identity_cfg = _table(config, "identity")
+    strategy_id = _optional_text(identity_cfg.get("external_strategy_id")) or _resolve_flux_strategy_id(
+        config,
+    )
+    return resolve_strategy_spec_for_strategy_id(strategy_id, default=_MAKERV3_SPEC)
 
 
 def _runtime_params_module(strategy_spec: FluxStrategySpec):
@@ -412,6 +422,84 @@ def _optional_strategy_config_kwargs(
         candidates["portfolio_asset_id"] = contract.portfolio_asset_id
         candidates["execution_account_scope_id"] = contract.execution_account_scope_id
         break
+    return {
+        field_name: value
+        for field_name, value in candidates.items()
+        if _strategy_config_accepts(strategy_spec.config_cls, field_name)
+    }
+
+
+def _strategy_config_kwargs(
+    *,
+    config: dict[str, Any],
+    external_strategy_id: str,
+    strategy_spec: FluxStrategySpec,
+    strategy_cfg: dict[str, Any],
+    maker_instrument_id: InstrumentId,
+    reference_instrument_id: InstrumentId,
+    allowed_instrument_ids: list[InstrumentId],
+    order_qty: Decimal,
+    qty: Decimal | None,
+    qty_unit: str,
+) -> dict[str, Any]:
+    candidates: dict[str, Any] = {
+        "strategy_id": str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
+        "maker_instrument_id": maker_instrument_id,
+        "reference_instrument_id": reference_instrument_id,
+        "external_strategy_id": external_strategy_id,
+        "allowed_submit_instrument_ids": allowed_instrument_ids,
+        "external_order_claims": allowed_instrument_ids,
+        "manage_stop": bool(strategy_cfg.get("manage_stop", False)),
+        "order_qty": order_qty,
+        "qty_unit": qty_unit,
+        "qty": qty,
+        "bot_on": bool(strategy_cfg.get("bot_on", False)),
+        "des_qty_global": float(strategy_cfg.get("des_qty_global", 0.0)),
+        "max_qty_global": float(strategy_cfg.get("max_qty_global", 40_000.0)),
+        "max_skew_bps_global": float(strategy_cfg.get("max_skew_bps_global", 20.0)),
+        "des_qty_local": float(strategy_cfg.get("des_qty_local", 0.0)),
+        "max_qty_local": float(strategy_cfg.get("max_qty_local", 0.0)),
+        "max_skew_bps_local": float(strategy_cfg.get("max_skew_bps_local", 0.0)),
+        "linear_offset_bps": float(strategy_cfg.get("linear_offset_bps", 0.0)),
+        "max_age_ms": int(strategy_cfg.get("max_age_ms", 10_000)),
+        "bid_edge1": float(strategy_cfg.get("bid_edge1", 10.0)),
+        "ask_edge1": float(strategy_cfg.get("ask_edge1", 10.0)),
+        "place_edge1": float(strategy_cfg.get("place_edge1", 2.0)),
+        "distance1": float(strategy_cfg.get("distance1", 2.0)),
+        "n_orders1": int(strategy_cfg.get("n_orders1", 5)),
+        "bid_edge2": float(strategy_cfg.get("bid_edge2", 25.0)),
+        "ask_edge2": float(strategy_cfg.get("ask_edge2", 25.0)),
+        "place_edge2": float(strategy_cfg.get("place_edge2", 2.0)),
+        "distance2": float(strategy_cfg.get("distance2", 5.0)),
+        "n_orders2": int(strategy_cfg.get("n_orders2", 0)),
+        "bid_edge3": float(strategy_cfg.get("bid_edge3", 50.0)),
+        "ask_edge3": float(strategy_cfg.get("ask_edge3", 50.0)),
+        "place_edge3": float(strategy_cfg.get("place_edge3", 2.0)),
+        "distance3": float(strategy_cfg.get("distance3", 5.0)),
+        "n_orders3": int(strategy_cfg.get("n_orders3", 0)),
+        "quote_fail_critical_after_count": int(
+            strategy_cfg.get("quote_fail_critical_after_count", 3),
+        ),
+        "quote_fail_critical_after_s": float(
+            strategy_cfg.get("quote_fail_critical_after_s", 60.0),
+        ),
+        "spot_cash_borrowing_policy": str(
+            strategy_cfg.get("spot_cash_borrowing_policy", "none"),
+        ),
+        "force_bot_off_on_start": bool(
+            strategy_cfg.get("force_bot_off_on_start", False),
+        ),
+        "cancel_all_instrument_orders": bool(
+            strategy_cfg.get("cancel_all_instrument_orders", False),
+        ),
+        **_optional_strategy_config_kwargs(
+            config=config,
+            external_strategy_id=external_strategy_id,
+            strategy_spec=strategy_spec,
+            strategy_cfg=strategy_cfg,
+        ),
+        **_client_order_id_config(maker_instrument_id),
+    }
     return {
         field_name: value
         for field_name, value in candidates.items()
@@ -569,62 +657,18 @@ def build_node(
 
     strategy = strategy_spec.strategy_cls(
         config=strategy_spec.config_cls(
-            strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
-            maker_instrument_id=maker_instrument_id,
-            reference_instrument_id=reference_instrument_id,
-            external_strategy_id=external_strategy_id,
-            allowed_submit_instrument_ids=allowed_instrument_ids,
-            external_order_claims=allowed_instrument_ids,
-            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
-            order_qty=order_qty,
-            qty_unit=qty_unit,
-            qty=qty,
-            bot_on=bool(strategy_cfg.get("bot_on", False)),
-            des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
-            max_qty_global=float(strategy_cfg.get("max_qty_global", 40_000.0)),
-            max_skew_bps_global=float(strategy_cfg.get("max_skew_bps_global", 20.0)),
-            des_qty_local=float(strategy_cfg.get("des_qty_local", 0.0)),
-            max_qty_local=float(strategy_cfg.get("max_qty_local", 0.0)),
-            max_skew_bps_local=float(strategy_cfg.get("max_skew_bps_local", 0.0)),
-            linear_offset_bps=float(strategy_cfg.get("linear_offset_bps", 0.0)),
-            max_age_ms=int(strategy_cfg.get("max_age_ms", 10_000)),
-            bid_edge1=float(strategy_cfg.get("bid_edge1", 10.0)),
-            ask_edge1=float(strategy_cfg.get("ask_edge1", 10.0)),
-            place_edge1=float(strategy_cfg.get("place_edge1", 2.0)),
-            distance1=float(strategy_cfg.get("distance1", 2.0)),
-            n_orders1=int(strategy_cfg.get("n_orders1", 5)),
-            bid_edge2=float(strategy_cfg.get("bid_edge2", 25.0)),
-            ask_edge2=float(strategy_cfg.get("ask_edge2", 25.0)),
-            place_edge2=float(strategy_cfg.get("place_edge2", 2.0)),
-            distance2=float(strategy_cfg.get("distance2", 5.0)),
-            n_orders2=int(strategy_cfg.get("n_orders2", 0)),
-            bid_edge3=float(strategy_cfg.get("bid_edge3", 50.0)),
-            ask_edge3=float(strategy_cfg.get("ask_edge3", 50.0)),
-            place_edge3=float(strategy_cfg.get("place_edge3", 2.0)),
-            distance3=float(strategy_cfg.get("distance3", 5.0)),
-            n_orders3=int(strategy_cfg.get("n_orders3", 0)),
-            quote_fail_critical_after_count=int(
-                strategy_cfg.get("quote_fail_critical_after_count", 3),
-            ),
-            quote_fail_critical_after_s=float(
-                strategy_cfg.get("quote_fail_critical_after_s", 60.0),
-            ),
-            spot_cash_borrowing_policy=str(
-                strategy_cfg.get("spot_cash_borrowing_policy", "none"),
-            ),
-            force_bot_off_on_start=bool(
-                strategy_cfg.get("force_bot_off_on_start", False),
-            ),
-            cancel_all_instrument_orders=bool(
-                strategy_cfg.get("cancel_all_instrument_orders", False),
-            ),
-            **_optional_strategy_config_kwargs(
+            **_strategy_config_kwargs(
                 config=config,
                 external_strategy_id=external_strategy_id,
                 strategy_spec=strategy_spec,
                 strategy_cfg=strategy_cfg,
+                maker_instrument_id=maker_instrument_id,
+                reference_instrument_id=reference_instrument_id,
+                allowed_instrument_ids=allowed_instrument_ids,
+                order_qty=order_qty,
+                qty=qty,
+                qty_unit=qty_unit,
             ),
-            **_client_order_id_config(maker_instrument_id),
         ),
     )
     _attach_runtime_params_manager(

@@ -4,8 +4,11 @@ Expose canonical flux strategy exports.
 
 import sys
 
+from flux.strategies.equities_maker.strategy import EquitiesMakerStrategy
+from flux.strategies.equities_maker.strategy import EquitiesMakerStrategyConfig
 from flux.strategies.makerv4.strategy import MakerV4Strategy
 from flux.strategies.makerv4.strategy import MakerV4StrategyConfig
+from flux.strategies.registry import EQUITIES_MAKER_STRATEGY_SPEC
 from flux.strategies.registry import FluxStrategyIdentity
 from flux.strategies.registry import FluxStrategySpec
 from flux.strategies.registry import MAKERV3_STRATEGY_SPEC
@@ -13,6 +16,7 @@ from flux.strategies.registry import MAKERV4_STRATEGY_SPEC
 from flux.strategies.registry import get_strategy_identity
 from flux.strategies.registry import get_strategy_spec
 from flux.strategies.registry import get_strategy_specs
+from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
 from flux.strategies.makerv3.strategy import MakerV3Strategy
 from flux.strategies.makerv3.strategy import MakerV3StrategyConfig
 
@@ -33,6 +37,9 @@ if compat_flux_pkg is not None:
 
 
 __all__ = [
+    "EQUITIES_MAKER_STRATEGY_SPEC",
+    "EquitiesMakerStrategy",
+    "EquitiesMakerStrategyConfig",
     "FluxStrategyIdentity",
     "FluxStrategySpec",
     "MAKERV3_STRATEGY_SPEC",
@@ -44,4 +51,5 @@ __all__ = [
     "get_strategy_identity",
     "get_strategy_spec",
     "get_strategy_specs",
+    "resolve_strategy_spec_for_strategy_id",
 ]
