@@ -10,6 +10,7 @@ from flux.runners.equities import run_node
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies.equities_maker import EquitiesMakerStrategyConfig
+from flux.strategies.equities_taker import EquitiesTakerStrategyConfig
 from flux.runners.tokenmm.run_node import _strategy_startup_lock as _tokenmm_strategy_startup_lock
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.identifiers import InstrumentId
@@ -47,9 +48,9 @@ def _install_strategy_spec(
         strategy_version=strategy_version,
         profile_key=profile_key,
         capabilities=SimpleNamespace(
-            publishes_local_inventory=param_set != "equities_maker",
+            publishes_local_inventory=param_set not in {"equities_maker", "equities_taker"},
             uses_profile_account_projection=True,
-            supports_immediate_hedge=param_set in {"makerv4", "equities_maker"},
+            supports_immediate_hedge=param_set in {"makerv4", "equities_maker", "equities_taker"},
         ),
     )
     monkeypatch.setattr(
@@ -555,6 +556,99 @@ def test_build_node_omits_local_inventory_fields_for_equities_maker(monkeypatch)
     assert not hasattr(strategy.config, "max_skew_bps_local")
 
 
+def test_build_node_omits_local_inventory_and_maker_quote_fields_for_equities_taker(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=EquitiesTakerStrategyConfig,
+        strategy_id="equities_taker",
+        param_set="equities_taker",
+        strategy_family="equities_taker",
+        strategy_version="v1",
+        profile_key="equities_taker",
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_taker",
+                "external_strategy_id": "aapl_tradexyz_taker",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_taker",
+                "order_qty": "1000",
+                "des_qty_local": "5",
+                "max_qty_local": "10",
+                "max_skew_bps_local": "7",
+                "bid_edge1": "5",
+                "ask_edge1": "5",
+                "n_orders1": "1",
+            },
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    assert isinstance(strategy, _CapturedStrategy)
+    assert isinstance(strategy.config, EquitiesTakerStrategyConfig)
+    assert not hasattr(strategy.config, "des_qty_local")
+    assert not hasattr(strategy.config, "max_qty_local")
+    assert not hasattr(strategy.config, "max_skew_bps_local")
+    assert not hasattr(strategy.config, "bid_edge1")
+    assert not hasattr(strategy.config, "ask_edge1")
+    assert not hasattr(strategy.config, "n_orders1")
+
+
 def test_load_runtime_config_keeps_strategy_contracts_and_account_scopes(
     tmp_path: Path,
 ) -> None:
@@ -719,6 +813,23 @@ def test_resolve_strategy_spec_uses_strategy_id_suffix_for_equities_maker() -> N
     assert spec.param_set == "equities_maker"
 
 
+def test_resolve_strategy_spec_uses_strategy_id_suffix_for_equities_taker() -> None:
+    spec = run_node._resolve_strategy_spec(
+        {
+            "identity": {
+                "strategy_id": "aapl_tradexyz_taker",
+                "external_strategy_id": "aapl_tradexyz_taker",
+            },
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_taker",
+            },
+        },
+    )
+
+    assert spec.strategy_id == "equities_taker"
+    assert spec.param_set == "equities_taker"
+
+
 def test_runtime_params_module_follows_strategy_capabilities_not_param_set() -> None:
     strategy_spec = SimpleNamespace(
         param_set="future_equities_arb",
@@ -740,6 +851,19 @@ def test_runtime_params_module_prefers_equities_maker_family_module_when_availab
 
     assert runtime_params_mod.PARAM_SET == "equities_maker"
     assert "execution_mode" not in runtime_params_mod.RUNTIME_PARAM_DEFAULTS
+
+
+def test_runtime_params_module_prefers_equities_taker_family_module_when_available() -> None:
+    strategy_spec = SimpleNamespace(
+        param_set="equities_taker",
+        capabilities=SimpleNamespace(supports_immediate_hedge=True),
+    )
+
+    runtime_params_mod = run_node._runtime_params_module(strategy_spec)
+
+    assert runtime_params_mod.PARAM_SET == "equities_taker"
+    assert "execution_mode" not in runtime_params_mod.RUNTIME_PARAM_DEFAULTS
+    assert "bid_edge1" not in runtime_params_mod.RUNTIME_PARAM_DEFAULTS
 
 
 def test_build_node_warns_when_qty_unit_missing_and_defaults_to_venue(
@@ -1561,6 +1685,81 @@ def test_build_node_passes_equities_maker_hedge_config_fields(monkeypatch) -> No
     )
 
     strategy = captured["strategy"]
+    assert strategy.config.outside_rth_hedge_enabled is True
+    assert strategy.config.hedge_price_tick_size == Decimal("0.05")
+    assert strategy.config.max_ibkr_quote_age_ms == 2500
+    assert strategy.config.max_ibkr_spread_bps == Decimal(45)
+    assert strategy.config.ibkr_primary_exchange == "NASDAQ"
+
+
+def test_build_node_passes_equities_taker_family_config_fields(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["node_config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_taker",
+                "external_strategy_id": "aapl_tradexyz_taker",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": True},
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_taker",
+                "param_set": "equities_taker",
+                "order_qty": "1",
+                "bid_edge_take_bps": "6",
+                "ask_edge_take_bps": "7",
+                "take_cooldown_ms": 2500,
+                "outside_rth_hedge_enabled": True,
+                "hedge_price_tick_size": "0.05",
+                "hedge_min_share_increment": "1",
+                "max_ibkr_quote_age_ms": 2500,
+                "max_ibkr_spread_bps": "45",
+                "ibkr_primary_exchange": "NASDAQ",
+            },
+        },
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    assert strategy.config.bid_edge_take_bps == 6.0
+    assert strategy.config.ask_edge_take_bps == 7.0
+    assert strategy.config.take_cooldown_ms == 2500
     assert strategy.config.outside_rth_hedge_enabled is True
     assert strategy.config.hedge_price_tick_size == Decimal("0.05")
     assert strategy.config.max_ibkr_quote_age_ms == 2500

@@ -12,6 +12,13 @@ from flux.strategies.equities_maker.constants import EQUITIES_MAKER_STRATEGY_ID
 from flux.strategies.equities_maker.constants import EQUITIES_MAKER_STRATEGY_VERSION
 from flux.strategies.equities_maker.strategy import EquitiesMakerStrategy
 from flux.strategies.equities_maker.strategy import EquitiesMakerStrategyConfig
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_PARAM_SET
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_PROFILE_KEY
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_STRATEGY_FAMILY
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_STRATEGY_ID
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_STRATEGY_VERSION
+from flux.strategies.equities_taker.strategy import EquitiesTakerStrategy
+from flux.strategies.equities_taker.strategy import EquitiesTakerStrategyConfig
 from flux.strategies.shared.capabilities import FluxStrategyCapabilities
 from flux.strategies.makerv4.constants import MAKERV4_PARAM_SET
 from flux.strategies.makerv4.constants import MAKERV4_PROFILE_KEY
@@ -121,10 +128,27 @@ EQUITIES_MAKER_STRATEGY_SPEC = FluxStrategySpec(
     strategy_id_suffixes=("maker",),
 )
 
+EQUITIES_TAKER_STRATEGY_SPEC = FluxStrategySpec(
+    strategy_id=EQUITIES_TAKER_STRATEGY_ID,
+    strategy_cls=EquitiesTakerStrategy,
+    config_cls=EquitiesTakerStrategyConfig,
+    param_set=EQUITIES_TAKER_PARAM_SET,
+    strategy_family=EQUITIES_TAKER_STRATEGY_FAMILY,
+    strategy_version=EQUITIES_TAKER_STRATEGY_VERSION,
+    profile_key=EQUITIES_TAKER_PROFILE_KEY,
+    capabilities=FluxStrategyCapabilities(
+        publishes_local_inventory=False,
+        uses_profile_account_projection=True,
+        supports_immediate_hedge=True,
+    ),
+    strategy_id_suffixes=("taker",),
+)
+
 _SPECS: tuple[FluxStrategySpec, ...] = (
     MAKERV3_STRATEGY_SPEC,
     MAKERV4_STRATEGY_SPEC,
     EQUITIES_MAKER_STRATEGY_SPEC,
+    EQUITIES_TAKER_STRATEGY_SPEC,
 )
 _SPECS_BY_NAME = {spec.strategy_id: spec for spec in _SPECS}
 
@@ -185,6 +209,7 @@ __all__ = [
     "FluxStrategyCapabilities",
     "FluxStrategySpec",
     "EQUITIES_MAKER_STRATEGY_SPEC",
+    "EQUITIES_TAKER_STRATEGY_SPEC",
     "MAKERV3_STRATEGY_SPEC",
     "MAKERV4_STRATEGY_SPEC",
     "get_strategy_identity",

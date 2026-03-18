@@ -6,9 +6,12 @@ import sys
 
 from flux.strategies.equities_maker.strategy import EquitiesMakerStrategy
 from flux.strategies.equities_maker.strategy import EquitiesMakerStrategyConfig
+from flux.strategies.equities_taker.strategy import EquitiesTakerStrategy
+from flux.strategies.equities_taker.strategy import EquitiesTakerStrategyConfig
 from flux.strategies.makerv4.strategy import MakerV4Strategy
 from flux.strategies.makerv4.strategy import MakerV4StrategyConfig
 from flux.strategies.registry import EQUITIES_MAKER_STRATEGY_SPEC
+from flux.strategies.registry import EQUITIES_TAKER_STRATEGY_SPEC
 from flux.strategies.registry import FluxStrategyIdentity
 from flux.strategies.registry import FluxStrategySpec
 from flux.strategies.registry import MAKERV3_STRATEGY_SPEC
@@ -38,8 +41,11 @@ if compat_flux_pkg is not None:
 
 __all__ = [
     "EQUITIES_MAKER_STRATEGY_SPEC",
+    "EQUITIES_TAKER_STRATEGY_SPEC",
     "EquitiesMakerStrategy",
     "EquitiesMakerStrategyConfig",
+    "EquitiesTakerStrategy",
+    "EquitiesTakerStrategyConfig",
     "FluxStrategyIdentity",
     "FluxStrategySpec",
     "MAKERV3_STRATEGY_SPEC",
