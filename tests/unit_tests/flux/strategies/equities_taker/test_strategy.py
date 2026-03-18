@@ -261,6 +261,12 @@ def test_equities_taker_seeds_runtime_params_from_config() -> None:
     assert strategy._runtime_params["take_cooldown_ms"] == 2_500
 
 
+def test_equities_taker_seeds_runtime_qty_from_order_qty_when_qty_is_omitted() -> None:
+    strategy = EquitiesTakerStrategy(config=_config(order_qty=Decimal("7"), qty=None))
+
+    assert Decimal(str(strategy._runtime_params["qty"])) == Decimal("7")
+
+
 def test_equities_taker_record_maker_fill_preserves_pricing_debug_observability() -> None:
     strategy = EquitiesTakerStrategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
 

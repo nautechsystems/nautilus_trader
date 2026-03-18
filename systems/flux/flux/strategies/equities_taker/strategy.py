@@ -94,6 +94,7 @@ class EquitiesTakerStrategy(MakerV4Strategy):
     @staticmethod
     def _seed_runtime_params_from_config(config: EquitiesTakerStrategyConfig) -> dict[str, Any]:
         seeded = dict(runtime_params_mod.EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS)
+        seeded["qty"] = config.active_order_qty
         for name in runtime_params_mod.EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.names:
             if not hasattr(config, name):
                 continue
