@@ -30,6 +30,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_UNDERLYING
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT_UNPADDED
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CASH
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CRYPTO
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
@@ -359,6 +360,38 @@ def test_regular_expression_option_requires_six_char_root():
     assert RE_OPT.match("AAPL230217P00155000") is None
     assert RE_OPT.match("SPXW 260120P06835000") is None  # one space = only 5-char root
     assert RE_OPT.match("SPXW  260120P06835000") is not None
+
+
+@pytest.mark.parametrize(
+    ("local_symbol", "expected_root", "expected_suffix"),
+    [
+        ("AAPL230217P00155000", "AAPL", "230217P00155000"),
+        ("SPXW260120P06835000", "SPXW", "260120P06835000"),
+    ],
+)
+def test_regular_expression_option_unpadded(local_symbol, expected_root, expected_suffix):
+    """
+    RE_OPT_UNPADDED matches IB unpadded option localSymbol (1-6 char root + OCC suffix).
+    """
+    m = RE_OPT_UNPADDED.match(local_symbol)
+    assert m is not None
+    assert m.group(1) == expected_root
+    assert m.group(2) == expected_suffix
+
+
+def test_ib_contract_to_instrument_id_unpadded_option_normalizes_to_six_char_root():
+    """
+    Unpadded IB option localSymbol (e.g. AAPL230217P00155000) normalizes to 6-char OCC
+    root.
+    """
+    contract = IBContract(
+        secType="OPT",
+        exchange="SMART",
+        localSymbol="AAPL230217P00155000",
+        currency="USD",
+    )
+    result = ib_contract_to_instrument_id(contract, "SMART")
+    assert result == InstrumentId.from_str("AAPL  230217P00155000.SMART")
 
 
 @pytest.mark.parametrize(

@@ -707,6 +707,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         Process contract details and return the instrument IDs of successfully processed
         contracts.
 
+        When ``venue`` is ``None``, the venue for each contract detail is resolved
+        individually via `determine_venue_from_contract` (symbol_to_mic_venue,
+        validExchanges, MIC mapping). This is correct for mixed result sets and when
+        loading via IBContract. Callers that previously passed a single venue
+        string will get the same behavior; pass ``venue=None`` to opt into
+        per-detail resolution.
+
         Parameters
         ----------
         contract_details : list[ContractDetails]
@@ -779,10 +786,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         contract_details: IBContractDetails | None = None,
     ) -> str:
         """
-        Determine the venue for a contract using the instrument provider configuration
-        logic. For OPT contracts with exchange SMART we avoid using SMART as the final
-        venue when possible: prefer _symbol_to_mic_venue, then a non-SMART exchange
-        from primaryExchange, contract_details.validExchanges, or cached details.
+        Determine the venue for a contract using the instrument provider configuration.
+
+        Precedence: (1) CFD/CMDTY return fixed venues; (2) if ``symbol_to_mic_venue``
+        is set and the contract symbol matches a configured prefix, that MIC venue is
+        used (independent of ``convert_exchange_to_mic_venue``); (3) otherwise resolve
+        exchange (for OPT with SMART: primaryExchange, then validExchanges from
+        contract_details or cache); (4) if ``convert_exchange_to_mic_venue`` is True,
+        map exchange to MIC; else return the exchange as venue.
 
         Parameters
         ----------

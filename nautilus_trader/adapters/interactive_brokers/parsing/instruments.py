@@ -1183,6 +1183,9 @@ def instrument_id_to_ib_contract_simplified_symbology(
     if is_generic_spread_id(instrument_id):
         return instrument_id_to_bag_contract(instrument_id, exchange, contract_details_map)
 
+    # contract_details_map is used by BAG decoding (instrument_id_to_bag_contract and legs).
+    # The _decode_* helpers share the same signature for a consistent decode pipeline;
+    # only the BAG path and spread leg resolution use the map.
     if (
         (contract := _decode_cash_contract(instrument_id, exchange, contract_details_map))
         or (contract := _decode_crypto_contract(instrument_id, exchange, contract_details_map))
@@ -1493,7 +1496,7 @@ def _decode_futures_family_contract(
             localSymbol=f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}",
         )
 
-    raise ValueError(f"Cannot parse {instrument_id}, use 2-digit year for FUT and FOP")
+    raise ValueError(f"Cannot parse {instrument_id}, use 1-digit year for FUT and FOP")
 
 
 def _decode_cfd_contract(
@@ -1565,6 +1568,7 @@ def _build_occ_option_contract(
     *,
     primary_exchange: str = "",
 ) -> IBContract:
+    # RE_OPT match['symbol'] is already 6 chars; .ljust(6) kept defensive for any other caller.
     return IBContract(
         secType="OPT",
         exchange=exchange,

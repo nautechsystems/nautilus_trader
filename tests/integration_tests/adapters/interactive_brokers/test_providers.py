@@ -354,6 +354,60 @@ def test_process_contract_details_resolves_venue_per_detail_when_not_provided(ib
     ]
 
 
+def test_process_contract_details_uses_explicit_venue_when_provided(ib_client):
+    """
+    When venue is passed, that venue is used for all details (no per-detail resolution).
+    """
+    from nautilus_trader.common.component import LiveClock
+
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=InteractiveBrokersInstrumentProviderConfig(
+            convert_exchange_to_mic_venue=True,
+        ),
+    )
+
+    processed_ids = provider._process_contract_details(
+        [
+            IBTestContractStubs.aapl_equity_contract_details(),
+            IBTestContractStubs.cl_future_contract_details(),
+        ],
+        venue="XNAS",
+    )
+
+    assert processed_ids == [
+        InstrumentId.from_str("AAPL.XNAS"),
+        InstrumentId.from_str("CLZ3.XNAS"),
+    ]
+
+
+def test_determine_venue_from_contract_symbol_to_mic_venue_without_convert_exchange(ib_client):
+    """
+    symbol_to_mic_venue is applied regardless of convert_exchange_to_mic_venue.
+    """
+    from nautilus_trader.common.component import LiveClock
+
+    config = InteractiveBrokersInstrumentProviderConfig(
+        symbol_to_mic_venue={"SPX": "XCBO"},
+        convert_exchange_to_mic_venue=False,
+    )
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=config,
+    )
+    contract = IBContract(
+        secType="OPT",
+        symbol="SPX",
+        exchange="SMART",
+        localSymbol="SPXW  260120P06835000",
+        currency="USD",
+    )
+    venue = provider.determine_venue_from_contract(contract)
+    assert venue == "XCBO"
+
+
 @pytest.mark.asyncio
 async def test_create_bag_contract_with_explicit_exchange(instrument_provider):
     """
