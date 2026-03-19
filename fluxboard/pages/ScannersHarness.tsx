@@ -10,6 +10,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useScannersStore } from '@/stores/scannersStore';
 import type { ScannerPricingSnapshot, ScannerPricingDelta } from '@/types';
+import {
+  REALTIME_BENCHMARK_SCENARIOS,
+  REALTIME_BUDGETS,
+  evaluateRealtimeBudgetStatus,
+  runRealtimeBenchmark,
+} from '../components/trades/PerfHarness';
 
 type Scenario = {
   name: string;
@@ -27,6 +33,8 @@ type HarnessStats = {
   commitDurations: number[];
 };
 
+type RolloutBaseline = Awaited<ReturnType<typeof runRealtimeBenchmark>>;
+
 const SCENARIOS: Scenario[] = [
   { name: '5k @ 100Hz', base_rows: 5000, delta_rate_per_sec: 100, duration_sec: 60, description: '5k rows, 100 updates/sec' },
   { name: '10k @ 100Hz', base_rows: 10000, delta_rate_per_sec: 100, duration_sec: 60, description: '10k rows, 100 updates/sec' },
@@ -36,6 +44,7 @@ const SCENARIOS: Scenario[] = [
 export default function ScannersHarness() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [running, setRunning] = useState(false);
+  const [rolloutBaselines, setRolloutBaselines] = useState<RolloutBaseline[]>([]);
   const [stats, setStats] = useState<HarnessStats>({
     deltasInjected: 0,
     startTime: 0,
@@ -52,6 +61,26 @@ export default function ScannersHarness() {
   const intervalRef = useRef<number | null>(null);
   const fpsRef = useRef<number[]>([]);
   const lastFrameTime = useRef<number>(performance.now());
+
+  useEffect(() => {
+    let active = true;
+
+    Promise.all(REALTIME_BENCHMARK_SCENARIOS.map((scenario) => runRealtimeBenchmark(scenario)))
+      .then((results) => {
+        if (active) {
+          setRolloutBaselines(results);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRolloutBaselines([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // FPS tracking
   useEffect(() => {
@@ -241,6 +270,47 @@ export default function ScannersHarness() {
         </button>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-2">
+        <div className="p-4 border rounded">
+          <h3 className="font-semibold mb-2">Rollout Budgets</h3>
+          <p>Mounted rows: ≤ {REALTIME_BUDGETS.maxMountedRows}</p>
+          <p>Single-panel apply+commit p95: ≤ {REALTIME_BUDGETS.maxBatchApplyCommitMs}ms</p>
+          <p>Multi-panel apply+commit p95: ≤ {REALTIME_BUDGETS.maxMultiPanelApplyCommitMs}ms</p>
+          <p>Freshness lag p95: ≤ {REALTIME_BUDGETS.maxFreshnessLagMs}ms</p>
+          <p>Selector invalidations p95: ≤ {REALTIME_BUDGETS.maxSelectorInvalidationsPerBatch}</p>
+          <p>Row rerenders per delta p95: ≤ {REALTIME_BUDGETS.maxRowRerendersPerDelta}</p>
+          <p>
+            Snapshot refreshes / minute: ≤ {REALTIME_BUDGETS.maxSteadyStateSnapshotRefreshesPerMinute}
+          </p>
+          <p>Per-cell timers: {REALTIME_BUDGETS.maxPerCellTimers}</p>
+        </div>
+
+        <div className="p-4 border rounded">
+          <h3 className="font-semibold mb-2">Committed Baseline</h3>
+          {rolloutBaselines.length === 0 ? (
+            <p>Loading benchmark baselines...</p>
+          ) : (
+            rolloutBaselines.map((baseline) => {
+              const status = evaluateRealtimeBudgetStatus(baseline);
+              return (
+                <div key={baseline.scenario} className="mb-3 last:mb-0">
+                  <p className="font-medium">{baseline.label}</p>
+                  <p>Status: {status.pass ? 'PASS' : 'FAIL'}</p>
+                  <p>Mounted rows: {baseline.maxMountedRows}</p>
+                  <p>Apply+commit p95: {baseline.batchApplyCommitMsP95.toFixed(1)}ms</p>
+                  <p>Freshness lag p95: {baseline.freshnessLagMsP95.toFixed(0)}ms</p>
+                  <p>Selector invalidations p95: {baseline.selectorInvalidationsP95}</p>
+                  <p>Row rerenders per delta p95: {baseline.rowRerendersPerDeltaP95}</p>
+                  <p>
+                    Snapshot refreshes / minute: {baseline.steadyStateSnapshotRefreshesPerMinute}
+                  </p>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       {running && (
         <div className="mb-6 p-4 bg-yellow-100 rounded">
           <p>Running scenario: {selectedScenario?.name}</p>
@@ -290,7 +360,6 @@ export default function ScannersHarness() {
     </div>
   );
 }
-
 
 
 

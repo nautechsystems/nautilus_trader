@@ -22,6 +22,11 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('../sockets', () => ({
+  disconnectSocket: vi.fn(),
+  connectSocket: vi.fn(),
+}));
+
 const baseTokens = ['PLUME', 'ETH', 'SEI'];
 
 // Helper to create mock report with many by_symbol entries for performance testing
@@ -95,6 +100,10 @@ async function renderPnL() {
   return view;
 }
 
+async function findRefreshButton() {
+  return screen.findByRole('button', { name: /Refresh/i });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.getAvailableSymbols).mockResolvedValue(baseTokens);
@@ -117,7 +126,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -150,7 +159,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -178,7 +187,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -212,7 +221,7 @@ describe('PnL Performance Optimizations', () => {
         report: createMockReportWithManySymbols(10),
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -262,7 +271,7 @@ describe('PnL Performance Optimizations', () => {
         report: initialReport,
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -295,7 +304,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -321,7 +330,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
 
       // First render
       await act(async () => {
@@ -365,7 +374,7 @@ describe('PnL Performance Optimizations', () => {
         report: createMockReportWithManySymbols(10),
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -392,6 +401,47 @@ describe('PnL Performance Optimizations', () => {
     });
   });
 
+  describe('Realtime Rollout Budgets', () => {
+    it('keeps steady-state snapshot refresh cadence within the rollout budget', async () => {
+      const perfHarness = (await import('../components/trades/PerfHarness')) as {
+        REALTIME_BUDGETS?: {
+          maxSteadyStateSnapshotRefreshesPerMinute: number;
+        };
+      };
+
+      expect(perfHarness.REALTIME_BUDGETS).toBeDefined();
+
+      vi.mocked(api.runPnLReport).mockResolvedValue({
+        status: 200,
+        etag: 'steady-etag',
+        report: createMockReportWithManySymbols(10),
+      });
+      vi.mocked(api.runPnLDelta).mockResolvedValue({ status: 304 } as any);
+
+      const view = await renderPnL();
+
+      await waitFor(() => {
+        expect(api.runPnLReport).toHaveBeenCalledTimes(1);
+      }, { timeout: 3000 });
+
+      const autoRefresh = await screen.findByLabelText(/Auto-refresh/i);
+      await act(async () => {
+        autoRefresh.click();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Next refresh in 30s/i)).toBeInTheDocument();
+      }, { timeout: 3000 });
+
+      expect(60 / 30).toBeLessThanOrEqual(
+        perfHarness.REALTIME_BUDGETS!.maxSteadyStateSnapshotRefreshesPerMinute,
+      );
+
+      view.unmount();
+    }, 10000);
+  });
+
   describe('Eager-Loaded Components', () => {
     it('should render FilterChip without Suspense wrapper', async () => {
       const mockReport = createMockReportWithManySymbols(10);
@@ -403,7 +453,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -429,7 +479,7 @@ describe('PnL Performance Optimizations', () => {
       await renderPnL();
 
       // Buttons should render immediately
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       expect(runButton).toBeInTheDocument();
     });
   });

@@ -7,6 +7,7 @@ import ScannersHarness from '../../pages/ScannersHarness';
 import {
   REALTIME_BENCHMARK_SCENARIOS,
   REALTIME_BUDGETS,
+  TradesPerfHarness,
   evaluateRealtimeBudgetStatus,
   runRealtimeBenchmark,
 } from '../../components/trades/PerfHarness';
@@ -112,6 +113,120 @@ describe('realtime rollout budget baselines', () => {
     }
   });
 
+  it('captures real runtime telemetry samples from the perf harness', async () => {
+    const originalResizeObserver = window.ResizeObserver;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function getBoundingClientRect() {
+        const width = Number.parseFloat(this.style.width || '0') || 1600;
+        const height = Number.parseFloat(this.style.height || '0') || 600;
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          width,
+          height,
+          right: width,
+          bottom: height,
+          toJSON: () => ({}),
+        } as DOMRect;
+      },
+    );
+    const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    const clientWidthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1600);
+
+    class ResizeObserverMock {
+      callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(target: Element) {
+        this.callback([
+          {
+            target,
+            contentRect: {
+              x: 0,
+              y: 0,
+              top: 0,
+              left: 0,
+              width: 1600,
+              height: 600,
+              right: 1600,
+              bottom: 600,
+              toJSON: () => ({}),
+            } as DOMRectReadOnly,
+          } as ResizeObserverEntry,
+        ], this as unknown as ResizeObserver);
+      }
+
+      disconnect() {}
+
+      unobserve() {}
+    }
+
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: ResizeObserverMock,
+    });
+
+    try {
+      render(
+        <div style={{ height: '720px', width: '1600px' }}>
+          <TradesPerfHarness onClose={() => {}} />
+        </div>,
+      );
+
+      expect(screen.getByText('Measured Runtime Telemetry')).toBeInTheDocument();
+      expect(screen.getByTestId('perf-runtime-reference-note')).toHaveTextContent(
+        'External freshness lag and snapshot refresh cadence stay reference-only in the committed rollout baseline below.',
+      );
+      expect(screen.getByTestId('perf-runtime-mounted-rows')).toHaveTextContent('Mounted rows:');
+
+      expect(screen.getByTestId('perf-runtime-apply-commit')).toHaveTextContent(
+        'Waiting for local delta...',
+      );
+      expect(screen.getByTestId('perf-runtime-local-lag')).toHaveTextContent(
+        'Waiting for local delta...',
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('perf-runtime-sample-count')).not.toHaveTextContent(
+          'Measured deltas: 0',
+        );
+        expect(screen.getByTestId('perf-runtime-apply-commit')).not.toHaveTextContent(
+          'Waiting for local delta...',
+        );
+        expect(screen.getByTestId('perf-runtime-local-lag')).not.toHaveTextContent(
+          'Waiting for local delta...',
+        );
+        const measuredDeltas = Number(
+          screen.getByTestId('perf-runtime-sample-count').textContent?.replace(/\D+/g, '') ?? '0',
+        );
+        const applyCommitMs = Number(
+          screen.getByTestId('perf-runtime-apply-commit').textContent?.match(/([\d.]+)ms/)?.[1] ?? '0',
+        );
+        const localLagMs = Number(
+          screen.getByTestId('perf-runtime-local-lag').textContent?.match(/([\d.]+)ms/)?.[1] ?? '0',
+        );
+        expect(measuredDeltas).toBeGreaterThan(0);
+        expect(applyCommitMs).toBeGreaterThan(0);
+        expect(localLagMs).toBeGreaterThan(0);
+      });
+    } finally {
+      rectSpy.mockRestore();
+      clientHeightSpy.mockRestore();
+      clientWidthSpy.mockRestore();
+      Object.defineProperty(window, 'ResizeObserver', {
+        configurable: true,
+        writable: true,
+        value: originalResizeObserver,
+      });
+    }
+  }, 10000);
+
   it('renders the same budgets and committed baselines in the scanners harness', async () => {
     render(<ScannersHarness />);
 
@@ -140,6 +255,8 @@ describe('realtime rollout budget baselines', () => {
 
     expect(plan).toContain('## Rollout Budget Contract');
     expect(plan).toContain('## Benchmark Scenarios Used For Approval');
+    expect(plan).toContain('measured local runtime telemetry');
+    expect(plan).toContain('external freshness lag and snapshot cadence remain');
     expect(plan).toContain(
       'pnpm --dir fluxboard exec vitest run __tests__/realtime/baseline-budgets.test.tsx __tests__/pnl-performance.test.tsx __tests__/panels/trades.perf.test.tsx',
     );
