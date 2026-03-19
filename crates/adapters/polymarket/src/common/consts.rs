@@ -28,8 +28,8 @@ pub const USDC: &str = "USDC";
 
 pub const MAX_PRICE: &str = "0.999";
 pub const MIN_PRICE: &str = "0.001";
-pub const MAX_PRECISION_MAKER: u8 = 5;
-pub const MAX_PRECISION_TAKER: u8 = 2;
+pub const USDC_DECIMALS: u32 = 6;
+pub const LOT_SIZE_SCALE: u32 = 2;
 
 pub const WS_MAX_SUBSCRIPTIONS: usize = 200;
 pub const WS_DEFAULT_SUBSCRIPTIONS: usize = 200;

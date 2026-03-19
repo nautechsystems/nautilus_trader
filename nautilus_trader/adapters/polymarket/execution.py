@@ -41,6 +41,7 @@ from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKE
 from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import make_composite_trade_id
@@ -52,6 +53,7 @@ from nautilus_trader.adapters.polymarket.common.types import JSON
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.http.conversion import convert_tif_to_polymarket_order_type
 from nautilus_trader.adapters.polymarket.http.errors import should_retry
+from nautilus_trader.adapters.polymarket.order_fill_tracker import OrderFillTracker
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.schemas.trade import PolymarketTradeReport
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketOpenOrder
@@ -226,6 +228,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
             max_subscriptions_per_connection=self._config.ws_max_subscriptions_per_connection,
         )
         self._decoder_user_msg = msgspec.json.Decoder(USER_WS_MESSAGE)
+
+        # Fill tracker for dust detection
+        self._fill_tracker = OrderFillTracker()
 
         # Hot caches
         self._processed_fills: OrderedDict[tuple[TradeId, VenueOrderId], None] = OrderedDict()
@@ -1577,6 +1582,18 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 venue_order_id = VenueOrderId(response["orderID"])
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
 
+                # Register with fill tracker for dust detection
+                instrument = self._cache.instrument(order.instrument_id)
+                if instrument is not None:
+                    self._fill_tracker.register(
+                        venue_order_id=venue_order_id,
+                        submitted_qty=order.quantity,
+                        order_side=order.side,
+                        instrument_id=order.instrument_id,
+                        size_precision=instrument.size_precision,
+                        price_precision=instrument.price_precision,
+                    )
+
                 # Signal order event
                 event = self._ack_events_order.get(venue_order_id)
                 if event:
@@ -1679,7 +1696,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             order_id=order_id,
         )
 
-    def _handle_ws_order_msg(self, msg: PolymarketUserOrder, wait_for_ack: bool):
+    def _handle_ws_order_msg(self, msg: PolymarketUserOrder, wait_for_ack: bool):  # noqa: C901
         self._log.debug(f"Handling order message, {wait_for_ack=}")
 
         venue_order_id = msg.venue_order_id()
@@ -1717,9 +1734,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"Order {msg.type.value}: {client_order_id!r}", LogColor.MAGENTA)
 
+        order = self._cache.order(client_order_id) if client_order_id else None
+
         match msg.type:
             case PolymarketEventType.PLACEMENT:
-                order = self._cache.order(client_order_id) if client_order_id else None
                 if order is None or order.status == OrderStatus.SUBMITTED:
                     self.generate_order_accepted(
                         strategy_id=strategy_id,
@@ -1734,7 +1752,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         "skipping placement event",
                     )
             case PolymarketEventType.CANCELLATION:
-                order = self._cache.order(client_order_id) if client_order_id else None
                 if order is not None and order.status == OrderStatus.CANCELED:
                     self._log.debug(
                         f"Order {client_order_id!r} already canceled - "
@@ -1748,9 +1765,38 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                 )
-            case PolymarketEventType.UPDATE | PolymarketEventType.TRADE:
-                # We skip these events as they are handled by trade messages
-                self._log.debug(f"Skipping order update: {msg}")
+            case PolymarketEventType.UPDATE:
+                if msg.status == PolymarketOrderStatus.MATCHED:
+                    dust = self._fill_tracker.check_dust_residual(venue_order_id)
+                    if dust is not None:
+                        dust_qty, dust_px = dust
+                        dust_trade_id = TradeId(f"{msg.id[:27]}-dust")
+                        self._log.info(
+                            f"Order {venue_order_id!r} MATCHED with dust residual "
+                            f"{dust_qty} — emitting synthetic fill",
+                        )
+
+                        if order is not None:
+                            self.generate_order_filled(
+                                strategy_id=strategy_id,
+                                instrument_id=instrument_id,
+                                client_order_id=client_order_id,
+                                venue_order_id=venue_order_id,
+                                venue_position_id=None,
+                                trade_id=dust_trade_id,
+                                order_side=order.side,
+                                order_type=order.order_type,
+                                last_qty=dust_qty,
+                                last_px=dust_px,
+                                quote_currency=USDC_POS,
+                                commission=Money(0.0, USDC_POS),
+                                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                                ts_event=millis_to_nanos(int(msg.timestamp)),
+                            )
+                else:
+                    self._log.debug(f"Skipping order update: {msg}")
+            case PolymarketEventType.TRADE:
+                self._log.debug(f"Skipping order trade event: {msg}")
             case _:  # Branch never hit unless code changes (leave in place)
                 raise RuntimeError(f"Unknown `PolymarketEventType`, was '{msg.type.value}'")
 
@@ -1900,6 +1946,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return  # Already closed (only status update)
 
         last_qty = instrument.make_qty(msg.last_qty(order_id))
+        last_qty = self._fill_tracker.snap_fill_qty(venue_order_id, last_qty)
         last_px = instrument.make_price(msg.last_px(order_id))
         commission = calculate_commission(last_qty, last_px, msg.get_fee_rate_bps(order_id))
         ts_event = secs_to_nanos(int(msg.match_time))
@@ -1923,6 +1970,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         )
 
         self._record_processed_fill(trade_id, venue_order_id)
+        self._fill_tracker.record_fill(
+            venue_order_id=venue_order_id,
+            qty=float(last_qty),
+            px=float(last_px),
+            ts=ts_event,
+        )
         self._record_processed_trade(trade_id, msg.status)
 
         # Only update account balance after trade is mined on-chain
