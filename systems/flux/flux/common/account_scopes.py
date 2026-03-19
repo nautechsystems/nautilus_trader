@@ -27,6 +27,11 @@ class AccountScopeConfig:
     ibg_client_id: int | None = None
     account_id: str | None = None
     dockerized_gateway: dict[str, Any] | None = None
+    api_key_env: str | None = None
+    api_secret_env: str | None = None
+    account_type: str | None = None
+    base_url_http: str | None = None
+    recv_window_ms: int | None = None
     private_key_env: str | None = None
     account_address_env: str | None = None
     vault_address_env: str | None = None
@@ -100,6 +105,11 @@ def decode_account_scopes(rows: Iterable[Mapping[str, Any]]) -> tuple[AccountSco
                 ibg_client_id=_optional_int(row, "ibg_client_id"),
                 account_id=_optional_text(row, "account_id"),
                 dockerized_gateway=_optional_mapping(row, "dockerized_gateway"),
+                api_key_env=_optional_text(row, "api_key_env"),
+                api_secret_env=_optional_text(row, "api_secret_env"),
+                account_type=_optional_text(row, "account_type"),
+                base_url_http=_optional_text(row, "base_url_http"),
+                recv_window_ms=_optional_int(row, "recv_window_ms"),
                 private_key_env=_optional_text(row, "private_key_env"),
                 account_address_env=_optional_text(row, "account_address_env"),
                 vault_address_env=_optional_text(row, "vault_address_env"),

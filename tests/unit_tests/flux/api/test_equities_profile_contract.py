@@ -89,6 +89,20 @@ def test_equities_contract_docs_define_shared_account_row_provenance() -> None:
     assert 'scope = "shared_account"' in contract
 
 
+def test_equities_binance_perp_runbook_documents_canary_sequence_and_futures_keys() -> None:
+    runbook = (
+        _repo_root() / "docs/runbooks/equities-binance-perp-market-making.md"
+    ).read_text(encoding="utf-8")
+
+    assert "EQUITIES_BINANCE_API_KEY" in runbook
+    assert "EQUITIES_BINANCE_API_SECRET" in runbook
+    assert "No Binance spot key is required" in runbook
+    assert "PLTR" in runbook
+    assert "TSLA" in runbook
+    assert "MSTR" in runbook
+    assert "binance_equities_universe.py" in runbook
+
+
 def test_strategy_contract_module_defines_canonical_account_scope_identity() -> None:
     path = _repo_root() / "systems/flux/flux/common/strategy_contracts.py"
 
@@ -97,6 +111,9 @@ def test_strategy_contract_module_defines_canonical_account_scope_identity() -> 
     assert "@dataclass(frozen=True, slots=True)" in contract_module
     assert "class StrategyContractEntry" in contract_module
     assert "portfolio_asset_id: str" in contract_module
+    assert "maker_venue: str" in contract_module
+    assert "maker_symbol: str" in contract_module
+    assert "market_type: str" in contract_module
     assert "execution_account_scope_id: str" in contract_module
     assert "reference_account_scope_id: str" in contract_module
     assert "hedge_account_scope_id: str | None = None" in contract_module
@@ -109,6 +126,9 @@ def test_decode_strategy_contracts_rejects_blank_required_fields() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv3",
                     "portfolio_asset_id": "   ",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -124,6 +144,9 @@ def test_decode_strategy_contracts_normalizes_optional_hedge_scope() -> None:
             {
                 "strategy_id": "aapl_tradexyz_makerv3",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -144,6 +167,9 @@ def test_decode_strategy_contracts_rejects_non_string_required_fields() -> None:
                 {
                     "strategy_id": 123,
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -2766,6 +2792,248 @@ def test_balances_profile_equities_preserves_shared_account_provenance_fields(
         secondary_strategy_id,
     ]
     assert "strategy_id" not in ibkr_cash_row
+
+
+def test_balances_profile_equities_exposes_multivenue_components_for_same_stock_bucket(
+    monkeypatch,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_000_200)
+    primary_strategy_id = "pltr_tradexyz_makerv4"
+    secondary_strategy_id = "pltr_binance_perp_makerv4"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=primary_strategy_id,
+            strategy_instance_id=primary_strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=primary_strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="PLTR/USD",
+            reference_symbol="PLTR/USD",
+        ),
+    )
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, primary_strategy_id)
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, secondary_strategy_id)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="equities",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "equities",
+            "inventory_by_asset": {
+                "PLTR": {
+                    "portfolio_id": "equities",
+                    "base_currency": "PLTR",
+                    "global_qty_base": "6",
+                    "global_qty": "6",
+                    "aggregation_mode": "strict",
+                    "global_qty_base_complete": True,
+                    "global_qty_complete": True,
+                    "ts_ms": 1_700_000_000_000,
+                    "stale_after_ms": 3_000,
+                    "components": [
+                        {
+                            "strategy_id": primary_strategy_id,
+                            "local_qty_base": "10",
+                            "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                            "qty_conversion_status": "identity",
+                            "qty_conversion_source": "generic:multiplier=1",
+                        },
+                        {
+                            "strategy_id": secondary_strategy_id,
+                            "local_qty_base": "-4",
+                            "local_position_qty_venue": "-64",
+                            "local_position_qty_base": "-4",
+                            "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                            "qty_conversion_status": "converted",
+                            "qty_conversion_source": "generic:multiplier=0.0625",
+                        },
+                    ],
+                    "missing_required": [],
+                    "stale_required": [],
+                    "null_qty_required": [],
+                    "degraded": False,
+                },
+            },
+            "balances": {
+                "rows": [
+                    {
+                        "exchange": "hyperliquid",
+                        "kind": "position",
+                        "asset": "PLTR",
+                        "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                        "signed_qty": "10",
+                        "quantity": "10",
+                        "mark_raw": 20.0,
+                        "mv_raw": 200.0,
+                        "ts_ms": 1_700_000_000_090,
+                        "strategy_id": "equities",
+                    },
+                    {
+                        "exchange": "binance_perp",
+                        "kind": "position",
+                        "asset": "PLTR",
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "signed_qty": "-4",
+                        "quantity": "4",
+                        "mark_raw": 20.0,
+                        "mv_raw": -80.0,
+                        "ts_ms": 1_700_000_000_095,
+                        "strategy_id": "equities",
+                    },
+                ],
+            },
+            "accounts": {
+                "rows": [
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "USD",
+                        "free": "1000",
+                        "total": "1000",
+                        "ts_ms": 1_700_000_000_100,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "ibkr.reference.main",
+                        "source_strategy_ids": [
+                            primary_strategy_id,
+                            secondary_strategy_id,
+                        ],
+                        "strategy_id": "equities",
+                    },
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "PLTR",
+                        "kind": "position",
+                        "instrument_id": "PLTR.NASDAQ",
+                        "signed_qty": "15",
+                        "quantity": "15",
+                        "total": "15",
+                        "free": "15",
+                        "mark_raw": 20.0,
+                        "mv_raw": 300.0,
+                        "ts_ms": 1_700_000_000_110,
+                        "source_scope": "shared_account",
+                        "account_scope_id": "ibkr.reference.main",
+                        "source_strategy_ids": [
+                            primary_strategy_id,
+                            secondary_strategy_id,
+                        ],
+                        "strategy_id": "equities",
+                    },
+                ],
+            },
+            "server_ts_ms": 1_700_000_000_150,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="PLTR/USD",
+                instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="binance_perp",
+                symbol="PLTR/USDT",
+                instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="PLTR/USD",
+                instrument_id="PLTR.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="PLTR",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        strategy_metadata_resolver=lambda strategy_id: app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="PLTR",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        profile_strategy_map={"equities": [primary_strategy_id, secondary_strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv4",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot_v2"
+    assert body["data"]["inventory_by_asset"]["PLTR"]["global_qty_base"] == "6"
+    assert sorted(
+        (row["portfolio_asset_id"], row["strategy_id"])
+        for row in body["data"]["components"]
+    ) == [
+        ("PLTR", secondary_strategy_id),
+        ("PLTR", primary_strategy_id),
+    ]
+    component_by_strategy = {
+        row["strategy_id"]: row
+        for row in body["data"]["components"]
+    }
+    assert component_by_strategy[primary_strategy_id]["maker_instrument_id"] == (
+        "xyz:PLTR-USD-PERP.HYPERLIQUID"
+    )
+    assert component_by_strategy[secondary_strategy_id]["maker_instrument_id"] == (
+        "PLTRUSDT-PERP.BINANCE_PERP"
+    )
+    ibkr_position_row = next(
+        row
+        for row in body["data"]["rows"]
+        if row["exchange"] == "ibkr" and row["asset"] == "PLTR" and row.get("kind") == "position"
+    )
+    assert ibkr_position_row["source_scope"] == "shared_account"
+    assert ibkr_position_row["source_strategy_ids"] == [
+        primary_strategy_id,
+        secondary_strategy_id,
+    ]
+    position_rows = [row for row in body["data"]["rows"] if row.get("kind") == "position"]
+    assert {row["instrument_id"] for row in position_rows} == {
+        "PLTR.NASDAQ",
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "XYZ:PLTR-USD-PERP.HYPERLIQUID",
+    }
+    assert {row["exchange"] for row in position_rows} == {"binance_perp", "hyperliquid", "ibkr"}
+    portfolio_rows = [row for row in position_rows if row["exchange"] != "ibkr"]
+    assert {row["source_scope"] for row in portfolio_rows} == {"portfolio"}
+    assert all("strategy_id" not in row for row in portfolio_rows)
+
+    risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
+    assert risk_groups["PLTR"]["net_qty"] == pytest.approx(21.0)
+    assert risk_groups["PLTR"]["net_mv"] == pytest.approx(420.0)
+    assert risk_groups["PLTR"]["gross_mv"] == pytest.approx(580.0)
+    assert set(risk_groups["PLTR"]["sources"]) == {"binance_perp", "hyperliquid", "ibkr"}
+    assert len(risk_groups["PLTR"]["rows"]) == 3
 
 
 def test_balances_profile_equities_preserves_shared_account_provenance_when_makerv3_and_makerv4_coexist(

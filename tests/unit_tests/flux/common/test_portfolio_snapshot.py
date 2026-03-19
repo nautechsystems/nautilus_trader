@@ -195,6 +195,79 @@ def test_build_portfolio_snapshot_nets_unmarked_position_valuation_when_all_rows
     assert snapshot["balances"]["totals"]["mv_display"] == "$10.00"
 
 
+def test_build_portfolio_snapshot_keeps_multi_route_contributors_visible_for_one_stock() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="equities",
+        base_currency="PLTR",
+        inventory_components={
+            "pltr_tradexyz_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("10"),
+                ts_ms=1_000,
+                maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+            "pltr_binance_perp_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_binance_perp_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("-4"),
+                ts_ms=1_000,
+                maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+                state="running",
+            ),
+        },
+        balance_rows_by_strategy={
+            "pltr_tradexyz_makerv4": [
+                {
+                    "strategy_id": "pltr_tradexyz_makerv4",
+                    "exchange": "hyperliquid",
+                    "kind": "position",
+                    "asset": "PLTR",
+                    "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "mark_raw": 20.0,
+                    "mv_raw": 200.0,
+                },
+            ],
+            "pltr_binance_perp_makerv4": [
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "exchange": "binance_perp",
+                    "kind": "position",
+                    "asset": "PLTR",
+                    "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "signed_qty": "-4",
+                    "quantity": "4",
+                    "mark_raw": 20.0,
+                    "mv_raw": -80.0,
+                },
+            ],
+        },
+        required_strategy_ids={
+            "pltr_tradexyz_makerv4",
+            "pltr_binance_perp_makerv4",
+        },
+        now_ms_value=2_000,
+    )
+
+    assert snapshot["inventory"]["global_qty_base"] == "6"
+    assert [row["strategy_id"] for row in snapshot["inventory"]["components"]] == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    assert {row["instrument_id"].upper() for row in snapshot["balances"]["rows"]} == {
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "XYZ:PLTR-USD-PERP.HYPERLIQUID",
+    }
+    assert {row["strategy_id"] for row in snapshot["balances"]["rows"]} == {"equities"}
+    assert snapshot["balances"]["totals"]["mv_raw"] == 120.0
+    assert snapshot["inventory_by_asset"]["PLTR"] == snapshot["inventory"]
+
+
 def test_portfolio_snapshot_round_trip_preserves_strict_inventory_metadata() -> None:
     encoded = encode_portfolio_snapshot(
         build_portfolio_snapshot(
@@ -491,3 +564,63 @@ def test_decode_portfolio_snapshot_drops_legacy_single_asset_aliases_for_multi_a
     assert "base_currency" not in decoded
     assert "inventory" not in decoded
     assert "components" not in decoded
+
+
+def test_build_portfolio_snapshot_v2_keeps_same_stock_multivenue_components_under_one_bucket() -> None:
+    snapshot = build_portfolio_snapshot_v2(
+        portfolio_id="equities",
+        inventory_by_asset={
+            "PLTR": {
+                "base_currency": "PLTR",
+                "global_qty_base": "15",
+                "components": [
+                    {
+                        "strategy_id": "pltr_tradexyz_makerv4",
+                        "local_qty_base": "10",
+                        "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    },
+                    {
+                        "strategy_id": "pltr_binance_perp_makerv4",
+                        "local_qty_base": "5",
+                        "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    },
+                ],
+            },
+        },
+        balance_rows=[],
+        account_rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "total": "1000",
+                "source_scope": "shared_account",
+                "account_scope_id": "ibkr.reference.main",
+                "source_strategy_ids": [
+                    "pltr_tradexyz_makerv4",
+                    "pltr_binance_perp_makerv4",
+                ],
+            },
+        ],
+        now_ms_value=1_700_000_000_000,
+    )
+
+    assert snapshot["inventory_by_asset"]["PLTR"]["global_qty_base"] == "15"
+    assert snapshot["inventory_by_asset"]["PLTR"]["components"] == [
+        {
+            "strategy_id": "pltr_tradexyz_makerv4",
+            "local_qty_base": "10",
+            "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+        },
+        {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "local_qty_base": "5",
+            "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+        },
+    ]
+    assert snapshot["accounts"]["rows"][0]["source_scope"] == "shared_account"
+    assert snapshot["accounts"]["rows"][0]["account_scope_id"] == "ibkr.reference.main"
+    assert snapshot["accounts"]["rows"][0]["source_strategy_ids"] == [
+        "pltr_tradexyz_makerv4",
+        "pltr_binance_perp_makerv4",
+    ]

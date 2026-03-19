@@ -95,8 +95,8 @@ def test_makerv4_strategy_quote_snapshot_uses_distinct_hedge_identity_and_fill_t
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
     strategy._instruments = {
-        maker_id: SimpleNamespace(raw_symbol="AAPL/USD"),
-        ref_id: SimpleNamespace(raw_symbol="AAPL/USD"),
+        maker_id: _instrument(raw_symbol="AAPL/USD"),
+        ref_id: _instrument(raw_symbol="AAPL/USD"),
     }
     strategy._latest_quotes = {
         maker_id: {
@@ -236,8 +236,8 @@ def test_makerv4_strategy_does_not_assume_smart_route_without_explicit_route_met
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
     strategy._instruments = {
-        maker_id: SimpleNamespace(raw_symbol="AAPL/USD"),
-        ref_id: SimpleNamespace(raw_symbol="AAPL/USD"),
+        maker_id: _instrument(raw_symbol="AAPL/USD"),
+        ref_id: _instrument(raw_symbol="AAPL/USD"),
     }
     strategy._latest_quotes = {
         maker_id: {
@@ -258,13 +258,46 @@ def test_makerv4_strategy_does_not_assume_smart_route_without_explicit_route_met
     assert "route" not in payload["hedge_leg"]
 
 
+def test_makerv4_publisher_contract_reports_actual_maker_venue_for_binance_perp_route() -> None:
+    maker_id = InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP")
+    ref_id = InstrumentId.from_str("PLTR.NASDAQ")
+    strategy = MakerV4Strategy(
+        config=_config(
+            maker_instrument_id=maker_id,
+            reference_instrument_id=ref_id,
+        )
+    )
+    strategy._instruments = {
+        maker_id: _instrument(raw_symbol="PLTRUSDT"),
+        ref_id: _instrument(raw_symbol="PLTR"),
+    }
+    strategy._latest_quotes = {
+        maker_id: {
+            "bid": Decimal("29.99"),
+            "ask": Decimal("30.01"),
+            "ts_ns": 1_000_000_000,
+        },
+        ref_id: {
+            "bid": Decimal("30.00"),
+            "ask": Decimal("30.04"),
+            "ts_ns": 1_000_000_000,
+        },
+    }
+
+    payload = strategy._quote_snapshot_payload(now_ns=1_050_000_000)
+
+    assert payload["maker_leg"]["venue"] == "BINANCE_PERP"
+    assert payload["maker_leg"]["instrument_id"] == str(maker_id)
+    assert payload["maker_leg"]["symbol"] == "PLTRUSDT"
+
+
 def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_quote_exports() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
     strategy._instruments = {
-        maker_id: SimpleNamespace(raw_symbol="AAPL/USD"),
-        ref_id: SimpleNamespace(raw_symbol="AAPL/USD"),
+        maker_id: _instrument(raw_symbol="AAPL/USD"),
+        ref_id: _instrument(raw_symbol="AAPL/USD"),
     }
     strategy._runtime_params.update(
         {

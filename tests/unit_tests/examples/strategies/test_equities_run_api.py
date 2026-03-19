@@ -121,6 +121,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv3",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -129,6 +132,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv4",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -143,6 +149,46 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
     assert metadata["aapl_tradexyz_makerv3"].strategy_family == "maker_v3"
     assert metadata["aapl_tradexyz_makerv4"].base_asset == "AAPL"
     assert metadata["aapl_tradexyz_makerv4"].strategy_family == "maker_v4"
+
+
+def test_equities_run_api_keeps_same_stock_multivenue_routes_distinct_in_metadata() -> None:
+    metadata = build_equities_strategy_metadata_map(
+        {
+            "strategy_groups": "equities",
+            "quote_asset": "USD",
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_tradexyz_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "PLTR",
+                    "market_type": "perp",
+                    "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+        strategy_ids=["pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"],
+    )
+
+    assert set(metadata) == {"pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"}
+    assert metadata["pltr_tradexyz_makerv4"].base_asset == "PLTR"
+    assert metadata["pltr_binance_perp_makerv4"].base_asset == "PLTR"
+    assert metadata["pltr_tradexyz_makerv4"].strategy_family == "maker_v4"
+    assert metadata["pltr_binance_perp_makerv4"].strategy_family == "maker_v4"
 
 
 def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
@@ -175,6 +221,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "aapl_tradexyz_makerv4",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -183,6 +232,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "amd_tradexyz_makerv4",
                 "portfolio_asset_id": "AMD",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AMD",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AMD.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -204,6 +256,71 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
     assert [entry.instrument_id for entry in contracts_by_strategy["amd_tradexyz_makerv4"]] == [
         "XYZ:AMD-USD-PERP.HYPERLIQUID",
         "AMD.NASDAQ",
+    ]
+
+
+def test_equities_run_api_keeps_multivenue_routes_separate_in_contract_catalog() -> None:
+    config = {
+        "contracts": [
+            {
+                "exchange": "hyperliquid",
+                "symbol": "PLTR/USD",
+                "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+            },
+            {
+                "exchange": "binance_perp",
+                "symbol": "PLTR/USDT",
+                "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "PLTR/USD",
+                "instrument_id": "PLTR.NASDAQ",
+            },
+        ],
+    }
+    api_cfg = {
+        "strategy_contracts": [
+            {
+                "strategy_id": "pltr_tradexyz_makerv4",
+                "portfolio_asset_id": "PLTR",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "PLTR",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "PLTR.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "portfolio_asset_id": "PLTR",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "PLTRUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLTR.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    }
+
+    contracts = _build_contract_catalog(config)
+    contracts_by_strategy = _build_contract_catalog_by_strategy(
+        api_cfg,
+        contract_catalog=contracts,
+    )
+
+    assert [entry.instrument_id for entry in contracts_by_strategy["pltr_tradexyz_makerv4"]] == [
+        "XYZ:PLTR-USD-PERP.HYPERLIQUID",
+        "PLTR.NASDAQ",
+    ]
+    assert [
+        entry.instrument_id for entry in contracts_by_strategy["pltr_binance_perp_makerv4"]
+    ] == [
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "PLTR.NASDAQ",
     ]
 
 

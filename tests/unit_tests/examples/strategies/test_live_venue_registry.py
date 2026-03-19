@@ -260,6 +260,54 @@ def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
     )
 
 
+def test_resolve_strategy_venues_supports_binance_perp_execution_with_ibkr_reference() -> None:
+    interactive_brokers_config = pytest.importorskip(
+        "nautilus_trader.adapters.interactive_brokers.config",
+    )
+    InteractiveBrokersDataClientConfig = (
+        interactive_brokers_config.InteractiveBrokersDataClientConfig
+    )
+
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "PLTR.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4002,
+                        "ibg_client_id": 7,
+                        "execution": False,
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "BINANCE_PERP"
+    assert resolved.reference_venue == "IBKR"
+    assert str(resolved.execution_instrument_id) == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert str(resolved.reference_instrument_id) == "PLTR.NASDAQ"
+    assert set(resolved.data_clients) == {"BINANCE_PERP", "IBKR"}
+    assert set(resolved.exec_clients) == {"BINANCE_PERP"}
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
+
+
 def test_resolve_strategy_venues_supports_ibkr_reference_exec_client() -> None:
     interactive_brokers_config = pytest.importorskip(
         "nautilus_trader.adapters.interactive_brokers.config",

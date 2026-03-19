@@ -52,15 +52,17 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 
 ## Strategy and Deploy Identity
 
-1. One stock uses one strategy file and one node process.
+1. One strategy route uses one strategy file and one node process.
 2. The live allowlist is `api.equities_strategy_ids`.
 3. Required portfolio readiness is `api.equities_required_strategy_ids`.
-4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per enrolled stock as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, venue instrument ids, and shared account scopes.
+4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per strategy route as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, `maker_venue`, `maker_symbol`, `market_type`, venue instrument ids, and shared account scopes.
 5. `portfolio_asset_id` is the canonical equities inventory identity. Do not infer portfolio identity from venue-specific base strings such as `XYZ:AAPL`.
-6. Shared account scopes are explicit: `execution_account_scope_id`, `reference_account_scope_id`, and optional `hedge_account_scope_id`.
-7. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
-8. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
-9. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
+6. `maker_venue`, `maker_symbol`, and `market_type` are mandatory per-route keys in the shared manifest.
+7. Shared account scopes are explicit: `execution_account_scope_id`, `reference_account_scope_id`, and optional `hedge_account_scope_id`.
+8. Multiple strategy routes may share the same `portfolio_asset_id` when one stock trades on multiple maker venues. Shared portfolio and future risk net at the stock bucket, while local maker inventory stays route-local.
+9. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
+10. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
+11. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
 
 ## Response Expectations
 

@@ -32,7 +32,8 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 from flux.strategies.makerv4 import fees as fees_mod
 from flux.strategies.makerv4 import publisher as publisher_mod
 from flux.strategies.makerv4 import runtime_params as runtime_params_mod
-from flux.strategies.makerv4.instruments import translate_hyperliquid_fill_to_ibkr_shares
+from flux.strategies.makerv4.instruments import round_base_fill_to_ibkr_shares
+from flux.strategies.makerv4.instruments import translate_maker_fill_to_ibkr_shares
 from flux.strategies.makerv4.managed_orders import HedgeBacklogState
 from flux.strategies.makerv4.managed_orders import HedgeOrderIntent
 from flux.strategies.makerv4.managed_orders import ManagedMakerOrderState
@@ -465,13 +466,80 @@ class MakerV4Strategy(Strategy):
             return (bid + ask) / Decimal("2")
         return ask or bid
 
+    def _hedge_min_share_increment(self) -> Decimal:
+        return Decimal(str(getattr(self.config, "hedge_min_share_increment", Decimal("1"))))
+
+    def _translate_maker_fill(
+        self,
+        *,
+        fill_qty: Decimal,
+        fill_price: Decimal | None,
+    ):
+        instrument = self._resolve_instrument(self.config.maker_instrument_id)
+        if instrument is None:
+            self._last_pricing_debug["maker_qty_conversion_status"] = "missing_metadata"
+            self._last_pricing_debug["maker_qty_conversion_source"] = "maker instrument unavailable"
+            return None
+        translation = translate_maker_fill_to_ibkr_shares(
+            maker_instrument=instrument,
+            fill_qty=fill_qty,
+            fill_price=fill_price,
+            min_share_increment=self._hedge_min_share_increment(),
+        )
+        self._last_pricing_debug["maker_qty_conversion_status"] = (
+            translation.qty_conversion_status
+        )
+        self._last_pricing_debug["maker_qty_conversion_source"] = (
+            translation.qty_conversion_source
+        )
+        return translation
+
+    def _maker_fill_hedge_qty(
+        self,
+        *,
+        fill_qty: Decimal,
+        fill_price: Decimal | None,
+    ) -> Decimal | None:
+        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
+        if translation is None or translation.hedge_qty is None:
+            return None
+        return abs(translation.hedge_qty)
+
+    def _maker_fill_base_qty(
+        self,
+        *,
+        fill_qty: Decimal,
+        fill_price: Decimal | None,
+    ) -> Decimal | None:
+        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
+        if translation is None or translation.base_qty is None:
+            return None
+        return abs(translation.base_qty)
+
+    def _maker_fill_qty_from_base_qty(
+        self,
+        *,
+        base_qty: Decimal,
+        fill_price: Decimal | None,
+    ) -> Decimal | None:
+        instrument = self._resolve_instrument(self.config.maker_instrument_id)
+        if instrument is None:
+            return None
+        exposure = venue_qty_from_base_qty(
+            instrument,
+            base_qty,
+            last_px=fill_price,
+        )
+        venue_qty = exposure.venue_qty
+        if venue_qty is None:
+            return None
+        return abs(venue_qty)
+
     def _maker_order_hedge_qty(self) -> Decimal:
         return abs(
-            translate_hyperliquid_fill_to_ibkr_shares(
+            round_base_fill_to_ibkr_shares(
                 fill_qty=self._maker_order_base_qty(),
-                min_share_increment=Decimal(
-                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
-                ),
+                min_share_increment=self._hedge_min_share_increment(),
             )
         )
 
@@ -2113,23 +2181,28 @@ class MakerV4Strategy(Strategy):
         if not client_order_id:
             return None
         fill_id = str(getattr(event, "trade_id", "")).strip()
+        fill_qty = self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty")
+        fill_price = self._required_decimal(getattr(event, "last_px", None), field_name="last_px")
         if not fill_id:
             fill_id = (
                 f"take_take_event:{client_order_id}:"
-                f"{self._required_decimal(getattr(event, 'last_qty', None), field_name='last_qty')}:"
+                f"{fill_qty}:"
                 f"{max(0, int(now_ns))}"
             )
         if fill_id in self._seen_fill_ids:
             return None
         self._remember_fill_id(fill_id)
+        base_fill_qty = self._maker_fill_base_qty(fill_qty=fill_qty, fill_price=fill_price)
+        if base_fill_qty is None or base_fill_qty <= 0:
+            self._disable_hedging("maker_qty_conversion_failed")
+            return None
 
         accumulator = self._take_take_fill_accumulators.get(client_order_id, {})
         accumulated_qty = Decimal(str(accumulator.get("qty", "0")))
         self._take_take_fill_accumulators[client_order_id] = {
             "side": str(getattr(event, "order_side", "")).strip(),
-            "qty": accumulated_qty
-            + self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty"),
-            "price": self._required_decimal(getattr(event, "last_px", None), field_name="last_px"),
+            "qty": accumulated_qty + base_fill_qty,
+            "price": fill_price,
             "ts_ms": max(0, int(now_ns) // 1_000_000),
         }
         return client_order_id
@@ -2200,14 +2273,10 @@ class MakerV4Strategy(Strategy):
         if fill_id and fill_id not in self._seen_fill_ids:
             self._remember_fill_id(fill_id)
         hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
-        hedge_qty = abs(
-            translate_hyperliquid_fill_to_ibkr_shares(
-                fill_qty=fill.qty,
-                min_share_increment=Decimal(
-                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
-                ),
-            )
-        )
+        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
+        if hedge_qty is None:
+            self._disable_hedging("maker_qty_conversion_failed")
+            return False
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return False
@@ -2402,20 +2471,26 @@ class MakerV4Strategy(Strategy):
             ts_ms=fill_ts_ms,
         )
         hedgeable_qty = abs(
-            translate_hyperliquid_fill_to_ibkr_shares(
+            round_base_fill_to_ibkr_shares(
                 fill_qty=aggregated_qty,
-                min_share_increment=Decimal(
-                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
-                ),
+                min_share_increment=self._hedge_min_share_increment(),
             )
         )
         if hedgeable_qty <= 0:
             return
+        fill_price = self._required_decimal(accumulator.get("price"), field_name="price")
+        maker_fill_qty = self._maker_fill_qty_from_base_qty(
+            base_qty=aggregated_qty,
+            fill_price=fill_price,
+        )
+        if maker_fill_qty is None:
+            self._disable_hedging("maker_qty_conversion_failed")
+            return
         fill = MakerFill(
             fill_id=f"take_take:{order_id}",
             side=aggregated_side,
-            qty=hedgeable_qty,
-            price=self._required_decimal(accumulator.get("price"), field_name="price"),
+            qty=maker_fill_qty,
+            price=fill_price,
             ts_ms=fill_ts_ms,
         )
         quote = self._reference_quote_snapshot(now_ns=now_ns)
@@ -2914,14 +2989,10 @@ class MakerV4Strategy(Strategy):
             return None
 
         hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
-        hedge_qty = abs(
-            translate_hyperliquid_fill_to_ibkr_shares(
-                fill_qty=fill.qty,
-                min_share_increment=Decimal(
-                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
-                ),
-            )
-        )
+        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
+        if hedge_qty is None:
+            self._disable_hedging("maker_qty_conversion_failed")
+            return None
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return None

@@ -15,6 +15,8 @@ execution_venue = "HYPERLIQUID"
 reference_venue = "IBKR"
 execution_symbol = "AAPL"
 reference_symbol = "AAPL/USD"
+# For Binance equity-perp routes, switch `execution_venue = "BINANCE_PERP"` and
+# use the venue symbol form, e.g. `execution_symbol = "AAPLUSDT"`.
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -48,6 +50,14 @@ account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
 vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
 dex = "xyz"
 testnet = false
+
+# For Binance USD-M equity-perp routes, replace the Hyperliquid block above with:
+# [node.venues.BINANCE_PERP]
+# instrument_id = "AAPLUSDT-PERP.BINANCE_PERP"
+# execution = true
+# api_key_env = "EQUITIES_BINANCE_API_KEY"
+# api_secret_env = "EQUITIES_BINANCE_API_SECRET"
+# account_type = "USDT_FUTURES"
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"

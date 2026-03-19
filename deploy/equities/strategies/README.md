@@ -7,8 +7,10 @@ This directory holds one TOML file per equities node process enrolled into the P
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
 - Recommended naming pattern for enrolled Tier 1 names is now `<stock>_tradexyz_makerv4.toml`.
-- One stock uses one strategy file and one node process.
+- One strategy route uses one strategy file and one node process.
+- Multiple strategy routes can share one canonical stock bucket in shared config even when only one route is currently enrolled with a checked-in node TOML.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
+- Treat `deploy/equities/equities.live.toml` as the route registry and `deploy/equities/strategies/*.toml` as the active node set. Shared manifest rows may exist ahead of node enrollment.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
 - The intended active target after the March 13, 2026 admission freeze is MakerV4 on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
 - The rollback file is `aapl_tradexyz_makerv3.toml.disabled`.
@@ -91,6 +93,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 
 - `local_qty` is strategy-local inventory for that stock.
 - `global_qty` is the shared `equities` portfolio aggregate for the stock portfolio.
+- Shared portfolio/risk nets by canonical `portfolio_asset_id`, not by maker venue or strategy file name.
 - Each node publishes a strategy inventory component to Redis.
 - `flux.runners.equities.run_portfolio` aggregates those components into the shared portfolio inventory feed consumed by all equities strategies.
 

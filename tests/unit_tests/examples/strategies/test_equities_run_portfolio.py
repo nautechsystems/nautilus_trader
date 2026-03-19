@@ -4,6 +4,7 @@ import json
 import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -134,9 +135,13 @@ class _CountingAccountProjectionProvider:
 
 
 def _strategy_contract(strategy_id: str, *, reference_account_scope_id: str) -> dict[str, str]:
+    asset = strategy_id.split("_", maxsplit=1)[0].upper()
     return {
         "strategy_id": strategy_id,
-        "portfolio_asset_id": strategy_id.split("_", maxsplit=1)[0].upper(),
+        "portfolio_asset_id": asset,
+        "maker_venue": "HYPERLIQUID",
+        "maker_symbol": asset,
+        "market_type": "perp",
         "maker_instrument_id": f"xyz:{strategy_id.upper()}-USD-PERP.HYPERLIQUID",
         "reference_instrument_id": f"{strategy_id.upper()}.NASDAQ",
         "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -257,6 +262,40 @@ def test_strategy_ids_by_asset_groups_allowlisted_strategy_contracts() -> None:
     }
 
 
+def test_strategy_ids_by_asset_groups_multiple_routes_under_one_stock_bucket() -> None:
+    grouped = _strategy_ids_by_asset(
+        {
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_tradexyz_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "PLTR",
+                    "market_type": "perp",
+                    "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+        allowlist=["pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"],
+    )
+
+    assert grouped["PLTR"] == ("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4")
+
+
 def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
     now_ms_value = int(time.time() * 1000)
     fake_redis = _FakeRedis(
@@ -370,6 +409,83 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert captured_provider_configs[1].dockerized_gateway is not None
     assert captured_provider_configs[1].ibg_port is None
     assert captured_provider_configs[1].ibg_client_id == 8
+
+
+def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceProvider:
+        def refresh(self) -> None:
+            return None
+
+        def snapshot(self) -> dict[str, Any]:
+            return {"rows": [], "totals": {}}
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        lambda provider_config: _CountingAccountProjectionProvider(
+            rows=[],
+            totals={"ibg_client_id": provider_config.ibg_client_id},
+        ),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts._build_binance_futures_account_provider",
+        lambda **_kwargs: _FakeBinanceProvider(),
+    )
+
+    bindings = build_profile_account_provider_bindings(
+        config={
+            "account_scopes": [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                },
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 7,
+                },
+            ],
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+    )
+
+    assert [binding.account_scope_id for binding in bindings] == [
+        "binance.futures.main",
+        "ibkr.reference.main",
+    ]
+    binance_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "binance.futures.main"
+    )
+    reference_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "ibkr.reference.main"
+    )
+
+    assert binance_binding.source_strategy_ids == ("pltr_binance_perp_makerv4",)
+    assert binance_binding.provider is not None
+    assert reference_binding.provider is not None
 
 
 def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_client_id(
@@ -708,6 +824,175 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(7478.386872)
 
 
+def test_equities_portfolio_runner_builds_binance_shared_account_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "flux.runners.shared.portfolio_runner.build_redis_client",
+        lambda _cfg: _FakeRedis(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        lambda _provider_config: _CountingAccountProjectionProvider(rows=[]),
+    )
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    captured_http_client_kwargs: list[dict[str, Any]] = []
+    captured_account_http_inits: list[dict[str, Any]] = []
+
+    class _FakeBinanceFuturesAccountHttpAPI:
+        def __init__(self, client: Any, clock: Any, account_type: Any) -> None:
+            captured_account_http_inits.append(
+                {
+                    "client": client,
+                    "clock_type": type(clock).__name__,
+                    "account_type": str(getattr(account_type, "value", account_type)),
+                },
+            )
+
+        async def query_futures_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                totalMarginBalance="1025.5",
+                availableBalance="1000.0",
+                maxWithdrawAmount="995.0",
+                assets=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        walletBalance="1000.0",
+                        availableBalance="975.0",
+                    ),
+                    SimpleNamespace(
+                        asset="BNB",
+                        walletBalance="2.5",
+                        availableBalance="2.0",
+                    ),
+                ],
+            )
+
+        async def query_futures_position_risk(
+            self,
+            symbol: str | None = None,
+            recv_window: str | None = None,
+        ) -> list[Any]:
+            assert symbol is None
+            assert recv_window == "5000"
+            return [
+                SimpleNamespace(
+                    symbol="PLTRUSDT",
+                    positionAmt="12.5",
+                    positionSide="BOTH",
+                    entryPrice="28.5",
+                    markPrice="29.0",
+                    unRealizedProfit="6.25",
+                    updateTime=1_700_000_000_100,
+                ),
+                SimpleNamespace(
+                    symbol="TSLAUSDT",
+                    positionAmt="0",
+                    positionSide="BOTH",
+                    entryPrice="0",
+                    markPrice="0",
+                    unRealizedProfit="0",
+                    updateTime=1_700_000_000_200,
+                ),
+            ]
+
+    def _fake_cached_binance_http_client(**kwargs: Any) -> object:
+        captured_http_client_kwargs.append(dict(kwargs))
+        return object()
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_binance_http_client",
+        _fake_cached_binance_http_client,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
+        _FakeBinanceFuturesAccountHttpAPI,
+    )
+
+    config: dict[str, Any] = {
+        "flux": {"namespace": "flux", "schema_version": "v1"},
+        "redis": {},
+        "venues": {"reference_venue": "IBKR"},
+        "account_scopes": [
+            {
+                "scope_id": "binance.futures.main",
+                "provider": "binance",
+                "venue": "BINANCE_PERP",
+                "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                "account_type": "USDT_FUTURES",
+                "base_url_http": "https://fapi.binance.com",
+                "recv_window_ms": 5000,
+            },
+            {
+                "scope_id": "ibkr.reference.main",
+                "provider": "ibkr",
+                "venue": "IBKR",
+                "ibg_host": "127.0.0.1",
+                "ibg_port": 4002,
+                "ibg_client_id": 7,
+            },
+        ],
+        "api": {
+            "equities_strategy_ids": ["pltr_binance_perp_makerv4"],
+        },
+        "portfolio": {"portfolio_id": "equities"},
+        "contracts": [{"exchange": "binance_perp", "symbol": "PLTR/USDT"}],
+        "strategy_contracts": [
+            {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "portfolio_asset_id": "PLTR",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "PLTRUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLTR.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    }
+
+    aggregator = EquitiesPortfolioAggregator(
+        config=config,
+        mode="paper",
+        logger=MagicMock(),
+    )
+
+    binding = next(
+        binding
+        for binding in aggregator._profile_account_bindings
+        if binding.account_scope_id == "binance.futures.main"
+    )
+    assert binding.provider is not None
+    binding.provider.refresh()
+    snapshot = binding.provider.snapshot()
+
+    assert snapshot is not None
+    assert len(captured_http_client_kwargs) == 1
+    http_client_kwargs = captured_http_client_kwargs[0]
+    assert http_client_kwargs["api_key"] == "binance-key"
+    assert http_client_kwargs["api_secret"] == "binance-secret"
+    assert http_client_kwargs["base_url"] == "https://fapi.binance.com"
+    assert str(getattr(http_client_kwargs["account_type"], "value", http_client_kwargs["account_type"])) == "USDT_FUTURES"
+    assert len(captured_account_http_inits) == 1
+    assert captured_account_http_inits[0]["clock_type"] == "LiveClock"
+    assert captured_account_http_inits[0]["account_type"] == "USDT_FUTURES"
+    assert snapshot["source_scope"] == "shared_account"
+    assert snapshot["totals"]["account_equity_raw"] == pytest.approx(1025.5)
+    assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(995.0)
+    cash_row = next(row for row in snapshot["rows"] if row.get("kind") != "position")
+    position_row = next(row for row in snapshot["rows"] if row.get("kind") == "position")
+    assert cash_row["exchange"] == "binance_perp"
+    assert cash_row["market_type"] == "perp"
+    assert position_row["instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert position_row["asset"] == "PLTR"
+    assert position_row["signed_qty"] == "12.5"
+    assert position_row["market_type"] == "perp"
+
 
 def test_equities_portfolio_aggregator_publishes_account_projection_once_per_scope() -> None:
     provider = _CountingAccountProjectionProvider(
@@ -875,6 +1160,256 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     assert "inventory" not in snapshot
     assert snapshot["accounts"]["rows"][0]["account_scope_id"] == "ibkr.reference.main"
     assert snapshot["balances"]["rows"][0]["strategy_id"] == "equities"
+
+
+def test_equities_portfolio_aggregator_nets_same_stock_multivenue_routes_into_one_bucket() -> None:
+    now_ms_value = int(time.time() * 1000)
+    provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "total": "1000",
+                "account_scope_id": "ibkr.reference.main",
+                "source_scope": "shared_account",
+            },
+        ],
+    )
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="pltr_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="pltr_tradexyz_makerv4",
+                    portfolio_id="equities",
+                    base_currency="PLTR",
+                    local_qty_base=10,
+                    local_position_qty_venue=10,
+                    local_position_qty_base=10,
+                    qty_conversion_status="identity",
+                    qty_conversion_source="generic:multiplier=1",
+                    ts_ms=now_ms_value,
+                    maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="pltr_binance_perp_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="pltr_binance_perp_makerv4",
+                    portfolio_id="equities",
+                    base_currency="PLTR",
+                    local_qty_base=5,
+                    local_position_qty_venue=80,
+                    local_position_qty_base=5,
+                    qty_conversion_status="converted",
+                    qty_conversion_source="generic:multiplier=0.0625",
+                    ts_ms=now_ms_value,
+                    maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys(strategy_id="pltr_tradexyz_makerv4").balances_snapshot(): json.dumps([]).encode(),
+            FluxRedisKeys(strategy_id="pltr_binance_perp_makerv4").balances_snapshot(): json.dumps([]).encode(),
+        },
+    )
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["PLTR"]
+    aggregator._strategy_ids_by_asset = {
+        "PLTR": ("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+    }
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["ibkr.reference.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.reference.main",
+            source_strategy_ids=("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+            provider=provider,
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert raw_snapshot is not None
+    snapshot = json.loads(raw_snapshot)
+
+    pltr_inventory = snapshot["inventory_by_asset"]["PLTR"]
+    assert pltr_inventory["global_qty_base"] == "15.000000"
+    assert pltr_inventory["global_qty_base_complete"] is True
+    assert sorted(row["strategy_id"] for row in pltr_inventory["components"]) == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    binance_component = next(
+        row for row in pltr_inventory["components"] if row["strategy_id"] == "pltr_binance_perp_makerv4"
+    )
+    assert binance_component["local_position_qty_venue"] == "80.000000"
+    assert binance_component["local_position_qty_base"] == "5.000000"
+    assert binance_component["maker_instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert snapshot["accounts"]["rows"][0]["source_strategy_ids"] == [
+        "pltr_tradexyz_makerv4",
+        "pltr_binance_perp_makerv4",
+    ]
+
+
+def test_equities_portfolio_aggregator_keeps_same_stock_multivenue_contributors_visible() -> None:
+    now_ms_value = int(time.time() * 1000)
+    provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "free": "1000",
+                "total": "1000",
+                "account_scope_id": "ibkr.reference.main",
+                "source_scope": "shared_account",
+            },
+        ],
+    )
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="pltr_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="pltr_tradexyz_makerv4",
+                    portfolio_id="equities",
+                    base_currency="PLTR",
+                    local_qty_base=10,
+                    ts_ms=now_ms_value,
+                    maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="pltr_binance_perp_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="pltr_binance_perp_makerv4",
+                    portfolio_id="equities",
+                    base_currency="PLTR",
+                    local_qty_base=-4,
+                    ts_ms=now_ms_value,
+                    maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys(strategy_id="pltr_tradexyz_makerv4").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "pltr_tradexyz_makerv4",
+                        "exchange": "hyperliquid",
+                        "kind": "position",
+                        "asset": "PLTR",
+                        "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                        "signed_qty": "10",
+                        "quantity": "10",
+                        "mark_raw": 20.0,
+                        "mv_raw": 200.0,
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+            FluxRedisKeys(strategy_id="pltr_binance_perp_makerv4").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "pltr_binance_perp_makerv4",
+                        "exchange": "binance_perp",
+                        "kind": "position",
+                        "asset": "PLTR",
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "signed_qty": "-4",
+                        "quantity": "4",
+                        "mark_raw": 20.0,
+                        "mv_raw": -80.0,
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+        },
+    )
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["PLTR"]
+    aggregator._strategy_ids_by_asset = {
+        "PLTR": ("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+    }
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["ibkr.reference.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.reference.main",
+            source_strategy_ids=("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+            provider=provider,
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    inventory = decode_portfolio_inventory(
+        fake_redis.get(
+            FluxRedisKeys.portfolio_inventory(portfolio_id="equities", base_currency="PLTR"),
+        ),
+    )
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+
+    assert inventory is not None
+    assert inventory["global_qty_base"] == "6.000000"
+    assert [row["strategy_id"] for row in inventory["components"]] == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    assert raw_snapshot is not None
+
+    snapshot = json.loads(raw_snapshot)
+    assert snapshot["inventory_by_asset"]["PLTR"]["global_qty_base"] == "6.000000"
+    assert [row["strategy_id"] for row in snapshot["inventory_by_asset"]["PLTR"]["components"]] == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    assert {row["instrument_id"].upper() for row in snapshot["balances"]["rows"]} == {
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "XYZ:PLTR-USD-PERP.HYPERLIQUID",
+    }
+    account_row = snapshot["accounts"]["rows"][0]
+    assert account_row["source_scope"] == "shared_account"
+    assert account_row["account_scope_id"] == "ibkr.reference.main"
+    assert account_row["source_strategy_ids"] == [
+        "pltr_tradexyz_makerv4",
+        "pltr_binance_perp_makerv4",
+    ]
 
 
 def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positions_and_totals() -> None:

@@ -478,11 +478,16 @@ def _build_signal_health_snapshot(
         contract = contracts_by_strategy_id.get(strategy_id)
         max_age_ms = _signal_max_age_ms(signal_row)
         legs = _mapping(signal_row.get("legs"))
+        maker_exchange = (
+            _optional_text(contract.maker_venue)
+            if contract is not None
+            else None
+        ) or "hyperliquid"
         maker_leg_id, maker_leg = _resolve_signal_leg(
             payload=signal_row,
             legs=legs,
             role="maker_leg",
-            fallback_exchange="hyperliquid",
+            fallback_exchange=maker_exchange,
             fallback_instrument_id=contract.maker_instrument_id if contract is not None else None,
         )
         reference_leg_id, reference_leg = _resolve_signal_leg(
@@ -525,7 +530,7 @@ def _build_signal_health_snapshot(
                 maker_leg_id,
                 maker_feed_state,
                 maker_quote_state,
-                "hyperliquid",
+                maker_exchange,
                 contract.maker_instrument_id if contract is not None else None,
             ),
             (
