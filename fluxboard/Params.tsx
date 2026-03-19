@@ -235,7 +235,10 @@ function resolveEffectiveProfile(
   ) {
     return 'maker_v4';
   }
-  return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
+  if (availableProfiles.includes(fallbackProfile)) {
+    return fallbackProfile;
+  }
+  return availableProfiles[0] ?? fallbackProfile;
 }
 
 function resolveSchemaStrategyId(
@@ -243,8 +246,13 @@ function resolveSchemaStrategyId(
   profile: ParamsProfileId,
   pathProfile: PathProfile,
 ): string | undefined {
-  return rows
-    .filter((row) => deriveRouteProfile(row, pathProfile) === profile)
+  const routeMatchedRows = rows.filter((row) => deriveRouteProfile(row, pathProfile) === profile);
+  const preferredRows =
+    pathProfile === 'equities' && profile === 'equities_maker'
+      ? routeMatchedRows.filter((row) => deriveStrategyProfile(row) === 'equities_maker')
+      : routeMatchedRows;
+  const candidateRows = preferredRows.length > 0 ? preferredRows : routeMatchedRows;
+  return candidateRows
     .map((row) => String(row.strategy_id ?? '').trim())
     .filter((strategyId) => strategyId.length > 0)
     .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))[0];
@@ -1136,9 +1144,8 @@ export default function Params({
 
   useEffect(() => {
     if (pathProfile !== 'default') return;
-    if (activeProfile !== 'equities_maker') return;
-    if (resolvedActiveProfile !== 'maker_v4') return;
-    setActiveProfile('maker_v4');
+    if (activeProfile === resolvedActiveProfile) return;
+    setActiveProfile(resolvedActiveProfile);
   }, [activeProfile, pathProfile, resolvedActiveProfile, setActiveProfile]);
 
   // Modal states
