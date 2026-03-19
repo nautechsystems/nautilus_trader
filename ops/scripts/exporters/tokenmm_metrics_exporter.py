@@ -29,12 +29,30 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from flux.common.keys import FluxRedisKeys
 from ops.scripts.exporters.common import poll_interval_seconds_arg
+
+try:
+    from flux.common.keys import FluxRedisKeys
+except ModuleNotFoundError:
+    @dataclass(frozen=True)
+    class FluxRedisKeys:  # pragma: no cover - exercised indirectly in importer smoke tests
+        strategy_id: str
+        namespace: str = "flux"
+        schema_version: str = "v1"
+
+        @property
+        def prefix(self) -> str:
+            return f"{self.namespace}:{self.schema_version}"
+
+        def state(self) -> str:
+            return f"{self.prefix}:state:{self.strategy_id}"
+
+        def params_hash_key(self) -> str:
+            return f"{self.prefix}:params:{self.strategy_id}"
 
 LOGGER = logging.getLogger("tokenmm_metrics_exporter")
 
-LABEL_NAMES = ("env", "token", "venue", "symbol", "strategy_family")
+LABEL_NAMES = ("env", "strategy_id", "token", "venue", "symbol", "strategy_family")
 DEFAULT_STRATEGY_IDS = (
     "plumeusdt_bybit_perp_makerv3",
     "plumeusdt_bybit_spot_makerv3",
@@ -412,6 +430,7 @@ class StrategyContext:
     def labels(self, env: str) -> dict[str, str]:
         return {
             "env": env,
+            "strategy_id": self.strategy_id,
             "token": self.token,
             "venue": self.venue,
             "symbol": self.symbol,

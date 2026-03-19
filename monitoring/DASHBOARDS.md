@@ -28,7 +28,7 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 ## Exporters
 
 - Liquidity sidecar: `python3 ops/scripts/exporters/tokenmm_metrics_exporter.py --help`
-  Provides liquidity and uptime metrics from existing Redis strategy state.
+  Provides per-strategy liquidity and uptime metrics from existing Redis strategy state.
   Discovers `tokenmm` strategies from `configs/strategies.ini` or falls back to
   the current `plumeusdt_<venue>_<product>_makerv3` allowlist.
 - Markouts sidecar: `python3 ops/scripts/exporters/tokenmm_markouts_exporter.py --help`
@@ -60,6 +60,10 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
 Operational notes:
 
 - both exporters reject `--poll-interval-s` values below `0.5`
+- the liquidity dashboard is strategy-scoped, not market-scoped, so future
+  TokenMM strategies on the same venue/symbol appear as separate rows and series
+- live deploys should avoid hard-pinning `--strategy-id` in the liquidity
+  sidecar unit unless intentionally narrowing coverage
 - the markouts sidecar can expose `0s`, `30s`, `60s`, and `120s` horizons from
   the same persisted `execution_markout` surface
 - the markouts exporter rejects non-positive `--window-hours` values so the

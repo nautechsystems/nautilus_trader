@@ -66,6 +66,43 @@ def test_liquidity_dashboard_uses_tokenmm_metric_names() -> None:
     assert all("chainsaw_mm_" not in expr for expr in expressions)
 
 
+def test_liquidity_dashboard_is_strategy_scoped() -> None:
+    path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_liquidity_v1.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    snapshot_panel = next(panel for panel in payload["panels"] if panel["id"] == 1)
+    assert snapshot_panel["title"] == "Quoting Uptime + Our Quote Depth Quality"
+
+    expressions = [target["expr"] for target in snapshot_panel["targets"]]
+    assert all("strategy_id" in expr for expr in expressions)
+    assert all("symbol_venue" not in expr for expr in expressions)
+
+    organize = next(
+        transformation
+        for transformation in snapshot_panel["transformations"]
+        if transformation["id"] == "organize"
+    )
+    rename_by_name = organize["options"]["renameByName"]
+    assert rename_by_name["strategy_id"] == "Strategy"
+
+    strategy_override = next(
+        override
+        for override in snapshot_panel["fieldConfig"]["overrides"]
+        if override["matcher"] == {"id": "byName", "options": "Strategy"}
+    )
+    strategy_width = next(
+        prop["value"] for prop in strategy_override["properties"] if prop["id"] == "custom.width"
+    )
+    assert strategy_width >= 320
+
+    strategy_var = next(
+        variable
+        for variable in payload["templating"]["list"]
+        if variable["name"] == "strategy_id"
+    )
+    assert strategy_var["query"] == ".*"
+
+
 def test_markouts_dashboard_uses_tokenmm_markout_metric_names() -> None:
     path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
     assert path.exists(), "markouts dashboard JSON should exist"
