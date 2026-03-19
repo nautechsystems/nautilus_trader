@@ -599,7 +599,7 @@ impl PolymarketExecutionClient {
                         log::info!("User WebSocket reconnected");
                     }
                     None => {
-                        log::warn!("User WebSocket stream ended");
+                        log::debug!("User WebSocket stream ended");
                         break;
                     }
                 }
