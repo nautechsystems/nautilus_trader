@@ -81,11 +81,21 @@ def _take_legacy_packets(client) -> list[dict[str, Any]]:
     ]
 
 
-def _signals_snapshot(app, *, profile: str = "tokenmm") -> dict[str, Any]:
+def _signals_snapshot(
+    app,
+    *,
+    profile: str | None = "tokenmm",
+    query: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     with app.test_client() as client:
+        query_string: dict[str, Any] = {"contract_version": 2}
+        if profile is not None:
+            query_string["profile"] = profile
+        if query is not None:
+            query_string.update(query)
         response = client.get(
             "/api/v1/signals",
-            query_string={"profile": profile, "contract_version": 2},
+            query_string=query_string,
         )
         assert response.status_code == 200
         return response.get_json()
@@ -172,6 +182,35 @@ def test_signals_snapshot_contract_version_two_exposes_realtime_metadata(
     assert realtime["last_seq"] == 0
     assert realtime["capabilities"]["recovery_mode"] == "invalidate_only"
     assert realtime["capabilities"]["replay_supported"] is False
+
+
+def test_signals_noncanonical_queries_withhold_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    explicit_strategy = _signals_snapshot(
+        app,
+        query={"profile": "tokenmm", "strategy": flux_config.identity.strategy_id},
+    )
+    assert "realtime" not in explicit_strategy["data"]
+
+    unscoped = _signals_snapshot(app, profile=None)
+    assert "realtime" not in unscoped["data"]
 
 
 def test_standard_contract_polling_only_transport_subscribes_and_receives_heartbeat(

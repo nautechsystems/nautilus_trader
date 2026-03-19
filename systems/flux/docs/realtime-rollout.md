@@ -11,7 +11,9 @@ This document describes the additive `contract_version=2` rollout controls imple
    - Socket.IO `subscribe` event carrying the returned lineage metadata
 3. The standard path currently supports `signal` and `trades` surfaces.
 4. The standard path is intentionally `invalidate_only` under the current polling transport.
-5. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
+5. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
+   strategy set exactly matches the subscribable stream identity for that profile.
+6. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
    Non-canonical trades queries stay REST-only and omit `data.realtime`.
 
 ## Rollout state

@@ -1780,6 +1780,34 @@ def create_flux_api_app(  # noqa: C901
             return False
         return True
 
+    def _canonical_signals_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, Any] | None:
+        normalized_profile = normalize_profile(profile_text)
+        if requested_strategy:
+            return None
+        if not normalized_profile:
+            return None
+        stream_metadata = socket_emitter.describe_standard_stream(
+            surface="signal",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="signal",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_seq(normalized_profile),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
     def _response(
         *,
         ok: bool,
@@ -2169,13 +2197,13 @@ def create_flux_api_app(  # noqa: C901
             "strategies": strategy_payloads,
         }
         if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
-            last_seq = socket_emitter.current_seq(_profile_for_realtime_snapshot(profile_text))
-            payload["realtime"] = _realtime_snapshot_metadata(
-                surface="signal",
+            realtime_metadata = _canonical_signals_realtime_metadata(
+                requested_strategy=requested_strategy,
                 profile_text=profile_text,
                 strategy_ids=strategy_ids,
-                last_seq=last_seq,
             )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
 
         return _ok(data=payload)
 

@@ -146,7 +146,12 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - `{rows, total, limit, offset, has_more}` (+ optional `next_offset`)
 7. `DELETE /api/v1/alerts` returns:
    - `{success, strategy_id, deleted, remaining, server_ts_ms}`
-8. `GET /api/v1/signals?contract_version=2` keeps the legacy payload shape and adds `data.realtime` with:
+8. `GET /api/v1/signals?contract_version=2` adds `data.realtime` only for the canonical profile-scoped
+   snapshot shape:
+   - normalized `profile` present
+   - no explicit `strategy`
+   - request-selected strategy set resolves to the same stream identity validated by `subscribe`
+9. Canonical signals snapshots keep the legacy payload shape and add `data.realtime` with:
    - `contract_version`
    - `surface`
    - `profile`
@@ -155,7 +160,8 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - `snapshot_revision`
    - `last_seq`
    - `capabilities`
-9. `GET /api/v1/trades?contract_version=2` adds `data.realtime` only for the canonical live-compatible
+10. Strategy-scoped or otherwise non-canonical signals queries remain REST-only and omit `data.realtime`.
+11. `GET /api/v1/trades?contract_version=2` adds `data.realtime` only for the canonical live-compatible
    snapshot shape:
    - normalized `profile` present
    - no explicit `strategy`
@@ -163,9 +169,9 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - first page (`offset=0`)
    - descending/default sort (`ts_ms_desc`)
    - default page size (`limit=50`, explicit or implicit)
-10. Non-canonical trades queries remain REST-only and omit `data.realtime`.
-11. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
-12. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
+12. Non-canonical trades queries remain REST-only and omit `data.realtime`.
+13. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
+14. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
 
 ## Socket.IO contract (`/socket.io`)
 
@@ -226,7 +232,7 @@ unless they explicitly subscribe to the standard path.
 
 HTTP snapshot handshake:
 
-1. Client fetches a live-compatible snapshot with `contract_version=2`.
+1. Client fetches a canonical live-compatible snapshot with `contract_version=2`.
 2. Snapshot response adds `data.realtime = {contract_version, surface, profile, surface_query_key, stream_id, snapshot_revision, last_seq, capabilities}`.
 3. Client subscribes with Socket.IO event `subscribe`.
 
