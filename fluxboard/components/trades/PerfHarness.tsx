@@ -57,8 +57,8 @@ type RealtimeBudgetCheck = {
 type LiveTelemetry = {
   mountedRows: number;
   applyCommitMsP95: number;
-  freshnessLagMsP95: number;
-  snapshotRefreshesPerMinute: number;
+  localUpdateLagMsP95: number;
+  measuredDeltas: number;
 };
 
 const REALTIME_BASELINE_RESULTS: Record<RealtimeBenchmarkScenario, RealtimeBenchmarkResult> = {
@@ -246,13 +246,13 @@ export function TradesPerfHarness({ onClose }: { onClose: () => void }) {
   const pendingMeasurementRef = useRef<{ startedAt: number; sourceTs: number } | null>(null);
   const telemetrySamplesRef = useRef({
     applyCommitMs: [] as number[],
-    freshnessLagMs: [] as number[],
+    localUpdateLagMs: [] as number[],
   });
   const [liveTelemetry, setLiveTelemetry] = useState<LiveTelemetry>({
     mountedRows: 0,
     applyCommitMsP95: 0,
-    freshnessLagMsP95: 0,
-    snapshotRefreshesPerMinute: 0,
+    localUpdateLagMsP95: 0,
+    measuredDeltas: 0,
   });
   const rolloutReference = useMemo(() => {
     const result = REALTIME_BASELINE_RESULTS['trades-live-2000-rows'];
@@ -342,25 +342,33 @@ export function TradesPerfHarness({ onClose }: { onClose: () => void }) {
   }, []);
 
   useLayoutEffect(() => {
+    const mountedRows = rootRef.current?.querySelectorAll('.trades-row').length ?? 0;
     const pending = pendingMeasurementRef.current;
     if (!pending) {
+      setLiveTelemetry((current) => (
+        current.mountedRows === mountedRows
+          ? current
+          : {
+              ...current,
+              mountedRows,
+            }
+      ));
       return;
     }
-    const mountedRows = rootRef.current?.querySelectorAll('.trades-row').length ?? 0;
     const applyCommitMsP95 = recordRollingSample(
       telemetrySamplesRef.current.applyCommitMs,
       performance.now() - pending.startedAt,
     );
-    const freshnessLagMsP95 = recordRollingSample(
-      telemetrySamplesRef.current.freshnessLagMs,
+    const localUpdateLagMsP95 = recordRollingSample(
+      telemetrySamplesRef.current.localUpdateLagMs,
       Math.max(0, Date.now() - pending.sourceTs),
     );
-    setLiveTelemetry({
+    setLiveTelemetry((current) => ({
       mountedRows,
       applyCommitMsP95,
-      freshnessLagMsP95,
-      snapshotRefreshesPerMinute: 0,
-    });
+      localUpdateLagMsP95,
+      measuredDeltas: current.measuredDeltas + 1,
+    }));
     pendingMeasurementRef.current = null;
   }, [rows]);
 
@@ -402,18 +410,37 @@ export function TradesPerfHarness({ onClose }: { onClose: () => void }) {
       >
         <div className="rounded border p-3" style={{ borderColor: colors.border.DEFAULT }}>
           <div className="font-mono uppercase" style={{ color: colors.text.primary }}>
-            Live Telemetry
+            Measured Runtime Telemetry
           </div>
           <div className="mt-2 space-y-1">
-            <div>Mounted rows: {liveTelemetry.mountedRows}</div>
-            <div>Apply+commit p95: {liveTelemetry.applyCommitMsP95.toFixed(2)}ms</div>
-            <div>Freshness lag p95: {liveTelemetry.freshnessLagMsP95.toFixed(0)}ms</div>
-            <div>Snapshot refreshes: {liveTelemetry.snapshotRefreshesPerMinute}/min</div>
+            <div data-testid="perf-runtime-mounted-rows">Mounted rows: {liveTelemetry.mountedRows}</div>
+            <div data-testid="perf-runtime-apply-commit">
+              Apply+commit p95:{' '}
+              {liveTelemetry.measuredDeltas > 0
+                ? `${liveTelemetry.applyCommitMsP95.toFixed(2)}ms`
+                : 'Waiting for local delta...'}
+            </div>
+            <div data-testid="perf-runtime-local-lag">
+              Local update-to-paint lag p95:{' '}
+              {liveTelemetry.measuredDeltas > 0
+                ? `${liveTelemetry.localUpdateLagMsP95.toFixed(0)}ms`
+                : 'Waiting for local delta...'}
+            </div>
+            <div data-testid="perf-runtime-sample-count">
+              Measured deltas: {liveTelemetry.measuredDeltas}
+            </div>
+            <div
+              data-testid="perf-runtime-reference-note"
+              style={{ color: colors.text.muted }}
+            >
+              External freshness lag and snapshot refresh cadence stay reference-only in the
+              committed rollout baseline below.
+            </div>
           </div>
         </div>
         <div className="rounded border p-3" style={{ borderColor: colors.border.DEFAULT }}>
           <div className="font-mono uppercase" style={{ color: colors.text.primary }}>
-            Rollout Gate Reference
+            Committed Rollout Reference
           </div>
           <div className="mt-2" style={{ color: colors.text.secondary }}>
             {rolloutReference.result.label}
