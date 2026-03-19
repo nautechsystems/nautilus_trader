@@ -34,7 +34,6 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStat
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
-from nautilus_trader.adapters.polymarket.http.conversion import convert_tif_to_polymarket_order_type
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -1203,7 +1202,7 @@ class TestPolymarketExecutionClient:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_str("10"),
             quote_quantity=True,
-            time_in_force=TimeInForce.IOC,  # Test IOC -> FAK mapping
+            time_in_force=TimeInForce.FOK,
         )
         self.cache.add_order(market_order, None)
 
@@ -1228,7 +1227,7 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
-        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.IOC)
+        assert call_args.order_type == "FOK"  # Market orders always use FOK
 
         # Check that venue order ID was cached
         venue_order_id = VenueOrderId("test_market_order_id")
@@ -1276,7 +1275,7 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 5.0
         assert call_args.side == "SELL"
         assert call_args.price == 0
-        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.FOK)
+        assert call_args.order_type == "FOK"  # Market orders always use FOK
 
     @pytest.mark.asyncio
     async def test_submit_limit_order_still_works(self, mocker):

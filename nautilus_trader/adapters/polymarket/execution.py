@@ -28,6 +28,7 @@ from py_clob_client.client import OrderArgs
 from py_clob_client.client import PartialCreateOrderOptions
 from py_clob_client.client import TradeParams
 from py_clob_client.clob_types import AssetType
+from py_clob_client.clob_types import OrderType as PolyOrderType
 from py_clob_client.clob_types import PostOrdersArgs
 from py_clob_client.exceptions import PolyApiException
 
@@ -1466,13 +1467,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 return
 
         amount = float(order.quantity)
-        order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
 
         market_order_args = MarketOrderArgs(
             token_id=get_polymarket_token_id(order.instrument_id),
             amount=amount,
             side=order_side_to_str(order.side),
-            order_type=order_type,
+            order_type=PolyOrderType.FOK,
         )
 
         neg_risk = self._get_neg_risk_for_instrument(instrument)
@@ -1493,7 +1493,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._post_signed_order(order, signed_order)
+        await self._post_signed_order(order, signed_order, order_type_override=PolyOrderType.FOK)
 
     async def _submit_limit_order(self, command: SubmitOrder, instrument) -> None:
         self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
@@ -1548,16 +1548,20 @@ class PolymarketExecutionClient(LiveExecutionClient):
         order: Order,
         signed_order,
         post_only: bool = False,
+        order_type_override=None,
     ) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
         try:
+            poly_order_type = order_type_override or convert_tif_to_polymarket_order_type(
+                order.time_in_force,
+            )
             response: JSON | None = await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
                 asyncio.to_thread,
                 self._http_client.post_order,
                 signed_order,
-                convert_tif_to_polymarket_order_type(order.time_in_force),
+                poly_order_type,
                 post_only,
             )
 
