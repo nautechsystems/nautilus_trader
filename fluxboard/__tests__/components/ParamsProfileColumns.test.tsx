@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Params from '../../Params';
 import * as api from '../../api';
 
@@ -18,6 +18,10 @@ vi.mock('../../api', () => ({
     patchStrategyParams: vi.fn(),
   },
 }));
+
+afterEach(() => {
+  cleanup();
+});
 
 vi.mock('../../hooks/index', () => ({
   usePolling: vi.fn(),
@@ -187,7 +191,7 @@ describe('Params profile column filtering', () => {
   });
 
   it('shows split equities family options and routes schema selection through the selected strategy family', async () => {
-    window.history.pushState({}, '', '/equities/params');
+    (window.location as any).pathname = '/equities/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
       params: {
@@ -238,16 +242,18 @@ describe('Params profile column filtering', () => {
     });
 
     const familySelect = screen.getByLabelText('Params family');
-    expect(screen.getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+    expect(within(familySelect).getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(within(familySelect).getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+    expect(within(familySelect).queryByRole('option', { name: /Maker V4/i })).not.toBeInTheDocument();
+    expect(within(familySelect).queryByRole('option', { name: /Maker V3/i })).not.toBeInTheDocument();
 
     fireEvent.change(familySelect, { target: { value: 'equities_taker' } });
 
     expect(mockSetActiveProfile).toHaveBeenCalledWith('equities_taker');
   });
 
-  it('renders MakerV3 short headers for equities params when rows are MakerV3-only', async () => {
-    window.history.pushState({}, '', '/equities/params');
+  it('renders MakerV3 short headers for tokenmm params when rows are MakerV3-only', async () => {
+    (window.location as any).pathname = '/tokenmm/params';
     paramsStoreState.activeProfile = 'maker_v3';
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
       params: {

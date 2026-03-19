@@ -25,7 +25,7 @@ vi.mock('sonner', () => ({
 describe('Params family short headers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.history.pushState({}, '', '/equities/params');
+    (window.location as any).pathname = '/equities/params';
     useParamsStore.getState().clearSelection();
     useParamsStore.getState().setActiveProfile('equities_maker' as any);
 

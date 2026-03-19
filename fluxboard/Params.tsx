@@ -1059,6 +1059,12 @@ export default function Params({
     });
   }, [strategies]);
   const profileIds = useMemo(() => listParamsProfiles(), []);
+  const routeProfileIds = useMemo<ParamsProfileId[]>(
+    () => (pathProfile === 'equities'
+      ? ['equities_maker', 'equities_taker']
+      : profileIds),
+    [pathProfile, profileIds]
+  );
   const profilePriorityKeySet = useMemo(
     () => new Set(getProfilePriorityKeys(activeProfile)),
     [activeProfile]
@@ -2909,8 +2915,14 @@ export default function Params({
     [strategies]
   );
   const availableProfiles = useMemo(
-    () => profileIds.filter((profile) => familyCounts[profile] > 0),
-    [familyCounts, profileIds]
+    () => routeProfileIds.filter((profile) => familyCounts[profile] > 0),
+    [familyCounts, routeProfileIds]
+  );
+  const selectableProfiles = useMemo(
+    () => (pathProfile === 'equities'
+      ? (availableProfiles.length > 0 ? availableProfiles : routeProfileIds)
+      : profileIds),
+    [availableProfiles, pathProfile, profileIds, routeProfileIds]
   );
   const lockedSingleProfile = availableProfiles.length === 1 ? availableProfiles[0] : null;
 
@@ -2982,7 +2994,7 @@ export default function Params({
             style={{ borderColor: colors.border.DEFAULT }}
             aria-label="Params family"
           >
-            {profileIds.map((profile) => (
+            {selectableProfiles.map((profile) => (
               <option key={`params-family-${profile}`} value={profile}>
                 {`${getProfileLabel(profile)} (${familyCounts[profile]})`}
               </option>
@@ -2991,7 +3003,7 @@ export default function Params({
         </label>
       </div>
     ),
-    [activeProfile, familyCounts, lockedSingleProfile, profileIds, setActiveProfile]
+    [activeProfile, familyCounts, lockedSingleProfile, selectableProfiles, setActiveProfile]
   );
 
   const panelHeaderActions = useMemo(() => {
