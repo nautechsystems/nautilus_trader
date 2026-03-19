@@ -47,7 +47,10 @@ from flux.api.payloads import safe_float
 from flux.api.payloads import safe_int
 from flux.api.payloads import select_latest_strategy_row
 from flux.api.payloads import strategy_id_from_row
+from flux.api.socketio import REALTIME_STANDARD_CONTRACT_VERSION
+from flux.api.socketio import build_standard_snapshot_metadata
 from flux.api.socketio import create_flux_socket_server
+from flux.api.socketio import default_realtime_rollout
 from flux.api.socketio import normalize_profile
 from flux.common.config import FluxConfig
 from flux.common.config import validate_identifier_part
@@ -1572,6 +1575,7 @@ def create_flux_api_app(  # noqa: C901
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
     app.json.sort_keys = False
+    app.extensions["flux_realtime_rollout"] = default_realtime_rollout()
 
     def _coerce_strategy_ids(raw_value: Any) -> list[str]:
         values: list[Any]
@@ -1683,16 +1687,63 @@ def create_flux_api_app(  # noqa: C901
             explicit=False,
         )
 
-    create_flux_socket_server(
+    socket_server = create_flux_socket_server(
         app,
         store=store,
         metadata_resolver=_metadata_for_strategy,
         strategy_resolver=_strategy_for_profile,
         strategy_ids_resolver=_strategy_ids_for_profile,
     )
+    socket_emitter = socket_server.emitter
     app.extensions["flux_strategy_set_descriptors"] = dict(strategy_set_descriptors)
     app.extensions["flux_profile_strategy_map"] = dict(resolved_profile_strategy_map)
     app.extensions["flux_profile_required_strategy_map"] = dict(resolved_profile_required_strategy_map)
+
+    def _requested_contract_version() -> int | None:
+        raw_value = request.args.get("contract_version")
+        if raw_value is None or decode_text(raw_value).strip() == "":
+            return None
+        parsed = safe_int(raw_value)
+        if parsed is None:
+            raise ApiEnvelopeError(
+                status=400,
+                code="invalid_contract_version",
+                message="`contract_version` must be an integer.",
+            )
+        if int(parsed) != REALTIME_STANDARD_CONTRACT_VERSION:
+            raise ApiEnvelopeError(
+                status=400,
+                code="unsupported_contract_version",
+                message="Requested realtime contract version is not supported.",
+                details={"contract_version": int(parsed)},
+            )
+        return int(parsed)
+
+    def _profile_for_realtime_snapshot(profile_text: str) -> str:
+        normalized = normalize_profile(profile_text)
+        if normalized:
+            return normalized
+        if default_unscoped_descriptor is not None:
+            descriptor_profile = normalize_profile(default_unscoped_descriptor.profile)
+            if descriptor_profile:
+                return descriptor_profile
+        return ""
+
+    def _realtime_snapshot_metadata(
+        *,
+        surface: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        last_seq: int,
+    ) -> dict[str, Any]:
+        normalized_profile = _profile_for_realtime_snapshot(profile_text)
+        return build_standard_snapshot_metadata(
+            surface=surface,
+            profile=normalized_profile,
+            strategy_ids=strategy_ids,
+            last_seq=last_seq,
+            poll_interval_s=socket_emitter.poll_interval_s,
+        )
 
     def _response(
         *,
@@ -2041,6 +2092,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
+        contract_version = _requested_contract_version()
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
@@ -2077,7 +2129,20 @@ def create_flux_api_app(  # noqa: C901
                 )
             strategy_payloads.append(strategy_payload)
 
-        return _ok(data={"server_ts_ms": now_ms(), "strategies": strategy_payloads})
+        payload: dict[str, Any] = {
+            "server_ts_ms": now_ms(),
+            "strategies": strategy_payloads,
+        }
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            last_seq = socket_emitter.current_seq(_profile_for_realtime_snapshot(profile_text))
+            payload["realtime"] = _realtime_snapshot_metadata(
+                surface="signal",
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                last_seq=last_seq,
+            )
+
+        return _ok(data=payload)
 
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
@@ -2440,6 +2505,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
+        contract_version = _requested_contract_version()
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
@@ -2551,6 +2617,13 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            payload["realtime"] = _realtime_snapshot_metadata(
+                surface="trades",
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                last_seq=last_seq,
+            )
         return _ok(data=payload)
 
     @app.get("/api/v1/trades/delta")
