@@ -309,6 +309,55 @@ describe('Params profile column filtering', () => {
     });
   });
 
+  it('keeps legacy maker_v4 equities rows visible on the shared equities params route during mixed rollout', async () => {
+    (window.location as any).pathname = '/equities/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv4',
+        running: true,
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_groups: 'equities',
+          chain: 'equities',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    });
+
+    const familySelect = screen.getByLabelText('Params family');
+    expect(within(familySelect).getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(within(familySelect).queryByRole('option', { name: /Maker V4/i })).not.toBeInTheDocument();
+    expect(vi.mocked(api.api.getParamSchema).mock.calls[0]?.[0]).toEqual({
+      preferKeyLabel: true,
+      strategyId: 'aapl_tradexyz_makerv4',
+    });
+  });
+
   it('renders MakerV3 short headers for tokenmm params when rows are MakerV3-only', async () => {
     (window.location as any).pathname = '/tokenmm/params';
     paramsStoreState.activeProfile = 'maker_v3';

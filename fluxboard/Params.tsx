@@ -189,12 +189,30 @@ function resolveSchemaCacheKey(
   return `${preferKeyLabel ? 'prefer_key_label' : 'default'}:${profile}:${strategyPart}`;
 }
 
+function normalizeRouteProfile(
+  pathProfile: PathProfile,
+  profile: ParamsProfileId,
+): ParamsProfileId {
+  if (pathProfile === 'equities' && profile === 'maker_v4') {
+    return 'equities_maker';
+  }
+  return profile;
+}
+
+function deriveRouteProfile(
+  row: Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>,
+  pathProfile: PathProfile,
+): ParamsProfileId {
+  return normalizeRouteProfile(pathProfile, deriveStrategyProfile(row));
+}
+
 function resolveSchemaProfile(
   rows: Array<Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>>,
   fallbackProfile: ParamsProfileId,
+  pathProfile: PathProfile,
 ): ParamsProfileId {
   const availableProfiles = listParamsProfiles().filter((profile) =>
-    rows.some((row) => deriveStrategyProfile(row) === profile)
+    rows.some((row) => deriveRouteProfile(row, pathProfile) === profile)
   );
   return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
 }
@@ -202,9 +220,10 @@ function resolveSchemaProfile(
 function resolveSchemaStrategyId(
   rows: Array<Pick<StrategyRow, 'strategy_id' | 'params' | 'hot_params' | 'meta'>>,
   profile: ParamsProfileId,
+  pathProfile: PathProfile,
 ): string | undefined {
   return rows
-    .filter((row) => deriveStrategyProfile(row) === profile)
+    .filter((row) => deriveRouteProfile(row, pathProfile) === profile)
     .map((row) => String(row.strategy_id ?? '').trim())
     .filter((strategyId) => strategyId.length > 0)
     .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))[0];
@@ -1080,7 +1099,7 @@ export default function Params({
   const profileStrategyKeySet = useMemo(() => {
     const keys = new Set<string>();
     strategies.forEach((strategy) => {
-      if (deriveStrategyProfile(strategy) !== activeProfile) return;
+      if (deriveRouteProfile(strategy, pathProfile) !== activeProfile) return;
       Object.keys(strategy.params || {}).forEach((key) => keys.add(key));
       (strategy.hot_params || []).forEach((key) => {
         const normalized = String(key || '').trim();
@@ -1088,7 +1107,7 @@ export default function Params({
       });
     });
     return keys;
-  }, [strategies, activeProfile]);
+  }, [strategies, activeProfile, pathProfile]);
   const defaultColumnOrder = useMemo(
     () => (schema ? buildProfileDefaultColumnOrder(schema, activeProfile) : []),
     [schema, activeProfile]
@@ -1335,8 +1354,8 @@ export default function Params({
         throw new Error('Invalid params response: expected array');
       }
       const paramsData = paramsResp;
-      const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile);
-      const strategyId = resolveSchemaStrategyId(paramsData, effectiveProfile);
+      const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile, pathProfile);
+      const strategyId = resolveSchemaStrategyId(paramsData, effectiveProfile, pathProfile);
       const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
       const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
 
@@ -1518,7 +1537,7 @@ export default function Params({
         console.warn('[params] Autorefresh failed, will retry on next interval');
       }
     }
-  }, [activeProfile, initialLoadDone, markLastUpdate]); // dirtyParams removed - use dirtyRef instead
+  }, [activeProfile, initialLoadDone, markLastUpdate, pathProfile]); // dirtyParams removed - use dirtyRef instead
 
   // Initial load on component mount
   useEffect(() => {
@@ -1527,8 +1546,8 @@ export default function Params({
   }, []); // Empty deps = run once on mount
 
   const familyScopedStrategies = useMemo(
-    () => strategies.filter((strategy) => deriveStrategyProfile(strategy) === activeProfile),
-    [strategies, activeProfile]
+    () => strategies.filter((strategy) => deriveRouteProfile(strategy, pathProfile) === activeProfile),
+    [strategies, activeProfile, pathProfile]
   );
 
   const preDirtyFilteredStrategies = useMemo(() => {
@@ -2903,7 +2922,7 @@ export default function Params({
   const familyCounts = useMemo<Record<ParamsProfileId, number>>(
     () => strategies.reduce(
       (acc, strategy) => {
-        const profile = deriveStrategyProfile(strategy);
+        const profile = deriveRouteProfile(strategy, pathProfile);
         acc[profile] += 1;
         return acc;
       },
@@ -2916,7 +2935,7 @@ export default function Params({
         maker_v4: 0,
       } as Record<ParamsProfileId, number>
     ),
-    [strategies]
+    [strategies, pathProfile]
   );
   const availableProfiles = useMemo(
     () => routeProfileIds.filter((profile) => familyCounts[profile] > 0),
@@ -2940,7 +2959,7 @@ export default function Params({
     if (!initialLoadDone) return;
 
     const effectiveProfile = lockedSingleProfile ?? activeProfile;
-    const strategyId = resolveSchemaStrategyId(strategies, effectiveProfile);
+    const strategyId = resolveSchemaStrategyId(strategies, effectiveProfile, pathProfile);
     const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
     const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
     const cachedSchema = schemaCacheRef.current[schemaCacheKey];
@@ -2967,7 +2986,7 @@ export default function Params({
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, initialLoadDone, lockedSingleProfile, schema, strategies]);
+  }, [activeProfile, initialLoadDone, lockedSingleProfile, pathProfile, schema, strategies]);
 
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];

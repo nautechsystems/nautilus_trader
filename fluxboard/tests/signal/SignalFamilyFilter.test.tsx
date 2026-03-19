@@ -174,6 +174,24 @@ function buildTakerStrategy(): SignalStrategy {
   };
 }
 
+function buildLegacyMakerV4EquitiesStrategy(): SignalStrategy {
+  const legacy = buildMakerV4Strategy();
+  return {
+    ...legacy,
+    id: 'aapl_tradexyz_makerv4',
+    strategy_family: 'maker_v4',
+    meta: {
+      ...legacy.meta,
+      strategy_family: 'maker_v4',
+      strategy_version: 'v4',
+      class: 'maker_v4',
+      param_set: 'makerv4',
+    },
+    maker_v4: legacy.equities_arb as any,
+    equities_arb: undefined,
+  };
+}
+
 function renderSignalTable(pathname: string) {
   return render(
     <MemoryRouter
@@ -219,5 +237,32 @@ describe('Signal family filter', () => {
     fireEvent.change(familyFilter, { target: { value: 'equities_taker' } });
     expect(screen.getByText('aapl_tradexyz_taker')).toBeInTheDocument();
     expect(screen.queryByText('aapl_tradexyz_maker')).not.toBeInTheDocument();
+  });
+
+  it('treats legacy maker_v4 equities rows as Maker in the shared family filter during mixed rollout', async () => {
+    const strategies = [buildLegacyMakerV4EquitiesStrategy(), buildTakerStrategy()];
+    (api.getSignalStrategies as any).mockResolvedValue({
+      strategies,
+      server_time: '2024-01-01 12:00:00',
+      server_ts_ms: 1_700_000_001_500,
+    });
+    initSignalState({
+      rows: strategies,
+      setRows: vi.fn(),
+      mergeStrategy: vi.fn(),
+      mergeStrategies: vi.fn(),
+    });
+
+    renderSignalTable('/equities/signal');
+
+    await screen.findByTestId('equities-arb-signal-table');
+
+    const familyFilter = screen.getByLabelText('Signal family');
+    expect(screen.getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+
+    fireEvent.change(familyFilter, { target: { value: 'equities_maker' } });
+    expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_taker')).not.toBeInTheDocument();
   });
 });

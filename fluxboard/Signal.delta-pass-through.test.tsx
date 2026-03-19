@@ -192,4 +192,74 @@ describe('signal_delta field pass-through wiring', () => {
       coin: 'PLUME',
     });
   });
+
+  it('passes through legacy maker_v4 payloads on equities signal_delta during mixed rollout', async () => {
+    currentSignalState.rows = [{
+      id: 'legacy_maker_strategy',
+      strategy_family: 'maker_v4',
+      params: { bot_on: '1', qty: '10' },
+      balances_ok: true,
+      meta: {
+        chain: 'equities',
+        strategy_groups: 'equities',
+        class: 'maker_v4',
+        param_set: 'makerv4',
+      },
+    }] as SignalStrategy[];
+
+    render(
+      <MemoryRouter initialEntries={['/equities/signal']}>
+        <SignalTable />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      const hasDeltaHandler = (socketsModule.socket.on as any).mock.calls.some(
+        (call: any[]) => call[0] === 'signal_delta',
+      );
+      expect(hasDeltaHandler).toBe(true);
+    });
+
+    const deltaHandler = (socketsModule.socket.on as any).mock.calls.find(
+      (call: any[]) => call[0] === 'signal_delta',
+    )?.[1];
+    expect(typeof deltaHandler).toBe('function');
+
+    act(() => {
+      deltaHandler({
+        id: 'legacy_maker_strategy',
+        strategy_family: 'maker_v4',
+        maker_v4: {
+          operator: {
+            execution_mode: 'maker_hedge',
+            behavior: 'maker',
+            hedge_policy: {
+              route: 'SMART',
+              time_in_force: 'DAY',
+            },
+          },
+          quote_snapshot: {
+            ts_ms: 1736942400000,
+            effective_spread_bps: 7.5,
+            hedge_latency_ms: 55,
+          },
+        },
+      });
+    });
+
+    expect(mockMergeStrategy).toHaveBeenCalled();
+    const merged = mockMergeStrategy.mock.calls.at(-1)?.[0];
+    expect(merged?.id).toBe('legacy_maker_strategy');
+    expect(merged?.strategy_family).toBe('maker_v4');
+    expect(merged?.maker_v4).toMatchObject({
+      operator: {
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
+      },
+      quote_snapshot: {
+        effective_spread_bps: 7.5,
+        hedge_latency_ms: 55,
+      },
+    });
+  });
 });

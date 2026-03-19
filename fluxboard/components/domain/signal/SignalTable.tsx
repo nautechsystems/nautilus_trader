@@ -267,6 +267,23 @@ function deriveStrategyFamily(strategy: Pick<SignalStrategy, 'strategy_family' |
   return 'taker';
 }
 
+function normalizeSignalFamilyForPath(
+  family: SignalStrategyFamily,
+  pathProfile: PathProfile,
+): SignalStrategyFamily {
+  if (pathProfile === 'equities' && family === 'maker_v4') {
+    return 'equities_maker';
+  }
+  return family;
+}
+
+function resolveSignalFamilyForPath(
+  pathProfile: PathProfile,
+  strategy: Pick<SignalStrategy, 'strategy_family' | 'meta'>,
+): SignalStrategyFamily {
+  return normalizeSignalFamilyForPath(deriveStrategyFamily(strategy), pathProfile);
+}
+
 function matchesSignalProfile(
   profile: PathProfile,
   strategy: Pick<SignalStrategy, 'meta'>
@@ -1777,8 +1794,8 @@ export default function SignalTable({
   const isFamilyVisible = useCallback((strategy: SignalStrategy): boolean => {
     const effectiveFamilyScope: SignalFamilyScope = familyScope;
     if (effectiveFamilyScope === 'all') return true;
-    return deriveStrategyFamily(strategy) === effectiveFamilyScope;
-  }, [familyScope]);
+    return resolveSignalFamilyForPath(pathProfile, strategy) === effectiveFamilyScope;
+  }, [familyScope, pathProfile]);
   // Select from zustand store with shallow equality to reduce re-renders
   const rows = useSignalStore(selectSignalRows, shallow);
   const setRows = useSignalStore(s => s.setRows);
@@ -1830,14 +1847,14 @@ export default function SignalTable({
     const base = (rows || []).filter(isStrategyVisible);
     return {
       all: base.length,
-      equities_maker: base.filter((r) => deriveStrategyFamily(r) === 'equities_maker').length,
-      equities_taker: base.filter((r) => deriveStrategyFamily(r) === 'equities_taker').length,
-      maker_v4: base.filter((r) => deriveStrategyFamily(r) === 'maker_v4').length,
-      maker_v3: base.filter((r) => deriveStrategyFamily(r) === 'maker_v3').length,
-      maker_v2: base.filter((r) => deriveStrategyFamily(r) === 'maker_v2').length,
-      taker: base.filter((r) => deriveStrategyFamily(r) === 'taker').length,
+      equities_maker: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'equities_maker').length,
+      equities_taker: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'equities_taker').length,
+      maker_v4: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'maker_v4').length,
+      maker_v3: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'maker_v3').length,
+      maker_v2: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'maker_v2').length,
+      taker: base.filter((r) => resolveSignalFamilyForPath(pathProfile, r) === 'taker').length,
     };
-  }, [rows, isStrategyVisible]);
+  }, [rows, isStrategyVisible, pathProfile]);
 
   // Refs to track state without triggering dependency cycles
   const pollRef = useRef<NodeJS.Timeout | null>(null);
@@ -2181,6 +2198,7 @@ export default function SignalTable({
           'balances_ok',
           'last_trade',
           'equities_arb',
+          'maker_v4',
         ]);
         for (const [key, value] of Object.entries(payload || {})) {
           if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
@@ -2370,7 +2388,7 @@ export default function SignalTable({
 
       return {
         ...row,
-        _strategyFamily: deriveStrategyFamily(row),
+        _strategyFamily: resolveSignalFamilyForPath(pathProfile, row),
         status,
         _netEdge: netEdge,
         _edge2: typeof edge2 === 'number' ? edge2 : null,
@@ -2401,7 +2419,7 @@ export default function SignalTable({
         chain: normalizedChain,
       };
     }).filter((row) => row !== null)) as EnrichedRow[];
-  }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, rows]);
+  }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, pathProfile, rows]);
 
   const signalFilters = useMemo<ColumnFilter[]>(() => {
     if (!isMakerSuiteProfile) {
