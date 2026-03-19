@@ -358,6 +358,59 @@ describe('Params profile column filtering', () => {
     });
   });
 
+  it('keeps legacy maker_v4 applies_to fields visible on the shared equities maker params surface during schema fallback', async () => {
+    (window.location as any).pathname = '/equities/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+        allow_cex_margin_sell: {
+          key: 'allow_cex_margin_sell',
+          label: 'allow_cex_margin_sell',
+          description: 'legacy maker margin toggle',
+          type: 'select',
+          default: '0',
+          options: [['0', 'Off'], ['1', 'On']],
+          applies_to: ['makerv4'],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv4',
+        running: true,
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_groups: 'equities',
+          chain: 'equities',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Sort by hedge_style' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by allow_cex_margin_sell' })).toBeInTheDocument();
+  });
+
   it('hides blended MakerV4-only params when the shared equities maker surface falls back to a legacy maker_v4 schema', async () => {
     (window.location as any).pathname = '/equities/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;

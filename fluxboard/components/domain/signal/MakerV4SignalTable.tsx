@@ -45,6 +45,13 @@ function resolvePayload(
 function resolveVariantLabel(
   row: Pick<SignalStrategy, 'strategy_family' | 'meta' | 'params' | 'hot_params'>,
 ): EquitiesVariant {
+  const strategyFamily = String(row.strategy_family ?? '').trim().toLowerCase();
+  if (strategyFamily === 'equities_taker') {
+    return 'Taker';
+  }
+  if (strategyFamily === 'equities_maker') {
+    return 'Maker';
+  }
   return deriveStrategyProfile(row) === 'equities_taker' ? 'Taker' : 'Maker';
 }
 

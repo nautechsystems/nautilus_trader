@@ -349,7 +349,7 @@ export const PROFILE_TO_APPLIES_TO: Record<ParamsProfileId, string[]> = {
   taker: ['takerarbitragetask', 'taker_arbitrage_task', 'dex_cex_arb', 'equity_perp_arb'],
   maker_v2: ['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker'],
   maker_v3: ['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3'],
-  equities_maker: ['equities_maker'],
+  equities_maker: ['equities_maker', 'maker_v4', 'makerv4', 'equity_perp_maker_v4'],
   equities_taker: ['equities_taker'],
   maker_v4: ['maker_v4', 'makerv4', 'equity_perp_maker_v4'],
 };
