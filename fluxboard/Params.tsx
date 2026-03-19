@@ -206,7 +206,20 @@ function deriveRouteProfile(
   return normalizeRouteProfile(pathProfile, deriveStrategyProfile(row));
 }
 
-function resolveSchemaProfile(
+function resolvePathSeedProfile(
+  pathProfile: PathProfile,
+  activeProfile: ParamsProfileId,
+): ParamsProfileId {
+  if (pathProfile === 'tokenmm') {
+    return 'maker_v3';
+  }
+  if (pathProfile === 'equities') {
+    return activeProfile === 'equities_taker' ? 'equities_taker' : 'equities_maker';
+  }
+  return activeProfile;
+}
+
+function resolveEffectiveProfile(
   rows: Array<Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>>,
   fallbackProfile: ParamsProfileId,
   pathProfile: PathProfile,
@@ -214,6 +227,14 @@ function resolveSchemaProfile(
   const availableProfiles = listParamsProfiles().filter((profile) =>
     rows.some((row) => deriveRouteProfile(row, pathProfile) === profile)
   );
+  if (
+    pathProfile === 'default'
+    && fallbackProfile === 'equities_maker'
+    && !availableProfiles.includes('equities_maker')
+    && availableProfiles.includes('maker_v4')
+  ) {
+    return 'maker_v4';
+  }
   return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
 }
 
@@ -1014,22 +1035,18 @@ export default function Params({
       .filter(Boolean)[0];
     return resolvePathProfile(firstSegment);
   }, []);
+  const routeActiveProfile = useMemo<ParamsProfileId>(
+    () => resolvePathSeedProfile(pathProfile, activeProfile),
+    [pathProfile, activeProfile]
+  );
   const didInitRouteProfileRef = useRef(false);
   useEffect(() => {
     if (didInitRouteProfileRef.current) return;
     didInitRouteProfileRef.current = true;
-    if (pathProfile === 'tokenmm' && activeProfile !== 'maker_v3') {
-      setActiveProfile('maker_v3');
-      return;
+    if (activeProfile !== routeActiveProfile) {
+      setActiveProfile(routeActiveProfile);
     }
-    if (
-      pathProfile === 'equities'
-      && activeProfile !== 'equities_maker'
-      && activeProfile !== 'equities_taker'
-    ) {
-      setActiveProfile('equities_maker');
-    }
-  }, [pathProfile, activeProfile, setActiveProfile]);
+  }, [activeProfile, routeActiveProfile, setActiveProfile]);
   const { isMobile: layoutIsMobile } = useMobileLayout();
   const isBreakpointMobile = useIsMobile();
   const isMobileView = variant === 'mobile' || (variant !== 'desktop' && isBreakpointMobile);
@@ -1081,6 +1098,10 @@ export default function Params({
       return column;
     });
   }, [strategies]);
+  const resolvedActiveProfile = useMemo<ParamsProfileId>(
+    () => resolveEffectiveProfile(strategies, routeActiveProfile, pathProfile),
+    [pathProfile, routeActiveProfile, strategies]
+  );
   const profileIds = useMemo(() => listParamsProfiles(), []);
   const routeProfileIds = useMemo<ParamsProfileId[]>(
     () => (pathProfile === 'equities'
@@ -1089,17 +1110,17 @@ export default function Params({
     [pathProfile, profileIds]
   );
   const profilePriorityKeySet = useMemo(
-    () => new Set(getProfilePriorityKeys(activeProfile)),
-    [activeProfile]
+    () => new Set(getProfilePriorityKeys(resolvedActiveProfile)),
+    [resolvedActiveProfile]
   );
   const profileHiddenKeySet = useMemo(
-    () => new Set(getProfileHiddenKeys(activeProfile)),
-    [activeProfile]
+    () => new Set(getProfileHiddenKeys(resolvedActiveProfile)),
+    [resolvedActiveProfile]
   );
   const profileStrategyKeySet = useMemo(() => {
     const keys = new Set<string>();
     strategies.forEach((strategy) => {
-      if (deriveRouteProfile(strategy, pathProfile) !== activeProfile) return;
+      if (deriveRouteProfile(strategy, pathProfile) !== resolvedActiveProfile) return;
       Object.keys(strategy.params || {}).forEach((key) => keys.add(key));
       (strategy.hot_params || []).forEach((key) => {
         const normalized = String(key || '').trim();
@@ -1107,11 +1128,18 @@ export default function Params({
       });
     });
     return keys;
-  }, [strategies, activeProfile, pathProfile]);
+  }, [strategies, resolvedActiveProfile, pathProfile]);
   const defaultColumnOrder = useMemo(
-    () => (schema ? buildProfileDefaultColumnOrder(schema, activeProfile) : []),
-    [schema, activeProfile]
+    () => (schema ? buildProfileDefaultColumnOrder(schema, resolvedActiveProfile) : []),
+    [schema, resolvedActiveProfile]
   );
+
+  useEffect(() => {
+    if (pathProfile !== 'default') return;
+    if (activeProfile !== 'equities_maker') return;
+    if (resolvedActiveProfile !== 'maker_v4') return;
+    setActiveProfile('maker_v4');
+  }, [activeProfile, pathProfile, resolvedActiveProfile, setActiveProfile]);
 
   // Modal states
   const [helpModalParam, setHelpModalParam] = useState<string | null>(null);
@@ -1250,10 +1278,10 @@ export default function Params({
 
   const columnOrder = useMemo(() => {
     const forceCanonicalOrder =
-      activeProfile === 'maker_v3'
-      || activeProfile === 'maker_v4'
-      || activeProfile === 'equities_maker'
-      || activeProfile === 'equities_taker';
+      resolvedActiveProfile === 'maker_v3'
+      || resolvedActiveProfile === 'maker_v4'
+      || resolvedActiveProfile === 'equities_maker'
+      || resolvedActiveProfile === 'equities_taker';
     if (forceCanonicalOrder) {
       return defaultColumnOrder;
     }
@@ -1266,15 +1294,15 @@ export default function Params({
       return defaultColumnOrder;
     }
     return reconcileColumnOrder(columnPrefs.order, defaultColumnOrder);
-  }, [schema, columnPrefs.order, defaultColumnOrder, activeProfile]);
+  }, [schema, columnPrefs.order, defaultColumnOrder, resolvedActiveProfile]);
 
   useEffect(() => {
     if (!schema) return;
     const forceCanonicalOrder =
-      activeProfile === 'maker_v3'
-      || activeProfile === 'maker_v4'
-      || activeProfile === 'equities_maker'
-      || activeProfile === 'equities_taker';
+      resolvedActiveProfile === 'maker_v3'
+      || resolvedActiveProfile === 'maker_v4'
+      || resolvedActiveProfile === 'equities_maker'
+      || resolvedActiveProfile === 'equities_taker';
     if (forceCanonicalOrder) {
       const persistedOrder = Array.isArray(columnPrefs.order) ? columnPrefs.order : [];
       if (!arraysShallowEqual(persistedOrder, defaultColumnOrder)) {
@@ -1290,7 +1318,7 @@ export default function Params({
     if (!arraysShallowEqual(columnPrefs.order, reconciled)) {
       persistColumnOrder(reconciled);
     }
-  }, [schema, columnPrefs.order, defaultColumnOrder, persistColumnOrder, activeProfile]);
+  }, [schema, columnPrefs.order, defaultColumnOrder, persistColumnOrder, resolvedActiveProfile]);
 
   const scheduleFlashClear = useCallback((strategyId: string, delay = 500) => {
     const existing = flashTimersRef.current.get(strategyId);
@@ -1354,7 +1382,7 @@ export default function Params({
         throw new Error('Invalid params response: expected array');
       }
       const paramsData = paramsResp;
-      const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile, pathProfile);
+      const effectiveProfile = resolveEffectiveProfile(paramsData, routeActiveProfile, pathProfile);
       const strategyId = resolveSchemaStrategyId(paramsData, effectiveProfile, pathProfile);
       const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
       const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
@@ -1537,7 +1565,7 @@ export default function Params({
         console.warn('[params] Autorefresh failed, will retry on next interval');
       }
     }
-  }, [activeProfile, initialLoadDone, markLastUpdate, pathProfile]); // dirtyParams removed - use dirtyRef instead
+  }, [initialLoadDone, markLastUpdate, pathProfile, routeActiveProfile]); // dirtyParams removed - use dirtyRef instead
 
   // Initial load on component mount
   useEffect(() => {
@@ -1546,8 +1574,8 @@ export default function Params({
   }, []); // Empty deps = run once on mount
 
   const familyScopedStrategies = useMemo(
-    () => strategies.filter((strategy) => deriveRouteProfile(strategy, pathProfile) === activeProfile),
-    [strategies, activeProfile, pathProfile]
+    () => strategies.filter((strategy) => deriveRouteProfile(strategy, pathProfile) === resolvedActiveProfile),
+    [strategies, resolvedActiveProfile, pathProfile]
   );
 
   const preDirtyFilteredStrategies = useMemo(() => {
@@ -2442,7 +2470,7 @@ export default function Params({
   const orderedParamDefs = useMemo(() => {
     if (!schema) return [];
     const order = columnOrder && columnOrder.length > 0 ? columnOrder : defaultColumnOrder;
-    const appliesToFilters = (PROFILE_TO_APPLIES_TO[activeProfile] || []).map((value) =>
+    const appliesToFilters = (PROFILE_TO_APPLIES_TO[resolvedActiveProfile] || []).map((value) =>
       value.trim().toLowerCase()
     );
     const hasAppliesToFilters = appliesToFilters.length > 0;
@@ -2483,7 +2511,7 @@ export default function Params({
     profilePriorityKeySet,
     profileStrategyKeySet,
     viewMode,
-    activeProfile,
+    resolvedActiveProfile,
   ]);
   // Sorted strategies list (applies when a sort key is active)
   const visibleStrategies = useMemo(() => {
@@ -2958,7 +2986,7 @@ export default function Params({
   useEffect(() => {
     if (!initialLoadDone) return;
 
-    const effectiveProfile = lockedSingleProfile ?? activeProfile;
+    const effectiveProfile = lockedSingleProfile ?? resolvedActiveProfile;
     const strategyId = resolveSchemaStrategyId(strategies, effectiveProfile, pathProfile);
     const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
     const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
@@ -2986,7 +3014,7 @@ export default function Params({
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, initialLoadDone, lockedSingleProfile, pathProfile, schema, strategies]);
+  }, [initialLoadDone, lockedSingleProfile, pathProfile, resolvedActiveProfile, schema, strategies]);
 
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];
@@ -3010,7 +3038,7 @@ export default function Params({
         <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
           <span>Family</span>
           <select
-            value={activeProfile}
+            value={lockedSingleProfile ?? resolvedActiveProfile}
             onChange={(event) => setActiveProfile(event.target.value as ParamsProfileId)}
             disabled={Boolean(lockedSingleProfile)}
             className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
@@ -3026,7 +3054,7 @@ export default function Params({
         </label>
       </div>
     ),
-    [activeProfile, familyCounts, lockedSingleProfile, selectableProfiles, setActiveProfile]
+    [familyCounts, lockedSingleProfile, resolvedActiveProfile, selectableProfiles, setActiveProfile]
   );
 
   const panelHeaderActions = useMemo(() => {

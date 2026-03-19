@@ -358,6 +358,163 @@ describe('Params profile column filtering', () => {
     });
   });
 
+  it('recovers a migrated equities maker selection back to maker_v4 on the default params route when only legacy rows exist', async () => {
+    (window.location as any).pathname = '/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv4',
+        running: true,
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_groups: 'equities',
+          chain: 'equities',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    });
+
+    expect(mockSetActiveProfile).toHaveBeenCalledWith('maker_v4');
+  });
+
+  it('uses the recovered maker_v4 profile for the first schema request on the default params route when legacy maker rows coexist with other families', async () => {
+    (window.location as any).pathname = '/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv4',
+        running: true,
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_groups: 'equities',
+          chain: 'equities',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+      {
+        strategy_id: 'msft_tradexyz_taker',
+        running: true,
+        meta: {
+          class: 'dex_cex_arb',
+        },
+        hot_params: ['qty'],
+        params: {
+          qty: '2',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(api.api.getParamSchema).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(api.api.getParamSchema).mock.calls[0]?.[0]).toEqual({
+      preferKeyLabel: true,
+      strategyId: 'aapl_tradexyz_makerv4',
+    });
+  });
+
+  it('uses the route-corrected equities maker profile on the first schema request', async () => {
+    (window.location as any).pathname = '/equities/params';
+    paramsStoreState.activeProfile = 'taker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'msft_tradexyz_taker',
+        running: true,
+        meta: {
+          class: 'equities_taker',
+          param_set: 'equities_taker',
+          strategy_family: 'equities_taker',
+        },
+        hot_params: ['bid_edge_take_bps'],
+        params: {
+          bid_edge_take_bps: '6',
+        },
+      },
+      {
+        strategy_id: 'aapl_tradexyz_maker',
+        running: true,
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(api.api.getParamSchema).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(api.api.getParamSchema).mock.calls[0]?.[0]).toEqual({
+      preferKeyLabel: true,
+      strategyId: 'aapl_tradexyz_maker',
+    });
+  });
+
   it('renders MakerV3 short headers for tokenmm params when rows are MakerV3-only', async () => {
     (window.location as any).pathname = '/tokenmm/params';
     paramsStoreState.activeProfile = 'maker_v3';
