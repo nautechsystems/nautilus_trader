@@ -63,4 +63,40 @@ def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[Strate
     return tuple(decoded)
 
 
-__all__ = ("StrategyContractEntry", "decode_strategy_contracts")
+def shared_observation_group_by_strategy_id(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    allowlist: Iterable[str] | None = None,
+) -> dict[str, str]:
+    """
+    Group same-asset strategies that observe one shared execution position.
+    """
+    allowlist_set = set(allowlist or ())
+    use_allowlist = allowlist is not None
+    grouped: dict[str, list[str]] = {}
+    for contract in decode_strategy_contracts(rows):
+        if use_allowlist and contract.strategy_id not in allowlist_set:
+            continue
+        group_key = "|".join(
+            (
+                contract.portfolio_asset_id.upper(),
+                contract.execution_account_scope_id,
+                contract.maker_instrument_id,
+            ),
+        )
+        strategy_ids = grouped.setdefault(group_key, [])
+        if contract.strategy_id not in strategy_ids:
+            strategy_ids.append(contract.strategy_id)
+    return {
+        strategy_id: group_key
+        for group_key, strategy_ids in grouped.items()
+        if len(strategy_ids) > 1
+        for strategy_id in strategy_ids
+    }
+
+
+__all__ = (
+    "StrategyContractEntry",
+    "decode_strategy_contracts",
+    "shared_observation_group_by_strategy_id",
+)

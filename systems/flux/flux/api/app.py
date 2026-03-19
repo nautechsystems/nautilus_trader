@@ -56,6 +56,7 @@ from flux.common.keys import FluxRedisKeys
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
+from flux.common.strategy_contracts import shared_observation_group_by_strategy_id
 from flux.params.manager import FluxParamsManager
 from flux.runners.shared.strategy_set import StrategySetDescriptor
 from flux.runners.shared.strategy_set import get_strategy_set_descriptors
@@ -1471,6 +1472,7 @@ def create_flux_api_app(  # noqa: C901
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
     profile_required_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
+    strategy_contracts: Sequence[Mapping[str, Any]] | None = None,
     params_schema: Mapping[str, Mapping[str, Any]] | None = None,
     params_defaults: Mapping[str, Any] | None = None,
     param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -1741,6 +1743,20 @@ def create_flux_api_app(  # noqa: C901
     def _strategy_ids_for_profile(profile: str) -> list[str]:
         normalized = normalize_profile(profile)
         return _coerce_strategy_ids(resolved_profile_strategy_map.get(normalized))
+
+    shared_position_groups_cache: dict[str, dict[str, str]] = {}
+
+    def _shared_position_groups_for_profile(profile: str) -> dict[str, str]:
+        normalized = normalize_profile(profile)
+        cached = shared_position_groups_cache.get(normalized)
+        if cached is not None:
+            return cached
+        shared_groups = shared_observation_group_by_strategy_id(
+            strategy_contracts or (),
+            allowlist=_strategy_ids_for_profile(normalized),
+        )
+        shared_position_groups_cache[normalized] = shared_groups
+        return shared_groups
 
     def _required_strategy_ids_for_profile(
         profile: str,
@@ -2551,6 +2567,11 @@ def create_flux_api_app(  # noqa: C901
                 rows_by_strategy=rows_by_strategy,
                 portfolio_id=profile_normalized,
                 preserve_product_scope_cash=True,
+                shared_position_groups_by_strategy=(
+                    _shared_position_groups_for_profile(profile_normalized)
+                    if profile_normalized == "equities"
+                    else None
+                ),
             )
             filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,

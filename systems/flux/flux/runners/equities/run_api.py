@@ -690,6 +690,7 @@ def main() -> None:
         strategy_metadata_resolver=strategy_metadata_map.__getitem__,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
+        strategy_contracts=config.get("strategy_contracts"),
         params_schema=params_schema,
         params_defaults=params_defaults,
         param_set=strategy_spec.param_set,

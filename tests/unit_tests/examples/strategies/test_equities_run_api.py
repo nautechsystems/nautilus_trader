@@ -485,6 +485,7 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
     def _fake_create_flux_api_app(*args, **kwargs):
         captured["strategy_metadata"] = kwargs["strategy_metadata"]
         captured["strategy_metadata_resolver"] = kwargs["strategy_metadata_resolver"]
+        captured["strategy_contracts"] = kwargs["strategy_contracts"]
         return Flask(__name__)
 
     monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
@@ -501,3 +502,4 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
     assert taker_metadata.base_asset == "AAPL"
     assert taker_metadata.param_set == "equities_taker"
     assert taker_metadata.strategy_family == "equities_taker"
+    assert captured["strategy_contracts"] == config["strategy_contracts"]

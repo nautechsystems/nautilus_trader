@@ -3587,6 +3587,126 @@ def test_balances_profile_equities_prefers_portfolio_snapshot_v2_hyperliquid_xyz
     assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(0.0)
 
 
+def test_balances_profile_equities_fallback_deduplicates_shared_same_asset_positions(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    maker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_maker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(maker_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(taker_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        maker_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "kind": "position",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "asset": "AAPL",
+                "coin": "AAPL",
+                "signed_qty": "10",
+                "quantity": "10",
+                "product_type": "perp",
+                "contract_type": "perp",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        taker_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "kind": "position",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "asset": "AAPL",
+                "coin": "AAPL",
+                "signed_qty": "10",
+                "quantity": "10",
+                "product_type": "perp",
+                "contract_type": "perp",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="XYZ:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=_equities_strategy_metadata("aapl_tradexyz_maker"),
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        strategy_contracts=[
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    position_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("kind") == "position"
+        and row.get("exchange") == "hyperliquid"
+        and row.get("instrument_id") == "XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    ]
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "equities"
+    assert position_rows[0]["signed_qty"] == "10"
+
+
 def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
     monkeypatch,
     flux_config,
