@@ -766,8 +766,27 @@ class FluxApiStore:
         )
         projection_keys: set[str] = set()
 
+        scan_fn = getattr(self._redis, "scan_iter", None)
+        scan_succeeded = False
+        if callable(scan_fn):
+            try:
+                for raw_key in scan_fn(match=f"{key_prefix}*"):
+                    if len(projection_keys) >= max_items:
+                        break
+                    key = decode_text(raw_key).strip()
+                    if key.startswith(key_prefix):
+                        projection_keys.add(key)
+                scan_succeeded = True
+            except Exception as e:
+                _LOG.debug(
+                    "Profile-account projection discovery via redis.scan_iter() failed prefix=%s error=%s",
+                    key_prefix,
+                    type(e).__name__,
+                    exc_info=True,
+                )
+
         keys_fn = getattr(self._redis, "keys", None)
-        if callable(keys_fn):
+        if not scan_succeeded and callable(keys_fn):
             try:
                 for raw_key in keys_fn(f"{key_prefix}*"):
                     if len(projection_keys) >= max_items:

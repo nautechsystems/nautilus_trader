@@ -93,6 +93,8 @@ def enrolled_binance_equity_symbols(config: dict[str, Any]) -> tuple[str, ...]:
 
 
 def fetch_exchange_info(*, exchange_info_url: str, timeout_seconds: float) -> dict[str, Any]:
+    if not str(exchange_info_url).lower().startswith("https://"):
+        raise ValueError(f"URL must use https, but got {exchange_info_url!r}")
     with urlopen(exchange_info_url, timeout=timeout_seconds) as response:  # noqa: S310
         return json.load(response)
 

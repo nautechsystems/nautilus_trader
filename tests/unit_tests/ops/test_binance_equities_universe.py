@@ -49,6 +49,14 @@ def test_discover_active_equity_perps_only_keeps_live_tradifi_symbols() -> None:
     ]
 
 
+def test_fetch_exchange_info_rejects_non_https_urls() -> None:
+    with pytest.raises(ValueError, match="https"):
+        binance_equities_universe.fetch_exchange_info(
+            exchange_info_url="http://fapi.binance.com/fapi/v1/exchangeInfo",
+            timeout_seconds=1.0,
+        )
+
+
 def test_main_prints_discovery_diff_without_auto_enrollment(
     monkeypatch,
     tmp_path: Path,

@@ -3993,6 +3993,109 @@ def test_balances_profile_equities_fallback_merges_profile_account_projection_ro
     assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
 
 
+def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection_discovery(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "free": "10",
+                "total": "10",
+                "mv_raw": 10.0,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["hyperliquid.xyz.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "asset": "NVDA",
+                    "kind": "position",
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-9.111",
+                    "quantity": "9.111",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_110,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 8314.466609,
+                "withdrawable_raw": 0.0,
+            },
+            "server_ts_ms": 123_140,
+        },
+    )
+    redis_client.keys_error = AssertionError("keys() should not be used when scan_iter() is available")
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="NVDA/USD",
+                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv3",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["rows"]
+    assert redis_client.scan_iter_calls
+    assert not redis_client.keys_calls
+
+
 def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
     monkeypatch,
     flux_config,
