@@ -197,6 +197,16 @@ const SCENARIOS: Array<[string, ScenarioInput]> = [
     },
   ],
   [
+    'backend-kill-switch-after-subscribe:new-be',
+    {
+      frontend: { client: 'new-fe', flags: { global: true, signal: true } },
+      backend: {
+        contractVersion: STANDARD_CONTRACT_VERSION,
+        activeWithdrawal: { signal: 'backend_kill_switch' },
+      },
+    },
+  ],
+  [
     'backend-canary-deny:new-be',
     {
       frontend: { client: 'new-fe', flags: { global: true, signal: true } },
@@ -308,6 +318,12 @@ describe('realtime compatibility matrix', () => {
         reason: 'backend_kill_switch',
       },
       legacySignal: { mode: 'legacy' },
+    });
+    expect(matrix['backend-kill-switch-after-subscribe:new-be']).toMatchObject({
+      signal: {
+        mode: 'manual_refresh_required',
+        reason: 'backend_kill_switch',
+      },
     });
     expect(matrix['backend-canary-deny:new-be']).toMatchObject({
       signal: {
