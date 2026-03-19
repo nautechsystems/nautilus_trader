@@ -49,6 +49,16 @@ Use this for developer, CI, and release automation.
 5. If a legacy `scripts/` path still exists, update the canonical script first and keep the legacy path as compatibility only.
 6. Keep `tooling/ci/check-repo-structure.sh` aligned with the canonical ownership model whenever repo paths change.
 
+## Upstream engine upgrade workflow
+
+Use this when preparing a Nautilus upstream sync for review.
+
+1. Use `tooling/dev/prepare-nautilus-upgrade.sh` as the canonical entrypoint.
+2. Keep `scripts/sync_upstream.sh` as compatibility only.
+3. Prepare an `upstream-sync/<tag>` branch and an `upgrade/nautilus-<date>-<tag>` branch; do not sync directly onto `main`.
+4. Record each run in `docs/reviews/` and keep the operating checklist in `docs/runbooks/`.
+5. Treat post-release cherry-picks as exceptions for targeted fixes, not the default sync path.
+
 ## Research workflow
 
 Use this for prototypes, experiments, notebooks, and throwaway analysis.
