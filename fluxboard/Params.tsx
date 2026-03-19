@@ -192,9 +192,9 @@ function resolveSchemaCacheKey(
 function normalizeRouteProfile(
   pathProfile: PathProfile,
   profile: ParamsProfileId,
-): ParamsProfileId {
+): ParamsProfileId | null {
   if (pathProfile === 'equities' && profile === 'maker_v4') {
-    return 'equities_maker';
+    return null;
   }
   return profile;
 }
@@ -202,7 +202,7 @@ function normalizeRouteProfile(
 function deriveRouteProfile(
   row: Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>,
   pathProfile: PathProfile,
-): ParamsProfileId {
+): ParamsProfileId | null {
   return normalizeRouteProfile(pathProfile, deriveStrategyProfile(row));
 }
 
@@ -2958,6 +2958,7 @@ export default function Params({
     () => strategies.reduce(
       (acc, strategy) => {
         const profile = deriveRouteProfile(strategy, pathProfile);
+        if (!profile) return acc;
         acc[profile] += 1;
         return acc;
       },

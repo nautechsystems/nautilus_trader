@@ -286,15 +286,22 @@ function resolveSignalFamilyForPath(
 
 function matchesSignalProfile(
   profile: PathProfile,
-  strategy: Pick<SignalStrategy, 'meta'>
+  strategy: Pick<SignalStrategy, 'strategy_family' | 'meta' | 'params' | 'hot_params' | 'equities_arb'>
 ): boolean {
   if (profile === 'default') return true;
+
   const groups = parseStrategyGroups(strategy.meta?.strategy_groups);
-  if (groups.size > 0) return groups.has(profile);
   if (profile === 'equities') {
-    const chain = String(strategy.meta?.chain || '').trim().toLowerCase();
-    if (chain === 'equities') return true;
+    const inEquitiesProfile = groups.size > 0
+      ? groups.has(profile)
+      : String(strategy.meta?.chain || '').trim().toLowerCase() === 'equities';
+    if (!inEquitiesProfile) return false;
+
+    const family = deriveStrategyFamily(strategy);
+    return Boolean(strategy.equities_arb) && (family === 'equities_maker' || family === 'equities_taker');
   }
+
+  if (groups.size > 0) return groups.has(profile);
   return false;
 }
 

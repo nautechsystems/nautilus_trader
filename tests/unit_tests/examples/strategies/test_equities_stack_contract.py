@@ -988,6 +988,18 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "ibkr.reference.main" in readme
     assert "hyperliquid.xyz.main" in readme
     assert "AAPL.NASDAQ" in readme
+
+
+def test_equities_deploy_readme_uses_split_family_overnight_hedge_language() -> None:
+    repo_root = _repo_root()
+    readme = _read(repo_root / "deploy/equities/README.md")
+    strategies_readme = _read(repo_root / "deploy/equities/strategies/README.md")
+    common_env = _read(repo_root / "deploy/equities/systemd/common.env.example")
+    live_config = _read(repo_root / "deploy/equities/equities.live.toml")
+    contract = _read(repo_root / "fluxboard/docs/equities_contract.md")
+
+    assert "MakerV4 take-take hedges remain immediate outside regular US equity hours" not in readme
+    assert "Taker hedges remain immediate outside regular US equity hours" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
     assert "shared IBKR contract entry must mirror the active canary route" in readme
     assert "vault_address_env" in readme

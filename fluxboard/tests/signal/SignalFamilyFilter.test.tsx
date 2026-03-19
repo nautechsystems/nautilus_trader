@@ -239,7 +239,7 @@ describe('Signal family filter', () => {
     expect(screen.queryByText('aapl_tradexyz_maker')).not.toBeInTheDocument();
   });
 
-  it('treats legacy maker_v4 equities rows as Maker in the shared family filter during mixed rollout', async () => {
+  it('ignores legacy maker_v4 equities rows on the shared family filter after the split cleanup', async () => {
     const strategies = [buildLegacyMakerV4EquitiesStrategy(), buildTakerStrategy()];
     (api.getSignalStrategies as any).mockResolvedValue({
       strategies,
@@ -258,11 +258,12 @@ describe('Signal family filter', () => {
     await screen.findByTestId('equities-arb-signal-table');
 
     const familyFilter = screen.getByLabelText('Signal family');
-    expect(screen.getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Maker (0)' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
 
     fireEvent.change(familyFilter, { target: { value: 'equities_maker' } });
-    expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
     expect(screen.queryByText('aapl_tradexyz_taker')).not.toBeInTheDocument();
   });
 });

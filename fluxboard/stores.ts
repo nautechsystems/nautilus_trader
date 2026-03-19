@@ -1789,6 +1789,9 @@ export const useParamsStore = create<ParamsStore>()(
                 .replace('taker_task', 'taker')
             : persistedState.activeProfile,
         );
+        if (activeProfile === 'maker_v4') {
+          activeProfile = 'equities_maker';
+        }
         const activePrefs = normalizedPrefsByProfile[activeProfile] || createDefaultColumnPrefs();
 
         return {

@@ -478,7 +478,7 @@ describe('SignalTable Store Merge Logic', () => {
   });
 
   describe('Params store migration', () => {
-    it('preserves a legacy maker_v4 active profile while copying its params preferences onto the split equities profiles', async () => {
+    it('migrates a legacy maker_v4 active profile onto equities_maker while copying its params preferences onto the split equities profiles', async () => {
       localStorage.setItem(
         'fluxboard:params:ui:v1',
         JSON.stringify({
@@ -500,12 +500,16 @@ describe('SignalTable Store Merge Logic', () => {
       const { useParamsStore } = await import('../../../stores');
       const state = useParamsStore.getState();
 
-      expect(state.activeProfile).toBe('maker_v4');
+      expect(state.activeProfile).toBe('equities_maker');
       expect(state.columnPrefsByProfile.equities_maker.order).toEqual([
         'hedge_style',
         'assumed_hedge_fee_bps',
       ]);
       expect(state.columnPrefsByProfile.equities_taker.order).toEqual([
+        'hedge_style',
+        'assumed_hedge_fee_bps',
+      ]);
+      expect(state.columnPrefs.order).toEqual([
         'hedge_style',
         'assumed_hedge_fee_bps',
       ]);

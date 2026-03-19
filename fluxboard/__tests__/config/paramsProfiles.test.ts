@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROFILE_TO_APPLIES_TO,
   buildProfileDefaultColumnOrder,
   deriveStrategyProfile,
   getProfileLabel,
@@ -178,6 +179,10 @@ describe('paramsProfiles', () => {
     expect(idx(makerOrder, 'max_qty_global')).toBeLessThan(idx(makerOrder, 'hedge_style'));
     expect(idx(takerOrder, 'bot_on')).toBeLessThan(idx(takerOrder, 'bid_edge_take_bps'));
     expect(idx(takerOrder, 'max_skew_bps_global')).toBeLessThan(idx(takerOrder, 'take_cooldown_ms'));
+  });
+
+  it('keeps the split equities maker applies_to surface scoped to the split family only', () => {
+    expect(PROFILE_TO_APPLIES_TO.equities_maker).toEqual(['equities_maker']);
   });
 
   it('hides legacy maker_v3 alias keys', () => {

@@ -163,7 +163,7 @@ describe('EquitiesArbSignalTable', () => {
     );
   });
 
-  it('falls back to maker_v4 payloads during mixed rollout and derives the taker variant from metadata', () => {
+  it('requires shared equities_arb payloads while still deriving split variants from metadata', () => {
     const makerRow = buildEquitiesStrategy('aapl_zzz_maker', 'equities_maker', 'Maker');
     makerRow.meta = {
       ...makerRow.meta,
@@ -171,7 +171,7 @@ describe('EquitiesArbSignalTable', () => {
     };
 
     const takerBase = buildEquitiesStrategy('aapl_aaa_taker', 'equities_taker', 'Taker');
-    const mixedRolloutTaker: SignalStrategy = {
+    const metadataOnlyTaker: SignalStrategy = {
       ...takerBase,
       strategy_family: '' as any,
       meta: {
@@ -181,17 +181,31 @@ describe('EquitiesArbSignalTable', () => {
         param_set: 'equities_taker',
         base_asset: 'AAPL',
       },
-      maker_v4: takerBase.equities_arb as any,
+    };
+    const legacyMakerOnly: SignalStrategy = {
+      ...buildEquitiesStrategy('aapl_legacy_makerv4', 'equities_maker', 'Maker'),
+      strategy_family: 'maker_v4',
+      meta: {
+        chain: 'equities',
+        strategy_groups: 'equities',
+        strategy_family: 'maker_v4',
+        class: 'maker_v4',
+        param_set: 'makerv4',
+        base_asset: 'AAPL',
+        quote_asset: 'USD',
+      },
+      maker_v4: makerRow.equities_arb as any,
       equities_arb: undefined,
     };
 
-    render(<EquitiesArbSignalTable rows={[mixedRolloutTaker, makerRow]} />);
+    render(<EquitiesArbSignalTable rows={[legacyMakerOnly, metadataOnlyTaker, makerRow]} />);
 
     const strategyCells = screen.getAllByText(/aapl_(aaa_taker|zzz_maker)/i);
     expect(strategyCells.map((cell) => cell.textContent)).toEqual([
       'aapl_zzz_maker',
       'aapl_aaa_taker',
     ]);
+    expect(screen.queryByText('aapl_legacy_makerv4')).not.toBeInTheDocument();
     expect(screen.getByText('Taker')).toBeInTheDocument();
     expect(screen.getAllByText('SMART · DAY').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Feed ok · Quote fresh').length).toBeGreaterThan(0);

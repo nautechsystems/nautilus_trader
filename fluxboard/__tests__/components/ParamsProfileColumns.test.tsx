@@ -309,7 +309,7 @@ describe('Params profile column filtering', () => {
     });
   });
 
-  it('keeps legacy maker_v4 equities rows visible on the shared equities params route during mixed rollout', async () => {
+  it('hides legacy maker_v4 equities rows from the shared equities params route after split cleanup', async () => {
     (window.location as any).pathname = '/equities/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
@@ -346,19 +346,21 @@ describe('Params profile column filtering', () => {
     render(<Params />);
 
     await waitFor(() => {
-      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+      expect(api.api.getParamSchema).toHaveBeenCalled();
     });
 
     const familySelect = screen.getByLabelText('Params family');
-    expect(within(familySelect).getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
+    expect(within(familySelect).getByRole('option', { name: 'Maker (0)' })).toBeInTheDocument();
+    expect(within(familySelect).getByRole('option', { name: 'Taker (0)' })).toBeInTheDocument();
     expect(within(familySelect).queryByRole('option', { name: /Maker V4/i })).not.toBeInTheDocument();
     expect(vi.mocked(api.api.getParamSchema).mock.calls[0]?.[0]).toEqual({
       preferKeyLabel: true,
-      strategyId: 'aapl_tradexyz_makerv4',
+      strategyId: undefined,
     });
   });
 
-  it('keeps legacy maker_v4 applies_to fields visible on the shared equities maker params surface during schema fallback', async () => {
+  it('hides legacy maker_v4 applies_to fields on the shared equities maker params surface after split cleanup', async () => {
     (window.location as any).pathname = '/equities/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
@@ -404,14 +406,15 @@ describe('Params profile column filtering', () => {
     render(<Params />);
 
     await waitFor(() => {
-      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+      expect(api.api.getParamSchema).toHaveBeenCalled();
     });
 
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sort by hedge_style' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sort by allow_cex_margin_sell' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by allow_cex_margin_sell' })).not.toBeInTheDocument();
   });
 
-  it('hides blended MakerV4-only params when the shared equities maker surface falls back to a legacy maker_v4 schema', async () => {
+  it('hides blended MakerV4-only params when the shared equities route ignores legacy maker_v4 rows', async () => {
     (window.location as any).pathname = '/equities/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
@@ -481,9 +484,10 @@ describe('Params profile column filtering', () => {
     render(<Params />);
 
     await waitFor(() => {
-      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+      expect(api.api.getParamSchema).toHaveBeenCalled();
     });
 
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sort by hedge_style' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sort by execution_mode' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sort by bid_edge_take_bps' })).not.toBeInTheDocument();

@@ -34,7 +34,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## Overnight IBKR Hedge Contract
 
-- MakerV4 take-take hedges remain immediate outside regular US equity hours; do not silently downgrade into a passive overnight stock hedge.
+- Taker hedges remain immediate outside regular US equity hours; do not silently downgrade into a passive overnight stock hedge.
 - Overnight-capable IBKR stock hedges still prefer `SMART`.
 - Set `includeOvernight=true` on the overnight-capable SMART stock route when outside RTH permissions are required.
 - Quote validation still gates submission outside RTH; stale or invalid IBKR quotes fail closed instead of falling back to a resting `DAY` order.
