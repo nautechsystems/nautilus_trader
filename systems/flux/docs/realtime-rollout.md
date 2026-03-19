@@ -14,7 +14,9 @@ This document describes the additive `contract_version=2` rollout controls imple
 5. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
    strategy set exactly matches the subscribable stream identity for that profile.
 6. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
-   Non-canonical trades queries stay REST-only and omit `data.realtime`.
+7. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
+   profile-shaped REST fallbacks are not allowed to advertise `data.realtime` if `subscribe` would reject them.
+8. Non-canonical trades queries stay REST-only and omit `data.realtime`.
 
 ## Rollout state
 

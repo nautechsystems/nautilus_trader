@@ -1808,6 +1808,53 @@ def create_flux_api_app(  # noqa: C901
                 return None
         return stream_metadata
 
+    def _canonical_trades_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        requested_limit: int | None,
+        offset: int,
+        sort_label: str,
+        coin_filter: str,
+        exchange_filter: str,
+        market_type_filter: str,
+        side_filter: str,
+        signal_id_filter: str,
+    ) -> dict[str, Any] | None:
+        if not _is_canonical_trades_realtime_query(
+            requested_strategy=requested_strategy,
+            profile_text=profile_text,
+            requested_limit=requested_limit,
+            offset=offset,
+            sort_label=sort_label,
+            coin_filter=coin_filter,
+            exchange_filter=exchange_filter,
+            market_type_filter=market_type_filter,
+            side_filter=side_filter,
+            signal_id_filter=signal_id_filter,
+        ):
+            return None
+        normalized_profile = normalize_profile(profile_text)
+        if not normalized_profile:
+            return None
+        stream_metadata = socket_emitter.describe_standard_stream(
+            surface="trades",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="trades",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_seq(normalized_profile),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
     def _response(
         *,
         ok: bool,
@@ -2680,24 +2727,22 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
-        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION and _is_canonical_trades_realtime_query(
-            requested_strategy=requested_strategy,
-            profile_text=profile_text,
-            requested_limit=requested_limit,
-            offset=offset,
-            sort_label=sort_label,
-            coin_filter=coin_filter,
-            exchange_filter=exchange_filter,
-            market_type_filter=market_type_filter,
-            side_filter=side_filter,
-            signal_id_filter=signal_id_filter,
-        ):
-            payload["realtime"] = _realtime_snapshot_metadata(
-                surface="trades",
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_trades_realtime_metadata(
+                requested_strategy=requested_strategy,
                 profile_text=profile_text,
                 strategy_ids=strategy_ids,
-                last_seq=socket_emitter.current_seq(_profile_for_realtime_snapshot(profile_text)),
+                requested_limit=requested_limit,
+                offset=offset,
+                sort_label=sort_label,
+                coin_filter=coin_filter,
+                exchange_filter=exchange_filter,
+                market_type_filter=market_type_filter,
+                side_filter=side_filter,
+                signal_id_filter=signal_id_filter,
             )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
         return _ok(data=payload)
 
     @app.get("/api/v1/trades/delta")

@@ -588,6 +588,51 @@ def test_trades_noncanonical_queries_withhold_realtime_metadata(
         assert "realtime" not in body["data"]
 
 
+def test_trades_unsubscribable_profile_withholds_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+
+    body = _trades_snapshot(app, profile="sandbox")
+    assert body["data"]["rows"]
+    assert "realtime" not in body["data"]
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        {
+            "contract_version": 2,
+            "surface": "trades",
+            "profile": "sandbox",
+            "surface_query_key": "trades|profile=sandbox|strategy_ids=strategy_01",
+            "stream_id": "trades:sandbox:strategy_01",
+            "snapshot_revision": 1,
+            "resume_from_seq": 0,
+        },
+    )
+
+    assert ack["accepted"] is False
+    assert ack["reason"] == "unsupported_profile"
+    client.disconnect()
+
+
 def test_standard_trades_gap_emits_recovery_required_instead_of_silent_drift(
     flux_config,
     redis_client,

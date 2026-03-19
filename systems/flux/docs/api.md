@@ -169,9 +169,12 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - first page (`offset=0`)
    - descending/default sort (`ts_ms_desc`)
    - default page size (`limit=50`, explicit or implicit)
-12. Non-canonical trades queries remain REST-only and omit `data.realtime`.
-13. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
-14. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
+12. Canonical trades snapshots must also resolve to the same real subscribable stream identity that
+    `subscribe` validates for that profile; if no standard trades descriptor exists for the normalized profile,
+    the route remains REST-only and omits `data.realtime`.
+13. Non-canonical trades queries remain REST-only and omit `data.realtime`.
+14. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
+15. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
 
 ## Socket.IO contract (`/socket.io`)
 
