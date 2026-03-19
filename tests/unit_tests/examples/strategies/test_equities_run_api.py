@@ -22,45 +22,44 @@ from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
-CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_maker",
-    "aapl_tradexyz_taker",
-    "amd_tradexyz_maker",
-    "amd_tradexyz_taker",
-    "amzn_tradexyz_maker",
-    "amzn_tradexyz_taker",
-    "googl_tradexyz_maker",
-    "googl_tradexyz_taker",
-    "meta_tradexyz_maker",
-    "meta_tradexyz_taker",
-    "msft_tradexyz_maker",
-    "msft_tradexyz_taker",
-    "nvda_tradexyz_maker",
-    "nvda_tradexyz_taker",
-    "orcl_tradexyz_maker",
-    "orcl_tradexyz_taker",
-    "pltr_tradexyz_maker",
-    "pltr_tradexyz_taker",
-    "tsla_tradexyz_maker",
-    "tsla_tradexyz_taker",
-    "amzn_binance_perp_maker",
-    "amzn_binance_perp_taker",
-    "coin_binance_perp_maker",
-    "coin_binance_perp_taker",
-    "crcl_binance_perp_maker",
-    "crcl_binance_perp_taker",
-    "ewy_binance_perp_maker",
-    "ewy_binance_perp_taker",
-    "hood_binance_perp_maker",
-    "hood_binance_perp_taker",
-    "intc_binance_perp_maker",
-    "intc_binance_perp_taker",
-    "mstr_binance_perp_maker",
-    "mstr_binance_perp_taker",
-    "pltr_binance_perp_maker",
-    "pltr_binance_perp_taker",
-    "tsla_binance_perp_maker",
-    "tsla_binance_perp_taker",
+LIVE_ENROLLED_ROUTE_IDS = (
+    "aapl_tradexyz",
+    "amd_tradexyz",
+    "amzn_binance_perp",
+    "amzn_tradexyz",
+    "baba_tradexyz",
+    "coin_binance_perp",
+    "coin_tradexyz",
+    "crcl_binance_perp",
+    "crcl_tradexyz",
+    "crwv_tradexyz",
+    "ewy_binance_perp",
+    "googl_tradexyz",
+    "hood_binance_perp",
+    "hood_tradexyz",
+    "intc_binance_perp",
+    "intc_tradexyz",
+    "meta_tradexyz",
+    "msft_tradexyz",
+    "mstr_binance_perp",
+    "mstr_tradexyz",
+    "mu_tradexyz",
+    "nflx_tradexyz",
+    "nvda_tradexyz",
+    "orcl_tradexyz",
+    "pltr_binance_perp",
+    "pltr_tradexyz",
+    "rivn_tradexyz",
+    "sndk_tradexyz",
+    "tsla_binance_perp",
+    "tsla_tradexyz",
+    "tsm_tradexyz",
+    "usar_tradexyz",
+)
+LIVE_ENROLLED_STRATEGY_IDS = tuple(
+    f"{route_id}_{variant}"
+    for route_id in LIVE_ENROLLED_ROUTE_IDS
+    for variant in ("maker", "taker")
 )
 
 
@@ -91,8 +90,8 @@ def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_
 
     strategy_map, required_map = _build_profile_strategy_maps(config["api"])
 
-    assert strategy_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
-    assert required_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
+    assert strategy_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
+    assert required_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:

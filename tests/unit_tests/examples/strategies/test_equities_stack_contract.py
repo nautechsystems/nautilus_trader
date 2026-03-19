@@ -182,8 +182,6 @@ BINANCE_PERP_STRATEGIES = tuple(
     for variant in ("maker", "taker")
 )
 BINANCE_PERP_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in BINANCE_PERP_STRATEGIES)
-LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES + BINANCE_PERP_STRATEGIES
-LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
 LEGACY_DISABLED_STRATEGIES = (
     {
         "symbol": "BABA",
@@ -263,6 +261,59 @@ LEGACY_DISABLED_STRATEGIES = (
         "hyperliquid_instrument_id": "xyz:USAR-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "USAR.NASDAQ",
     },
+)
+LIVE_ENROLLED_TRADEXYZ_STRATEGIES = CORE_PROD_STRATEGIES + tuple(
+    _split_core_strategy_entry(
+        {
+            "symbol": route["symbol"],
+            "hyperliquid_instrument_id": route["hyperliquid_instrument_id"],
+            "ibkr_instrument_id": route["ibkr_instrument_id"],
+        },
+        variant,
+    )
+    for route in LEGACY_DISABLED_STRATEGIES
+    for variant in ("maker", "taker")
+)
+LIVE_ENROLLED_STRATEGIES = LIVE_ENROLLED_TRADEXYZ_STRATEGIES + BINANCE_PERP_STRATEGIES
+LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
+LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = (
+    "aapl_tradexyz",
+    "amd_tradexyz",
+    "amzn_binance_perp",
+    "amzn_tradexyz",
+    "baba_tradexyz",
+    "coin_binance_perp",
+    "coin_tradexyz",
+    "crcl_binance_perp",
+    "crcl_tradexyz",
+    "crwv_tradexyz",
+    "ewy_binance_perp",
+    "googl_tradexyz",
+    "hood_binance_perp",
+    "hood_tradexyz",
+    "intc_binance_perp",
+    "intc_tradexyz",
+    "meta_tradexyz",
+    "msft_tradexyz",
+    "mstr_binance_perp",
+    "mstr_tradexyz",
+    "mu_tradexyz",
+    "nflx_tradexyz",
+    "nvda_tradexyz",
+    "orcl_tradexyz",
+    "pltr_binance_perp",
+    "pltr_tradexyz",
+    "rivn_tradexyz",
+    "sndk_tradexyz",
+    "tsla_binance_perp",
+    "tsla_tradexyz",
+    "tsm_tradexyz",
+    "usar_tradexyz",
+)
+LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER = tuple(
+    f"{route_id}_{variant}"
+    for route_id in LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER
+    for variant in ("maker", "taker")
 )
 ACTIVE_STRATEGIES = CORE_PROD_STRATEGIES + LEGACY_DISABLED_STRATEGIES
 ACTIVE_STRATEGY_IDS = [entry["strategy_id"] for entry in ACTIVE_STRATEGIES]
@@ -351,8 +402,10 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
-    assert config["api"]["equities_required_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
+    assert config["api"]["equities_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER)
+    assert config["api"]["equities_required_strategy_ids"] == list(
+        LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER,
+    )
 
 
 def test_equities_live_config_decommissions_hyundai() -> None:
@@ -605,7 +658,7 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert binance["api_secret_env"] == "EQUITIES_BINANCE_API_SECRET"
     assert binance["account_type"] == "USDT_FUTURES"
     assert binance["private_api_family"] == "PORTFOLIO_MARGIN"
-    assert binance["base_url_http"] == "https://papi.binance.com"
+    assert "base_url_http" not in binance
     assert binance["recv_window_ms"] == 5000
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
@@ -690,9 +743,7 @@ def test_equities_live_config_strategy_contracts_cover_live_enrolled_split_route
     assert len(rows) == len(LIVE_ENROLLED_STRATEGIES)
     assert len(strategy_ids) == len(set(strategy_ids))
     assert {entry["portfolio_asset_id"] for entry in rows} == {
-        route["symbol"] for route in CORE_PROD_SYMBOL_ROUTES
-    } | {
-        route["symbol"] for route in BINANCE_PERP_SYMBOL_ROUTES
+        entry["symbol"] for entry in LIVE_ENROLLED_STRATEGIES
     }
 
     contracts = {
