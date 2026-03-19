@@ -1627,6 +1627,41 @@ class TestBinanceFuturesExecutionClient:
         assert call_args[0][0] == ETHUSDT_PERP_BINANCE.id
         assert call_args[0][1] == Decimal(20)
 
+    @pytest.mark.asyncio
+    async def test_update_account_state_tolerates_missing_portfolio_margin_update_time(
+        self,
+        mocker,
+    ):
+        account_info = BinanceFuturesAccountInfo(
+            feeTier=None,
+            canTrade=False,
+            canDeposit=True,
+            canWithdraw=True,
+            updateTime=None,
+            assets=[],
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_account_info",
+            return_value=account_info,
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_symbol_config",
+            return_value=[],
+        )
+        mock_generate_account_state = mocker.patch.object(self.exec_client, "generate_account_state")
+        mocker.patch.object(self.exec_client, "_await_account_registered", return_value=None)
+
+        before_ms = self.clock.timestamp_ms()
+        await self.exec_client._update_account_state()
+        after_ms = self.clock.timestamp_ms()
+
+        assert mock_generate_account_state.call_count == 1
+        ts_event = mock_generate_account_state.call_args.kwargs["ts_event"]
+        # millis_to_nanos goes through float conversion, so allow a tiny rounding skew.
+        assert (before_ms * 1_000_000) - 1_000 <= ts_event <= (after_ms * 1_000_000) + 1_000
+
     # -------------------------------------------------------------------------
     # Algo Order Cancellation Tests
     # -------------------------------------------------------------------------

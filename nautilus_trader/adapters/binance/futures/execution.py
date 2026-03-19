@@ -175,11 +175,15 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")
         else:
             self._log.error("Binance API key does not have trading permissions")
+        ts_event_ms = account_info.updateTime
+        if ts_event_ms is None:
+            ts_event_ms = self._clock.timestamp_ms()
+            self._log.info("Binance account response omitted updateTime; using local clock")
         self.generate_account_state(
             balances=account_info.parse_to_account_balances(),
             margins=account_info.parse_to_margin_balances(),
             reported=True,
-            ts_event=millis_to_nanos(account_info.updateTime),
+            ts_event=millis_to_nanos(ts_event_ms),
             info={
                 "total_wallet_balance": account_info.totalWalletBalance,
                 "total_margin_balance": account_info.totalMarginBalance,

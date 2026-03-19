@@ -8,6 +8,7 @@ from nautilus_trader.adapters.binance.common.credentials import is_ed25519_priva
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_user_stream_base_url
@@ -194,8 +195,10 @@ def get_cached_binance_spot_instrument_provider(
 @lru_cache(1)
 def get_cached_binance_futures_instrument_provider(
     client: BinanceHttpClient,
+    market_client: BinanceHttpClient | None,
     clock: LiveClock,
     account_type: BinanceAccountType,
+    private_api_family: BinancePrivateApiFamily,
     config: InstrumentProviderConfig | BinanceInstrumentProviderConfig,
     venue: Venue,
 ) -> BinanceFuturesInstrumentProvider:
@@ -224,8 +227,10 @@ def get_cached_binance_futures_instrument_provider(
     """
     return BinanceFuturesInstrumentProvider(
         client=client,
+        market_client=market_client,
         clock=clock,
         account_type=account_type,
+        private_api_family=private_api_family,
         config=config,
         venue=venue,
     )
@@ -275,18 +280,36 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         """
         environment = _resolve_environment(config.environment, config.testnet)
 
-        # Get HTTP client singleton
-        client: BinanceHttpClient = get_cached_binance_http_client(
+        public_client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
             api_key=config.api_key,
             api_secret=config.api_secret,
             key_type=config.key_type,
-            base_url=config.base_url_http,
+            base_url=None if config.account_type.is_futures else config.base_url_http,
             environment=environment,
             is_us=config.us,
             proxy_url=config.proxy_url,
         )
+        private_client: BinanceHttpClient = public_client
+        if config.account_type.is_futures:
+            private_base_url = config.base_url_http or get_private_http_base_url(
+                config.account_type,
+                private_api_family=config.private_api_family,
+                environment=environment,
+                is_us=config.us,
+            )
+            private_client = get_cached_binance_http_client(
+                clock=clock,
+                account_type=config.account_type,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                key_type=config.key_type,
+                base_url=private_base_url,
+                environment=environment,
+                is_us=config.us,
+                proxy_url=config.proxy_url,
+            )
 
         default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
@@ -298,7 +321,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
-                client=client,
+                client=public_client,
                 clock=clock,
                 account_type=config.account_type,
                 environment=environment,
@@ -308,7 +331,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
             return BinanceSpotDataClient(
                 loop=loop,
-                client=client,
+                client=public_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
@@ -321,16 +344,18 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
-                client=client,
+                client=private_client,
+                market_client=public_client,
                 clock=clock,
                 account_type=config.account_type,
+                private_api_family=config.private_api_family,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
 
             return BinanceFuturesDataClient(
                 loop=loop,
-                client=client,
+                client=public_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
@@ -465,9 +490,11 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
-                client=public_client,
+                client=private_client,
+                market_client=public_client,
                 clock=clock,
                 account_type=config.account_type,
+                private_api_family=config.private_api_family,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
