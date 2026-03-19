@@ -34,6 +34,7 @@ export interface RealtimeSurfaceController<TRow> {
   applyDelta: (delta: RealtimeRowDelta<TRow> | readonly RealtimeRowDelta<TRow>[]) => RealtimeSurfaceSnapshot<TRow>;
   queueDelta: (delta: RealtimeRowDelta<TRow> | readonly RealtimeRowDelta<TRow>[]) => void;
   flush: () => readonly RealtimeRowDelta<TRow>[];
+  clearQueuedDeltas: () => void;
   setVisibleRange: (range: Partial<IndexRange>) => RealtimeSurfaceSnapshot<TRow>;
   destroy: () => void;
 }
@@ -88,6 +89,7 @@ export function createRealtimeSurfaceController<TRow>({
   let rows: readonly TRow[] = [];
   let dataVersion = 0;
   let orderVersion = 0;
+  let visibleVersion = 0;
   let currentVisibleRange: IndexRange = visibleRange
     ? clampIndexRange(0, visibleRange)
     : { start: 0, end: Number.MAX_SAFE_INTEGER };
@@ -102,10 +104,12 @@ export function createRealtimeSurfaceController<TRow>({
     emitChange = true,
     orderChanged = false,
     dataChanged = false,
+    visibleChanged = false,
   }: {
     emitChange?: boolean;
     orderChanged?: boolean;
     dataChanged?: boolean;
+    visibleChanged?: boolean;
   }) => {
     currentVisibleRange = clampIndexRange(rows.length, currentVisibleRange);
     if (dataChanged) {
@@ -113,6 +117,9 @@ export function createRealtimeSurfaceController<TRow>({
     }
     if (orderChanged) {
       orderVersion += 1;
+    }
+    if (visibleChanged) {
+      visibleVersion += 1;
     }
     if (emitChange && (dataChanged || orderChanged)) {
       emit();
@@ -125,7 +132,7 @@ export function createRealtimeSurfaceController<TRow>({
       const resolvedVisibleRange = clampIndexRange(rows.length, currentVisibleRange);
       return {
         rows,
-        visibleRows: selectVisibleRows(rows, resolvedVisibleRange),
+        visibleRows: selectVisibleRows(rows, resolvedVisibleRange, visibleVersion),
         totalRows: rows.length,
         dataVersion,
         orderVersion,
@@ -145,7 +152,7 @@ export function createRealtimeSurfaceController<TRow>({
         order.sort((leftId, rightId) => compareRows(byId.get(leftId) as TRow, byId.get(rightId) as TRow));
       }
       rows = buildRows(order);
-      return updateSnapshot({ orderChanged: true, dataChanged: true });
+      return updateSnapshot({ orderChanged: true, dataChanged: true, visibleChanged: true });
     },
     applyDelta(deltaInput) {
       const deltas = Array.isArray(deltaInput) ? deltaInput : [deltaInput];
@@ -155,9 +162,12 @@ export function createRealtimeSurfaceController<TRow>({
 
       let changed = false;
       let orderChanged = false;
+      let visibleChanged = false;
+      const resolvedVisibleRange = clampIndexRange(rows.length, currentVisibleRange);
 
       for (const delta of deltas) {
         if (delta.kind === 'delete') {
+          const deletedIndex = order.indexOf(delta.id);
           if (!byId.has(delta.id)) {
             continue;
           }
@@ -166,6 +176,9 @@ export function createRealtimeSurfaceController<TRow>({
           rows = buildRows(order);
           changed = true;
           orderChanged = true;
+          if (deletedIndex >= resolvedVisibleRange.start && deletedIndex < resolvedVisibleRange.end) {
+            visibleChanged = true;
+          }
           continue;
         }
 
@@ -181,6 +194,7 @@ export function createRealtimeSurfaceController<TRow>({
           rows = buildRows(order);
           changed = true;
           orderChanged = true;
+          visibleChanged = true;
           continue;
         }
 
@@ -192,6 +206,9 @@ export function createRealtimeSurfaceController<TRow>({
         }
 
         changed = true;
+        if (rowIndex >= resolvedVisibleRange.start && rowIndex < resolvedVisibleRange.end) {
+          visibleChanged = true;
+        }
 
         if (compareRows && rowIndex >= 0) {
           const previousId = order[rowIndex - 1];
@@ -204,6 +221,7 @@ export function createRealtimeSurfaceController<TRow>({
             order.sort((leftId, rightId) => compareRows(byId.get(leftId) as TRow, byId.get(rightId) as TRow));
             rows = buildRows(order);
             orderChanged = true;
+            visibleChanged = true;
           }
         }
       }
@@ -216,13 +234,16 @@ export function createRealtimeSurfaceController<TRow>({
         rows = buildRows(order);
       }
 
-      return updateSnapshot({ orderChanged, dataChanged: true });
+      return updateSnapshot({ orderChanged, dataChanged: true, visibleChanged: visibleChanged || orderChanged });
     },
     queueDelta(delta) {
       batcher.enqueue(delta);
     },
     flush() {
       return batcher.flush();
+    },
+    clearQueuedDeltas() {
+      batcher.cancel();
     },
     setVisibleRange(range) {
       const nextRange = clampIndexRange(rows.length, range);

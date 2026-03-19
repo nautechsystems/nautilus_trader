@@ -31,7 +31,7 @@ export interface UseRealtimeChannelOptions<TRow> {
   channelKey: string;
   enabled?: boolean;
   adapter: RealtimeChannelAdapter<readonly TRow[], RealtimeRowDelta<TRow> | readonly RealtimeRowDelta<TRow>[]>;
-  controller: Pick<RealtimeSurfaceController<TRow>, 'applySnapshot' | 'queueDelta' | 'flush'>;
+  controller: Pick<RealtimeSurfaceController<TRow>, 'applySnapshot' | 'queueDelta' | 'flush' | 'clearQueuedDeltas'>;
   recoveryBaseDelayMs?: number;
   recoveryMaxDelayMs?: number;
   onRecover?: (event: RecoveryEvent) => void;
@@ -56,6 +56,8 @@ export function useRealtimeChannel<TRow>({
 
   const controllerRef = useRef(controller);
   controllerRef.current = controller;
+  const connectionIdRef = useRef(0);
+  const activeConnectionIdRef = useRef(0);
 
   const scheduler = useMemo(
     () =>
@@ -78,6 +80,8 @@ export function useRealtimeChannel<TRow>({
 
   useEffect(() => {
     if (!enabled) {
+      activeConnectionIdRef.current = 0;
+      controllerRef.current.clearQueuedDeltas();
       setState({
         status: 'idle',
         reconnectAttempt: 0,
@@ -91,8 +95,16 @@ export function useRealtimeChannel<TRow>({
       status: 'connecting',
     }));
 
+    const connectionId = connectionIdRef.current + 1;
+    connectionIdRef.current = connectionId;
+    activeConnectionIdRef.current = connectionId;
+    const isActiveConnection = () => activeConnectionIdRef.current === connectionId;
+
     const disconnect = adapter.connect({
       onOpen: () => {
+        if (!isActiveConnection()) {
+          return;
+        }
         scheduler.reset();
         setState((previous) => ({
           ...previous,
@@ -101,6 +113,10 @@ export function useRealtimeChannel<TRow>({
         }));
       },
       onSnapshot: (snapshot) => {
+        if (!isActiveConnection()) {
+          return;
+        }
+        controllerRef.current.clearQueuedDeltas();
         controllerRef.current.applySnapshot(snapshot);
         setState((previous) => ({
           ...previous,
@@ -108,6 +124,9 @@ export function useRealtimeChannel<TRow>({
         }));
       },
       onDelta: (delta) => {
+        if (!isActiveConnection()) {
+          return;
+        }
         controllerRef.current.queueDelta(delta);
         setState((previous) => ({
           ...previous,
@@ -115,6 +134,11 @@ export function useRealtimeChannel<TRow>({
         }));
       },
       onClose: (reason) => {
+        if (!isActiveConnection()) {
+          return;
+        }
+        activeConnectionIdRef.current = 0;
+        controllerRef.current.clearQueuedDeltas();
         const reasonText = String(reason ?? 'closed');
         const delayMs = scheduler.schedule(reasonText);
         const nextSnapshot = scheduler.getSnapshot();
@@ -127,6 +151,11 @@ export function useRealtimeChannel<TRow>({
         }));
       },
       onError: (error) => {
+        if (!isActiveConnection()) {
+          return;
+        }
+        activeConnectionIdRef.current = 0;
+        controllerRef.current.clearQueuedDeltas();
         const reasonText = String(error ?? 'error');
         scheduler.schedule(reasonText);
         const nextSnapshot = scheduler.getSnapshot();
@@ -140,6 +169,9 @@ export function useRealtimeChannel<TRow>({
     });
 
     return () => {
+      if (activeConnectionIdRef.current === connectionId) {
+        activeConnectionIdRef.current = 0;
+      }
       if (typeof disconnect === 'function') {
         disconnect();
       }
