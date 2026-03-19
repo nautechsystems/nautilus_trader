@@ -2026,6 +2026,15 @@ class LiveExecutionEngine(ExecutionEngine):
         client: ExecutionClient,
         instrument_id: InstrumentId,
     ) -> bool:
+        if not getattr(client, "supports_startup_historical_order_status_reports", True):
+            self._log.info(
+                f"Startup reconciliation client {client.id} disables closed order-history "
+                f"queries for {instrument_id}; requesting only open venue orders and using "
+                "fills/positions for historical reconstruction",
+                LogColor.BLUE,
+            )
+            return True
+
         snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
         if snapshot.has_open_positions:
             self._log.info(

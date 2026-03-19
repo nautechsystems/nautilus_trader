@@ -1665,6 +1665,56 @@ class TestLiveExecutionEngine:
         assert [command.open_only for command in order_commands] == [False]
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_uses_open_only_order_history_when_client_disables_startup_full_history(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        cached_order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100_000),
+            price=AUDUSD_SIM.make_price("1.00000"),
+        )
+        self.cache.add_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_submitted(
+                cached_order,
+                account_id=self.client.account_id,
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_accepted(
+                cached_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-CACHED-ORDER"),
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
+
+        order_commands = []
+
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.client.supports_startup_historical_order_status_reports = False
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [True]
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_uses_open_only_order_history_when_startup_cache_has_restored_open_positions_but_no_open_orders(
         self,
     ):
