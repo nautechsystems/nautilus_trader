@@ -27,28 +27,38 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.core import nautilus_pyo3
 
 CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv4",
-    "amd_tradexyz_makerv4",
-    "amzn_tradexyz_makerv4",
-    "googl_tradexyz_makerv4",
-    "meta_tradexyz_makerv4",
-    "msft_tradexyz_makerv4",
-    "nvda_tradexyz_makerv4",
-    "orcl_tradexyz_makerv4",
-    "pltr_tradexyz_makerv4",
-    "tsla_tradexyz_makerv4",
+    "aapl_tradexyz_maker",
+    "aapl_tradexyz_taker",
+    "amd_tradexyz_maker",
+    "amd_tradexyz_taker",
+    "amzn_tradexyz_maker",
+    "amzn_tradexyz_taker",
+    "googl_tradexyz_maker",
+    "googl_tradexyz_taker",
+    "meta_tradexyz_maker",
+    "meta_tradexyz_taker",
+    "msft_tradexyz_maker",
+    "msft_tradexyz_taker",
+    "nvda_tradexyz_maker",
+    "nvda_tradexyz_taker",
+    "orcl_tradexyz_maker",
+    "orcl_tradexyz_taker",
+    "pltr_tradexyz_maker",
+    "pltr_tradexyz_taker",
+    "tsla_tradexyz_maker",
+    "tsla_tradexyz_taker",
 )
 CORE_PROD_STRATEGY_IDS_BY_ASSET = {
-    "AAPL": ("aapl_tradexyz_makerv4",),
-    "AMD": ("amd_tradexyz_makerv4",),
-    "AMZN": ("amzn_tradexyz_makerv4",),
-    "GOOGL": ("googl_tradexyz_makerv4",),
-    "META": ("meta_tradexyz_makerv4",),
-    "MSFT": ("msft_tradexyz_makerv4",),
-    "NVDA": ("nvda_tradexyz_makerv4",),
-    "ORCL": ("orcl_tradexyz_makerv4",),
-    "PLTR": ("pltr_tradexyz_makerv4",),
-    "TSLA": ("tsla_tradexyz_makerv4",),
+    "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
+    "AMD": ("amd_tradexyz_maker", "amd_tradexyz_taker"),
+    "AMZN": ("amzn_tradexyz_maker", "amzn_tradexyz_taker"),
+    "GOOGL": ("googl_tradexyz_maker", "googl_tradexyz_taker"),
+    "META": ("meta_tradexyz_maker", "meta_tradexyz_taker"),
+    "MSFT": ("msft_tradexyz_maker", "msft_tradexyz_taker"),
+    "NVDA": ("nvda_tradexyz_maker", "nvda_tradexyz_taker"),
+    "ORCL": ("orcl_tradexyz_maker", "orcl_tradexyz_taker"),
+    "PLTR": ("pltr_tradexyz_maker", "pltr_tradexyz_taker"),
+    "TSLA": ("tsla_tradexyz_maker", "tsla_tradexyz_taker"),
 }
 
 
@@ -254,6 +264,39 @@ def test_strategy_ids_by_asset_groups_allowlisted_strategy_contracts() -> None:
     ) == {
         "AAPL": ("aapl_tradexyz_makerv4",),
         "MSFT": ("msft_tradexyz_makerv4",),
+    }
+
+
+def test_strategy_ids_by_asset_groups_distinct_same_asset_variants() -> None:
+    assert _strategy_ids_by_asset(
+        {
+            "strategy_contracts": [
+                {
+                    **_strategy_contract(
+                        "aapl_tradexyz_maker",
+                        reference_account_scope_id="ibkr.reference.main",
+                    ),
+                    "portfolio_asset_id": "AAPL",
+                },
+                {
+                    **_strategy_contract(
+                        "aapl_tradexyz_taker",
+                        reference_account_scope_id="ibkr.reference.main",
+                    ),
+                    "portfolio_asset_id": "AAPL",
+                },
+                {
+                    **_strategy_contract(
+                        "aapl_tradexyz_taker",
+                        reference_account_scope_id="ibkr.reference.main",
+                    ),
+                    "portfolio_asset_id": "AAPL",
+                },
+            ],
+        },
+        allowlist=["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
+    ) == {
+        "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
     }
 
 

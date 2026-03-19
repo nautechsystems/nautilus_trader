@@ -23,16 +23,26 @@ from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
 CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv4",
-    "amd_tradexyz_makerv4",
-    "amzn_tradexyz_makerv4",
-    "googl_tradexyz_makerv4",
-    "meta_tradexyz_makerv4",
-    "msft_tradexyz_makerv4",
-    "nvda_tradexyz_makerv4",
-    "orcl_tradexyz_makerv4",
-    "pltr_tradexyz_makerv4",
-    "tsla_tradexyz_makerv4",
+    "aapl_tradexyz_maker",
+    "aapl_tradexyz_taker",
+    "amd_tradexyz_maker",
+    "amd_tradexyz_taker",
+    "amzn_tradexyz_maker",
+    "amzn_tradexyz_taker",
+    "googl_tradexyz_maker",
+    "googl_tradexyz_taker",
+    "meta_tradexyz_maker",
+    "meta_tradexyz_taker",
+    "msft_tradexyz_maker",
+    "msft_tradexyz_taker",
+    "nvda_tradexyz_maker",
+    "nvda_tradexyz_taker",
+    "orcl_tradexyz_maker",
+    "orcl_tradexyz_taker",
+    "pltr_tradexyz_maker",
+    "pltr_tradexyz_taker",
+    "tsla_tradexyz_maker",
+    "tsla_tradexyz_taker",
 )
 
 
@@ -47,15 +57,15 @@ def _load_toml(path: Path) -> dict:
 def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subset() -> None:
     strategy_map, required_map = _build_profile_strategy_maps(
         {
-            "equities_strategy_ids": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
-            "equities_required_strategy_ids": ["aapl_tradexyz_makerv4"],
+            "equities_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
+            "equities_required_strategy_ids": ["aapl_tradexyz_maker"],
         },
     )
 
     assert strategy_map == {
-        "equities": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"],
+        "equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
     }
-    assert required_map == {"equities": ["aapl_tradexyz_makerv4"]}
+    assert required_map == {"equities": ["aapl_tradexyz_maker"]}
 
 
 def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config() -> None:
@@ -87,21 +97,21 @@ def test_build_profile_strategy_maps_rejects_required_ids_outside_allowlist() ->
     with pytest.raises(ValueError, match="subset"):
         _build_profile_strategy_maps(
             {
-                "equities_strategy_ids": ["aapl_tradexyz_makerv4"],
-                "equities_required_strategy_ids": ["msft_tradexyz_makerv4"],
+                "equities_strategy_ids": ["aapl_tradexyz_maker"],
+                "equities_required_strategy_ids": ["aapl_tradexyz_taker"],
             },
         )
 
 
 def test_equities_profile_summary_reports_effective_strategy_sets() -> None:
     summary = _equities_profile_summary(
-        {"equities": ["aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"]},
-        {"equities": ["aapl_tradexyz_makerv4"]},
+        {"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        {"equities": ["aapl_tradexyz_maker"]},
     )
 
     assert "equities_strategy_count=2" in summary
-    assert "equities_strategy_ids=['aapl_tradexyz_makerv4', 'msft_tradexyz_makerv4']" in summary
-    assert "equities_required_strategy_ids=['aapl_tradexyz_makerv4']" in summary
+    assert "equities_strategy_ids=['aapl_tradexyz_maker', 'aapl_tradexyz_taker']" in summary
+    assert "equities_required_strategy_ids=['aapl_tradexyz_maker']" in summary
 
 
 def test_equities_run_api_uses_makerv4_metadata_when_strategy_spec_is_makerv4() -> None:
@@ -344,6 +354,15 @@ def test_resolve_strategy_name_rejects_param_set_drift() -> None:
         )
 
 
+def test_resolve_strategy_name_accepts_split_equities_defaults() -> None:
+    assert _resolve_strategy_name(
+        {
+            "strategy_class": "equities_maker",
+            "param_set": "equities_maker",
+        }
+    ) == "equities_maker"
+
+
 def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "equities.toml"
     config_path.write_text(
@@ -391,8 +410,8 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
         "api": {
             "host": "127.0.0.1",
             "port": 5022,
-            "strategy_class": "maker_v4",
-            "param_set": "makerv4",
+            "strategy_class": "equities_maker",
+            "param_set": "equities_maker",
             "strategy_groups": "equities",
             "base_asset": "STOCKS",
             "quote_asset": "USD",

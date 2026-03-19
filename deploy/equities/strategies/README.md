@@ -6,11 +6,11 @@ This directory holds one TOML file per equities node process enrolled into the P
 ## File naming
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
-- Recommended naming pattern for enrolled Tier 1 names is now `<stock>_tradexyz_makerv4.toml`.
-- One stock uses one strategy file and one node process.
+- Recommended naming patterns for enrolled Tier 1 names are now `<stock>_tradexyz_maker.toml` and `<stock>_tradexyz_taker.toml`.
+- Each enrolled variant uses one strategy file and one node process; the same stock may run both variants concurrently.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
-- The intended active target after the March 13, 2026 admission freeze is MakerV4 on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
+- The intended active target after the March 13, 2026 admission freeze is the split `maker` plus `taker` rollout on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
 - The rollback file is `aapl_tradexyz_makerv3.toml.disabled`.
 - Treat `aapl_tradexyz_makerv3.toml.disabled` as rollback material, not the active control-plane contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
@@ -23,16 +23,26 @@ This directory holds one TOML file per equities node process enrolled into the P
 
 ### Tier 1 Core Basket
 
-- `aapl_tradexyz_makerv4`
-- `amd_tradexyz_makerv4`
-- `amzn_tradexyz_makerv4`
-- `googl_tradexyz_makerv4`
-- `meta_tradexyz_makerv4`
-- `msft_tradexyz_makerv4`
-- `nvda_tradexyz_makerv4`
-- `orcl_tradexyz_makerv4`
-- `pltr_tradexyz_makerv4`
-- `tsla_tradexyz_makerv4`
+- `aapl_tradexyz_maker`
+- `aapl_tradexyz_taker`
+- `amd_tradexyz_maker`
+- `amd_tradexyz_taker`
+- `amzn_tradexyz_maker`
+- `amzn_tradexyz_taker`
+- `googl_tradexyz_maker`
+- `googl_tradexyz_taker`
+- `meta_tradexyz_maker`
+- `meta_tradexyz_taker`
+- `msft_tradexyz_maker`
+- `msft_tradexyz_taker`
+- `nvda_tradexyz_maker`
+- `nvda_tradexyz_taker`
+- `orcl_tradexyz_maker`
+- `orcl_tradexyz_taker`
+- `pltr_tradexyz_maker`
+- `pltr_tradexyz_taker`
+- `tsla_tradexyz_maker`
+- `tsla_tradexyz_taker`
 
 ### Second-Wave Disabled Basket
 
@@ -65,12 +75,12 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[identity].strategy_id` and `[identity].strategy_instance_id` stay aligned to the file name.
 - `[strategy].strategy_id` stays descriptive and unique across node processes.
 - `[strategy].strategy_groups` stays `equities`.
-- `[strategy].param_set = "makerv4"` stays explicit for the intended active equities rollout.
+- `[strategy].param_set = "equities_maker"` or `"equities_taker"` stays explicit for the intended active equities rollout.
 - `[strategy].manage_stop = false` stays explicit in the checked-in live equities configs; flatten-on-stop is opt-in only and must be set per strategy when explicitly desired.
 - `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
 - `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` or `USAR.NASDAQ`.
-- `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the MakerV4 contract.
+- `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the split maker/taker contract.
 - `[strategy].outside_rth_hedge_enabled = true` enables the session-aware overnight hedge policy.
 - `[strategy].ibkr_primary_exchange` must match the listing venue used for the enrolled IBKR reference instrument.
 - `[node.venues.IBKR.dockerized_gateway]` is now a non-owning client contract for enrolled nodes.

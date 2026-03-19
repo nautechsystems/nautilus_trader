@@ -4,169 +4,61 @@ import re
 import tomllib
 from pathlib import Path
 
-ACTIVE_STRATEGY_CLASS = "maker_v4"
-ACTIVE_PARAM_SET = "makerv4"
+ACTIVE_STRATEGY_CLASS = "equities_maker"
+ACTIVE_PARAM_SET = "equities_maker"
 ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv3"
-ACTIVE_STRATEGIES = (
+
+CORE_PROD_SYMBOL_ROUTES = (
     {
         "symbol": "AAPL",
-        "strategy_id": "aapl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AAPL.NASDAQ",
     },
     {
         "symbol": "AMD",
-        "strategy_id": "amd_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AMD.NASDAQ",
     },
     {
         "symbol": "AMZN",
-        "strategy_id": "amzn_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:AMZN-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "AMZN.NASDAQ",
     },
     {
-        "symbol": "BABA",
-        "strategy_id": "baba_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:BABA-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "BABA.NYSE",
-    },
-    {
-        "symbol": "COIN",
-        "strategy_id": "coin_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "COIN.NASDAQ",
-    },
-    {
-        "symbol": "CRCL",
-        "strategy_id": "crcl_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:CRCL-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "CRCL.NYSE",
-    },
-    {
-        "symbol": "CRWV",
-        "strategy_id": "crwv_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:CRWV-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "CRWV.NASDAQ",
-    },
-    {
         "symbol": "GOOGL",
-        "strategy_id": "googl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "GOOGL.NASDAQ",
     },
     {
-        "symbol": "HOOD",
-        "strategy_id": "hood_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:HOOD-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "HOOD.NASDAQ",
-    },
-    {
-        "symbol": "INTC",
-        "strategy_id": "intc_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:INTC-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "INTC.NASDAQ",
-    },
-    {
         "symbol": "META",
-        "strategy_id": "meta_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:META-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "META.NASDAQ",
     },
     {
-        "symbol": "MSTR",
-        "strategy_id": "mstr_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:MSTR-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "MSTR.NASDAQ",
-    },
-    {
         "symbol": "MSFT",
-        "strategy_id": "msft_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:MSFT-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "MSFT.NASDAQ",
     },
     {
-        "symbol": "MU",
-        "strategy_id": "mu_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:MU-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "MU.NASDAQ",
-    },
-    {
-        "symbol": "NFLX",
-        "strategy_id": "nflx_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:NFLX-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "NFLX.NASDAQ",
-    },
-    {
         "symbol": "NVDA",
-        "strategy_id": "nvda_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "NVDA.NASDAQ",
     },
     {
         "symbol": "ORCL",
-        "strategy_id": "orcl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:ORCL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "ORCL.NYSE",
     },
     {
         "symbol": "PLTR",
-        "strategy_id": "pltr_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "PLTR.NASDAQ",
     },
     {
-        "symbol": "RIVN",
-        "strategy_id": "rivn_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:RIVN-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "RIVN.NASDAQ",
-    },
-    {
-        "symbol": "SNDK",
-        "strategy_id": "sndk_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:SNDK-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "SNDK.NASDAQ",
-    },
-    {
-        "symbol": "TSM",
-        "strategy_id": "tsm_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:TSM-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "TSM.NYSE",
-    },
-    {
         "symbol": "TSLA",
-        "strategy_id": "tsla_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:TSLA-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "TSLA.NASDAQ",
     },
-    {
-        "symbol": "USAR",
-        "strategy_id": "usar_tradexyz_makerv3",
-        "hyperliquid_instrument_id": "xyz:USAR-USD-PERP.HYPERLIQUID",
-        "ibkr_instrument_id": "USAR.NASDAQ",
-    },
-)
-ACTIVE_STRATEGY_IDS = [entry["strategy_id"] for entry in ACTIVE_STRATEGIES]
-ACTIVE_HYPERLIQUID_INSTRUMENT_IDS = {
-    entry["hyperliquid_instrument_id"]
-    for entry in ACTIVE_STRATEGIES
-}
-ACTIVE_IBKR_INSTRUMENT_IDS = {
-    entry["ibkr_instrument_id"]
-    for entry in ACTIVE_STRATEGIES
-}
-CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv4",
-    "amd_tradexyz_makerv4",
-    "amzn_tradexyz_makerv4",
-    "googl_tradexyz_makerv4",
-    "meta_tradexyz_makerv4",
-    "msft_tradexyz_makerv4",
-    "nvda_tradexyz_makerv4",
-    "orcl_tradexyz_makerv4",
-    "pltr_tradexyz_makerv4",
-    "tsla_tradexyz_makerv4",
 )
 SECOND_WAVE_DISABLED_STRATEGY_IDS = (
     "coin_tradexyz_makerv3",
@@ -192,9 +84,109 @@ ADMISSION_POLICY_LINES = (
     "The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.",
     "The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.",
 )
+
+
+def _split_core_strategy_entry(route: dict[str, str], variant: str) -> dict[str, str]:
+    return {
+        **route,
+        "strategy_id": f"{route['symbol'].lower()}_tradexyz_{variant}",
+    }
+
+
 CORE_PROD_STRATEGIES = tuple(
-    entry for entry in ACTIVE_STRATEGIES if entry["strategy_id"] in CORE_PROD_STRATEGY_IDS
+    _split_core_strategy_entry(route, variant)
+    for route in CORE_PROD_SYMBOL_ROUTES
+    for variant in ("maker", "taker")
 )
+CORE_PROD_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in CORE_PROD_STRATEGIES)
+LEGACY_DISABLED_STRATEGIES = (
+    {
+        "symbol": "BABA",
+        "strategy_id": "baba_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:BABA-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "BABA.NYSE",
+    },
+    {
+        "symbol": "COIN",
+        "strategy_id": "coin_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "COIN.NASDAQ",
+    },
+    {
+        "symbol": "CRCL",
+        "strategy_id": "crcl_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:CRCL-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "CRCL.NYSE",
+    },
+    {
+        "symbol": "CRWV",
+        "strategy_id": "crwv_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:CRWV-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "CRWV.NASDAQ",
+    },
+    {
+        "symbol": "HOOD",
+        "strategy_id": "hood_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:HOOD-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "HOOD.NASDAQ",
+    },
+    {
+        "symbol": "INTC",
+        "strategy_id": "intc_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:INTC-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "INTC.NASDAQ",
+    },
+    {
+        "symbol": "MSTR",
+        "strategy_id": "mstr_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:MSTR-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "MSTR.NASDAQ",
+    },
+    {
+        "symbol": "MU",
+        "strategy_id": "mu_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:MU-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "MU.NASDAQ",
+    },
+    {
+        "symbol": "NFLX",
+        "strategy_id": "nflx_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:NFLX-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "NFLX.NASDAQ",
+    },
+    {
+        "symbol": "RIVN",
+        "strategy_id": "rivn_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:RIVN-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "RIVN.NASDAQ",
+    },
+    {
+        "symbol": "SNDK",
+        "strategy_id": "sndk_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:SNDK-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "SNDK.NASDAQ",
+    },
+    {
+        "symbol": "TSM",
+        "strategy_id": "tsm_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:TSM-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "TSM.NYSE",
+    },
+    {
+        "symbol": "USAR",
+        "strategy_id": "usar_tradexyz_makerv3",
+        "hyperliquid_instrument_id": "xyz:USAR-USD-PERP.HYPERLIQUID",
+        "ibkr_instrument_id": "USAR.NASDAQ",
+    },
+)
+ACTIVE_STRATEGIES = CORE_PROD_STRATEGIES + LEGACY_DISABLED_STRATEGIES
+ACTIVE_STRATEGY_IDS = [entry["strategy_id"] for entry in ACTIVE_STRATEGIES]
+ACTIVE_HYPERLIQUID_INSTRUMENT_IDS = {
+    entry["hyperliquid_instrument_id"] for entry in ACTIVE_STRATEGIES
+}
+ACTIVE_IBKR_INSTRUMENT_IDS = {
+    entry["ibkr_instrument_id"] for entry in ACTIVE_STRATEGIES
+}
 CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS = {
     entry["hyperliquid_instrument_id"]
     for entry in CORE_PROD_STRATEGIES
@@ -316,9 +308,9 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert 'read_only_api = true' in template
     assert "manage_container = false" in template
     assert 'twofa_timeout_action = "exit"' not in template
-    assert identity["strategy_id"] == "symbol_tradexyz_makerv4"
-    assert identity["strategy_instance_id"] == "symbol_tradexyz_makerv4"
-    assert identity["external_strategy_id"] == "symbol_tradexyz_makerv4"
+    assert identity["strategy_id"] == "symbol_tradexyz_maker"
+    assert identity["strategy_instance_id"] == "symbol_tradexyz_maker"
+    assert identity["external_strategy_id"] == "symbol_tradexyz_maker"
     assert hyperliquid["private_key_env"] == "TRADE_XYZ_AGENT_PK"
     assert hyperliquid["account_address_env"] == "TRADE_XYZ_ACCOUNT_ADDRESS"
     assert hyperliquid["vault_address_env"] == "TRADE_XYZ_VAULT_ADDRESS"
@@ -383,16 +375,21 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         active_path = repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml"
         assert active_path.exists()
         config = _load_toml(active_path)
+        strategy_cfg = config["strategy"]
         assert config["identity"]["strategy_id"] == entry["strategy_id"]
         assert config["identity"]["strategy_instance_id"] == entry["strategy_id"]
         assert config["identity"]["external_strategy_id"] == entry["strategy_id"]
-        assert config["strategy"]["strategy_id"] == entry["strategy_id"]
-        assert config["strategy"].get("param_set") in {None, ACTIVE_PARAM_SET}
-        assert config["strategy"]["manage_stop"] is False
-        assert config["strategy"]["force_bot_off_on_start"] is True
-        assert config["strategy"]["outside_rth_hedge_enabled"] is True
+        assert strategy_cfg["strategy_id"] == entry["strategy_id"]
+        expected_param_set = "equities_taker" if entry["strategy_id"].endswith("_taker") else "equities_maker"
+        assert strategy_cfg["param_set"] == expected_param_set
+        assert strategy_cfg["manage_stop"] is False
+        assert strategy_cfg["force_bot_off_on_start"] is True
+        assert strategy_cfg["outside_rth_hedge_enabled"] is True
+        assert "des_qty_local" not in strategy_cfg
+        assert "max_qty_local" not in strategy_cfg
+        assert "max_skew_bps_local" not in strategy_cfg
         expected_primary_exchange = entry["ibkr_instrument_id"].rsplit(".", 1)[1]
-        assert config["strategy"]["ibkr_primary_exchange"] == expected_primary_exchange
+        assert strategy_cfg["ibkr_primary_exchange"] == expected_primary_exchange
         assert config["node"]["enable_execution"] is False
         assert (
             config["node"]["venues"]["HYPERLIQUID"]["instrument_id"]
@@ -406,6 +403,18 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
             == "TRADE_XYZ_VAULT_ADDRESS"
         )
         assert "twofa_timeout_action" not in config["node"]["venues"]["IBKR"]["dockerized_gateway"]
+        if entry["strategy_id"].endswith("_maker"):
+            assert strategy_cfg["bid_edge1"] == 5.0
+            assert strategy_cfg["ask_edge1"] == 5.0
+            assert strategy_cfg["place_edge1"] == 1.0
+            assert strategy_cfg["distance1"] == 2.0
+            assert strategy_cfg["n_orders1"] == 3
+        else:
+            for field in ("linear_offset_bps", "bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"):
+                assert field not in strategy_cfg
+            assert strategy_cfg["bid_edge_take_bps"] == 5.0
+            assert strategy_cfg["ask_edge_take_bps"] == 5.0
+            assert strategy_cfg["take_cooldown_ms"] == 1000
 
 
 def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> None:
@@ -481,7 +490,7 @@ def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() ->
 def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_ids() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     contracts = config["strategy_contracts"]
-    aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_makerv4")
+    aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_maker")
 
     assert aapl["portfolio_asset_id"] == "AAPL"
     assert aapl["maker_instrument_id"] == "xyz:AAPL-USD-PERP.HYPERLIQUID"
@@ -514,15 +523,44 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert "twofa_timeout_action" not in hedge_gateway
 
 
+def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    strategy_ids = config["api"]["equities_strategy_ids"]
+    required_strategy_ids = config["api"]["equities_required_strategy_ids"]
+    contracts = config["strategy_contracts"]
+    aapl_contracts = [
+        row for row in contracts if row["portfolio_asset_id"] == "AAPL"
+    ]
+
+    assert sorted(
+        row["strategy_id"] for row in aapl_contracts
+    ) == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert sorted(
+        strategy_id
+        for strategy_id in strategy_ids
+        if strategy_id.startswith("aapl_tradexyz_")
+    ) == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert sorted(
+        strategy_id
+        for strategy_id in required_strategy_ids
+        if strategy_id.startswith("aapl_tradexyz_")
+    ) == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert len([row["strategy_id"] for row in contracts]) == len(
+        set(row["strategy_id"] for row in contracts)
+    )
+    assert [row["portfolio_asset_id"] for row in contracts].count("AAPL") == 2
+
+
 def test_equities_live_config_strategy_contracts_cover_core_prod_routes_only() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     rows = config["strategy_contracts"]
     strategy_ids = [entry["strategy_id"] for entry in rows]
-    portfolio_asset_ids = [entry["portfolio_asset_id"] for entry in rows]
 
     assert len(rows) == len(CORE_PROD_STRATEGIES)
     assert len(strategy_ids) == len(set(strategy_ids))
-    assert len(portfolio_asset_ids) == len(set(portfolio_asset_ids))
+    assert {entry["portfolio_asset_id"] for entry in rows} == {
+        route["symbol"] for route in CORE_PROD_SYMBOL_ROUTES
+    }
 
     contracts = {
         entry["strategy_id"]: (
@@ -540,6 +578,43 @@ def test_equities_live_config_strategy_contracts_cover_core_prod_routes_only() -
             entry["hyperliquid_instrument_id"],
             entry["ibkr_instrument_id"],
         )
+
+
+def test_equities_dual_variant_strategy_files_preserve_shared_session_contract() -> None:
+    repo_root = _repo_root()
+    template = _read(repo_root / "deploy/equities/strategies/equities.strategy.template.toml")
+
+    assert "des_qty_local" not in template
+    assert "max_qty_local" not in template
+    assert "max_skew_bps_local" not in template
+    assert "symbol_tradexyz_maker" in template
+    assert 'param_set = "equities_maker"' in template
+
+    for strategy_id, param_set, forbidden_fields in (
+        (
+            "aapl_tradexyz_maker",
+            "equities_maker",
+            (),
+        ),
+        (
+            "aapl_tradexyz_taker",
+            "equities_taker",
+            ("bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"),
+        ),
+    ):
+        path = repo_root / f"deploy/equities/strategies/{strategy_id}.toml"
+        assert path.exists()
+        config = _load_toml(path)
+        assert config["identity"]["strategy_id"] == strategy_id
+        assert config["strategy"]["strategy_id"] == strategy_id
+        assert config["strategy"]["param_set"] == param_set
+        assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
+        assert config["strategy"]["outside_rth_hedge_enabled"] is True
+        assert "des_qty_local" not in config["strategy"]
+        assert "max_qty_local" not in config["strategy"]
+        assert "max_skew_bps_local" not in config["strategy"]
+        for field in forbidden_fields:
+            assert field not in config["strategy"]
 
 
 def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
@@ -920,7 +995,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
     assert 'twofa_timeout_action = "exit"' in readme
 
-    assert "<stock>_tradexyz_makerv4.toml" in strategies_readme
+    assert "<stock>_tradexyz_maker.toml" in strategies_readme
+    assert "<stock>_tradexyz_taker.toml" in strategies_readme
     assert "aapl_tradexyz_makerv3.toml.disabled" in strategies_readme
     assert "AAPL.NASDAQ" in strategies_readme
     assert "use_regular_trading_hours = false" in strategies_readme

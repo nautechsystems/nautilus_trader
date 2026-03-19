@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "symbol_tradexyz_maker"
-strategy_instance_id = "symbol_tradexyz_maker"
-trader_id = "EQUITIES-LIVE-SYMBOL-TRADEXYZ-MAKER"
-external_strategy_id = "symbol_tradexyz_maker"
+strategy_id = "aapl_tradexyz_maker"
+strategy_instance_id = "aapl_tradexyz_maker"
+trader_id = "EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER"
+external_strategy_id = "aapl_tradexyz_maker"
 
 [venues]
 execution_venue = "HYPERLIQUID"
@@ -62,7 +62,7 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "symbol_tradexyz_maker"
+strategy_id = "aapl_tradexyz_maker"
 strategy_groups = "equities"
 param_set = "equities_maker"
 force_bot_off_on_start = true

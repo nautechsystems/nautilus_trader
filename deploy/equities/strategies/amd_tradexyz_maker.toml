@@ -5,16 +5,16 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "tsla_tradexyz_makerv4"
-strategy_instance_id = "tsla_tradexyz_makerv4"
-trader_id = "EQUITIES-LIVE-TSLA-TRADEXYZ"
-external_strategy_id = "tsla_tradexyz_makerv4"
+strategy_id = "amd_tradexyz_maker"
+strategy_instance_id = "amd_tradexyz_maker"
+trader_id = "EQUITIES-LIVE-AMD-TRADEXYZ-MAKER"
+external_strategy_id = "amd_tradexyz_maker"
 
 [venues]
 execution_venue = "HYPERLIQUID"
 reference_venue = "IBKR"
-execution_symbol = "TSLA"
-reference_symbol = "TSLA/USD"
+execution_symbol = "AMD"
+reference_symbol = "AMD/USD"
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -40,7 +40,7 @@ purge_account_events_lookback_mins = 60
 purge_from_database = true
 
 [node.venues.HYPERLIQUID]
-instrument_id = "xyz:TSLA-USD-PERP.HYPERLIQUID"
+instrument_id = "xyz:AMD-USD-PERP.HYPERLIQUID"
 execution = true
 private_key_env = "TRADE_XYZ_AGENT_PK"
 # Effective account identity precedence: vault_address_env -> account_address_env -> agent wallet master.
@@ -51,8 +51,8 @@ testnet = false
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"
-instrument_id = "TSLA.NASDAQ"
-ibg_client_id = 29
+instrument_id = "AMD.NASDAQ"
+ibg_client_id = 8
 execution = false
 use_regular_trading_hours = false
 
@@ -62,9 +62,9 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "tsla_tradexyz_makerv4"
+strategy_id = "amd_tradexyz_maker"
 strategy_groups = "equities"
-param_set = "makerv4"
+param_set = "equities_maker"
 force_bot_off_on_start = true
 order_qty = "1"
 qty = "1"
@@ -77,9 +77,6 @@ max_age_ms = 10000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0
-des_qty_local = 0.0
-max_qty_local = 0.0
-max_skew_bps_local = 0.0
 linear_offset_bps = 0.0
 bid_edge1 = 5.0
 ask_edge1 = 5.0

@@ -5,16 +5,16 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "meta_tradexyz_makerv4"
-strategy_instance_id = "meta_tradexyz_makerv4"
-trader_id = "EQUITIES-LIVE-META-TRADEXYZ"
-external_strategy_id = "meta_tradexyz_makerv4"
+strategy_id = "orcl_tradexyz_maker"
+strategy_instance_id = "orcl_tradexyz_maker"
+trader_id = "EQUITIES-LIVE-ORCL-TRADEXYZ-MAKER"
+external_strategy_id = "orcl_tradexyz_maker"
 
 [venues]
 execution_venue = "HYPERLIQUID"
 reference_venue = "IBKR"
-execution_symbol = "META"
-reference_symbol = "META/USD"
+execution_symbol = "ORCL"
+reference_symbol = "ORCL/USD"
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -40,7 +40,7 @@ purge_account_events_lookback_mins = 60
 purge_from_database = true
 
 [node.venues.HYPERLIQUID]
-instrument_id = "xyz:META-USD-PERP.HYPERLIQUID"
+instrument_id = "xyz:ORCL-USD-PERP.HYPERLIQUID"
 execution = true
 private_key_env = "TRADE_XYZ_AGENT_PK"
 # Effective account identity precedence: vault_address_env -> account_address_env -> agent wallet master.
@@ -51,8 +51,8 @@ testnet = false
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"
-instrument_id = "META.NASDAQ"
-ibg_client_id = 18
+instrument_id = "ORCL.NYSE"
+ibg_client_id = 24
 execution = false
 use_regular_trading_hours = false
 
@@ -62,9 +62,9 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "meta_tradexyz_makerv4"
+strategy_id = "orcl_tradexyz_maker"
 strategy_groups = "equities"
-param_set = "makerv4"
+param_set = "equities_maker"
 force_bot_off_on_start = true
 order_qty = "1"
 qty = "1"
@@ -72,14 +72,11 @@ qty_unit = "base"
 bot_on = false
 manage_stop = false
 outside_rth_hedge_enabled = true
-ibkr_primary_exchange = "NASDAQ"
+ibkr_primary_exchange = "NYSE"
 max_age_ms = 10000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0
-des_qty_local = 0.0
-max_qty_local = 0.0
-max_skew_bps_local = 0.0
 linear_offset_bps = 0.0
 bid_edge1 = 5.0
 ask_edge1 = 5.0
