@@ -162,4 +162,38 @@ describe('EquitiesArbSignalTable', () => {
       expect.stringContaining('Assumed hedge fee: 1.00 bps'),
     );
   });
+
+  it('falls back to maker_v4 payloads during mixed rollout and derives the taker variant from metadata', () => {
+    const makerRow = buildEquitiesStrategy('aapl_zzz_maker', 'equities_maker', 'Maker');
+    makerRow.meta = {
+      ...makerRow.meta,
+      base_asset: 'AAPL',
+    };
+
+    const takerBase = buildEquitiesStrategy('aapl_aaa_taker', 'equities_taker', 'Taker');
+    const mixedRolloutTaker: SignalStrategy = {
+      ...takerBase,
+      strategy_family: '' as any,
+      meta: {
+        ...takerBase.meta,
+        strategy_family: undefined,
+        class: 'equities_taker',
+        param_set: 'equities_taker',
+        base_asset: 'AAPL',
+      },
+      maker_v4: takerBase.equities_arb as any,
+      equities_arb: undefined,
+    };
+
+    render(<EquitiesArbSignalTable rows={[mixedRolloutTaker, makerRow]} />);
+
+    const strategyCells = screen.getAllByText(/aapl_(aaa_taker|zzz_maker)/i);
+    expect(strategyCells.map((cell) => cell.textContent)).toEqual([
+      'aapl_zzz_maker',
+      'aapl_aaa_taker',
+    ]);
+    expect(screen.getByText('Taker')).toBeInTheDocument();
+    expect(screen.getAllByText('SMART · DAY').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Feed ok · Quote fresh').length).toBeGreaterThan(0);
+  });
 });

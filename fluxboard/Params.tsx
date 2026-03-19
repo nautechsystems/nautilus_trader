@@ -203,7 +203,11 @@ function resolveSchemaStrategyId(
   rows: Array<Pick<StrategyRow, 'strategy_id' | 'params' | 'hot_params' | 'meta'>>,
   profile: ParamsProfileId,
 ): string | undefined {
-  return rows.find((row) => deriveStrategyProfile(row) === profile)?.strategy_id;
+  return rows
+    .filter((row) => deriveStrategyProfile(row) === profile)
+    .map((row) => String(row.strategy_id ?? '').trim())
+    .filter((strategyId) => strategyId.length > 0)
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))[0];
 }
 
 function shouldPreferKeyLabel(profile: ParamsProfileId): boolean {

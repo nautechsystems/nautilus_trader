@@ -252,6 +252,63 @@ describe('Params profile column filtering', () => {
     expect(mockSetActiveProfile).toHaveBeenCalledWith('equities_taker');
   });
 
+  it('uses a deterministic strategy id when fetching split-family equities schemas', async () => {
+    (window.location as any).pathname = '/equities/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'msft_tradexyz_maker',
+        running: true,
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+      {
+        strategy_id: 'aapl_tradexyz_maker',
+        running: true,
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(api.api.getParamSchema).toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(api.api.getParamSchema).mock.calls[0]?.[0]).toEqual({
+      preferKeyLabel: true,
+      strategyId: 'aapl_tradexyz_maker',
+    });
+  });
+
   it('renders MakerV3 short headers for tokenmm params when rows are MakerV3-only', async () => {
     (window.location as any).pathname = '/tokenmm/params';
     paramsStoreState.activeProfile = 'maker_v3';

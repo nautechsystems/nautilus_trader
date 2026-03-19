@@ -4,6 +4,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/table/DataTable';
 import { SimpleTooltip } from '@/components/ui/tooltip/Tooltip';
 import { StatusPill } from '@/components/shared/StatusPill';
+import { deriveStrategyProfile } from '@/config/paramsProfiles';
 import { colors } from '@/lib/tokens';
 import { fmtAgeSec, fmtPriceSignal } from '@/utils';
 import { formatLocal } from '@/utils/time';
@@ -35,11 +36,16 @@ function resolvePayload(
   row: SignalStrategy,
   payloadKey: SignalPayloadKey,
 ): { quote_snapshot?: MakerV4QuoteSnapshot; operator?: MakerV4OperatorPayload } | null {
-  return payloadKey === 'equities_arb' ? row.equities_arb ?? null : row.maker_v4 ?? null;
+  if (payloadKey === 'equities_arb') {
+    return row.equities_arb ?? row.maker_v4 ?? null;
+  }
+  return row.maker_v4 ?? null;
 }
 
-function resolveVariantLabel(row: Pick<SignalStrategy, 'strategy_family'>): EquitiesVariant {
-  return row.strategy_family === 'equities_taker' ? 'Taker' : 'Maker';
+function resolveVariantLabel(
+  row: Pick<SignalStrategy, 'strategy_family' | 'meta' | 'params' | 'hot_params'>,
+): EquitiesVariant {
+  return deriveStrategyProfile(row) === 'equities_taker' ? 'Taker' : 'Maker';
 }
 
 function resolveAssetKey(row: Pick<SignalStrategy, 'id' | 'meta'>): string {
