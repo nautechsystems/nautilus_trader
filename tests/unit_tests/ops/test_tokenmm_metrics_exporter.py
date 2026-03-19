@@ -402,7 +402,8 @@ def test_exporter_source_uses_flux_v1_state_contract() -> None:
 
     source = path.read_text(encoding="utf-8")
 
-    assert "FluxRedisKeys" in source
+    assert "_flux_state_key" in source
+    assert "_flux_params_hash_key" in source
     assert "self._state_key(strategy_id)" in source
 
 
@@ -548,6 +549,15 @@ def test_default_redis_url_prefers_tokenmm_env_over_localhost(monkeypatch) -> No
     monkeypatch.setenv("TOKENMM_REDIS_SSL", "true")
 
     assert module._default_redis_url() == "rediss://default:secret@cache.example:6380/7"
+
+
+def test_flux_key_helpers_reject_non_identifier_safe_strategy_ids() -> None:
+    module = _load_exporter_module()
+
+    with pytest.raises(ValueError):
+        module._flux_state_key("bad strategy id")
+    with pytest.raises(ValueError):
+        module._flux_params_hash_key("bad strategy id")
 
 
 def test_quote_state_poll_emits_distinct_series_for_same_market_when_strategy_ids_differ() -> None:
