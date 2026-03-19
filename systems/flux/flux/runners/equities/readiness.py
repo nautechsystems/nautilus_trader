@@ -251,8 +251,11 @@ def _safe_decimal(value: Any) -> Decimal | None:
 
 
 def _signal_quote_snapshot_leg(payload: Mapping[str, Any], *, role: str) -> Mapping[str, Any]:
-    maker_v4 = _mapping(payload.get("maker_v4"))
-    quote_snapshot = _mapping(maker_v4.get("quote_snapshot"))
+    equities_arb = _mapping(payload.get("equities_arb"))
+    quote_snapshot = _mapping(equities_arb.get("quote_snapshot"))
+    if not quote_snapshot:
+        maker_v4 = _mapping(payload.get("maker_v4"))
+        quote_snapshot = _mapping(maker_v4.get("quote_snapshot"))
     leg_key = {
         "maker": "maker_leg",
         "reference": "ref_leg",

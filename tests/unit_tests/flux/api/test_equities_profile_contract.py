@@ -17,6 +17,12 @@ from nautilus_trader.flux.common.config import FluxVenuesConfig
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.common.strategy_contracts import decode_strategy_contracts
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+)
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+)
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4Strategy
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4StrategyConfig
 from nautilus_trader.model.identifiers import InstrumentId
@@ -713,7 +719,6 @@ def test_signals_profile_equities_emits_makerv4_execution_mode_overnight_and_fee
             "hl_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
-        "hedge_backlog": None,
     }
 
 
@@ -1669,6 +1674,88 @@ def test_params_profile_equities_does_not_discover_unallowlisted_strategies(
     ]
     assert body["data"][0]["meta"]["strategy_id"] == flux_config.identity.strategy_id
     assert body["data"][0]["meta"]["class"] == strategy_metadata.strategy_class
+
+
+def test_params_profile_equities_uses_per_strategy_param_contracts_for_split_families(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    maker_id = "aapl_tradexyz_maker"
+    taker_id = "aapl_tradexyz_taker"
+    maker_keys = FluxRedisKeys(
+        strategy_id=maker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id=taker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        maker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "n_orders1": "3",
+        },
+    )
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bid_edge_take_bps": "6.5",
+        },
+    )
+
+    def _metadata_for_strategy(strategy_id: str) -> app_module.StrategyMetadata:
+        if strategy_id == maker_id:
+            return app_module.StrategyMetadata(
+                strategy_class="equities_maker",
+                strategy_groups="equities",
+                base_asset="AAPL",
+                quote_asset="USD",
+                param_set="equities_maker",
+                strategy_family="equities_maker",
+                strategy_version="v1",
+            )
+        if strategy_id == taker_id:
+            return app_module.StrategyMetadata(
+                strategy_class="equities_taker",
+                strategy_groups="equities",
+                base_asset="AAPL",
+                quote_asset="USD",
+                param_set="equities_taker",
+                strategy_family="equities_taker",
+                strategy_version="v1",
+            )
+        raise KeyError(strategy_id)
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_metadata_for_strategy,
+        profile_strategy_map={"equities": [maker_id, taker_id]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows_by_strategy = {row["strategy_id"]: row for row in body["data"]}
+    assert rows_by_strategy[maker_id]["params"]["n_orders1"] == 3
+    assert rows_by_strategy[maker_id]["meta"]["param_set"] == "equities_maker"
+    assert rows_by_strategy[taker_id]["params"]["bid_edge_take_bps"] == 6.5
+    assert rows_by_strategy[taker_id]["meta"]["param_set"] == "equities_taker"
+    assert "bid_edge_take_bps" in rows_by_strategy[taker_id]["schema"]
+    assert "n_orders1" not in rows_by_strategy[taker_id]["schema"]
 
 
 def test_balances_profile_equities_aggregates_cash_and_positions(

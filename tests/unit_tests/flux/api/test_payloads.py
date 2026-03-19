@@ -2736,6 +2736,185 @@ def test_build_signals_payload_emits_makerv4_quote_snapshot() -> None:
     assert quote_snapshot["hedge_disabled_reason"] == "stale_quote"
 
 
+def test_build_signals_payload_emits_shared_equities_arb_contract_for_equities_maker() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_maker",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": 6.5,
+                    "assumed_hedge_fee_bps": 1.0,
+                    "hedge_route": "SMART",
+                },
+                "hedge_policy": {
+                    "route": "SMART",
+                    "time_in_force": "DAY",
+                    "outside_rth": True,
+                    "include_overnight": True,
+                    "cancel_after_ms": 5000,
+                },
+                "fee_assumptions": {
+                    "ibkr_fee_plan": "tiered",
+                    "ibkr_fee_min_usd": 0.35,
+                    "hl_taker_fee_bps": 4.5,
+                    "hl_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["strategy_family"] == "equities_maker"
+    assert payload["equities_arb"]["quote_snapshot"]["maker_leg"]["venue"] == "HYPERLIQUID"
+    assert payload["equities_arb"]["quote_snapshot"]["effective_spread_bps"] == 6.5
+    assert payload["equities_arb"]["operator"]["execution_mode"] == "maker_hedge"
+    assert payload["equities_arb"]["operator"]["fee_assumptions"]["hl_taker_fee_bps"] == 4.5
+    assert "maker_v3" not in payload
+
+
+def test_build_signals_payload_emits_shared_equities_arb_contract_for_equities_taker() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_taker",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="equities_taker",
+        strategy_family="equities_taker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_taker",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 0,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": 5.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                    "hedge_route": "BLUEOCEAN",
+                },
+                "fee_assumptions": {
+                    "ibkr_fee_plan": "tiered",
+                    "ibkr_fee_min_usd": 0.35,
+                    "hl_taker_fee_bps": 4.5,
+                    "hl_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["strategy_family"] == "equities_taker"
+    assert payload["equities_arb"]["quote_snapshot"]["hedge_leg"]["venue"] == "IBKR"
+    assert payload["equities_arb"]["operator"]["execution_mode"] == "take_take"
+    assert payload["equities_arb"]["operator"]["behavior"] == "take_take"
+    assert payload["equities_arb"]["operator"]["fee_assumptions"]["ibkr_fee_plan"] == "tiered"
+    assert "maker_v3" not in payload
+
+
 def test_build_signals_payload_synthesizes_distinct_makerv4_hedge_leg_from_role_map() -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v4",

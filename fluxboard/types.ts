@@ -753,6 +753,11 @@ export type MakerV4OperatorPayload = {
   } | null;
 };
 
+export type EquitiesArbSignalPayload = {
+  quote_snapshot?: MakerV4QuoteSnapshot;
+  operator?: MakerV4OperatorPayload;
+};
+
 export type SignalStrategy = {
   id: string;
   params: Record<string, string | undefined>;
@@ -812,11 +817,18 @@ export type SignalStrategy = {
   maker_v3?: {
     quote_snapshot?: MakerV2QuoteSnapshot;
   };
+  equities_arb?: EquitiesArbSignalPayload;
   maker_v4?: {
     quote_snapshot?: MakerV4QuoteSnapshot;
     operator?: MakerV4OperatorPayload;
   };
-  strategy_family?: 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
+  strategy_family?:
+    | 'maker_v4'
+    | 'maker_v3'
+    | 'maker_v2'
+    | 'taker'
+    | 'equities_maker'
+    | 'equities_taker';
   risk_delta?: number;
   risk_delta_ts_ms?: number;
   // Static strategy classification metadata (optional, from configs/strategies.ini)
@@ -1086,6 +1098,8 @@ export type ParamDef = {
 export type ParamSchema = {
   params: Record<string, ParamDef>;
   deprecated: Record<string, ParamDef>;
+  params_defaults?: Record<string, string | number | boolean | null | undefined>;
+  param_set?: string;
 };
 
 // Bulk params fetch response
@@ -1094,7 +1108,10 @@ export type ParamsResponse = {
   shard?: string;
   runner?: string;
   running?: boolean | null;  // true=running, false=stopped, null=unknown
-  params: Record<string, string>;
+  params: Record<string, string | number | boolean | null | undefined>;
+  schema?: Record<string, Record<string, unknown>>;
+  params_defaults?: Record<string, string | number | boolean | null | undefined>;
+  param_set?: string;
   hot_params?: string[];
   // Optional static classification metadata for this strategy.
   meta?: StrategyMeta;

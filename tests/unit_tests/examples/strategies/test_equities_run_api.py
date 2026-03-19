@@ -7,6 +7,7 @@ import tomllib
 import pytest
 from flask import Flask
 
+import flux.runners.equities.run_api as run_api
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
 from flux.runners.equities.run_api import _build_contract_catalog
@@ -368,3 +369,116 @@ ssl = false
     assert config["redis"]["username"] == "default"
     assert config["redis"]["password"] == "secret"
     assert config["redis"]["ssl"] is True
+
+
+def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    config = {
+        "flux": {"mode": "paper", "namespace": "flux", "schema_version": "v1"},
+        "identity": {
+            "strategy_id": "equities_api",
+            "strategy_instance_id": "equities_api",
+            "trader_id": "EQUITIES-API-001",
+            "external_strategy_id": "equities_api",
+        },
+        "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+        "venues": {
+            "execution_venue": "HYPERLIQUID",
+            "reference_venue": "IBKR",
+            "execution_symbol": "STOCKS",
+            "reference_symbol": "STOCKS/USD",
+        },
+        "api": {
+            "host": "127.0.0.1",
+            "port": 5022,
+            "strategy_class": "maker_v4",
+            "param_set": "makerv4",
+            "strategy_groups": "equities",
+            "base_asset": "STOCKS",
+            "quote_asset": "USD",
+            "equities_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
+        },
+        "strategy_contracts": [
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+        ],
+        "contracts": [
+            {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+            },
+        ],
+    }
+    args = Namespace(
+        config=Path("equities.toml"),
+        mode=None,
+        confirm_live=False,
+        log_level=None,
+        host=None,
+        port=None,
+        serve_fluxboard=False,
+        fluxboard_dist=None,
+        serve_pulse=False,
+        pulse_dist=None,
+    )
+
+    monkeypatch.setattr(run_api, "_parse_args", lambda: args)
+    monkeypatch.setattr(run_api, "_load_config", lambda path: config)
+    monkeypatch.setattr(run_api, "_resolve_mode", lambda cfg, parsed: "paper")
+    monkeypatch.setattr(run_api, "configure_python_logging", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "emit_startup_banner", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "_build_strategy_running_resolver", lambda: (lambda ids: {}))
+    monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
+
+    class _FakePulse:
+        def register_routes(self, app) -> None:
+            captured["pulse_app"] = app
+
+    monkeypatch.setattr(run_api, "PulseControlPlane", lambda: _FakePulse())
+    monkeypatch.setattr(
+        run_api,
+        "_run_with_socketio_if_available",
+        lambda app, *, host, port: captured.update({"host": host, "port": port}),
+    )
+
+    def _fake_create_flux_api_app(*args, **kwargs):
+        captured["strategy_metadata"] = kwargs["strategy_metadata"]
+        captured["strategy_metadata_resolver"] = kwargs["strategy_metadata_resolver"]
+        return Flask(__name__)
+
+    monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
+
+    run_api.main()
+
+    resolver = captured["strategy_metadata_resolver"]
+    maker_metadata = resolver("aapl_tradexyz_maker")
+    taker_metadata = resolver("aapl_tradexyz_taker")
+
+    assert maker_metadata.base_asset == "AAPL"
+    assert maker_metadata.param_set == "equities_maker"
+    assert maker_metadata.strategy_family == "equities_maker"
+    assert taker_metadata.base_asset == "AAPL"
+    assert taker_metadata.param_set == "equities_taker"
+    assert taker_metadata.strategy_family == "equities_taker"

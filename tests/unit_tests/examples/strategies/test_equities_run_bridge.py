@@ -34,6 +34,18 @@ def test_resolve_strategy_ids_uses_api_equities_allowlist_when_cli_missing() -> 
     assert resolved == ["strategy_a", "strategy_b"]
 
 
+def test_resolve_strategy_ids_accepts_split_dual_arb_allowlist() -> None:
+    config = {
+        "identity": {"strategy_id": "config_strategy"},
+        "api": {"equities_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+    }
+    args = Namespace(strategy_id=None, all_strategies=False)
+
+    resolved = _resolve_strategy_ids(config, args)
+
+    assert resolved == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+
+
 def test_resolve_strategy_ids_requires_explicit_equities_allowlist_when_cli_missing() -> None:
     config = {"identity": {"strategy_id": "config_strategy"}}
     args = Namespace(strategy_id=None, all_strategies=False)

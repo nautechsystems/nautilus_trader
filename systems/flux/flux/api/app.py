@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import math
@@ -21,6 +22,7 @@ from flask import request
 
 from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api._payloads_balances import combine_portfolio_snapshot_rows
+from flux.api._payloads_signals import build_signals_payload_impl
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
 from flux.api.payloads import build_alerts_rows
@@ -29,7 +31,6 @@ from flux.api.payloads import build_envelope
 from flux.api.payloads import build_error
 from flux.api.payloads import build_legs_payload
 from flux.api.payloads import build_params_payload
-from flux.api.payloads import build_signals_payload
 from flux.api.payloads import build_trades_rows
 from flux.api.payloads import coerce_ts_ms
 from flux.api.payloads import collapse_balance_display_rows
@@ -189,6 +190,13 @@ class ReadinessSnapshot:
     schema_ready: bool
 
 
+@dataclass(frozen=True)
+class ParamsContract:
+    schema: dict[str, dict[str, Any]]
+    defaults: dict[str, Any]
+    param_set: str
+
+
 class FluxApiStore:
     def __init__(
         self,
@@ -201,6 +209,7 @@ class FluxApiStore:
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
+        params_contract_resolver: Callable[[str], ParamsContract] | None = None,
         required_readiness_keys: Sequence[str] | None = None,
     ) -> None:
         if not contract_catalog:
@@ -214,17 +223,23 @@ class FluxApiStore:
 
         self._config = flux_config
         self._redis = redis_client
-        self._params_schema = _ordered_params_schema(params_schema)
-        self._param_set = param_set.strip()
-        self._params_defaults = FluxParamsManager(
+        default_schema = _ordered_params_schema(params_schema)
+        default_param_set = param_set.strip()
+        default_defaults = FluxParamsManager(
             redis_client=self._redis,
             strategy_id=self._config.identity.strategy_id,
             namespace=self._config.identity.namespace,
             schema_version=self._config.identity.schema_version,
-            schema=self._params_schema,
+            schema=default_schema,
             defaults=params_defaults,
-            param_set=self._param_set,
+            param_set=default_param_set,
         ).defaults
+        self._default_params_contract = ParamsContract(
+            schema=default_schema,
+            defaults=default_defaults,
+            param_set=default_param_set,
+        )
+        self._params_contract_resolver = params_contract_resolver
         self._contract_specs = self._validate_contract_catalog(contract_catalog)
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
         self._contract_catalog_resolver = contract_catalog_resolver
@@ -279,15 +294,21 @@ class FluxApiStore:
     def _contracts_for_strategy(self, strategy_id: str) -> tuple[ContractCatalogEntry, ...]:
         return tuple(spec[0] for spec in self._contract_specs_for_strategy(strategy_id))
 
+    def params_contract(self, strategy_id: str) -> ParamsContract:
+        if self._params_contract_resolver is None:
+            return self._default_params_contract
+        return self._params_contract_resolver(strategy_id)
+
     def _params_manager(self, strategy_id: str) -> FluxParamsManager:
+        contract = self.params_contract(strategy_id)
         return FluxParamsManager(
             redis_client=self._redis,
             strategy_id=strategy_id,
             namespace=self._config.identity.namespace,
             schema_version=self._config.identity.schema_version,
-            schema=self._params_schema,
-            defaults=self._params_defaults,
-            param_set=self._param_set,
+            schema=contract.schema,
+            defaults=contract.defaults,
+            param_set=contract.param_set,
         )
 
     def _validate_contract_catalog(
@@ -999,7 +1020,7 @@ class FluxApiStore:
         )
 
         params = self.load_params(strategy_id)
-        payload = build_signals_payload(
+        payload = build_signals_payload_impl(
             strategy_id=strategy_id,
             metadata=metadata,
             state=state,
@@ -1008,6 +1029,7 @@ class FluxApiStore:
             balances=balances,
             legs=legs,
             running=running,
+            now_ms_fn=now_ms,
         )
         inventory_overlay = self._tokenmm_inventory_overlay(
             strategy_id=strategy_id,
@@ -1469,6 +1491,88 @@ def create_flux_api_app(  # noqa: C901
 
     schema = params_schema or DEFAULT_PARAMS_SCHEMA
     defaults = params_defaults or DEFAULT_PARAMS_DEFAULTS
+    default_param_set = param_set.strip()
+    from flux.strategies.registry import get_strategy_spec
+    from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
+
+    try:
+        default_strategy_spec = get_strategy_spec(default_param_set)
+    except Exception:
+        default_strategy_spec = None
+
+    default_params_contract = ParamsContract(
+        schema=_ordered_params_schema(schema),
+        defaults=FluxParamsManager(
+            redis_client=redis_client,
+            strategy_id=flux_config.identity.strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+            schema=schema,
+            defaults=defaults,
+            param_set=default_param_set,
+        ).defaults,
+        param_set=default_param_set,
+    )
+
+    params_contract_cache: dict[str, ParamsContract] = {}
+
+    def _metadata_for_contract(strategy_id: str) -> StrategyMetadata:
+        metadata = strategy_metadata
+        if strategy_metadata_resolver is not None:
+            try:
+                metadata = strategy_metadata_resolver(strategy_id)
+            except LookupError:
+                metadata = strategy_metadata
+        return metadata
+
+    def _runtime_params_contract_for_param_set(resolved_param_set: str) -> ParamsContract:
+        cached = params_contract_cache.get(resolved_param_set)
+        if cached is not None:
+            return cached
+        if resolved_param_set == default_params_contract.param_set:
+            params_contract_cache[resolved_param_set] = default_params_contract
+            return default_params_contract
+
+        module = importlib.import_module(f"flux.strategies.{resolved_param_set}.runtime_params")
+        runtime_schema = getattr(module, "RUNTIME_PARAM_SCHEMA", None)
+        runtime_defaults = getattr(module, "RUNTIME_PARAM_DEFAULTS", None)
+        runtime_param_set = str(getattr(module, "PARAM_SET", resolved_param_set)).strip()
+        if not isinstance(runtime_schema, Mapping) or not isinstance(runtime_defaults, Mapping):
+            raise ValueError(
+                f"Runtime params module for {resolved_param_set!r} did not expose schema/defaults",
+            )
+        contract = ParamsContract(
+            schema=_ordered_params_schema(runtime_schema),
+            defaults=FluxParamsManager(
+                redis_client=redis_client,
+                strategy_id=flux_config.identity.strategy_id,
+                namespace=flux_config.identity.namespace,
+                schema_version=flux_config.identity.schema_version,
+                schema=runtime_schema,
+                defaults=runtime_defaults,
+                param_set=runtime_param_set,
+            ).defaults,
+            param_set=runtime_param_set,
+        )
+        params_contract_cache[resolved_param_set] = contract
+        return contract
+
+    def _params_contract_for_strategy(strategy_id: str) -> ParamsContract:
+        metadata = _metadata_for_contract(strategy_id)
+        resolved_param_set = decode_text(getattr(metadata, "param_set", "")).strip()
+        if not resolved_param_set:
+            try:
+                resolved_spec = resolve_strategy_spec_for_strategy_id(
+                    strategy_id,
+                    default=default_strategy_spec,
+                )
+                resolved_param_set = resolved_spec.param_set
+            except Exception:
+                resolved_param_set = default_params_contract.param_set
+        if not resolved_param_set:
+            return default_params_contract
+        return _runtime_params_contract_for_param_set(resolved_param_set)
+
     store = FluxApiStore(
         flux_config=flux_config,
         redis_client=redis_client,
@@ -1478,6 +1582,7 @@ def create_flux_api_app(  # noqa: C901
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
+        params_contract_resolver=_params_contract_for_strategy,
         required_readiness_keys=required_readiness_keys,
     )
     default_strategy_id = flux_config.identity.strategy_id
@@ -1826,8 +1931,16 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/param-schema")
     def api_param_schema() -> Response:
-        ordered_schema = _ordered_params_schema(schema)
-        return _ok(data={"params": ordered_schema, "deprecated": {}})
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+        contract = store.params_contract(strategy_id)
+        return _ok(
+            data={
+                "params": _ordered_params_schema(contract.schema),
+                "deprecated": {},
+                "params_defaults": dict(contract.defaults),
+                "param_set": contract.param_set,
+            },
+        )
 
     @app.get("/api/v1/params")
     def api_params() -> Response:
@@ -1852,14 +1965,17 @@ def create_flux_api_app(  # noqa: C901
                     message=str(e),
                     details={"strategy_id": strategy_id},
                 )
+            contract = store.params_contract(strategy_id)
             state_summary = store.load_state_summary(strategy_id)
             payload = build_params_payload(
                 strategy_id=strategy_id,
                 params=params,
-                schema=_ordered_params_schema(schema),
+                schema=_ordered_params_schema(contract.schema),
                 running=running_states.get(strategy_id),
                 metadata=_metadata_for_strategy(strategy_id),
             )
+            payload["params_defaults"] = dict(contract.defaults)
+            payload["param_set"] = contract.param_set
             payload["persisted_bot_on"] = (
                 state_summary.get("persisted_bot_on")
                 if "persisted_bot_on" in state_summary
@@ -2115,7 +2231,14 @@ def create_flux_api_app(  # noqa: C901
                 message=str(e),
                 details={"strategy_id": sid},
             )
-        payload = {"strategy_id": sid, "params": params, "schema": _ordered_params_schema(schema)}
+        contract = store.params_contract(sid)
+        payload = {
+            "strategy_id": sid,
+            "params": params,
+            "schema": _ordered_params_schema(contract.schema),
+            "params_defaults": dict(contract.defaults),
+            "param_set": contract.param_set,
+        }
         return _ok(data=payload)
 
     @app.post("/api/v1/strategies/<string:strategy_id>/parameters")
@@ -2146,11 +2269,14 @@ def create_flux_api_app(  # noqa: C901
                 message=str(e),
                 details={"strategy_id": sid},
             )
+        contract = store.params_contract(sid)
         payload = {
             "strategy_id": sid,
             "updated": result["updated"],
             "params": result["params"],
-            "schema": _ordered_params_schema(schema),
+            "schema": _ordered_params_schema(contract.schema),
+            "params_defaults": dict(contract.defaults),
+            "param_set": contract.param_set,
         }
         return _ok(data=payload)
 

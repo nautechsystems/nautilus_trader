@@ -14,6 +14,12 @@ from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+)
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+)
 
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
@@ -4777,3 +4783,198 @@ def test_alerts_delete_rejects_unallowlisted_tokenmm_strategy_query(
     assert response.status_code == 404
     assert body["ok"] is False
     assert body["error"]["code"] == "unknown_strategy_id"
+
+
+def _equities_strategy_metadata(strategy_id: str) -> StrategyMetadata:
+    if strategy_id == "aapl_tradexyz_maker":
+        return StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        )
+    if strategy_id == "aapl_tradexyz_taker":
+        return StrategyMetadata(
+            strategy_class="equities_taker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_taker",
+            strategy_family="equities_taker",
+            strategy_version="v1",
+        )
+    raise KeyError(strategy_id)
+
+
+def test_param_schema_endpoint_uses_strategy_specific_contract_for_equities_family(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/param-schema",
+            query_string={"strategy": "aapl_tradexyz_taker"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert "bid_edge_take_bps" in body["data"]["params"]
+    assert "n_orders1" not in body["data"]["params"]
+
+
+def test_params_endpoint_loads_mixed_family_rows_with_strategy_specific_schema(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    maker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_maker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        maker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "n_orders1": "4",
+        },
+    )
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bid_edge_take_bps": "7.0",
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows_by_strategy = {row["strategy_id"]: row for row in body["data"]}
+    assert rows_by_strategy["aapl_tradexyz_maker"]["params"]["n_orders1"] == 4
+    assert "bid_edge_take_bps" not in rows_by_strategy["aapl_tradexyz_maker"]["schema"]
+    assert rows_by_strategy["aapl_tradexyz_taker"]["params"]["bid_edge_take_bps"] == 7.0
+    assert "bid_edge_take_bps" in rows_by_strategy["aapl_tradexyz_taker"]["schema"]
+    assert "n_orders1" not in rows_by_strategy["aapl_tradexyz_taker"]["schema"]
+
+
+def test_bulk_params_update_validates_mixed_family_updates_per_strategy_contract(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/params",
+            json={
+                "updates": [
+                    {
+                        "strategy_id": "aapl_tradexyz_maker",
+                        "params": {"n_orders1": 5},
+                    },
+                    {
+                        "strategy_id": "aapl_tradexyz_taker",
+                        "params": {"bid_edge_take_bps": 8.5},
+                    },
+                ],
+            },
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["failed"] == []
+    assert [row["strategy_id"] for row in body["data"]["success"]] == [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+    ]
+    assert body["data"]["success"][0]["updated"] == ["n_orders1"]
+    assert body["data"]["success"][1]["updated"] == ["bid_edge_take_bps"]
+
+
+def test_strategy_parameters_endpoint_uses_selected_strategy_family_contract(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bid_edge_take_bps": "6.0",
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/strategies/aapl_tradexyz_taker/parameters")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["params"]["bid_edge_take_bps"] == 6.0
+    assert "bid_edge_take_bps" in body["data"]["schema"]
+    assert "n_orders1" not in body["data"]["schema"]

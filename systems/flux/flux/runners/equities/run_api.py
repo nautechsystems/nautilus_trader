@@ -389,6 +389,7 @@ def build_equities_strategy_metadata_map(
     api_cfg: dict[str, Any],
     *,
     strategy_ids: list[str],
+    strategy_contracts: Any = None,
 ) -> dict[str, StrategyMetadata]:
     configured_strategy_class = _optional_text(api_cfg.get("strategy_class"))
     default_strategy_spec = (
@@ -396,9 +397,12 @@ def build_equities_strategy_metadata_map(
         if configured_strategy_class
         else DEFAULT_EQUITIES_STRATEGY_SPEC
     )
+    raw_strategy_contracts = strategy_contracts
+    if raw_strategy_contracts is None:
+        raw_strategy_contracts = api_cfg.get("strategy_contracts")
     contracts_by_strategy_id = {
         contract.strategy_id: contract
-        for contract in decode_strategy_contracts(api_cfg.get("strategy_contracts") or [])
+        for contract in decode_strategy_contracts(raw_strategy_contracts or [])
     }
     metadata_by_strategy_id: dict[str, StrategyMetadata] = {}
     for strategy_id in strategy_ids:
@@ -628,6 +632,7 @@ def main() -> None:
     strategy_metadata_map = build_equities_strategy_metadata_map(
         api_cfg,
         strategy_ids=profile_strategy_map.get(EQUITIES_DESCRIPTOR.profile, []),
+        strategy_contracts=config.get("strategy_contracts"),
     )
     contract_catalog_by_strategy = _build_contract_catalog_by_strategy(
         config,

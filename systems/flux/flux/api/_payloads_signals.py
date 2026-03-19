@@ -623,6 +623,10 @@ def _derive_pricing_adjustments(
 
 def _derive_strategy_family(strategy_class: str) -> str:
     normalized = strategy_class.strip().lower()
+    if "equities_maker" in normalized:
+        return "equities_maker"
+    if "equities_taker" in normalized:
+        return "equities_taker"
     if "maker_v4" in normalized:
         return "maker_v4"
     if "maker_v3" in normalized:
@@ -630,6 +634,10 @@ def _derive_strategy_family(strategy_class: str) -> str:
     if "maker_v2" in normalized or normalized.startswith("maker"):
         return "maker_v2"
     return "taker"
+
+
+def _uses_equities_arb_contract(strategy_family: str) -> bool:
+    return strategy_family in {"maker_v4", "equities_maker", "equities_taker"}
 
 
 def _normalize_v4_leg_snapshot(
@@ -800,6 +808,7 @@ def _derive_quote_snapshot_v4(
 
 def _derive_makerv4_operator_payload(
     *,
+    strategy_family: str,
     state: Mapping[str, Any],
     params: Mapping[str, Any],
     quote_snapshot: Mapping[str, Any],
@@ -821,10 +830,10 @@ def _derive_makerv4_operator_payload(
             state_v4.get("execution_mode"),
             quote_snapshot.get("execution_mode"),
         )
-        or "maker_hedge"
+        or ("take_take" if strategy_family == "equities_taker" else "maker_hedge")
     ).lower()
     if execution_mode not in {"maker_hedge", "take_take"}:
-        execution_mode = "maker_hedge"
+        execution_mode = "take_take" if strategy_family == "equities_taker" else "maker_hedge"
 
     fee_assumptions = state_v4.get("fee_assumptions")
     fee_assumptions_map = fee_assumptions if isinstance(fee_assumptions, Mapping) else {}
@@ -839,7 +848,7 @@ def _derive_makerv4_operator_payload(
     else:
         cancel_after_ms = _first_valid_int(quote_snapshot.get("cancel_after_ms"))
 
-    return {
+    payload = {
         "execution_mode": execution_mode,
         "behavior": "take_take" if execution_mode == "take_take" else "maker",
         "hedge_policy": {
@@ -889,19 +898,17 @@ def _derive_makerv4_operator_payload(
                 quote_snapshot.get("assumed_hedge_fee_bps"),
             ),
         },
-        "hedge_backlog": (
-            {
-                "fill_id": _first_valid_text(hedge_backlog_map.get("fill_id")),
-                "side": _first_valid_upper_text(hedge_backlog_map.get("side")),
-                "requested_qty": _first_valid_text(hedge_backlog_map.get("requested_qty")),
-                "blocked_reason": _first_valid_text(hedge_backlog_map.get("blocked_reason")),
-                "fill_ts_ms": _first_valid_int(hedge_backlog_map.get("fill_ts_ms")),
-                "maker_fee_bps": _first_valid_float(hedge_backlog_map.get("maker_fee_bps")),
-            }
-            if hedge_backlog_map
-            else None
-        ),
     }
+    if hedge_backlog_map:
+        payload["hedge_backlog"] = {
+            "fill_id": _first_valid_text(hedge_backlog_map.get("fill_id")),
+            "side": _first_valid_upper_text(hedge_backlog_map.get("side")),
+            "requested_qty": _first_valid_text(hedge_backlog_map.get("requested_qty")),
+            "blocked_reason": _first_valid_text(hedge_backlog_map.get("blocked_reason")),
+            "fill_ts_ms": _first_valid_int(hedge_backlog_map.get("fill_ts_ms")),
+            "maker_fee_bps": _first_valid_float(hedge_backlog_map.get("maker_fee_bps")),
+        }
+    return payload
 
 
 def _maker_v4_quote_health_blocks_new_risk(
@@ -1275,6 +1282,7 @@ def build_signals_payload_impl(
         pricing_adjustments=pricing_adjustments,
     )
     strategy_family = metadata.strategy_family or _derive_strategy_family(metadata.strategy_class)
+    uses_equities_arb_contract = _uses_equities_arb_contract(strategy_family)
     quote_snapshot = (
         _derive_quote_snapshot_v4(
             state=state,
@@ -1285,7 +1293,7 @@ def build_signals_payload_impl(
             ref_leg=ref_leg,
             hedge_leg_id=raw_hedge_leg_id or role_map.get("hedge_leg"),
         )
-        if strategy_family == "maker_v4"
+        if uses_equities_arb_contract
         else _derive_quote_snapshot(
             state=state,
             params=params,
@@ -1358,6 +1366,13 @@ def build_signals_payload_impl(
         isinstance(state.get("maker_v4"), Mapping)
         and isinstance(cast(Mapping[str, Any], state.get("maker_v4")).get("quote_snapshot"), Mapping)
     )
+    explicit_quote_snapshot = explicit_quote_snapshot or (
+        isinstance(state.get("equities_arb"), Mapping)
+        and isinstance(
+            cast(Mapping[str, Any], state.get("equities_arb")).get("quote_snapshot"),
+            Mapping,
+        )
+    )
     has_partial_strategy_state = bool(
         pricing_adjustments
         or explicit_quote_snapshot
@@ -1418,23 +1433,24 @@ def build_signals_payload_impl(
             quote_snapshot=quote_snapshot,
         )
 
-    if strategy_family == "maker_v4" and _maker_v4_quote_health_blocks_new_risk(
+    if uses_equities_arb_contract and _maker_v4_quote_health_blocks_new_risk(
         state=state,
         quote_snapshot=quote_snapshot,
     ):
         tradeable = False
         blocked = True
 
-    maker_v4_payload = (
+    equities_arb_payload = (
         {
             "quote_snapshot": quote_snapshot,
             "operator": _derive_makerv4_operator_payload(
+                strategy_family=strategy_family,
                 state=state,
                 params=params,
                 quote_snapshot=quote_snapshot,
             ),
         }
-        if strategy_family == "maker_v4"
+        if uses_equities_arb_contract
         else None
     )
 
@@ -1468,8 +1484,9 @@ def build_signals_payload_impl(
         "pricing_adjustments": pricing_adjustments,
         "balance_readiness": balance_readiness,
         **inventory_fields,
-        **({"maker_v4": maker_v4_payload} if strategy_family == "maker_v4" else {}),
-        **({"maker_v3": {"quote_snapshot": quote_snapshot}} if strategy_family != "maker_v4" else {}),
+        **({"equities_arb": equities_arb_payload} if uses_equities_arb_contract else {}),
+        **({"maker_v4": equities_arb_payload} if strategy_family == "maker_v4" else {}),
+        **({"maker_v3": {"quote_snapshot": quote_snapshot}} if not uses_equities_arb_contract else {}),
         "state": state,
         "legs": legs,
         "legs_order": legs_order,
