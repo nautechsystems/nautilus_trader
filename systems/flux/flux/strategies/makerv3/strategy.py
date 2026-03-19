@@ -408,7 +408,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._refresh_runtime_params(force=True)
             except Exception as e:
                 self._fail_fast_runtime_params(context="on_start", exc=e)
-                return
             self._terminal_order_denial_circuit_open = False
             self._last_bot_on = self._effective_bot_on()
             self.clock.set_timer(
@@ -576,15 +575,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if getattr(event, "name", "") != self._params_timer_name:
                 return
 
-            if self._runtime_params_failed:
-                return
-
             now_ns = int(self.clock.timestamp_ns())
             try:
                 self._refresh_runtime_params(now_ns=now_ns)
             except Exception as e:
                 self._fail_fast_runtime_params(context="on_time_event", exc=e)
-                return
             self._publish_balances_if_due()
             self._publish_portfolio_inventory_component()
             bot_on_now = self._effective_bot_on()

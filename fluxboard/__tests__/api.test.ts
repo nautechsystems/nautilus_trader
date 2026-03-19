@@ -228,6 +228,25 @@ describe('API Client - Param Methods', () => {
         api.patchStrategyParams('strat1', { qty: '-10' })
       ).rejects.toThrow('400 Bad Request');
     });
+
+    it('preserves backend validation message on 400 responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => ({
+          ok: false,
+          error: {
+            code: 'invalid_params_update',
+            message: '`bid_edge1` must be <= 1000.0',
+          },
+        }),
+      });
+
+      await expect(
+        api.patchStrategyParams('strat1', { bid_edge1: '1001' })
+      ).rejects.toThrow('`bid_edge1` must be <= 1000.0');
+    });
   });
 
   describe('updateParams', () => {
@@ -297,6 +316,29 @@ describe('API Client - Param Methods', () => {
       ];
 
       await expect(api.updateParams(updates)).rejects.toThrow('400 Bad Request');
+    });
+
+    it('preserves backend validation message for bulk 400 responses', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => ({
+          ok: false,
+          error: {
+            code: 'invalid_params_update',
+            message: 'strat1: `bid_edge1` must be <= 1000.0',
+          },
+        }),
+      });
+
+      const updates = [
+        { strategy_id: 'strat1', params: { bid_edge1: '1001' } }
+      ];
+
+      await expect(api.updateParams(updates)).rejects.toThrow(
+        'strat1: `bid_edge1` must be <= 1000.0',
+      );
     });
 
     it('uses default source if not provided', async () => {
