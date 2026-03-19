@@ -1,8 +1,85 @@
 // Playwright smoke tests
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+const REALTIME_FLAG_KEYS = {
+  global: 'fluxboard:feature:realtime-standard',
+  signal: 'fluxboard:feature:realtime-standard-signal',
+  trades: 'fluxboard:feature:realtime-standard-trades',
+  killSwitch: 'fluxboard:feature:realtime-standard-kill-switch',
+} as const;
+
+type RealtimeFlagName = keyof typeof REALTIME_FLAG_KEYS;
+type RealtimeFlagOverrides = Partial<Record<RealtimeFlagName, boolean>>;
+
+async function setRealtimeFlags(page: Page, flags: RealtimeFlagOverrides) {
+  await page.evaluate((entries) => {
+    for (const [key, enabled] of entries) {
+      if (enabled) {
+        window.localStorage.setItem(key, '1');
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    }
+  }, Object.entries(flags).map(([name, enabled]) => [REALTIME_FLAG_KEYS[name as RealtimeFlagName], enabled]));
+}
+
+async function readRealtimeFlags(page: Page) {
+  return page.evaluate((keys) => {
+    const out: Record<string, string | null> = {};
+    for (const [name, key] of Object.entries(keys)) {
+      out[name] = window.localStorage.getItem(key);
+    }
+    return out;
+  }, REALTIME_FLAG_KEYS);
+}
 
 test.describe('flux Smoke Tests', () => {
+  test('realtime rollout flags can be enabled, kill-switched, and rolled back without breaking dashboard boot', async ({ page }) => {
+    await page.goto('http://localhost:5000/');
+    await expect(page.locator('.dashboard-panel')).toBeVisible();
+
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: null,
+      signal: null,
+      trades: null,
+      killSwitch: null,
+    });
+
+    await setRealtimeFlags(page, { global: true, signal: true, trades: false, killSwitch: false });
+    await page.reload();
+    await expect(page.locator('.dashboard-panel')).toBeVisible();
+
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: '1',
+      signal: '1',
+      trades: null,
+      killSwitch: null,
+    });
+
+    await setRealtimeFlags(page, { global: true, signal: true, trades: false, killSwitch: true });
+    await page.reload();
+    await expect(page.locator('.dashboard-panel')).toBeVisible();
+
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: '1',
+      signal: '1',
+      trades: null,
+      killSwitch: '1',
+    });
+
+    await setRealtimeFlags(page, { global: false, signal: false, trades: false, killSwitch: false });
+    await page.reload();
+    await expect(page.locator('.dashboard-panel')).toBeVisible();
+
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: null,
+      signal: null,
+      trades: null,
+      killSwitch: null,
+    });
+  });
+
   test('params route loads and shows strategy selector', async ({ page }) => {
     await page.goto('http://localhost:5000/params');
     await expect(page.locator('select')).toBeVisible();
