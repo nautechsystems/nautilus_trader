@@ -62,6 +62,7 @@ from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
 from nautilus_trader.live.reconciliation import is_external_reconciliation_artifact_position
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.model.book import py_should_handle_own_book_order
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -89,6 +90,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
@@ -1816,12 +1818,28 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
-        return tuple(
+        exact_entries = tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
+
+        if account_id is None:
+            return exact_entries
+
+        exact_strategy_ids = {snapshot.strategy_id for snapshot in exact_entries}
+        unscoped_entries = tuple(
+            snapshot
+            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
+            self._startup_reconciliation_snapshot.items()
+            if snapshot_instrument_id == instrument_id
+            and snapshot_account_id is None
+            and not snapshot.has_open_positions
+            and snapshot.strategy_id not in exact_strategy_ids
+        )
+
+        return (*exact_entries, *unscoped_entries)
 
     def _startup_snapshot_for_instrument(
         self,
@@ -3219,38 +3237,36 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         return effective_positions, external_positions, effective_qty, raw_qty
 
-    def _cleanup_stale_external_reconciliation_positions(
+    def _cleanup_stale_startup_netting_positions(
         self,
         report: PositionStatusReport,
         instrument: Instrument,
-        artifact_positions: list[Position],
+        stale_positions: list[Position],
         raw_qty: Decimal,
         effective_qty: Decimal,
-        publish_startup_alert: bool = False,
+        log_message: str,
+        startup_alert_message: str | None = None,
     ) -> bool:
-        stale_position_ids = [position.id.value for position in artifact_positions]
+        stale_position_ids = [position.id.value for position in stale_positions]
         self._log.info(
-            f"Closing stale EXTERNAL reconciliation positions for {report.instrument_id}: "
+            f"{log_message} for {report.instrument_id}: "
             f"raw_qty={raw_qty}, effective_qty={effective_qty}, "
-            f"stale_qty={self._sum_position_signed_decimal_qty(artifact_positions)}, "
+            f"stale_qty={self._sum_position_signed_decimal_qty(stale_positions)}, "
             f"position_ids={stale_position_ids}",
             LogColor.BLUE,
         )
 
-        if publish_startup_alert:
+        if startup_alert_message is not None:
             self._publish_startup_position_reconciliation_alert(
                 report=report,
-                message=(
-                    f"Startup reconciliation removed stale EXTERNAL cached positions for "
-                    f"{report.instrument_id}"
-                ),
+                message=startup_alert_message,
                 cached_qty=raw_qty,
                 venue_qty=report.signed_decimal_qty,
                 position_ids=stale_position_ids,
                 effective_qty=effective_qty,
             )
 
-        for position in artifact_positions:
+        for position in stale_positions:
             position_qty = position.signed_decimal_qty()
             diff_quantity = Quantity(abs(position_qty), instrument.size_precision)
             if diff_quantity == 0:
@@ -3277,9 +3293,97 @@ class LiveExecutionEngine(ExecutionEngine):
             if diff_report is None:
                 continue
 
-            if not self._reconcile_order_report(diff_report, trades=[], is_external=False):
+            fill_price = diff_report.price
+            if fill_price is None and diff_report.avg_px is not None:
+                fill_price = instrument.make_price(diff_report.avg_px)
+            if fill_price is None and current_avg_px is not None:
+                fill_price = instrument.make_price(current_avg_px)
+            if fill_price is None:
+                fill_price = instrument.make_price(0)
+
+            cleanup_fill_report = FillReport(
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                venue_order_id=diff_report.venue_order_id,
+                trade_id=TradeId(UUID4().value),
+                order_side=diff_report.order_side,
+                last_qty=diff_quantity,
+                last_px=fill_price,
+                commission=Money(0, instrument.quote_currency),
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                report_id=UUID4(),
+                ts_event=diff_report.ts_last,
+                ts_init=diff_report.ts_init,
+                client_order_id=diff_report.client_order_id,
+                venue_position_id=position.id,
+            )
+
+            if not self._reconcile_order_report(
+                diff_report,
+                trades=[cleanup_fill_report],
+                is_external=False,
+                position_id_override=position.id,
+            ):
                 return False
 
+        return True
+
+    def _cleanup_stale_external_reconciliation_positions(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        artifact_positions: list[Position],
+        raw_qty: Decimal,
+        effective_qty: Decimal,
+        publish_startup_alert: bool = False,
+    ) -> bool:
+        return self._cleanup_stale_startup_netting_positions(
+            report=report,
+            instrument=instrument,
+            stale_positions=artifact_positions,
+            raw_qty=raw_qty,
+            effective_qty=effective_qty,
+            log_message="Closing stale EXTERNAL reconciliation positions",
+            startup_alert_message=(
+                f"Startup reconciliation removed stale EXTERNAL cached positions for "
+                f"{report.instrument_id}"
+                if publish_startup_alert
+                else None
+            ),
+        )
+
+    def _should_cleanup_stale_startup_netting_positions(
+        self,
+        positions_open: list[Position],
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+        venue_qty: Decimal,
+    ) -> bool:
+        if venue_qty != 0 or not positions_open:
+            return False
+
+        snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
+        if snapshot.total_open_order_count != 0:
+            return False
+
+        startup_position_ids = {
+            position_id
+            for strategy_snapshot in snapshot.strategy_snapshots
+            for position_id in strategy_snapshot.open_position_ids
+        }
+        if not startup_position_ids:
+            return False
+
+        current_position_ids = {position.id for position in positions_open}
+        if not current_position_ids.issubset(startup_position_ids):
+            return False
+
+        self._log.info(
+            f"Treating startup netting positions as stale cached positions for "
+            f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
+            f"snapshot_open_orders={snapshot.total_open_order_count}",
+            LogColor.BLUE,
+        )
         return True
 
     def _reconcile_position_report_netting(
@@ -3336,6 +3440,28 @@ class LiveExecutionEngine(ExecutionEngine):
                 raw_qty=raw_position_signed_decimal_qty,
                 effective_qty=position_signed_decimal_qty,
                 publish_startup_alert=allow_startup_external_cleanup,
+            )
+
+        if (
+            allow_startup_external_cleanup
+            and self._should_cleanup_stale_startup_netting_positions(
+                positions_open=positions_open,
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                venue_qty=report.signed_decimal_qty,
+            )
+        ):
+            return self._cleanup_stale_startup_netting_positions(
+                report=report,
+                instrument=instrument,
+                stale_positions=positions_open,
+                raw_qty=raw_position_signed_decimal_qty,
+                effective_qty=Decimal("0"),
+                log_message="Closing stale startup cached positions",
+                startup_alert_message=(
+                    f"Startup reconciliation removed stale cached positions for "
+                    f"{report.instrument_id}"
+                ),
             )
 
         # Check if quantities match
@@ -3815,6 +3941,7 @@ class LiveExecutionEngine(ExecutionEngine):
         report: OrderStatusReport,
         trades: list[FillReport],
         is_external: bool = True,
+        position_id_override: PositionId | None = None,
     ) -> bool:
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
@@ -3843,7 +3970,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True  # No further reconciliation
 
             # Add to cache without determining any position ID initially
-            self._cache.add_order(order)
+            self._cache.add_order(order, position_id=position_id_override)
 
             # Explicitly index venue_order_id for external orders to ensure they can be found
             # by venue_order_id in subsequent reconciliation passes
@@ -4305,7 +4432,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         # Only venue-originated external orders should be claimed by strategies.
-        # Synthetic reconciliation orders must remain EXTERNAL so they don't
+        # Synthetic reconciliation orders remain EXTERNAL by default so they don't
         # pollute strategy-owned state when cache is reloaded on restart.
         strategy_id = self.get_external_order_claim(report.instrument_id) if is_external else None
 
