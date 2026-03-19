@@ -7,12 +7,18 @@ import { socket } from './sockets';
 import { useTradesStore } from './stores';
 import type { TradeRow } from './types';
 
-vi.mock('./api', () => ({
-  api: {
-    getTrades: vi.fn(),
-    getTradesDelta: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades: vi.fn(),
+      getTradesDelta: vi.fn(),
+    },
+    deriveCanonicalNaming: vi.fn(() => ({})),
+  };
+});
 
 vi.mock('./sockets', () => ({
   socket: {
@@ -67,6 +73,34 @@ const makeTradeRow = (overrides: Partial<TradeRow> = {}): TradeRow => ({
   decision: '',
   explorer_url: '',
   notes: '',
+  ...overrides,
+});
+
+const makeSnapshotResponse = (
+  rows: TradeRow[],
+  overrides: Record<string, unknown> = {},
+) => ({
+  rows,
+  total: rows.length,
+  page: 1,
+  page_size: 100,
+  last_seq: rows.reduce((max, row) => Math.max(max, row.seq), 0),
+  has_more: false,
+  next_cursor: null,
+  stream_id: 'trades-main',
+  snapshot_revision: 17,
+  ...overrides,
+});
+
+const makeDeltaResponse = (
+  rows: TradeRow[],
+  overrides: Record<string, unknown> = {},
+) => ({
+  rows,
+  last_seq: rows.reduce((max, row) => Math.max(max, row.seq), 0),
+  reset_required: false,
+  stream_id: 'trades-main',
+  snapshot_revision: 17,
   ...overrides,
 });
 
@@ -129,19 +163,19 @@ describe('Trades recovery regressions', () => {
   it('uses timestamp fallback polling on tokenmm when snapshot last_seq is unusable', async () => {
     (window.location as any).pathname = '/tokenmm/trades';
     setupStore();
-    mockGetTrades.mockResolvedValue({
-      rows: [
-        makeTradeRow({ row_id: 'tokenmm-a', seq: 101, ts: 1_700_000_001_000, ts_ms: 1_700_000_001_000 } as Partial<TradeRow>),
-        makeTradeRow({ row_id: 'tokenmm-b', seq: 202, ts: 1_700_000_002_000, ts_ms: 1_700_000_002_000 } as Partial<TradeRow>),
-      ],
-      total: 2,
-      page: 1,
-      page_size: 100,
+    mockGetTrades.mockResolvedValue(makeSnapshotResponse([
+      makeTradeRow({ row_id: 'tokenmm-a', seq: 101, ts: 1_700_000_001_000, ts_ms: 1_700_000_001_000 } as Partial<TradeRow>),
+      makeTradeRow({ row_id: 'tokenmm-b', seq: 202, ts: 1_700_000_002_000, ts_ms: 1_700_000_002_000 } as Partial<TradeRow>),
+    ], {
       last_seq: 0,
-      has_more: false,
-      next_cursor: null,
-    });
-    mockGetTradesDelta.mockResolvedValue({ rows: [], last_seq: 0, reset_required: false });
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-2',
+    }));
+    mockGetTradesDelta.mockResolvedValue(makeDeltaResponse([], {
+      last_seq: 0,
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-2',
+    }));
 
     render(<Trades />);
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
@@ -154,6 +188,8 @@ describe('Trades recovery regressions', () => {
     await waitFor(() => expect(mockGetTradesDelta).toHaveBeenCalledTimes(1));
     expect(mockGetTradesDelta).toHaveBeenCalledWith(
       expect.objectContaining({
+        streamId: 'tokenmm-trades',
+        snapshotRevision: 'snap-2',
         afterMs: 1_700_000_002_000,
         afterRowId: 'tokenmm-b',
         afterVersion: 1,
@@ -165,50 +201,46 @@ describe('Trades recovery regressions', () => {
   it('drops replay rows that are not newer than the persisted tokenmm cursor tuple', async () => {
     (window.location as any).pathname = '/tokenmm/trades';
     const { applyDelta } = setupStore();
-    mockGetTrades.mockResolvedValue({
-      rows: [
-        makeTradeRow({
-          row_id: 'tokenmm-b',
-          seq: 202,
-          ts: 1_700_000_002_000,
-          ts_ms: 1_700_000_002_000,
-          version: 1,
-        } as Partial<TradeRow>),
-      ],
-      total: 1,
-      page: 1,
-      page_size: 100,
+    mockGetTrades.mockResolvedValue(makeSnapshotResponse([
+      makeTradeRow({
+        row_id: 'tokenmm-b',
+        seq: 202,
+        ts: 1_700_000_002_000,
+        ts_ms: 1_700_000_002_000,
+        version: 1,
+      } as Partial<TradeRow>),
+    ], {
       last_seq: 0,
-      has_more: false,
-      next_cursor: null,
-    });
-    mockGetTradesDelta.mockResolvedValue({
-      rows: [
-        makeTradeRow({
-          row_id: 'tokenmm-b',
-          seq: 202,
-          ts: 1_700_000_002_000,
-          ts_ms: 1_700_000_002_000,
-          version: 1,
-        } as Partial<TradeRow>),
-        makeTradeRow({
-          row_id: 'tokenmm-b',
-          seq: 203,
-          ts: 1_700_000_002_000,
-          ts_ms: 1_700_000_002_000,
-          version: 2,
-        } as Partial<TradeRow>),
-        makeTradeRow({
-          row_id: 'tokenmm-c',
-          seq: 204,
-          ts: 1_700_000_002_000,
-          ts_ms: 1_700_000_002_000,
-          version: 1,
-        } as Partial<TradeRow>),
-      ],
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-3',
+    }));
+    mockGetTradesDelta.mockResolvedValue(makeDeltaResponse([
+      makeTradeRow({
+        row_id: 'tokenmm-b',
+        seq: 202,
+        ts: 1_700_000_002_000,
+        ts_ms: 1_700_000_002_000,
+        version: 1,
+      } as Partial<TradeRow>),
+      makeTradeRow({
+        row_id: 'tokenmm-b',
+        seq: 203,
+        ts: 1_700_000_002_000,
+        ts_ms: 1_700_000_002_000,
+        version: 2,
+      } as Partial<TradeRow>),
+      makeTradeRow({
+        row_id: 'tokenmm-c',
+        seq: 204,
+        ts: 1_700_000_002_000,
+        ts_ms: 1_700_000_002_000,
+        version: 1,
+      } as Partial<TradeRow>),
+    ], {
       last_seq: 0,
-      reset_required: false,
-    });
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-3',
+    }));
 
     render(<Trades />);
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
@@ -236,16 +268,8 @@ describe('Trades recovery regressions', () => {
       coin: 'PLUME',
     });
     setupStore({ rows: [existing], lastSeq: 5 });
-    mockGetTrades.mockResolvedValueOnce({
-      rows: [existing],
-      total: 1,
-      page: 1,
-      page_size: 100,
-      last_seq: 5,
-      has_more: false,
-      next_cursor: null,
-    });
-    mockGetTradesDelta.mockResolvedValue({ rows: [], last_seq: 5, reset_required: false });
+    mockGetTrades.mockResolvedValueOnce(makeSnapshotResponse([existing], { last_seq: 5 }));
+    mockGetTradesDelta.mockResolvedValue(makeDeltaResponse([], { last_seq: 5 }));
 
     render(<Trades />);
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
@@ -253,15 +277,7 @@ describe('Trades recovery regressions', () => {
     const tradeUpdateHandler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
     expect(tradeUpdateHandler).toBeInstanceOf(Function);
 
-    mockGetTrades.mockResolvedValueOnce({
-      rows: [],
-      total: 0,
-      page: 1,
-      page_size: 100,
-      last_seq: 6,
-      has_more: false,
-      next_cursor: null,
-    });
+    mockGetTrades.mockResolvedValueOnce(makeSnapshotResponse([], { last_seq: 6 }));
     mockGetTrades.mockClear();
 
     act(() => {

@@ -125,6 +125,8 @@ type TradesDeltaCursor = number | {
   afterMs?: number;
   afterRowId?: string;
   afterVersion?: number;
+  streamId?: string;
+  snapshotRevision?: number | string;
 };
 
 function isFluxEnvelope<T>(payload: unknown): payload is FluxEnvelope<T> {
@@ -1619,6 +1621,9 @@ export const api = {
     rows: TradeEvent[];
     total: number;
     last_seq?: number;
+    contract_version?: number;
+    stream_id?: string;
+    snapshot_revision?: number | string;
     page?: number;
     page_size?: number;
     total_records?: number;
@@ -1657,6 +1662,9 @@ export const api = {
       limit: number;
       offset: number;
       last_seq?: number;
+      contract_version?: number;
+      stream_id?: string;
+      snapshot_revision?: number | string;
       page?: number;
       page_size?: number;
       total_records?: number;
@@ -1702,6 +1710,12 @@ export const api = {
       rows,
       total: totalCount,
       last_seq: data.last_seq,
+      contract_version: typeof data.contract_version === 'number' ? data.contract_version : undefined,
+      stream_id: typeof data.stream_id === 'string' ? data.stream_id : undefined,
+      snapshot_revision:
+        typeof data.snapshot_revision === 'number' || typeof data.snapshot_revision === 'string'
+          ? data.snapshot_revision
+          : undefined,
       page: resolvedPage,
       page_size: resolvedPageSize,
       total_records: data.total_records,
@@ -1717,7 +1731,14 @@ export const api = {
     cursor: TradesDeltaCursor,
     limit = 2000,
     init?: RequestInit
-  ): Promise<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }> => {
+  ): Promise<{
+    rows: TradeEvent[];
+    last_seq?: number;
+    reset_required?: boolean;
+    contract_version?: number;
+    stream_id?: string;
+    snapshot_revision?: number | string;
+  }> => {
     const resolvedCursor =
       typeof cursor === 'number'
         ? { sinceSeq: cursor }
@@ -1739,6 +1760,14 @@ export const api = {
       typeof resolvedCursor.sinceSeq === 'number' && Number.isFinite(resolvedCursor.sinceSeq)
         ? Math.max(0, Math.trunc(resolvedCursor.sinceSeq))
         : 0;
+    const streamId =
+      typeof resolvedCursor.streamId === 'string' && resolvedCursor.streamId.trim()
+        ? resolvedCursor.streamId.trim()
+        : '';
+    const snapshotRevision =
+      typeof resolvedCursor.snapshotRevision === 'number' || typeof resolvedCursor.snapshotRevision === 'string'
+        ? String(resolvedCursor.snapshotRevision)
+        : '';
     if (afterMs !== undefined) {
       qs.set('after', String(afterMs));
       if (afterRowId) {
@@ -1748,8 +1777,21 @@ export const api = {
     } else {
       qs.set('since_seq', String(sinceSeq));
     }
+    if (streamId) {
+      qs.set('stream_id', streamId);
+    }
+    if (snapshotRevision) {
+      qs.set('snapshot_revision', snapshotRevision);
+    }
     appendProfileQuery(qs);
-    const r = await fetchJSON<FluxEnvelope<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
+    const r = await fetchJSON<FluxEnvelope<{
+      rows: TradeEvent[];
+      last_seq?: number;
+      reset_required?: boolean;
+      contract_version?: number;
+      stream_id?: string;
+      snapshot_revision?: number | string;
+    }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
     const data = unwrapFluxEnvelope(r);
     const rows = (data.rows || [])
       .map((row, index) => normalizeTradeEventCandidate(row, index, sinceSeq + index + 1))
@@ -1759,6 +1801,12 @@ export const api = {
       rows,
       last_seq: typeof data.last_seq === 'number' ? data.last_seq : (maxSeq > 0 ? maxSeq : sinceSeq),
       reset_required: data.reset_required,
+      contract_version: typeof data.contract_version === 'number' ? data.contract_version : undefined,
+      stream_id: typeof data.stream_id === 'string' ? data.stream_id : undefined,
+      snapshot_revision:
+        typeof data.snapshot_revision === 'number' || typeof data.snapshot_revision === 'string'
+          ? data.snapshot_revision
+          : undefined,
     };
   },
 
