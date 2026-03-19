@@ -23,6 +23,8 @@ from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnaps
 from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
+from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
@@ -50,6 +52,7 @@ class BinanceFuturesAccountProjectionProviderConfig:
     api_key: str
     api_secret: str
     account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES
+    private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO
     environment: BinanceEnvironment = BinanceEnvironment.LIVE
     base_url_http: str | None = None
     recv_window_ms: int = 5000
@@ -192,6 +195,16 @@ def _parse_binance_account_type(value: str | None) -> BinanceAccountType:
         return BinanceAccountType(text)
     except ValueError as exc:
         raise ValueError(f"unsupported Binance account_type {text!r}") from exc
+
+
+def _parse_binance_private_api_family(value: str | None) -> BinancePrivateApiFamily:
+    text = _optional_text(value)
+    if text is None:
+        return BinancePrivateApiFamily.AUTO
+    try:
+        return BinancePrivateApiFamily(text)
+    except ValueError as exc:
+        raise ValueError(f"unsupported Binance private_api_family {text!r}") from exc
 
 
 def _extract_binance_account_totals(payload: Any) -> dict[str, Any]:
@@ -444,7 +457,13 @@ class BinanceFuturesAccountProjectionProvider:
             account_type=config.account_type,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            base_url=config.base_url_http,
+            base_url=config.base_url_http
+            or get_private_http_base_url(
+                config.account_type,
+                private_api_family=config.private_api_family,
+                environment=config.environment,
+                is_us=False,
+            ),
             environment=config.environment,
             proxy_url=config.http_proxy_url,
         )
@@ -452,6 +471,7 @@ class BinanceFuturesAccountProjectionProvider:
             client=self._client,
             clock=self._clock,
             account_type=config.account_type,
+            private_api_family=config.private_api_family,
         )
         self._latest_snapshot: dict[str, Any] | None = None
         self._last_refresh_monotonic = 0.0
@@ -594,6 +614,7 @@ def _build_binance_futures_account_provider(
             api_key=api_key,
             api_secret=api_secret,
             account_type=_parse_binance_account_type(scope_config.account_type),
+            private_api_family=_parse_binance_private_api_family(scope_config.private_api_family),
             environment=BinanceEnvironment.TESTNET if scope_config.testnet else BinanceEnvironment.LIVE,
             base_url_http=scope_config.base_url_http,
             recv_window_ms=scope_config.recv_window_ms or 5000,

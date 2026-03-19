@@ -188,6 +188,17 @@ class BinanceAccountType(Enum):
 
 
 @unique
+class BinancePrivateApiFamily(Enum):
+    """
+    Represents which private/authenticated Binance API family to use.
+    """
+
+    AUTO = "AUTO"
+    STANDARD_FUTURES = "STANDARD_FUTURES"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
+
+
+@unique
 class BinanceOrderSide(Enum):
     """
     Represents a Binance order side.

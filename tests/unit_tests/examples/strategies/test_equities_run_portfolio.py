@@ -30,26 +30,62 @@ from nautilus_trader.core import nautilus_pyo3
 CORE_PROD_STRATEGY_IDS = (
     "aapl_tradexyz_makerv4",
     "amd_tradexyz_makerv4",
+    "amzn_binance_perp_makerv4",
     "amzn_tradexyz_makerv4",
+    "baba_tradexyz_makerv4",
+    "coin_binance_perp_makerv4",
+    "coin_tradexyz_makerv4",
+    "crcl_binance_perp_makerv4",
+    "crcl_tradexyz_makerv4",
+    "crwv_tradexyz_makerv4",
+    "ewy_binance_perp_makerv4",
     "googl_tradexyz_makerv4",
+    "hood_binance_perp_makerv4",
+    "hood_tradexyz_makerv4",
+    "intc_binance_perp_makerv4",
+    "intc_tradexyz_makerv4",
     "meta_tradexyz_makerv4",
     "msft_tradexyz_makerv4",
+    "mstr_binance_perp_makerv4",
+    "mstr_tradexyz_makerv4",
+    "mu_tradexyz_makerv4",
+    "nflx_tradexyz_makerv4",
     "nvda_tradexyz_makerv4",
     "orcl_tradexyz_makerv4",
+    "pltr_binance_perp_makerv4",
     "pltr_tradexyz_makerv4",
+    "rivn_tradexyz_makerv4",
+    "sndk_tradexyz_makerv4",
+    "tsla_binance_perp_makerv4",
     "tsla_tradexyz_makerv4",
+    "tsm_tradexyz_makerv4",
+    "usar_tradexyz_makerv4",
 )
 CORE_PROD_STRATEGY_IDS_BY_ASSET = {
     "AAPL": ("aapl_tradexyz_makerv4",),
     "AMD": ("amd_tradexyz_makerv4",),
-    "AMZN": ("amzn_tradexyz_makerv4",),
+    "AMZN": ("amzn_binance_perp_makerv4", "amzn_tradexyz_makerv4"),
+    "BABA": ("baba_tradexyz_makerv4",),
+    "COIN": ("coin_binance_perp_makerv4", "coin_tradexyz_makerv4"),
+    "CRCL": ("crcl_binance_perp_makerv4", "crcl_tradexyz_makerv4"),
+    "CRWV": ("crwv_tradexyz_makerv4",),
+    "EWY": ("ewy_binance_perp_makerv4",),
     "GOOGL": ("googl_tradexyz_makerv4",),
+    "HOOD": ("hood_binance_perp_makerv4", "hood_tradexyz_makerv4"),
+    "INTC": ("intc_binance_perp_makerv4", "intc_tradexyz_makerv4"),
     "META": ("meta_tradexyz_makerv4",),
     "MSFT": ("msft_tradexyz_makerv4",),
+    "MSTR": ("mstr_binance_perp_makerv4", "mstr_tradexyz_makerv4"),
+    "MU": ("mu_tradexyz_makerv4",),
+    "NFLX": ("nflx_tradexyz_makerv4",),
     "NVDA": ("nvda_tradexyz_makerv4",),
     "ORCL": ("orcl_tradexyz_makerv4",),
-    "PLTR": ("pltr_tradexyz_makerv4",),
-    "TSLA": ("tsla_tradexyz_makerv4",),
+    "PLTR": ("pltr_binance_perp_makerv4", "pltr_tradexyz_makerv4"),
+    "RIVN": ("rivn_tradexyz_makerv4",),
+    "SNDK": ("sndk_tradexyz_makerv4",),
+    "TSLA": ("tsla_binance_perp_makerv4", "tsla_tradexyz_makerv4"),
+    "TSM": ("tsm_tradexyz_makerv4",),
+    "USAR": ("usar_tradexyz_makerv4",),
 }
 
 
@@ -214,7 +250,7 @@ def test_equities_portfolio_allowlist_uses_shared_parser() -> None:
     ) == ["aapl_tradexyz_makerv4"]
 
 
-def test_equities_live_config_prunes_shared_portfolio_contracts_to_core_prod_basket() -> None:
+def test_equities_live_config_enrolls_full_makerv4_portfolio_contracts() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     allowlist = _equities_strategy_ids(config["api"])
     required = _required_strategy_ids(config["api"], fallback=allowlist)
@@ -842,12 +878,21 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     captured_account_http_inits: list[dict[str, Any]] = []
 
     class _FakeBinanceFuturesAccountHttpAPI:
-        def __init__(self, client: Any, clock: Any, account_type: Any) -> None:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+            private_api_family: Any | None = None,
+        ) -> None:
             captured_account_http_inits.append(
                 {
                     "client": client,
                     "clock_type": type(clock).__name__,
                     "account_type": str(getattr(account_type, "value", account_type)),
+                    "private_api_family": str(
+                        getattr(private_api_family, "value", private_api_family),
+                    ),
                 },
             )
 
@@ -924,7 +969,7 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
                 "api_key_env": "EQUITIES_BINANCE_API_KEY",
                 "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
                 "account_type": "USDT_FUTURES",
-                "base_url_http": "https://fapi.binance.com",
+                "private_api_family": "PORTFOLIO_MARGIN",
                 "recv_window_ms": 5000,
             },
             {
@@ -976,8 +1021,9 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     http_client_kwargs = captured_http_client_kwargs[0]
     assert http_client_kwargs["api_key"] == "binance-key"
     assert http_client_kwargs["api_secret"] == "binance-secret"
-    assert http_client_kwargs["base_url"] == "https://fapi.binance.com"
+    assert http_client_kwargs["base_url"] == "https://papi.binance.com"
     assert str(getattr(http_client_kwargs["account_type"], "value", http_client_kwargs["account_type"])) == "USDT_FUTURES"
+    assert captured_account_http_inits[0]["private_api_family"] == "PORTFOLIO_MARGIN"
     assert len(captured_account_http_inits) == 1
     assert captured_account_http_inits[0]["clock_type"] == "LiveClock"
     assert captured_account_http_inits[0]["account_type"] == "USDT_FUTURES"

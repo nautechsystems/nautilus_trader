@@ -21,14 +21,14 @@ Required routes:
 
 The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"`.
 The reference venue for FV inputs is `IBKR`.
-The enrolled stock universe is now served through MakerV4 semantics on the shared equities control plane and currently includes `AAPL`, `AMD`, `AMZN`, `BABA`, `COIN`, `CRCL`, `CRWV`, `GOOGL`, `HOOD`, `HYUNDAI`, `INTC`, `META`, `MSTR`, `MSFT`, `MU`, `NFLX`, `NVDA`, `ORCL`, `PLTR`, `RIVN`, `SNDK`, `TSM`, `TSLA`, and `USAR`.
-Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `AAPL.NASDAQ`, `005380.KRX`, and `USAR.NASDAQ`.
+The enrolled stock universe is now served through MakerV4 semantics on the shared equities control plane and currently includes `AAPL`, `AMD`, `AMZN`, `BABA`, `COIN`, `CRCL`, `CRWV`, `EWY`, `GOOGL`, `HOOD`, `INTC`, `META`, `MSTR`, `MSFT`, `MU`, `NFLX`, `NVDA`, `ORCL`, `PLTR`, `RIVN`, `SNDK`, `TSM`, `TSLA`, and `USAR`.
+Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `AAPL.NASDAQ`, `EWYUSDT-PERP.BINANCE_PERP`, and `USAR.NASDAQ`.
 
 ## Frozen Deploy Identity
 
 1. The intended active equities deploy contract is MakerV4 via the enrolled stock allowlist in `api.equities_strategy_ids`.
-2. The enrolled Tier 1 strategy ids and service names now use the `*_makerv4` suffix.
-3. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback material, not the active contract.
+2. The enrolled strategy ids and service names use the `*_makerv4` suffix.
+3. Dead MakerV3 equities configs have been removed from the checked-in deploy surface.
 4. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
 5. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
 6. Task 2 of the March 11 live review locked that build/static-serving contract to the shared `/static/fluxboard/` base.

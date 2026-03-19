@@ -2,6 +2,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -335,3 +336,26 @@ class TestBinanceFactories:
         )
 
         assert isinstance(exec_client, BinanceFuturesExecutionClient)
+
+    def test_create_binance_portfolio_margin_futures_exec_client_uses_split_public_private_routing(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.USDT_FUTURES,
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceFuturesExecutionClient)
+        assert exec_client._http_client.base_url == "https://papi.binance.com"
+        assert exec_client._http_market.client.base_url == "https://fapi.binance.com"
+        assert exec_client._ws_client._stream_base_url == "wss://fstream.binance.com/pm"

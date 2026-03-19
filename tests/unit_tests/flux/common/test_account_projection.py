@@ -205,6 +205,26 @@ def test_account_scope_decoder_requires_provider_and_scope_id() -> None:
             ],
         )
 
+
+def test_account_scope_decoder_preserves_binance_private_api_family() -> None:
+    from nautilus_trader.flux.common.account_scopes import decode_account_scopes
+
+    decoded = decode_account_scopes(
+        [
+            {
+                "scope_id": "binance.futures.main",
+                "provider": "binance",
+                "venue": "BINANCE_PERP",
+                "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                "account_type": "USDT_FUTURES",
+                "private_api_family": "PORTFOLIO_MARGIN",
+            },
+        ],
+    )
+
+    assert decoded[0].private_api_family == "PORTFOLIO_MARGIN"
+
     with pytest.raises(ValueError, match="scope_id"):
         decode_account_scopes(
             [

@@ -727,7 +727,13 @@ def _derive_quote_snapshot_v4(
         if isinstance(raw_quote_snapshot, Mapping):
             quote_snapshot = dict(raw_quote_snapshot)
 
+    ibkr_max_quote_age_ms = (
+        safe_int(quote_snapshot.get("max_ibkr_quote_age_ms"))
+        or safe_int(params.get("max_ibkr_quote_age_ms"))
+        or 1_000
+    )
     quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
             quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
@@ -742,7 +748,7 @@ def _derive_quote_snapshot_v4(
             hedge_leg,
         ),
         leg_role="hedge",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     quote_snapshot["ref_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
@@ -750,7 +756,7 @@ def _derive_quote_snapshot_v4(
             ref_leg,
         ),
         leg_role="reference",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     hedge_leg_id_text = decode_text(hedge_leg_id).strip()
     if hedge_leg_id_text:
@@ -875,11 +881,15 @@ def _derive_makerv4_operator_payload(
                 fee_assumptions_map.get("ibkr_fee_min_usd"),
                 quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
             ),
-            "hl_taker_fee_bps": _first_valid_float(
+            "maker_taker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_taker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_taker_fee_bps"),
                 fee_assumptions_map.get("hl_taker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_taker_fee_bps"),
             ),
-            "hl_maker_fee_bps": _first_valid_float(
+            "maker_maker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_maker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_maker_fee_bps"),
                 fee_assumptions_map.get("hl_maker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_maker_fee_bps"),
             ),

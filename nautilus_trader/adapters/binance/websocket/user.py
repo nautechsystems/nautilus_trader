@@ -21,6 +21,7 @@ import msgspec
 from nautilus_trader.adapters.binance.common.credentials import extract_ed25519_private_key
 from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.common.component import LiveClock
@@ -91,6 +92,7 @@ class BinanceUserDataWebSocketClient:
         is_ed25519: bool | None = None,
         http_client: BinanceHttpClient | None = None,
         account_type: BinanceAccountType | None = None,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -120,6 +122,7 @@ class BinanceUserDataWebSocketClient:
             self._http_user: BinanceUserDataHttpAPI | None = BinanceUserDataHttpAPI(
                 client=http_client,
                 account_type=account_type,
+                private_api_family=private_api_family,
             )
         else:
             self._http_user = None

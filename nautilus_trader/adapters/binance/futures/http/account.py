@@ -6,6 +6,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
@@ -859,64 +860,75 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         client: BinanceHttpClient,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
     ):
         super().__init__(
             client=client,
             clock=clock,
             account_type=account_type,
+            private_api_family=private_api_family,
         )
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"`BinanceAccountType` not USDT_FUTURES or COIN_FUTURES, was {account_type}",  # pragma: no cover
             )
+        v1_endpoint_base = self.base_endpoint
         v2_endpoint_base = self.base_endpoint
         v3_endpoint_base = self.base_endpoint
-        if account_type == BinanceAccountType.USDT_FUTURES:
+        if private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN:
+            v2_endpoint_base = "/papi/v1/um/"
+            v3_endpoint_base = "/papi/v1/um/"
+            v1_endpoint_base = "/papi/v1/um/"
+        elif account_type == BinanceAccountType.USDT_FUTURES:
             v2_endpoint_base = "/fapi/v2/"
             v3_endpoint_base = "/fapi/v3/"
+            v1_endpoint_base = "/fapi/v1/"
 
         # Create endpoints
         self._endpoint_futures_position_mode = BinanceFuturesPositionModeHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_all_open_orders = BinanceFuturesAllOpenOrdersHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_cancel_multiple_orders = BinanceFuturesCancelMultipleOrdersHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_account = BinanceFuturesAccountHttp(client, v2_endpoint_base)
         self._endpoint_futures_position_risk = BinanceFuturesPositionRiskHttp(
             client,
             v3_endpoint_base,
         )
-        self._endpoint_futures_leverage = BinanceFuturesLeverageHttp(client, self.base_endpoint)
+        self._endpoint_futures_leverage = BinanceFuturesLeverageHttp(
+            client,
+            v1_endpoint_base,
+        )
         self._endpoint_futures_margin_type = BinanceFuturesMarginTypeHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_symbol_config = BinanceFuturesSymbolConfigHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_algo_order = BinanceFuturesAlgoOrderHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_open_algo_orders = BinanceFuturesOpenAlgoOrdersHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_all_algo_orders = BinanceFuturesAllAlgoOrdersHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
         self._endpoint_futures_cancel_all_algo_orders = BinanceFuturesCancelAllAlgoOrdersHttp(
             client,
-            self.base_endpoint,
+            v1_endpoint_base,
         )
 
     async def query_futures_hedge_mode(

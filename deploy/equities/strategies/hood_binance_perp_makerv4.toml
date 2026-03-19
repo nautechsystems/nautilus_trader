@@ -5,16 +5,16 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "msft_tradexyz_makerv4"
-strategy_instance_id = "msft_tradexyz_makerv4"
-trader_id = "EQUITIES-LIVE-MSFT-TRADEXYZ"
-external_strategy_id = "msft_tradexyz_makerv4"
+strategy_id = "hood_binance_perp_makerv4"
+strategy_instance_id = "hood_binance_perp_makerv4"
+trader_id = "EQUITIES-LIVE-HOOD-BINANCE-TRADEXYZ"
+external_strategy_id = "hood_binance_perp_makerv4"
 
 [venues]
-execution_venue = "HYPERLIQUID"
+execution_venue = "BINANCE_PERP"
 reference_venue = "IBKR"
-execution_symbol = "MSFT"
-reference_symbol = "MSFT/USD"
+execution_symbol = "HOODUSDT"
+reference_symbol = "HOOD/USD"
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -39,20 +39,16 @@ purge_account_events_interval_mins = 10
 purge_account_events_lookback_mins = 60
 purge_from_database = true
 
-[node.venues.HYPERLIQUID]
-instrument_id = "xyz:MSFT-USD-PERP.HYPERLIQUID"
+[node.venues.BINANCE_PERP]
+instrument_id = "HOODUSDT-PERP.BINANCE_PERP"
 execution = true
-private_key_env = "TRADE_XYZ_AGENT_PK"
-# Effective account identity precedence: vault_address_env -> account_address_env -> agent wallet master.
-account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
-vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
-dex = "xyz"
-testnet = false
+account_type = "USDT_FUTURES"
+private_api_family = "PORTFOLIO_MARGIN"
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"
-instrument_id = "MSFT.NASDAQ"
-ibg_client_id = 20
+instrument_id = "HOOD.NASDAQ"
+ibg_client_id = 45
 execution = false
 use_regular_trading_hours = false
 
@@ -62,7 +58,7 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "msft_tradexyz_makerv4"
+strategy_id = "hood_binance_perp_makerv4"
 strategy_groups = "equities"
 param_set = "makerv4"
 force_bot_off_on_start = true

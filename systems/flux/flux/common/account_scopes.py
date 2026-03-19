@@ -30,6 +30,7 @@ class AccountScopeConfig:
     api_key_env: str | None = None
     api_secret_env: str | None = None
     account_type: str | None = None
+    private_api_family: str | None = None
     base_url_http: str | None = None
     recv_window_ms: int | None = None
     private_key_env: str | None = None
@@ -108,6 +109,7 @@ def decode_account_scopes(rows: Iterable[Mapping[str, Any]]) -> tuple[AccountSco
                 api_key_env=_optional_text(row, "api_key_env"),
                 api_secret_env=_optional_text(row, "api_secret_env"),
                 account_type=_optional_text(row, "account_type"),
+                private_api_family=_optional_text(row, "private_api_family"),
                 base_url_http=_optional_text(row, "base_url_http"),
                 recv_window_ms=_optional_int(row, "recv_window_ms"),
                 private_key_env=_optional_text(row, "private_key_env"),

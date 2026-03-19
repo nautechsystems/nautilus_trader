@@ -90,9 +90,9 @@ def _clone_runtime_specs() -> tuple[RuntimeParamSpec, ...]:
             RuntimeParamSpec(
                 name="maker_fee_source",
                 schema_type="select",
-                default="hyperliquid_api",
+                default="config",
                 description="Maker-fee source used for live quote gross-up.",
-                options=(("hyperliquid_api", "Hyperliquid API"),),
+                options=(("config", "Configured Assumption"),),
             ),
             RuntimeParamSpec(
                 name="hedge_fee_source",
@@ -124,20 +124,22 @@ def _clone_runtime_specs() -> tuple[RuntimeParamSpec, ...]:
                 maximum=100.0,
             ),
             RuntimeParamSpec(
-                name="hl_taker_fee_bps",
+                name="maker_taker_fee_bps",
                 schema_type="number",
                 default=4.5,
-                description="Configured Hyperliquid taker-fee assumption in bps.",
+                description="Configured maker-venue taker-fee assumption in bps.",
                 minimum=0.0,
                 maximum=100.0,
+                aliases=("hl_taker_fee_bps",),
             ),
             RuntimeParamSpec(
-                name="hl_maker_fee_bps",
+                name="maker_maker_fee_bps",
                 schema_type="number",
                 default=0.25,
-                description="Configured Hyperliquid maker-fee assumption in bps.",
+                description="Configured maker-venue maker-fee assumption in bps.",
                 minimum=0.0,
                 maximum=100.0,
+                aliases=("hl_maker_fee_bps",),
             ),
             RuntimeParamSpec(
                 name="bid_edge_take_bps",

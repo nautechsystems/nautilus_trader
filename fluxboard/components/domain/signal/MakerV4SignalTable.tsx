@@ -289,11 +289,15 @@ export default function MakerV4SignalTable({
               ? '—'
               : `$${Number(feeAssumptions.ibkr_fee_min_usd).toFixed(2)}`
           }`,
-          `HL taker fee: ${
-            feeAssumptions?.hl_taker_fee_bps == null ? '—' : `${Number(feeAssumptions.hl_taker_fee_bps).toFixed(2)} bps`
+          `Maker taker fee: ${
+            feeAssumptions?.maker_taker_fee_bps == null
+              ? '—'
+              : `${Number(feeAssumptions.maker_taker_fee_bps).toFixed(2)} bps`
           }`,
-          `HL maker fee: ${
-            feeAssumptions?.hl_maker_fee_bps == null ? '—' : `${Number(feeAssumptions.hl_maker_fee_bps).toFixed(2)} bps`
+          `Maker maker fee: ${
+            feeAssumptions?.maker_maker_fee_bps == null
+              ? '—'
+              : `${Number(feeAssumptions.maker_maker_fee_bps).toFixed(2)} bps`
           }`,
           `Assumed hedge fee: ${
             feeAssumptions?.assumed_hedge_fee_bps == null

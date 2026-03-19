@@ -1,5 +1,6 @@
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 
 
 def get_http_base_url(  # noqa: C901 (URL dispatch)
@@ -44,6 +45,23 @@ def get_http_base_url(  # noqa: C901 (URL dispatch)
         raise RuntimeError(  # pragma: no cover (design-time error)
             f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
         )
+
+
+def get_private_http_base_url(
+    account_type: BinanceAccountType,
+    private_api_family: BinancePrivateApiFamily,
+    environment: BinanceEnvironment,
+    is_us: bool,
+) -> str:
+    if not account_type.is_futures or private_api_family != BinancePrivateApiFamily.PORTFOLIO_MARGIN:
+        return get_http_base_url(account_type, environment, is_us)
+
+    if environment != BinanceEnvironment.LIVE:
+        raise ValueError("Portfolio margin private API routing is only supported on Binance live")
+    if is_us:
+        raise ValueError("Portfolio margin private API routing is not supported on Binance US")
+
+    return "https://papi.binance.com"
 
 
 def get_ws_api_base_url(  # noqa: C901 (URL dispatch)
@@ -136,3 +154,22 @@ def get_ws_base_url(  # noqa: C901 (URL dispatch)
         raise RuntimeError(
             f"invalid `BinanceAccountType`, was {account_type}",
         )  # pragma: no cover (design-time error)
+
+
+def get_user_stream_base_url(
+    account_type: BinanceAccountType,
+    private_api_family: BinancePrivateApiFamily,
+    environment: BinanceEnvironment,
+    is_us: bool,
+) -> str:
+    if not account_type.is_futures or private_api_family != BinancePrivateApiFamily.PORTFOLIO_MARGIN:
+        return get_ws_base_url(account_type, environment, is_us)
+
+    if environment != BinanceEnvironment.LIVE:
+        raise ValueError("Portfolio margin user stream routing is only supported on Binance live")
+    if is_us:
+        raise ValueError("Portfolio margin user stream routing is not supported on Binance US")
+    if account_type != BinanceAccountType.USDT_FUTURES:
+        raise ValueError("Portfolio margin user stream routing is currently supported for UM futures only")
+
+    return "wss://fstream.binance.com/pm"

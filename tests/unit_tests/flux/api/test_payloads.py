@@ -2892,8 +2892,8 @@ def test_build_signals_payload_emits_makerv4_execution_mode_overnight_and_fee_op
                 "fee_assumptions": {
                     "ibkr_fee_plan": "tiered",
                     "ibkr_fee_min_usd": 0.35,
-                    "hl_taker_fee_bps": 4.5,
-                    "hl_maker_fee_bps": 0.25,
+                    "maker_taker_fee_bps": 4.5,
+                    "maker_maker_fee_bps": 0.25,
                     "assumed_hedge_fee_bps": 1.0,
                 },
                 "pending_hedge": {
@@ -2924,10 +2924,11 @@ def test_build_signals_payload_emits_makerv4_execution_mode_overnight_and_fee_op
         "fee_assumptions": {
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "hl_taker_fee_bps": 4.5,
-            "hl_maker_fee_bps": 0.25,
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
+        "hedge_backlog": None,
     }
 
 
@@ -3004,8 +3005,8 @@ def test_build_signals_payload_emits_complete_makerv4_steady_state_hedge_policy_
                 "fee_assumptions": {
                     "ibkr_fee_plan": "tiered",
                     "ibkr_fee_min_usd": 0.35,
-                    "hl_taker_fee_bps": 4.5,
-                    "hl_maker_fee_bps": 0.25,
+                    "maker_taker_fee_bps": 4.5,
+                    "maker_maker_fee_bps": 0.25,
                     "assumed_hedge_fee_bps": 1.0,
                 },
             },

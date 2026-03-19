@@ -9,6 +9,8 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_user_stream_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -393,30 +395,51 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         api_key = config.api_key or get_api_key(config.account_type, environment)
         api_secret = config.api_secret or get_api_secret(config.account_type, environment)
 
-        # Get HTTP client singleton
-        client: BinanceHttpClient = get_cached_binance_http_client(
+        # Public market-data client singleton
+        public_client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
             api_key=api_key,
             api_secret=api_secret,
             key_type=config.key_type,
-            base_url=config.base_url_http,
+            base_url=None if config.account_type.is_futures else config.base_url_http,
             environment=environment,
             is_us=config.us,
             proxy_url=config.proxy_url,
         )
 
-        default_base_url_ws: str = get_ws_base_url(
+        private_client: BinanceHttpClient = public_client
+        if config.account_type.is_futures:
+            private_base_url = config.base_url_http or get_private_http_base_url(
+                config.account_type,
+                private_api_family=config.private_api_family,
+                environment=environment,
+                is_us=config.us,
+            )
+            private_client = get_cached_binance_http_client(
+                clock=clock,
+                account_type=config.account_type,
+                api_key=api_key,
+                api_secret=api_secret,
+                key_type=config.key_type,
+                base_url=private_base_url,
+                environment=environment,
+                is_us=config.us,
+                proxy_url=config.proxy_url,
+            )
+
+        default_stream_base_url: str = get_user_stream_base_url(
             account_type=config.account_type,
             environment=environment,
             is_us=config.us,
+            private_api_family=config.private_api_family,
         )
 
         provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
-                client=client,
+                client=public_client,
                 clock=clock,
                 account_type=config.account_type,
                 environment=environment,
@@ -426,12 +449,12 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 
             return BinanceSpotExecutionClient(
                 loop=loop,
-                client=client,
+                client=private_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
                 instrument_provider=provider,
-                base_url_ws=config.base_url_ws or default_base_url_ws,
+                base_url_ws=config.base_url_ws or default_stream_base_url,
                 account_type=config.account_type,
                 name=name,
                 config=config,
@@ -442,7 +465,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
-                client=client,
+                client=public_client,
                 clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
@@ -451,15 +474,16 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 
             return BinanceFuturesExecutionClient(
                 loop=loop,
-                client=client,
+                client=private_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
                 instrument_provider=provider,
-                base_url_ws=config.base_url_ws or default_base_url_ws,
+                base_url_ws=config.base_url_ws or default_stream_base_url,
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                market_client=public_client,
                 environment=environment,
                 api_key=api_key,
                 api_secret=api_secret,

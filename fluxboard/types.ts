@@ -739,8 +739,8 @@ export type MakerV4OperatorPayload = {
   fee_assumptions?: {
     ibkr_fee_plan?: string;
     ibkr_fee_min_usd?: number | null;
-    hl_taker_fee_bps?: number | null;
-    hl_maker_fee_bps?: number | null;
+    maker_taker_fee_bps?: number | null;
+    maker_maker_fee_bps?: number | null;
     assumed_hedge_fee_bps?: number | null;
   };
   hedge_backlog?: {

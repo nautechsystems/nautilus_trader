@@ -2,7 +2,10 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_user_stream_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 
@@ -73,6 +76,42 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 )
 def test_get_http_base_url(account_type, environment, is_us, expected):
     url = get_http_base_url(account_type, environment=environment, is_us=is_us)
+    assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("account_type", "private_api_family", "environment", "is_us", "expected"),
+    [
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinancePrivateApiFamily.STANDARD_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "https://fapi.binance.com",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            BinanceEnvironment.LIVE,
+            False,
+            "https://papi.binance.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            BinanceEnvironment.LIVE,
+            False,
+            "https://papi.binance.com",
+        ),
+    ],
+)
+def test_get_private_http_base_url(account_type, private_api_family, environment, is_us, expected):
+    url = get_private_http_base_url(
+        account_type,
+        private_api_family=private_api_family,
+        environment=environment,
+        is_us=is_us,
+    )
     assert url == expected
 
 
@@ -162,6 +201,41 @@ def test_get_http_base_url(account_type, environment, is_us, expected):
 )
 def test_get_ws_base_url(account_type, environment, is_us, expected):
     url = get_ws_base_url(account_type, environment=environment, is_us=is_us)
+    assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("account_type", "private_api_family", "environment", "is_us", "expected"),
+    [
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinancePrivateApiFamily.STANDARD_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://fstream.binance.com",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://fstream.binance.com/pm",
+        ),
+    ],
+)
+def test_get_user_stream_base_url(
+    account_type,
+    private_api_family,
+    environment,
+    is_us,
+    expected,
+):
+    url = get_user_stream_base_url(
+        account_type,
+        private_api_family=private_api_family,
+        environment=environment,
+        is_us=is_us,
+    )
     assert url == expected
 
 

@@ -114,8 +114,8 @@ function buildMakerV4Strategy(): SignalStrategy {
         fee_assumptions: {
           ibkr_fee_plan: 'tiered',
           ibkr_fee_min_usd: 0.35,
-          hl_taker_fee_bps: 4.5,
-          hl_maker_fee_bps: 0.25,
+          maker_taker_fee_bps: 4.5,
+          maker_maker_fee_bps: 0.25,
           assumed_hedge_fee_bps: 1.0,
         },
       },
@@ -296,7 +296,10 @@ describe('MakerV4SignalTable', () => {
 
     const strategyId = screen.getByText('aapl_tradexyz_makerv4');
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('IBKR fee plan: tiered'));
-    expect(strategyId).toHaveAttribute('title', expect.stringContaining('HL taker fee: 4.50 bps'));
+    expect(strategyId).toHaveAttribute(
+      'title',
+      expect.stringContaining('Maker taker fee: 4.50 bps'),
+    );
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('Assumed hedge fee: 1.00 bps'));
   });
 

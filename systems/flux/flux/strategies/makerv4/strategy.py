@@ -32,8 +32,7 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 from flux.strategies.makerv4 import fees as fees_mod
 from flux.strategies.makerv4 import publisher as publisher_mod
 from flux.strategies.makerv4 import runtime_params as runtime_params_mod
-from flux.strategies.makerv4.instruments import round_base_fill_to_ibkr_shares
-from flux.strategies.makerv4.instruments import translate_maker_fill_to_ibkr_shares
+from flux.strategies.makerv4.instruments import translate_hyperliquid_fill_to_ibkr_shares
 from flux.strategies.makerv4.managed_orders import HedgeBacklogState
 from flux.strategies.makerv4.managed_orders import HedgeOrderIntent
 from flux.strategies.makerv4.managed_orders import ManagedMakerOrderState
@@ -466,80 +465,13 @@ class MakerV4Strategy(Strategy):
             return (bid + ask) / Decimal("2")
         return ask or bid
 
-    def _hedge_min_share_increment(self) -> Decimal:
-        return Decimal(str(getattr(self.config, "hedge_min_share_increment", Decimal("1"))))
-
-    def _translate_maker_fill(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None,
-    ):
-        instrument = self._resolve_instrument(self.config.maker_instrument_id)
-        if instrument is None:
-            self._last_pricing_debug["maker_qty_conversion_status"] = "missing_metadata"
-            self._last_pricing_debug["maker_qty_conversion_source"] = "maker instrument unavailable"
-            return None
-        translation = translate_maker_fill_to_ibkr_shares(
-            maker_instrument=instrument,
-            fill_qty=fill_qty,
-            fill_price=fill_price,
-            min_share_increment=self._hedge_min_share_increment(),
-        )
-        self._last_pricing_debug["maker_qty_conversion_status"] = (
-            translation.qty_conversion_status
-        )
-        self._last_pricing_debug["maker_qty_conversion_source"] = (
-            translation.qty_conversion_source
-        )
-        return translation
-
-    def _maker_fill_hedge_qty(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None,
-    ) -> Decimal | None:
-        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
-        if translation is None or translation.hedge_qty is None:
-            return None
-        return abs(translation.hedge_qty)
-
-    def _maker_fill_base_qty(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None,
-    ) -> Decimal | None:
-        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
-        if translation is None or translation.base_qty is None:
-            return None
-        return abs(translation.base_qty)
-
-    def _maker_fill_qty_from_base_qty(
-        self,
-        *,
-        base_qty: Decimal,
-        fill_price: Decimal | None,
-    ) -> Decimal | None:
-        instrument = self._resolve_instrument(self.config.maker_instrument_id)
-        if instrument is None:
-            return None
-        exposure = venue_qty_from_base_qty(
-            instrument,
-            base_qty,
-            last_px=fill_price,
-        )
-        venue_qty = exposure.venue_qty
-        if venue_qty is None:
-            return None
-        return abs(venue_qty)
-
     def _maker_order_hedge_qty(self) -> Decimal:
         return abs(
-            round_base_fill_to_ibkr_shares(
+            translate_hyperliquid_fill_to_ibkr_shares(
                 fill_qty=self._maker_order_base_qty(),
-                min_share_increment=self._hedge_min_share_increment(),
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
             )
         )
 
@@ -1172,8 +1104,8 @@ class MakerV4Strategy(Strategy):
         return {
             "ibkr_fee_plan": assumptions.ibkr_fee_plan,
             "ibkr_fee_min_usd": float(assumptions.ibkr_fee_min_usd),
-            "hl_taker_fee_bps": float(assumptions.hl_taker_fee_bps),
-            "hl_maker_fee_bps": float(assumptions.hl_maker_fee_bps),
+            "maker_taker_fee_bps": float(assumptions.maker_taker_fee_bps),
+            "maker_maker_fee_bps": float(assumptions.maker_maker_fee_bps),
             "assumed_hedge_fee_bps": float(assumptions.assumed_hedge_fee_bps),
         }
 
@@ -1185,8 +1117,14 @@ class MakerV4Strategy(Strategy):
                 self._runtime_params.get("ibkr_fee_plan", default_ibkr_fee_plan),
             ),
             ibkr_fee_min_usd=self._runtime_params.get("ibkr_fee_min_usd", 0.35),
-            hl_taker_fee_bps=self._runtime_params.get("hl_taker_fee_bps", 4.5),
-            hl_maker_fee_bps=self._runtime_params.get("hl_maker_fee_bps", 0.25),
+            maker_taker_fee_bps=self._runtime_params.get(
+                "maker_taker_fee_bps",
+                self._runtime_params.get("hl_taker_fee_bps", 4.5),
+            ),
+            maker_maker_fee_bps=self._runtime_params.get(
+                "maker_maker_fee_bps",
+                self._runtime_params.get("hl_maker_fee_bps", 0.25),
+            ),
             assumed_hedge_fee_bps=self._runtime_params.get("assumed_hedge_fee_bps", 1.0),
         )
 
@@ -1434,7 +1372,7 @@ class MakerV4Strategy(Strategy):
                 - float(assumed_hedge_fee_bps)
                 - float(hedge_slippage_bps or 0.0)
             )
-        return publisher_mod.build_quote_snapshot_payload(
+        payload = publisher_mod.build_quote_snapshot_payload(
             maker_leg=maker_leg,
             hedge_leg=hedge_leg,
             ref_leg=ref_leg,
@@ -1468,6 +1406,10 @@ class MakerV4Strategy(Strategy):
             ts_ms=max(0, int(now_ns)) // 1_000_000,
             fee_assumptions=fee_assumptions,
         )
+        payload["max_ibkr_quote_age_ms"] = int(
+            getattr(self.config, "max_ibkr_quote_age_ms", 1_000),
+        )
+        return payload
 
     def _maker_quote_health(self, *, now_ns: int):
         maker_leg = self._quote_leg_snapshot(
@@ -1524,7 +1466,7 @@ class MakerV4Strategy(Strategy):
             return None
 
         fee_assumptions = self._fee_assumptions()
-        maker_fee_bps = fee_assumptions.hl_maker_fee_bps
+        maker_fee_bps = fee_assumptions.maker_maker_fee_bps
         hedge_fee_bps = build_effective_ibkr_fee_bps(
             fee_assumptions=fee_assumptions,
             hedge_notional_usd=reference_quote.mid * self._maker_order_base_qty(),
@@ -1926,7 +1868,7 @@ class MakerV4Strategy(Strategy):
             reference_bid=reference_quote.bid,
             reference_ask=reference_quote.ask,
             target_edge_bps=Decimal(str(self._runtime_params.get("bid_edge_take_bps", "0"))),
-            hl_taker_fee_bps=fee_assumptions.hl_taker_fee_bps,
+            maker_taker_fee_bps=fee_assumptions.maker_taker_fee_bps,
             hedge_fee_bps=hedge_fee_bps,
         )
         if buy_price is not None:
@@ -1939,7 +1881,7 @@ class MakerV4Strategy(Strategy):
             reference_bid=reference_quote.bid,
             reference_ask=reference_quote.ask,
             target_edge_bps=Decimal(str(self._runtime_params.get("ask_edge_take_bps", "0"))),
-            hl_taker_fee_bps=fee_assumptions.hl_taker_fee_bps,
+            maker_taker_fee_bps=fee_assumptions.maker_taker_fee_bps,
             hedge_fee_bps=hedge_fee_bps,
         )
         if sell_price is not None:
@@ -2162,14 +2104,14 @@ class MakerV4Strategy(Strategy):
         if quote is None:
             self._queue_hedge_backlog_for_fill(
                 fill=fill,
-                maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
+                maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
                 blocked_reason="missing_ref_quote",
             )
             return
         order = self.record_maker_fill(
             fill=fill,
             quote=quote,
-            maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
+            maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
         )
         if order is None:
             return
@@ -2181,28 +2123,23 @@ class MakerV4Strategy(Strategy):
         if not client_order_id:
             return None
         fill_id = str(getattr(event, "trade_id", "")).strip()
-        fill_qty = self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty")
-        fill_price = self._required_decimal(getattr(event, "last_px", None), field_name="last_px")
         if not fill_id:
             fill_id = (
                 f"take_take_event:{client_order_id}:"
-                f"{fill_qty}:"
+                f"{self._required_decimal(getattr(event, 'last_qty', None), field_name='last_qty')}:"
                 f"{max(0, int(now_ns))}"
             )
         if fill_id in self._seen_fill_ids:
             return None
         self._remember_fill_id(fill_id)
-        base_fill_qty = self._maker_fill_base_qty(fill_qty=fill_qty, fill_price=fill_price)
-        if base_fill_qty is None or base_fill_qty <= 0:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return None
 
         accumulator = self._take_take_fill_accumulators.get(client_order_id, {})
         accumulated_qty = Decimal(str(accumulator.get("qty", "0")))
         self._take_take_fill_accumulators[client_order_id] = {
             "side": str(getattr(event, "order_side", "")).strip(),
-            "qty": accumulated_qty + base_fill_qty,
-            "price": fill_price,
+            "qty": accumulated_qty
+            + self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty"),
+            "price": self._required_decimal(getattr(event, "last_px", None), field_name="last_px"),
             "ts_ms": max(0, int(now_ns) // 1_000_000),
         }
         return client_order_id
@@ -2273,10 +2210,14 @@ class MakerV4Strategy(Strategy):
         if fill_id and fill_id not in self._seen_fill_ids:
             self._remember_fill_id(fill_id)
         hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
-        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
-        if hedge_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return False
+        hedge_qty = abs(
+            translate_hyperliquid_fill_to_ibkr_shares(
+                fill_qty=fill.qty,
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
+            )
+        )
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return False
@@ -2471,33 +2412,27 @@ class MakerV4Strategy(Strategy):
             ts_ms=fill_ts_ms,
         )
         hedgeable_qty = abs(
-            round_base_fill_to_ibkr_shares(
+            translate_hyperliquid_fill_to_ibkr_shares(
                 fill_qty=aggregated_qty,
-                min_share_increment=self._hedge_min_share_increment(),
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
             )
         )
         if hedgeable_qty <= 0:
             return
-        fill_price = self._required_decimal(accumulator.get("price"), field_name="price")
-        maker_fill_qty = self._maker_fill_qty_from_base_qty(
-            base_qty=aggregated_qty,
-            fill_price=fill_price,
-        )
-        if maker_fill_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return
         fill = MakerFill(
             fill_id=f"take_take:{order_id}",
             side=aggregated_side,
-            qty=maker_fill_qty,
-            price=fill_price,
+            qty=hedgeable_qty,
+            price=self._required_decimal(accumulator.get("price"), field_name="price"),
             ts_ms=fill_ts_ms,
         )
         quote = self._reference_quote_snapshot(now_ns=now_ns)
         if quote is None:
             self._queue_hedge_backlog_for_fill(
                 fill=fill,
-                maker_fee_bps=self._fee_assumptions().hl_maker_fee_bps,
+                maker_fee_bps=self._fee_assumptions().maker_maker_fee_bps,
                 blocked_reason="missing_ref_quote",
             )
             return
@@ -2505,7 +2440,7 @@ class MakerV4Strategy(Strategy):
         order = self.record_maker_fill(
             fill=fill,
             quote=quote,
-            maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
+            maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
         )
         if order is None:
             return
@@ -2989,10 +2924,14 @@ class MakerV4Strategy(Strategy):
             return None
 
         hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
-        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
-        if hedge_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return None
+        hedge_qty = abs(
+            translate_hyperliquid_fill_to_ibkr_shares(
+                fill_qty=fill.qty,
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
+            )
+        )
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return None

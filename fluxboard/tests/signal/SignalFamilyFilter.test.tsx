@@ -113,8 +113,8 @@ function buildMakerV4Strategy(): SignalStrategy {
         fee_assumptions: {
           ibkr_fee_plan: 'tiered',
           ibkr_fee_min_usd: 0.35,
-          hl_taker_fee_bps: 4.5,
-          hl_maker_fee_bps: 0.25,
+          maker_taker_fee_bps: 4.5,
+          maker_maker_fee_bps: 0.25,
           assumed_hedge_fee_bps: 1.0,
         },
       },
@@ -180,17 +180,13 @@ describe('Signal family filter', () => {
     });
   });
 
-  it('shows a locked maker_v4 family control on equities signal while keeping the strategy filter', async () => {
+  it('locks equities signal to maker_v4 implicitly while keeping the strategy filter', async () => {
     renderSignalTable('/equities/signal');
 
     await screen.findByTestId('maker-v4-signal-table');
-
-    const familyFilter = screen.getByLabelText('Signal family');
-    expect(familyFilter).toBeInTheDocument();
-    expect(familyFilter).toHaveValue('maker_v4');
-    expect(familyFilter).toBeDisabled();
-
     fireEvent.click(screen.getByText('Filters'));
+
+    expect(screen.queryByText('Family')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Strategy ID/i)).toBeInTheDocument();
   });
 });

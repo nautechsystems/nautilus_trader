@@ -20,6 +20,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_CLIENT_ID
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -89,6 +90,7 @@ __all__ = [
     "BinanceFuturesMarkPriceUpdate",
     "BinanceInstrumentProviderConfig",
     "BinanceKeyType",
+    "BinancePrivateApiFamily",
     "BinanceLiveDataClientFactory",
     "BinanceLiveExecClientFactory",
     "BinanceOrderBookDeltaDataLoader",

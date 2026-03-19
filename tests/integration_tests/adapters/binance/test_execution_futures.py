@@ -8,12 +8,14 @@ import pytest
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAlgoOrder
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -50,6 +52,35 @@ from nautilus_trader.trading.strategy import Strategy
 
 
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+
+
+def test_portfolio_margin_futures_http_api_routes():
+    clock = LiveClock()
+    client = BinanceHttpClient(
+        clock=clock,
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
+        base_url="https://papi.binance.com/",
+    )
+    http_account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURES,
+        private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+    )
+
+    assert http_account._endpoint_futures_account.url_path == "/papi/v1/um/account"
+    assert http_account._endpoint_futures_position_risk.url_path == "/papi/v1/um/positionRisk"
+    assert http_account._endpoint_futures_position_mode.url_path == "/papi/v1/um/positionSide/dual"
+    assert http_account._endpoint_futures_all_open_orders.url_path == "/papi/v1/um/allOpenOrders"
+    assert http_account._endpoint_futures_cancel_multiple_orders.url_path == "/papi/v1/um/batchOrders"
+    assert http_account._endpoint_futures_leverage.url_path == "/papi/v1/um/leverage"
+    assert http_account._endpoint_futures_margin_type.url_path == "/papi/v1/um/marginType"
+    assert http_account._endpoint_futures_symbol_config.url_path == "/papi/v1/um/symbolConfig"
+    assert http_account._endpoint_futures_algo_order.url_path == "/papi/v1/um/algoOrder"
+    assert http_account._endpoint_futures_open_algo_orders.url_path == "/papi/v1/um/openAlgoOrders"
+    assert http_account._endpoint_futures_all_algo_orders.url_path == "/papi/v1/um/allAlgoOrders"
+    assert http_account._endpoint_futures_cancel_all_algo_orders.url_path == "/papi/v1/um/algoOpenOrders"
 
 
 class TestBinanceFuturesExecutionClient:
@@ -571,6 +602,52 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
+
+    @pytest.mark.asyncio
+    async def test_submit_market_order_uses_papi_um_order_for_portfolio_margin(self, mocker):
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", False)
+
+        exec_client = BinanceFuturesExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        )
+        mocker.patch.object(exec_client, "_is_dual_side_position", False)
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        request = mock_send_request.call_args
+        assert request[0][1] == "/papi/v1/um/order"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

@@ -92,19 +92,14 @@ def _fill_event(
     )
 
 
-def _instrument(
-    *,
-    raw_symbol: str,
-    multiplier: str = "1",
-    settlement_currency: str = "USD",
-) -> SimpleNamespace:
+def _instrument(*, raw_symbol: str, multiplier: str = "1") -> SimpleNamespace:
     return SimpleNamespace(
         raw_symbol=raw_symbol,
         price_precision=2,
         price_increment=Decimal("0.01"),
         base_currency=SimpleNamespace(code="AAPL"),
         quote_currency=SimpleNamespace(code="USD"),
-        settlement_currency=SimpleNamespace(code=settlement_currency),
+        settlement_currency=SimpleNamespace(code="USD"),
         multiplier=Decimal(multiplier),
         is_inverse=False,
         make_qty=lambda value: Decimal(str(value)),
@@ -172,22 +167,6 @@ def _configure_strategy_for_quoting(strategy: MakerV4Strategy) -> tuple[Instrume
     return maker_id, ref_id
 
 
-def _prepare_strategy_for_maker_fills(strategy: MakerV4Strategy) -> MakerV4Strategy:
-    maker_id = strategy.config.maker_instrument_id
-    ref_id = strategy.config.reference_instrument_id
-    strategy._instruments = {
-        maker_id: _instrument(raw_symbol="AAPL/USD"),
-        ref_id: _instrument(raw_symbol="AAPL"),
-    }
-    strategy._cache = SimpleNamespace(
-        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
-        positions_open=lambda *args, **kwargs: [],
-        accounts=lambda: [],
-    )
-    strategy._publish_json = lambda *_args, **_kwargs: None
-    return strategy
-
-
 def _enum_name(value: object) -> str:
     name = getattr(value, "name", None)
     if isinstance(name, str) and name:
@@ -199,8 +178,8 @@ def _prepare_strategy_for_fill_events(strategy: MakerV4Strategy) -> MakerV4Strat
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
     strategy._instruments = {
-        maker_id: _instrument(raw_symbol="AAPL/USD"),
-        ref_id: _instrument(raw_symbol="AAPL"),
+        maker_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL/USD"),
+        ref_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL"),
     }
     strategy._latest_quotes = {
         ref_id: {
@@ -209,11 +188,6 @@ def _prepare_strategy_for_fill_events(strategy: MakerV4Strategy) -> MakerV4Strat
             "ts_ns": _REGULAR_SESSION_TS_NS - 50_000_000,
         },
     }
-    strategy._cache = SimpleNamespace(
-        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
-        positions_open=lambda *args, **kwargs: [],
-        accounts=lambda: [],
-    )
     strategy._submit_hedge_intent = lambda _intent: "hedge-fill-1"
     strategy._publish_json = lambda *_args, **_kwargs: None
     return strategy
@@ -251,7 +225,7 @@ class _StubReferenceBalanceProvider:
 
 
 def test_makerv4_fill_builds_ioc_hedge_order_through_mid() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
 
     order = strategy.record_maker_fill(
         fill=_fill(side="SELL"),
@@ -267,115 +241,17 @@ def test_makerv4_fill_builds_ioc_hedge_order_through_mid() -> None:
     assert order.outside_rth is True
 
 
-def test_makerv4_record_maker_fill_converts_venue_qty_to_canonical_stock_qty_before_ibkr_rounding() -> None:
-    strategy = MakerV4Strategy(
-        config=_config(
-            maker_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
-            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
-            strategy_id="pltr_binance_perp_makerv4",
-            external_strategy_id="pltr_binance_perp_makerv4",
-        )
-    )
-    maker_id = strategy.config.maker_instrument_id
-    ref_id = strategy.config.reference_instrument_id
-    strategy._instruments = {
-        maker_id: _instrument(raw_symbol="PLTRUSDT", multiplier="0.0625"),
-        ref_id: _instrument(raw_symbol="PLTR"),
-    }
-
-    order = strategy.record_maker_fill(
-        fill=_fill(side="BUY", qty="16", px="118.50"),
-        quote=IbkrQuoteSnapshot(
-            instrument_id=str(ref_id),
-            bid=Decimal("118.50"),
-            ask=Decimal("118.54"),
-            age_ms=25,
-            ts_ms=1_000,
-        ),
-        maker_fee_bps=Decimal("0.25"),
-    )
-
-    assert order is not None
-    assert order.side == "SELL"
-    assert order.qty == Decimal("1")
-
-
-def test_makerv4_record_maker_fill_disables_hedging_when_maker_qty_conversion_is_unsupported() -> None:
-    strategy = MakerV4Strategy(
-        config=_config(
-            maker_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
-            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
-            strategy_id="pltr_binance_perp_makerv4",
-            external_strategy_id="pltr_binance_perp_makerv4",
-        )
-    )
-    maker_id = strategy.config.maker_instrument_id
-    ref_id = strategy.config.reference_instrument_id
-    strategy._instruments = {
-        maker_id: _instrument(
-            raw_symbol="PLTRUSDT",
-            multiplier="1",
-            settlement_currency="USDC",
-        ),
-        ref_id: _instrument(raw_symbol="PLTR"),
-    }
-
-    order = strategy.record_maker_fill(
-        fill=_fill(side="BUY", qty="1", px="118.50"),
-        quote=IbkrQuoteSnapshot(
-            instrument_id=str(ref_id),
-            bid=Decimal("118.50"),
-            ask=Decimal("118.54"),
-            age_ms=25,
-            ts_ms=1_000,
-        ),
-        maker_fee_bps=Decimal("0.25"),
-    )
-
-    assert order is None
-    assert strategy.hedge_disabled_reason == "maker_qty_conversion_failed"
-    assert strategy._pending_hedge is None
-
-
-def test_makerv4_record_maker_fill_queues_backlog_using_canonical_stock_qty_from_venue_fill() -> None:
-    strategy = MakerV4Strategy(
-        config=_config(
-            maker_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
-            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
-            strategy_id="pltr_binance_perp_makerv4",
-            external_strategy_id="pltr_binance_perp_makerv4",
-        )
-    )
-    maker_id = strategy.config.maker_instrument_id
-    ref_id = strategy.config.reference_instrument_id
-    strategy._instruments = {
-        maker_id: _instrument(raw_symbol="PLTRUSDT", multiplier="0.0625"),
-        ref_id: _instrument(raw_symbol="PLTR"),
-    }
-
-    order = strategy.record_maker_fill(
-        fill=_fill(side="BUY", qty="16", px="118.50"),
-        quote=IbkrQuoteSnapshot(
-            instrument_id=str(ref_id),
-            bid=Decimal("118.50"),
-            ask=Decimal("118.54"),
-            age_ms=5_000,
-            ts_ms=1_000,
-        ),
-        maker_fee_bps=Decimal("0.25"),
-    )
-
-    assert order is None
-    assert strategy.hedge_disabled_reason == "stale_quote"
-    assert strategy._hedge_backlog is not None
-    assert strategy._hedge_backlog.requested_qty == Decimal("1")
-
-
 def test_makerv4_submit_hedge_intent_attaches_outside_rth_ibkr_tag(monkeypatch) -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     created = _install_limit_order_factory(strategy, monkeypatch)
     submit_calls: list[dict[str, object]] = []
     strategy.submit_order = lambda _order, **kwargs: submit_calls.append(kwargs)
+    strategy._instruments = {
+        strategy.config.reference_instrument_id: _instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
 
     order_id = strategy._submit_hedge_intent(
         strategy.record_maker_fill(
@@ -394,11 +270,15 @@ def test_makerv4_submit_hedge_intent_attaches_outside_rth_ibkr_tag(monkeypatch) 
 def test_makerv4_submit_hedge_intent_does_not_force_include_overnight_during_regular_session(
     monkeypatch,
 ) -> None:
-    strategy = _prepare_strategy_for_maker_fills(
-        MakerV4Strategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
-    )
+    strategy = MakerV4Strategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
     created = _install_limit_order_factory(strategy, monkeypatch)
     strategy.submit_order = lambda _order, **_kwargs: None
+    strategy._instruments = {
+        strategy.config.reference_instrument_id: _instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
 
     order_id = strategy._submit_hedge_intent(
         strategy.record_maker_fill(
@@ -484,10 +364,8 @@ def test_makerv4_overnight_hedge_policy_keeps_immediate_ioc_and_include_overnigh
     assert created[0].tags == [IBOrderTags(outsideRth=True, includeOvernight=True).value]
 
 
-def test_makerv4_pending_hedge_policy_metadata_keeps_immediate_ioc_for_overnight_route() -> None:
-    strategy = _prepare_strategy_for_maker_fills(
-        MakerV4Strategy(config=_config(ibkr_hedge_route="SMART"))
-    )
+def test_makerv4_pending_hedge_policy_metadata_uses_overnight_day_policy() -> None:
+    strategy = MakerV4Strategy(config=_config(ibkr_hedge_route="SMART"))
 
     strategy.record_maker_fill(
         fill=_fill(fill_id="fill-overnight-policy", ts_ms=_OVERNIGHT_TS_MS),
@@ -505,9 +383,7 @@ def test_makerv4_pending_hedge_policy_metadata_keeps_immediate_ioc_for_overnight
 
 
 def test_makerv4_overnight_blueocean_config_normalizes_to_smart_hedge_instrument() -> None:
-    strategy = _prepare_strategy_for_maker_fills(
-        MakerV4Strategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
-    )
+    strategy = MakerV4Strategy(config=_config(ibkr_hedge_route="BLUEOCEAN"))
 
     order = strategy.record_maker_fill(
         fill=_fill(
@@ -676,7 +552,7 @@ def test_makerv4_second_maker_fill_while_hedge_pending_fails_closed_without_over
 
 
 def test_makerv4_duplicate_fill_event_does_not_double_hedge() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
 
     first = strategy.record_maker_fill(
         fill=_fill(fill_id="fill-1"),
@@ -706,7 +582,7 @@ def test_makerv4_duplicate_fill_event_is_ignored_through_order_callback() -> Non
 
 
 def test_makerv4_pauses_when_ibkr_quote_is_stale() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
 
     order = strategy.record_maker_fill(
         fill=_fill(),
@@ -809,7 +685,7 @@ def test_makerv4_take_take_stale_reference_quote_creates_recoverable_hedge_backl
 
 
 def test_makerv4_partial_hedge_fill_pauses_strategy() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     strategy.record_maker_fill(
         fill=_fill(qty="3"),
         quote=_quote(),
@@ -860,7 +736,7 @@ def test_makerv4_partial_hedge_fill_via_order_callback_pauses_strategy() -> None
 
 
 def test_makerv4_snapshot_restores_pending_hedge_state() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     strategy.record_maker_fill(
         fill=_fill(fill_id="fill-77", qty="1"),
         quote=_quote(),
@@ -1857,7 +1733,7 @@ def test_makerv4_take_take_base_qty_converts_hl_venue_size_and_hedges_full_base_
             fill_id="take-fill-1",
             client_order_id="order-1",
             side="BUY",
-            qty="16",
+            qty="1",
             px="189.20",
             ts_event=2_002_000_000,
         )
@@ -1873,137 +1749,6 @@ def test_makerv4_take_take_base_qty_converts_hl_venue_size_and_hedges_full_base_
     assert strategy.hedge_request_count == 1
     assert strategy._pending_hedge is not None
     assert strategy._pending_hedge.requested_qty == Decimal("1")
-
-
-def test_makerv4_take_take_binance_fill_converts_venue_qty_to_canonical_stock_qty_before_hedge_rounding(
-    monkeypatch,
-) -> None:
-    strategy = MakerV4Strategy(
-        config=_config(
-            maker_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
-            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
-            qty_unit="base",
-            strategy_id="pltr_binance_perp_makerv4",
-            external_strategy_id="pltr_binance_perp_makerv4",
-        )
-    )
-    maker_id = strategy.config.maker_instrument_id
-    ref_id = strategy.config.reference_instrument_id
-    fake_clock = SimpleNamespace(timestamp_ns=lambda: 2_000_000_000)
-    submitted: list[SimpleNamespace] = []
-
-    strategy._runtime_params.update(
-        {
-            "bot_on": True,
-            "execution_mode": "take_take",
-            "n_orders1": 1,
-            "n_orders2": 0,
-            "n_orders3": 0,
-            "bid_edge_take_bps": 5.0,
-            "ask_edge_take_bps": 50.0,
-            "qty": Decimal("1"),
-        }
-    )
-    strategy._publish_market_bbo = lambda **_kwargs: None
-    strategy._publish_balances_if_due = lambda: None
-    strategy._publish_state_snapshot = lambda **_kwargs: None
-    strategy._publish_json = lambda *_args, **_kwargs: None
-    strategy.submit_order = lambda order, **_kwargs: submitted.append(order)
-    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
-    _install_limit_order_factory(strategy, monkeypatch)
-    strategy._instruments = {
-        maker_id: _instrument(raw_symbol="PLTRUSDT", multiplier="0.0625"),
-        ref_id: _instrument(raw_symbol="PLTR"),
-    }
-    strategy._cache = SimpleNamespace(
-        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
-        positions_open=lambda *args, **kwargs: [],
-        accounts=lambda: [],
-    )
-
-    strategy.on_quote_tick(
-        _quote_tick(
-            instrument_id=maker_id,
-            bid="189.18",
-            ask="189.20",
-            ts_event=2_000_000_000,
-        )
-    )
-    strategy.on_quote_tick(
-        _quote_tick(
-            instrument_id=ref_id,
-            bid="190.00",
-            ask="190.04",
-            ts_event=2_001_000_000,
-        )
-    )
-
-    assert len(submitted) == 1
-    assert submitted[0].quantity == Decimal("16")
-
-    strategy.on_order_filled(
-        _fill_event(
-            instrument_id=maker_id,
-            fill_id="binance-take-fill-1",
-            client_order_id="order-1",
-            side="BUY",
-            qty="16",
-            px="189.20",
-            ts_event=2_002_000_000,
-        )
-    )
-
-    assert len(submitted) == 2
-    hedge_order = submitted[1]
-    assert str(hedge_order.instrument_id) == str(ref_id)
-    assert _enum_name(hedge_order.side) == "SELL"
-    assert hedge_order.quantity == Decimal("1")
-    assert strategy._pending_hedge is not None
-    assert strategy._pending_hedge.requested_qty == Decimal("1")
-
-
-def test_makerv4_take_take_fill_disables_hedging_when_maker_qty_conversion_is_unsupported() -> None:
-    strategy = _prepare_strategy_for_fill_events(
-        MakerV4Strategy(
-            config=_config(
-                maker_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
-                reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
-                strategy_id="pltr_binance_perp_makerv4",
-                external_strategy_id="pltr_binance_perp_makerv4",
-            )
-        )
-    )
-    maker_id = strategy.config.maker_instrument_id
-    strategy._instruments[maker_id] = _instrument(
-        raw_symbol="PLTRUSDT",
-        multiplier="1",
-        settlement_currency="USDC",
-    )
-    strategy._runtime_params["execution_mode"] = "take_take"
-    strategy._managed_maker_orders["BUY"] = ManagedMakerOrderState(
-        client_order_id="order-1",
-        instrument_id=str(maker_id),
-        side="BUY",
-        quantity=Decimal("1"),
-        price=Decimal("118.50"),
-        post_only=False,
-    )
-
-    strategy.on_order_filled(
-        _fill_event(
-            instrument_id=maker_id,
-            fill_id="take-fill-unsupported",
-            client_order_id="order-1",
-            side="BUY",
-            qty="1",
-            px="118.50",
-            ts_event=2_002_000_000,
-        )
-    )
-
-    assert strategy.hedge_disabled_reason == "maker_qty_conversion_failed"
-    assert strategy._pending_hedge is None
-    assert strategy._hedge_backlog is None
 
 
 def test_makerv4_take_take_reconciles_closed_partial_ioc_orders_without_terminal_callbacks(
@@ -3035,7 +2780,7 @@ def test_makerv4_maker_order_expire_reconciles_managed_order_state(monkeypatch) 
 
 
 def test_makerv4_hedge_reject_fails_closed(monkeypatch) -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     fake_clock = SimpleNamespace(timestamp_ns=lambda: 1_200_000_000)
     published: list[tuple[str, dict[str, object]]] = []
     strategy._publish_state_snapshot = lambda **_kwargs: None
@@ -3066,7 +2811,7 @@ def test_makerv4_hedge_reject_fails_closed(monkeypatch) -> None:
 
 
 def test_makerv4_hedge_quota_reject_fails_closed_as_venue_protection(monkeypatch) -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     fake_clock = SimpleNamespace(timestamp_ns=lambda: 1_200_000_000)
     published: list[tuple[str, dict[str, object]]] = []
     strategy._publish_state_snapshot = lambda **_kwargs: None
@@ -3104,7 +2849,7 @@ def test_makerv4_hedge_quota_reject_fails_closed_as_venue_protection(monkeypatch
 
 
 def test_makerv4_hedge_cancel_fails_closed() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     strategy._publish_state_snapshot = lambda **_kwargs: None
     strategy.record_maker_fill(
         fill=_fill(fill_id="fill-cancel"),
@@ -3126,7 +2871,7 @@ def test_makerv4_hedge_cancel_fails_closed() -> None:
 
 
 def test_makerv4_hedge_expire_fails_closed_as_timeout() -> None:
-    strategy = _prepare_strategy_for_maker_fills(MakerV4Strategy(config=_config()))
+    strategy = MakerV4Strategy(config=_config())
     strategy._publish_state_snapshot = lambda **_kwargs: None
     strategy.record_maker_fill(
         fill=_fill(fill_id="fill-expire"),

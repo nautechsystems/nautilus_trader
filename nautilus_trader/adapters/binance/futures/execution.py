@@ -97,6 +97,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         instrument_provider: BinanceFuturesInstrumentProvider,
         base_url_ws: str,
         config: BinanceExecClientConfig,
+        market_client: BinanceHttpClient | None = None,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         name: str | None = None,
         *,
@@ -110,8 +111,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         )
 
         # Futures HTTP API
-        self._futures_http_account = BinanceFuturesAccountHttpAPI(client, clock, account_type)
-        self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
+        self._futures_http_account = BinanceFuturesAccountHttpAPI(
+            client,
+            clock,
+            account_type,
+            private_api_family=config.private_api_family,
+        )
+        self._futures_http_market = BinanceFuturesMarketHttpAPI(market_client or client, account_type)
 
         # Futures enum parser
         self._futures_enum_parser = BinanceFuturesEnumParser()

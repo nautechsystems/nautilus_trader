@@ -16,12 +16,13 @@ from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserTrade
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
-from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
+from nautilus_trader.adapters.binance.common.urls import get_user_stream_base_url
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -207,8 +208,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Futures events arrive on a separate stream (different endpoint)
         stream_base_url: str | None = None
         if account_type.is_futures:
-            stream_base_url = config.base_url_ws_stream or get_ws_base_url(
+            stream_base_url = config.base_url_ws_stream or get_user_stream_base_url(
                 account_type=account_type,
+                private_api_family=config.private_api_family,
                 environment=environment,
                 is_us=config.us,
             )
@@ -226,7 +228,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if account_type == BinanceAccountType.MARGIN:
             http_client_for_ws = client
             account_type_for_ws = account_type
-        elif account_type.is_futures and not is_ed25519:
+        elif account_type.is_futures and (
+            config.private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN or not is_ed25519
+        ):
             http_client_for_ws = client
             account_type_for_ws = account_type
 
@@ -242,6 +246,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             is_ed25519=is_ed25519,
             http_client=http_client_for_ws,
             account_type=account_type_for_ws,
+            private_api_family=config.private_api_family,
         )
 
         self._submit_order_method: dict[
