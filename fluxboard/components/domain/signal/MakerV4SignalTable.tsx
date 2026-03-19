@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/table/DataTable';
@@ -161,6 +161,80 @@ function buildAgeTooltip(row: MakerV4DisplayRow): string {
   return lines.join('\n');
 }
 
+function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4DisplayRow {
+  const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
+  const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
+  const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
+  const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const status = deriveStrategyStatus({
+    running: resolveSignalRunning(row, nowMs),
+    trading: row.params?.bot_on,
+    blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
+  });
+
+  return {
+    ...row,
+    _quoteSnapshot: quoteSnapshot,
+    _makerLeg: quoteSnapshot?.maker_leg ?? null,
+    _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
+    _operator: row.maker_v4?.operator ?? null,
+    _quoteHealthUsable: quoteHealthUsable,
+    _statusLabel: describeTradingStatus(status),
+    _lastUpdateMs: lastUpdateMs,
+    _lastAgeMs: lastAgeMs,
+  };
+}
+
+function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayRow) {
+  Object.keys(target).forEach((key) => {
+    if (!(key in next)) {
+      delete (target as Record<string, unknown>)[key];
+    }
+  });
+
+  Object.entries(next).forEach(([key, value]) => {
+    (target as Record<string, unknown>)[key] = value;
+  });
+}
+
+function reconcileMakerV4DisplayRows({
+  currentRows,
+  currentRowById,
+  sourceRows,
+  nowMs,
+}: {
+  currentRows: MakerV4DisplayRow[];
+  currentRowById: Map<string, MakerV4DisplayRow>;
+  sourceRows: readonly SignalStrategy[];
+  nowMs: number;
+}) {
+  const nextRows: MakerV4DisplayRow[] = [];
+  const nextRowById = new Map<string, MakerV4DisplayRow>();
+
+  sourceRows.forEach((sourceRow) => {
+    const nextId = sourceRow.id;
+    const nextDisplayRow = buildMakerV4DisplayRow(sourceRow, nowMs);
+    const existing = currentRowById.get(nextId);
+    if (existing) {
+      patchDisplayRowInPlace(existing, nextDisplayRow);
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      return;
+    }
+
+    nextRows.push(nextDisplayRow);
+    nextRowById.set(nextId, nextDisplayRow);
+  });
+
+  currentRows.splice(0, currentRows.length, ...nextRows);
+  currentRowById.clear();
+  nextRowById.forEach((value, key) => {
+    currentRowById.set(key, value);
+  });
+
+  return currentRows;
+}
+
 function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
   if (!leg) return '—';
   const venue = leg.venue?.trim() || '—';
@@ -242,38 +316,25 @@ export default function MakerV4SignalTable({
   strategies,
   loading = false,
   nowProvider = () => Date.now(),
+  liveDataVersion,
 }: {
   rows?: SignalStrategy[];
   strategies?: SignalStrategy[];
   loading?: boolean;
   nowProvider?: () => number;
+  liveDataVersion?: number;
 }) {
   const sourceRows = rows ?? strategies ?? [];
+  const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
+  const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
   const data = useMemo<MakerV4DisplayRow[]>(() => {
-    return sourceRows.map((row) => {
-      const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
-      const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
-      const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
-      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowProvider());
-      const status = deriveStrategyStatus({
-        running: resolveSignalRunning(row, nowProvider()),
-        trading: row.params?.bot_on,
-        blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
-      });
-
-      return {
-        ...row,
-        _quoteSnapshot: quoteSnapshot,
-        _makerLeg: quoteSnapshot?.maker_leg ?? null,
-        _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
-        _operator: row.maker_v4?.operator ?? null,
-        _quoteHealthUsable: quoteHealthUsable,
-        _statusLabel: describeTradingStatus(status),
-        _lastUpdateMs: lastUpdateMs,
-        _lastAgeMs: lastAgeMs,
-      };
+    return reconcileMakerV4DisplayRows({
+      currentRows: displayRowsRef.current,
+      currentRowById: displayRowByIdRef.current,
+      sourceRows,
+      nowMs: nowProvider(),
     });
-  }, [nowProvider, sourceRows]);
+  }, [liveDataVersion, nowProvider, sourceRows]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
@@ -570,6 +631,7 @@ export default function MakerV4SignalTable({
         columns={columns}
         getRowId={(row) => row.id}
         sortable
+        liveDataVersion={liveDataVersion}
         dense={false}
         loading={loading}
         emptyMessage={loading ? 'Loading strategies...' : 'No Maker V4 strategies found'}

@@ -10,9 +10,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { api } from '@/api';
 import SignalTable from '@/components/domain/signal/SignalTable';
 import { useSignalStore } from '@/stores';
 import { socket } from '@/sockets';
@@ -84,6 +85,13 @@ function getVisibleStrategyIds(): string[] {
   return Array.from(table.querySelectorAll('tbody tr')).map((row) => row.querySelector('td')?.textContent?.trim() ?? '');
 }
 
+async function flushAsyncRender() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe('SignalTable Behavioral Tests', () => {
   const mockSetRows = vi.fn();
   const mockMergeStrategy = vi.fn();
@@ -128,6 +136,7 @@ describe('SignalTable Behavioral Tests', () => {
 
   afterEach(() => {
     vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   describe('Sorting Behavior', () => {
@@ -483,6 +492,72 @@ describe('SignalTable Behavioral Tests', () => {
       expect(socket.off).toHaveBeenCalledWith('connect', expect.any(Function));
       expect(socket.off).toHaveBeenCalledWith('disconnect', expect.any(Function));
       expect(socket.off).toHaveBeenCalledWith('market_update', expect.any(Function));
+    });
+
+    it('does not fall back to watchdog polling while the websocket stays connected and idle', async () => {
+      vi.useFakeTimers();
+      (socket as any).connected = true;
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('treats changed-id market_update payloads as one-shot invalidations instead of immediate snapshot thrash', async () => {
+      vi.useFakeTimers();
+      (socket as any).connected = true;
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      const marketUpdateHandler = (socket.on as any).mock.calls.find(
+        (call: any[]) => call[0] === 'market_update'
+      )?.[1];
+      expect(typeof marketUpdateHandler).toBe('function');
+
+      act(() => {
+        marketUpdateHandler({
+          strategies: { changed: ['strategy_a'] },
+          server_time: '2024-01-01 12:00:01',
+          server_ts_ms: 1_700_000_000_001,
+        });
+        marketUpdateHandler({
+          strategies: { changed: ['strategy_b'] },
+          server_time: '2024-01-01 12:00:01',
+          server_ts_ms: 1_700_000_000_001,
+        });
+      });
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
     });
   });
 

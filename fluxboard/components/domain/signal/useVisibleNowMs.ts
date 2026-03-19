@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useViewportClock } from '@/hooks/useViewportClock';
 
 type UseVisibleNowMsOptions = {
   intervalMs?: number;
@@ -14,95 +15,26 @@ type UseVisibleNowMsResult<T extends HTMLElement> = {
   targetRef: (node: T | null) => void;
 };
 
-const SCROLLABLE_OVERFLOW_RE = /(auto|scroll|overlay)/i;
-
-function isScrollableElement(element: HTMLElement): boolean {
-  const style = window.getComputedStyle(element);
-  return (
-    SCROLLABLE_OVERFLOW_RE.test(style.overflow)
-    || SCROLLABLE_OVERFLOW_RE.test(style.overflowX)
-    || SCROLLABLE_OVERFLOW_RE.test(style.overflowY)
-  );
-}
-
-function findNearestScrollParent(element: HTMLElement | null): HTMLElement | null {
-  let current = element?.parentElement ?? null;
-  while (current) {
-    if (isScrollableElement(current)) return current;
-    current = current.parentElement;
-  }
-  return null;
-}
-
 /**
- * Visibility-aware ticker for table cells:
- * updates every interval while intersecting, otherwise pauses.
+ * Shared viewport-clock ticker for table cells.
+ * The large-table path must not allocate per-cell timers or observers.
  */
 export function useVisibleNowMs<T extends HTMLElement = HTMLElement>({
   intervalMs = 1000,
   nowProvider = Date.now,
   disabled = false,
-  root,
-  detectScrollParent = true,
+  root: _root,
+  detectScrollParent: _detectScrollParent = true,
 }: UseVisibleNowMsOptions = {}): UseVisibleNowMsResult<T> {
-  const [element, setElement] = useState<T | null>(null);
-  const [nowMs, setNowMs] = useState<number>(() => nowProvider());
-  const [isVisible, setIsVisible] = useState<boolean>(
-    () => typeof IntersectionObserver === 'undefined'
-  );
+  const tick = useViewportClock({
+    clockKey: 'signal:visible-now-ms',
+    intervalMs,
+    active: !disabled,
+  });
+  const nowMs = useMemo(() => nowProvider(), [nowProvider, tick]);
+  const isVisible = !disabled;
 
-  const targetRef = useCallback((node: T | null) => {
-    setElement(node);
-  }, []);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsVisible(false);
-      return;
-    }
-
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsVisible(true);
-      return;
-    }
-
-    if (!element) {
-      setIsVisible(false);
-      return;
-    }
-
-    const resolvedRoot = root ?? (
-      detectScrollParent && element instanceof HTMLElement
-        ? findNearestScrollParent(element)
-        : null
-    );
-
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries[0];
-      setIsVisible(entry?.isIntersecting ?? true);
-    }, {
-      root: resolvedRoot ?? null,
-    });
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [detectScrollParent, disabled, element, root]);
-
-  useEffect(() => {
-    if (!disabled && isVisible) {
-      setNowMs(nowProvider());
-    }
-  }, [disabled, isVisible, nowProvider]);
-
-  useEffect(() => {
-    if (disabled || !isVisible) return;
-
-    const intervalId = window.setInterval(() => {
-      setNowMs(nowProvider());
-    }, intervalMs);
-
-    return () => window.clearInterval(intervalId);
-  }, [disabled, intervalMs, isVisible, nowProvider]);
+  const targetRef = useCallback((_node: T | null) => {}, []);
 
   return { nowMs, isVisible, targetRef };
 }

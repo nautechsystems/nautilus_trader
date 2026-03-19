@@ -2,6 +2,23 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
+const dataTablePropsHistory: Array<{ data: unknown; liveDataVersion: unknown }> = [];
+
+vi.mock('@/components/ui/table/DataTable', async () => {
+  const actual = await vi.importActual<any>('@/components/ui/table/DataTable');
+  return {
+    ...actual,
+    DataTable: (props: any) => {
+      dataTablePropsHistory.push({
+        data: props.data,
+        liveDataVersion: props.liveDataVersion,
+      });
+      const ActualDataTable = actual.DataTable;
+      return <ActualDataTable {...props} />;
+    },
+  };
+});
+
 import { api } from '@/api';
 import SignalTable from '@/components/domain/signal/SignalTable';
 import MakerV4SignalTable from '@/components/domain/signal/MakerV4SignalTable';
@@ -298,6 +315,46 @@ describe('MakerV4SignalTable', () => {
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('IBKR fee plan: tiered'));
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('HL taker fee: 4.50 bps'));
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('Assumed hedge fee: 1.00 bps'));
+  });
+
+  it('reconciles in-place row mutations through liveDataVersion without rebuilding the maker v4 data array', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    const rows = [strategy];
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2.0 bps')).toBeInTheDocument();
+    });
+
+    const initial = dataTablePropsHistory.at(-1);
+    strategy.maker_v4 = {
+      ...strategy.maker_v4,
+      quote_snapshot: {
+        ...strategy.maker_v4?.quote_snapshot,
+        mid_spread_bps: 3.0,
+      },
+    } as any;
+
+    rerender(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={2}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('3.0 bps')).toBeInTheDocument();
+    });
+
+    const latest = dataTablePropsHistory.at(-1);
+    expect(latest?.data).toBe(initial?.data);
+    expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
   });
 
   it('switches the equities signal route to the dedicated maker v4 table while filters stay available', async () => {

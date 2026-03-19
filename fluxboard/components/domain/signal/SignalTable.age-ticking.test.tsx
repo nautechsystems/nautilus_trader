@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SignalTable from './SignalTable';
 import * as apiModule from '../../../api';
@@ -32,57 +33,12 @@ vi.mock('../../../sockets', () => {
 });
 
 const originalIntersectionObserver = globalThis.IntersectionObserver;
-
-class MockIntersectionObserver implements IntersectionObserver {
-  readonly root: Element | Document | null = null;
-  readonly rootMargin = '0px';
-  readonly thresholds = [0];
-  private readonly callback: IntersectionObserverCallback;
-  private readonly elements = new Set<Element>();
-
-  constructor(callback: IntersectionObserverCallback) {
-    this.callback = callback;
-    observerRegistry.push(this);
-  }
-
-  disconnect(): void {
-    this.elements.clear();
-  }
-
-  observe(target: Element): void {
-    this.elements.add(target);
-  }
-
-  takeRecords(): IntersectionObserverEntry[] {
-    return [];
-  }
-
-  unobserve(target: Element): void {
-    this.elements.delete(target);
-  }
-
-  emit(isIntersecting: boolean): void {
-    const entries = Array.from(this.elements).map((target) => ({
-      target,
-      isIntersecting,
-      intersectionRatio: isIntersecting ? 1 : 0,
-      time: Date.now(),
-      boundingClientRect: target.getBoundingClientRect(),
-      intersectionRect: target.getBoundingClientRect(),
-      rootBounds: null,
-    })) as IntersectionObserverEntry[];
-
-    this.callback(entries, this);
-  }
-}
-
-const observerRegistry: MockIntersectionObserver[] = [];
-
-function emitVisibility(isIntersecting: boolean) {
-  observerRegistry.forEach((observer) => {
-    observer.emit(isIntersecting);
-  });
-}
+const intersectionObserverCtor = vi.fn(() => ({
+  observe: vi.fn(),
+  disconnect: vi.fn(),
+  takeRecords: vi.fn(() => []),
+  unobserve: vi.fn(),
+}));
 
 function createStrategy(serverTsMs: number) {
   return {
@@ -161,13 +117,20 @@ async function flushRender() {
   });
 }
 
+function renderSignalTable() {
+  return render(
+    <MemoryRouter>
+      <SignalTable />
+    </MemoryRouter>
+  );
+}
+
 describe('SignalTable age ticking', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     useSignalStore.setState({ rows: [], lastUpdate: undefined });
-    observerRegistry.length = 0;
-    globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver = intersectionObserverCtor as unknown as typeof IntersectionObserver;
     mockSocket.connected = true;
     const handlers = (mockSocket as any).__handlers as Record<string, Array<(payload: any) => void>> | undefined;
     if (handlers) {
@@ -180,7 +143,7 @@ describe('SignalTable age ticking', () => {
     globalThis.IntersectionObserver = originalIntersectionObserver;
   });
 
-  it('updates Age each second for visible rows', async () => {
+  it('updates Age each second without creating per-row visibility observers', async () => {
     const serverTsMs = 1_000_000;
     (apiModule.api.getSignalStrategies as any).mockResolvedValue({
       strategies: [createStrategy(serverTsMs)],
@@ -188,11 +151,11 @@ describe('SignalTable age ticking', () => {
       server_ts_ms: serverTsMs,
     });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
     await flushRender();
 
     expect(screen.getByText('visible_age')).toBeInTheDocument();
-    act(() => emitVisibility(true));
+    expect(intersectionObserverCtor).not.toHaveBeenCalled();
     expect(getAgeText(container)).toContain('10.0s');
 
     act(() => {
@@ -201,7 +164,7 @@ describe('SignalTable age ticking', () => {
     expect(getAgeText(container)).toContain('11.0s');
   });
 
-  it('does not advance hidden rows while not intersecting (regression safety)', async () => {
+  it('keeps advancing ages from the shared clock even when no visibility events are emitted', async () => {
     const serverTsMs = 2_000_000;
     (apiModule.api.getSignalStrategies as any).mockResolvedValue({
       strategies: [createStrategy(serverTsMs)],
@@ -209,19 +172,17 @@ describe('SignalTable age ticking', () => {
       server_ts_ms: serverTsMs,
     });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
     await flushRender();
 
     expect(screen.getByText('visible_age')).toBeInTheDocument();
-    act(() => emitVisibility(false));
-
-    const initialAge = getAgeText(container);
-    expect(initialAge).toContain('10.0s');
+    expect(intersectionObserverCtor).not.toHaveBeenCalled();
+    expect(getAgeText(container)).toContain('10.0s');
 
     act(() => {
       vi.advanceTimersByTime(3000);
     });
-    expect(getAgeText(container)).toContain('10.0s');
+    expect(getAgeText(container)).toContain('13.0s');
   });
 
   it('updates age sort order over time when sorted by Age', async () => {
@@ -239,7 +200,7 @@ describe('SignalTable age ticking', () => {
       server_ts_ms: serverTsMs,
     });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
     await flushRender();
 
     expect(screen.getByText('age_dynamic')).toBeInTheDocument();
