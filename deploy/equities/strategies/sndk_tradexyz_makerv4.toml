@@ -78,6 +78,7 @@ max_age_ms = 60000
 max_ibkr_quote_age_ms = 300000
 bid_edge_take_bps = 10.0
 ask_edge_take_bps = 10.0
+take_cooldown_ms = 15000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0

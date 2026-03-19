@@ -125,6 +125,11 @@ class _FakeRedis:
         self.values[key] = value.encode() if isinstance(value, str) else value
         return True
 
+    def delete(self, key: str) -> int:
+        existed = key in self.values
+        self.values.pop(key, None)
+        return 1 if existed else 0
+
     def publish(self, channel: str, message: str) -> int:
         self.published.append((channel, message))
         return 1
@@ -170,6 +175,22 @@ class _CountingAccountProjectionProvider:
             "rows": list(self._rows),
             "totals": dict(self._totals),
         }
+
+
+class _SequenceAccountProjectionProvider:
+    def __init__(self, snapshots: list[dict[str, Any]]) -> None:
+        self._snapshots = list(snapshots)
+        self._index = -1
+        self.refresh_calls = 0
+
+    def refresh(self) -> None:
+        self.refresh_calls += 1
+        if self._index < (len(self._snapshots) - 1):
+            self._index += 1
+
+    def snapshot(self) -> dict[str, Any] | None:
+        index = self._index if self._index >= 0 else 0
+        return dict(self._snapshots[index])
 
 
 def _strategy_contract(strategy_id: str, *, reference_account_scope_id: str) -> dict[str, str]:
@@ -1007,6 +1028,7 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
 
     captured_http_client_kwargs: list[dict[str, Any]] = []
     captured_account_http_inits: list[dict[str, Any]] = []
+    captured_spot_account_http_inits: list[dict[str, Any]] = []
 
     class _FakeBinanceFuturesAccountHttpAPI:
         def __init__(
@@ -1075,6 +1097,33 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
                 ),
             ]
 
+    class _FakeBinanceSpotAccountHttpAPI:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+        ) -> None:
+            captured_spot_account_http_inits.append(
+                {
+                    "client": client,
+                    "clock_type": type(clock).__name__,
+                    "account_type": str(getattr(account_type, "value", account_type)),
+                },
+            )
+
+        async def query_spot_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                balances=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        free="5000.0",
+                        locked="0.0",
+                    ),
+                ],
+            )
+
     def _fake_cached_binance_http_client(**kwargs: Any) -> object:
         captured_http_client_kwargs.append(dict(kwargs))
         return object()
@@ -1086,6 +1135,10 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     monkeypatch.setattr(
         "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
         _FakeBinanceFuturesAccountHttpAPI,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceSpotAccountHttpAPI",
+        _FakeBinanceSpotAccountHttpAPI,
     )
 
     config: dict[str, Any] = {
@@ -1148,23 +1201,47 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     snapshot = binding.provider.snapshot()
 
     assert snapshot is not None
-    assert len(captured_http_client_kwargs) == 1
-    http_client_kwargs = captured_http_client_kwargs[0]
-    assert http_client_kwargs["api_key"] == "binance-key"
-    assert http_client_kwargs["api_secret"] == "binance-secret"
-    assert http_client_kwargs["base_url"] == "https://papi.binance.com"
-    assert str(getattr(http_client_kwargs["account_type"], "value", http_client_kwargs["account_type"])) == "USDT_FUTURES"
+    assert len(captured_http_client_kwargs) == 2
+    futures_http_client_kwargs = next(
+        kwargs
+        for kwargs in captured_http_client_kwargs
+        if str(getattr(kwargs["account_type"], "value", kwargs["account_type"])) == "USDT_FUTURES"
+    )
+    spot_http_client_kwargs = next(
+        kwargs
+        for kwargs in captured_http_client_kwargs
+        if str(getattr(kwargs["account_type"], "value", kwargs["account_type"])) == "SPOT"
+    )
+    assert futures_http_client_kwargs["api_key"] == "binance-key"
+    assert futures_http_client_kwargs["api_secret"] == "binance-secret"
+    assert futures_http_client_kwargs["base_url"] == "https://papi.binance.com"
+    assert spot_http_client_kwargs["base_url"] == "https://api.binance.com"
     assert captured_account_http_inits[0]["private_api_family"] == "PORTFOLIO_MARGIN"
     assert len(captured_account_http_inits) == 1
     assert captured_account_http_inits[0]["clock_type"] == "LiveClock"
     assert captured_account_http_inits[0]["account_type"] == "USDT_FUTURES"
+    assert len(captured_spot_account_http_inits) == 1
+    assert captured_spot_account_http_inits[0]["clock_type"] == "LiveClock"
+    assert captured_spot_account_http_inits[0]["account_type"] == "SPOT"
     assert snapshot["source_scope"] == "shared_account"
     assert snapshot["totals"]["account_equity_raw"] == pytest.approx(1025.5)
     assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(995.0)
-    cash_row = next(row for row in snapshot["rows"] if row.get("kind") != "position")
+    spot_cash_row = next(
+        row
+        for row in snapshot["rows"]
+        if row.get("kind") != "position" and row["exchange"] == "binance"
+    )
+    perp_cash_row = next(
+        row
+        for row in snapshot["rows"]
+        if row.get("kind") != "position" and row["exchange"] == "binance_perp"
+    )
     position_row = next(row for row in snapshot["rows"] if row.get("kind") == "position")
-    assert cash_row["exchange"] == "binance_perp"
-    assert cash_row["market_type"] == "perp"
+    assert spot_cash_row["asset"] == "USDT"
+    assert spot_cash_row["total"] == "5000"
+    assert spot_cash_row["market_type"] == "spot"
+    assert perp_cash_row["exchange"] == "binance_perp"
+    assert perp_cash_row["market_type"] == "perp"
     assert position_row["instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"
     assert position_row["asset"] == "PLTR"
     assert position_row["signed_qty"] == "12.5"
@@ -1219,6 +1296,17 @@ def test_equities_portfolio_runner_parses_portfolio_margin_balances_without_wall
         "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
         _FakeBinanceFuturesAccountHttpAPI,
     )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceSpotAccountHttpAPI",
+        type(
+            "_FakeBinanceSpotAccountHttpAPI",
+            (),
+            {
+                "__init__": lambda self, client, clock, account_type: None,
+                "query_spot_account_info": lambda self, recv_window=None: asyncio.sleep(0, result=SimpleNamespace(balances=[])),
+            },
+        ),
+    )
 
     provider = build_account_projection_provider(
         scope_config=decode_account_scopes(
@@ -1248,6 +1336,184 @@ def test_equities_portfolio_runner_parses_portfolio_margin_balances_without_wall
     assert cash_row["asset"] == "USDT"
     assert cash_row["total"] == "1000.0"
     assert cash_row["free"] == "975.0"
+
+
+def test_equities_portfolio_runner_parses_portfolio_margin_cross_wallet_balances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceFuturesAccountHttpAPI:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+            private_api_family: Any | None = None,
+        ) -> None:
+            _ = (client, clock, account_type, private_api_family)
+
+        async def query_futures_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                assets=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        crossWalletBalance="1000.0",
+                        crossUnPnl="0.0",
+                    ),
+                    SimpleNamespace(
+                        asset="USDC",
+                        crossWalletBalance="0.0",
+                        crossUnPnl="0.0",
+                    ),
+                ],
+            )
+
+        async def query_futures_position_risk(
+            self,
+            symbol: str | None = None,
+            recv_window: str | None = None,
+        ) -> list[Any]:
+            assert symbol is None
+            assert recv_window == "5000"
+            return []
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_binance_http_client",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
+        _FakeBinanceFuturesAccountHttpAPI,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceSpotAccountHttpAPI",
+        type(
+            "_FakeBinanceSpotAccountHttpAPI",
+            (),
+            {
+                "__init__": lambda self, client, clock, account_type: None,
+                "query_spot_account_info": lambda self, recv_window=None: asyncio.sleep(0, result=SimpleNamespace(balances=[])),
+            },
+        ),
+    )
+
+    provider = build_account_projection_provider(
+        scope_config=decode_account_scopes(
+            [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                    "private_api_family": "PORTFOLIO_MARGIN",
+                    "recv_window_ms": 5000,
+                },
+            ],
+        )[0],
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_makerv4",),
+    )
+
+    assert provider is not None
+    provider.refresh()
+    snapshot = provider.snapshot()
+
+    assert snapshot is not None
+    assert len(snapshot["rows"]) == 1
+    cash_row = snapshot["rows"][0]
+    assert cash_row["asset"] == "USDT"
+    assert cash_row["total"] == "1000.0"
+    assert cash_row["free"] == "1000.0"
+    assert cash_row["row_id"] != "shared_account:acc:0"
+
+
+def test_equities_portfolio_runner_omits_empty_binance_shared_account_wrapper_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceFuturesAccountHttpAPI:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+            private_api_family: Any | None = None,
+        ) -> None:
+            _ = (client, clock, account_type, private_api_family)
+
+        async def query_futures_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                assets=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        crossWalletBalance="0.00000000",
+                        crossUnPnl="0.00000000",
+                    ),
+                ],
+            )
+
+        async def query_futures_position_risk(
+            self,
+            symbol: str | None = None,
+            recv_window: str | None = None,
+        ) -> list[Any]:
+            assert symbol is None
+            assert recv_window == "5000"
+            return []
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_binance_http_client",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
+        _FakeBinanceFuturesAccountHttpAPI,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceSpotAccountHttpAPI",
+        type(
+            "_FakeBinanceSpotAccountHttpAPI",
+            (),
+            {
+                "__init__": lambda self, client, clock, account_type: None,
+                "query_spot_account_info": lambda self, recv_window=None: asyncio.sleep(0, result=SimpleNamespace(balances=[])),
+            },
+        ),
+    )
+
+    provider = build_account_projection_provider(
+        scope_config=decode_account_scopes(
+            [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                    "private_api_family": "PORTFOLIO_MARGIN",
+                    "recv_window_ms": 5000,
+                },
+            ],
+        )[0],
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_makerv4",),
+    )
+
+    assert provider is not None
+    provider.refresh()
+    snapshot = provider.snapshot()
+
+    assert snapshot is not None
+    assert snapshot["rows"] == []
 
 
 def test_equities_portfolio_aggregator_publishes_account_projection_once_per_scope() -> None:
@@ -1304,6 +1570,74 @@ def test_equities_portfolio_aggregator_publishes_account_projection_once_per_sco
         ),
         raw_snapshot.decode(),
     ) in fake_redis.published
+
+
+def test_equities_portfolio_aggregator_clears_stale_empty_account_projection() -> None:
+    provider = _SequenceAccountProjectionProvider(
+        snapshots=[
+            {
+                "rows": [
+                    {
+                        "exchange": "binance_perp",
+                        "asset": "USDT",
+                        "total": "1000",
+                    },
+                ],
+                "totals": {},
+            },
+            {
+                "rows": [],
+                "totals": {},
+            },
+        ],
+    )
+    fake_redis = _FakeRedis()
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = []
+    aggregator._required_strategy_ids = set()
+    aggregator._base_assets = []
+    aggregator._strategy_ids_by_asset = {}
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["binance.futures.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="binance.futures.main",
+            source_strategy_ids=("pltr_binance_perp_makerv4",),
+            provider=provider,
+        ),
+    )
+
+    projection_key = FluxRedisKeys.profile_account_projection(
+        profile_id="equities",
+        account_scope_id="binance.futures.main",
+    )
+    snapshot_key = FluxRedisKeys.portfolio_snapshot(portfolio_id="equities")
+
+    aggregator.recompute_once()
+    projection_raw = fake_redis.get(projection_key)
+    assert projection_raw is not None
+
+    first_snapshot_raw = fake_redis.get(snapshot_key)
+    assert first_snapshot_raw is not None
+    first_snapshot = json.loads(first_snapshot_raw)
+    assert len(first_snapshot["accounts"]["rows"]) == 1
+
+    aggregator.recompute_once()
+    assert fake_redis.get(projection_key) is None
+
+    snapshot_raw = fake_redis.get(snapshot_key)
+    assert snapshot_raw is not None
+    snapshot = json.loads(snapshot_raw)
+    assert snapshot["accounts"]["rows"] == []
+    assert provider.refresh_calls == 2
 
 
 def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_v2() -> None:

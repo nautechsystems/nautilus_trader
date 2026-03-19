@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from decimal import InvalidOperation
@@ -27,6 +28,7 @@ from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamil
 from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
+from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.common.component import LiveClock
@@ -302,24 +304,75 @@ def _extract_binance_account_totals(payload: Any) -> dict[str, Any]:
 
 def _extract_binance_futures_balances(payload: Any) -> list[dict[str, Any]]:
     raw_balances = _field_value(payload, "assets")
-    if not isinstance(raw_balances, list):
+    if not isinstance(raw_balances, Sequence) or isinstance(raw_balances, str | bytes):
         return []
 
     balances: list[dict[str, Any]] = []
     for raw_balance in raw_balances:
         asset = _optional_text(_field_value(raw_balance, "asset", "currency", "coin"))
         total = _optional_text(
-            _field_value(raw_balance, "walletBalance", "marginBalance", "total", "free"),
+            _field_value(
+                raw_balance,
+                "walletBalance",
+                "marginBalance",
+                "crossWalletBalance",
+                "total",
+                "free",
+            ),
         )
-        free = _optional_text(_field_value(raw_balance, "availableBalance", "free")) or total
+        free = _optional_text(
+            _field_value(raw_balance, "availableBalance", "maxWithdrawAmount", "free"),
+        ) or total
         if asset is None or total is None or free is None:
             continue
+        total_decimal = _safe_decimal(total)
+        free_decimal = _safe_decimal(free)
+        if total_decimal is not None and free_decimal is not None:
+            if total_decimal == 0 and free_decimal == 0:
+                continue
+            if free_decimal > total_decimal:
+                total = free
         balances.append(
             {
                 "currency": asset,
                 "free": free,
                 "locked": _locked_balance_text(total, free),
                 "total": total,
+            },
+        )
+    return balances
+
+
+def _extract_binance_spot_balances(payload: Any) -> list[dict[str, Any]]:
+    raw_balances = _field_value(payload, "balances", "userAssets", "assets")
+    if not isinstance(raw_balances, Sequence) or isinstance(raw_balances, str | bytes):
+        return []
+
+    balances: list[dict[str, Any]] = []
+    for raw_balance in raw_balances:
+        asset = _optional_text(_field_value(raw_balance, "asset", "currency", "coin"))
+        free_decimal = _safe_decimal(_field_value(raw_balance, "free", "availableBalance"))
+        locked_decimal = _safe_decimal(_field_value(raw_balance, "locked", "freeze"))
+        total_decimal = _safe_decimal(_field_value(raw_balance, "total"))
+        if total_decimal is None:
+            total_decimal = max(free_decimal or Decimal("0"), Decimal("0")) + max(
+                locked_decimal or Decimal("0"),
+                Decimal("0"),
+            )
+        if free_decimal is None:
+            free_decimal = max(total_decimal - max(locked_decimal or Decimal("0"), Decimal("0")), Decimal("0"))
+        if locked_decimal is None:
+            locked_decimal = max(total_decimal - free_decimal, Decimal("0"))
+        if asset is None:
+            continue
+        if total_decimal == 0 and free_decimal == 0 and locked_decimal == 0:
+            continue
+        balances.append(
+            {
+                "currency": asset,
+                "free": _decimal_text(free_decimal),
+                "locked": _decimal_text(locked_decimal),
+                "total": _decimal_text(total_decimal),
             },
         )
     return balances
@@ -550,11 +603,30 @@ class BinanceFuturesAccountProjectionProvider:
             environment=config.environment,
             proxy_url=config.http_proxy_url,
         )
+        self._spot_client = get_cached_binance_http_client(
+            clock=self._clock,
+            account_type=BinanceAccountType.SPOT,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=get_private_http_base_url(
+                BinanceAccountType.SPOT,
+                private_api_family=BinancePrivateApiFamily.AUTO,
+                environment=config.environment,
+                is_us=False,
+            ),
+            environment=config.environment,
+            proxy_url=config.http_proxy_url,
+        )
         self._http_account = BinanceFuturesAccountHttpAPI(
             client=self._client,
             clock=self._clock,
             account_type=config.account_type,
             private_api_family=config.private_api_family,
+        )
+        self._spot_http_account = BinanceSpotAccountHttpAPI(
+            client=self._spot_client,
+            clock=self._clock,
+            account_type=BinanceAccountType.SPOT,
         )
         self._latest_snapshot: dict[str, Any] | None = None
         self._last_refresh_monotonic = 0.0
@@ -595,33 +667,77 @@ class BinanceFuturesAccountProjectionProvider:
         )
 
         account_id = "BINANCE_PERP-master"
+        spot_account_id = "BINANCE_SPOT-master"
         ts_ms = int(time.time() * 1000)
-        payload = {
-            "market_type": "perp",
-            "accounts": [
-                {
-                    "account_id": account_id,
-                    "venue": "binance_perp",
-                    "events": [
-                        {
-                            "account_id": account_id,
-                            "venue": "binance_perp",
-                            "balances": _extract_binance_futures_balances(account_info),
-                            "ts_ms": ts_ms,
-                        },
-                    ],
-                },
-            ],
-            "positions": _extract_binance_futures_positions(
-                positions,
-                account_id=account_id,
-            ),
-            "ts_ms": ts_ms,
-        }
-        rows = build_balances_rows(
-            raw_snapshot=payload,
-            strategy_id="shared_account",
+        balances = _extract_binance_futures_balances(account_info)
+        position_rows = _extract_binance_futures_positions(
+            positions,
+            account_id=account_id,
         )
+        spot_balances: list[dict[str, Any]] = []
+        try:
+            spot_account_info = await self._spot_http_account.query_spot_account_info(
+                recv_window=recv_window,
+            )
+            spot_balances = _extract_binance_spot_balances(spot_account_info)
+        except Exception:
+            _ACCOUNT_PROJECTION_LOG.debug(
+                "Binance spot shared-account refresh skipped",
+                exc_info=True,
+            )
+        rows: list[dict[str, Any]] = []
+        if balances or position_rows:
+            futures_payload: dict[str, Any] = {
+                "market_type": "perp",
+                "positions": position_rows,
+                "ts_ms": ts_ms,
+            }
+            if balances:
+                futures_payload["accounts"] = [
+                    {
+                        "account_id": account_id,
+                        "venue": "binance_perp",
+                        "events": [
+                            {
+                                "account_id": account_id,
+                                "venue": "binance_perp",
+                                "balances": balances,
+                                "ts_ms": ts_ms,
+                            },
+                        ],
+                    },
+                ]
+            rows.extend(
+                build_balances_rows(
+                    raw_snapshot=futures_payload,
+                    strategy_id="shared_account",
+                ),
+            )
+        if spot_balances:
+            spot_payload = {
+                "market_type": "spot",
+                "accounts": [
+                    {
+                        "account_id": spot_account_id,
+                        "venue": "binance",
+                        "events": [
+                            {
+                                "account_id": spot_account_id,
+                                "venue": "binance",
+                                "balances": spot_balances,
+                                "ts_ms": ts_ms,
+                            },
+                        ],
+                    },
+                ],
+                "ts_ms": ts_ms,
+            }
+            rows.extend(
+                build_balances_rows(
+                    raw_snapshot=spot_payload,
+                    strategy_id="shared_account",
+                ),
+            )
         return {
             "source_scope": "shared_account",
             "rows": rows,

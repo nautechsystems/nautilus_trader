@@ -261,7 +261,11 @@ class StrategySetPortfolioAggregator:
             snapshot_totals = snapshot.get("totals")
             if isinstance(snapshot_totals, Mapping):
                 published_totals = _merge_account_totals(published_totals, snapshot_totals)
+            key = self._profile_account_projection_key(account_scope_id=binding.account_scope_id)
             if not snapshot["rows"] and not snapshot_totals:
+                delete = getattr(self._redis, "delete", None)
+                if callable(delete):
+                    delete(key)
                 continue
             published_rows.extend(
                 dict(row)
@@ -269,7 +273,6 @@ class StrategySetPortfolioAggregator:
                 if isinstance(row, Mapping)
             )
             encoded = encode_profile_account_snapshot(snapshot)
-            key = self._profile_account_projection_key(account_scope_id=binding.account_scope_id)
             previous = self._redis.get(key)
             self._redis.set(key, encoded)
             if previous != encoded.encode():
