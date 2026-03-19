@@ -14,10 +14,15 @@ repo actively uses.
 
 ## Current baseline
 
-- Fork point: upstream tag `v1.224.0`
-- Fork point date: `2026-03-03`
-- Local `main`: `617` commits ahead of that fork point
-- Local `main` vs `upstream/master`: `0` commits behind as of `2026-03-19 UTC`
+Do not hard-code fork-point or ahead/behind numbers in this runbook.
+
+At the start of each run, recompute and record current baseline facts in the
+dated evidence note for that run, for example:
+
+- current merge-base between local `main` and `upstream/master`
+- whether the fork point matches an upstream release tag
+- how far local `main` is ahead or behind upstream
+- whether the latest upstream release is already included
 
 ## What the script prepares
 
@@ -79,6 +84,13 @@ tooling/dev/prepare-nautilus-upgrade.sh
 6. Record the run in a new evidence note copied from
    `docs/reviews/nautilus-upstream-upgrade-template.md`.
 7. Stop for human review before any merge decision.
+
+Important rerun rule:
+
+- if `upgrade/nautilus-<date>-<tag>` already exists, the script exits instead of
+  resetting that branch
+- for a fresh rerun, use a new `UPGRADE_DATE` or intentionally delete the old
+  review branch before rerunning the same target
 
 ## Cherry-pick policy
 
