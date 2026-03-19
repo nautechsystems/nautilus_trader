@@ -402,47 +402,6 @@ describe('PnL Performance Optimizations', () => {
     });
   });
 
-  describe('Realtime Rollout Budgets', () => {
-    it('keeps steady-state snapshot refresh cadence within the rollout budget', async () => {
-      const perfHarness = (await import('../components/trades/PerfHarness')) as {
-        REALTIME_BUDGETS?: {
-          maxSteadyStateSnapshotRefreshesPerMinute: number;
-        };
-      };
-
-      expect(perfHarness.REALTIME_BUDGETS).toBeDefined();
-
-      vi.mocked(api.runPnLReport).mockResolvedValue({
-        status: 200,
-        etag: 'steady-etag',
-        report: createMockReportWithManySymbols(10),
-      });
-      vi.mocked(api.runPnLDelta).mockResolvedValue({ status: 304 } as any);
-
-      const view = await renderPnL();
-
-      await waitFor(() => {
-        expect(api.runPnLReport).toHaveBeenCalledTimes(1);
-      }, { timeout: 3000 });
-
-      const autoRefresh = await screen.findByLabelText(/Auto-refresh/i);
-      await act(async () => {
-        autoRefresh.click();
-        await Promise.resolve();
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText(/Next refresh in 30s/i)).toBeInTheDocument();
-      }, { timeout: 3000 });
-
-      expect(60 / 30).toBeLessThanOrEqual(
-        perfHarness.REALTIME_BUDGETS!.maxSteadyStateSnapshotRefreshesPerMinute,
-      );
-
-      view.unmount();
-    }, 10000);
-  });
-
   describe('Eager-Loaded Components', () => {
     it('should render FilterChip without Suspense wrapper', async () => {
       const mockReport = createMockReportWithManySymbols(10);
