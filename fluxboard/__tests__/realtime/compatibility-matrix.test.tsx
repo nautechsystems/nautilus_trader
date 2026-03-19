@@ -355,7 +355,7 @@ describe('realtime compatibility matrix contract', () => {
     });
   });
 
-  it('rolls back to legacy without leaving partial standard subscriptions behind in the matrix', async () => {
+  it('resolves rollback-to-legacy as legacy mode in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['rollback-new-be-to-legacy']).toMatchObject({

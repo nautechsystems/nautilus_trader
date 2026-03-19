@@ -1,6 +1,6 @@
 // Dashboard panel interaction tests
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const REALTIME_FLAG_KEYS = {
   global: 'fluxboard:feature:realtime-standard',
@@ -32,6 +32,16 @@ async function readRealtimeFlags(page: Page) {
   }, REALTIME_FLAG_KEYS);
 }
 
+async function expectPanelToggleStillWorks(panel: Locator) {
+  const toggleButton = panel.locator('button[title*="Collapse"]').or(panel.locator('button[title*="Expand"]'));
+  const body = panel.locator('[data-testid="panel-body"]');
+  const initialBodyCount = await body.count();
+
+  await expect(toggleButton).toBeVisible();
+  await toggleButton.click({ force: true });
+  await expect(body).toHaveCount(initialBodyCount === 0 ? 1 : 0);
+}
+
 test.describe('Dashboard Panel Interactions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('http://localhost:5000/');
@@ -51,11 +61,8 @@ test.describe('Dashboard Panel Interactions', () => {
     });
 
     const signalPanel = page.locator('.dashboard-panel[data-panel-title="Signal"]');
-    const signalCollapseButton = signalPanel.locator('button[title*="Collapse"]').or(signalPanel.locator('button[title*="Expand"]'));
     await expect(signalPanel).toBeVisible();
-    await expect(signalCollapseButton).toBeVisible();
-    await signalCollapseButton.click({ force: true });
-    await expect(signalPanel.locator('[data-testid="panel-body"]')).toHaveCount(0);
+    await expectPanelToggleStillWorks(signalPanel);
 
     const tradesPanel = page.locator('.dashboard-panel[data-panel-title="Trades"]');
     const tradesRemoveButton = tradesPanel.locator('button[title="Remove"]');
@@ -79,6 +86,7 @@ test.describe('Dashboard Panel Interactions', () => {
       killSwitch: '1',
     });
     await expect(page.locator('.dashboard-panel[data-panel-title="Signal"]')).toBeVisible();
+    await expectPanelToggleStillWorks(page.locator('.dashboard-panel[data-panel-title="Signal"]'));
 
     await setRealtimeFlags(page, { global: false, signal: false, killSwitch: false });
     await page.reload();
@@ -90,6 +98,7 @@ test.describe('Dashboard Panel Interactions', () => {
     });
     await expect(page.locator('.dashboard-panel[data-panel-title="Signal"]')).toBeVisible();
     await expect(page.locator('.dashboard-panel[data-panel-title="Trades"]')).toBeVisible();
+    await expectPanelToggleStillWorks(page.locator('.dashboard-panel[data-panel-title="Signal"]'));
   });
 
   test('collapse button (-) collapses and expands panel', async ({ page }) => {
