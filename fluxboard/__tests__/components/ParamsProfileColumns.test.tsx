@@ -297,7 +297,10 @@ describe('Params profile column filtering', () => {
     });
 
     await waitFor(() => {
-      expect(api.api.getParamSchema).toHaveBeenCalledWith({ preferKeyLabel: true });
+      expect(api.api.getParamSchema).toHaveBeenCalledWith({
+        preferKeyLabel: true,
+        strategyId: 'aapl_tradexyz_makerv4',
+      });
     });
     expect(screen.getByRole('button', { name: 'Sort by bid_edge1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sort by ask_edge1' })).toBeInTheDocument();

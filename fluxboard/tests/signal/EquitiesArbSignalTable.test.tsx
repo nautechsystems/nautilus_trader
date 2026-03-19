@@ -134,4 +134,32 @@ describe('EquitiesArbSignalTable', () => {
     expect(screen.getByText('Maker')).toBeInTheDocument();
     expect(screen.getByText('Taker')).toBeInTheDocument();
   });
+
+  it('preserves the prior equities observability and trading-status semantics on the shared surface', () => {
+    const pausedMaker = buildEquitiesStrategy('aapl_tradexyz_maker', 'equities_maker', 'Maker');
+    pausedMaker.params.bot_on = '0';
+
+    const pendingTaker = buildEquitiesStrategy('aapl_tradexyz_taker', 'equities_taker', 'Taker');
+    pendingTaker.equities_arb = {
+      ...pendingTaker.equities_arb,
+      quote_snapshot: {
+        ...pendingTaker.equities_arb?.quote_snapshot,
+        hedge_ready: false,
+        hedge_disabled_reason: 'outside_rth_blocked',
+      },
+    };
+
+    render(<EquitiesArbSignalTable rows={[pausedMaker, pendingTaker]} />);
+
+    expect(screen.getByText('Hedge')).toBeInTheDocument();
+    expect(screen.getByText('Last Updated')).toBeInTheDocument();
+    expect(screen.getAllByText('SMART · DAY').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Feed ok · Quote fresh').length).toBeGreaterThan(0);
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('aapl_tradexyz_maker')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Assumed hedge fee: 1.00 bps'),
+    );
+  });
 });
