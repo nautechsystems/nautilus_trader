@@ -84,6 +84,20 @@ def test_translate_maker_fill_to_ibkr_shares_conversion_fails_closed_when_base_e
     assert translation.qty_conversion_source == "generic:quanto instrument"
 
 
+def test_translate_maker_fill_to_ibkr_shares_falls_back_to_identity_when_metadata_is_missing() -> None:
+    translation = translate_maker_fill_to_ibkr_shares(
+        maker_instrument=SimpleNamespace(raw_symbol="AAPL/USD"),
+        fill_qty=Decimal("2.7"),
+        fill_price=Decimal("190"),
+        min_share_increment=Decimal("1"),
+    )
+
+    assert translation.base_qty == Decimal("2.7")
+    assert translation.hedge_qty == Decimal("2")
+    assert translation.qty_conversion_status == "identity_fallback"
+    assert translation.qty_conversion_source == "maker_instrument:missing_metadata_identity_fallback"
+
+
 def test_hyperliquid_perp_to_ibkr_instrument_id_maps_equity_symbol() -> None:
     assert (
         hyperliquid_perp_to_ibkr_instrument_id(

@@ -78,10 +78,62 @@ def test_portfolio_margin_futures_http_api_routes():
     assert http_account._endpoint_futures_leverage.url_path == "/papi/v1/um/leverage"
     assert http_account._endpoint_futures_margin_type.url_path == "/papi/v1/um/marginType"
     assert http_account._endpoint_futures_symbol_config.url_path == "/papi/v1/um/symbolConfig"
-    assert http_account._endpoint_futures_algo_order.url_path == "/papi/v1/um/algoOrder"
-    assert http_account._endpoint_futures_open_algo_orders.url_path == "/papi/v1/um/openAlgoOrders"
-    assert http_account._endpoint_futures_all_algo_orders.url_path == "/papi/v1/um/allAlgoOrders"
-    assert http_account._endpoint_futures_cancel_all_algo_orders.url_path == "/papi/v1/um/algoOpenOrders"
+    assert http_account._endpoint_futures_algo_order.url_path == "/papi/v1/um/conditional/order"
+    assert http_account._endpoint_futures_open_algo_orders.url_path == "/papi/v1/um/conditional/openOrders"
+    assert http_account._endpoint_futures_all_algo_orders.url_path == "/papi/v1/um/conditional/allOrders"
+    assert http_account._endpoint_futures_cancel_all_algo_orders.url_path == (
+        "/papi/v1/um/conditional/allOpenOrders"
+    )
+
+
+@pytest.mark.asyncio
+async def test_portfolio_margin_query_algo_order_uses_conditional_open_order_endpoint(mocker):
+    clock = LiveClock()
+    client = BinanceHttpClient(
+        clock=clock,
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
+        base_url="https://papi.binance.com/",
+    )
+    http_account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURES,
+        private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+    )
+    mock_send_request = mocker.patch(
+        target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        return_value=json.dumps(
+            {
+                "algoId": 12345,
+                "clientAlgoId": "algo-1",
+                "algoType": "CONDITIONAL",
+                "orderType": "STOP_MARKET",
+                "symbol": "ETHUSDT",
+                "side": "SELL",
+                "positionSide": "BOTH",
+                "timeInForce": "GTC",
+                "quantity": "1",
+                "algoStatus": "NEW",
+                "triggerPrice": "10099.00",
+                "price": "0",
+                "workingType": "CONTRACT_PRICE",
+                "activatePrice": None,
+                "callbackRate": None,
+                "reduceOnly": False,
+                "closePosition": False,
+                "priceProtect": False,
+                "selfTradePreventionMode": "NONE",
+            },
+        ).encode(),
+    )
+
+    await http_account.query_algo_order(client_algo_id="algo-1")
+
+    request = mock_send_request.call_args
+    assert request[0][0] == HttpMethod.GET
+    assert request[0][1] == "/papi/v1/um/conditional/openOrder"
+    assert request[1]["payload"]["clientAlgoId"] == "algo-1"
 
 
 def test_portfolio_margin_account_info_decodes_assets_without_wallet_balance_or_unrealized_profit():
@@ -762,6 +814,54 @@ class TestBinanceFuturesExecutionClient:
 
         request = mock_send_request.call_args
         assert request[0][1] == "/papi/v1/um/order"
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order_uses_pm_conditional_endpoint(self, mocker):
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+
+        exec_client = BinanceFuturesExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        )
+        mocker.patch.object(exec_client, "_is_dual_side_position", False)
+        mocker.patch.object(exec_client, "_use_reduce_only", True)
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        request = mock_send_request.call_args
+        assert request[0][1] == "/papi/v1/um/conditional/order"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

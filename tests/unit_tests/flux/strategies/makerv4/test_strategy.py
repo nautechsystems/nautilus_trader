@@ -1090,6 +1090,34 @@ def test_makerv4_on_start_subscribes_maker_book_deltas_and_reference_quote_ticks
     assert published == ["balances", "state"]
 
 
+def test_makerv4_on_start_falls_back_to_quote_ticks_when_book_subscription_requires_registered_actor() -> None:
+    strategy = MakerV4Strategy(config=_config())
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    instruments = {
+        maker_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL/USD"),
+        ref_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL/USD"),
+    }
+    quote_subscribed: list[InstrumentId] = []
+    book_attempts: list[tuple[InstrumentId, BookType]] = []
+
+    strategy._cache = SimpleNamespace(instrument=lambda instrument_id: instruments.get(instrument_id))
+    strategy.subscribe_quote_ticks = lambda instrument_id, **_kwargs: quote_subscribed.append(instrument_id)
+
+    def _subscribe_order_book_deltas(*, instrument_id, book_type, **_kwargs):
+        book_attempts.append((instrument_id, book_type))
+        raise ValueError("The actor has not been registered")
+
+    strategy.subscribe_order_book_deltas = _subscribe_order_book_deltas
+    strategy._publish_balances = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+
+    strategy.on_start()
+
+    assert book_attempts == [(maker_id, BookType.L2_MBP)]
+    assert quote_subscribed == [maker_id, ref_id]
+
+
 def test_makerv4_on_order_book_deltas_refreshes_maker_age_on_non_bbo_book_updates() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id

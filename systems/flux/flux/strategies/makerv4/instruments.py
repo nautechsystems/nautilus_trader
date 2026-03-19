@@ -64,6 +64,19 @@ def translate_maker_fill_to_ibkr_shares(
         last_px=fill_price,
     )
     if exposure.base_qty is None:
+        if exposure.qty_conversion_status == "missing_metadata":
+            base_qty = fill_qty
+            hedge_qty = round_base_fill_to_ibkr_shares(
+                fill_qty=base_qty,
+                min_share_increment=min_share_increment,
+            )
+            return MakerFillHedgeTranslation(
+                venue_qty=fill_qty,
+                base_qty=base_qty,
+                hedge_qty=hedge_qty,
+                qty_conversion_status="identity_fallback",
+                qty_conversion_source="maker_instrument:missing_metadata_identity_fallback",
+            )
         return MakerFillHedgeTranslation(
             venue_qty=fill_qty,
             base_qty=None,

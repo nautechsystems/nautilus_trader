@@ -529,13 +529,15 @@ class BinanceFuturesAlgoOrderHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
+        *,
+        url_path: str | None = None,
     ):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
             HttpMethod.POST: BinanceSecurityType.TRADE,
             HttpMethod.DELETE: BinanceSecurityType.TRADE,
         }
-        url_path = base_endpoint + "algoOrder"
+        url_path = url_path or (base_endpoint + "algoOrder")
         super().__init__(
             client,
             methods,
@@ -659,6 +661,42 @@ class BinanceFuturesAlgoOrderHttp(BinanceHttpEndpoint):
         return self._post_resp_decoder.decode(raw)
 
 
+class BinanceFuturesOpenAlgoOrderHttp(BinanceHttpEndpoint):
+    """
+    Endpoint for querying a single open algo (conditional) order.
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+        *,
+        url_path: str | None = None,
+    ):
+        methods = {
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
+        }
+        url_path = url_path or (base_endpoint + "algoOrder")
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceFuturesAlgoOrder)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        timestamp: str
+        algoId: int | None = None
+        clientAlgoId: str | None = None
+        recvWindow: str | None = None
+
+    async def get(self, params: GetParameters) -> BinanceFuturesAlgoOrder:
+        method_type = HttpMethod.GET
+        raw = await self._method(method_type, params)
+        return self._get_resp_decoder.decode(raw)
+
+
 class BinanceFuturesOpenAlgoOrdersHttp(BinanceHttpEndpoint):
     """
     Endpoint for fetching all open algo (conditional) orders.
@@ -675,11 +713,13 @@ class BinanceFuturesOpenAlgoOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
+        *,
+        url_path: str | None = None,
     ):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
-        url_path = base_endpoint + "openAlgoOrders"
+        url_path = url_path or (base_endpoint + "openAlgoOrders")
         super().__init__(
             client,
             methods,
@@ -735,11 +775,13 @@ class BinanceFuturesAllAlgoOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
+        *,
+        url_path: str | None = None,
     ):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
-        url_path = base_endpoint + "allAlgoOrders"
+        url_path = url_path or (base_endpoint + "allAlgoOrders")
         super().__init__(
             client,
             methods,
@@ -804,11 +846,13 @@ class BinanceFuturesCancelAllAlgoOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
+        *,
+        url_path: str | None = None,
     ):
         methods = {
             HttpMethod.DELETE: BinanceSecurityType.TRADE,
         }
-        url_path = base_endpoint + "algoOpenOrders"
+        url_path = url_path or (base_endpoint + "algoOpenOrders")
         super().__init__(
             client,
             methods,
@@ -875,10 +919,20 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         v1_endpoint_base = self.base_endpoint
         v2_endpoint_base = self.base_endpoint
         v3_endpoint_base = self.base_endpoint
+        algo_order_url_path = None
+        open_algo_order_url_path = None
+        open_algo_orders_url_path = None
+        all_algo_orders_url_path = None
+        cancel_all_algo_orders_url_path = None
         if private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN:
             v2_endpoint_base = "/papi/v1/um/"
             v3_endpoint_base = "/papi/v1/um/"
             v1_endpoint_base = "/papi/v1/um/"
+            algo_order_url_path = "/papi/v1/um/conditional/order"
+            open_algo_order_url_path = "/papi/v1/um/conditional/openOrder"
+            open_algo_orders_url_path = "/papi/v1/um/conditional/openOrders"
+            all_algo_orders_url_path = "/papi/v1/um/conditional/allOrders"
+            cancel_all_algo_orders_url_path = "/papi/v1/um/conditional/allOpenOrders"
         elif account_type == BinanceAccountType.USDT_FUTURES:
             v2_endpoint_base = "/fapi/v2/"
             v3_endpoint_base = "/fapi/v3/"
@@ -917,18 +971,27 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         self._endpoint_futures_algo_order = BinanceFuturesAlgoOrderHttp(
             client,
             v1_endpoint_base,
+            url_path=algo_order_url_path,
+        )
+        self._endpoint_futures_open_algo_order = BinanceFuturesOpenAlgoOrderHttp(
+            client,
+            v1_endpoint_base,
+            url_path=open_algo_order_url_path,
         )
         self._endpoint_futures_open_algo_orders = BinanceFuturesOpenAlgoOrdersHttp(
             client,
             v1_endpoint_base,
+            url_path=open_algo_orders_url_path,
         )
         self._endpoint_futures_all_algo_orders = BinanceFuturesAllAlgoOrdersHttp(
             client,
             v1_endpoint_base,
+            url_path=all_algo_orders_url_path,
         )
         self._endpoint_futures_cancel_all_algo_orders = BinanceFuturesCancelAllAlgoOrdersHttp(
             client,
             v1_endpoint_base,
+            url_path=cancel_all_algo_orders_url_path,
         )
 
     async def query_futures_hedge_mode(
@@ -1180,8 +1243,8 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             raise RuntimeError(
                 "Either algoId or clientAlgoId must be sent.",
             )
-        return await self._endpoint_futures_algo_order.get(
-            params=self._endpoint_futures_algo_order.GetDeleteParameters(
+        return await self._endpoint_futures_open_algo_order.get(
+            params=self._endpoint_futures_open_algo_order.GetParameters(
                 timestamp=self._timestamp(),
                 algoId=algo_id,
                 clientAlgoId=client_algo_id,

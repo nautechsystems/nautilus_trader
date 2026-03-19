@@ -491,10 +491,20 @@ class MakerV4Strategy(Strategy):
     ) -> MakerFillHedgeTranslation | None:
         maker_instrument = self._resolve_instrument(self.config.maker_instrument_id)
         if maker_instrument is None:
-            self.log.error(
-                f"Failed MakerV4 fill conversion for {self._external_strategy_id}: maker instrument unavailable",
+            self.log.warning(
+                "MakerV4 fill conversion instrument unavailable for "
+                f"{self._external_strategy_id}; using identity fallback",
             )
-            return None
+            return MakerFillHedgeTranslation(
+                venue_qty=fill_qty,
+                base_qty=fill_qty,
+                hedge_qty=round_base_fill_to_ibkr_shares(
+                    fill_qty=fill_qty,
+                    min_share_increment=self._hedge_min_share_increment(),
+                ),
+                qty_conversion_status="identity_fallback",
+                qty_conversion_source="maker_instrument:unavailable_identity_fallback",
+            )
         return translate_maker_fill_to_ibkr_shares(
             maker_instrument=maker_instrument,
             fill_qty=fill_qty,
@@ -535,6 +545,29 @@ class MakerV4Strategy(Strategy):
             )
             return None
         return translation.base_qty
+
+    def _subscribe_maker_book_deltas_or_fallback_to_quotes(self, instrument_id) -> None:
+        self._books[instrument_id] = OrderBook(
+            instrument_id=instrument_id,
+            book_type=BookType.L2_MBP,
+        )
+        if not self._prime_cached_order_book(instrument_id):
+            self._prime_cached_quote(instrument_id)
+        try:
+            self.subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                book_type=BookType.L2_MBP,
+            )
+        except ValueError as exc:
+            if "has not been registered" not in str(exc):
+                raise
+            self.log.warning(
+                "MakerV4 order-book subscription unavailable before actor registration; "
+                "falling back to quote ticks",
+            )
+            self._books.pop(instrument_id, None)
+            self._prime_cached_quote(instrument_id)
+            self.subscribe_quote_ticks(instrument_id=instrument_id)
 
     def _maker_tick_size(self) -> Decimal:
         instrument = self._resolve_instrument(self.config.maker_instrument_id)
@@ -2832,16 +2865,7 @@ class MakerV4Strategy(Strategy):
                 instrument_id == self.config.maker_instrument_id
                 and self._maker_uses_order_book_deltas()
             ):
-                self._books[instrument_id] = OrderBook(
-                    instrument_id=instrument_id,
-                    book_type=BookType.L2_MBP,
-                )
-                if not self._prime_cached_order_book(instrument_id):
-                    self._prime_cached_quote(instrument_id)
-                self.subscribe_order_book_deltas(
-                    instrument_id=instrument_id,
-                    book_type=BookType.L2_MBP,
-                )
+                self._subscribe_maker_book_deltas_or_fallback_to_quotes(instrument_id)
             else:
                 self._prime_cached_quote(instrument_id)
                 self.subscribe_quote_ticks(instrument_id=instrument_id)
