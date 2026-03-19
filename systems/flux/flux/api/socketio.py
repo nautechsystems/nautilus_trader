@@ -547,6 +547,29 @@ class FluxSocketEmitter:
             poll_interval_s=self._poll_interval_s,
         )
 
+    def resolve_standard_subscription_descriptor(
+        self,
+        *,
+        contract_version: int,
+        surface: Any,
+        profile: Any,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        normalized_surface = normalize_surface(surface)
+        normalized_profile = normalize_profile(profile)
+        rejection_reason = standard_subscribe_rejection_reason(
+            contract_version=int(contract_version),
+            surface=normalized_surface,
+            profile=normalized_profile,
+            rollout=self._rollout_state(),
+        )
+        descriptor = self.describe_standard_stream(
+            surface=normalized_surface,
+            profile=normalized_profile,
+        )
+        if rejection_reason is not None or descriptor is None:
+            return None, rejection_reason or "unsupported_profile"
+        return descriptor, None
+
     def _rollout_state(self) -> Mapping[str, Any]:
         if self._realtime_rollout_resolver is None:
             return default_realtime_rollout()
@@ -764,19 +787,13 @@ class FluxSocketEmitter:
     ) -> dict[str, Any]:
         normalized_surface = normalize_surface(surface)
         normalized_profile = normalize_profile(profile)
-        rollout = self._rollout_state()
-        rejection_reason = standard_subscribe_rejection_reason(
+        descriptor, rejection_reason = self.resolve_standard_subscription_descriptor(
             contract_version=int(contract_version),
-            surface=normalized_surface,
-            profile=normalized_profile,
-            rollout=rollout,
-        )
-        descriptor = self.describe_standard_stream(
             surface=normalized_surface,
             profile=normalized_profile,
         )
 
-        if rejection_reason is not None or descriptor is None:
+        if descriptor is None:
             reason = rejection_reason or "unsupported_profile"
             self._record_metric("standard_subscribe_counts", reason)
             return {
@@ -837,19 +854,21 @@ class FluxSocketEmitter:
         self.unsubscribe_standard(sid, surface=normalized_surface)
         self.acquire_profile(normalized_profile)
         self._prime_profile_state(normalized_profile)
-        refreshed = self.describe_standard_stream(
+        refreshed, refreshed_reason = self.resolve_standard_subscription_descriptor(
+            contract_version=int(contract_version),
             surface=normalized_surface,
             profile=normalized_profile,
         )
         if refreshed is None:
+            reason = refreshed_reason or "unsupported_profile"
             self.release_profile(normalized_profile)
-            self._record_metric("standard_subscribe_counts", "unsupported_profile")
+            self._record_metric("standard_subscribe_counts", reason)
             return {
                 "accepted": False,
                 "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
                 "surface": normalized_surface,
                 "profile": normalized_profile,
-                "reason": "unsupported_profile",
+                "reason": reason,
             }
 
         subscription = FluxStandardSubscription(

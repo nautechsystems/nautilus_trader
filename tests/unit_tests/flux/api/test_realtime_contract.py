@@ -227,6 +227,44 @@ def test_signals_noncanonical_queries_withhold_realtime_metadata(
     assert "realtime" not in unscoped["data"]
 
 
+def test_signals_snapshot_withholds_realtime_metadata_when_standard_rollout_denies_subscribe(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    rollout = app.extensions["flux_realtime_rollout"]
+
+    baseline = _signals_snapshot(app)
+    assert "realtime" in baseline["data"]
+
+    rollout["hard_kill_switch"] = True
+    kill_switched = _signals_snapshot(app)
+    assert "realtime" not in kill_switched["data"]
+
+    rollout["hard_kill_switch"] = False
+    rollout["supported_contract_versions"] = {999}
+    unsupported_version = _signals_snapshot(app)
+    assert "realtime" not in unsupported_version["data"]
+
+    rollout["supported_contract_versions"] = {2}
+    rollout["surface_canary_profiles"]["signal"] = set()
+    canary_denied = _signals_snapshot(app)
+    assert "realtime" not in canary_denied["data"]
+
+
 def test_standard_contract_polling_only_transport_subscribes_and_receives_heartbeat(
     flux_config,
     redis_client,
@@ -730,6 +768,39 @@ def test_trades_noncanonical_queries_withhold_realtime_metadata(
     ):
         body = _trades_snapshot(app, query=query)
         assert "realtime" not in body["data"]
+
+
+def test_trades_snapshot_withholds_realtime_metadata_when_standard_rollout_denies_subscribe(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    rollout = app.extensions["flux_realtime_rollout"]
+
+    baseline = _trades_snapshot(app)
+    assert "realtime" in baseline["data"]
+
+    rollout["surface_enabled"]["trades"] = False
+    disabled_surface = _trades_snapshot(app)
+    assert "realtime" not in disabled_surface["data"]
+
+    rollout["surface_enabled"]["trades"] = True
+    rollout["surface_canary_profiles"]["trades"] = set()
+    canary_denied = _trades_snapshot(app)
+    assert "realtime" not in canary_denied["data"]
 
 
 def test_trades_unsubscribable_profile_withholds_realtime_metadata(

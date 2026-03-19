@@ -1791,7 +1791,8 @@ def create_flux_api_app(  # noqa: C901
             return None
         if not normalized_profile:
             return None
-        stream_metadata = socket_emitter.describe_standard_stream(
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
             surface="signal",
             profile=normalized_profile,
         )
@@ -1838,7 +1839,8 @@ def create_flux_api_app(  # noqa: C901
         normalized_profile = normalize_profile(profile_text)
         if not normalized_profile:
             return None
-        stream_metadata = socket_emitter.describe_standard_stream(
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
             surface="trades",
             profile=normalized_profile,
         )
