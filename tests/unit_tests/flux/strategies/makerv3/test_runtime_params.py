@@ -99,6 +99,21 @@ def test_refresh_runtime_params_is_idempotent_and_noop_when_unchanged(strategy_f
     assert strategy._order_qty is initial_order_qty
 
 
+def test_refresh_runtime_params_clears_failure_latch_after_success(strategy_factory) -> None:
+    strategy = strategy_factory()
+
+    class _ParamsManager:
+        def load(self) -> dict[str, int | bool]:
+            return {"bot_on": False, "max_age_ms": 100}
+
+    strategy.set_params_manager(_ParamsManager())
+    strategy._runtime_params_failed = True
+
+    strategy._refresh_runtime_params(now_ns=1_000_000_000, force=True)
+
+    assert strategy._runtime_params_failed is False
+
+
 def test_initial_runtime_params_use_registry_defaults_when_config_omits_values() -> None:
     config = MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),

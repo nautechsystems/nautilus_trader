@@ -9,10 +9,16 @@
  * - Validation failure focuses first invalid field
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import Params from '../../Params';
 import * as api from '../../api';
+
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+}));
 
 vi.mock('../../api', () => ({
   api: {
@@ -31,7 +37,7 @@ vi.mock('../../hooks', () => ({
 
 // Silence toasts
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  toast: toastMock,
 }));
 
 describe('Params - Edit and Save', () => {
@@ -94,6 +100,8 @@ describe('Params - Edit and Save', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (globalThis as any).__paramsEditPolling = undefined;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
     vi.mocked(api.api.getParamSchema).mockResolvedValue(mockSchema as any);
     vi.mocked(api.api.getParams).mockResolvedValue(mockParams as any);
   });
@@ -135,6 +143,53 @@ describe('Params - Edit and Save', () => {
     await waitFor(() => expect(api.api.patchStrategyParams).toHaveBeenCalled());
   });
 
+  it('shows rejected copy with backend validation message when save is refused', async () => {
+    vi.mocked(api.api.patchStrategyParams).mockRejectedValue(
+      new Error('alpha: `bid_edge1` must be <= 1000.0'),
+    );
+
+    render(<Params />);
+    await waitFor(() => expect(screen.getByText('alpha')).toBeInTheDocument());
+
+    const qtyInput = screen.getByDisplayValue('10') as HTMLInputElement;
+    fireEvent.focus(qtyInput);
+    fireEvent.change(qtyInput, { target: { value: '12.5' } });
+    fireEvent.blur(qtyInput);
+
+    const saveButton = within(rowFor('alpha')).getByRole('button', { name: /Save row changes/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Rejected alpha: `bid_edge1` must be <= 1000.0',
+      ),
+    );
+  });
+
+  it('shows aggregated rejected copy for save all failures', async () => {
+    vi.mocked(api.api.updateParams).mockResolvedValue({
+      success: 0,
+      failed: 1,
+      errors: [{ strategy_id: 'alpha', message: '`bid_edge1` must be <= 1000.0' }],
+    } as any);
+
+    render(<Params />);
+    await waitFor(() => expect(screen.getByText('alpha')).toBeInTheDocument());
+
+    const qtyInput = screen.getByDisplayValue('10') as HTMLInputElement;
+    fireEvent.focus(qtyInput);
+    fireEvent.change(qtyInput, { target: { value: '12.5' } });
+    fireEvent.blur(qtyInput);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Save All/i })[0]);
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        'Rejected 1 strategies: alpha: `bid_edge1` must be <= 1000.0',
+      ),
+    );
+  });
+
   it('does not show conflict when backend data is unchanged while row is dirty', async () => {
     render(<Params />);
     await waitFor(() => expect(screen.getByText('alpha')).toBeInTheDocument());
@@ -156,21 +211,17 @@ describe('Params - Edit and Save', () => {
     render(<Params />);
     await waitFor(() => expect(screen.getByText('alpha')).toBeInTheDocument());
 
-    const viewToggle = screen.getByRole('button', { name: /Advanced Params/i });
-    fireEvent.click(viewToggle);
-
-    // Set invalid max_age_ms (< 100)
-    const maxAgeInput = screen.getAllByDisplayValue('2500')[0] as HTMLInputElement;
-    fireEvent.focus(maxAgeInput);
-    fireEvent.change(maxAgeInput, { target: { value: '50' } });
-    fireEvent.blur(maxAgeInput);
+    const qtyInput = screen.getByDisplayValue('10') as HTMLInputElement;
+    fireEvent.focus(qtyInput);
+    fireEvent.change(qtyInput, { target: { value: '-1' } });
+    fireEvent.blur(qtyInput);
 
     const saveButton = within(rowFor('alpha')).getByRole('button', { name: /Save row changes/i });
     fireEvent.click(saveButton);
 
     // After validation error, the invalid input should be focused
     await waitFor(() => {
-      const invalidInput = screen.getAllByDisplayValue('50')[0] as HTMLInputElement;
+      const invalidInput = screen.getByDisplayValue('-1') as HTMLInputElement;
       expect(invalidInput).toHaveAttribute('aria-invalid', 'true');
     });
   });

@@ -142,6 +142,39 @@ function unwrapFluxEnvelope<T>(payload: T | FluxEnvelope<T>): T {
   return payload as T;
 }
 
+function extractFluxErrorMessage(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    const message = payload.trim();
+    return message || null;
+  }
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const data = payload as Record<string, unknown>;
+  const directMessage = typeof data.message === 'string' ? data.message.trim() : '';
+  if (directMessage) return directMessage;
+
+  const directError = typeof data.error === 'string' ? data.error.trim() : '';
+  if (directError) return directError;
+
+  const nestedError = extractFluxErrorMessage(data.error);
+  if (nestedError) return nestedError;
+
+  const errors = extractBulkUpdateFailures(data);
+  if (errors.length > 0) {
+    return errors
+      .map((entry) => (entry.strategy_id ? `${entry.strategy_id}: ${entry.message}` : entry.message))
+      .join('; ');
+  }
+
+  const nestedData = extractFluxErrorMessage(data.data);
+  if (nestedData) return nestedData;
+
+  const code = typeof data.code === 'string' ? data.code.trim() : '';
+  return code || null;
+}
+
 function toFiniteNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -926,7 +959,7 @@ function extractBulkUpdateFailures(payload: unknown): Array<{ strategy_id: strin
       if (!entry || typeof entry !== 'object') return null;
       const row = entry as Record<string, unknown>;
       const strategyId = String(row.strategy_id ?? '').trim();
-      const message = String(row.error ?? row.message ?? row.code ?? 'update_failed').trim();
+      const message = extractFluxErrorMessage(row.error ?? row.message ?? row.code) ?? 'update_failed';
       return { strategy_id: strategyId, message };
     })
     .filter((entry): entry is { strategy_id: string; message: string } => Boolean(entry && entry.message));
@@ -1161,6 +1194,24 @@ async function signedJsonHeaders(payload: any, context?: SignedHeaderContext): P
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     return await apiClient.fetchJSON<T>(path, init);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg);
+  }
+}
+
+async function fetchParamsJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(`${base}${path}`, init);
+    let payload: unknown = null;
+    if (typeof response.json === 'function') {
+      payload = await response.json();
+    }
+    if (!response.ok) {
+      const detail = extractFluxErrorMessage(payload);
+      throw new Error(detail || `${response.status} ${response.statusText}`);
+    }
+    return payload as T;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(msg);
@@ -1855,7 +1906,7 @@ export const api = {
         method: 'PATCH',
         path,
       });
-      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+      const result = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...extra },
         body: JSON.stringify(payload)
@@ -1878,7 +1929,7 @@ export const api = {
       method: 'PATCH',
       path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1895,7 +1946,7 @@ export const api = {
       method: 'PATCH',
       path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1968,7 +2019,7 @@ export const api = {
     const payload = { updates, source };
     const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, { method: 'PATCH', path });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
