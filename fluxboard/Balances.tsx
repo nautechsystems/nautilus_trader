@@ -89,6 +89,22 @@ const DEFAULT_FILTERS: FilterState = {
   columnFilters: {},
 };
 
+const formatBalanceMvCell = (mvRaw: number | null | undefined, mvDisplay?: string | null): string => {
+  const fallbackRaw = typeof mvDisplay === 'string'
+    ? Number(mvDisplay.replace(/[$,]/g, ''))
+    : Number.NaN;
+  const value = Number.isFinite(mvRaw) ? Number(mvRaw) : fallbackRaw;
+  if (!Number.isFinite(value)) return mvDisplay ?? '$0.00';
+
+  const abs = Math.abs(value);
+  const formatted = abs.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const sign = value < 0 ? '-' : '';
+  return `${sign}$${formatted}`;
+};
+
 const getStorageProfile = (): PathProfile => {
   if (typeof window === 'undefined') return 'default';
   return resolvePathnameProfile(window.location?.pathname);
@@ -803,7 +819,7 @@ export default function Balances({
               }
               disabled={!hasChildren}
             >
-              <span className="text-zinc-300">{parent.mv_display}</span>
+              <span className="text-zinc-300">{formatBalanceMvCell(parent.mv_raw, parent.mv_display)}</span>
             </Tooltip>
           </td>
           {!isMobile && (
@@ -852,7 +868,7 @@ export default function Balances({
           </td>
           <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
             <span className="text-zinc-300">
-              {child.mv_display}
+              {formatBalanceMvCell(child.mv_raw, child.mv_display)}
             </span>
           </td>
               {!isMobile && (
@@ -906,7 +922,7 @@ export default function Balances({
         {formatQty(child.inventory_asset ?? child.base_asset ?? child.coin, child.qty_raw, child.mark_raw)}
       </td>
       <td className={cn("text-right font-mono tabular-nums text-zinc-300", paddingClass)}>
-        {child.mv_display}
+        {formatBalanceMvCell(child.mv_raw, child.mv_display)}
       </td>
       {!isMobile && (
         <td className={cn("text-right font-mono tabular-nums", paddingClass)}>

@@ -243,6 +243,54 @@ describe('Balances component', () => {
     expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
   });
 
+  it('formats balance MV cells with thousands separators from raw values', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      rows: [
+        {
+          ...buildPayload().rows[0],
+          id: 'AAPL_LOGICAL',
+          coin: 'AAPL_LOGICAL',
+          canonical: 'AAPL',
+          qty_display: '10',
+          qty_raw: 10,
+          mv_display: '$2550.00',
+          mv_raw: 2550,
+          mark_display: '255',
+          mark_raw: 255,
+          raw: { qty: 10, mv_usd: 2550, mark: 255 },
+          children: [
+            {
+              ...buildPayload().rows[0].children[0],
+              id: 'AAPL_LOGICAL:AAPL:ibkr',
+              parent_id: 'AAPL_LOGICAL',
+              coin: 'AAPL',
+              display_name_short: 'AAPL Spot',
+              display_name_long: 'IBKR AAPL Spot',
+              venue: 'ibkr',
+              wallet: 'shared',
+              qty_display: '10',
+              qty_raw: 10,
+              mv_display: '$2550.00',
+              mv_raw: 2550,
+              mark_display: '255',
+              mark_raw: 255,
+            },
+          ],
+        },
+      ],
+      totals: { mv_raw: 2550, mv_display: '$2550.00' },
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText('$2,550.00')).toHaveLength(2);
+  });
+
   it('prefers authoritative totals.mv_display when net_mv_display is missing', async () => {
     const payload = buildPayload();
     mockedApi.getBalances.mockResolvedValueOnce({
