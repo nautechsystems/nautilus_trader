@@ -1745,6 +1745,41 @@ def create_flux_api_app(  # noqa: C901
             poll_interval_s=socket_emitter.poll_interval_s,
         )
 
+    def _is_canonical_trades_realtime_query(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        requested_limit: int | None,
+        offset: int,
+        sort_label: str,
+        coin_filter: str,
+        exchange_filter: str,
+        market_type_filter: str,
+        side_filter: str,
+        signal_id_filter: str,
+    ) -> bool:
+        if requested_strategy:
+            return False
+        if not normalize_profile(profile_text):
+            return False
+        if offset != 0:
+            return False
+        if requested_limit is not None and int(requested_limit) != 50:
+            return False
+        if sort_label != "ts_ms_desc":
+            return False
+        if any(
+            (
+                coin_filter,
+                exchange_filter,
+                market_type_filter,
+                side_filter,
+                signal_id_filter,
+            ),
+        ):
+            return False
+        return True
+
     def _response(
         *,
         ok: bool,
@@ -2617,12 +2652,23 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
-        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION and _is_canonical_trades_realtime_query(
+            requested_strategy=requested_strategy,
+            profile_text=profile_text,
+            requested_limit=requested_limit,
+            offset=offset,
+            sort_label=sort_label,
+            coin_filter=coin_filter,
+            exchange_filter=exchange_filter,
+            market_type_filter=market_type_filter,
+            side_filter=side_filter,
+            signal_id_filter=signal_id_filter,
+        ):
             payload["realtime"] = _realtime_snapshot_metadata(
                 surface="trades",
                 profile_text=profile_text,
                 strategy_ids=strategy_ids,
-                last_seq=last_seq,
+                last_seq=socket_emitter.current_seq(_profile_for_realtime_snapshot(profile_text)),
             )
         return _ok(data=payload)
 

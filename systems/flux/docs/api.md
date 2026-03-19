@@ -146,8 +146,7 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - `{rows, total, limit, offset, has_more}` (+ optional `next_offset`)
 7. `DELETE /api/v1/alerts` returns:
    - `{success, strategy_id, deleted, remaining, server_ts_ms}`
-8. `GET /api/v1/signals?contract_version=2` and `GET /api/v1/trades?contract_version=2` keep the legacy
-   payload shape and add `data.realtime` with:
+8. `GET /api/v1/signals?contract_version=2` keeps the legacy payload shape and adds `data.realtime` with:
    - `contract_version`
    - `surface`
    - `profile`
@@ -156,7 +155,17 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - `snapshot_revision`
    - `last_seq`
    - `capabilities`
-9. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
+9. `GET /api/v1/trades?contract_version=2` adds `data.realtime` only for the canonical live-compatible
+   snapshot shape:
+   - normalized `profile` present
+   - no explicit `strategy`
+   - no filters
+   - first page (`offset=0`)
+   - descending/default sort (`ts_ms_desc`)
+   - default page size (`limit=50`, explicit or implicit)
+10. Non-canonical trades queries remain REST-only and omit `data.realtime`.
+11. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
+12. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
 
 ## Socket.IO contract (`/socket.io`)
 
@@ -231,6 +240,12 @@ HTTP snapshot handshake:
 6. `snapshot_revision`
 7. `resume_from_seq`
 
+All three lineage fields are mandatory and must be echoed from the snapshot:
+
+1. `surface_query_key` must be non-empty
+2. `stream_id` must be non-empty
+3. `snapshot_revision` must be non-null
+
 `subscribe` ack payload:
 
 1. `accepted`
@@ -271,6 +286,7 @@ Standard rejection and recovery reasons:
    - `unsupported_profile`
    - `capability_unavailable`
    - `canary_denied`
+   - `missing_snapshot_lineage`
    - `stream_rollover`
    - `snapshot_revision_mismatch`
    - `surface_query_key_mismatch`

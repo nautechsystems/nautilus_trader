@@ -769,6 +769,19 @@ class FluxSocketEmitter:
         request_surface_query_key = decode_text(surface_query_key).strip()
         request_stream_id = decode_text(stream_id).strip()
         request_snapshot_revision = safe_int(snapshot_revision)
+        if (
+            not request_surface_query_key
+            or not request_stream_id
+            or request_snapshot_revision is None
+        ):
+            self._record_metric("standard_subscribe_counts", "missing_snapshot_lineage")
+            return {
+                "accepted": False,
+                "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
+                "surface": normalized_surface,
+                "profile": normalized_profile,
+                "reason": "missing_snapshot_lineage",
+            }
         if request_stream_id and request_stream_id != descriptor["stream_id"]:
             self._record_metric("standard_subscribe_counts", "stream_rollover")
             return {

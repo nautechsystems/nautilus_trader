@@ -11,6 +11,8 @@ This document describes the additive `contract_version=2` rollout controls imple
    - Socket.IO `subscribe` event carrying the returned lineage metadata
 3. The standard path currently supports `signal` and `trades` surfaces.
 4. The standard path is intentionally `invalidate_only` under the current polling transport.
+5. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
+   Non-canonical trades queries stay REST-only and omit `data.realtime`.
 
 ## Rollout state
 
@@ -41,6 +43,7 @@ Semantics:
    - does not affect legacy event names
 2. `supported_contract_versions`
    - unsupported requests are rejected with `reason=unsupported_contract_version`
+   - missing `surface_query_key`, `stream_id`, or `snapshot_revision` is rejected with `reason=missing_snapshot_lineage`
 3. `surface_enabled[surface] = False`
    - rejects new subscribes with `reason=capability_unavailable`
    - ejects connected subscribers with `reason=capability_withdrawn`
@@ -96,8 +99,10 @@ Implications:
 
 1. `accepted_start_seq` in subscribe ack is the server-accepted cursor after lineage validation.
 2. Clients must compare their requested cursor with `accepted_start_seq`.
-3. Any `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
-4. Trade scan overflow or cursor gaps emit `recovery_required` with `reason=trade_gap`.
+3. `surface_query_key`, `stream_id`, and `snapshot_revision` are mandatory subscribe inputs; the server does not silently infer missing lineage.
+4. For trades, `data.realtime.last_seq` is the standard stream cursor, not the `/api/v1/trades` row cursor.
+5. Any `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
+6. Trade scan overflow or cursor gaps emit `recovery_required` with `reason=trade_gap`.
 
 ## Observability
 

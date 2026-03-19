@@ -91,11 +91,19 @@ def _signals_snapshot(app, *, profile: str = "tokenmm") -> dict[str, Any]:
         return response.get_json()
 
 
-def _trades_snapshot(app, *, profile: str = "tokenmm") -> dict[str, Any]:
+def _trades_snapshot(
+    app,
+    *,
+    profile: str = "tokenmm",
+    query: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     with app.test_client() as client:
+        query_string = {"profile": profile, "contract_version": 2}
+        if query is not None:
+            query_string.update(query)
         response = client.get(
             "/api/v1/trades",
-            query_string={"profile": profile, "contract_version": 2},
+            query_string=query_string,
         )
         assert response.status_code == 200
         return response.get_json()
@@ -298,6 +306,46 @@ def test_standard_subscribe_rejects_snapshot_lineage_mismatch_before_any_data_is
     client.disconnect()
 
 
+def test_standard_subscribe_rejects_missing_snapshot_lineage_before_any_data_is_sent(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _signals_snapshot(app)
+    client = socketio.test_client(app)
+    base_payload = _standard_subscribe_payload(snapshot, surface="signal")
+
+    for field_name, missing_value in (
+        ("surface_query_key", ""),
+        ("stream_id", ""),
+        ("snapshot_revision", None),
+    ):
+        payload = dict(base_payload)
+        payload[field_name] = missing_value
+        ack = _subscribe_without_background_emitter(client, emitter, payload)
+
+        assert ack["accepted"] is False
+        assert ack["reason"] == "missing_snapshot_lineage"
+        assert _take_realtime_packets(client) == []
+
+    client.disconnect()
+
+
 def test_backend_hard_kill_switch_and_canary_controls_fail_closed_for_standard_only(
     flux_config,
     redis_client,
@@ -431,6 +479,74 @@ def test_standard_subscribe_ack_exposes_realtime_metadata_and_mid_session_withdr
     assert payload["kind"] == "recovery_required"
     assert payload["reason"] == "capability_withdrawn"
     client.disconnect()
+
+
+def test_trades_snapshot_contract_version_two_uses_standard_stream_cursor_for_lineage(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _trades_snapshot(app)
+    realtime = snapshot["data"]["realtime"]
+
+    assert snapshot["data"]["last_seq"] == 1
+    assert realtime["last_seq"] == 0
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="trades"),
+    )
+
+    assert ack["accepted"] is True
+    assert ack["accepted_start_seq"] == realtime["last_seq"]
+    assert ack["last_seq"] == realtime["last_seq"]
+    client.disconnect()
+
+
+def test_trades_noncanonical_queries_withhold_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    for query in (
+        {"limit": 10},
+        {"offset": 1},
+        {"sort": "asc"},
+        {"coin": "ABC"},
+    ):
+        body = _trades_snapshot(app, query=query)
+        assert "realtime" not in body["data"]
 
 
 def test_standard_trades_gap_emits_recovery_required_instead_of_silent_drift(
