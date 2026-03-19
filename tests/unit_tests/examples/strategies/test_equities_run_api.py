@@ -9,6 +9,7 @@ from flask import Flask
 
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
+from flux.runners.equities.run_api import _build_strategy_alerts_resolver
 from flux.runners.equities.run_api import _build_contract_catalog
 from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
 from flux.runners.equities.run_api import _build_profile_strategy_maps
@@ -343,6 +344,91 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_
     assert pulse.calls == [
         "equities-node-aapl_tradexyz_makerv4",
         "equities-node-meta_tradexyz_makerv4",
+    ]
+
+
+def test_build_strategy_alerts_resolver_surfaces_pulse_failures_but_ignores_active_error_logs() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_snapshot(self, job_id: str) -> dict[str, object] | None:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz_makerv4": {
+                    "id": job_id,
+                    "status": "failed",
+                    "errors": {
+                        "count": 2,
+                        "last_seen": "2026-03-19T11:43:02Z",
+                        "preview": "Invalid API-key, IP, or permissions for action",
+                    },
+                },
+                "equities-node-meta_tradexyz_makerv4": {
+                    "id": job_id,
+                    "status": "active",
+                    "errors": {
+                        "count": 1,
+                        "last_seen": "2026-03-19T11:43:10Z",
+                        "preview": "Binance API key does not have trading permissions",
+                    },
+                },
+            }.get(job_id)
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_alerts_resolver(
+        pulse_control=pulse,
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_763_289_790_000,
+    )
+
+    rows_by_strategy = resolver(
+        [
+            "aapl_tradexyz_makerv4",
+            "meta_tradexyz_makerv4",
+            "missing_tradexyz_makerv4",
+        ],
+    )
+
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz_makerv4",
+        "equities-node-meta_tradexyz_makerv4",
+        "equities-node-missing_tradexyz_makerv4",
+    ]
+    assert rows_by_strategy["aapl_tradexyz_makerv4"] == [
+        {
+            "strategy_id": "aapl_tradexyz_makerv4",
+            "row_id": "pulse:aapl_tradexyz_makerv4:pulse_job_failed:1773920582000",
+            "id": "pulse:aapl_tradexyz_makerv4:pulse_job_failed:1773920582000",
+            "level": "CRITICAL",
+            "message": "Pulse runner failed: Invalid API-key, IP, or permissions for action",
+            "alert_key": "pulse_job_failed",
+            "ts_ms": 1_773_920_582_000,
+            "source": "pulse",
+            "job_id": "equities-node-aapl_tradexyz_makerv4",
+            "status": "failed",
+            "error_preview": "Invalid API-key, IP, or permissions for action",
+            "error_count": 2,
+            "last_seen": "2026-03-19T11:43:02Z",
+        },
+    ]
+    assert rows_by_strategy["meta_tradexyz_makerv4"] == []
+    assert rows_by_strategy["missing_tradexyz_makerv4"] == [
+        {
+            "strategy_id": "missing_tradexyz_makerv4",
+            "row_id": "pulse:missing_tradexyz_makerv4:pulse_job_unknown:1763289790000",
+            "id": "pulse:missing_tradexyz_makerv4:pulse_job_unknown:1763289790000",
+            "level": "ERROR",
+            "message": "Pulse runner is not registered",
+            "alert_key": "pulse_job_unknown",
+            "ts_ms": 1_763_289_790_000,
+            "source": "pulse",
+            "job_id": "equities-node-missing_tradexyz_makerv4",
+            "status": "unknown",
+            "error_preview": None,
+            "error_count": 0,
+            "last_seen": None,
+        },
     ]
 
 

@@ -470,6 +470,55 @@ def test_get_job_status_normalizes_systemctl_status_without_loading_logs(tmp_pat
     assert calls == [["systemctl", "status", "flux@tokenmm-bridge"]]
 
 
+def test_get_job_snapshot_returns_status_and_error_preview(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tokenmm-bridge.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM Bridge",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                'CMD="python -m flux.runners.tokenmm.run_bridge"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        calls.append(cmd)
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-bridge"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="failed"))
+        if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-bridge"]:
+            return FakeCompletedProcess(
+                cmd,
+                stdout=(
+                    "2026-03-19T11:43:02Z host flux[123]: BinanceClientError: Invalid API-key\n"
+                ),
+            )
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+
+    snapshot = control_plane.get_job_snapshot("tokenmm-bridge")
+
+    assert snapshot is not None
+    assert snapshot["status"] == "failed"
+    assert snapshot["errors"] == {
+        "count": 1,
+        "last_seen": "2026-03-19T11:43:02Z",
+        "preview": "BinanceClientError: Invalid API-key",
+    }
+
+
 def test_control_job_runs_systemctl_action_and_returns_latest_status(tmp_path: Path) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)

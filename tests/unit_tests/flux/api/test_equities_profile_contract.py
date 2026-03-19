@@ -3379,6 +3379,79 @@ def test_alerts_profile_equities_fans_out_allowlisted_strategies_in_global_time_
     assert body["data"]["rows"][0]["market_exit"] is True
 
 
+def test_alerts_profile_equities_merges_synthetic_pulse_alerts_with_stream_rows(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "a-primary",
+                "level": "ERROR",
+                "message": "primary venue protection",
+                "alert_key": "venue_protection_circuit_breaker",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id, "strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        strategy_alerts_resolver=lambda strategy_ids: {
+            flux_config.identity.strategy_id: [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "pulse-primary",
+                    "id": "pulse-primary",
+                    "level": "CRITICAL",
+                    "message": "Pulse runner failed: Invalid API-key",
+                    "alert_key": "pulse_job_failed",
+                    "ts_ms": 3_000,
+                    "source": "pulse",
+                },
+            ],
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "row_id": "pulse-secondary",
+                    "id": "pulse-secondary",
+                    "level": "WARNING",
+                    "message": "Pulse runner restarting",
+                    "alert_key": "pulse_job_restarting",
+                    "ts_ms": 2_000,
+                    "source": "pulse",
+                },
+            ],
+        },
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["total"] == 3
+    assert [row["row_id"] for row in body["data"]["rows"]] == [
+        "pulse-primary",
+        "pulse-secondary",
+        "a-primary",
+    ]
+    assert body["data"]["rows"][0]["source"] == "pulse"
+
+
 def test_trades_profile_equities_preserves_market_exit_rows(
     flux_config,
     redis_client,

@@ -108,6 +108,7 @@ class RedisClientProtocol(Protocol):
 
 
 StrategyRunningResolver = Callable[[Sequence[str]], Mapping[str, bool | None]]
+StrategyAlertsResolver = Callable[[Sequence[str]], Mapping[str, Sequence[Mapping[str, Any]]]]
 
 
 class ParamsStoreValidationError(ValueError):
@@ -198,6 +199,7 @@ class FluxApiStore:
         contract_catalog: Sequence[ContractCatalogEntry],
         contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
         strategy_running_resolver: StrategyRunningResolver | None = None,
+        strategy_alerts_resolver: StrategyAlertsResolver | None = None,
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -229,6 +231,7 @@ class FluxApiStore:
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
+        self._strategy_alerts_resolver = strategy_alerts_resolver
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -1178,6 +1181,7 @@ class FluxApiStore:
         fetch_count = max(1, min(2_000, limit * 2))
         entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
         rows = extract_stream_rows(entries)
+        rows.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
         return build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
 
     def load_all_alerts_rows(self, strategy_id: str) -> list[dict[str, Any]]:
@@ -1185,6 +1189,7 @@ class FluxApiStore:
         entries = self._redis.xrevrange(keys.alerts())
         rows = extract_stream_rows(entries)
         filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+        filtered.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
         return build_alerts_rows(
             rows=filtered,
             strategy_id=strategy_id,
@@ -1208,16 +1213,55 @@ class FluxApiStore:
     def alerts_stream_len(self, strategy_id: str) -> int | None:
         keys = self._keys_for_strategy(strategy_id)
         stream_key = keys.alerts()
+        extra_count = len(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
         xlen_fn = getattr(self._redis, "xlen", None)
         if callable(xlen_fn):
             size = safe_int(xlen_fn(stream_key))
-            return max(0, size or 0)
+            return max(0, size or 0) + extra_count
         streams = getattr(self._redis, "streams", None)
         if isinstance(streams, dict):
             rows = streams.get(stream_key)
             if isinstance(rows, list):
-                return len(rows)
-        return None
+                return len(rows) + extra_count
+        return extra_count or None
+
+    def _resolved_alert_rows(
+        self,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, list[dict[str, Any]]]:
+        if self._strategy_alerts_resolver is None:
+            return {}
+
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = decode_text(strategy_id).strip()
+            if not strategy_text or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+        if not deduped_ids:
+            return {}
+
+        try:
+            resolved_raw = dict(self._strategy_alerts_resolver(deduped_ids))
+        except Exception:
+            _LOG.exception("Flux API supplemental alert resolver failed strategy_ids=%s", deduped_ids)
+            return {strategy_id: [] for strategy_id in deduped_ids}
+
+        resolved: dict[str, list[dict[str, Any]]] = {}
+        for strategy_id in deduped_ids:
+            rows = resolved_raw.get(strategy_id, ())
+            normalized_rows: list[dict[str, Any]] = []
+            if isinstance(rows, Sequence) and not isinstance(rows, str | bytes):
+                for row in rows:
+                    if not isinstance(row, Mapping):
+                        continue
+                    normalized = dict(row)
+                    normalized.setdefault("strategy_id", strategy_id)
+                    normalized_rows.append(normalized)
+            resolved[strategy_id] = normalized_rows
+        return resolved
 
     def clear_alerts(self, strategy_id: str) -> int:
         keys = self._keys_for_strategy(strategy_id)
@@ -1517,6 +1561,7 @@ def create_flux_api_app(  # noqa: C901
     contract_catalog: Sequence[ContractCatalogEntry],
     contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
     strategy_running_resolver: StrategyRunningResolver | None = None,
+    strategy_alerts_resolver: StrategyAlertsResolver | None = None,
     strategy_metadata: StrategyMetadata,
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
@@ -1547,6 +1592,7 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog=contract_catalog,
         contract_catalog_resolver=contract_catalog_resolver,
         strategy_running_resolver=strategy_running_resolver,
+        strategy_alerts_resolver=strategy_alerts_resolver,
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,

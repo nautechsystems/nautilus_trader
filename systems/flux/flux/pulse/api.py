@@ -20,7 +20,7 @@ from flask import request
 
 
 ERROR_MESSAGE_PATTERN = re.compile(
-    r"\b(ERROR|CRITICAL|EXCEPTION|TRACEBACK|FAILED TO START|FAILED WITH RESULT)\b",
+    r"\b(ERROR|CRITICAL|EXCEPTION|TRACEBACK|FAILED TO START|FAILED WITH RESULT|[A-Z][A-Z0-9_]*ERROR|[A-Z][A-Za-z0-9]+Error)\b",
     re.IGNORECASE,
 )
 JOURNAL_SHORT_ISO_TIMESTAMP_PATTERN = re.compile(
@@ -320,6 +320,12 @@ class PulseControlPlane:
             check=False,
         )
         return _normalize_status(result.stdout or "")
+
+    def get_job_snapshot(self, job_id: str) -> dict[str, Any] | None:
+        service = self._service_by_id(job_id)
+        if service is None:
+            return None
+        return self._service_payload(service)
 
     def control_job(self, job_id: str, action: str) -> str:
         if action not in {"start", "stop", "restart"}:
