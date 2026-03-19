@@ -22,6 +22,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  useRef,
   useCallback,
   Fragment,
   type ReactNode,
@@ -113,6 +114,17 @@ export interface DataTableProps<T> {
   mobileMode?: 'table' | 'cards';
   /** Custom row renderer for mobile cards */
   renderMobileRow?: (row: T) => React.ReactNode;
+  /** Stable live-data version when mutating row objects in place */
+  liveDataVersion?: number;
+  /** Optional debug callback for live-table verification */
+  onDebugMetrics?: (metrics: DataTableDebugMetrics) => void;
+}
+
+export interface DataTableDebugMetrics {
+  coreRowModelInvalidated: boolean;
+  liveCacheReset: boolean;
+  rowModelStable: boolean;
+  rowCount: number;
 }
 
 /**
@@ -163,6 +175,8 @@ function DataTableInner<T>({
   secondaryColumns,
   mobileMode = 'table',
   renderMobileRow,
+  liveDataVersion,
+  onDebugMetrics,
 }: DataTableProps<T>) {
   // Sorting state (controlled or uncontrolled)
   const [internalSorting, setInternalSorting] = useState<SortingState>(
@@ -392,6 +406,9 @@ function DataTableInner<T>({
   );
 
   const table = useReactTable(tableConfig as any);
+  const previousDataRef = useRef(data);
+  const previousRowModelRef = useRef<ReturnType<typeof table.getRowModel>>();
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
 
   // Extract current sort state for indicators
   const currentSort = currentSorting[0];
@@ -401,6 +418,14 @@ function DataTableInner<T>({
   const densityStyles = getDensityStyles(dense, densityMode);
 
   const rowModel = table.getRowModel();
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  if (liveCacheReset) {
+    rowModel.rows.forEach((row) => {
+      (row as any)._valuesCache = {};
+      (row as any)._uniqueValuesCache = {};
+    });
+    previousLiveDataVersionRef.current = liveDataVersion;
+  }
   const rows = rowModel.rows;
   const useCardMode = isMobileViewport && mobileMode === 'cards' && Boolean(renderMobileRow);
   const virtualItems: VirtualItem[] = useCardMode ? [] : virtualizer?.getVirtualItems() ?? [];
@@ -420,34 +445,81 @@ function DataTableInner<T>({
     return new Map(rows.map((row) => [row.original, row]));
   }, [groupedData, renderGroupHeader, rows]);
 
-  const renderTableRow = (row: Row<T>) => (
-    <Fragment key={`row-fragment-${row.id}`}>
-      <TableRow
-        key={row.id}
-        dense={dense}
-        selected={row.getIsSelected()}
-        onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
-      >
-        {row.getVisibleCells().map((cell) => {
-          const widthStyle = getWidthStyle(cell.column);
+  useEffect(() => {
+    const metrics: DataTableDebugMetrics = {
+      coreRowModelInvalidated: previousDataRef.current !== data,
+      liveCacheReset,
+      rowModelStable: previousRowModelRef.current === rowModel,
+      rowCount: rows.length,
+    };
+    onDebugMetrics?.(metrics);
+    previousDataRef.current = data;
+    previousRowModelRef.current = rowModel;
+  }, [data, liveCacheReset, onDebugMetrics, rowModel, rows.length]);
 
-          return (
-            <td
-              key={cell.id}
-              style={{
-                padding: '6px 10px',
-                fontSize: densityStyles.fontSize,
-                fontWeight: typography.fontWeight.normal,
-                color: colors.text.primary,
-                fontFamily: typography.fontFamily.sans,
-                ...(widthStyle ?? {}),
-              }}
-            >
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-            </td>
-          );
-        })}
-      </TableRow>
+  const renderTableCells = (row: Row<T>) =>
+    row.getVisibleCells().map((cell) => {
+      const widthStyle = getWidthStyle(cell.column);
+
+      return (
+        <td
+          key={cell.id}
+          style={{
+            padding: '6px 10px',
+            fontSize: densityStyles.fontSize,
+            fontWeight: typography.fontWeight.normal,
+            color: colors.text.primary,
+            fontFamily: typography.fontFamily.sans,
+            ...(widthStyle ?? {}),
+          }}
+        >
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </td>
+      );
+    });
+
+  const renderTableRow = (row: Row<T>, virtualRow?: VirtualItem) => (
+    <Fragment key={`row-fragment-${row.id}`}>
+      {virtualRow ? (
+        <tr
+          aria-selected={row.getIsSelected()}
+          className={cn(
+            'transition-colors duration-150 border-b border-border',
+            onRowClick && 'cursor-pointer',
+            !row.getIsSelected() && 'hover:bg-bg-hover',
+            row.getIsSelected() && 'bg-accent/12 border-accent/60',
+          )}
+          style={{
+            height: dense ? spacing.row.compact : spacing.row.normal,
+          }}
+          onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
+          onKeyDown={(event) => {
+            if (onRowClick && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              onRowClick(row.original as T);
+            }
+          }}
+          role={onRowClick ? 'button' : undefined}
+          tabIndex={onRowClick ? 0 : undefined}
+          ref={(node) => {
+            if (node) {
+              (virtualizer as any)?.measureElement?.(node);
+            }
+          }}
+          data-index={virtualRow.index}
+        >
+          {renderTableCells(row)}
+        </tr>
+      ) : (
+        <TableRow
+          key={row.id}
+          dense={dense}
+          selected={row.getIsSelected()}
+          onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
+        >
+          {renderTableCells(row)}
+        </TableRow>
+      )}
       {enableRowExpansion && row.getIsExpanded() && renderExpandedRow && (
         <tr
           key={`${row.id}-expanded`}
@@ -552,7 +624,7 @@ function DataTableInner<T>({
               {virtualItems.map((virtualRow) => {
                 const row = rows[virtualRow.index];
                 if (!row) return null;
-                return renderTableRow(row as Row<T>);
+                return renderTableRow(row as Row<T>, virtualRow);
               })}
               {bottomVirtualHeight > 0 && (
                 <tr aria-hidden style={{ height: bottomVirtualHeight, lineHeight: 0 }}>

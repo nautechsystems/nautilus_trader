@@ -29,7 +29,21 @@ import { colors, borderRadius } from '@/lib/tokens';
 // SCROLL AREA COMPONENT
 // =============================================================================
 
-export interface ScrollAreaProps {
+type ScrollAreaRootProps = Omit<
+  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>,
+  'children' | 'type'
+>;
+
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T) {
+  if (!ref) return;
+  if (typeof ref === 'function') {
+    ref(value);
+    return;
+  }
+  (ref as React.MutableRefObject<T>).current = value;
+}
+
+export interface ScrollAreaProps extends ScrollAreaRootProps {
   /**
    * Content to be scrolled
    */
@@ -62,6 +76,16 @@ export interface ScrollAreaProps {
    * Additional className for viewport
    */
   viewportClassName?: string;
+
+  /**
+   * Forwarded viewport ref for virtualization and scroll coordination
+   */
+  viewportRef?: React.Ref<HTMLDivElement>;
+
+  /**
+   * Viewport scroll handler
+   */
+  onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
 }
 
 /**
@@ -85,6 +109,9 @@ export const ScrollArea = React.forwardRef<
       size = 'md',
       type = 'hover',
       viewportClassName,
+      viewportRef,
+      onViewportScroll,
+      ...rootProps
     },
     ref
   ) => {
@@ -98,11 +125,16 @@ export const ScrollArea = React.forwardRef<
         className={cn('relative overflow-hidden', className)}
         type={type}
         data-radix-scroll-area-root
+        {...rootProps}
       >
         {/* Viewport */}
         <ScrollAreaPrimitive.Viewport
+          ref={(node) => {
+            assignRef(viewportRef, node);
+          }}
           className={cn('h-full w-full rounded-[inherit]', viewportClassName)}
           data-radix-scroll-area-viewport
+          onScroll={onViewportScroll}
         >
           {children}
         </ScrollAreaPrimitive.Viewport>

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ColumnDef } from '@tanstack/react-table';
-import { DataTable } from '@/components/ui/table/DataTable';
+import { DataTable, type DataTableDebugMetrics } from '@/components/ui/table/DataTable';
 
 interface TestData {
   id: number;
@@ -226,5 +226,62 @@ describe('DataTable', () => {
     const dataRow = rows[1]; // First data row (after header)
 
     expect(dataRow).not.toHaveAttribute('role', 'button');
+  });
+
+  it('supports liveDataVersion updates without invalidating the core row model when data identity is stable', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Initial')).toBeInTheDocument();
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
+  it('measures rendered virtual rows for variable-height virtualization', () => {
+    const measureElement = vi.fn();
+    const virtualizer = {
+      getVirtualItems: () => [{ index: 0, start: 0, size: 32 }],
+      getTotalSize: () => 32,
+      measureElement,
+    };
+
+    render(
+      <DataTable
+        data={[mockData[0]]}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        virtualizer={virtualizer as any}
+      />
+    );
+
+    expect(measureElement).toHaveBeenCalled();
+    expect(screen.getByText('Alice').closest('tr')).toHaveAttribute('data-index', '0');
   });
 });
