@@ -186,6 +186,107 @@ def test_merge_portfolio_balances_rows_deduplicates_shared_position_snapshots_by
     assert position_rows[0]["signed_qty"] == "10"
 
 
+def test_merge_portfolio_balances_rows_deduplicates_binance_split_pair_but_keeps_multivenue_same_asset_positions() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "aapl_binance_perp_maker": [
+                {
+                    "strategy_id": "aapl_binance_perp_maker",
+                    "kind": "position",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE-main",
+                    "instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
+                    "signed_qty": "4",
+                    "quantity": "4",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "source_scope": "shared_account",
+                    "account_scope_id": "binance.futures.main",
+                    "ts_ms": 1_700_000_000_000,
+                },
+            ],
+            "aapl_binance_perp_taker": [
+                {
+                    "strategy_id": "aapl_binance_perp_taker",
+                    "kind": "position",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE-main",
+                    "instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
+                    "signed_qty": "4",
+                    "quantity": "4",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "source_scope": "shared_account",
+                    "account_scope_id": "binance.futures.main",
+                    "ts_ms": 1_700_000_000_100,
+                },
+            ],
+            "aapl_tradexyz_maker": [
+                {
+                    "strategy_id": "aapl_tradexyz_maker",
+                    "kind": "position",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "ts_ms": 1_700_000_000_000,
+                },
+            ],
+            "aapl_tradexyz_taker": [
+                {
+                    "strategy_id": "aapl_tradexyz_taker",
+                    "kind": "position",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "ts_ms": 1_700_000_000_100,
+                },
+            ],
+        },
+        portfolio_id="equities",
+        shared_position_groups_by_strategy={
+            "aapl_binance_perp_maker": "AAPL|binance.futures.main|AAPLUSDT-PERP.BINANCE_PERP",
+            "aapl_binance_perp_taker": "AAPL|binance.futures.main|AAPLUSDT-PERP.BINANCE_PERP",
+            "aapl_tradexyz_maker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "aapl_tradexyz_taker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+        },
+    )
+
+    position_rows = [
+        row
+        for row in merged
+        if row.get("kind") == "position" and row.get("asset") == "AAPL"
+    ]
+
+    assert len(position_rows) == 2
+    assert {row["instrument_id"] for row in position_rows} == {
+        "AAPLUSDT-PERP.BINANCE_PERP",
+        "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+    }
+    assert {row["exchange"] for row in position_rows} == {"binance_perp", "hyperliquid"}
+    assert {row["signed_qty"] for row in position_rows} == {"4", "10"}
+    assert all(row["strategy_id"] == "equities" for row in position_rows)
+
+
 def test_collapse_balance_display_rows_keeps_bitget_cash_rows_across_product_scopes() -> None:
     collapsed = collapse_balance_display_rows(
         [

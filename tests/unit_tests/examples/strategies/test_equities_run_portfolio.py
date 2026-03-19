@@ -223,11 +223,28 @@ def test_equities_live_config_prunes_shared_portfolio_contracts_to_core_prod_bas
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     allowlist = _equities_strategy_ids(config["api"])
     required = _required_strategy_ids(config["api"], fallback=allowlist)
+    strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=allowlist)
 
-    assert allowlist == list(CORE_PROD_STRATEGY_IDS)
-    assert required == list(CORE_PROD_STRATEGY_IDS)
-    assert _portfolio_base_assets(config) == list(CORE_PROD_STRATEGY_IDS_BY_ASSET)
-    assert _strategy_ids_by_asset(config, allowlist=allowlist) == CORE_PROD_STRATEGY_IDS_BY_ASSET
+    assert required == allowlist
+    assert _portfolio_base_assets(config) == list(strategy_ids_by_asset)
+    assert set(allowlist) == {
+        strategy_id
+        for strategy_ids in strategy_ids_by_asset.values()
+        for strategy_id in strategy_ids
+    }
+    assert all("_makerv4" not in strategy_id for strategy_id in allowlist)
+    for asset, strategy_ids in strategy_ids_by_asset.items():
+        assert len(strategy_ids) in {2, 4}
+        assert {strategy_id.rsplit("_", maxsplit=1)[-1] for strategy_id in strategy_ids} == {
+            "maker",
+            "taker",
+        }
+        assert all(strategy_id.startswith(f"{asset.lower()}_") for strategy_id in strategy_ids)
+        enrolled_venues = {
+            strategy_id.removeprefix(f"{asset.lower()}_").rsplit("_", maxsplit=1)[0]
+            for strategy_id in strategy_ids
+        }
+        assert len(strategy_ids) == 2 * len(enrolled_venues)
 
 
 def test_portfolio_base_assets_dedupes_contract_bases() -> None:
@@ -413,6 +430,113 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert captured_provider_configs[1].dockerized_gateway is not None
     assert captured_provider_configs[1].ibg_port is None
     assert captured_provider_configs[1].ibg_client_id == 8
+
+
+def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceProvider:
+        def refresh(self) -> None:
+            return None
+
+        def snapshot(self) -> dict[str, Any]:
+            return {"rows": [], "totals": {}}
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        lambda provider_config: _CountingAccountProjectionProvider(
+            rows=[],
+            totals={"ibg_client_id": provider_config.ibg_client_id},
+        ),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts._build_binance_futures_account_provider",
+        lambda **_kwargs: _FakeBinanceProvider(),
+        raising=False,
+    )
+
+    bindings = build_profile_account_provider_bindings(
+        config={
+            "account_scopes": [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                },
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 7,
+                },
+                {
+                    "scope_id": "ibkr.hedge.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 8,
+                },
+            ],
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_binance_perp_maker",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+                {
+                    "strategy_id": "pltr_binance_perp_taker",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+            ],
+        },
+    )
+
+    assert [binding.account_scope_id for binding in bindings] == [
+        "binance.futures.main",
+        "ibkr.reference.main",
+        "ibkr.hedge.main",
+    ]
+    binance_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "binance.futures.main"
+    )
+    reference_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "ibkr.reference.main"
+    )
+    hedge_binding = next(
+        binding for binding in bindings if binding.account_scope_id == "ibkr.hedge.main"
+    )
+
+    assert binance_binding.source_strategy_ids == (
+        "pltr_binance_perp_maker",
+        "pltr_binance_perp_taker",
+    )
+    assert binance_binding.provider is not None
+    assert reference_binding.provider is not None
+    assert hedge_binding.provider is not None
 
 
 def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_client_id(
