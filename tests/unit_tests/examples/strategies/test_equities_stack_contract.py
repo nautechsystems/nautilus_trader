@@ -564,7 +564,7 @@ def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> Non
         if path.name != "equities.strategy.template.toml"
     )
 
-    assert active_strategy_ids == list(CORE_PROD_STRATEGY_IDS)
+    assert active_strategy_ids == sorted(LIVE_ENROLLED_STRATEGY_IDS)
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert not (strategies_dir / f"{strategy_id}.toml").exists()
         assert (strategies_dir / f"{strategy_id}.toml.disabled").exists()
@@ -604,7 +604,7 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
     assert "--enable-execution" in install_script
 
 
-def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() -> None:
+def test_equities_shared_contract_catalog_matches_live_enrolled_strategy_routes() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
     shared_contracts = {
@@ -613,14 +613,19 @@ def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() ->
     }
     assert LIVE_ENROLLED_MAKER_CONTRACTS <= shared_contracts
     assert LIVE_ENROLLED_REFERENCE_CONTRACTS <= shared_contracts
-    for entry in CORE_PROD_STRATEGIES:
+    for entry in LIVE_ENROLLED_STRATEGIES:
         active_config = _load_toml(
             repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
         )
+        maker_venue_key = "BINANCE_PERP" if entry["maker_exchange"] == "binance_perp" else "HYPERLIQUID"
         assert (
-            "hyperliquid",
-            active_config["node"]["venues"]["HYPERLIQUID"]["instrument_id"],
+            entry["maker_exchange"],
+            active_config["node"]["venues"][maker_venue_key]["instrument_id"],
         ) in shared_contracts
+        assert (
+            active_config["node"]["venues"]["IBKR"]["instrument_id"]
+            == entry["reference_instrument_id"]
+        )
         assert (
             "ibkr",
             active_config["node"]["venues"]["IBKR"]["instrument_id"],
@@ -791,6 +796,21 @@ def test_equities_dual_variant_strategy_files_preserve_shared_session_contract()
             "equities_taker",
             ("bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"),
         ),
+        (
+            "baba_tradexyz_maker",
+            "equities_maker",
+            (),
+        ),
+        (
+            "amzn_binance_perp_maker",
+            "equities_maker",
+            (),
+        ),
+        (
+            "amzn_binance_perp_taker",
+            "equities_taker",
+            ("bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"),
+        ),
     ):
         path = repo_root / f"deploy/equities/strategies/{strategy_id}.toml"
         assert path.exists()
@@ -803,6 +823,30 @@ def test_equities_dual_variant_strategy_files_preserve_shared_session_contract()
         assert "des_qty_local" not in config["strategy"]
         assert "max_qty_local" not in config["strategy"]
         assert "max_skew_bps_local" not in config["strategy"]
+        if "_binance_perp_" in strategy_id:
+            assert config["venues"]["execution_venue"] == "BINANCE_PERP"
+            assert config["node"]["venues"]["BINANCE_PERP"]["execution"] is True
+            assert (
+                config["node"]["venues"]["BINANCE_PERP"]["api_key_env"]
+                == "EQUITIES_BINANCE_API_KEY"
+            )
+            assert (
+                config["node"]["venues"]["BINANCE_PERP"]["api_secret_env"]
+                == "EQUITIES_BINANCE_API_SECRET"
+            )
+            assert config["node"]["venues"]["BINANCE_PERP"]["account_type"] == "USDT_FUTURES"
+            assert (
+                config["node"]["venues"]["BINANCE_PERP"]["private_api_family"]
+                == "PORTFOLIO_MARGIN"
+            )
+            assert "HYPERLIQUID" not in config["node"]["venues"]
+        else:
+            assert config["venues"]["execution_venue"] == "HYPERLIQUID"
+            assert config["node"]["venues"]["HYPERLIQUID"]["execution"] is True
+            assert (
+                config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"]
+                == "TRADE_XYZ_VAULT_ADDRESS"
+            )
         for field in forbidden_fields:
             assert field not in config["strategy"]
 
@@ -811,10 +855,10 @@ def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
     repo_root = _repo_root()
     client_ids: list[int] = []
 
-    for entry in CORE_PROD_STRATEGIES:
-        active_config = _load_toml(
-            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
-        )
+    for path in (repo_root / "deploy/equities/strategies").glob("*.toml"):
+        if path.name == "equities.strategy.template.toml":
+            continue
+        active_config = _load_toml(path)
         client_ids.append(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert len(client_ids) == len(set(client_ids))
@@ -830,10 +874,10 @@ def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_id
     }
     strategy_client_ids: set[int] = set()
 
-    for entry in CORE_PROD_STRATEGIES:
-        active_config = _load_toml(
-            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
-        )
+    for path in (repo_root / "deploy/equities/strategies").glob("*.toml"):
+        if path.name == "equities.strategy.template.toml":
+            continue
+        active_config = _load_toml(path)
         strategy_client_ids.add(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert shared_client_ids.isdisjoint(strategy_client_ids)
@@ -862,6 +906,8 @@ def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -
     assert "TRADE_XYZ_AGENT_PK=" in env_example
     assert "TRADE_XYZ_ACCOUNT_ADDRESS=" in env_example
     assert "TRADE_XYZ_VAULT_ADDRESS=" in env_example
+    assert "EQUITIES_BINANCE_API_KEY=" in env_example
+    assert "EQUITIES_BINANCE_API_SECRET=" in env_example
     assert "TWS_USERNAME=" in env_example
     assert "TWS_PASSWORD=" in env_example
 
@@ -903,7 +949,7 @@ def test_equities_stack_script_is_scoped_to_equities_services_and_paths() -> Non
     assert 'TOKENMM_' not in script
 
 
-def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
+def test_equities_systemd_assets_use_live_enrolled_service_names_only() -> None:
     target = _read(_repo_root() / "deploy/equities/systemd/flux-equities.target")
     install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
     common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")
@@ -914,7 +960,7 @@ def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
     assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
-    for strategy_id in CORE_PROD_STRATEGY_IDS:
+    for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' in target
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' not in target
@@ -943,9 +989,11 @@ def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
     assert 'TRADE_XYZ_AGENT_PK=' in common_env
     assert 'TRADE_XYZ_ACCOUNT_ADDRESS=' in common_env
     assert 'TRADE_XYZ_VAULT_ADDRESS=' in common_env
+    assert 'EQUITIES_BINANCE_API_KEY=' in common_env
+    assert 'EQUITIES_BINANCE_API_SECRET=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
-    for strategy_id in CORE_PROD_STRATEGY_IDS:
+    for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" not in sudoers
