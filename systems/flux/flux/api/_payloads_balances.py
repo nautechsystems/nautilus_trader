@@ -838,6 +838,41 @@ def _position_portfolio_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
     return (exchange, instrument)
 
 
+def _shared_position_snapshot_key(
+    row: Mapping[str, Any],
+    *,
+    shared_position_groups_by_strategy: Mapping[str, str] | None,
+) -> tuple[str, str, str, str] | None:
+    if shared_position_groups_by_strategy is None:
+        return None
+    strategy_id = decode_text(row.get("strategy_id")).strip()
+    if not strategy_id:
+        return None
+    group_id = decode_text(shared_position_groups_by_strategy.get(strategy_id)).strip()
+    if not group_id:
+        return None
+    position_key = _position_portfolio_key(row)
+    if position_key is None:
+        return None
+    exchange, instrument = position_key
+    return (group_id, _balance_account_hint(row), exchange, instrument)
+
+
+def _should_replace_shared_position_row(
+    previous_row: Mapping[str, Any],
+    candidate_row: Mapping[str, Any],
+) -> bool:
+    previous_ts_ms = _row_ts_ms(previous_row)
+    candidate_ts_ms = _row_ts_ms(candidate_row)
+    if candidate_ts_ms != previous_ts_ms:
+        return candidate_ts_ms > previous_ts_ms
+    previous_has_qty = _balance_row_qty(previous_row) is not None
+    candidate_has_qty = _balance_row_qty(candidate_row) is not None
+    if previous_has_qty != candidate_has_qty:
+        return candidate_has_qty
+    return decode_text(candidate_row.get("row_id")).strip() >= decode_text(previous_row.get("row_id")).strip()
+
+
 def _position_portfolio_row_from_agg(
     key: tuple[str, str],
     agg: Mapping[str, Any],
@@ -910,6 +945,7 @@ def merge_portfolio_balances_rows(
     rows_by_strategy: Mapping[str, Sequence[Mapping[str, Any]]],
     portfolio_id: str = "tokenmm",
     preserve_product_scope_cash: bool = False,
+    shared_position_groups_by_strategy: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Merge per-strategy balance rows into a single portfolio-level balance view."""
 
@@ -917,6 +953,7 @@ def merge_portfolio_balances_rows(
     cash_latest_marked: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]] = {}
     cash_source_strategy_ids: dict[tuple[str, str, str, str], set[str]] = {}
     position_grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    shared_position_latest: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]] = {}
     passthrough_rows: list[dict[str, Any]] = []
     scoped_cash_conflicts: set[tuple[str, str, str]] = set()
 
@@ -947,6 +984,16 @@ def merge_portfolio_balances_rows(
             row = dict(source_row)
 
             if _is_position_row(row):
+                shared_position_key = _shared_position_snapshot_key(
+                    row,
+                    shared_position_groups_by_strategy=shared_position_groups_by_strategy,
+                )
+                if shared_position_key is not None:
+                    row_ts_ms = _row_ts_ms(row)
+                    previous = shared_position_latest.get(shared_position_key)
+                    if previous is None or _should_replace_shared_position_row(previous[1], row):
+                        shared_position_latest[shared_position_key] = (row_ts_ms, row)
+                    continue
                 position_key = _position_portfolio_key(row)
                 if position_key is None:
                     continue
@@ -1015,6 +1062,16 @@ def merge_portfolio_balances_rows(
         cash_latest[cash_key] = (latest_ts_ms, carried)
 
     _collapse_duplicate_cash_scope_rows(cash_latest, cash_source_strategy_ids)
+
+    for _shared_key, (_ts_ms, row) in shared_position_latest.items():
+        position_key = _position_portfolio_key(row)
+        if position_key is None:
+            continue
+        agg = position_grouped.get(position_key)
+        if agg is None:
+            agg = _position_agg_seed(row)
+            position_grouped[position_key] = agg
+        _position_agg_update(agg, row)
 
     merged_positions: list[dict[str, Any]] = []
     for key, agg in position_grouped.items():

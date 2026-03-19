@@ -138,6 +138,54 @@ def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stabl
     assert row["display_name_long"] == "Bitget USDT"
 
 
+def test_merge_portfolio_balances_rows_deduplicates_shared_position_snapshots_by_group() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "aapl_tradexyz_maker": [
+                {
+                    "strategy_id": "aapl_tradexyz_maker",
+                    "kind": "position",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "ts_ms": 1_700_000_000_000,
+                },
+            ],
+            "aapl_tradexyz_taker": [
+                {
+                    "strategy_id": "aapl_tradexyz_taker",
+                    "kind": "position",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "10",
+                    "quantity": "10",
+                    "ts_ms": 1_700_000_000_100,
+                },
+            ],
+        },
+        portfolio_id="equities",
+        shared_position_groups_by_strategy={
+            "aapl_tradexyz_maker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "aapl_tradexyz_taker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+        },
+    )
+
+    position_rows = [
+        row
+        for row in merged
+        if row.get("kind") == "position"
+        and row.get("exchange") == "hyperliquid"
+        and row.get("instrument_id") == "XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    ]
+
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "equities"
+    assert position_rows[0]["signed_qty"] == "10"
+
+
 def test_collapse_balance_display_rows_keeps_bitget_cash_rows_across_product_scopes() -> None:
     collapsed = collapse_balance_display_rows(
         [

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from flux.common.strategy_contracts import decode_strategy_contracts
-from flux.common.strategy_contracts import shared_asset_primary_strategy_ids
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
@@ -83,15 +82,32 @@ def _strategy_ids_by_asset(config: dict[str, Any], *, allowlist: list[str]) -> d
     }
 
 
-def _primary_strategy_ids_by_asset(
+def _shared_observation_group_by_strategy_id(
     config: dict[str, Any],
     *,
     allowlist: list[str],
 ) -> dict[str, str]:
-    return shared_asset_primary_strategy_ids(
-        decode_strategy_contracts(config.get("strategy_contracts") or []),
-        strategy_ids=allowlist,
-    )
+    allowlist_set = set(allowlist)
+    grouped: dict[str, list[str]] = {}
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id not in allowlist_set:
+            continue
+        group_key = "|".join(
+            (
+                contract.portfolio_asset_id.upper(),
+                contract.execution_account_scope_id,
+                contract.maker_instrument_id,
+            ),
+        )
+        strategy_ids = grouped.setdefault(group_key, [])
+        if contract.strategy_id not in strategy_ids:
+            strategy_ids.append(contract.strategy_id)
+    return {
+        strategy_id: group_key
+        for group_key, strategy_ids in grouped.items()
+        if len(strategy_ids) > 1
+        for strategy_id in strategy_ids
+    }
 
 
 class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
@@ -108,7 +124,7 @@ class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
             for binding in self._profile_account_bindings
         ]
         self._strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=self._strategy_ids)
-        self._primary_strategy_id_by_asset = _primary_strategy_ids_by_asset(
+        self._shared_observation_group_by_strategy_id = _shared_observation_group_by_strategy_id(
             config,
             allowlist=self._strategy_ids,
         )

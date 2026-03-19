@@ -2610,7 +2610,7 @@ def test_build_node_keeps_shared_execution_claims_for_primary_same_asset_variant
     ]
 
 
-def test_build_node_disables_shared_execution_claims_for_secondary_same_asset_variant(
+def test_build_node_keeps_shared_execution_claims_for_secondary_same_asset_variant(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -2712,9 +2712,15 @@ def test_build_node_disables_shared_execution_claims_for_secondary_same_asset_va
     strategy = captured["strategy"]
     node_config = captured["node_config"]
 
-    assert strategy.config.external_order_claims == []
-    assert node_config.exec_engine.reconciliation is False
-    assert node_config.exec_engine.reconciliation_instrument_ids == []
+    assert strategy.config.external_order_claims == [
+        maker_instrument_id,
+        reference_instrument_id,
+    ]
+    assert node_config.exec_engine.reconciliation is True
+    assert node_config.exec_engine.reconciliation_instrument_ids == [
+        maker_instrument_id,
+        reference_instrument_id,
+    ]
 
 
 def test_main_exits_with_fatal_code_without_restartable_success(monkeypatch, tmp_path: Path) -> None:

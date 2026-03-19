@@ -41,7 +41,6 @@ class EquitiesTakerStrategyConfig(StrategyConfig, frozen=True):
     order_qty: Decimal
     portfolio_asset_id: str | None = None
     execution_account_scope_id: str | None = None
-    shared_asset_primary: bool = True
     qty_unit: OrderQtyUnit = "venue"
     external_strategy_id: str = "equities_taker"
     bot_on: bool | None = None

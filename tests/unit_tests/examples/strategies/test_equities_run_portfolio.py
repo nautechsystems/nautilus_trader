@@ -920,7 +920,7 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     assert snapshot["balances"]["rows"][0]["strategy_id"] == "equities"
 
 
-def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_components_and_positions() -> None:
+def test_equities_portfolio_aggregator_deduplicates_shared_same_asset_observations() -> None:
     now_ms_value = int(time.time() * 1000)
     fake_redis = _FakeRedis(
         {
@@ -935,6 +935,7 @@ def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_compone
                     base_currency="AAPL",
                     local_qty_base=10,
                     ts_ms=now_ms_value,
+                    maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
                     state="running",
                 ),
             ).encode(),
@@ -949,6 +950,7 @@ def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_compone
                     base_currency="AAPL",
                     local_qty_base=None,
                     ts_ms=now_ms_value,
+                    maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
                     state="running",
                 ),
             ).encode(),
@@ -998,7 +1000,10 @@ def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_compone
     aggregator._strategy_ids_by_asset = {
         "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
     }
-    aggregator._primary_strategy_id_by_asset = {"AAPL": "aapl_tradexyz_maker"}
+    aggregator._shared_observation_group_by_strategy_id = {
+        "aapl_tradexyz_maker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+        "aapl_tradexyz_taker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+    }
     aggregator._redis = fake_redis
     aggregator._log = MagicMock()
     aggregator.account_scope_ids = []
@@ -1012,6 +1017,12 @@ def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_compone
 
     assert snapshot["inventory_by_asset"]["AAPL"]["global_qty_base"] == "10.000000"
     assert snapshot["inventory_by_asset"]["AAPL"]["degraded"] is False
+    component_rows = snapshot["inventory_by_asset"]["AAPL"]["components"]
+    assert [row["strategy_id"] for row in component_rows] == [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+    ]
+    assert [row["local_qty_base"] for row in component_rows] == ["10.000000", None]
     position_rows = [
         row
         for row in snapshot["balances"]["rows"]

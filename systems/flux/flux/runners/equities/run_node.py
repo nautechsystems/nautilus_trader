@@ -19,7 +19,6 @@ import redis
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.strategy_contracts import decode_strategy_contracts
-from flux.common.strategy_contracts import shared_asset_primary_strategy_ids
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
 from flux.runners.shared.bootstrap import build_redis_database_config
@@ -443,7 +442,6 @@ def _strategy_config_kwargs(
     order_qty: Decimal,
     qty: Decimal | None,
     qty_unit: str,
-    shared_asset_primary: bool,
     external_order_claims: list[InstrumentId],
 ) -> dict[str, Any]:
     candidates: dict[str, Any] = {
@@ -453,7 +451,6 @@ def _strategy_config_kwargs(
         "external_strategy_id": external_strategy_id,
         "allowed_submit_instrument_ids": allowed_instrument_ids,
         "external_order_claims": external_order_claims,
-        "shared_asset_primary": shared_asset_primary,
         "manage_stop": bool(strategy_cfg.get("manage_stop", False)),
         "order_qty": order_qty,
         "qty_unit": qty_unit,
@@ -513,30 +510,6 @@ def _strategy_config_kwargs(
         for field_name, value in candidates.items()
         if _strategy_config_accepts(strategy_spec.config_cls, field_name)
     }
-
-
-def _shared_asset_primary_for_strategy(
-    *,
-    config: dict[str, Any],
-    strategy_id: str,
-) -> bool:
-    strategy_contracts = decode_strategy_contracts(config.get("strategy_contracts") or [])
-    strategy_contract = next(
-        (contract for contract in strategy_contracts if contract.strategy_id == strategy_id),
-        None,
-    )
-    if strategy_contract is None:
-        return True
-    asset_id = strategy_contract.portfolio_asset_id.upper()
-    asset_strategy_ids = [
-        contract.strategy_id
-        for contract in strategy_contracts
-        if contract.portfolio_asset_id.upper() == asset_id
-    ]
-    if len(asset_strategy_ids) <= 1:
-        return True
-    primary_strategy_id = shared_asset_primary_strategy_ids(strategy_contracts).get(asset_id)
-    return primary_strategy_id is None or primary_strategy_id == strategy_id
 
 
 @contextmanager
@@ -607,21 +580,9 @@ def build_node(
         maker_instrument_id=maker_instrument_id,
         reference_instrument_id=reference_instrument_id,
     )
-    shared_asset_primary = _shared_asset_primary_for_strategy(
-        config=config,
-        strategy_id=external_strategy_id,
-    )
     exec_reconciliation = bool(node_cfg.get("exec_reconciliation", True))
     reconciliation_instrument_ids = allowed_instrument_ids
     external_order_claims = allowed_instrument_ids
-    if not shared_asset_primary:
-        exec_reconciliation = False
-        reconciliation_instrument_ids = []
-        external_order_claims = []
-        LOGGER.info(
-            "Disabling shared execution claims for secondary same-asset strategy_id=%s",
-            external_strategy_id,
-        )
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
@@ -715,7 +676,6 @@ def build_node(
                 order_qty=order_qty,
                 qty=qty,
                 qty_unit=qty_unit,
-                shared_asset_primary=shared_asset_primary,
                 external_order_claims=external_order_claims,
             ),
         ),

@@ -315,6 +315,102 @@ def test_aggregate_components_partial_mode_sums_usable_qty_and_reports_required_
     assert payload["degraded"] is True
 
 
+def test_aggregate_components_deduplicates_shared_quantity_groups_without_hiding_rows() -> None:
+    payload = aggregate_components(
+        portfolio_id="equities",
+        base_currency="AAPL",
+        components={
+            "aapl_tradexyz_maker": StrategyInventoryComponent(
+                strategy_id="aapl_tradexyz_maker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+                local_qty_base=Decimal("10"),
+                ts_ms=1_000,
+                maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+            "aapl_tradexyz_taker": StrategyInventoryComponent(
+                strategy_id="aapl_tradexyz_taker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+                local_qty_base=Decimal("10"),
+                ts_ms=1_100,
+                maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+        },
+        required_strategy_ids={"aapl_tradexyz_maker", "aapl_tradexyz_taker"},
+        now_ms_value=2_000,
+        shared_quantity_groups={
+            "aapl_tradexyz_maker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "aapl_tradexyz_taker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+        },
+    )
+
+    assert payload["global_qty_base"] == "10"
+    assert payload["global_qty"] == "10"
+    assert payload["global_qty_base_complete"] is True
+    assert payload["global_qty_complete"] is True
+    assert payload["usable_component_count"] == 1
+    assert payload["expected_component_count"] == 2
+    assert payload["missing_required"] == []
+    assert payload["stale_required"] == []
+    assert payload["null_qty_required"] == []
+    assert payload["shared_quantity_conflict_strategy_ids"] == []
+    assert payload["degraded"] is False
+    assert [row["strategy_id"] for row in payload["components"]] == [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+    ]
+    assert [row["local_qty_base"] for row in payload["components"]] == ["10", "10"]
+
+
+def test_aggregate_components_flags_conflicting_shared_quantity_groups() -> None:
+    payload = aggregate_components(
+        portfolio_id="equities",
+        base_currency="AAPL",
+        components={
+            "aapl_tradexyz_maker": StrategyInventoryComponent(
+                strategy_id="aapl_tradexyz_maker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+                local_qty_base=Decimal("10"),
+                ts_ms=1_000,
+                maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+            "aapl_tradexyz_taker": StrategyInventoryComponent(
+                strategy_id="aapl_tradexyz_taker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+                local_qty_base=Decimal("4"),
+                ts_ms=1_100,
+                maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+        },
+        required_strategy_ids={"aapl_tradexyz_maker", "aapl_tradexyz_taker"},
+        now_ms_value=2_000,
+        shared_quantity_groups={
+            "aapl_tradexyz_maker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "aapl_tradexyz_taker": "AAPL|hyperliquid.xyz.main|xyz:AAPL-USD-PERP.HYPERLIQUID",
+        },
+    )
+
+    assert payload["global_qty_base"] is None
+    assert payload["global_qty"] is None
+    assert payload["global_qty_base_complete"] is False
+    assert payload["global_qty_complete"] is False
+    assert payload["missing_required"] == []
+    assert payload["stale_required"] == []
+    assert payload["null_qty_required"] == []
+    assert payload["shared_quantity_conflict_strategy_ids"] == [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+    ]
+    assert payload["degraded"] is True
+
+
 def test_normalize_inventory_by_asset_canonicalizes_asset_keys() -> None:
     normalized = normalize_inventory_by_asset(
         {

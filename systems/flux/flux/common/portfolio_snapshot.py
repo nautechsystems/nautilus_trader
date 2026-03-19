@@ -84,12 +84,14 @@ def build_portfolio_balance_rows(
     *,
     portfolio_id: str,
     balance_rows_by_strategy: Mapping[str, Sequence[Mapping[str, Any]]],
+    shared_position_groups_by_strategy: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     return _coherent_balance_rows(
         merge_portfolio_balances_rows(
             rows_by_strategy=balance_rows_by_strategy,
             portfolio_id=portfolio_id,
             preserve_product_scope_cash=True,
+            shared_position_groups_by_strategy=shared_position_groups_by_strategy,
         ),
     )
 
