@@ -302,6 +302,69 @@ describe('SignalTable Store Merge Logic', () => {
       expect(merged.legs['BTCUSDT-SPOT']?.decision_bid).toBe(50010);
       expect(merged.legs['BTCUSDT-SPOT']?.exchange).toBe('bybit');
     });
+
+    it('deep merges shared equities_arb payloads without dropping operator or quote snapshot fields', () => {
+      const { useSignalStore } = storeModule;
+
+      useSignalStore.getState().setRows([
+        {
+          id: 'aapl_tradexyz_maker',
+          strategy_family: 'equities_maker',
+          params: { bot_on: '1', qty: '1' },
+          legs: {},
+          balances_ok: true,
+          equities_arb: {
+            operator: {
+              execution_mode: 'maker_hedge',
+              behavior: 'maker',
+              hedge_policy: {
+                route: 'SMART',
+                time_in_force: 'DAY',
+              },
+            },
+            quote_snapshot: {
+              ts_ms: 1_700_000_000_500,
+              effective_spread_bps: 6.5,
+              maker_leg: {
+                instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
+                quote_state: 'fresh',
+              },
+            },
+          },
+        } as any,
+      ]);
+
+      useSignalStore.getState().mergeStrategy({
+        id: 'aapl_tradexyz_maker',
+        equities_arb: {
+          quote_snapshot: {
+            hedge_latency_ms: 45,
+            maker_leg: {
+              feed_state: 'ok',
+            },
+          },
+        },
+      } as any);
+
+      const merged = useSignalStore.getState().rows.find((row) => row.id === 'aapl_tradexyz_maker') as any;
+      expect(merged.equities_arb.operator).toMatchObject({
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
+        hedge_policy: {
+          route: 'SMART',
+          time_in_force: 'DAY',
+        },
+      });
+      expect(merged.equities_arb.quote_snapshot).toMatchObject({
+        effective_spread_bps: 6.5,
+        hedge_latency_ms: 45,
+      });
+      expect(merged.equities_arb.quote_snapshot.maker_leg).toMatchObject({
+        instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
+        quote_state: 'fresh',
+        feed_state: 'ok',
+      });
+    });
   });
 
   describe('Batched merge behavior', () => {
@@ -411,6 +474,44 @@ describe('SignalTable Store Merge Logic', () => {
 
       expect(sequentialNotifyCount).toBe(updates.length);
       expect(batchedNotifyCount).toBe(1);
+    });
+  });
+
+  describe('Params store migration', () => {
+    it('migrates legacy maker_v4 params preferences onto the split equities profiles', async () => {
+      localStorage.setItem(
+        'fluxboard:params:ui:v1',
+        JSON.stringify({
+          state: {
+            activeProfile: 'maker_v4',
+            columnPrefsByProfile: {
+              maker_v4: {
+                order: ['hedge_style', 'assumed_hedge_fee_bps'],
+                visibility: { assumed_hedge_fee_bps: true },
+              },
+            },
+            sortState: { key: null, direction: null },
+          },
+          version: 3,
+        }),
+      );
+
+      vi.resetModules();
+      const { useParamsStore } = await import('../../../stores');
+      const state = useParamsStore.getState();
+
+      expect(state.activeProfile).toBe('equities_maker');
+      expect(state.columnPrefsByProfile.equities_maker.order).toEqual([
+        'hedge_style',
+        'assumed_hedge_fee_bps',
+      ]);
+      expect(state.columnPrefsByProfile.equities_taker.order).toEqual([
+        'hedge_style',
+        'assumed_hedge_fee_bps',
+      ]);
+      expect(state.columnPrefsByProfile.equities_maker.visibility).toMatchObject({
+        assumed_hedge_fee_bps: true,
+      });
     });
   });
 });

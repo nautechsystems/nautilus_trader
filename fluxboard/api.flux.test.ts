@@ -697,6 +697,30 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('requests strategy-scoped equities param schema for the selected split family', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          hedge_style: {
+            type: 'select',
+            description: 'Immediate hedge mode.',
+            options: [['ioc_through_mid', 'IOC Through Mid']],
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    await api.getParamSchema({ preferKeyLabel: true, strategyId: 'aapl_tradexyz_maker' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    const params = new URLSearchParams(String(path).split('?')[1] ?? '');
+    expect(params.get('profile')).toBe('equities');
+    expect(params.get('strategy')).toBe('aapl_tradexyz_maker');
+  });
+
   it('normalizes typed params payload values to string map used by Params editor', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({
@@ -722,17 +746,17 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
-  it('normalizes non-bot boolean params and preserves params metadata for maker_v4 rows', async () => {
+  it('normalizes non-bot boolean params and preserves params metadata for split equities rows', async () => {
     setPathname('/equities/params');
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
       data: [
         {
-          strategy_id: 'aapl_tradexyz_makerv4',
+          strategy_id: 'aapl_tradexyz_maker',
           meta: {
-            class: 'maker_v4',
-            param_set: 'makerv4',
-            strategy_family: 'maker_v4',
+            class: 'equities_maker',
+            param_set: 'equities_maker',
+            strategy_family: 'equities_maker',
             strategy_version: 'v4',
           },
           schema: {
@@ -748,7 +772,7 @@ describe('profile-scoped read APIs', () => {
 
     const rows = await api.getParams();
     expect(rows).toHaveLength(1);
-    expect(rows[0].meta?.param_set).toBe('makerv4');
+    expect(rows[0].meta?.param_set).toBe('equities_maker');
     expect(rows[0].params).toMatchObject({
       instant_hedge_enabled: '1',
       execution_mode: 'maker_hedge',

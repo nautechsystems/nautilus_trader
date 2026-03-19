@@ -69,7 +69,9 @@ describe('signal_delta field pass-through wiring', () => {
       },
       balances_ok: false,
       meta: {
-        class: 'maker_v3',
+        class: 'equities_maker',
+        param_set: 'equities_maker',
+        strategy_family: 'equities_maker',
       },
     } as any;
 
@@ -79,9 +81,9 @@ describe('signal_delta field pass-through wiring', () => {
     });
   });
 
-  it('passes through params, balance_readiness, balances_ok, and last_trade on signal_delta', async () => {
+  it('passes through shared equities-arb payload, params, balance_readiness, balances_ok, and last_trade on signal_delta', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/equities/signal']}>
         <SignalTable />
       </MemoryRouter>,
     );
@@ -124,9 +126,25 @@ describe('signal_delta field pass-through wiring', () => {
           ],
         },
         balances_ok: true,
+        strategy_family: 'equities_maker',
+        equities_arb: {
+          operator: {
+            execution_mode: 'maker_hedge',
+            behavior: 'maker',
+            hedge_policy: {
+              route: 'SMART',
+              time_in_force: 'DAY',
+            },
+          },
+          quote_snapshot: {
+            ts_ms: 1736942400000,
+            effective_spread_bps: 6.5,
+            hedge_latency_ms: 45,
+          },
+        },
         meta: {
-          class: 'maker_v3',
-          external_strategy_id: 'maker_v3_external',
+          class: 'equities_maker',
+          external_strategy_id: 'equities_maker_external',
         },
         last_trade: {
           side: 'buy',
@@ -146,9 +164,20 @@ describe('signal_delta field pass-through wiring', () => {
       summary: 'Low inventory on one venue',
     });
     expect(merged?.balances_ok).toBe(true);
+    expect(merged?.strategy_family).toBe('equities_maker');
+    expect(merged?.equities_arb).toMatchObject({
+      operator: {
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
+      },
+      quote_snapshot: {
+        effective_spread_bps: 6.5,
+        hedge_latency_ms: 45,
+      },
+    });
     expect(merged?.meta).toMatchObject({
-      class: 'maker_v3',
-      external_strategy_id: 'maker_v3_external',
+      class: 'equities_maker',
+      external_strategy_id: 'equities_maker_external',
     });
     expect(merged?.last_trade).toMatchObject({
       side: 'buy',

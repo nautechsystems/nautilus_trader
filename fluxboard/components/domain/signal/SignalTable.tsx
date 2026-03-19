@@ -43,6 +43,7 @@ import { buildLegDeltaPatch, getLegForSlot, getOrderedLegEntries, resolveRoleSlo
 import { formatAbsoluteTime, formatLocal } from '@/utils/time';
 import { useVisibleNowMs } from './useVisibleNowMs';
 import MakerV4SignalTable from './MakerV4SignalTable';
+import EquitiesArbSignalTable from './EquitiesArbSignalTable';
 import type {
   BalanceSummary,
   MakerRoleMap,
@@ -111,7 +112,13 @@ type EnrichedRow = SignalStrategy & {
   chain?: string;
 };
 
-type SignalStrategyFamily = 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
+type SignalStrategyFamily =
+  | 'maker_v4'
+  | 'maker_v3'
+  | 'maker_v2'
+  | 'taker'
+  | 'equities_maker'
+  | 'equities_taker';
 type SignalFamilyScope = 'all' | SignalStrategyFamily;
 type SignalLegResolutionRow = Pick<
   SignalStrategy,
@@ -215,25 +222,45 @@ function parseStrategyGroups(rawGroups: unknown): Set<PathProfile> {
 const MAKER_V3_CLASSES = new Set(['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3']);
 const MAKER_V4_CLASSES = new Set(['maker_v4', 'equity_perp_maker_v4']);
 const MAKER_V2_CLASSES = new Set(['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker']);
+const EQUITIES_MAKER_CLASSES = new Set(['equities_maker']);
+const EQUITIES_TAKER_CLASSES = new Set(['equities_taker']);
 
 function deriveStrategyFamily(strategy: Pick<SignalStrategy, 'strategy_family' | 'meta'>): SignalStrategyFamily {
   const explicit = String(strategy.strategy_family || '').trim().toLowerCase();
-  if (explicit === 'maker_v4' || explicit === 'maker_v3' || explicit === 'maker_v2' || explicit === 'taker') {
+  if (
+    explicit === 'maker_v4'
+    || explicit === 'maker_v3'
+    || explicit === 'maker_v2'
+    || explicit === 'taker'
+    || explicit === 'equities_maker'
+    || explicit === 'equities_taker'
+  ) {
     return explicit;
   }
   const metaFamily = String(strategy.meta?.strategy_family || '').trim().toLowerCase();
   const metaVersion = String(strategy.meta?.strategy_version || '').trim().toLowerCase();
-  if (metaFamily === 'maker_v4' || metaFamily === 'maker_v3' || metaFamily === 'maker_v2' || metaFamily === 'taker') {
+  if (
+    metaFamily === 'maker_v4'
+    || metaFamily === 'maker_v3'
+    || metaFamily === 'maker_v2'
+    || metaFamily === 'taker'
+    || metaFamily === 'equities_maker'
+    || metaFamily === 'equities_taker'
+  ) {
     return metaFamily;
   }
   if (metaFamily === 'maker' && metaVersion === 'v4') return 'maker_v4';
   if (metaFamily === 'maker' && metaVersion === 'v3') return 'maker_v3';
   if (metaFamily === 'maker' && metaVersion === 'v2') return 'maker_v2';
   const cls = String(strategy.meta?.class || '').trim().toLowerCase();
+  if (EQUITIES_MAKER_CLASSES.has(cls)) return 'equities_maker';
+  if (EQUITIES_TAKER_CLASSES.has(cls)) return 'equities_taker';
   if (MAKER_V4_CLASSES.has(cls)) return 'maker_v4';
   if (MAKER_V3_CLASSES.has(cls)) return 'maker_v3';
   if (MAKER_V2_CLASSES.has(cls)) return 'maker_v2';
   const profile = deriveStrategyProfile({ meta: strategy.meta });
+  if (profile === 'equities_maker') return 'equities_maker';
+  if (profile === 'equities_taker') return 'equities_taker';
   if (profile === 'maker_v4') return 'maker_v4';
   if (profile === 'maker_v3') return 'maker_v3';
   if (profile === 'maker_v2') return 'maker_v2';
@@ -1803,6 +1830,8 @@ export default function SignalTable({
     const base = (rows || []).filter(isStrategyVisible);
     return {
       all: base.length,
+      equities_maker: base.filter((r) => deriveStrategyFamily(r) === 'equities_maker').length,
+      equities_taker: base.filter((r) => deriveStrategyFamily(r) === 'equities_taker').length,
       maker_v4: base.filter((r) => deriveStrategyFamily(r) === 'maker_v4').length,
       maker_v3: base.filter((r) => deriveStrategyFamily(r) === 'maker_v3').length,
       maker_v2: base.filter((r) => deriveStrategyFamily(r) === 'maker_v2').length,
@@ -2119,7 +2148,7 @@ export default function SignalTable({
           return;
         }
         const visibleByProfile = matchesSignalProfile(pathProfile, payload as SignalStrategy);
-        if (!visibleByProfile && (hasMeta || !visibleIdSetRef.current.has(id))) {
+        if (!visibleByProfile && !knownInView) {
           return;
         }
         const apply: Partial<SignalStrategy> = { id } as any;
@@ -2151,6 +2180,7 @@ export default function SignalTable({
           'balance_readiness',
           'balances_ok',
           'last_trade',
+          'equities_arb',
         ]);
         for (const [key, value] of Object.entries(payload || {})) {
           if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
@@ -2409,10 +2439,15 @@ export default function SignalTable({
     return applyFilters(enrichedRows, filters, { columns: signalFilters });
   }, [enrichedRows, filters, signalFilters]);
 
+  const shouldUseEquitiesArbTable = useMemo(() => {
+    return pathProfile === 'equities';
+  }, [pathProfile]);
+
   const shouldUseMakerV4Table = useMemo(() => {
+    if (shouldUseEquitiesArbTable) return false;
     if (familyScope === 'maker_v4') return true;
     return filteredRows.length > 0 && filteredRows.every((row) => row._strategyFamily === 'maker_v4');
-  }, [familyScope, filteredRows]);
+  }, [familyScope, filteredRows, shouldUseEquitiesArbTable]);
 
   // Column definitions (TanStack Table format)
   const columns = useMemo<ColumnDef<EnrichedRow>[]>(() => {
@@ -2865,24 +2900,34 @@ export default function SignalTable({
               color: colors.text.muted,
             }}
           >
-            {!isMakerSuiteProfile && (
+            {(!isMakerSuiteProfile || shouldUseEquitiesArbTable) && (
               <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
                 <span>Family</span>
                 <select
                   value={familyScope}
                   onChange={(e) => setFamilyScope(e.target.value as SignalFamilyScope)}
+                  aria-label="Signal family"
                   className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
                   style={{ borderColor: colors.border.DEFAULT }}
                 >
                   <option value="all">All ({familyCounts.all})</option>
-                  <option value="maker_v4">Maker V4 ({familyCounts.maker_v4})</option>
-                  <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
-                  <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
-                  <option value="taker">Taker ({familyCounts.taker})</option>
+                  {shouldUseEquitiesArbTable ? (
+                    <>
+                      <option value="equities_maker">Maker ({familyCounts.equities_maker})</option>
+                      <option value="equities_taker">Taker ({familyCounts.equities_taker})</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="maker_v4">Maker V4 ({familyCounts.maker_v4})</option>
+                      <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
+                      <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
+                      <option value="taker">Taker ({familyCounts.taker})</option>
+                    </>
+                  )}
                 </select>
               </label>
             )}
-            {!shouldUseMakerV4Table && (
+            {!shouldUseMakerV4Table && !shouldUseEquitiesArbTable && (
               <label className="flex items-center select-none cursor-pointer" style={{ gap: spacing.gap.xs }}>
                 <input
                   type="checkbox"
@@ -2898,7 +2943,9 @@ export default function SignalTable({
         }
       />
       <PanelBody ref={handleVisibilityRootRef}>
-        {shouldUseMakerV4Table ? (
+        {shouldUseEquitiesArbTable ? (
+          <EquitiesArbSignalTable rows={filteredRows} loading={loading} />
+        ) : shouldUseMakerV4Table ? (
           <MakerV4SignalTable rows={filteredRows} loading={loading} />
         ) : (
           <DataTable

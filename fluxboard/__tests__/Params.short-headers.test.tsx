@@ -27,7 +27,7 @@ describe('Params family short headers', () => {
     vi.clearAllMocks();
     window.history.pushState({}, '', '/equities/params');
     useParamsStore.getState().clearSelection();
-    useParamsStore.getState().setActiveProfile('maker_v4');
+    useParamsStore.getState().setActiveProfile('equities_maker' as any);
 
     vi.mocked(apiModule.api.getParamSchema).mockResolvedValue({
       params: {
@@ -51,9 +51,13 @@ describe('Params family short headers', () => {
     } as any);
     vi.mocked(apiModule.api.getParams).mockResolvedValue([
       {
-        strategy_id: 'aapl_tradexyz_makerv4',
+        strategy_id: 'aapl_tradexyz_maker',
         running: true,
-        meta: { class: 'maker_v4', param_set: 'makerv4', strategy_family: 'maker_v4' },
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+        },
         hot_params: ['hedge_style', 'assumed_hedge_fee_bps'],
         params: {
           hedge_style: 'ioc_through_mid',
@@ -63,15 +67,18 @@ describe('Params family short headers', () => {
     ] as any);
   });
 
-  it('uses key-label headers for maker_v4 in equities view', async () => {
+  it('uses key-label headers for the split equities maker profile', async () => {
     render(<Params />);
 
     await waitFor(() => {
-      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+      expect(screen.getByText('aapl_tradexyz_maker')).toBeInTheDocument();
     });
 
     await waitFor(() => {
-      expect(apiModule.api.getParamSchema).toHaveBeenCalledWith({ preferKeyLabel: true });
+      expect(apiModule.api.getParamSchema).toHaveBeenCalledWith({
+        preferKeyLabel: true,
+        strategyId: 'aapl_tradexyz_maker',
+      });
     });
 
     expect(screen.getByRole('button', { name: 'Sort by hedge_style' })).toBeInTheDocument();

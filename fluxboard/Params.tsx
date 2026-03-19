@@ -178,10 +178,15 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
-type SchemaCacheKey = 'default' | 'prefer_key_label';
+type SchemaCacheKey = string;
 
-function resolveSchemaCacheKey(preferKeyLabel: boolean): SchemaCacheKey {
-  return preferKeyLabel ? 'prefer_key_label' : 'default';
+function resolveSchemaCacheKey(
+  preferKeyLabel: boolean,
+  profile: ParamsProfileId,
+  strategyId?: string | null,
+): SchemaCacheKey {
+  const strategyPart = String(strategyId ?? '').trim() || 'default';
+  return `${preferKeyLabel ? 'prefer_key_label' : 'default'}:${profile}:${strategyPart}`;
 }
 
 function resolveSchemaProfile(
@@ -194,8 +199,20 @@ function resolveSchemaProfile(
   return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
 }
 
+function resolveSchemaStrategyId(
+  rows: Array<Pick<StrategyRow, 'strategy_id' | 'params' | 'hot_params' | 'meta'>>,
+  profile: ParamsProfileId,
+): string | undefined {
+  return rows.find((row) => deriveStrategyProfile(row) === profile)?.strategy_id;
+}
+
 function shouldPreferKeyLabel(profile: ParamsProfileId): boolean {
-  return profile === 'maker_v3' || profile === 'maker_v4';
+  return (
+    profile === 'maker_v3'
+    || profile === 'maker_v4'
+    || profile === 'equities_maker'
+    || profile === 'equities_taker'
+  );
 }
 
 type DragPosition = 'before' | 'after';
@@ -980,6 +997,14 @@ export default function Params({
     didInitRouteProfileRef.current = true;
     if (pathProfile === 'tokenmm' && activeProfile !== 'maker_v3') {
       setActiveProfile('maker_v3');
+      return;
+    }
+    if (
+      pathProfile === 'equities'
+      && activeProfile !== 'equities_maker'
+      && activeProfile !== 'equities_taker'
+    ) {
+      setActiveProfile('equities_maker');
     }
   }, [pathProfile, activeProfile, setActiveProfile]);
   const { isMobile: layoutIsMobile } = useMobileLayout();
@@ -1195,7 +1220,11 @@ export default function Params({
   }, [diffStrategyId, conflictRows]);
 
   const columnOrder = useMemo(() => {
-    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
+    const forceCanonicalOrder =
+      activeProfile === 'maker_v3'
+      || activeProfile === 'maker_v4'
+      || activeProfile === 'equities_maker'
+      || activeProfile === 'equities_taker';
     if (forceCanonicalOrder) {
       return defaultColumnOrder;
     }
@@ -1212,7 +1241,11 @@ export default function Params({
 
   useEffect(() => {
     if (!schema) return;
-    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
+    const forceCanonicalOrder =
+      activeProfile === 'maker_v3'
+      || activeProfile === 'maker_v4'
+      || activeProfile === 'equities_maker'
+      || activeProfile === 'equities_taker';
     if (forceCanonicalOrder) {
       const persistedOrder = Array.isArray(columnPrefs.order) ? columnPrefs.order : [];
       if (!arraysShallowEqual(persistedOrder, defaultColumnOrder)) {
@@ -1293,12 +1326,13 @@ export default function Params({
       }
       const paramsData = paramsResp;
       const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile);
+      const strategyId = resolveSchemaStrategyId(paramsData, effectiveProfile);
       const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
-      const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
+      const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
 
       schemaData = schemaCacheRef.current[schemaCacheKey] ?? null;
       if (!schemaData) {
-        const schemaResp = await api.getParamSchema({ preferKeyLabel });
+        const schemaResp = await api.getParamSchema({ preferKeyLabel, strategyId });
         if (!schemaResp || !schemaResp.params) {
           throw new Error('Invalid schema response: missing params');
         }
@@ -2867,6 +2901,9 @@ export default function Params({
         taker: 0,
         maker_v2: 0,
         maker_v3: 0,
+        equities_maker: 0,
+        equities_taker: 0,
+        maker_v4: 0,
       } as Record<ParamsProfileId, number>
     ),
     [strategies]
@@ -2887,8 +2924,9 @@ export default function Params({
     if (!initialLoadDone) return;
 
     const effectiveProfile = lockedSingleProfile ?? activeProfile;
+    const strategyId = resolveSchemaStrategyId(strategies, effectiveProfile);
     const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
-    const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
+    const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel, effectiveProfile, strategyId);
     const cachedSchema = schemaCacheRef.current[schemaCacheKey];
 
     if (cachedSchema) {
@@ -2899,7 +2937,7 @@ export default function Params({
     }
 
     let cancelled = false;
-    api.getParamSchema({ preferKeyLabel })
+    api.getParamSchema({ preferKeyLabel, strategyId })
       .then((schemaResp) => {
         if (cancelled || !schemaResp?.params) return;
         schemaCacheRef.current[schemaCacheKey] = schemaResp;
@@ -2913,7 +2951,7 @@ export default function Params({
     return () => {
       cancelled = true;
     };
-  }, [activeProfile, initialLoadDone, lockedSingleProfile, schema]);
+  }, [activeProfile, initialLoadDone, lockedSingleProfile, schema, strategies]);
 
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];

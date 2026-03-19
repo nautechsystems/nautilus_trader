@@ -36,7 +36,15 @@ vi.mock('../../stores', () => {
     get activeProfile() {
       return paramsStoreState.activeProfile;
     },
-    setActiveProfile: (profile: 'taker' | 'maker_v2' | 'maker_v3') => {
+    setActiveProfile: (
+      profile:
+        | 'taker'
+        | 'maker_v2'
+        | 'maker_v3'
+        | 'maker_v4'
+        | 'equities_maker'
+        | 'equities_taker',
+    ) => {
       paramsStoreState.activeProfile = profile;
       mockSetActiveProfile(profile);
     },
@@ -176,6 +184,66 @@ describe('Params profile column filtering', () => {
     fireEvent.change(familySelect, { target: { value: 'maker_v3' } });
 
     expect(mockSetActiveProfile).toHaveBeenCalledWith('maker_v3');
+  });
+
+  it('shows split equities family options and routes schema selection through the selected strategy family', async () => {
+    window.history.pushState({}, '', '/equities/params');
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_maker',
+        running: true,
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+        },
+        hot_params: ['hedge_style'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+        },
+      },
+      {
+        strategy_id: 'aapl_tradexyz_taker',
+        running: true,
+        meta: {
+          class: 'equities_taker',
+          param_set: 'equities_taker',
+          strategy_family: 'equities_taker',
+        },
+        hot_params: ['bid_edge_take_bps'],
+        params: {
+          bid_edge_take_bps: '5',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_maker')).toBeInTheDocument();
+    });
+
+    const familySelect = screen.getByLabelText('Params family');
+    expect(screen.getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+
+    fireEvent.change(familySelect, { target: { value: 'equities_taker' } });
+
+    expect(mockSetActiveProfile).toHaveBeenCalledWith('equities_taker');
   });
 
   it('renders MakerV3 short headers for equities params when rows are MakerV3-only', async () => {

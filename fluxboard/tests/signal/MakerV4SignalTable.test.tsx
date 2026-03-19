@@ -246,15 +246,41 @@ describe('MakerV4SignalTable', () => {
     expect(strategyId).toHaveAttribute('title', expect.stringContaining('Assumed hedge fee: 1.00 bps'));
   });
 
-  it('switches the equities signal route to the dedicated maker v4 table while filters stay available', async () => {
+  it('switches the equities signal route to the shared equities-arb table while filters stay available', async () => {
     vi.clearAllMocks();
     (api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [buildMakerV4Strategy()],
+      strategies: [
+        {
+          ...buildMakerV4Strategy(),
+          id: 'aapl_tradexyz_maker',
+          strategy_family: 'equities_maker',
+          meta: {
+            ...buildMakerV4Strategy().meta,
+            class: 'equities_maker',
+            param_set: 'equities_maker',
+            strategy_family: 'equities_maker',
+          },
+          equities_arb: buildMakerV4Strategy().maker_v4,
+        },
+      ],
       server_time: '2024-01-01 12:00:00',
       server_ts_ms: 1_700_000_001_500,
     });
     initSignalState({
-      rows: [buildMakerV4Strategy()],
+      rows: [
+        {
+          ...buildMakerV4Strategy(),
+          id: 'aapl_tradexyz_maker',
+          strategy_family: 'equities_maker',
+          meta: {
+            ...buildMakerV4Strategy().meta,
+            class: 'equities_maker',
+            param_set: 'equities_maker',
+            strategy_family: 'equities_maker',
+          },
+          equities_arb: buildMakerV4Strategy().maker_v4,
+        },
+      ],
       setRows: vi.fn(),
       mergeStrategy: vi.fn(),
       mergeStrategies: vi.fn(),
@@ -270,16 +296,16 @@ describe('MakerV4SignalTable', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('maker-v4-signal-table')).toBeInTheDocument();
+      expect(screen.getByTestId('equities-arb-signal-table')).toBeInTheDocument();
     });
 
+    expect(screen.getByText('Variant')).toBeInTheDocument();
     expect(screen.getByText('Maker Market')).toBeInTheDocument();
     expect(screen.getByText('Hedge Market')).toBeInTheDocument();
     expect(screen.getByText('Mid Spread')).toBeInTheDocument();
     expect(screen.getByText('Arb Spread')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Filters'));
     expect(screen.getByPlaceholderText(/Strategy ID/i)).toBeInTheDocument();
-    expect(screen.getByTestId('maker-v4-signal-table')).toBeInTheDocument();
-    expect(screen.queryByText('FV market')).not.toBeInTheDocument();
+    expect(screen.getByTestId('equities-arb-signal-table')).toBeInTheDocument();
   });
 });
