@@ -407,7 +407,7 @@ class MakerV4Strategy(Strategy):
 
     @staticmethod
     def _order_side_enum(side: str) -> OrderSide:
-        return OrderSide.BUY if str(side).strip().upper() == "BUY" else OrderSide.SELL
+        return OrderSide.BUY if MakerV4Strategy._enum_name(side) == "BUY" else OrderSide.SELL
 
     def _make_order_quantity(self, instrument: Any, qty: Decimal) -> Any:
         make_qty = getattr(instrument, "make_qty", None)
@@ -2242,7 +2242,7 @@ class MakerV4Strategy(Strategy):
             return
         fill = MakerFill(
             fill_id=str(getattr(event, "trade_id", "")).strip(),
-            side=str(getattr(event, "order_side", "")).strip(),
+            side=self._enum_name(getattr(event, "order_side", "")),
             qty=self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty"),
             price=self._required_decimal(getattr(event, "last_px", None), field_name="last_px"),
             ts_ms=max(0, now_ns // 1_000_000),
@@ -2290,7 +2290,7 @@ class MakerV4Strategy(Strategy):
         accumulator = self._take_take_fill_accumulators.get(client_order_id, {})
         accumulated_base_qty = Decimal(str(accumulator.get("base_qty", "0")))
         self._take_take_fill_accumulators[client_order_id] = {
-            "side": str(getattr(event, "order_side", "")).strip(),
+            "side": self._enum_name(getattr(event, "order_side", "")),
             "base_qty": accumulated_base_qty + abs(base_fill_qty),
             "ts_ms": max(0, int(now_ns) // 1_000_000),
         }
@@ -2298,7 +2298,7 @@ class MakerV4Strategy(Strategy):
 
     @staticmethod
     def _signed_fill_qty(*, side: str, qty: Decimal) -> Decimal:
-        return abs(qty) if str(side).strip().upper() == "BUY" else -abs(qty)
+        return abs(qty) if MakerV4Strategy._enum_name(side) == "BUY" else -abs(qty)
 
     @staticmethod
     def _is_retryable_hedge_block_reason(reason: str | None) -> bool:
@@ -2361,7 +2361,7 @@ class MakerV4Strategy(Strategy):
         fill_id = str(fill.fill_id).strip()
         if fill_id and fill_id not in self._seen_fill_ids:
             self._remember_fill_id(fill_id)
-        hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
+        hedge_side = "SELL" if self._enum_name(fill.side) == "BUY" else "BUY"
         hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
         if hedge_qty is None:
             self._disable_hedging("maker_qty_conversion_failed")
@@ -3154,7 +3154,7 @@ class MakerV4Strategy(Strategy):
                 self._disable_hedging(quote_error)
             return None
 
-        hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
+        hedge_side = "SELL" if self._enum_name(fill.side) == "BUY" else "BUY"
         hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
         if hedge_qty is None:
             self._disable_hedging("maker_qty_conversion_failed")

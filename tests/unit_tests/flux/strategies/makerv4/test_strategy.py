@@ -1951,6 +1951,66 @@ def test_makerv4_take_take_base_qty_converts_binance_venue_size_and_hedges_full_
     assert strategy._pending_hedge.requested_qty == Decimal("1")
 
 
+def test_makerv4_take_take_normalizes_enum_order_side_before_hedge_direction(
+    monkeypatch,
+) -> None:
+    strategy = MakerV4Strategy(config=_binance_config(qty_unit="base"))
+    maker_id, ref_id = _configure_strategy_for_quoting(strategy)
+    fake_clock = SimpleNamespace(timestamp_ns=lambda: 2_000_000_000)
+    submitted: list[SimpleNamespace] = []
+
+    strategy._runtime_params.update(
+        {
+            "execution_mode": "take_take",
+            "bid_edge_take_bps": 5.0,
+            "ask_edge_take_bps": 50.0,
+            "qty": Decimal("1"),
+        }
+    )
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy.submit_order = lambda order, **_kwargs: submitted.append(order)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    _install_limit_order_factory(strategy, monkeypatch)
+    strategy._instruments[maker_id] = _instrument(raw_symbol="AAPL/USD", multiplier="0.0625")
+
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=maker_id,
+            bid="189.18",
+            ask="189.20",
+            ts_event=2_000_000_000,
+        )
+    )
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=ref_id,
+            bid="190.00",
+            ask="190.04",
+            ts_event=2_001_000_000,
+        )
+    )
+
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-enum-1",
+            client_order_id="order-1",
+            side=OrderSide.BUY,
+            qty="16",
+            px="189.20",
+            ts_event=2_002_000_000,
+        )
+    )
+
+    assert len(submitted) == 2
+    hedge_order = submitted[1]
+    assert str(hedge_order.instrument_id) == str(ref_id)
+    assert _enum_name(hedge_order.side) == "SELL"
+    assert hedge_order.quantity == Decimal("1")
+
+
 def test_makerv4_take_take_accumulates_price_based_base_qty_across_multi_price_fills(
     monkeypatch,
 ) -> None:
