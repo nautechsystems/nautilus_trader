@@ -237,6 +237,7 @@ describe('PnL Performance Optimizations', () => {
         etag: 'test-etag-1',
         report: null,
       });
+      vi.mocked(api.runPnLDelta).mockResolvedValueOnce({ status: 304 } as any);
 
       // Enable auto-refresh to trigger delta check
       const autoRefresh = await screen.findByLabelText(/Auto-refresh/i);
