@@ -131,7 +131,15 @@ describe('paramsProfiles', () => {
 
   it('hides local-inventory ownership controls from the split equities profiles', () => {
     expect(getProfileHiddenKeys('equities_maker')).toEqual(
-      expect.arrayContaining(['des_qty_local', 'max_qty_local', 'max_skew_bps_local']),
+      expect.arrayContaining([
+        'des_qty_local',
+        'max_qty_local',
+        'max_skew_bps_local',
+        'execution_mode',
+        'bid_edge_take_bps',
+        'ask_edge_take_bps',
+        'take_cooldown_ms',
+      ]),
     );
     expect(getProfileHiddenKeys('equities_taker')).toEqual(
       expect.arrayContaining([

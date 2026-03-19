@@ -358,6 +358,86 @@ describe('Params profile column filtering', () => {
     });
   });
 
+  it('hides blended MakerV4-only params when the shared equities maker surface falls back to a legacy maker_v4 schema', async () => {
+    (window.location as any).pathname = '/equities/params';
+    paramsStoreState.activeProfile = 'equities_maker' as any;
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        hedge_style: {
+          key: 'hedge_style',
+          label: 'hedge_style',
+          description: 'hedge style',
+          type: 'select',
+          default: 'ioc_through_mid',
+          options: [['ioc_through_mid', 'IOC Through Mid']],
+        },
+        execution_mode: {
+          key: 'execution_mode',
+          label: 'execution_mode',
+          description: 'legacy execution mode',
+          type: 'select',
+          default: 'maker_hedge',
+          options: [['maker_hedge', 'Maker Hedge']],
+        },
+        bid_edge_take_bps: {
+          key: 'bid_edge_take_bps',
+          label: 'bid_edge_take_bps',
+          description: 'legacy bid take edge',
+          type: 'float',
+          default: 5,
+        },
+        ask_edge_take_bps: {
+          key: 'ask_edge_take_bps',
+          label: 'ask_edge_take_bps',
+          description: 'legacy ask take edge',
+          type: 'float',
+          default: 5,
+        },
+        take_cooldown_ms: {
+          key: 'take_cooldown_ms',
+          label: 'take_cooldown_ms',
+          description: 'legacy take cooldown',
+          type: 'int',
+          default: 250,
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv4',
+        running: true,
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_groups: 'equities',
+          chain: 'equities',
+        },
+        hot_params: ['hedge_style', 'execution_mode', 'bid_edge_take_bps', 'ask_edge_take_bps', 'take_cooldown_ms'],
+        params: {
+          hedge_style: 'ioc_through_mid',
+          execution_mode: 'maker_hedge',
+          bid_edge_take_bps: '5',
+          ask_edge_take_bps: '6',
+          take_cooldown_ms: '250',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_makerv4')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Sort by hedge_style' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by execution_mode' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by bid_edge_take_bps' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by ask_edge_take_bps' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by take_cooldown_ms' })).not.toBeInTheDocument();
+  });
+
   it('recovers a migrated equities maker selection back to maker_v4 on the default params route when only legacy rows exist', async () => {
     (window.location as any).pathname = '/params';
     paramsStoreState.activeProfile = 'equities_maker' as any;

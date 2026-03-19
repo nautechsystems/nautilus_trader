@@ -139,14 +139,27 @@ const LOCAL_OWNERSHIP_RUNTIME_KEYS = new Set<string>([
   'max_skew_bps_local',
 ]);
 
-const EQUITIES_MAKER_HIDDEN_KEYS = new Set<string>([
+const EQUITIES_SHARED_HIDDEN_KEYS = new Set<string>([
   ...MAKER_V3_LEGACY_ALIAS_KEYS,
   ...MAKER_V4_UNUSED_RUNTIME_KEYS,
   ...LOCAL_OWNERSHIP_RUNTIME_KEYS,
+  'execution_mode',
+]);
+
+const EQUITIES_MAKER_HIDDEN_KEYS = new Set<string>([
+  ...EQUITIES_SHARED_HIDDEN_KEYS,
+  'strategy_take_enabled',
+  'bid_edge_take',
+  'ask_edge_take',
+  'take_qty',
+  'take_cooldown',
+  'bid_edge_take_bps',
+  'ask_edge_take_bps',
+  'take_cooldown_ms',
 ]);
 
 const EQUITIES_TAKER_HIDDEN_KEYS = new Set<string>([
-  ...EQUITIES_MAKER_HIDDEN_KEYS,
+  ...EQUITIES_SHARED_HIDDEN_KEYS,
   'linear_offset_bps',
   'bid_edge1',
   'ask_edge1',
