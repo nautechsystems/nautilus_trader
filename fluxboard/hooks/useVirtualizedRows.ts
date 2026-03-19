@@ -80,14 +80,37 @@ export function useVirtualizedRows<TRow>({
   enabled = true,
   scrollRef,
 }: UseVirtualizedRowsOptions<TRow>): UseVirtualizedRowsResult<TRow> {
-  const scrollElement = scrollRef.current;
   const measurementCacheRef = useRef(new Map<string, number>());
   const previousLayoutRef = useRef<LayoutSnapshot | null>(null);
   const [measurementVersion, setMeasurementVersion] = useState(0);
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   const [scrollState, setScrollState] = useState({
-    scrollTop: scrollElement?.scrollTop ?? 0,
-    viewportHeight: scrollElement?.clientHeight ?? 0,
+    scrollTop: 0,
+    viewportHeight: 0,
   });
+
+  useLayoutEffect(() => {
+    const nextScrollElement = scrollRef.current;
+    if (nextScrollElement !== scrollElement) {
+      setScrollElement(nextScrollElement);
+    }
+    if (!nextScrollElement) {
+      return;
+    }
+    setScrollState((previous) => {
+      const nextState = {
+        scrollTop: nextScrollElement.scrollTop,
+        viewportHeight: nextScrollElement.clientHeight,
+      };
+      if (
+        previous.scrollTop === nextState.scrollTop
+        && previous.viewportHeight === nextState.viewportHeight
+      ) {
+        return previous;
+      }
+      return nextState;
+    });
+  }, [scrollElement, scrollRef]);
 
   const rowIds = useMemo(
     () => rows.map((row, index) => getRowId(row, index)),

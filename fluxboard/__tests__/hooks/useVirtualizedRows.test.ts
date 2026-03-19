@@ -1,4 +1,5 @@
-import { act, renderHook } from '@testing-library/react';
+import React, { useRef } from 'react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 
@@ -130,5 +131,47 @@ describe('useVirtualizedRows', () => {
 
     expect(result.current.measurementCache.has('b')).toBe(false);
     expect(result.current.totalSize).toBe(40);
+  });
+
+  it('hydrates from a forwarded viewport ref on initial mount', async () => {
+    const rows = makeRows(['0', '1', '2', '3', '4', '5']);
+    let latestRange: { start: number; end: number } | null = null;
+
+    function Probe() {
+      const scrollRef = useRef<HTMLDivElement | null>(null);
+      const result = useVirtualizedRows({
+        rows,
+        getRowId: (row) => row.id,
+        estimateSize: () => 20,
+        overscan: 1,
+        scrollRef,
+      });
+      latestRange = result.visibleRange;
+
+      return React.createElement('div', {
+        ref: (node: HTMLDivElement | null) => {
+          if (!node) {
+            scrollRef.current = null;
+            return;
+          }
+          Object.defineProperty(node, 'clientHeight', {
+            configurable: true,
+            get: () => 60,
+          });
+          Object.defineProperty(node, 'scrollTop', {
+            configurable: true,
+            get: () => 0,
+            set: () => {},
+          });
+          scrollRef.current = node;
+        },
+      });
+    }
+
+    render(React.createElement(Probe));
+
+    await waitFor(() => {
+      expect(latestRange).toEqual({ start: 0, end: 3 });
+    });
   });
 });
