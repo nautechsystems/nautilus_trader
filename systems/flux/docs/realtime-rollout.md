@@ -95,18 +95,25 @@ With the default `0.75s` poll interval this yields:
 
 Heartbeats do not advance `last_seq`; only data or recovery events advance stream sequence.
 
+Cursor semantics are surface-specific:
+
+1. Standard stream cursors are keyed by `(profile, surface)`.
+2. Legacy `market_update` / `signal_delta` / `trade_update` traffic does not advance standard cursors.
+3. Signal standard traffic does not advance trades standard cursors, and trades standard traffic does not advance signal standard cursors.
+
 ## Recovery behavior
 
 Current recovery mode is `invalidate_only`.
 
 Implications:
 
-1. `accepted_start_seq` in subscribe ack is the server-accepted cursor after lineage validation.
+1. `accepted_start_seq` in subscribe ack is the server-accepted surface-specific cursor after lineage validation.
 2. Clients must compare their requested cursor with `accepted_start_seq`.
 3. `surface_query_key`, `stream_id`, and `snapshot_revision` are mandatory subscribe inputs; the server does not silently infer missing lineage.
-4. For trades, `data.realtime.last_seq` is the standard stream cursor, not the `/api/v1/trades` row cursor.
-5. Any `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
-6. Trade scan overflow or cursor gaps emit `recovery_required` with `reason=trade_gap`.
+4. For signals and trades, `data.realtime.last_seq` is the standard surface-specific stream cursor, not a shared profile-wide counter.
+5. For trades, `data.realtime.last_seq` is also distinct from the `/api/v1/trades` row cursor.
+6. Any `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
+7. Trade scan overflow or cursor gaps emit `recovery_required` with `reason=trade_gap`.
 
 ## Observability
 

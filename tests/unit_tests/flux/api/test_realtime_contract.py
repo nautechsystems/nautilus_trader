@@ -132,6 +132,20 @@ def _subscribe_without_background_emitter(
         emitter.start = original_start
 
 
+def _set_legacy_profile_without_background_emitter(
+    socket_client,
+    emitter,
+    *,
+    profile: str = "tokenmm",
+) -> dict[str, Any]:
+    original_start = emitter.start
+    emitter.start = lambda: None  # type: ignore[method-assign]
+    try:
+        return socket_client.emit("set_profile", {"profile": profile}, callback=True)
+    finally:
+        emitter.start = original_start
+
+
 def _standard_subscribe_payload(
     snapshot_body: dict[str, Any],
     *,
@@ -263,6 +277,40 @@ def test_standard_contract_polling_only_transport_subscribes_and_receives_heartb
     client.disconnect()
 
 
+def test_legacy_packets_do_not_advance_standard_surface_cursors(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+
+    ack = _set_legacy_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
+    emitter.emit_once(profile="tokenmm")
+    assert _take_legacy_packets(client)
+
+    signals_snapshot = _signals_snapshot(app)
+    trades_snapshot = _trades_snapshot(app)
+    assert signals_snapshot["data"]["realtime"]["last_seq"] == 0
+    assert trades_snapshot["data"]["realtime"]["last_seq"] == 0
+    client.disconnect()
+
+
 def test_standard_signal_delta_batch_is_versioned_and_machine_readable(
     flux_config,
     redis_client,
@@ -310,6 +358,102 @@ def test_standard_signal_delta_batch_is_versioned_and_machine_readable(
     assert payload["payload"]["signals"][0]["strategy_id"] == flux_config.identity.strategy_id
     assert "patch" in payload["payload"]["signals"][0]
     client.disconnect()
+
+
+def test_standard_surface_cursors_are_independent_and_surface_specific(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    signal_snapshot = _signals_snapshot(app)
+    trades_snapshot = _trades_snapshot(app)
+
+    signal_client = socketio.test_client(app)
+    trades_client = socketio.test_client(app)
+    signal_ack = _subscribe_without_background_emitter(
+        signal_client,
+        emitter,
+        _standard_subscribe_payload(signal_snapshot, surface="signal"),
+    )
+    trades_ack = _subscribe_without_background_emitter(
+        trades_client,
+        emitter,
+        _standard_subscribe_payload(trades_snapshot, surface="trades"),
+    )
+    assert signal_ack["accepted"] is True
+    assert trades_ack["accepted"] is True
+    _ = _take_realtime_packets(signal_client)
+    _ = _take_realtime_packets(trades_client)
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.market_last(exchange="venue_a", base="ABC", quote="USDT"),
+        {"bid": 100.5, "ask": 101.5, "ts_ms": 1_700_000_000_900},
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    signal_after_signal_delta = _signals_snapshot(app)
+    trades_after_signal_delta = _trades_snapshot(app)
+    assert signal_after_signal_delta["data"]["realtime"]["last_seq"] == 1
+    assert trades_after_signal_delta["data"]["realtime"]["last_seq"] == 0
+
+    signal_probe_client = socketio.test_client(app)
+    trades_probe_client = socketio.test_client(app)
+    signal_probe_ack = _subscribe_without_background_emitter(
+        signal_probe_client,
+        emitter,
+        _standard_subscribe_payload(signal_after_signal_delta, surface="signal"),
+    )
+    trades_probe_ack = _subscribe_without_background_emitter(
+        trades_probe_client,
+        emitter,
+        _standard_subscribe_payload(trades_after_signal_delta, surface="trades"),
+    )
+    assert signal_probe_ack["accepted_start_seq"] == 1
+    assert trades_probe_ack["accepted_start_seq"] == 0
+    signal_probe_client.disconnect()
+    trades_probe_client.disconnect()
+
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-002",
+                "seq": 2,
+                "version": 1,
+                "ts_ms": 1_700_000_001_000,
+                "exchange": "venue_a",
+                "symbol": "ABC/USDT",
+                "side": "SELL",
+                "price": 101.0,
+                "qty": 1.0,
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    signal_after_trade_delta = _signals_snapshot(app)
+    trades_after_trade_delta = _trades_snapshot(app)
+    assert signal_after_trade_delta["data"]["realtime"]["last_seq"] == 1
+    assert trades_after_trade_delta["data"]["realtime"]["last_seq"] == 1
+    signal_client.disconnect()
+    trades_client.disconnect()
 
 
 def test_standard_subscribe_rejects_snapshot_lineage_mismatch_before_any_data_is_sent(

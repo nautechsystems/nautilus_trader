@@ -1801,7 +1801,7 @@ def create_flux_api_app(  # noqa: C901
             surface="signal",
             profile_text=profile_text,
             strategy_ids=strategy_ids,
-            last_seq=socket_emitter.current_seq(normalized_profile),
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "signal"),
         )
         for key in ("surface_query_key", "stream_id", "snapshot_revision"):
             if request_metadata.get(key) != stream_metadata.get(key):
@@ -1848,7 +1848,7 @@ def create_flux_api_app(  # noqa: C901
             surface="trades",
             profile_text=profile_text,
             strategy_ids=strategy_ids,
-            last_seq=socket_emitter.current_seq(normalized_profile),
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "trades"),
         )
         for key in ("surface_query_key", "stream_id", "snapshot_revision"):
             if request_metadata.get(key) != stream_metadata.get(key):

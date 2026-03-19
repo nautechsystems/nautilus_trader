@@ -495,6 +495,7 @@ class FluxSocketEmitter:
         self._wake_event = Event()
         self._profile_refcounts: dict[str, int] = {}
         self._seq_by_profile: dict[str, int] = {}
+        self._standard_seq_by_profile_surface: dict[tuple[str, str], int] = {}
         self._signal_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
         self._trade_cursor_by_profile: dict[str, dict[str, int]] = {}
         self._alerts_by_profile: dict[str, tuple[int, int | None, str]] = {}
@@ -520,6 +521,14 @@ class FluxSocketEmitter:
         with self._lock:
             return int(self._seq_by_profile.get(normalized, 0))
 
+    def current_standard_seq(self, profile: Any, surface: Any) -> int:
+        normalized_profile = normalize_profile(profile)
+        normalized_surface = normalize_surface(surface)
+        with self._lock:
+            return int(
+                self._standard_seq_by_profile_surface.get((normalized_profile, normalized_surface), 0),
+            )
+
     def describe_standard_stream(self, *, surface: Any, profile: Any) -> dict[str, Any] | None:
         normalized_surface = normalize_surface(surface)
         normalized_profile = normalize_profile(profile)
@@ -534,7 +543,7 @@ class FluxSocketEmitter:
             surface=normalized_surface,
             profile=normalized_profile,
             strategy_ids=strategy_ids,
-            last_seq=self.current_seq(normalized_profile),
+            last_seq=self.current_standard_seq(normalized_profile, normalized_surface),
             poll_interval_s=self._poll_interval_s,
         )
 
@@ -647,6 +656,9 @@ class FluxSocketEmitter:
 
     def _cleanup_profile_state_locked(self, profile: str) -> None:
         self._seq_by_profile.pop(profile, None)
+        for key in list(self._standard_seq_by_profile_surface):
+            if key[0] == profile:
+                self._standard_seq_by_profile_surface.pop(key, None)
         self._signal_by_profile.pop(profile, None)
         self._trade_cursor_by_profile.pop(profile, None)
         self._alerts_by_profile.pop(profile, None)
@@ -680,6 +692,15 @@ class FluxSocketEmitter:
         with self._lock:
             seq = self._seq_by_profile.get(profile, 0) + 1
             self._seq_by_profile[profile] = seq
+            return seq
+
+    def _next_standard_seq(self, profile: str, surface: str) -> int:
+        normalized_profile = normalize_profile(profile)
+        normalized_surface = normalize_surface(surface)
+        with self._lock:
+            key = (normalized_profile, normalized_surface)
+            seq = self._standard_seq_by_profile_surface.get(key, 0) + 1
+            self._standard_seq_by_profile_surface[key] = seq
             return seq
 
     def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:
@@ -879,7 +900,11 @@ class FluxSocketEmitter:
         reason: str | None = None,
         payload: Mapping[str, Any] | None = None,
     ) -> None:
-        event_seq = self.current_seq(subscription.profile) if seq is None else int(seq)
+        event_seq = (
+            self.current_standard_seq(subscription.profile, subscription.surface)
+            if seq is None
+            else int(seq)
+        )
         event: dict[str, Any] = {
             "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
             "surface": subscription.surface,
@@ -1216,7 +1241,7 @@ class FluxSocketEmitter:
                     if withdrawal_reason is None:
                         active_subscriptions[surface_name] = surface_subscriptions
                         continue
-                    withdrawal_seq = self._next_seq(profile)
+                    withdrawal_seq = self._next_standard_seq(profile, surface_name)
                     for subscription in surface_subscriptions:
                         self._emit_standard_event(
                             subscription,
@@ -1230,7 +1255,7 @@ class FluxSocketEmitter:
                 signal_subscriptions = active_subscriptions.get("signal", [])
                 if signal_subscriptions:
                     if signal_changes or alerts_changed:
-                        signal_seq = self._next_seq(profile)
+                        signal_seq = self._next_standard_seq(profile, "signal")
                         payload: dict[str, Any] = {
                             "strategies": {"changed": list(signal_changed_ids)},
                         }
@@ -1253,14 +1278,14 @@ class FluxSocketEmitter:
                             self._emit_standard_event(
                                 subscription,
                                 kind="heartbeat",
-                                seq=self.current_seq(profile),
+                                seq=self.current_standard_seq(profile, "signal"),
                                 payload={},
                             )
 
                 trades_subscriptions = active_subscriptions.get("trades", [])
                 if trades_subscriptions:
                     if trade_gap:
-                        trade_gap_seq = self._next_seq(profile)
+                        trade_gap_seq = self._next_standard_seq(profile, "trades")
                         for subscription in trades_subscriptions:
                             self._emit_standard_event(
                                 subscription,
@@ -1271,7 +1296,7 @@ class FluxSocketEmitter:
                             )
                             pending_unsubscribes.append((subscription.sid, subscription.surface))
                     elif trade_changes:
-                        trades_seq = self._next_seq(profile)
+                        trades_seq = self._next_standard_seq(profile, "trades")
                         payload = {"trades": trade_changes}
                         for subscription in trades_subscriptions:
                             self._emit_standard_event(
@@ -1285,7 +1310,7 @@ class FluxSocketEmitter:
                             self._emit_standard_event(
                                 subscription,
                                 kind="heartbeat",
-                                seq=self.current_seq(profile),
+                                seq=self.current_standard_seq(profile, "trades"),
                                 payload={},
                             )
 

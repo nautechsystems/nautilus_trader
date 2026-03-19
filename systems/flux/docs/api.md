@@ -173,8 +173,11 @@ Compatibility is request/response-shape compatibility only; storage remains stri
     `subscribe` validates for that profile; if no standard trades descriptor exists for the normalized profile,
     the route remains REST-only and omits `data.realtime`.
 13. Non-canonical trades queries remain REST-only and omit `data.realtime`.
-14. In `data.realtime`, `last_seq` is the standard stream cursor for subscribe lineage, not the REST row-sequence value.
-15. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
+14. In `data.realtime`, `last_seq` is the standard surface-specific stream cursor for subscribe lineage,
+    not the REST row-sequence value.
+15. Standard cursors are scoped by `(profile, surface)`. Legacy Socket.IO packets and the other standard surface
+    do not advance a surface's v2 cursor.
+16. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
 
 ## Socket.IO contract (`/socket.io`)
 
@@ -276,15 +279,16 @@ Standard live event name:
 Standard live envelope invariants:
 
 1. Every event includes `contract_version`, `surface`, `stream_id`, `profile`, `kind`, `seq`, `snapshot_revision`, and `server_ts_ms`.
-2. Supported `kind` values are:
+2. `seq` is surface-specific for the standard contract and is scoped to `(profile, surface)`.
+3. Supported `kind` values are:
    - `delta_batch`
    - `heartbeat`
    - `recovery_required`
-3. `delta_batch` carries machine-readable `payload` content:
+4. `delta_batch` carries machine-readable `payload` content:
    - `signal` surface: `payload.signals[]`, `payload.alerts`, `payload.strategies.changed`
    - `trades` surface: `payload.trades[]`
-4. `heartbeat` may carry an empty payload and does not advance `last_seq`.
-5. `recovery_required` includes machine-readable `reason`.
+5. `heartbeat` may carry an empty payload and does not advance that surface's `last_seq`.
+6. `recovery_required` includes machine-readable `reason` and advances only the affected surface's cursor.
 
 Standard rejection and recovery reasons:
 
