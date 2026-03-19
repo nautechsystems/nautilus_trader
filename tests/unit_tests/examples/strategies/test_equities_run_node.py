@@ -1704,6 +1704,288 @@ def test_build_node_uses_explicit_contract_reference_for_binance_perp_route(monk
     assert strategy.config.reference_instrument_id == expected_reference_instrument_id
 
 
+def test_build_node_promotes_contract_maker_venue_over_stale_top_level_execution_venue(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    def _resolve_strategy_venues(**kwargs):
+        effective_config = kwargs["config"]
+        captured["execution_venue"] = effective_config["venues"]["execution_venue"]
+        captured["execution_instrument_id"] = effective_config["node"]["venues"]["BINANCE_PERP"][
+            "instrument_id"
+        ]
+        return SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str(
+                str(captured["execution_instrument_id"]),
+            ),
+            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        )
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=_CapturedStrategyConfig,
+    )
+    monkeypatch.setattr(run_node, "resolve_strategy_venues", _resolve_strategy_venues)
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "external_strategy_id": "pltr_binance_perp_makerv4",
+                "trader_id": "EQUITIES-LIVE-PLTR-BINANCE",
+            },
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "IBKR",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {
+                "enable_execution": False,
+                "venues": {
+                    "HYPERLIQUID": {
+                        "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    },
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "PLTR.SMART",
+                        "execution": False,
+                        "ibg_client_id": 23,
+                    },
+                },
+            },
+            "strategy": {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "param_set": "makerv4",
+                "order_qty": "1",
+                "ibkr_primary_exchange": "NASDAQ",
+            },
+            "account_scopes": [
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 107,
+                    "account_id": "U10015777",
+                },
+                {
+                    "scope_id": "ibkr.hedge.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 108,
+                    "account_id": "U10015777",
+                },
+            ],
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+            ],
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    assert captured["execution_venue"] == "BINANCE_PERP"
+    assert captured["execution_instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"
+
+
+def test_build_node_clears_stale_execution_flags_when_contract_promotes_new_maker_venue(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, *args, **kwargs) -> None:
+            _ = args, kwargs
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    def _resolve_strategy_venues(**kwargs):
+        effective_config = kwargs["config"]
+        captured["execution_venue"] = effective_config["venues"]["execution_venue"]
+        captured["hyperliquid_execution"] = effective_config["node"]["venues"]["HYPERLIQUID"][
+            "execution"
+        ]
+        captured["binance_execution"] = effective_config["node"]["venues"]["BINANCE_PERP"][
+            "execution"
+        ]
+        return SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLTRUSDT-PERP.BINANCE_PERP"),
+            reference_instrument_id=InstrumentId.from_str("PLTR.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        )
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=_CapturedStrategyConfig,
+    )
+    monkeypatch.setattr(run_node, "resolve_strategy_venues", _resolve_strategy_venues)
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "external_strategy_id": "pltr_binance_perp_makerv4",
+                "trader_id": "EQUITIES-LIVE-PLTR-BINANCE",
+            },
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "IBKR",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {
+                "enable_execution": False,
+                "venues": {
+                    "HYPERLIQUID": {
+                        "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                        "execution": True,
+                    },
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": False,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "PLTR.SMART",
+                        "execution": False,
+                        "ibg_client_id": 23,
+                    },
+                },
+            },
+            "strategy": {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "param_set": "makerv4",
+                "order_qty": "1",
+                "ibkr_primary_exchange": "NASDAQ",
+            },
+            "account_scopes": [
+                {
+                    "scope_id": "ibkr.reference.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 107,
+                    "account_id": "U10015777",
+                },
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "account_type": "USDT_FUTURES",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                },
+            ],
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+    )
+
+    assert captured["execution_venue"] == "BINANCE_PERP"
+    assert captured["hyperliquid_execution"] is False
+    assert captured["binance_execution"] is True
+
+
 def test_build_node_force_enable_execution_overrides_explicit_false_for_makerv4(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

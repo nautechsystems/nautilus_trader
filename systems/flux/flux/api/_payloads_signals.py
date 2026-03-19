@@ -943,6 +943,30 @@ def _maker_v4_quote_health_blocks_new_risk(
     return False
 
 
+def _maker_v4_can_render_from_quote_snapshot_while_paused(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+    bot_on: bool,
+    maker_leg: Mapping[str, Any] | None,
+    ref_leg: Mapping[str, Any] | None,
+) -> bool:
+    if bot_on:
+        return False
+    if not isinstance(quote_snapshot, Mapping):
+        return False
+    live_maker_ts_ms = coerce_ts_ms(maker_leg.get("ts_ms")) if isinstance(maker_leg, Mapping) else None
+    live_ref_ts_ms = coerce_ts_ms(ref_leg.get("ts_ms")) if isinstance(ref_leg, Mapping) else None
+    if live_maker_ts_ms is None:
+        return False
+    if live_ref_ts_ms is None:
+        return False
+    return not _maker_v4_quote_health_blocks_new_risk(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    )
+
+
 def _derive_quote_snapshot(
     *,
     state: Mapping[str, Any],
@@ -1396,7 +1420,18 @@ def build_signals_payload_impl(
     elif top_level_ts_ms is None and has_partial_strategy_state:
         state_stale = True
 
-    if state_stale:
+    suppress_state_stale_block = (
+        strategy_family == "maker_v4"
+        and _maker_v4_can_render_from_quote_snapshot_while_paused(
+            state=state,
+            quote_snapshot=quote_snapshot,
+            bot_on=bot_on,
+            maker_leg=maker_leg,
+            ref_leg=ref_leg,
+        )
+    )
+
+    if state_stale and not suppress_state_stale_block:
         managed = 0
         tradeable = False
         blocked = True
@@ -1410,7 +1445,7 @@ def build_signals_payload_impl(
         }
     md_health["state_stale"] = state_stale
 
-    if state_stale:
+    if state_stale and not suppress_state_stale_block:
         top_level_mode = "STALE"
         top_level_reason = "stale_state"
         top_level_skew_bps = None
@@ -1419,10 +1454,13 @@ def build_signals_payload_impl(
             quote_snapshot=quote_snapshot,
             bot_on=bot_on,
         )
-        top_level_reason = _top_level_signal_reason(
-            state=state,
-            quote_snapshot=quote_snapshot,
-        )
+        if suppress_state_stale_block and not bot_on:
+            top_level_reason = "bot_off"
+        else:
+            top_level_reason = _top_level_signal_reason(
+                state=state,
+                quote_snapshot=quote_snapshot,
+            )
         top_level_skew_bps = _top_level_signal_signed_skew_bps(
             pricing_adjustments=pricing_adjustments,
             quote_snapshot=quote_snapshot,

@@ -78,6 +78,7 @@ def test_makerv4_defaults_enable_instant_hedge_and_fee_controls() -> None:
     assert schema["maker_fee_source"]["type"] == "select"
     assert schema["maker_fee_source"]["options"] == [
         ["config", "Configured Assumption"],
+        ["hyperliquid_api", "Legacy Hyperliquid API"],
     ]
     assert schema["hedge_fee_source"]["type"] == "select"
     assert schema["hedge_fee_source"]["options"] == [
@@ -190,6 +191,19 @@ def test_params_manager_rejects_unsupported_makerv4_select_updates() -> None:
 
     with pytest.raises(ValueError, match="Invalid option value"):
         manager.publish_update({"ibkr_fee_plan": "smart"}, ts_ms=123)
+
+
+def test_params_manager_factory_loads_legacy_hyperliquid_maker_fee_source() -> None:
+    redis_client = _FakeRedis()
+    redis_client.hashes["flux:v1:params:aapl_tradexyz_makerv4"] = {
+        "maker_fee_source": b"hyperliquid_api",
+    }
+    strategy = MakerV4Strategy(config=_build_config())
+    manager = runtime_params_mod.params_manager_factory(redis_client=redis_client)(strategy)
+
+    loaded = manager.load()
+
+    assert loaded["maker_fee_source"] == "hyperliquid_api"
 
 
 def test_params_manager_rejects_unsupported_execution_mode_updates() -> None:

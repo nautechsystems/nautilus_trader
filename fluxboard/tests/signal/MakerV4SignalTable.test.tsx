@@ -287,6 +287,46 @@ describe('MakerV4SignalTable', () => {
     expect(screen.getByText(/SELL 1/)).toBeInTheDocument();
   });
 
+  it('sorts stale mid-spread rows after numeric rows', () => {
+    const fresh = buildMakerV4Strategy();
+    fresh.id = 'fresh_row';
+    fresh.maker_v4 = {
+      ...fresh.maker_v4,
+      quote_snapshot: {
+        ...fresh.maker_v4?.quote_snapshot,
+        mid_spread_bps: 1.0,
+      },
+    } as any;
+
+    const stale = buildMakerV4Strategy();
+    stale.id = 'stale_row';
+    stale.maker_v4 = {
+      ...stale.maker_v4,
+      quote_snapshot: {
+        ...stale.maker_v4?.quote_snapshot,
+        maker_leg: {
+          ...stale.maker_v4?.quote_snapshot?.maker_leg,
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          age_ms: 25_000,
+        },
+        mid_spread_bps: 99.0,
+      },
+    } as any;
+
+    render(
+      <MakerV4SignalTable
+        rows={[stale, fresh]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Mid Spread/i }));
+
+    const strategyCells = screen.getAllByText(/_row$/i);
+    expect(strategyCells.map((node) => node.textContent)).toEqual(['fresh_row', 'stale_row']);
+  });
+
   it('shows fee assumptions when hovering the strategy id', async () => {
     render(
       <MakerV4SignalTable

@@ -31,7 +31,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 - Flux runner stop handling is also opt-in: checked-in equities strategy TOMLs set `manage_stop = false`, so live defaults do not auto-flatten on runner stop unless a strategy explicitly enables that policy.
-- Equities MakerV4 routes use `max_ibkr_quote_age_ms = 60000` so Signal blocks on genuinely stale or missing IBKR data, not merely on a quiet top of book.
+- Equities MakerV4 routes use `max_age_ms = 60000` for maker venues and `max_ibkr_quote_age_ms = 300000` for IBKR so Signal blocks on genuinely stale or missing market data, not merely on a quiet book.
 
 ## Overnight IBKR Hedge Contract
 
@@ -113,12 +113,14 @@ The checked-in Pulse-managed equities universe is now the full `maker_v4` route 
 
 - `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v4"`, the equities allowlist points to the enrolled stock strategy set, and the shared contract metadata publishes the shared contract rows each enrolled route depends on.
 - Each `[[strategy_contracts]]` row binds one strategy-local route id to one canonical `portfolio_asset_id`, one explicit maker route contract (`maker_venue`, `maker_symbol`, `market_type`, `maker_instrument_id`), one explicit IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
+- For live route resolution, the shared `[[strategy_contracts]]` row is authoritative for maker venue selection and instrument rewrites; per-node `[venues].execution_venue` must not drift from that shared contract.
 - `maker_venue`, `maker_symbol`, and `market_type` are mandatory on every equities route row; older manifests must be upgraded before they can decode.
 - Duplicate `portfolio_asset_id` values are valid when distinct strategy routes share the same canonical stock bucket across venues such as Hyperliquid and Binance perps.
 - Each `[[account_scopes]]` row defines the shared provider config for one profile-owned account scope so the portfolio runner can build shared Hyperliquid/IBKR account projections without scraping one arbitrary node TOML.
 - Binance shared-account scopes use `api_key_env`, `api_secret_env`, `account_type`, and optional `base_url_http` / `recv_window_ms`; the checked-in live contract expects `EQUITIES_BINANCE_API_KEY`, `EQUITIES_BINANCE_API_SECRET`, and `USDT_FUTURES`.
 - `ops/scripts/deploy/binance_equities_universe.py --config deploy/equities/equities.live.toml` fetches live Binance USD-M `exchangeInfo`, filters active equity `TRADIFI_PERPETUAL` contracts, and prints the discovery diff against the explicitly enrolled `BINANCE_PERP` routes.
 - Checked-in `.toml` strategy files are the enrolled set. Discovery is informational only until a matching `maker_v4` route is committed into both the shared manifest and `deploy/equities/strategies/`.
+- The discovery helper diffs against the enrolled equities allowlist from `api.equities_strategy_ids`, not every staged `[[strategy_contracts]]` row.
 - The shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, and `[[account_scopes]]`, so active node settings live in `deploy/equities/strategies/*.toml` while canonical asset/account contracts stay centralized in `deploy/equities/equities.live.toml`.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
 - Shared IBKR contract entry must mirror the active enrolled route set before restart so `/equities` surfaces the same catalog Pulse will manage.
@@ -178,6 +180,7 @@ Runtime registration is explicit:
 - Production hosts should inject that dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - `EQUITIES_BINANCE_API_KEY` and `EQUITIES_BINANCE_API_SECRET` also stay in `/etc/flux/common.env` for the shared `binance.futures.main` account scope; no Binance spot key is required for this equities-perp path.
+- Every checked-in `deploy/equities/strategies/*binance_perp_makerv4.toml` route must reference those env var names under `[node.venues.BINANCE_PERP]`; do not rely on generic `BINANCE_API_*` fallbacks.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
 

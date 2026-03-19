@@ -3,6 +3,7 @@ import json
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -81,6 +82,119 @@ def test_portfolio_margin_futures_http_api_routes():
     assert http_account._endpoint_futures_open_algo_orders.url_path == "/papi/v1/um/openAlgoOrders"
     assert http_account._endpoint_futures_all_algo_orders.url_path == "/papi/v1/um/allAlgoOrders"
     assert http_account._endpoint_futures_cancel_all_algo_orders.url_path == "/papi/v1/um/algoOpenOrders"
+
+
+def test_portfolio_margin_account_info_decodes_assets_without_wallet_balance_or_unrealized_profit():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "totalMarginBalance": "1025.5",
+        "availableBalance": "1000.0",
+        "maxWithdrawAmount": "995.0",
+        "assets": [
+            {
+                "asset": "USDT",
+                "marginBalance": "1000.0",
+                "maintMargin": "0.0",
+                "initialMargin": "0.0",
+                "positionInitialMargin": "0.0",
+                "openOrderInitialMargin": "0.0",
+                "crossWalletBalance": "1000.0",
+                "crossUnPnl": "0.0",
+                "availableBalance": "975.0",
+                "maxWithdrawAmount": "995.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].marginBalance == "1000.0"
+
+
+def test_portfolio_margin_account_info_decodes_assets_without_margin_balance():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "totalMarginBalance": "1025.5",
+        "availableBalance": "1000.0",
+        "maxWithdrawAmount": "995.0",
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "maintMargin": "0.0",
+                "initialMargin": "0.0",
+                "positionInitialMargin": "0.0",
+                "openOrderInitialMargin": "0.0",
+                "crossWalletBalance": "1000.0",
+                "crossUnPnl": "0.0",
+                "availableBalance": "975.0",
+                "maxWithdrawAmount": "995.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].walletBalance == "1000.0"
+
+
+def test_portfolio_margin_account_info_decodes_minimal_asset_balance_row():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "availableBalance": "975.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+    balances = decoded.parse_to_account_balances()
+
+    assert balances[0].total.as_decimal() == Decimal("1000.0")
+    assert balances[0].free.as_decimal() == Decimal("975.0")
+
+
+def test_portfolio_margin_account_info_decodes_without_fee_tier_metadata():
+    payload = {
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "availableBalance": "975.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].walletBalance == "1000.0"
 
 
 class TestBinanceFuturesExecutionClient:

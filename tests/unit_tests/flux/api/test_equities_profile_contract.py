@@ -1150,7 +1150,7 @@ def test_signals_profile_equities_makerv4_uses_published_ibkr_quote_age_budget(
             "maker_v4": {
                 "quote_snapshot": {
                     "ts_ms": now_ms,
-                    "max_ibkr_quote_age_ms": 60_000,
+                    "max_ibkr_quote_age_ms": 300_000,
                     "maker_leg": {
                         "venue": "HYPERLIQUID",
                         "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",

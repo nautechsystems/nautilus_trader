@@ -71,10 +71,22 @@ def discover_active_equity_perps(payload: dict[str, Any]) -> tuple[BinanceEquity
 
 
 def enrolled_binance_equity_symbols(config: dict[str, Any]) -> tuple[str, ...]:
+    api_cfg = config.get("api")
+    raw_strategy_ids = api_cfg.get("equities_strategy_ids", []) if isinstance(api_cfg, dict) else []
+    if not raw_strategy_ids:
+        return ()
+    enrolled_strategy_ids = {
+        _text(strategy_id).lower()
+        for strategy_id in raw_strategy_ids
+    }
     enrolled = {
         _text(row.get("maker_symbol"))
         for row in config.get("strategy_contracts", [])
-        if isinstance(row, dict) and _text(row.get("maker_venue")) == "BINANCE_PERP"
+        if (
+            isinstance(row, dict)
+            and _text(row.get("maker_venue")) == "BINANCE_PERP"
+            and _text(row.get("strategy_id")).lower() in enrolled_strategy_ids
+        )
     }
     enrolled.discard("")
     return tuple(sorted(enrolled))

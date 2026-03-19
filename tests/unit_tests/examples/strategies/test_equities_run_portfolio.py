@@ -23,8 +23,10 @@ from flux.runners.equities.run_portfolio import _required_strategy_ids
 from flux.runners.equities.run_portfolio import _strategy_ids_by_asset
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
+from flux.runners.shared.profile_accounts import build_account_projection_provider
 from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from nautilus_trader.flux.common.account_scopes import decode_account_scopes
 from nautilus_trader.core import nautilus_pyo3
 
 CORE_PROD_STRATEGY_IDS = (
@@ -220,6 +222,7 @@ def _account_scopes() -> list[dict[str, object]]:
             "dockerized_gateway": {
                 "trading_mode": "live",
                 "read_only_api": True,
+                "manage_container": False,
             },
         },
     ]
@@ -442,8 +445,8 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert captured_provider_configs[0].dockerized_gateway is not None
     assert captured_provider_configs[0].ibg_port is None
     assert captured_provider_configs[0].ibg_client_id == 7
-    assert captured_provider_configs[1].dockerized_gateway is not None
-    assert captured_provider_configs[1].ibg_port is None
+    assert captured_provider_configs[1].dockerized_gateway is None
+    assert captured_provider_configs[1].ibg_port == 4002
     assert captured_provider_configs[1].ibg_client_id == 8
 
 
@@ -860,6 +863,134 @@ def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider(
     assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(7478.386872)
 
 
+def test_equities_portfolio_runner_builds_hyperliquid_shared_account_provider_prefers_spot_usdc_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    funded_account = "0x1111111111111111111111111111111111111111"
+    vault_account = "0x2222222222222222222222222222222222222222"
+
+    monkeypatch.setattr(
+        "flux.runners.shared.portfolio_runner.build_redis_client",
+        lambda _cfg: _FakeRedis(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        lambda _provider_config: _CountingAccountProjectionProvider(rows=[]),
+    )
+    monkeypatch.setenv("TRADE_XYZ_AGENT_PK", "super-secret")
+    monkeypatch.setenv("TRADE_XYZ_ACCOUNT_ADDRESS", funded_account)
+    monkeypatch.setenv("TRADE_XYZ_VAULT_ADDRESS", vault_account)
+
+    class _FakeHyperliquidClient:
+        def get_user_address(self) -> str:
+            return "0x3333333333333333333333333333333333333333"
+
+        def set_account_id(self, account_id: str) -> None:
+            assert account_id == "HYPERLIQUID-master"
+
+        def set_account_address(self, account_address: str) -> None:
+            assert account_address == vault_account
+
+        async def request_position_status_reports(self, **kwargs: Any) -> list[Any]:
+            assert kwargs == {
+                "account_address": vault_account,
+                "dex": "xyz",
+            }
+            return []
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_hyperliquid_http_client",
+        lambda **_kwargs: _FakeHyperliquidClient(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.resolve_hyperliquid_user",
+        lambda **_kwargs: ResolvedHyperliquidUser(
+            execution_signer="0x3333333333333333333333333333333333333333",
+            account_query_address=vault_account,
+            fee_query_address=vault_account,
+            ws_subscription_address=vault_account,
+            source="vault_address",
+        ),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts._post_hyperliquid_info",
+        lambda **kwargs: (
+            {
+                "marginSummary": {
+                    "accountValue": "16020",
+                    "totalRawUsd": "16000",
+                },
+                "withdrawable": "15980",
+            }
+            if kwargs["payload"]["type"] == "clearinghouseState"
+            else {
+                "balances": [
+                    {
+                        "coin": "USDC",
+                        "total": "16917.55422992",
+                        "hold": "883.731772",
+                    },
+                    {
+                        "coin": "USDE",
+                        "total": "12.5",
+                        "hold": "0.0",
+                    },
+                ],
+            }
+        ),
+    )
+
+    config: dict[str, Any] = {
+        "flux": {"namespace": "flux", "schema_version": "v1"},
+        "redis": {},
+        "venues": {"reference_venue": "IBKR"},
+        "account_scopes": _account_scopes(),
+        "api": {
+            "equities_strategy_ids": ["aapl_tradexyz_makerv4"],
+        },
+        "portfolio": {"portfolio_id": "equities"},
+        "contracts": [{"exchange": "hyperliquid", "symbol": "AAPL/USD"}],
+        "strategy_contracts": [
+            _strategy_contract(
+                "aapl_tradexyz_makerv4",
+                reference_account_scope_id="ibkr.reference.main",
+            ),
+        ],
+    }
+
+    aggregator = EquitiesPortfolioAggregator(
+        config=config,
+        mode="paper",
+        logger=MagicMock(),
+    )
+
+    binding = next(
+        binding
+        for binding in aggregator._profile_account_bindings
+        if binding.account_scope_id == "hyperliquid.xyz.main"
+    )
+    assert binding.provider is not None
+    binding.provider.refresh()
+    snapshot = binding.provider.snapshot()
+
+    assert snapshot is not None
+    usdc_row = next(
+        row
+        for row in snapshot["rows"]
+        if row["exchange"] == "hyperliquid" and row["asset"] == "USDC" and row.get("kind") != "position"
+    )
+    assert usdc_row["free"] == "16917.55422992"
+    assert usdc_row["locked"] == "883.731772"
+    assert usdc_row["total"] == "16917.55422992"
+    assert usdc_row["display_name_short"] == "USDC"
+    assert any(
+        row["exchange"] == "hyperliquid" and row["asset"] == "USDE"
+        for row in snapshot["rows"]
+    )
+    assert snapshot["totals"]["account_equity_raw"] == pytest.approx(16020.0)
+    assert snapshot["totals"]["withdrawable_raw"] == pytest.approx(15980.0)
+
+
 def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1038,6 +1169,85 @@ def test_equities_portfolio_runner_builds_binance_shared_account_provider(
     assert position_row["asset"] == "PLTR"
     assert position_row["signed_qty"] == "12.5"
     assert position_row["market_type"] == "perp"
+
+
+def test_equities_portfolio_runner_parses_portfolio_margin_balances_without_wallet_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceFuturesAccountHttpAPI:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+            private_api_family: Any | None = None,
+        ) -> None:
+            _ = (client, clock, account_type, private_api_family)
+
+        async def query_futures_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                totalMarginBalance="1025.5",
+                availableBalance="1000.0",
+                maxWithdrawAmount="995.0",
+                assets=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        marginBalance="1000.0",
+                        availableBalance="975.0",
+                    ),
+                ],
+            )
+
+        async def query_futures_position_risk(
+            self,
+            symbol: str | None = None,
+            recv_window: str | None = None,
+        ) -> list[Any]:
+            assert symbol is None
+            assert recv_window == "5000"
+            return []
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_binance_http_client",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
+        _FakeBinanceFuturesAccountHttpAPI,
+    )
+
+    provider = build_account_projection_provider(
+        scope_config=decode_account_scopes(
+            [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                    "private_api_family": "PORTFOLIO_MARGIN",
+                    "recv_window_ms": 5000,
+                },
+            ],
+        )[0],
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_makerv4",),
+    )
+
+    assert provider is not None
+    provider.refresh()
+    snapshot = provider.snapshot()
+
+    assert snapshot is not None
+    cash_row = next(row for row in snapshot["rows"] if row.get("kind") != "position")
+    assert cash_row["asset"] == "USDT"
+    assert cash_row["total"] == "1000.0"
+    assert cash_row["free"] == "975.0"
 
 
 def test_equities_portfolio_aggregator_publishes_account_projection_once_per_scope() -> None:

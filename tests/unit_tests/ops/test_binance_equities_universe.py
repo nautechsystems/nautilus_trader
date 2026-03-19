@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import ops.scripts.deploy.binance_equities_universe as binance_equities_universe
 
 
@@ -55,6 +57,9 @@ def test_main_prints_discovery_diff_without_auto_enrollment(
     config_path = tmp_path / "equities.live.toml"
     config_path.write_text(
         """
+[api]
+equities_strategy_ids = ["pltr_binance_perp_makerv4", "pltr_tradexyz_makerv4"]
+
 [[strategy_contracts]]
 strategy_id = "pltr_binance_perp_makerv4"
 portfolio_asset_id = "PLTR"
@@ -119,6 +124,21 @@ maker_instrument_id = "xyz:PLTR-USD-PERP.HYPERLIQUID"
     assert "HOODUSDT" not in output
     assert "Discovered but not enrolled (1):" in output
     assert "- AAPLUSDT" in output
-    assert "Enrolled but not currently live on Binance (1):" in output
-    assert "- TSLAUSDT" in output
+    assert "Enrolled but not currently live on Binance (0):" in output
+    assert "- TSLAUSDT" not in output
     assert "does not modify strategy rows or allowlists" in output
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        ({}, ()),
+        ({"api": {}, "strategy_contracts": [{"strategy_id": "pltr_binance_perp_makerv4", "maker_venue": "BINANCE_PERP", "maker_symbol": "PLTRUSDT"}]}, ()),
+        ({"api": {"equities_strategy_ids": []}, "strategy_contracts": [{"strategy_id": "pltr_binance_perp_makerv4", "maker_venue": "BINANCE_PERP", "maker_symbol": "PLTRUSDT"}]}, ()),
+    ],
+)
+def test_enrolled_binance_equity_symbols_requires_non_empty_equities_allowlist(
+    config: dict[str, object],
+    expected: tuple[str, ...],
+) -> None:
+    assert binance_equities_universe.enrolled_binance_equity_symbols(config) == expected

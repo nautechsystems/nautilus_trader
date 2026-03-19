@@ -92,7 +92,10 @@ def _clone_runtime_specs() -> tuple[RuntimeParamSpec, ...]:
                 schema_type="select",
                 default="config",
                 description="Maker-fee source used for live quote gross-up.",
-                options=(("config", "Configured Assumption"),),
+                options=(
+                    ("config", "Configured Assumption"),
+                    ("hyperliquid_api", "Legacy Hyperliquid API"),
+                ),
             ),
             RuntimeParamSpec(
                 name="hedge_fee_source",

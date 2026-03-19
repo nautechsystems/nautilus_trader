@@ -13,6 +13,8 @@ Use it together with `deploy/equities/README.md`,
   making.
 - Configure `EQUITIES_BINANCE_API_KEY` and
   `EQUITIES_BINANCE_API_SECRET` for that subaccount.
+- Keep every checked-in Binance node TOML pointed at those env vars through
+  `[node.venues.BINANCE_PERP].api_key_env` and `api_secret_env`.
 - Fund the Binance futures wallet with USDT before enabling quoting.
 - No Binance spot key is required for this rollout.
 - Keep hedge / FV market on IBKR. Binance is maker venue only for this path.
@@ -24,7 +26,8 @@ Use it together with `deploy/equities/README.md`,
   to review the current Binance equity-perp universe.
 - The discovery helper is read-only. It shows newly discovered Binance-only
   routes but does not enroll them.
-- Only explicitly enrolled `[[strategy_contracts]]` rows may trade.
+- Only explicitly enrolled routes from `api.equities_strategy_ids` may trade;
+  staging a `[[strategy_contracts]]` row alone is not enough.
 
 ## Canary sequence
 

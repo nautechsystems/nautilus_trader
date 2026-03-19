@@ -421,6 +421,9 @@ def _effective_venue_resolution_config(
     if not isinstance(venue_entries, dict):
         return config
 
+    venues_cfg = config.get("venues")
+    effective_strategy_venues = dict(venues_cfg) if isinstance(venues_cfg, dict) else {}
+
     ibkr_cfg = venue_entries.get("IBKR")
     if not isinstance(ibkr_cfg, dict):
         return config
@@ -468,20 +471,43 @@ def _effective_venue_resolution_config(
         and isinstance(maker_cfg, dict)
         and _optional_text(maker_cfg.get("instrument_id")) != desired_maker_instrument_id
     )
+    needs_contract_execution_rewrite = contract is not None and any(
+        bool(venue_cfg.get("execution", False)) != (venue_name == maker_venue_name)
+        for venue_name, venue_cfg in venue_entries.items()
+        if isinstance(venue_cfg, dict) and venue_name != "IBKR"
+    )
+    needs_execution_venue_rewrite = (
+        contract is not None
+        and _optional_text(effective_strategy_venues.get("execution_venue")) != maker_venue_name
+    )
     if (
         not needs_reference_rewrite
         and not needs_execution_promotion
         and not needs_scope_overlay
         and not needs_maker_rewrite
+        and not needs_contract_execution_rewrite
+        and not needs_execution_venue_rewrite
     ):
         return config
 
     effective_node_cfg = dict(node_cfg)
-    effective_venue_entries = dict(venue_entries)
-    if needs_maker_rewrite and isinstance(maker_cfg, dict):
+    effective_venue_entries = {
+        venue_name: dict(venue_cfg)
+        for venue_name, venue_cfg in venue_entries.items()
+    }
+    if contract is not None:
+        for venue_name, venue_cfg in effective_venue_entries.items():
+            venue_cfg["execution"] = venue_name == maker_venue_name
+    if isinstance(maker_cfg, dict):
         effective_venue_entries[maker_venue_name] = {
+            **effective_venue_entries.get(maker_venue_name, {}),
             **maker_cfg,
-            "instrument_id": desired_maker_instrument_id,
+            "execution": True,
+            **(
+                {"instrument_id": desired_maker_instrument_id}
+                if needs_maker_rewrite and desired_maker_instrument_id is not None
+                else {}
+            ),
         }
     effective_venue_entries["IBKR"] = {
         **ibkr_cfg,
@@ -490,10 +516,16 @@ def _effective_venue_resolution_config(
         "execution": True,
     }
     effective_node_cfg["venues"] = effective_venue_entries
-    return {
+    effective_config = {
         **config,
         "node": effective_node_cfg,
     }
+    if needs_execution_venue_rewrite:
+        effective_config["venues"] = {
+            **effective_strategy_venues,
+            "execution_venue": maker_venue_name,
+        }
+    return effective_config
 
 
 def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:

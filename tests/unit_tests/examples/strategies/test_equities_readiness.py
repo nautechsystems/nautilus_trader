@@ -316,6 +316,13 @@ def test_evaluate_equities_readiness_allows_multiple_routes_for_same_portfolio_a
             "ts_ms": 1_700_000_000_000,
         },
     }
+    projection_payloads = _healthy_projection_payloads() | {
+        "binance.futures.main": {
+            "account_scope_ids": ["binance.futures.main"],
+            "rows": [{"exchange": "binance_perp", "asset": "USDT", "total": "750"}],
+            "server_ts_ms": 1_700_000_000_050,
+        },
+    }
 
     result = evaluate_equities_readiness(
         profile_id="equities",
@@ -329,15 +336,122 @@ def test_evaluate_equities_readiness_allows_multiple_routes_for_same_portfolio_a
             "missing_required": [],
         },
         signals_payload=signals_payload,
-        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        projection_payloads_by_scope_id=projection_payloads,
         component_payloads_by_strategy_id=component_payloads,
         now_ms_value=1_700_000_000_500,
     )
 
     assert result.ok is True
+    assert result.summary["expected_projection_scope_ids"] == [
+        "binance.futures.main",
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
     assert result.summary["healthy_strategy_count"] == 2
     assert result.checks["component_keys"].details["missing_strategy_ids"] == []
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
+
+
+def test_evaluate_equities_readiness_requires_binance_projection_for_binance_routes() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    strategy_contracts = (
+        StrategyContractEntry(
+            strategy_id="pltr_binance_perp_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="BINANCE_PERP",
+            maker_symbol="PLTRUSDT",
+            market_type="perp",
+            maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="binance.futures.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+    )
+    account_scopes = (
+        AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.reference.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.hedge.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+    )
+    signals_payload = {
+        "server_ts_ms": 1_700_000_000_500,
+        "strategies": [
+            {
+                "id": "pltr_binance_perp_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 55},
+                    "binance_perp:PLTRUSDT-PERP.BINANCE_PERP": {"age_ms": 20},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+        ],
+    }
+    component_payloads = {
+        "pltr_binance_perp_makerv4": {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "12.5",
+            "ts_ms": 1_700_000_000_000,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=("pltr_binance_perp_makerv4",),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.summary["expected_projection_scope_ids"] == [
+        "binance.futures.main",
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
+    assert result.checks["profile_account_projections"].details["missing_scope_ids"] == [
+        "binance.futures.main",
+    ]
 
 
 def test_evaluate_equities_readiness_tracks_signal_health_per_route_inside_stock_netted_portfolio() -> None:

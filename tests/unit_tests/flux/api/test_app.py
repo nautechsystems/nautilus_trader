@@ -3581,6 +3581,418 @@ def test_balances_profile_equities_prefers_portfolio_snapshot_v2_hyperliquid_xyz
     assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(0.0)
 
 
+def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_account_projections(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="equities",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "equities",
+            "inventory_by_asset": {
+                "NVDA": {
+                    "portfolio_id": "equities",
+                    "base_currency": "NVDA",
+                    "global_qty_base": "0",
+                    "global_qty": "0",
+                    "aggregation_mode": "partial",
+                    "global_qty_base_complete": False,
+                    "global_qty_complete": False,
+                    "ts_ms": 123_000,
+                    "stale_after_ms": 3_000,
+                    "components": [],
+                    "missing_required": [],
+                    "stale_required": [],
+                    "null_qty_required": [],
+                    "degraded": False,
+                },
+            },
+            "balances": {"rows": []},
+            "accounts": {"rows": []},
+            "server_ts_ms": 123_200,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["hyperliquid.xyz.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "asset": "USDC",
+                    "free": "15980",
+                    "locked": "20",
+                    "total": "16000",
+                    "product_type": "spot",
+                    "contract_type": "cash",
+                    "ts_ms": 123_100,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "asset": "NVDA",
+                    "kind": "position",
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-9.111",
+                    "quantity": "9.111",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_110,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 8314.466609,
+                "withdrawable_raw": 0.0,
+            },
+            "server_ts_ms": 123_140,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.alt",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["hyperliquid.xyz.alt"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:COIN-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-alt",
+                    "asset": "COIN",
+                    "kind": "position",
+                    "instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-22.715",
+                    "quantity": "22.715",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_120,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.alt",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-alt",
+                    "asset": "GOOGL",
+                    "kind": "position",
+                    "instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-6",
+                    "quantity": "6",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_130,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.alt",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 4123.0,
+                "withdrawable_raw": 250.0,
+            },
+            "server_ts_ms": 123_150,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="NVDA/USD",
+                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="COIN/USD",
+                instrument_id="xyz:COIN-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="GOOGL/USD",
+                instrument_id="xyz:GOOGL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv3",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot_v2"
+    hyperliquid_position_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
+    ]
+    assert {row["coin"] for row in hyperliquid_position_rows} >= {"NVDA", "COIN", "GOOGL"}
+    assert {row["account_scope_id"] for row in hyperliquid_position_rows} == {
+        "hyperliquid.xyz.alt",
+        "hyperliquid.xyz.main",
+    }
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(12_437.466609)
+    assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
+
+
+def test_balances_profile_equities_fallback_merges_profile_account_projection_rows(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "free": "10",
+                "total": "10",
+                "mv_raw": 10.0,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["hyperliquid.xyz.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "asset": "USDC",
+                    "free": "15980",
+                    "locked": "20",
+                    "total": "16000",
+                    "product_type": "spot",
+                    "contract_type": "cash",
+                    "ts_ms": 123_100,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-master",
+                    "asset": "NVDA",
+                    "kind": "position",
+                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-9.111",
+                    "quantity": "9.111",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_110,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.main",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 8314.466609,
+                "withdrawable_raw": 0.0,
+            },
+            "server_ts_ms": 123_140,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="hyperliquid.xyz.alt",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["hyperliquid.xyz.alt"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:COIN-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-alt",
+                    "asset": "COIN",
+                    "kind": "position",
+                    "instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-22.715",
+                    "quantity": "22.715",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_120,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.alt",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+                {
+                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                    "exchange": "hyperliquid",
+                    "account": "HYPERLIQUID-alt",
+                    "asset": "GOOGL",
+                    "kind": "position",
+                    "instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                    "signed_qty": "-6",
+                    "quantity": "6",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_130,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "hyperliquid.xyz.alt",
+                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 4123.0,
+                "withdrawable_raw": 250.0,
+            },
+            "server_ts_ms": 123_150,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="NVDA/USD",
+                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="COIN/USD",
+                instrument_id="xyz:COIN-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="GOOGL/USD",
+                instrument_id="xyz:GOOGL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv3",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    hyperliquid_position_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
+    ]
+    assert {row["coin"] for row in hyperliquid_position_rows} >= {"NVDA", "COIN", "GOOGL"}
+    assert {row["account_scope_id"] for row in hyperliquid_position_rows} == {
+        "hyperliquid.xyz.alt",
+        "hyperliquid.xyz.main",
+    }
+    assert {row["account"] for row in hyperliquid_position_rows} == {
+        "HYPERLIQUID-alt",
+        "HYPERLIQUID-master",
+    }
+    assert {row["source_scope"] for row in hyperliquid_position_rows} == {"shared_account"}
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(12_437.466609)
+    assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
+
+
 def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
     monkeypatch,
     flux_config,

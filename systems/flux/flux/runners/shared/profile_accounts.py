@@ -156,6 +156,56 @@ def _extract_hyperliquid_account_totals(payload: Any) -> dict[str, Any]:
     return totals
 
 
+def _extract_hyperliquid_perp_usdc_balance(payload: Any) -> dict[str, str] | None:
+    if not isinstance(payload, Mapping):
+        return None
+
+    margin_summary = payload.get("crossMarginSummary")
+    if not isinstance(margin_summary, Mapping):
+        margin_summary = payload.get("marginSummary")
+    if not isinstance(margin_summary, Mapping):
+        margin_summary = {}
+
+    total = _safe_decimal(
+        margin_summary.get("totalRawUsd")
+        if isinstance(margin_summary, Mapping)
+        else None,
+    )
+    if total is None:
+        total = _safe_decimal(
+            margin_summary.get("accountValue")
+            if isinstance(margin_summary, Mapping)
+            else None,
+        )
+    if total is None:
+        total = _safe_decimal(payload.get("accountValue"))
+
+    free = _safe_decimal(payload.get("withdrawable"))
+    if free is None and isinstance(margin_summary, Mapping):
+        free = _safe_decimal(margin_summary.get("withdrawable"))
+
+    if total is None and free is None:
+        return None
+    if total is None:
+        total = free
+    if free is None:
+        free = total
+    if total is None or free is None:
+        return None
+
+    total = max(total, Decimal("0"))
+    free = max(free, Decimal("0"))
+    if free > total:
+        total = free
+    locked = max(total - free, Decimal("0"))
+    return {
+        "currency": "USDC",
+        "free": _decimal_text(free),
+        "locked": _decimal_text(locked),
+        "total": _decimal_text(total),
+    }
+
+
 def _extract_hyperliquid_spot_balances(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, Mapping):
         return []
@@ -184,6 +234,34 @@ def _extract_hyperliquid_spot_balances(payload: Any) -> list[dict[str, Any]]:
                 "total": total,
             },
         )
+    return balances
+
+
+def _extract_hyperliquid_cash_balances(
+    *,
+    clearinghouse_payload: Any,
+    spot_payload: Any,
+) -> list[dict[str, Any]]:
+    balances: list[dict[str, Any]] = []
+    spot_balances = _extract_hyperliquid_spot_balances(spot_payload)
+    preferred_usdc_balance = next(
+        (
+            balance
+            for balance in spot_balances
+            if _optional_text(balance.get("currency")) == "USDC"
+        ),
+        None,
+    )
+    if preferred_usdc_balance is None:
+        preferred_usdc_balance = _extract_hyperliquid_perp_usdc_balance(clearinghouse_payload)
+    if preferred_usdc_balance is not None:
+        balances.append(preferred_usdc_balance)
+
+    for balance in spot_balances:
+        asset = _optional_text(balance.get("currency"))
+        if preferred_usdc_balance is not None and asset == "USDC":
+            continue
+        balances.append(balance)
     return balances
 
 
@@ -230,7 +308,9 @@ def _extract_binance_futures_balances(payload: Any) -> list[dict[str, Any]]:
     balances: list[dict[str, Any]] = []
     for raw_balance in raw_balances:
         asset = _optional_text(_field_value(raw_balance, "asset", "currency", "coin"))
-        total = _optional_text(_field_value(raw_balance, "walletBalance", "total", "free"))
+        total = _optional_text(
+            _field_value(raw_balance, "walletBalance", "marginBalance", "total", "free"),
+        )
         free = _optional_text(_field_value(raw_balance, "availableBalance", "free")) or total
         if asset is None or total is None or free is None:
             continue
@@ -412,7 +492,10 @@ class HyperliquidAccountProjectionProvider:
                         {
                             "account_id": account_id,
                             "venue": "hyperliquid",
-                            "balances": _extract_hyperliquid_spot_balances(spot_payload),
+                            "balances": _extract_hyperliquid_cash_balances(
+                                clearinghouse_payload=clearinghouse_payload,
+                                spot_payload=spot_payload,
+                            ),
                             "ts_ms": ts_ms,
                         },
                     ],
@@ -561,6 +644,9 @@ def _build_ibkr_account_provider(
         dockerized_gateway = DockerizedIBGatewayConfig(**dockerized_gateway_cfg)
     elif dockerized_gateway_cfg is not None:
         raise ValueError("`node.venues.IBKR.dockerized_gateway` must be a TOML table")
+
+    if dockerized_gateway is not None and not dockerized_gateway.manage_container:
+        dockerized_gateway = None
 
     return get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(

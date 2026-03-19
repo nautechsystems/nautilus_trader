@@ -82,12 +82,13 @@ These are the checked-in node TOMLs that Pulse-managed discovery should enroll.
 - `[strategy].strategy_groups` stays `equities`.
 - `[strategy].param_set = "makerv4"` stays explicit for the intended active equities rollout.
 - `[strategy].manage_stop = false` stays explicit in the checked-in live equities configs; flatten-on-stop is opt-in only and must be set per strategy when explicitly desired.
-- `[strategy].max_ibkr_quote_age_ms = 60000` is the checked-in equities default so Signal treats quiet-but-valid IBKR books as healthy while still failing closed on truly stale data.
+- `[strategy].max_age_ms = 60000` and `[strategy].max_ibkr_quote_age_ms = 300000` are the checked-in equities defaults so Signal treats quiet-but-valid maker and IBKR books as healthy while still failing closed on truly stale data.
 - `[venues].execution_venue` must match the maker route (`HYPERLIQUID` or `BINANCE_PERP`) and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument for Hyperliquid routes.
 - `[node.venues.BINANCE_PERP].instrument_id` defines the Binance USD-M equity-perp instrument for Binance routes.
 - `[node.venues.BINANCE_PERP].api_key_env` and `api_secret_env` must reference `EQUITIES_BINANCE_*` env vars, not inline secrets.
 - Portfolio Margin Binance accounts must set `[node.venues.BINANCE_PERP].private_api_family = "PORTFOLIO_MARGIN"` so private account/order/user-stream traffic routes to Binance `papi` while public market data remains on the normal futures market-data path.
+- Checked-in Binance route files must also set `[node.venues.BINANCE_PERP].api_key_env = "EQUITIES_BINANCE_API_KEY"` and `[node.venues.BINANCE_PERP].api_secret_env = "EQUITIES_BINANCE_API_SECRET"` so execution clients use the shared equities account scope rather than generic Binance env names.
 - `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` or `USAR.NASDAQ`.
 - `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the MakerV4 contract.
 - `[strategy].outside_rth_hedge_enabled = true` enables the session-aware overnight hedge policy.
@@ -98,6 +99,7 @@ These are the checked-in node TOMLs that Pulse-managed discovery should enroll.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
 - Keep the shared `[[contracts]]` IBKR entries aligned with the enrolled reference instruments, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
+- Keep `[venues].execution_venue` aligned with the shared `[[strategy_contracts]].maker_venue`; the shared contract row is authoritative for effective live route resolution.
 - In practice, that means each enrolled strategy file must keep the shared IBKR contract entry set in sync.
 - Keep the shared `[[contracts]]` IBKR entry aligned with the active enrolled reference instrument set before restart.
 - Hyperliquid effective account identity resolves in this order: `vault_address_env`, then funded `account_address_env`, then the agent wallet's `userRole`-resolved master account.

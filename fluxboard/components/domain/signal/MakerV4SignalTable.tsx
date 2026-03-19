@@ -383,9 +383,12 @@ export default function MakerV4SignalTable({
       ),
     },
     {
-      accessorFn: (row) => coerceNumber(row._quoteSnapshot?.mid_spread_bps) ?? Number.NEGATIVE_INFINITY,
+      accessorFn: (row) => (
+        row._quoteHealthUsable ? coerceNumber(row._quoteSnapshot?.mid_spread_bps) : undefined
+      ),
       id: 'mid_spread',
       header: 'Mid Spread',
+      sortUndefined: 'last',
       cell: ({ row }) => {
         const quoteHealthUsable = row.original._quoteHealthUsable;
         const midSpreadBps = coerceNumber(row.original._quoteSnapshot?.mid_spread_bps);

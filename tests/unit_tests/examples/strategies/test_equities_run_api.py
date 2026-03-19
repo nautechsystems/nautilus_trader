@@ -21,20 +21,6 @@ from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
-CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv4",
-    "amd_tradexyz_makerv4",
-    "amzn_tradexyz_makerv4",
-    "googl_tradexyz_makerv4",
-    "meta_tradexyz_makerv4",
-    "msft_tradexyz_makerv4",
-    "nvda_tradexyz_makerv4",
-    "orcl_tradexyz_makerv4",
-    "pltr_tradexyz_makerv4",
-    "tsla_tradexyz_makerv4",
-)
-
-
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
@@ -59,11 +45,13 @@ def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subse
 
 def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    expected_strategy_ids = list(config["api"]["equities_strategy_ids"])
+    expected_required_strategy_ids = list(config["api"]["equities_required_strategy_ids"])
 
     strategy_map, required_map = _build_profile_strategy_maps(config["api"])
 
-    assert strategy_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
-    assert required_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
+    assert strategy_map == {"equities": expected_strategy_ids}
+    assert required_map == {"equities": expected_required_strategy_ids}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:

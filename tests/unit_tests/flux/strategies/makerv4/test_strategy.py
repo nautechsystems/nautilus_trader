@@ -16,11 +16,20 @@ from nautilus_trader.flux.strategies.makerv4.managed_orders import ManagedMakerO
 from nautilus_trader.flux.strategies.makerv4.wire import HedgeExecutionReport
 from nautilus_trader.flux.strategies.makerv4.wire import MakerFill
 from nautilus_trader.flux.strategies.makerv4.market_data import IbkrQuoteSnapshot
+from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.adapters.interactive_brokers.common import IB_CLIENT_ID
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 _REGULAR_SESSION_TS_MS = 1_742_223_600_000
@@ -36,6 +45,19 @@ def _config(**overrides) -> MakerV4StrategyConfig:
         "order_qty": Decimal("1"),
         "external_strategy_id": "aapl_tradexyz_makerv4",
         "strategy_id": "aapl_tradexyz_makerv4",
+        "outside_rth_hedge_enabled": True,
+    }
+    base.update(overrides)
+    return MakerV4StrategyConfig(**base)
+
+
+def _binance_config(**overrides) -> MakerV4StrategyConfig:
+    base = {
+        "maker_instrument_id": InstrumentId.from_str("AAPLUSDT-PERP.BINANCE_PERP"),
+        "reference_instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+        "order_qty": Decimal("1"),
+        "external_strategy_id": "aapl_binance_perp_makerv4",
+        "strategy_id": "aapl_binance_perp_makerv4",
         "outside_rth_hedge_enabled": True,
     }
     base.update(overrides)
@@ -92,7 +114,13 @@ def _fill_event(
     )
 
 
-def _instrument(*, raw_symbol: str, multiplier: str = "1") -> SimpleNamespace:
+def _instrument(
+    *,
+    raw_symbol: str,
+    multiplier: str = "1",
+    is_inverse: bool = False,
+    info: dict[str, object] | None = None,
+) -> SimpleNamespace:
     return SimpleNamespace(
         raw_symbol=raw_symbol,
         price_precision=2,
@@ -101,7 +129,8 @@ def _instrument(*, raw_symbol: str, multiplier: str = "1") -> SimpleNamespace:
         quote_currency=SimpleNamespace(code="USD"),
         settlement_currency=SimpleNamespace(code="USD"),
         multiplier=Decimal(multiplier),
-        is_inverse=False,
+        is_inverse=is_inverse,
+        info=info,
         make_qty=lambda value: Decimal(str(value)),
         make_price=lambda value: Decimal(str(value)),
         calculate_base_exposure_qty=lambda qty, _price=None: Decimal(str(qty)),
@@ -114,6 +143,50 @@ def _quote_tick(*, instrument_id, bid: str, ask: str, ts_event: int):
         bid_price=SimpleNamespace(as_decimal=lambda: Decimal(bid)),
         ask_price=SimpleNamespace(as_decimal=lambda: Decimal(ask)),
         ts_event=ts_event,
+    )
+
+
+def _order_book_deltas(
+    *,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    bids: list[tuple[str, str, int]],
+    asks: list[tuple[str, str, int]],
+) -> OrderBookDeltas:
+    deltas = [TestDataStubs.order_book_delta_clear(instrument_id=instrument_id)]
+    deltas.extend(
+        TestDataStubs.order_book_delta(
+            instrument_id=instrument_id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                price=Price.from_str(price),
+                size=Quantity.from_str(size),
+                side=OrderSide.BUY,
+                order_id=order_id,
+            ),
+            ts_event=ts_event,
+            ts_init=ts_event,
+        )
+        for price, size, order_id in bids
+    )
+    deltas.extend(
+        TestDataStubs.order_book_delta(
+            instrument_id=instrument_id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                price=Price.from_str(price),
+                size=Quantity.from_str(size),
+                side=OrderSide.SELL,
+                order_id=order_id,
+            ),
+            ts_event=ts_event,
+            ts_init=ts_event,
+        )
+        for price, size, order_id in asks
+    )
+    return TestDataStubs.order_book_deltas(
+        instrument_id=instrument_id,
+        deltas=deltas,
     )
 
 
@@ -595,6 +668,41 @@ def test_makerv4_pauses_when_ibkr_quote_is_stale() -> None:
     assert strategy.hedge_disabled_reason == "stale_quote"
 
 
+def test_makerv4_record_maker_fill_translates_binance_perp_contracts_before_hedging() -> None:
+    strategy = MakerV4Strategy(config=_binance_config())
+    maker_id, ref_id = _configure_strategy_for_quoting(strategy)
+    strategy._instruments[maker_id] = _instrument(raw_symbol="AAPL/USDT", multiplier="0.0625")
+
+    order = strategy.record_maker_fill(
+        fill=_fill(qty="16"),
+        quote=_quote(),
+        maker_fee_bps=Decimal("0.25"),
+    )
+
+    assert order is not None
+    assert str(order.instrument_id) == str(ref_id)
+    assert order.qty == Decimal("1")
+    assert strategy._pending_hedge is not None
+    assert strategy._pending_hedge.requested_qty == Decimal("1")
+
+
+def test_makerv4_stale_quote_backlog_translates_binance_perp_contracts_before_queueing() -> None:
+    strategy = MakerV4Strategy(config=_binance_config())
+    maker_id, _ref_id = _configure_strategy_for_quoting(strategy)
+    strategy._instruments[maker_id] = _instrument(raw_symbol="AAPL/USDT", multiplier="0.0625")
+
+    order = strategy.record_maker_fill(
+        fill=_fill(qty="16"),
+        quote=_quote(age_ms=2_000),
+        maker_fee_bps=Decimal("0.25"),
+    )
+
+    assert order is None
+    assert strategy._hedge_backlog is not None
+    assert strategy._hedge_backlog.requested_qty == Decimal("1")
+    assert strategy.hedge_disabled_reason == "stale_quote"
+
+
 def test_makerv4_take_take_stale_reference_quote_creates_recoverable_hedge_backlog(
     monkeypatch,
 ) -> None:
@@ -955,7 +1063,7 @@ def test_makerv4_on_start_reclaims_open_maker_orders_and_skips_duplicate_requote
     assert restored_submitted == []
 
 
-def test_makerv4_on_start_subscribes_quote_ticks_and_publishes_initial_snapshots() -> None:
+def test_makerv4_on_start_subscribes_maker_book_deltas_and_reference_quote_ticks() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
@@ -963,18 +1071,82 @@ def test_makerv4_on_start_subscribes_quote_ticks_and_publishes_initial_snapshots
         maker_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL/USD"),
         ref_id: SimpleNamespace(price_precision=2, raw_symbol="AAPL/USD"),
     }
-    subscribed: list[InstrumentId] = []
+    quote_subscribed: list[InstrumentId] = []
+    book_subscribed: list[tuple[InstrumentId, BookType]] = []
     published: list[str] = []
 
     strategy._cache = SimpleNamespace(instrument=lambda instrument_id: instruments.get(instrument_id))
-    strategy.subscribe_quote_ticks = lambda instrument_id, **_kwargs: subscribed.append(instrument_id)
+    strategy.subscribe_quote_ticks = lambda instrument_id, **_kwargs: quote_subscribed.append(instrument_id)
+    strategy.subscribe_order_book_deltas = (
+        lambda instrument_id, book_type, **_kwargs: book_subscribed.append((instrument_id, book_type))
+    )
     strategy._publish_balances = lambda: published.append("balances")
     strategy._publish_state_snapshot = lambda **_kwargs: published.append("state")
 
     strategy.on_start()
 
-    assert subscribed == [maker_id, ref_id]
+    assert book_subscribed == [(maker_id, BookType.L2_MBP)]
+    assert quote_subscribed == [ref_id]
     assert published == ["balances", "state"]
+
+
+def test_makerv4_on_order_book_deltas_refreshes_maker_age_on_non_bbo_book_updates() -> None:
+    strategy = MakerV4Strategy(config=_config())
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    strategy._instruments = {
+        maker_id: SimpleNamespace(raw_symbol="AAPL/USD"),
+        ref_id: SimpleNamespace(raw_symbol="AAPL"),
+    }
+    strategy._books = {
+        maker_id: OrderBook(maker_id, BookType.L2_MBP),
+    }
+    strategy._runtime_params["max_age_ms"] = 10_000
+    strategy._refresh_runtime_params_if_due = lambda **_kwargs: None
+    strategy._retry_hedge_backlog = lambda **_kwargs: None
+    strategy._refresh_maker_quotes = lambda **_kwargs: None
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+
+    strategy.on_order_book_deltas(
+        _order_book_deltas(
+            instrument_id=maker_id,
+            ts_event=1_000_000_000,
+            bids=[("190.00", "5", 1), ("189.95", "10", 2)],
+            asks=[("190.04", "6", 3), ("190.10", "12", 4)],
+        ),
+    )
+    strategy.on_order_book_deltas(
+        TestDataStubs.order_book_deltas(
+            instrument_id=maker_id,
+            deltas=[
+                TestDataStubs.order_book_delta(
+                    instrument_id=maker_id,
+                    action=BookAction.UPDATE,
+                    order=BookOrder(
+                        price=Price.from_str("189.95"),
+                        size=Quantity.from_str("14"),
+                        side=OrderSide.BUY,
+                        order_id=2,
+                    ),
+                    ts_event=55_000_000_000,
+                    ts_init=55_000_000_000,
+                ),
+            ],
+        ),
+    )
+
+    maker_leg = strategy._quote_leg_snapshot(
+        maker_id,
+        leg_role="maker",
+        now_ns=60_000_000_000,
+    )
+
+    assert maker_leg["bid"] == 190.0
+    assert maker_leg["ask"] == 190.04
+    assert maker_leg["age_ms"] == 5_000
+    assert maker_leg["quote_state"] == "fresh"
 
 
 def test_makerv4_on_quote_tick_publishes_market_bbo() -> None:
@@ -1682,10 +1854,10 @@ def test_makerv4_take_take_accumulates_sub_share_terminal_fills_across_orders_un
     assert strategy.hedge_disabled_reason is None
 
 
-def test_makerv4_take_take_base_qty_converts_hl_venue_size_and_hedges_full_base_fill(
+def test_makerv4_take_take_base_qty_converts_binance_venue_size_and_hedges_full_base_fill(
     monkeypatch,
 ) -> None:
-    strategy = MakerV4Strategy(config=_config(qty_unit="base"))
+    strategy = MakerV4Strategy(config=_binance_config(qty_unit="base"))
     maker_id, ref_id = _configure_strategy_for_quoting(strategy)
     fake_clock = SimpleNamespace(timestamp_ns=lambda: 2_000_000_000)
     submitted: list[SimpleNamespace] = []
@@ -1733,7 +1905,7 @@ def test_makerv4_take_take_base_qty_converts_hl_venue_size_and_hedges_full_base_
             fill_id="take-fill-1",
             client_order_id="order-1",
             side="BUY",
-            qty="1",
+            qty="16",
             px="189.20",
             ts_event=2_002_000_000,
         )
@@ -1749,6 +1921,80 @@ def test_makerv4_take_take_base_qty_converts_hl_venue_size_and_hedges_full_base_
     assert strategy.hedge_request_count == 1
     assert strategy._pending_hedge is not None
     assert strategy._pending_hedge.requested_qty == Decimal("1")
+
+
+def test_makerv4_take_take_accumulates_price_based_base_qty_across_multi_price_fills(
+    monkeypatch,
+) -> None:
+    strategy = MakerV4Strategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quoting(strategy)
+    submitted: list[SimpleNamespace] = []
+
+    strategy._runtime_params.update(
+        {
+            "execution_mode": "take_take",
+            "qty": Decimal("20"),
+        }
+    )
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy.submit_order = lambda order, **_kwargs: submitted.append(order)
+    _install_limit_order_factory(strategy, monkeypatch)
+    strategy._latest_quotes = {
+        ref_id: {
+            "bid": Decimal("190.00"),
+            "ask": Decimal("190.04"),
+            "ts_ns": 1_999_000_000,
+        },
+    }
+    strategy._instruments[maker_id] = _instrument(
+        raw_symbol="AAPL/USD",
+        multiplier="100",
+        is_inverse=True,
+    )
+
+    strategy._managed_maker_orders["BUY"] = ManagedMakerOrderState(
+        client_order_id="order-1",
+        instrument_id=str(maker_id),
+        side="BUY",
+        quantity=Decimal("20"),
+        price=Decimal("200"),
+        post_only=False,
+    )
+
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-1",
+            client_order_id="order-1",
+            side="BUY",
+            qty="10",
+            px="200",
+            ts_event=2_002_000_000,
+        )
+    )
+
+    assert submitted == []
+    assert strategy._pending_hedge is None
+
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-2",
+            client_order_id="order-1",
+            side="BUY",
+            qty="10",
+            px="100",
+            ts_event=2_003_000_000,
+        )
+    )
+
+    assert len(submitted) == 1
+    hedge_order = submitted[0]
+    assert str(hedge_order.instrument_id) == str(ref_id)
+    assert _enum_name(hedge_order.side) == "SELL"
+    assert hedge_order.quantity == Decimal("15")
 
 
 def test_makerv4_take_take_reconciles_closed_partial_ioc_orders_without_terminal_callbacks(

@@ -6,7 +6,8 @@ from pathlib import Path
 
 ACTIVE_STRATEGY_CLASS = "maker_v4"
 ACTIVE_PARAM_SET = "makerv4"
-EQUITIES_IBKR_MAX_QUOTE_AGE_MS = 60_000
+EQUITIES_MAKER_MAX_QUOTE_AGE_MS = 60_000
+EQUITIES_IBKR_MAX_QUOTE_AGE_MS = 300_000
 ACTIVE_STRATEGIES = (
     {
         "symbol": "AAPL",
@@ -537,6 +538,7 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         assert config["strategy"]["manage_stop"] is False
         assert config["strategy"]["force_bot_off_on_start"] is True
         assert config["strategy"]["outside_rth_hedge_enabled"] is True
+        assert config["strategy"]["max_age_ms"] == EQUITIES_MAKER_MAX_QUOTE_AGE_MS
         assert config["strategy"]["max_ibkr_quote_age_ms"] == EQUITIES_IBKR_MAX_QUOTE_AGE_MS
         expected_primary_exchange = entry["ibkr_instrument_id"].rsplit(".", 1)[1]
         assert config["strategy"]["ibkr_primary_exchange"] == expected_primary_exchange
@@ -586,6 +588,7 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
 
     assert active_config["node"]["enable_execution"] is False
     assert template_config["node"]["enable_execution"] is False
+    assert template_config["strategy"]["max_age_ms"] == EQUITIES_MAKER_MAX_QUOTE_AGE_MS
     assert template_config["strategy"]["max_ibkr_quote_age_ms"] == EQUITIES_IBKR_MAX_QUOTE_AGE_MS
     assert (
         "# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution"

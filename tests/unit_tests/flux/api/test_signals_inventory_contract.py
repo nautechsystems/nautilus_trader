@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from nautilus_trader.flux.api import StrategyMetadata
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.payloads import build_legs_payload
@@ -406,6 +408,7 @@ def test_build_signals_payload_marks_timestamp_less_pricing_state_stale(
 def test_build_signals_payload_marks_explicit_quote_snapshot_stale_without_leg_timestamps(
     contract_catalog,
 ) -> None:
+    now_ms = int(time.time() * 1000)
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
         strategy_groups="tokenmm",
@@ -420,10 +423,10 @@ def test_build_signals_payload_marks_explicit_quote_snapshot_stale_without_leg_t
             "bot_on": True,
             "managed_orders": 2,
             "state": "running",
-            "ts_ms": 1_700_000_000_000,
+            "ts_ms": now_ms - 40_000,
             "maker_v3": {
                 "quote_snapshot": {
-                    "ts_ms": 1_700_000_000_000,
+                    "ts_ms": now_ms - 40_000,
                     "mode": "ON",
                     "reason": "quoting",
                     "place_bid": 98.5,
@@ -439,15 +442,119 @@ def test_build_signals_payload_marks_explicit_quote_snapshot_stale_without_leg_t
         legs=build_legs_payload(
             contracts=contract_catalog,
             market_rows={},
-            now_ms_value=1_700_000_040_000,
+            now_ms_value=now_ms,
         ),
     )
 
     assert payload["debug"]["md_health"]["state_stale"] is True
-    assert payload["debug"]["md_health"]["signal_state_age_ms"] == 40_000
+    assert 40_000 <= payload["debug"]["md_health"]["signal_state_age_ms"] < 40_100
     assert payload["mode"] == "STALE"
     assert payload["reason"] == "stale_state"
     assert payload["managed_orders"] == 0
+
+
+def test_build_signals_payload_keeps_paused_makerv4_rows_reviewable_with_fresh_quote_snapshot(
+) -> None:
+    now_ms = int(time.time() * 1000)
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AMD",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+
+    payload = build_signals_payload(
+        strategy_id="amd_tradexyz_makerv4",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "on_stop",
+            "ts_ms": now_ms - 120_000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AMD-USD-PERP.HYPERLIQUID",
+                "ref_leg": "ibkr:AMD.NASDAQ",
+                "hedge_leg": "ibkr:AMD.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": now_ms - 120_000,
+                    "maker_leg": {
+                        "instrument_id": "XYZ:AMD-USD-PERP.HYPERLIQUID",
+                        "venue": "HYPERLIQUID",
+                        "symbol": "AMD/USD",
+                        "bid": 197.49,
+                        "ask": 197.86,
+                        "ts_ms": now_ms - 500,
+                        "age_ms": 500,
+                    },
+                    "ref_leg": {
+                        "instrument_id": "AMD.NASDAQ",
+                        "venue": "IBKR",
+                        "symbol": "AMD/USD",
+                        "bid": 197.35,
+                        "ask": 197.88,
+                        "ts_ms": now_ms - 1_500,
+                        "age_ms": 1_500,
+                    },
+                    "hedge_leg": {
+                        "instrument_id": "AMD.NASDAQ",
+                        "venue": "IBKR",
+                        "symbol": "AMD/USD",
+                        "bid": 197.35,
+                        "ask": 197.88,
+                        "ts_ms": now_ms - 1_500,
+                        "age_ms": 1_500,
+                    },
+                    "mid_spread_bps": 3.0,
+                    "arb_bid_spread_bps": -25.8,
+                    "arb_ask_spread_bps": -19.7,
+                    "effective_spread_bps": 13.4,
+                    "quoted_spread_bps": 13.4,
+                },
+            },
+        },
+        fv_row={"fv": 197.675},
+        params={
+            "qty": 1.0,
+            "bot_on": False,
+            "max_age_ms": 60_000,
+            "max_ibkr_quote_age_ms": 300_000,
+        },
+        balances=[],
+        legs={
+            "hyperliquid:XYZ:AMD-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AMD/USD",
+                "instrument_id": "XYZ:AMD-USD-PERP.HYPERLIQUID",
+                "bid": 197.49,
+                "ask": 197.86,
+                "mid": 197.675,
+                "ts_ms": now_ms - 500,
+                "age_ms": 500,
+            },
+            "ibkr:AMD.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AMD/USD",
+                "instrument_id": "AMD.NASDAQ",
+                "bid": 197.35,
+                "ask": 197.88,
+                "mid": 197.615,
+                "ts_ms": now_ms - 1_500,
+                "age_ms": 1_500,
+            },
+        },
+        running=True,
+    )
+
+    assert payload["debug"]["md_health"]["state_stale"] is True
+    assert payload["mode"] == "OFF"
+    assert payload["reason"] == "bot_off"
+    assert payload["maker_v4"]["quote_snapshot"]["maker_leg"]["quote_state"] == "fresh"
+    assert payload["maker_v4"]["quote_snapshot"]["ref_leg"]["quote_state"] == "fresh"
 
 
 def test_build_signals_payload_promotes_operator_quote_fields_to_top_level(
