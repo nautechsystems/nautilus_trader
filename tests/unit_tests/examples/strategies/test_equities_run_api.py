@@ -43,6 +43,24 @@ CORE_PROD_STRATEGY_IDS = (
     "pltr_tradexyz_taker",
     "tsla_tradexyz_maker",
     "tsla_tradexyz_taker",
+    "amzn_binance_perp_maker",
+    "amzn_binance_perp_taker",
+    "coin_binance_perp_maker",
+    "coin_binance_perp_taker",
+    "crcl_binance_perp_maker",
+    "crcl_binance_perp_taker",
+    "ewy_binance_perp_maker",
+    "ewy_binance_perp_taker",
+    "hood_binance_perp_maker",
+    "hood_binance_perp_taker",
+    "intc_binance_perp_maker",
+    "intc_binance_perp_taker",
+    "mstr_binance_perp_maker",
+    "mstr_binance_perp_taker",
+    "pltr_binance_perp_maker",
+    "pltr_binance_perp_taker",
+    "tsla_binance_perp_maker",
+    "tsla_binance_perp_taker",
 )
 
 
@@ -132,6 +150,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv3",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -140,6 +161,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv4",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -186,6 +210,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "aapl_tradexyz_makerv4",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -194,6 +221,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "amd_tradexyz_makerv4",
                 "portfolio_asset_id": "AMD",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AMD",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AMD.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -415,12 +445,20 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
             "strategy_groups": "equities",
             "base_asset": "STOCKS",
             "quote_asset": "USD",
-            "equities_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
+            "equities_strategy_ids": [
+                "aapl_tradexyz_maker",
+                "aapl_tradexyz_taker",
+                "amzn_binance_perp_maker",
+                "amzn_binance_perp_taker",
+            ],
         },
         "strategy_contracts": [
             {
                 "strategy_id": "aapl_tradexyz_maker",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -430,9 +468,36 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
             {
                 "strategy_id": "aapl_tradexyz_taker",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+            {
+                "strategy_id": "amzn_binance_perp_maker",
+                "portfolio_asset_id": "AMZN",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AMZNUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AMZN.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+            {
+                "strategy_id": "amzn_binance_perp_taker",
+                "portfolio_asset_id": "AMZN",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AMZNUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AMZN.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
                 "reference_account_scope_id": "ibkr.reference.main",
                 "hedge_account_scope_id": "ibkr.hedge.main",
             },
@@ -447,6 +512,16 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
                 "exchange": "ibkr",
                 "symbol": "AAPL/USD",
                 "instrument_id": "AAPL.NASDAQ",
+            },
+            {
+                "exchange": "binance_perp",
+                "symbol": "AMZN/USDT",
+                "instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "AMZN/USD",
+                "instrument_id": "AMZN.NASDAQ",
             },
         ],
     }
@@ -495,6 +570,8 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
     resolver = captured["strategy_metadata_resolver"]
     maker_metadata = resolver("aapl_tradexyz_maker")
     taker_metadata = resolver("aapl_tradexyz_taker")
+    amzn_binance_maker = resolver("amzn_binance_perp_maker")
+    amzn_binance_taker = resolver("amzn_binance_perp_taker")
 
     assert maker_metadata.base_asset == "AAPL"
     assert maker_metadata.param_set == "equities_maker"
@@ -502,4 +579,10 @@ def test_main_binds_per_strategy_metadata_from_root_strategy_contracts(monkeypat
     assert taker_metadata.base_asset == "AAPL"
     assert taker_metadata.param_set == "equities_taker"
     assert taker_metadata.strategy_family == "equities_taker"
+    assert amzn_binance_maker.base_asset == "AMZN"
+    assert amzn_binance_maker.param_set == "equities_maker"
+    assert amzn_binance_maker.strategy_family == "equities_maker"
+    assert amzn_binance_taker.base_asset == "AMZN"
+    assert amzn_binance_taker.param_set == "equities_taker"
+    assert amzn_binance_taker.strategy_family == "equities_taker"
     assert captured["strategy_contracts"] == config["strategy_contracts"]

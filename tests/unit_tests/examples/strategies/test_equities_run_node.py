@@ -687,12 +687,38 @@ scope_id = "ibkr.reference.main"
 provider = "ibkr"
 venue = "IBKR"
 
+[[account_scopes]]
+scope_id = "binance.futures.main"
+provider = "binance"
+venue = "BINANCE_PERP"
+api_key_env = "EQUITIES_BINANCE_API_KEY"
+api_secret_env = "EQUITIES_BINANCE_API_SECRET"
+account_type = "USDT_FUTURES"
+private_api_family = "PORTFOLIO_MARGIN"
+base_url_http = "https://papi.binance.com"
+recv_window_ms = 5000
+
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_makerv3"
 portfolio_asset_id = "AAPL"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "AAPL"
+market_type = "perp"
 maker_instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
 reference_instrument_id = "AAPL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+
+[[strategy_contracts]]
+strategy_id = "amzn_binance_perp_maker"
+portfolio_asset_id = "AMZN"
+maker_venue = "BINANCE_PERP"
+maker_symbol = "AMZNUSDT"
+market_type = "perp"
+maker_instrument_id = "AMZNUSDT-PERP.BINANCE_PERP"
+reference_instrument_id = "AMZN.NASDAQ"
+execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 """.strip()
@@ -704,7 +730,11 @@ hedge_account_scope_id = "ibkr.hedge.main"
 
     assert merged["portfolio"]["portfolio_id"] == "equities"
     assert merged["account_scopes"][0]["scope_id"] == "ibkr.reference.main"
+    assert merged["account_scopes"][1]["base_url_http"] == "https://papi.binance.com"
     assert merged["strategy_contracts"][0]["portfolio_asset_id"] == "AAPL"
+    assert merged["strategy_contracts"][0]["maker_venue"] == "HYPERLIQUID"
+    assert merged["strategy_contracts"][1]["strategy_id"] == "amzn_binance_perp_maker"
+    assert merged["strategy_contracts"][1]["maker_symbol"] == "AMZNUSDT"
 
 
 def test_optional_strategy_config_kwargs_injects_shared_contract_identity_fields(
@@ -734,6 +764,9 @@ venue = "IBKR"
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_makerv3"
 portfolio_asset_id = "AAPL"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "AAPL"
+market_type = "perp"
 maker_instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
 reference_instrument_id = "AAPL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"

@@ -9,7 +9,7 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class StrategyContractEntry:
     """
-    Canonical equities strategy identity and shared-account scope contract.
+    Canonical equities strategy-route identity and shared-account scope contract.
     """
 
     strategy_id: str
@@ -19,6 +19,9 @@ class StrategyContractEntry:
     execution_account_scope_id: str
     reference_account_scope_id: str
     hedge_account_scope_id: str | None = None
+    maker_venue: str | None = None
+    maker_symbol: str | None = None
+    market_type: str | None = None
 
 
 def _required_text(row: Mapping[str, Any], field_name: str) -> str:
@@ -41,6 +44,25 @@ def _optional_text(row: Mapping[str, Any], field_name: str) -> str | None:
     return text or None
 
 
+def _derive_maker_venue(maker_instrument_id: str) -> str | None:
+    if maker_instrument_id.endswith(".BINANCE_PERP"):
+        return "BINANCE_PERP"
+    if maker_instrument_id.endswith(".HYPERLIQUID"):
+        return "HYPERLIQUID"
+    return None
+
+
+def _derive_maker_symbol(maker_instrument_id: str) -> str | None:
+    symbol = maker_instrument_id.split(".", 1)[0]
+    if ":" in symbol:
+        symbol = symbol.split(":", 1)[1]
+    if symbol.endswith("-USD-PERP"):
+        return symbol.removesuffix("-USD-PERP")
+    if symbol.endswith("-PERP"):
+        return symbol.removesuffix("-PERP")
+    return symbol or None
+
+
 def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[StrategyContractEntry, ...]:
     """
     Normalize TOML/JSON manifest rows into immutable contract entries.
@@ -49,15 +71,19 @@ def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[Strate
     for index, row in enumerate(rows):
         if not isinstance(row, Mapping):
             raise TypeError(f"strategy contract manifest row {index} must be a mapping")
+        maker_instrument_id = _required_text(row, "maker_instrument_id")
         decoded.append(
             StrategyContractEntry(
                 strategy_id=_required_text(row, "strategy_id"),
                 portfolio_asset_id=_required_text(row, "portfolio_asset_id"),
-                maker_instrument_id=_required_text(row, "maker_instrument_id"),
+                maker_instrument_id=maker_instrument_id,
                 reference_instrument_id=_required_text(row, "reference_instrument_id"),
                 execution_account_scope_id=_required_text(row, "execution_account_scope_id"),
                 reference_account_scope_id=_required_text(row, "reference_account_scope_id"),
                 hedge_account_scope_id=_optional_text(row, "hedge_account_scope_id"),
+                maker_venue=_optional_text(row, "maker_venue") or _derive_maker_venue(maker_instrument_id),
+                maker_symbol=_optional_text(row, "maker_symbol") or _derive_maker_symbol(maker_instrument_id),
+                market_type=_optional_text(row, "market_type") or "perp",
             ),
         )
     return tuple(decoded)

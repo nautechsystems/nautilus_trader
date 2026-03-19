@@ -90,6 +90,12 @@ def _split_core_strategy_entry(route: dict[str, str], variant: str) -> dict[str,
     return {
         **route,
         "strategy_id": f"{route['symbol'].lower()}_tradexyz_{variant}",
+        "maker_exchange": "hyperliquid",
+        "maker_venue": "HYPERLIQUID",
+        "maker_symbol": route["symbol"],
+        "market_type": "perp",
+        "maker_instrument_id": route["hyperliquid_instrument_id"],
+        "reference_instrument_id": route["ibkr_instrument_id"],
     }
 
 
@@ -99,6 +105,85 @@ CORE_PROD_STRATEGIES = tuple(
     for variant in ("maker", "taker")
 )
 CORE_PROD_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in CORE_PROD_STRATEGIES)
+BINANCE_PERP_SYMBOL_ROUTES = (
+    {
+        "symbol": "AMZN",
+        "binance_symbol": "AMZNUSDT",
+        "binance_perp_instrument_id": "AMZNUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "AMZN.NASDAQ",
+    },
+    {
+        "symbol": "COIN",
+        "binance_symbol": "COINUSDT",
+        "binance_perp_instrument_id": "COINUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "COIN.NASDAQ",
+    },
+    {
+        "symbol": "CRCL",
+        "binance_symbol": "CRCLUSDT",
+        "binance_perp_instrument_id": "CRCLUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "CRCL.NYSE",
+    },
+    {
+        "symbol": "EWY",
+        "binance_symbol": "EWYUSDT",
+        "binance_perp_instrument_id": "EWYUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "EWY.NYSE",
+    },
+    {
+        "symbol": "HOOD",
+        "binance_symbol": "HOODUSDT",
+        "binance_perp_instrument_id": "HOODUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "HOOD.NASDAQ",
+    },
+    {
+        "symbol": "INTC",
+        "binance_symbol": "INTCUSDT",
+        "binance_perp_instrument_id": "INTCUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "INTC.NASDAQ",
+    },
+    {
+        "symbol": "MSTR",
+        "binance_symbol": "MSTRUSDT",
+        "binance_perp_instrument_id": "MSTRUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "MSTR.NASDAQ",
+    },
+    {
+        "symbol": "PLTR",
+        "binance_symbol": "PLTRUSDT",
+        "binance_perp_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "PLTR.NASDAQ",
+    },
+    {
+        "symbol": "TSLA",
+        "binance_symbol": "TSLAUSDT",
+        "binance_perp_instrument_id": "TSLAUSDT-PERP.BINANCE_PERP",
+        "ibkr_instrument_id": "TSLA.NASDAQ",
+    },
+)
+
+
+def _split_binance_strategy_entry(route: dict[str, str], variant: str) -> dict[str, str]:
+    return {
+        **route,
+        "strategy_id": f"{route['symbol'].lower()}_binance_perp_{variant}",
+        "maker_exchange": "binance_perp",
+        "maker_venue": "BINANCE_PERP",
+        "maker_symbol": route["binance_symbol"],
+        "market_type": "perp",
+        "maker_instrument_id": route["binance_perp_instrument_id"],
+        "reference_instrument_id": route["ibkr_instrument_id"],
+    }
+
+
+BINANCE_PERP_STRATEGIES = tuple(
+    _split_binance_strategy_entry(route, variant)
+    for route in BINANCE_PERP_SYMBOL_ROUTES
+    for variant in ("maker", "taker")
+)
+BINANCE_PERP_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in BINANCE_PERP_STRATEGIES)
+LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES + BINANCE_PERP_STRATEGIES
+LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
 LEGACY_DISABLED_STRATEGIES = (
     {
         "symbol": "BABA",
@@ -187,6 +272,14 @@ ACTIVE_HYPERLIQUID_INSTRUMENT_IDS = {
 ACTIVE_IBKR_INSTRUMENT_IDS = {
     entry["ibkr_instrument_id"] for entry in ACTIVE_STRATEGIES
 }
+LIVE_ENROLLED_MAKER_CONTRACTS = {
+    (entry["maker_exchange"], entry["maker_instrument_id"])
+    for entry in LIVE_ENROLLED_STRATEGIES
+}
+LIVE_ENROLLED_REFERENCE_CONTRACTS = {
+    ("ibkr", entry["reference_instrument_id"])
+    for entry in LIVE_ENROLLED_STRATEGIES
+}
 CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS = {
     entry["hyperliquid_instrument_id"]
     for entry in CORE_PROD_STRATEGIES
@@ -258,8 +351,8 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
-    assert config["api"]["equities_required_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
+    assert config["api"]["equities_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
+    assert config["api"]["equities_required_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
 
 
 def test_equities_live_config_decommissions_hyundai() -> None:
@@ -352,17 +445,9 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     assert "[strategy]" not in live_config
     assert "[[strategy_contracts]]" in live_config
     assert 'exchange = "hyperliquid"' in live_config
+    assert 'exchange = "binance_perp"' in live_config
     assert 'exchange = "ibkr"' in live_config
-    assert contracts == {
-        *{
-            ("hyperliquid", instrument_id)
-            for instrument_id in CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS
-        },
-        *{
-            ("ibkr", instrument_id)
-            for instrument_id in CORE_PROD_IBKR_INSTRUMENT_IDS
-        },
-    }
+    assert contracts == LIVE_ENROLLED_MAKER_CONTRACTS | LIVE_ENROLLED_REFERENCE_CONTRACTS
 
 
 def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_ids() -> None:
@@ -473,6 +558,8 @@ def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() ->
         (entry["exchange"], entry["instrument_id"])
         for entry in shared_config["contracts"]
     }
+    assert LIVE_ENROLLED_MAKER_CONTRACTS <= shared_contracts
+    assert LIVE_ENROLLED_REFERENCE_CONTRACTS <= shared_contracts
     for entry in CORE_PROD_STRATEGIES:
         active_config = _load_toml(
             repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
@@ -493,6 +580,9 @@ def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_i
     aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_maker")
 
     assert aapl["portfolio_asset_id"] == "AAPL"
+    assert aapl["maker_venue"] == "HYPERLIQUID"
+    assert aapl["maker_symbol"] == "AAPL"
+    assert aapl["market_type"] == "perp"
     assert aapl["maker_instrument_id"] == "xyz:AAPL-USD-PERP.HYPERLIQUID"
     assert aapl["reference_instrument_id"] == "AAPL.NASDAQ"
     assert aapl["execution_account_scope_id"] == "hyperliquid.xyz.main"
@@ -503,11 +593,20 @@ def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_i
 def test_equities_live_config_declares_shared_account_scopes() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     scopes = {row["scope_id"]: row for row in config["account_scopes"]}
+    binance = scopes["binance.futures.main"]
     reference_gateway = scopes["ibkr.reference.main"]["dockerized_gateway"]
     hedge_gateway = scopes["ibkr.hedge.main"]["dockerized_gateway"]
 
     assert scopes["hyperliquid.xyz.main"]["provider"] == "hyperliquid"
     assert scopes["hyperliquid.xyz.main"]["venue"] == "HYPERLIQUID"
+    assert binance["provider"] == "binance"
+    assert binance["venue"] == "BINANCE_PERP"
+    assert binance["api_key_env"] == "EQUITIES_BINANCE_API_KEY"
+    assert binance["api_secret_env"] == "EQUITIES_BINANCE_API_SECRET"
+    assert binance["account_type"] == "USDT_FUTURES"
+    assert binance["private_api_family"] == "PORTFOLIO_MARGIN"
+    assert binance["base_url_http"] == "https://papi.binance.com"
+    assert binance["recv_window_ms"] == 5000
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
@@ -550,33 +649,73 @@ def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset(
     )
     assert [row["portfolio_asset_id"] for row in contracts].count("AAPL") == 2
 
+    amzn_contracts = [
+        row for row in contracts if row["portfolio_asset_id"] == "AMZN"
+    ]
+    assert sorted(row["strategy_id"] for row in amzn_contracts) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+        "amzn_tradexyz_maker",
+        "amzn_tradexyz_taker",
+    ]
+    assert {row["maker_venue"] for row in amzn_contracts} == {"BINANCE_PERP", "HYPERLIQUID"}
+    assert sorted(
+        strategy_id
+        for strategy_id in strategy_ids
+        if strategy_id.startswith("amzn_")
+    ) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+        "amzn_tradexyz_maker",
+        "amzn_tradexyz_taker",
+    ]
+    assert sorted(
+        strategy_id
+        for strategy_id in required_strategy_ids
+        if strategy_id.startswith("amzn_")
+    ) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+        "amzn_tradexyz_maker",
+        "amzn_tradexyz_taker",
+    ]
+    assert [row["portfolio_asset_id"] for row in contracts].count("AMZN") == 4
 
-def test_equities_live_config_strategy_contracts_cover_core_prod_routes_only() -> None:
+
+def test_equities_live_config_strategy_contracts_cover_live_enrolled_split_routes() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     rows = config["strategy_contracts"]
     strategy_ids = [entry["strategy_id"] for entry in rows]
 
-    assert len(rows) == len(CORE_PROD_STRATEGIES)
+    assert len(rows) == len(LIVE_ENROLLED_STRATEGIES)
     assert len(strategy_ids) == len(set(strategy_ids))
     assert {entry["portfolio_asset_id"] for entry in rows} == {
         route["symbol"] for route in CORE_PROD_SYMBOL_ROUTES
+    } | {
+        route["symbol"] for route in BINANCE_PERP_SYMBOL_ROUTES
     }
 
     contracts = {
         entry["strategy_id"]: (
             entry["portfolio_asset_id"],
+            entry["maker_venue"],
+            entry["maker_symbol"],
+            entry["market_type"],
             entry["maker_instrument_id"],
             entry["reference_instrument_id"],
         )
         for entry in rows
     }
 
-    assert set(contracts) == set(CORE_PROD_STRATEGY_IDS)
-    for entry in CORE_PROD_STRATEGIES:
+    assert set(contracts) == set(LIVE_ENROLLED_STRATEGY_IDS)
+    for entry in LIVE_ENROLLED_STRATEGIES:
         assert contracts[entry["strategy_id"]] == (
             entry["symbol"],
-            entry["hyperliquid_instrument_id"],
-            entry["ibkr_instrument_id"],
+            entry["maker_venue"],
+            entry["maker_symbol"],
+            entry["market_type"],
+            entry["maker_instrument_id"],
+            entry["reference_instrument_id"],
         )
 
 
