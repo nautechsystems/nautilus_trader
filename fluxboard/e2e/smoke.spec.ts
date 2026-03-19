@@ -35,7 +35,7 @@ async function readRealtimeFlags(page: Page) {
 }
 
 test.describe('flux Smoke Tests', () => {
-  test('realtime rollout flags can be enabled, kill-switched, and rolled back without breaking dashboard boot', async ({ page }) => {
+  test('frontend realtime rollout flags can be enabled, locally kill-switched, and rolled back without breaking dashboard boot', async ({ page }) => {
     await page.goto('http://localhost:5000/');
     await expect(page.locator('.dashboard-panel')).toBeVisible();
 

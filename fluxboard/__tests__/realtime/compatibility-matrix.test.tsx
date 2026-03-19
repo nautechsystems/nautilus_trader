@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { STANDARD_CONTRACT_VERSION, RealtimeSurfaceState } from '@/lib/realtime/types';
 
+// Task 5 validates the deterministic compatibility matrix contract for mixed rollout states.
+// This suite models the expected decision table against current flag semantics and contract
+// identifiers; it does not replace later runtime/surface-specific withdrawal handling tests.
+
 type SurfaceMode = 'legacy' | 'standard' | RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
 type RecoveryReason =
   | 'backend_kill_switch'
@@ -254,7 +258,7 @@ async function exerciseCompatibilityMatrix(): Promise<CompatibilityMatrix> {
   return Object.fromEntries(entries);
 }
 
-describe('realtime compatibility matrix', () => {
+describe('realtime compatibility matrix contract', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.resetModules();
@@ -265,7 +269,7 @@ describe('realtime compatibility matrix', () => {
     vi.resetModules();
   });
 
-  it('keeps old clients and flag-off rollout states on legacy paths', async () => {
+  it('keeps old clients and flag-off rollout states on legacy paths in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['old-fe:old-be']).toMatchObject({
@@ -285,7 +289,7 @@ describe('realtime compatibility matrix', () => {
     });
   });
 
-  it('routes only flagged surfaces to the standard contract with invalidate-only polling capabilities', async () => {
+  it('routes only flagged surfaces to the standard contract with invalidate-only polling capabilities in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['new-fe-flag-on:new-be']).toMatchObject({
@@ -303,7 +307,7 @@ describe('realtime compatibility matrix', () => {
     });
   });
 
-  it('fails closed on unsupported contracts and backend gating while leaving legacy clients healthy', async () => {
+  it('resolves unsupported contracts and backend gating explicitly in the matrix while leaving legacy clients healthy', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['new-fe-flag-on:old-be']).toMatchObject({
@@ -334,7 +338,7 @@ describe('realtime compatibility matrix', () => {
     });
   });
 
-  it('surfaces active withdrawal and trade-gap recovery with deterministic reasons', async () => {
+  it('models active withdrawal and trade-gap recovery with deterministic reasons in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['capability-withdrawn:new-be']).toMatchObject({
@@ -351,7 +355,7 @@ describe('realtime compatibility matrix', () => {
     });
   });
 
-  it('rolls back to legacy without leaving partial standard subscriptions behind', async () => {
+  it('rolls back to legacy without leaving partial standard subscriptions behind in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['rollback-new-be-to-legacy']).toMatchObject({

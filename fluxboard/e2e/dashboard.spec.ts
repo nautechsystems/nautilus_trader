@@ -39,7 +39,7 @@ test.describe('Dashboard Panel Interactions', () => {
     await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
   });
 
-  test('dashboard panels stay interactive across rollout flag toggles and rollback', async ({ page }) => {
+  test('dashboard panels stay interactive across frontend rollout flag toggles and rollback', async ({ page }) => {
     await setRealtimeFlags(page, { global: true, signal: true, killSwitch: false });
     await page.reload();
     await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
