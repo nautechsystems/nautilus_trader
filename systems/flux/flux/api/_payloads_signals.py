@@ -1071,7 +1071,34 @@ def _derive_quote_snapshot(
     return quote_snapshot
 
 
-def _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+def _quote_snapshot_raw_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(quote_snapshot, Mapping):
+        return None
+    maker_bid = _first_valid_float(
+        quote_snapshot.get("maker_top_bid"),
+        quote_snapshot.get("bid"),
+    )
+    maker_ask = _first_valid_float(
+        quote_snapshot.get("maker_top_ask"),
+        quote_snapshot.get("ask"),
+    )
+    ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    if (
+        maker_bid is None
+        or maker_ask is None
+        or ref_bid is None
+        or ref_ask is None
+    ):
+        return None
+    ref_mid = (ref_bid + ref_ask) / 2.0
+    if not ref_mid:
+        return None
+    market_mid = (maker_bid + maker_ask) / 2.0
+    return ((market_mid - ref_mid) / ref_mid) * 10_000.0
+
+
+def _quote_snapshot_quoted_mid_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
     if not isinstance(quote_snapshot, Mapping):
         return None
     place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
@@ -1297,13 +1324,14 @@ def build_signals_payload_impl(
     )
 
     if strategy_family == "maker_v3":
-        quote_spread_bps = _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot)
-        if quote_spread_bps is not None:
-            spread_net_bps = quote_spread_bps
-            if explicit_decision_edge_bps is None:
-                decision_edge_bps = quote_spread_bps
-                if explicit_edge2_bps is None and required_edge_bps is not None:
-                    edge2_bps = decision_edge_bps - required_edge_bps
+        raw_spread_bps = _quote_snapshot_raw_market_vs_ref_mid_bps(quote_snapshot)
+        if raw_spread_bps is not None:
+            spread_net_bps = raw_spread_bps
+        quote_spread_bps = _quote_snapshot_quoted_mid_vs_ref_mid_bps(quote_snapshot)
+        if quote_spread_bps is not None and explicit_decision_edge_bps is None:
+            decision_edge_bps = quote_spread_bps
+            if explicit_edge2_bps is None and required_edge_bps is not None:
+                edge2_bps = decision_edge_bps - required_edge_bps
 
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = (

@@ -79,7 +79,7 @@ describe('SignalTable audit coverage', () => {
     initSignalState({ rows: [] });
   });
 
-  it('renders maker spread from the quote snapshot used by the operator-facing Our/Ref rows', async () => {
+  it('renders maker spread from raw market mid versus reference mid', async () => {
     const strategy: SignalStrategy = {
       id: 'spread_strategy',
       params: { bot_on: '1', cex_bid_edge: '5', cex_ask_edge: '5', pool_edge: '2' } as any,
@@ -137,8 +137,8 @@ describe('SignalTable audit coverage', () => {
     await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
 
     const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
-    expect(spreadCell?.textContent).toContain('-288.5 bps');
-    expect(spreadCell?.textContent).not.toContain('0.0 bps');
+    expect(spreadCell?.textContent).toContain('0.0 bps');
+    expect(spreadCell?.textContent).not.toContain('-288.5 bps');
   });
 
   it('builds balance methodology text from payload data instead of a hardcoded 10x rule', () => {

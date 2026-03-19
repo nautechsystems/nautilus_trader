@@ -192,7 +192,7 @@ def test_build_signals_payload_exposes_canonical_signed_skew_from_strategy_state
     assert adjustment["inv_skew"] == -3.86
 
 
-def test_build_signals_payload_keeps_spread_contract_aligned_with_makerv3_quote_snapshot(
+def test_build_signals_payload_keeps_raw_spread_and_quoted_decision_edge_separate_for_makerv3(
     contract_catalog,
 ) -> None:
     metadata = StrategyMetadata(
@@ -246,14 +246,15 @@ def test_build_signals_payload_keeps_spread_contract_aligned_with_makerv3_quote_
     )
 
     quote_snapshot = payload["maker_v3"]["quote_snapshot"]
-    expected_spread_bps = ((101.0 - 104.0) / 104.0) * 10_000
+    expected_raw_spread_bps = 0.0
+    expected_quoted_decision_bps = ((101.0 - 104.0) / 104.0) * 10_000
 
     assert quote_snapshot["place_bid"] == 100.0
     assert quote_snapshot["place_ask"] == 102.0
     assert quote_snapshot["ref_bid"] == 103.0
     assert quote_snapshot["ref_ask"] == 105.0
-    assert payload["spread_net_bps"] == pytest.approx(expected_spread_bps, abs=0.1)
-    assert payload["decision_edge_bps"] == pytest.approx(expected_spread_bps, abs=0.1)
+    assert payload["spread_net_bps"] == pytest.approx(expected_raw_spread_bps, abs=0.1)
+    assert payload["decision_edge_bps"] == pytest.approx(expected_quoted_decision_bps, abs=0.1)
 
 
 def test_build_signals_payload_preserves_explicit_makerv3_quote_snapshot_epoch(

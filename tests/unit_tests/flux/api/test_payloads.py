@@ -1327,7 +1327,7 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["balances_ok"] is True
     assert payload["risk_delta"] == 12.5
     assert payload["decision_edge_bps"] == 0.0
-    assert payload["spread_net_bps"] == 0.0
+    assert payload["spread_net_bps"] == pytest.approx(100.50251256281408)
     assert payload["required_edge_bps"] == 7.0
     assert payload["edge2_bps"] == -7.0
     assert payload["spread_net_best_case"] == "case2"
