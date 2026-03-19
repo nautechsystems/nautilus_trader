@@ -145,7 +145,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     markPrice: str
     unRealizedProfit: str
     liquidationPrice: str
-    isolatedMargin: str
+    isolatedMargin: str | None = None
     updateTime: int
 
     # v2 fields (may not be present in v3)

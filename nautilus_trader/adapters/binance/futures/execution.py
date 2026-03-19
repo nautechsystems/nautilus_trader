@@ -146,6 +146,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._futures_user_ws_handlers = {
             BinanceFuturesEventType.ACCOUNT_UPDATE: self._handle_account_update,
             BinanceFuturesEventType.ORDER_TRADE_UPDATE: self._handle_order_trade_update,
+            BinanceFuturesEventType.OUTBOUND_ACCOUNT_POSITION: self._handle_spot_style_account_update,
+            BinanceFuturesEventType.BALANCE_UPDATE: self._handle_spot_style_balance_update,
             BinanceFuturesEventType.MARGIN_CALL: self._handle_margin_call,
             BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE: self._handle_account_config_update,
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
@@ -663,6 +665,12 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         order_update = self._decoder_futures_order_update.decode(raw)
         if not (self._use_trade_lite and order_update.o.x == BinanceExecutionType.TRADE):
             order_update.o.handle_order_trade_update(self)
+
+    def _handle_spot_style_account_update(self, raw: bytes) -> None:
+        self.create_task(self._update_account_state())
+
+    def _handle_spot_style_balance_update(self, raw: bytes) -> None:
+        self.create_task(self._update_account_state())
 
     def _handle_margin_call(self, raw: bytes) -> None:
         self._log.warning("MARGIN CALL received")  # Implement

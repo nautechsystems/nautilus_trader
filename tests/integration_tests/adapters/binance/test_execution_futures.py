@@ -1,6 +1,7 @@
 import asyncio
 import json
 from decimal import Decimal
+import pkgutil
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -15,8 +16,11 @@ from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExe
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAlgoOrder
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -249,6 +253,82 @@ def test_portfolio_margin_account_info_decodes_without_fee_tier_metadata():
     assert decoded.assets[0].walletBalance == "1000.0"
 
 
+def test_portfolio_margin_order_update_decodes_without_working_type():
+    raw = pkgutil.get_data(
+        package="tests.integration_tests.adapters.binance.resources.ws_messages",
+        resource="ws_futures_order_update_new_price_match.json",
+    )
+    payload = json.loads(raw)
+    del payload["data"]["o"]["wt"]
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesOrderUpdateWrapper,
+    )
+
+    assert decoded.data.o.wt is None
+
+
+def test_portfolio_margin_account_update_decodes_without_margin_type():
+    payload = {
+        "stream": "ACCOUNT_UPDATE",
+        "data": {
+            "e": "ACCOUNT_UPDATE",
+            "E": 1759347763200,
+            "T": 1759347763200,
+            "a": {
+                "m": "ORDER",
+                "B": [
+                    {
+                        "a": "USDT",
+                        "wb": "1000.0",
+                        "cw": "1000.0",
+                        "bc": "0.0",
+                    },
+                ],
+                "P": [
+                    {
+                        "s": "ETHUSDT",
+                        "pa": "0",
+                        "ep": "0.0",
+                        "cr": "0.0",
+                        "up": "0.0",
+                        "iw": "0.0",
+                        "ps": "BOTH",
+                    },
+                ],
+            },
+        },
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountUpdateWrapper,
+    )
+
+    assert decoded.data.a.P[0].mt is None
+
+
+def test_portfolio_margin_position_risk_decodes_without_isolated_margin():
+    payload = {
+        "symbol": "INTCUSDT",
+        "positionSide": "BOTH",
+        "positionAmt": "0",
+        "entryPrice": "0.0",
+        "markPrice": "44.12",
+        "unRealizedProfit": "0.0",
+        "liquidationPrice": "0.0",
+        "updateTime": 1759347763200,
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesPositionRisk,
+    )
+
+    assert decoded.isolatedMargin is None
+
+
 class TestBinanceFuturesExecutionClient:
     @pytest.fixture(autouse=True)
     def setup(self, request):
@@ -335,6 +415,25 @@ class TestBinanceFuturesExecutionClient:
         )
 
         return
+
+    def test_portfolio_margin_spot_style_outbound_account_position_refreshes_full_state(
+        self,
+        mocker,
+    ):
+        create_task = mocker.patch.object(self.exec_client, "create_task")
+        generate_account_state = mocker.patch.object(self.exec_client, "generate_account_state")
+        raw = (
+            b'{"e":"outboundAccountPosition","E":1564034571105,"u":1564034571073,'
+            b'"B":[{"a":"USDT","f":"5000.00000000","l":"0.00000000"}]}'
+        )
+
+        self.exec_client._handle_user_ws_message(raw)
+
+        create_task.assert_called_once()
+        scheduled_coro = create_task.call_args.args[0]
+        assert scheduled_coro.cr_code.co_name == self.exec_client._update_account_state.__name__
+        scheduled_coro.close()
+        generate_account_state.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
