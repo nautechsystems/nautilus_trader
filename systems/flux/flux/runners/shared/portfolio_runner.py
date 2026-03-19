@@ -12,6 +12,7 @@ from flux.common.account_projection import build_profile_account_snapshot
 from flux.common.account_projection import encode_profile_account_snapshot
 from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
+from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import aggregate_components
 from flux.common.portfolio_inventory import decode_component
 from flux.common.portfolio_inventory import encode_portfolio_inventory
@@ -297,17 +298,39 @@ class StrategySetPortfolioAggregator:
                 ),
             ),
         )
+        strategy_ids_by_asset = getattr(self, "_strategy_ids_by_asset", {})
+        primary_strategy_id_by_asset = getattr(self, "_primary_strategy_id_by_asset", {})
+        non_primary_shared_asset_strategy_ids = {
+            strategy_id
+            for asset_id, strategy_ids in strategy_ids_by_asset.items()
+            for strategy_id in strategy_ids
+            if len(strategy_ids) > 1
+            and primary_strategy_id_by_asset.get(asset_id.upper()) not in (None, strategy_id)
+        }
+        if non_primary_shared_asset_strategy_ids:
+            balance_rows_by_strategy = {
+                strategy_id: (
+                    []
+                    if strategy_id in non_primary_shared_asset_strategy_ids
+                    else rows
+                )
+                for strategy_id, rows in balance_rows_by_strategy.items()
+            }
         merged_balance_rows = build_portfolio_balance_rows(
             portfolio_id=self._portfolio_id,
             balance_rows_by_strategy=balance_rows_by_strategy,
         )
         inventory_by_asset: dict[str, dict[str, Any]] = {}
-        strategy_ids_by_asset = getattr(self, "_strategy_ids_by_asset", {})
         for base_currency in self._base_assets:
+            asset_id = base_currency.upper()
             asset_strategy_ids = list(
-                strategy_ids_by_asset.get(base_currency.upper(), tuple(self._strategy_ids)),
+                strategy_ids_by_asset.get(asset_id, tuple(self._strategy_ids)),
             )
-            required_strategy_ids = self._required_strategy_ids.intersection(asset_strategy_ids)
+            primary_strategy_id = primary_strategy_id_by_asset.get(asset_id)
+            if primary_strategy_id in asset_strategy_ids:
+                required_strategy_ids = self._required_strategy_ids.intersection({primary_strategy_id})
+            else:
+                required_strategy_ids = self._required_strategy_ids.intersection(asset_strategy_ids)
             pipeline = self._redis.pipeline(transaction=False)
             for strategy_id in asset_strategy_ids:
                 pipeline.get(self._component_key(strategy_id=strategy_id, base_currency=base_currency))
@@ -316,6 +339,29 @@ class StrategySetPortfolioAggregator:
                 strategy_id: decode_component(raw)
                 for strategy_id, raw in zip(asset_strategy_ids, raw_components, strict=True)
             }
+            if primary_strategy_id in asset_strategy_ids:
+                components = {
+                    strategy_id: (
+                        component
+                        if strategy_id == primary_strategy_id or component is None
+                        else StrategyInventoryComponent(
+                            strategy_id=component.strategy_id,
+                            portfolio_id=component.portfolio_id,
+                            base_currency=component.base_currency,
+                            local_qty_base=None,
+                            ts_ms=component.ts_ms,
+                            local_position_qty_venue=None,
+                            local_position_qty_base=None,
+                            local_spot_qty=None,
+                            qty_conversion_status=None,
+                            qty_conversion_source=None,
+                            stale_after_ms=component.stale_after_ms,
+                            maker_instrument_id=component.maker_instrument_id,
+                            state=component.state,
+                        )
+                    )
+                    for strategy_id, component in components.items()
+                }
             payload = aggregate_components(
                 portfolio_id=self._portfolio_id,
                 base_currency=base_currency,

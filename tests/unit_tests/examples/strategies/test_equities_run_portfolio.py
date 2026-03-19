@@ -920,6 +920,108 @@ def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_
     assert snapshot["balances"]["rows"][0]["strategy_id"] == "equities"
 
 
+def test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_components_and_positions() -> None:
+    now_ms_value = int(time.time() * 1000)
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="aapl_tradexyz_maker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="aapl_tradexyz_maker",
+                    portfolio_id="equities",
+                    base_currency="AAPL",
+                    local_qty_base=10,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="aapl_tradexyz_taker",
+                portfolio_id="equities",
+                base_currency="AAPL",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="aapl_tradexyz_taker",
+                    portfolio_id="equities",
+                    base_currency="AAPL",
+                    local_qty_base=None,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+            FluxRedisKeys(strategy_id="aapl_tradexyz_maker").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "aapl_tradexyz_maker",
+                        "exchange": "hyperliquid",
+                        "account": "trading",
+                        "asset": "AAPL",
+                        "kind": "position",
+                        "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                        "signed_qty": "10",
+                        "quantity": "10",
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+            FluxRedisKeys(strategy_id="aapl_tradexyz_taker").balances_snapshot(): json.dumps(
+                [
+                    {
+                        "strategy_id": "aapl_tradexyz_taker",
+                        "exchange": "hyperliquid",
+                        "account": "trading",
+                        "asset": "AAPL",
+                        "kind": "position",
+                        "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                        "signed_qty": "10",
+                        "quantity": "10",
+                        "ts_ms": now_ms_value,
+                    },
+                ],
+            ).encode(),
+        },
+    )
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["AAPL"]
+    aggregator._strategy_ids_by_asset = {
+        "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
+    }
+    aggregator._primary_strategy_id_by_asset = {"AAPL": "aapl_tradexyz_maker"}
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = []
+    aggregator._profile_account_bindings = ()
+
+    aggregator.recompute_once()
+
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert raw_snapshot is not None
+    snapshot = json.loads(raw_snapshot)
+
+    assert snapshot["inventory_by_asset"]["AAPL"]["global_qty_base"] == "10.000000"
+    assert snapshot["inventory_by_asset"]["AAPL"]["degraded"] is False
+    position_rows = [
+        row
+        for row in snapshot["balances"]["rows"]
+        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
+    ]
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "equities"
+    assert position_rows[0]["signed_qty"] == "10"
+
+
 def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positions_and_totals() -> None:
     now_ms_value = int(time.time() * 1000)
     provider = _CountingAccountProjectionProvider(

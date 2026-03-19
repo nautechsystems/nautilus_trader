@@ -1036,6 +1036,9 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "/equities" in contract
     assert "/api/v1/signals?profile=equities" in contract
     assert "/api/v1/params?profile=equities" in contract
+    assert "/api/v1/param-schema?profile=equities&strategy=aapl_tradexyz_maker" in contract
+    assert "/api/v1/params?profile=equities&strategy=aapl_tradexyz_maker" in contract
     assert "trade[XYZ]" in contract
     assert "AAPL.NASDAQ" in contract
-    assert "MakerV4" in contract
+    assert "aapl_tradexyz_maker" in contract
+    assert "aapl_tradexyz_taker" in contract

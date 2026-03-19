@@ -63,4 +63,42 @@ def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[Strate
     return tuple(decoded)
 
 
-__all__ = ("StrategyContractEntry", "decode_strategy_contracts")
+def _shared_asset_primary_rank(strategy_id: str) -> int:
+    normalized = strategy_id.strip().lower()
+    if normalized.endswith("_maker") or normalized.endswith("_makerv4") or normalized.endswith("_makerv3"):
+        return 0
+    if normalized.endswith("_taker"):
+        return 1
+    return 2
+
+
+def shared_asset_primary_strategy_ids(
+    contracts: Iterable[StrategyContractEntry],
+    *,
+    strategy_ids: Iterable[str] | None = None,
+) -> dict[str, str]:
+    allowlist = {str(strategy_id).strip() for strategy_id in strategy_ids or () if str(strategy_id).strip()}
+    use_allowlist = strategy_ids is not None
+    grouped: dict[str, list[tuple[int, StrategyContractEntry]]] = {}
+    for index, contract in enumerate(contracts):
+        if use_allowlist and contract.strategy_id not in allowlist:
+            continue
+        grouped.setdefault(contract.portfolio_asset_id.upper(), []).append((index, contract))
+    return {
+        asset_id: min(
+            entries,
+            key=lambda item: (
+                _shared_asset_primary_rank(item[1].strategy_id),
+                item[0],
+                item[1].strategy_id,
+            ),
+        )[1].strategy_id
+        for asset_id, entries in grouped.items()
+    }
+
+
+__all__ = (
+    "StrategyContractEntry",
+    "decode_strategy_contracts",
+    "shared_asset_primary_strategy_ids",
+)

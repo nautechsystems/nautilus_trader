@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.common.strategy_contracts import shared_asset_primary_strategy_ids
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
@@ -82,6 +83,17 @@ def _strategy_ids_by_asset(config: dict[str, Any], *, allowlist: list[str]) -> d
     }
 
 
+def _primary_strategy_ids_by_asset(
+    config: dict[str, Any],
+    *,
+    allowlist: list[str],
+) -> dict[str, str]:
+    return shared_asset_primary_strategy_ids(
+        decode_strategy_contracts(config.get("strategy_contracts") or []),
+        strategy_ids=allowlist,
+    )
+
+
 class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
     def __init__(self, *, config: dict[str, Any], mode: str, logger: logging.Logger) -> None:
         super().__init__(
@@ -96,6 +108,10 @@ class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
             for binding in self._profile_account_bindings
         ]
         self._strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=self._strategy_ids)
+        self._primary_strategy_id_by_asset = _primary_strategy_ids_by_asset(
+            config,
+            allowlist=self._strategy_ids,
+        )
 
 
 def main() -> None:

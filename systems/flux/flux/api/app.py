@@ -1762,6 +1762,17 @@ def create_flux_api_app(  # noqa: C901
             return default_strategy_id
         return None
 
+    def _profile_param_sets(profile: str) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in _strategy_ids_for_profile(profile):
+            param_set = decode_text(store.params_contract(strategy_id).param_set).strip()
+            if not param_set or param_set in seen:
+                continue
+            seen.add(param_set)
+            out.append(param_set)
+        return out
+
     def _default_strategy_for_unscoped_request() -> str:
         if default_unscoped_descriptor is None:
             return default_strategy_id
@@ -1770,7 +1781,11 @@ def create_flux_api_app(  # noqa: C901
             return strategy_ids[0]
         return default_strategy_id
 
-    def _resolve_strategy_id_for_request(*, field_name: str = "strategy") -> str:
+    def _resolve_strategy_id_for_request(
+        *,
+        field_name: str = "strategy",
+        require_unambiguous_profile: bool = False,
+    ) -> str:
         strategy_raw = request.args.get("strategy")
         strategy_text = decode_text(strategy_raw).strip()
         if strategy_text:
@@ -1778,6 +1793,22 @@ def create_flux_api_app(  # noqa: C901
 
         profile_text = decode_text(request.args.get("profile")).strip()
         if profile_text:
+            if require_unambiguous_profile:
+                profile_param_sets = _profile_param_sets(profile_text)
+                if len(profile_param_sets) > 1:
+                    raise ApiEnvelopeError(
+                        status=400,
+                        code="ambiguous_strategy_target",
+                        message=(
+                            "Profile-scoped params requests require an explicit `strategy` "
+                            "when the profile spans multiple param sets."
+                        ),
+                        details={
+                            "profile": profile_text,
+                            "strategy_ids": _strategy_ids_for_profile(profile_text),
+                            "param_sets": profile_param_sets,
+                        },
+                    )
             resolved_strategy = _strategy_for_profile(profile_text)
             if resolved_strategy:
                 return _resolve_strategy_id(resolved_strategy, field_name=field_name, explicit=False)
@@ -1931,7 +1962,10 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/param-schema")
     def api_param_schema() -> Response:
-        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(
+            field_name="strategy",
+            require_unambiguous_profile=True,
+        )
         contract = store.params_contract(strategy_id)
         return _ok(
             data={
@@ -2138,7 +2172,10 @@ def create_flux_api_app(  # noqa: C901
                 errors=errors,
             )
         else:
-            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            strategy_id = _resolve_strategy_id_for_request(
+                field_name="strategy",
+                require_unambiguous_profile=True,
+            )
             updates = _params_request_payload()
             if not updates:
                 return _error(

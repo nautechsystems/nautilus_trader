@@ -4838,6 +4838,33 @@ def test_param_schema_endpoint_uses_strategy_specific_contract_for_equities_fami
     assert "n_orders1" not in body["data"]["params"]
 
 
+def test_param_schema_endpoint_rejects_profile_scoped_mixed_family_equities_request_without_strategy(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/param-schema", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error"]["code"] == "ambiguous_strategy_target"
+
+
 def test_params_endpoint_loads_mixed_family_rows_with_strategy_specific_schema(
     flux_config,
     redis_client,
@@ -4938,6 +4965,37 @@ def test_bulk_params_update_validates_mixed_family_updates_per_strategy_contract
     ]
     assert body["data"]["success"][0]["updated"] == ["n_orders1"]
     assert body["data"]["success"][1]["updated"] == ["bid_edge_take_bps"]
+
+
+def test_single_params_update_rejects_profile_scoped_mixed_family_equities_request_without_strategy(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/params",
+            query_string={"profile": "equities"},
+            json={"params": {"qty": 2}},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error"]["code"] == "ambiguous_strategy_target"
 
 
 def test_strategy_parameters_endpoint_uses_selected_strategy_family_contract(
