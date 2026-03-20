@@ -647,6 +647,53 @@ cdef class SubscribeQuoteTicks(SubscribeData):
             correlation_id=self.id,
         )
 
+    @staticmethod
+    def create_batch(
+        list instrument_ids,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> list:
+        """
+        Create a batch of SubscribeQuoteTicks commands from a list of instrument IDs.
+
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instrument IDs for the subscriptions.
+        client_id : ClientId or ``None``
+            The data client ID for the commands.
+        venue : Venue or ``None``
+            The venue for the commands.
+        ts_init : uint64_t
+            UNIX timestamp (nanoseconds) when the objects were initialized.
+        params : dict[str, object], optional
+            Additional parameters for the subscriptions.
+
+        Returns
+        -------
+        list[SubscribeQuoteTicks]
+
+        Raises
+        ------
+        ValueError
+            If `instrument_ids` is empty.
+
+        """
+        Condition.not_empty(instrument_ids, "instrument_ids")
+
+        cdef list commands = []
+        for instrument_id in instrument_ids:
+            commands.append(SubscribeQuoteTicks(
+                instrument_id=instrument_id,
+                client_id=client_id,
+                venue=venue,
+                command_id=UUID4(),
+                ts_init=ts_init,
+                params=params.copy() if params else None,
+            ))
+        return commands
 
 cdef class SubscribeTradeTicks(SubscribeData):
     """
@@ -754,6 +801,53 @@ cdef class SubscribeTradeTicks(SubscribeData):
             correlation_id=self.id,
         )
 
+    @staticmethod
+    def create_batch(
+        list instrument_ids,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> list:
+        """
+        Create a batch of SubscribeTradeTicks commands from a list of instrument IDs.
+
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instrument IDs for the subscriptions.
+        client_id : ClientId or ``None``
+            The data client ID for the commands.
+        venue : Venue or ``None``
+            The venue for the commands.
+        ts_init : uint64_t
+            UNIX timestamp (nanoseconds) when the objects were initialized.
+        params : dict[str, object], optional
+            Additional parameters for the subscriptions.
+
+        Returns
+        -------
+        list[SubscribeTradeTicks]
+
+        Raises
+        ------
+        ValueError
+            If `instrument_ids` is empty.
+
+        """
+        Condition.not_empty(instrument_ids, "instrument_ids")
+
+        cdef list commands = []
+        for instrument_id in instrument_ids:
+            commands.append(SubscribeTradeTicks(
+                instrument_id=instrument_id,
+                client_id=client_id,
+                venue=venue,
+                command_id=UUID4(),
+                ts_init=ts_init,
+                params=params.copy() if params else None,
+            ))
+        return commands
 
 cdef class SubscribeMarkPrices(SubscribeData):
     """
@@ -1060,6 +1154,53 @@ cdef class SubscribeBars(SubscribeData):
             correlation_id=self.id,
         )
 
+    @staticmethod
+    def create_batch(
+        list bar_types,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
+    ) -> list:
+        """
+        Create a batch of SubscribeBars commands from a list of bar types.
+
+        Parameters
+        ----------
+        bar_types : list[BarType]
+            The bar types for the subscriptions.
+        client_id : ClientId or ``None``
+            The data client ID for the commands.
+        venue : Venue or ``None``
+            The venue for the commands.
+        ts_init : uint64_t
+            UNIX timestamp (nanoseconds) when the objects were initialized.
+        params : dict[str, object], optional
+            Additional parameters for the subscriptions.
+
+        Returns
+        -------
+        list[SubscribeBars]
+
+        Raises
+        ------
+        ValueError
+            If `bar_types` is empty.
+
+        """
+        Condition.not_empty(bar_types, "bar_types")
+
+        cdef list commands = []
+        for bar_type in bar_types:
+            commands.append(SubscribeBars(
+                bar_type=bar_type,
+                client_id=client_id,
+                venue=venue,
+                command_id=UUID4(),
+                ts_init=ts_init,
+                params=params.copy() if params else None,
+            ))
+        return commands
 
 cdef class SubscribeInstrumentStatus(SubscribeData):
     """
