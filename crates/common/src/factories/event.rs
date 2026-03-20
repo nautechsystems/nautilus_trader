@@ -20,8 +20,8 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected,
-        OrderSubmitted, OrderTriggered, OrderUpdated,
+        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{AccountId, PositionId, TradeId, TraderId, VenueOrderId},
     orders::{Order, OrderAny},
@@ -132,6 +132,56 @@ impl OrderEventFactory {
             ts_init,
         );
         OrderEventAny::Submitted(event)
+    }
+
+    /// Generates an order pending update event.
+    ///
+    /// The event timestamp `ts_event` is the same as the initialized timestamp `ts_init`.
+    #[must_use]
+    pub fn generate_order_pending_update(
+        &self,
+        order: &OrderAny,
+        reconciliation: bool,
+        ts_init: UnixNanos,
+    ) -> OrderEventAny {
+        let event = OrderPendingUpdate::new(
+            self.trader_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            self.account_id,
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            reconciliation,
+            order.venue_order_id(),
+        );
+        OrderEventAny::PendingUpdate(event)
+    }
+
+    /// Generates an order pending cancel event.
+    ///
+    /// The event timestamp `ts_event` is the same as the initialized timestamp `ts_init`.
+    #[must_use]
+    pub fn generate_order_pending_cancel(
+        &self,
+        order: &OrderAny,
+        reconciliation: bool,
+        ts_init: UnixNanos,
+    ) -> OrderEventAny {
+        let event = OrderPendingCancel::new(
+            self.trader_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            self.account_id,
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            reconciliation,
+            order.venue_order_id(),
+        );
+        OrderEventAny::PendingCancel(event)
     }
 
     /// Generates an order rejected event.

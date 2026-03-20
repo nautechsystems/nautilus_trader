@@ -140,6 +140,26 @@ impl ExecutionEventEmitter {
         self.send_order_event(event);
     }
 
+    /// Generates and emits an order pending cancel event.
+    ///
+    /// `reconciliation` indicates if the event was generated during reconciliation.
+    pub fn emit_order_pending_cancel(&self, order: &OrderAny, reconciliation: bool) {
+        let event =
+            self.factory
+                .generate_order_pending_cancel(order, reconciliation, self.ts_init());
+        self.send_order_event(event);
+    }
+
+    /// Generates and emits an order pending update event.
+    ///
+    /// `reconciliation` indicates if the event was generated during reconciliation.
+    pub fn emit_order_pending_update(&self, order: &OrderAny, reconciliation: bool) {
+        let event =
+            self.factory
+                .generate_order_pending_update(order, reconciliation, self.ts_init());
+        self.send_order_event(event);
+    }
+
     /// Generates and emits an order rejected event.
     pub fn emit_order_rejected(
         &self,
