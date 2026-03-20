@@ -32,6 +32,7 @@ from nautilus_trader.data.messages import UnsubscribeOptionChain
 from nautilus_trader.data.messages import UnsubscribeOptionGreeks
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OptionGreeks
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import ClientId
@@ -186,7 +187,7 @@ class TestOptionChainEngine:
 
     _UNSET = object()
 
-    def _subscribe_and_bootstrap(self, series_id, strike_range=_UNSET):
+    def _subscribe_and_bootstrap(self, series_id, strike_range=_UNSET, snapshot_interval_ms=None):
         """
         Subscribe to an option chain and complete the bootstrap by simulating an empty
         forward price response.
@@ -197,7 +198,7 @@ class TestOptionChainEngine:
         sub_cmd = SubscribeOptionChain(
             series_id=series_id,
             strike_range=strike_range,
-            snapshot_interval_ms=None,
+            snapshot_interval_ms=snapshot_interval_ms,
             client_id=self.client.id,
             venue=OPRA,
             command_id=UUID4(),
@@ -525,3 +526,58 @@ class TestOptionChainEngine:
 
         # Assert
         assert inst_id not in self.client.subscribed_option_greeks()
+
+    def test_snapshot_timer_tears_down_expired_series(self):
+        # Arrange: set clock close to expiry so advance doesn't generate billions of events
+        self.clock.set_time(EXPIRY_NS - 5_000_000_000)  # 5 seconds before expiry
+
+        series_key = str(self.series_id)
+        self._subscribe_and_bootstrap(self.series_id, snapshot_interval_ms=1000)
+
+        assert series_key in self.data_engine._option_chain_managers
+        assert series_key in self.data_engine._option_chain_timer_names
+
+        # Act: advance clock past expiration and fire the timer
+        events = self.clock.advance_time(EXPIRY_NS + 1_000_000_000)
+        for event in events:
+            event.handle()
+
+        # Assert: manager, timer, and instrument index all cleaned up
+        assert series_key not in self.data_engine._option_chain_managers
+        assert series_key not in self.data_engine._option_chain_timer_names
+        for sk in self.data_engine._option_chain_instrument_index.values():
+            assert sk != series_key
+
+    def test_snapshot_timer_publishes_slice_to_bus(self):
+        # Arrange: subscribe with snapshot interval
+        series_key = str(self.series_id)
+        self._subscribe_and_bootstrap(self.series_id, snapshot_interval_ms=1000)
+
+        # Feed greeks with underlying_price to trigger ATM bootstrap
+        greeks = _make_greeks(self.aapl_call_150.id)
+        self.data_engine.process(greeks)
+
+        # Feed a quote tick so the aggregator has data for the snapshot
+        quote = QuoteTick(
+            self.aapl_call_150.id,
+            Price.from_str("5.00"),
+            Price.from_str("5.50"),
+            Quantity.from_int(10),
+            Quantity.from_int(10),
+            0,
+            0,
+        )
+        self.data_engine.process(quote)
+
+        # Subscribe to the option chain topic
+        received = []
+        topic = f"data.option_chain.{series_key}"
+        self.msgbus.subscribe(topic=topic, handler=received.append)
+
+        # Act: advance clock by 1 second to trigger the snapshot timer
+        events = self.clock.advance_time(1_000_000_000)
+        for event in events:
+            event.handle()
+
+        # Assert: snapshot was published to the bus
+        assert len(received) == 1

@@ -709,6 +709,14 @@ impl OptionChainManager {
 
     /// Takes the accumulated snapshot and publishes it to the msgbus.
     pub fn publish_slice(&mut self, ts: nautilus_core::UnixNanos) {
+        // Proactive expiry safeguard
+        if self.aggregator.is_expired(ts) {
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .push_back(DeferredCommand::ExpireSeries(self.aggregator.series_id()));
+            return;
+        }
+
         self.maybe_rebalance(ts);
 
         let series_id = self.aggregator.series_id();
@@ -1118,5 +1126,43 @@ mod tests {
         // Empty manager returns true (catalog was already empty)
         assert!(is_empty);
         assert!(queue.borrow().is_empty()); // no deferred commands pushed
+    }
+
+    #[rstest]
+    fn test_publish_slice_pushes_expire_series_when_expired() {
+        let (mut manager, queue) = make_option_chain_manager();
+        bootstrap_via_greeks(&mut manager);
+        queue.borrow_mut().clear();
+
+        // Publish at the expiration timestamp — should push ExpireSeries, not publish
+        let expiry_ns = manager.aggregator.series_id().expiration_ns;
+        manager.publish_slice(expiry_ns);
+
+        let cmds: Vec<_> = queue.borrow().iter().cloned().collect();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], DeferredCommand::ExpireSeries(_)));
+    }
+
+    #[rstest]
+    fn test_expired_instrument_unsubscribes_include_instrument_status() {
+        let (mut manager, queue) = make_option_chain_manager();
+        bootstrap_via_greeks(&mut manager);
+        queue.borrow_mut().clear();
+
+        let expired_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
+        manager.handle_instrument_expired(&expired_id);
+
+        let cmds: Vec<_> = queue.borrow().iter().cloned().collect();
+        // Should have exactly one InstrumentStatus unsubscribe among the 3
+        let status_unsubs = cmds
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    DeferredCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(_))
+                )
+            })
+            .count();
+        assert_eq!(status_unsubs, 1);
     }
 }

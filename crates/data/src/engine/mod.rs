@@ -120,6 +120,7 @@ use crate::{
 pub(crate) enum DeferredCommand {
     Subscribe(SubscribeCommand),
     Unsubscribe(UnsubscribeCommand),
+    ExpireSeries(OptionSeriesId),
 }
 
 /// Shared queue for deferred subscribe/unsubscribe commands.
@@ -1243,25 +1244,59 @@ impl DataEngine {
     /// managers (or any other component) and executes them against the appropriate
     /// data client.
     fn drain_deferred_commands(&mut self) {
-        let commands: VecDeque<DeferredCommand> =
-            std::mem::take(&mut *self.deferred_cmd_queue.borrow_mut());
+        // Loop because handlers (e.g. expire_series) may push new commands during processing
+        loop {
+            let commands: VecDeque<DeferredCommand> =
+                std::mem::take(&mut *self.deferred_cmd_queue.borrow_mut());
 
-        for cmd in commands {
-            match cmd {
-                DeferredCommand::Subscribe(sub) => {
-                    let client = self.get_client(sub.client_id(), sub.venue());
-                    if let Some(client) = client {
-                        client.execute_subscribe(&sub);
+            if commands.is_empty() {
+                break;
+            }
+
+            for cmd in commands {
+                match cmd {
+                    DeferredCommand::Subscribe(sub) => {
+                        let client = self.get_client(sub.client_id(), sub.venue());
+                        if let Some(client) = client {
+                            client.execute_subscribe(&sub);
+                        }
                     }
-                }
-                DeferredCommand::Unsubscribe(unsub) => {
-                    let client = self.get_client(unsub.client_id(), unsub.venue());
-                    if let Some(client) = client {
-                        client.execute_unsubscribe(&unsub);
+                    DeferredCommand::Unsubscribe(unsub) => {
+                        let client = self.get_client(unsub.client_id(), unsub.venue());
+                        if let Some(client) = client {
+                            client.execute_unsubscribe(&unsub);
+                        }
+                    }
+                    DeferredCommand::ExpireSeries(series_id) => {
+                        self.expire_series(series_id);
                     }
                 }
             }
         }
+    }
+
+    /// Proactively expires all instruments for a series and tears down the manager.
+    fn expire_series(&mut self, series_id: OptionSeriesId) {
+        let Some(manager_rc) = self.option_chain_managers.get(&series_id).cloned() else {
+            return;
+        };
+
+        let instrument_ids: Vec<InstrumentId> = self
+            .option_chain_instrument_index
+            .iter()
+            .filter(|(_, sid)| **sid == series_id)
+            .map(|(id, _)| *id)
+            .collect();
+
+        for id in &instrument_ids {
+            self.option_chain_instrument_index.remove(id);
+            manager_rc.borrow_mut().handle_instrument_expired(id);
+        }
+
+        manager_rc.borrow_mut().teardown(&self.clock);
+        self.option_chain_managers.remove(&series_id);
+
+        log::info!("Proactively torn down expired option chain {series_id}");
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------

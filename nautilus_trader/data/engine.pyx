@@ -1601,6 +1601,10 @@ cdef class DataEngine(Component):
         """Timer callback to publish option chain snapshots."""
         cdef str timer_name = event.name
         cdef str series_key = None
+        cdef uint64_t ts_ns
+        cdef uint64_t expiration_ns
+        cdef Venue venue
+        cdef MarketDataClient client
 
         # Find series key from timer name
         for sk, tn in self._option_chain_timer_names.items():
@@ -1615,7 +1619,18 @@ cdef class DataEngine(Component):
         if manager is None:
             return
 
-        cdef uint64_t ts_ns = self._clock.timestamp_ns()
+        ts_ns = self._clock.timestamp_ns()
+
+        # Safeguard: proactively teardown expired series
+        expiration_ns = manager.series_id.expiration_ns
+        if ts_ns >= expiration_ns:
+            self._log.warning(
+                f"Option chain {series_key} expired at {expiration_ns}, tearing down",
+            )
+            venue = Venue(str(manager.series_id.venue))
+            client = self._routing_map.get(venue)
+            self._teardown_option_chain(series_key, client)
+            return
 
         # Check rebalance and forward subscribe/unsubscribe for changed instruments
         rebalance = manager.check_rebalance(ts_ns)
@@ -2762,6 +2777,15 @@ cdef class DataEngine(Component):
         manager = self._option_chain_managers.get(series_key)
         if manager is None:
             return
+
+        # Safeguard: reject data past expiry
+        if tick.ts_event >= manager.series_id.expiration_ns:
+            self._log.warning(
+                f"Dropping quote for {tick.instrument_id} — series {series_key} expired",
+            )
+            self._expire_option_chain_instrument(tick.instrument_id, series_key)
+            return
+
         try:
             pyo3_tick = tick.to_pyo3()
             bootstrapped = manager.handle_quote(pyo3_tick)
@@ -2783,6 +2807,15 @@ cdef class DataEngine(Component):
         manager = self._option_chain_managers.get(series_key)
         if manager is None:
             return
+
+        # Safeguard: reject data past expiry
+        if option_greeks.ts_event >= manager.series_id.expiration_ns:
+            self._log.warning(
+                f"Dropping greeks for {option_greeks.instrument_id} — series {series_key} expired",
+            )
+            self._expire_option_chain_instrument(option_greeks.instrument_id, series_key)
+            return
+
         try:
             pyo3_greeks = option_greeks.to_pyo3()
             bootstrapped = manager.handle_greeks(pyo3_greeks)
