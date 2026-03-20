@@ -1714,6 +1714,42 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
 
+    cpdef void subscribe_quote_ticks_batch(
+        self,
+        list instrument_ids,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `QuoteTick` data for the given list of instrument IDs.
+
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instrument IDs to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Raises
+        ------
+        ValueError
+            If `instrument_ids` is empty.
+
+        """
+        Condition.not_empty(instrument_ids, "instrument_ids")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        cdef InstrumentId instrument_id
+        for instrument_id in instrument_ids:
+            self.subscribe_quote_ticks(
+                instrument_id=instrument_id,
+                client_id=client_id,
+                params=params,
+            )
+
     cpdef void subscribe_trade_ticks(
         self,
         InstrumentId instrument_id,
@@ -1763,6 +1799,42 @@ cdef class Actor(Component):
             params=used_params,
         )
         self._send_data_cmd(command)
+
+    cpdef void subscribe_trade_ticks_batch(
+        self,
+        list instrument_ids,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `TradeTick` data for the given list of instrument IDs.
+
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instrument IDs to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Raises
+        ------
+        ValueError
+            If `instrument_ids` is empty.
+
+        """
+        Condition.not_empty(instrument_ids, "instrument_ids")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        cdef InstrumentId instrument_id
+        for instrument_id in instrument_ids:
+            self.subscribe_trade_ticks(
+                instrument_id=instrument_id,
+                client_id=client_id,
+                params=params,
+            )
 
     cpdef void subscribe_mark_prices(
         self,
@@ -1948,6 +2020,49 @@ cdef class Actor(Component):
             params=used_params,
         )
         self._send_data_cmd(command)
+
+    cpdef void subscribe_bars_batch(
+        self,
+        list bar_types,
+        ClientId client_id = None,
+        bint update_catalog = False,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `Bar` data for the given list of bar types.
+
+        Loops through each bar type and creates individual subscribe commands,
+        allowing adapters that support batch subscriptions to be extended later.
+
+        Parameters
+        ----------
+        bar_types : list[BarType]
+            The bar types to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Raises
+        ------
+        ValueError
+            If `bar_types` is empty.
+
+        """
+        Condition.not_empty(bar_types, "bar_types")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        cdef BarType bar_type
+        for bar_type in bar_types:
+            self.subscribe_bars(
+                bar_type=bar_type,
+                client_id=client_id,
+                update_catalog=update_catalog,
+                params=params,
+            )
 
     cpdef void subscribe_instrument_status(
         self,
