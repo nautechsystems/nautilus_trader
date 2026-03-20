@@ -604,16 +604,21 @@ class BybitDataClient(LiveMarketDataClient):
 
                 if not self._instrument_status_subs:
                     continue
+
+                # Accumulate statuses from all product types before diffing
+                all_statuses: dict[InstrumentId, MarketStatusAction] = {}
                 for product_type in self._product_types:
                     try:
                         new_statuses = await self._http_client.request_instrument_statuses(
                             product_type,
                         )
-                        self._diff_and_emit_statuses(new_statuses)
+                        all_statuses.update(new_statuses)
                     except Exception as e:
                         self._log.warning(
                             f"Instrument status poll failed for {product_type}: {e}",
                         )
+
+                self._diff_and_emit_statuses(all_statuses)
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'poll_instrument_statuses'")
                 return
@@ -624,25 +629,24 @@ class BybitDataClient(LiveMarketDataClient):
     ) -> None:
         now = self._clock.timestamp_ns()
 
-        # Filter to only subscribed instruments
-        subscribed_statuses = {
-            k: v for k, v in new_statuses.items() if k in self._instrument_status_subs
-        }
-
-        for instrument_id, new_action in subscribed_statuses.items():
+        # Update cache for all instruments, emit only for subscribed
+        for instrument_id, new_action in new_statuses.items():
             cached = self._status_cache.get(instrument_id)
             if cached is None or cached != new_action:
                 self._status_cache[instrument_id] = new_action
-                self._emit_instrument_status(instrument_id, new_action, now)
+                if instrument_id in self._instrument_status_subs:
+                    self._emit_instrument_status(instrument_id, new_action, now)
 
-        removed = [id for id in self._status_cache if id not in subscribed_statuses]
+        # Detect symbols removed from the API snapshot
+        removed = [iid for iid in self._status_cache if iid not in new_statuses]
         for instrument_id in removed:
             del self._status_cache[instrument_id]
-            self._emit_instrument_status(
-                instrument_id,
-                MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
-                now,
-            )
+            if instrument_id in self._instrument_status_subs:
+                self._emit_instrument_status(
+                    instrument_id,
+                    MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+                    now,
+                )
 
     def _emit_instrument_status(
         self,

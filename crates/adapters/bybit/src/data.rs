@@ -240,35 +240,31 @@ impl BybitDataClient {
                             continue;
                         }
 
+                        // Accumulate statuses from all product types before diffing
+                        let mut all_statuses = AHashMap::new();
                         for &pt in &product_types {
                             match http.request_instrument_statuses(pt).await {
                                 Ok(new_statuses) => {
-                                    let ts = clock.get_time_ns();
-
-                                    // Filter to only subscribed + known instruments
                                     let inst_guard = instruments.read()
                                         .expect(MUTEX_POISONED);
-                                    let filtered: AHashMap<InstrumentId, MarketStatusAction> =
-                                        new_statuses
-                                            .into_iter()
-                                            .filter(|(id, _)| {
-                                                inst_guard.contains_key(id)
-                                                    && status_subs.contains(id)
-                                            })
-                                            .collect();
-                                    drop(inst_guard);
-
-                                    let mut cache = status_cache.write()
-                                        .expect(MUTEX_POISONED);
-                                    diff_and_emit_statuses(
-                                        &filtered, &mut cache, &sender, ts, ts,
-                                    );
+                                    for (id, action) in new_statuses {
+                                        if inst_guard.contains_key(&id) {
+                                            all_statuses.insert(id, action);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
                                 }
                             }
                         }
+
+                        let ts = clock.get_time_ns();
+                        let mut cache = status_cache.write()
+                            .expect(MUTEX_POISONED);
+                        diff_and_emit_statuses(
+                            &all_statuses, &mut cache, Some(&status_subs), &sender, ts, ts,
+                        );
                     }
                     () = cancel.cancelled() => {
                         log::debug!("Bybit instrument status polling task cancelled");

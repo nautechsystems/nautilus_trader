@@ -16,6 +16,7 @@
 //! Instrument status mapping and polling for the Bybit adapter.
 
 use ahash::AHashMap;
+use dashmap::DashSet;
 use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -44,15 +45,22 @@ impl From<BybitInstrumentStatus> for MarketStatusAction {
 /// Compares new status snapshot against cached state, emitting [`InstrumentStatus`]
 /// events for changes and removals.
 ///
+/// The cache is always updated to reflect the full API state. Emissions are gated
+/// by `subscriptions`: only instruments present in the subscription set produce
+/// events. Pass `None` to emit for all changes unconditionally.
+///
 /// Symbols present in the cache but absent from the new snapshot are treated as
-/// removed and emit `NotAvailableForTrading`.
+/// removed and emit `NotAvailableForTrading` (if subscribed).
 pub fn diff_and_emit_statuses(
     new_statuses: &AHashMap<InstrumentId, MarketStatusAction>,
     cached_statuses: &mut AHashMap<InstrumentId, MarketStatusAction>,
+    subscriptions: Option<&DashSet<InstrumentId>>,
     sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
+    let is_subscribed = |id: &InstrumentId| subscriptions.is_none_or(|subs| subs.contains(id));
+
     for (instrument_id, &new_action) in new_statuses {
         let changed = cached_statuses
             .get(instrument_id)
@@ -60,7 +68,9 @@ pub fn diff_and_emit_statuses(
 
         if changed {
             cached_statuses.insert(*instrument_id, new_action);
-            emit_status(sender, *instrument_id, new_action, ts_event, ts_init);
+            if is_subscribed(instrument_id) {
+                emit_status(sender, *instrument_id, new_action, ts_event, ts_init);
+            }
         }
     }
 
@@ -73,13 +83,15 @@ pub fn diff_and_emit_statuses(
 
     for instrument_id in removed {
         cached_statuses.remove(&instrument_id);
-        emit_status(
-            sender,
-            instrument_id,
-            MarketStatusAction::NotAvailableForTrading,
-            ts_event,
-            ts_init,
-        );
+        if is_subscribed(&instrument_id) {
+            emit_status(
+                sender,
+                instrument_id,
+                MarketStatusAction::NotAvailableForTrading,
+                ts_event,
+                ts_init,
+            );
+        }
     }
 }
 
@@ -150,6 +162,7 @@ mod tests {
         diff_and_emit_statuses(
             &new_statuses,
             &mut cached,
+            None,
             &tx,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -182,6 +195,7 @@ mod tests {
         diff_and_emit_statuses(
             &new_statuses,
             &mut cached,
+            None,
             &tx,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -202,6 +216,7 @@ mod tests {
         diff_and_emit_statuses(
             &new_statuses,
             &mut cached,
+            None,
             &tx,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -231,6 +246,7 @@ mod tests {
         diff_and_emit_statuses(
             &new_statuses,
             &mut cached,
+            None,
             &tx,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -249,5 +265,90 @@ mod tests {
         }
 
         assert!(!cached.contains_key(&id));
+    }
+
+    #[rstest]
+    fn test_diff_subscription_gating_only_emits_for_subscribed() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscribed_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let unsubscribed_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+
+        let subs = dashmap::DashSet::new();
+        subs.insert(subscribed_id);
+
+        let mut cached = AHashMap::new();
+        cached.insert(subscribed_id, MarketStatusAction::Trading);
+        cached.insert(unsubscribed_id, MarketStatusAction::Trading);
+
+        // Both change status
+        let mut new_statuses = AHashMap::new();
+        new_statuses.insert(subscribed_id, MarketStatusAction::Halt);
+        new_statuses.insert(unsubscribed_id, MarketStatusAction::Halt);
+
+        diff_and_emit_statuses(
+            &new_statuses,
+            &mut cached,
+            Some(&subs),
+            &tx,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Only subscribed instrument emits
+        let event = rx.try_recv().expect("expected status event");
+        match event {
+            DataEvent::InstrumentStatus(status) => {
+                assert_eq!(status.instrument_id, subscribed_id);
+                assert_eq!(status.action, MarketStatusAction::Halt);
+            }
+            _ => panic!("expected InstrumentStatus event"),
+        }
+        assert!(rx.try_recv().is_err(), "should not emit for unsubscribed");
+
+        // But cache is updated for both
+        assert_eq!(cached.get(&subscribed_id), Some(&MarketStatusAction::Halt));
+        assert_eq!(
+            cached.get(&unsubscribed_id),
+            Some(&MarketStatusAction::Halt)
+        );
+    }
+
+    #[rstest]
+    fn test_diff_removal_only_emits_for_subscribed() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscribed_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let unsubscribed_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+
+        let subs = dashmap::DashSet::new();
+        subs.insert(subscribed_id);
+
+        let mut cached = AHashMap::new();
+        cached.insert(subscribed_id, MarketStatusAction::Trading);
+        cached.insert(unsubscribed_id, MarketStatusAction::Trading);
+
+        let new_statuses = AHashMap::new(); // Both removed from API
+
+        diff_and_emit_statuses(
+            &new_statuses,
+            &mut cached,
+            Some(&subs),
+            &tx,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Only subscribed instrument emits NotAvailableForTrading
+        let event = rx.try_recv().expect("expected removal event");
+        match event {
+            DataEvent::InstrumentStatus(status) => {
+                assert_eq!(status.instrument_id, subscribed_id);
+                assert_eq!(status.action, MarketStatusAction::NotAvailableForTrading);
+            }
+            _ => panic!("expected InstrumentStatus event"),
+        }
+        assert!(rx.try_recv().is_err(), "should not emit for unsubscribed");
+
+        // Both removed from cache
+        assert!(cached.is_empty());
     }
 }
