@@ -1352,6 +1352,17 @@ cdef class DataEngine(Component):
                         ts_init=self._clock.timestamp_ns(),
                     ),
                 )
+            # Subscribe instrument status
+            if cython_id not in client.subscribed_instrument_status():
+                client.subscribe_instrument_status(
+                    SubscribeInstrumentStatus(
+                        client_id=command.client_id,
+                        venue=command.venue,
+                        instrument_id=cython_id,
+                        command_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                    ),
+                )
 
     cdef void _unsubscribe_option_chain_instruments(
         self,
@@ -1375,6 +1386,16 @@ cdef class DataEngine(Component):
             if cython_id in client.subscribed_option_greeks():
                 client.unsubscribe_option_greeks(
                     UnsubscribeOptionGreeks(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+            if cython_id in client.subscribed_instrument_status():
+                client.unsubscribe_instrument_status(
+                    UnsubscribeInstrumentStatus(
                         instrument_id=cython_id,
                         client_id=client.id,
                         venue=client.venue,

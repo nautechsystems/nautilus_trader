@@ -78,6 +78,12 @@ class MockOptionDataClient(MarketDataClient):
     def unsubscribe_option_greeks(self, command):
         self._remove_subscription_option_greeks(command.instrument_id)
 
+    def subscribe_instrument_status(self, command):
+        self._add_subscription_instrument_status(command.instrument_id)
+
+    def unsubscribe_instrument_status(self, command):
+        self._remove_subscription_instrument_status(command.instrument_id)
+
     def request_forward_prices(self, request):
         pass  # no-op for tests
 
