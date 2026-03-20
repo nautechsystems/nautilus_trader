@@ -6851,6 +6851,10 @@ class BybitHttpClient:
         product_type: BybitProductType,
         symbol: str | None = None,
     ) -> list[Instrument]: ...
+    async def request_instrument_statuses(
+        self,
+        product_type: BybitProductType,
+    ) -> dict[InstrumentId, MarketStatusAction]: ...
     async def request_trades(
         self,
         product_type: BybitProductType,

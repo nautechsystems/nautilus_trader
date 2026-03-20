@@ -67,6 +67,9 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     bars_timestamp_on_close : bool, default True
         If the ts_event timestamp for bars should be on the open or close or the bar.
         If True, then ts_event will be on the close of the bar.
+    instrument_status_poll_secs : PositiveInt or None, default 60
+        The interval (seconds) for polling instrument status changes.
+        Set to ``None`` to disable.
 
     """
 
@@ -84,6 +87,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
     bars_timestamp_on_close: bool = True
+    instrument_status_poll_secs: PositiveInt | None = 60
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):

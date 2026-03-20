@@ -36,6 +36,7 @@ from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOptionGreeks
 from nautilus_trader.data.messages import SubscribeOrderBook
@@ -44,6 +45,7 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOptionGreeks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
@@ -56,15 +58,18 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -133,6 +138,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
+        self._log.info(f"{config.instrument_status_poll_secs=}", LogColor.BLUE)
         self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
@@ -174,6 +180,10 @@ class BybitDataClient(LiveMarketDataClient):
 
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
+        self._instrument_status_poll_secs: int | None = config.instrument_status_poll_secs
+        self._instrument_status_task: asyncio.Task | None = None
+        self._instrument_status_subs: set[InstrumentId] = set()
+        self._status_cache: dict[InstrumentId, MarketStatusAction] = {}
 
     @property
     def instrument_provider(self) -> BybitInstrumentProvider:
@@ -195,6 +205,12 @@ class BybitDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
+        if self._instrument_status_poll_secs:
+            await self._seed_instrument_status_cache()
+            self._instrument_status_task = self.create_task(
+                self._poll_instrument_statuses(self._instrument_status_poll_secs),
+            )
+
     async def _disconnect(self) -> None:
         self._http_client.cancel_all_requests()
 
@@ -202,6 +218,11 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
+        if self._instrument_status_task:
+            self._log.debug("Canceling task 'poll_instrument_statuses'")
+            self._instrument_status_task.cancel()
+            self._instrument_status_task = None
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
@@ -552,6 +573,95 @@ class BybitDataClient(LiveMarketDataClient):
             if not self._ticker_subscriptions[pyo3_instrument_id]:
                 await ws_client.unsubscribe_ticker(pyo3_instrument_id)
                 del self._ticker_subscriptions[pyo3_instrument_id]
+
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        self._log.debug(
+            f"subscribe_instrument_status: {command.instrument_id} "
+            "(status changes detected via periodic instrument info polling)",
+        )
+        self._instrument_status_subs.add(command.instrument_id)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        self._log.debug(f"unsubscribe_instrument_status: {command.instrument_id}")
+        self._instrument_status_subs.discard(command.instrument_id)
+
+    async def _seed_instrument_status_cache(self) -> None:
+        for product_type in self._product_types:
+            try:
+                statuses = await self._http_client.request_instrument_statuses(product_type)
+                self._status_cache.update(statuses)
+            except Exception as e:
+                self._log.warning(f"Failed to seed instrument status cache for {product_type}: {e}")
+        self._log.info(
+            f"Seeded instrument status cache with {len(self._status_cache)} entries",
+            LogColor.BLUE,
+        )
+
+    async def _poll_instrument_statuses(self, interval_secs: int) -> None:
+        while True:
+            try:
+                await asyncio.sleep(interval_secs)
+
+                if not self._instrument_status_subs:
+                    continue
+                for product_type in self._product_types:
+                    try:
+                        new_statuses = await self._http_client.request_instrument_statuses(
+                            product_type,
+                        )
+                        self._diff_and_emit_statuses(new_statuses)
+                    except Exception as e:
+                        self._log.warning(
+                            f"Instrument status poll failed for {product_type}: {e}",
+                        )
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'poll_instrument_statuses'")
+                return
+
+    def _diff_and_emit_statuses(
+        self,
+        new_statuses: dict[InstrumentId, MarketStatusAction],
+    ) -> None:
+        now = self._clock.timestamp_ns()
+
+        # Filter to only subscribed instruments
+        subscribed_statuses = {
+            k: v for k, v in new_statuses.items() if k in self._instrument_status_subs
+        }
+
+        for instrument_id, new_action in subscribed_statuses.items():
+            cached = self._status_cache.get(instrument_id)
+            if cached is None or cached != new_action:
+                self._status_cache[instrument_id] = new_action
+                self._emit_instrument_status(instrument_id, new_action, now)
+
+        removed = [id for id in self._status_cache if id not in subscribed_statuses]
+        for instrument_id in removed:
+            del self._status_cache[instrument_id]
+            self._emit_instrument_status(
+                instrument_id,
+                MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+                now,
+            )
+
+    def _emit_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        action: MarketStatusAction,
+        ts_ns: int,
+    ) -> None:
+        status = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=action,
+            ts_event=ts_ns,
+            ts_init=ts_ns,
+            reason=None,
+            trading_event=None,
+            is_trading=action == MarketStatusAction.TRADING,
+            is_quoting=None,
+            is_short_sell_restricted=None,
+        )
+        self._handle_data(status)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
