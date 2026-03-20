@@ -37,7 +37,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
-    enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -84,7 +84,7 @@ use super::{
     },
 };
 use crate::common::{
-    consts::BYBIT_NAUTILUS_BROKER_ID,
+    consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
         BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
@@ -2731,6 +2731,83 @@ impl BybitHttpClient {
         }
 
         Ok(instruments)
+    }
+
+    /// Fetches instrument info and returns the current status of each symbol.
+    ///
+    /// Paginates through the instruments endpoint collecting only
+    /// `(InstrumentId, MarketStatusAction)` pairs. This avoids fee-rate
+    /// fetching and full instrument parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_instrument_statuses(
+        &self,
+        product_type: BybitProductType,
+    ) -> anyhow::Result<AHashMap<InstrumentId, MarketStatusAction>> {
+        let mut statuses = AHashMap::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitInstrumentsInfoParams {
+                category: product_type,
+                symbol: None,
+                status: None,
+                base_coin: None,
+                limit: Some(1000),
+                cursor: cursor.clone(),
+            };
+
+            match product_type {
+                BybitProductType::Spot => {
+                    let response: BybitCursorListResponse<BybitInstrumentSpot> =
+                        self.inner.get_instruments(&params).await?;
+                    for def in &response.result.list {
+                        let symbol = make_bybit_symbol(def.symbol, product_type);
+                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                    }
+                    cursor = response.result.next_page_cursor;
+                }
+                BybitProductType::Linear => {
+                    let response: BybitCursorListResponse<BybitInstrumentLinear> =
+                        self.inner.get_instruments(&params).await?;
+                    for def in &response.result.list {
+                        let symbol = make_bybit_symbol(def.symbol, product_type);
+                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                    }
+                    cursor = response.result.next_page_cursor;
+                }
+                BybitProductType::Inverse => {
+                    let response: BybitCursorListResponse<BybitInstrumentInverse> =
+                        self.inner.get_instruments(&params).await?;
+                    for def in &response.result.list {
+                        let symbol = make_bybit_symbol(def.symbol, product_type);
+                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                    }
+                    cursor = response.result.next_page_cursor;
+                }
+                BybitProductType::Option => {
+                    let response: BybitCursorListResponse<BybitInstrumentOption> =
+                        self.inner.get_instruments(&params).await?;
+                    for def in &response.result.list {
+                        let symbol = make_bybit_symbol(def.symbol, product_type);
+                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                    }
+                    cursor = response.result.next_page_cursor;
+                }
+            }
+
+            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                break;
+            }
+        }
+
+        Ok(statuses)
     }
 
     /// Request instruments for a given product type.

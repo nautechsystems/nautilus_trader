@@ -44,6 +44,7 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs = None,
         recv_window_ms = None,
         update_instruments_interval_mins = None,
+        instrument_status_poll_secs = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -62,6 +63,7 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs: Option<u64>,
         recv_window_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        instrument_status_poll_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -82,6 +84,8 @@ impl BybitDataClientConfig {
             recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .or(defaults.update_instruments_interval_mins),
+            instrument_status_poll_secs: instrument_status_poll_secs
+                .or(defaults.instrument_status_poll_secs),
         }
     }
 

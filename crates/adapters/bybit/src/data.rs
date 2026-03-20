@@ -37,9 +37,10 @@ use nautilus_common::{
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
             RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            SubscribeIndexPrices, SubscribeInstrumentStatus, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
             UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -51,7 +52,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
-    enums::BookType,
+    enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::book::OrderBook,
@@ -66,6 +67,7 @@ use crate::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
         parse::{extract_raw_symbol, make_bybit_symbol},
+        status::diff_and_emit_statuses,
         symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
@@ -99,6 +101,8 @@ pub struct BybitDataClient {
     quote_depths: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
     ticker_subs: Arc<RwLock<AHashMap<InstrumentId, AHashSet<&'static str>>>>,
     option_greeks_subs: Arc<DashSet<InstrumentId>>,
+    instrument_status_subs: Arc<DashSet<InstrumentId>>,
+    status_cache: Arc<RwLock<AHashMap<InstrumentId, MarketStatusAction>>>,
     clock: &'static AtomicTime,
 }
 
@@ -171,6 +175,8 @@ impl BybitDataClient {
             quote_depths: Arc::new(RwLock::new(AHashMap::new())),
             ticker_subs: Arc::new(RwLock::new(AHashMap::new())),
             option_greeks_subs: Arc::new(DashSet::new()),
+            instrument_status_subs: Arc::new(DashSet::new()),
+            status_cache: Arc::new(RwLock::new(AHashMap::new())),
             clock,
         })
     }
@@ -207,6 +213,72 @@ impl BybitDataClient {
                 log::error!("{context}: {e:?}");
             }
         });
+    }
+
+    fn spawn_instrument_status_polling(
+        &mut self,
+        product_types: &[BybitProductType],
+        poll_secs: u64,
+    ) {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let status_cache = self.status_cache.clone();
+        let status_subs = self.instrument_status_subs.clone();
+        let cancel = self.cancellation_token.clone();
+        let clock = self.clock;
+        let product_types = product_types.to_vec();
+
+        let handle = get_runtime().spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
+            interval.tick().await; // Skip first immediate tick
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if status_subs.is_empty() {
+                            continue;
+                        }
+
+                        for &pt in &product_types {
+                            match http.request_instrument_statuses(pt).await {
+                                Ok(new_statuses) => {
+                                    let ts = clock.get_time_ns();
+
+                                    // Filter to only subscribed + known instruments
+                                    let inst_guard = instruments.read()
+                                        .expect(MUTEX_POISONED);
+                                    let filtered: AHashMap<InstrumentId, MarketStatusAction> =
+                                        new_statuses
+                                            .into_iter()
+                                            .filter(|(id, _)| {
+                                                inst_guard.contains_key(id)
+                                                    && status_subs.contains(id)
+                                            })
+                                            .collect();
+                                    drop(inst_guard);
+
+                                    let mut cache = status_cache.write()
+                                        .expect(MUTEX_POISONED);
+                                    diff_and_emit_statuses(
+                                        &filtered, &mut cache, &sender, ts, ts,
+                                    );
+                                }
+                                Err(e) => {
+                                    log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
+                                }
+                            }
+                        }
+                    }
+                    () = cancel.cancelled() => {
+                        log::debug!("Bybit instrument status polling task cancelled");
+                        break;
+                    }
+                }
+            }
+        });
+        self.tasks.push(handle);
+        log::info!("Instrument status polling started: interval={poll_secs}s");
     }
 }
 
@@ -535,6 +607,8 @@ impl DataClient for BybitDataClient {
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
         self.option_greeks_subs.clear();
+        self.instrument_status_subs.clear();
+        self.status_cache.write().expect(MUTEX_POISONED).clear();
         Ok(())
     }
 
@@ -573,6 +647,45 @@ impl DataClient for BybitDataClient {
             drop(guard);
 
             all_instruments.extend(fetched);
+        }
+
+        // Seed instrument status cache from initial fetch
+        if self
+            .config
+            .instrument_status_poll_secs
+            .is_some_and(|s| s > 0)
+        {
+            // Collect all statuses first (without holding the lock across await)
+            let mut collected_statuses = Vec::new();
+            for product_type in &product_types {
+                match self
+                    .http_client
+                    .request_instrument_statuses(*product_type)
+                    .await
+                {
+                    Ok(statuses) => collected_statuses.push(statuses),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to seed instrument status cache for {product_type:?}: {e}"
+                        );
+                    }
+                }
+            }
+
+            // Now acquire locks and insert
+            let mut status_guard = self.status_cache.write().expect(MUTEX_POISONED);
+            let inst_guard = self.instruments.read().expect(MUTEX_POISONED);
+            for statuses in collected_statuses {
+                for (id, action) in statuses {
+                    if inst_guard.contains_key(&id) {
+                        status_guard.insert(id, action);
+                    }
+                }
+            }
+            log::info!(
+                "Seeded instrument status cache with {} entries",
+                status_guard.len()
+            );
         }
 
         for instrument in all_instruments {
@@ -645,6 +758,13 @@ impl DataClient for BybitDataClient {
             self.tasks.push(handle);
         }
 
+        // Spawn instrument status polling task
+        if let Some(poll_secs) = self.config.instrument_status_poll_secs
+            && poll_secs > 0
+        {
+            self.spawn_instrument_status_polling(&product_types, poll_secs);
+        }
+
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
@@ -680,6 +800,8 @@ impl DataClient for BybitDataClient {
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
         self.option_greeks_subs.clear();
+        self.instrument_status_subs.clear();
+        self.status_cache.write().expect(MUTEX_POISONED).clear();
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
@@ -1280,6 +1402,30 @@ impl DataClient for BybitDataClient {
                 "option greeks unsubscribe",
             );
         }
+        Ok(())
+    }
+
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "subscribe_instrument_status: {id} (status changes detected via periodic instrument info polling)",
+            id = cmd.instrument_id,
+        );
+        self.instrument_status_subs.insert(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "unsubscribe_instrument_status: {id}",
+            id = cmd.instrument_id,
+        );
+        self.instrument_status_subs.remove(&cmd.instrument_id);
         Ok(())
     }
 

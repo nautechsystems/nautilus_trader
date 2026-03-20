@@ -271,6 +271,7 @@ pub enum BybitInstrumentStatus {
     Delivering,
     ListedOnly,
     PendingListing,
+    PreLaunch,
     PreTrading,
     Closed,
     Suspended,
