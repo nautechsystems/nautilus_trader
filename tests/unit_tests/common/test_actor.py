@@ -1806,6 +1806,38 @@ class TestActor:
         assert self.data_engine.subscribed_quote_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
+    def test_subscribe_quote_ticks_batch(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument_ids = [AUDUSD_SIM.id, GBPUSD_SIM.id]
+
+        # Act
+        actor.subscribe_quote_ticks_batch(instrument_ids)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_quote_ticks_batch_raises_on_empty(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act & Assert
+        with pytest.raises(ValueError):
+            actor.subscribe_quote_ticks_batch([])
+
     def test_unsubscribe_quote_ticks(self) -> None:
         # Arrange
         actor = MockActor()
@@ -1842,6 +1874,38 @@ class TestActor:
         expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.subscribed_trade_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
+
+    def test_subscribe_trade_ticks_batch(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument_ids = [AUDUSD_SIM.id, GBPUSD_SIM.id]
+
+        # Act
+        actor.subscribe_trade_ticks_batch(instrument_ids)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_trade_ticks_batch_raises_on_empty(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act & Assert
+        with pytest.raises(ValueError):
+            actor.subscribe_trade_ticks_batch([])
 
     def test_unsubscribe_trade_ticks(self) -> None:
         # Arrange
@@ -2011,6 +2075,41 @@ class TestActor:
         # Assert
         assert self.data_engine.subscribed_bars() == [bar_type]
         assert self.data_engine.command_count == 1
+
+    def test_subscribe_bars_batch(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bar_types = [
+            TestDataStubs.bartype_audusd_1min_bid(),
+            TestDataStubs.bartype_adabtc_binance_1min_last(),
+        ]
+
+        # Act
+        actor.subscribe_bars_batch(bar_types)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_bars_batch_raises_on_empty(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act & Assert
+        with pytest.raises(ValueError):
+            actor.subscribe_bars_batch([])
 
     def test_unsubscribe_bars(self) -> None:
         # Arrange
