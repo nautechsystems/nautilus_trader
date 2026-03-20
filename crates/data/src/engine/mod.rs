@@ -59,7 +59,8 @@ use nautilus_common::{
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeOptionChain, UnsubscribeBars, UnsubscribeBookDeltas,
         UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes,
     },
     msgbus::{
         self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
@@ -1732,6 +1733,17 @@ impl DataEngine {
             )));
             client.execute_unsubscribe(&UnsubscribeCommand::OptionGreeks(
                 UnsubscribeOptionGreeks::new(
+                    *instrument_id,
+                    client_id,
+                    Some(venue),
+                    UUID4::new(),
+                    ts_init,
+                    None,
+                    None,
+                ),
+            ));
+            client.execute_unsubscribe(&UnsubscribeCommand::InstrumentStatus(
+                UnsubscribeInstrumentStatus::new(
                     *instrument_id,
                     client_id,
                     Some(venue),
