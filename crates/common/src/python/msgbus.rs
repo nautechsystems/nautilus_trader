@@ -72,7 +72,7 @@ impl DatabaseConfig {
     /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (database_type=None, host=None, port=None, username=None, password=None, ssl=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
+    #[pyo3(signature = (database_type=None, host=None, port=None, username=None, password=None, ssl=None, cluster_mode=None, cluster_nodes=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
     fn py_new(
         database_type: Option<String>,
         host: Option<String>,
@@ -80,6 +80,8 @@ impl DatabaseConfig {
         username: Option<String>,
         password: Option<String>,
         ssl: Option<bool>,
+        cluster_mode: Option<bool>,
+        cluster_nodes: Option<Vec<String>>,
         connection_timeout: Option<u16>,
         response_timeout: Option<u16>,
         number_of_retries: Option<usize>,
@@ -95,6 +97,8 @@ impl DatabaseConfig {
             username,
             password,
             ssl: ssl.unwrap_or(default.ssl),
+            cluster_mode: cluster_mode.unwrap_or(default.cluster_mode),
+            cluster_nodes,
             connection_timeout: connection_timeout.unwrap_or(default.connection_timeout),
             response_timeout: response_timeout.unwrap_or(default.response_timeout),
             number_of_retries: number_of_retries.unwrap_or(default.number_of_retries),

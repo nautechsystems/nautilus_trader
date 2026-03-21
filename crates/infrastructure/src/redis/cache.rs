@@ -70,11 +70,11 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{Pipeline, aio::ConnectionManager};
+use redis::Pipeline;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
-use crate::redis::{create_redis_connection, queries::DatabaseQueries};
+use crate::redis::{RedisConnection, create_redis_connection, queries::DatabaseQueries};
 
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
@@ -160,7 +160,7 @@ impl DatabaseCommand {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisCacheDatabase {
-    pub con: ConnectionManager,
+    pub con: RedisConnection,
     pub trader_id: TraderId,
     pub trader_key: String,
     pub encoding: SerializationEncoding,
@@ -570,7 +570,7 @@ async fn handle_command(
     maybe_cmd: Option<DatabaseCommand>,
     buffer: &mut VecDeque<DatabaseCommand>,
     buffer_interval: Duration,
-    con: &mut ConnectionManager,
+    con: &mut RedisConnection,
     trader_key: &str,
 ) -> ControlFlow<()> {
     let Some(cmd) = maybe_cmd else {
@@ -612,7 +612,7 @@ async fn handle_command(
 
 async fn flush_buffer(
     buffer: &mut VecDeque<DatabaseCommand>,
-    con: &mut ConnectionManager,
+    con: &mut RedisConnection,
     trader_key: &str,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
@@ -626,7 +626,7 @@ async fn flush_buffer(
 }
 
 async fn drain_buffer(
-    conn: &mut ConnectionManager,
+    conn: &mut RedisConnection,
     trader_key: &str,
     buffer: &mut VecDeque<DatabaseCommand>,
 ) {

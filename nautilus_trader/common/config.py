@@ -323,6 +323,13 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         If socket should use an SSL (TLS encryption) enabled connection.
     timeout : int, default 20
         The timeout (seconds) to wait for a new connection.
+    cluster_mode : bool, default False
+        If the Redis connection should use cluster mode.
+        Redis Cluster only supports database 0.
+    cluster_nodes : list[str], optional
+        Additional Redis cluster seed node URLs (e.g. ``["redis://host2:6380"]``).
+        The primary ``host:port`` is always used as the first seed node.
+        Only used when ``cluster_mode`` is True.
 
     Notes
     -----
@@ -337,6 +344,8 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     password: str | None = None
     ssl: bool = False
     timeout: int | None = 20
+    cluster_mode: bool = False
+    cluster_nodes: list[str] | None = None
 
     def __repr__(self) -> str:
         redacted_password = "None"

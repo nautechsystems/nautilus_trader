@@ -45,7 +45,7 @@ mod serial_tests {
         LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
     }
 
-    async fn get_redis_connection() -> redis::aio::ConnectionManager {
+    async fn get_redis_connection() -> nautilus_infrastructure::redis::RedisConnection {
         let config = DatabaseConfig {
             database_type: "redis".to_string(),
             host: Some("localhost".to_string()),
@@ -53,6 +53,8 @@ mod serial_tests {
             username: None,
             password: None,
             ssl: false,
+            cluster_mode: false,
+            cluster_nodes: None,
             connection_timeout: 20,
             response_timeout: 20,
             number_of_retries: 100,
@@ -78,6 +80,8 @@ mod serial_tests {
                 username: None,
                 password: None,
                 ssl: false,
+                cluster_mode: false,
+                cluster_nodes: None,
                 connection_timeout: 20,
                 response_timeout: 20,
                 number_of_retries: 100,

@@ -364,7 +364,7 @@ pub async fn publish_messages(
 }
 
 async fn drain_buffer(
-    conn: &mut redis::aio::ConnectionManager,
+    conn: &mut crate::redis::RedisConnection,
     stream_key: &str,
     stream_per_topic: bool,
     autotrim_duration: Option<Duration>,
@@ -674,14 +674,14 @@ mod tests {
 #[cfg(test)]
 mod serial_tests {
     use nautilus_common::testing::wait_until_async;
-    use redis::aio::ConnectionManager;
+    use crate::redis::RedisConnection;
     use rstest::*;
 
     use super::*;
     use crate::redis::flush_redis;
 
     #[fixture]
-    async fn redis_connection() -> ConnectionManager {
+    async fn redis_connection() -> RedisConnection {
         let config = DatabaseConfig::default();
         let mut con = create_redis_connection(MSGBUS_STREAM, config)
             .await
@@ -692,7 +692,7 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_stream_messages_terminate_signal(#[future] redis_connection: ConnectionManager) {
+    async fn test_stream_messages_terminate_signal(#[future] redis_connection: RedisConnection) {
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -732,7 +732,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_when_receiver_closed(
-        #[future] redis_connection: ConnectionManager,
+        #[future] redis_connection: RedisConnection,
     ) {
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
@@ -786,7 +786,7 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_stream_messages(#[future] redis_connection: ConnectionManager) {
+    async fn test_stream_messages(#[future] redis_connection: RedisConnection) {
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -843,7 +843,7 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+    async fn test_publish_messages(#[future] redis_connection: RedisConnection) {
         let mut con = redis_connection.await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -902,7 +902,7 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_stream_messages_multiple_streams(#[future] redis_connection: ConnectionManager) {
+    async fn test_stream_messages_multiple_streams(#[future] redis_connection: RedisConnection) {
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -972,7 +972,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_interleaved_at_different_rates(
-        #[future] redis_connection: ConnectionManager,
+        #[future] redis_connection: RedisConnection,
     ) {
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);

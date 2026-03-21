@@ -1,0 +1,74 @@
+services:
+  redis-node-1:
+    image: redis:7
+    command: >
+      redis-server
+      --port 7001
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    ports:
+      - "7001:7001"
+    networks:
+      redis-cluster:
+        ipv4_address: 172.30.0.11
+
+  redis-node-2:
+    image: redis:7
+    command: >
+      redis-server
+      --port 7002
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    ports:
+      - "7002:7002"
+    networks:
+      redis-cluster:
+        ipv4_address: 172.30.0.12
+
+  redis-node-3:
+    image: redis:7
+    command: >
+      redis-server
+      --port 7003
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+    ports:
+      - "7003:7003"
+    networks:
+      redis-cluster:
+        ipv4_address: 172.30.0.13
+
+  cluster-init:
+    image: redis:7
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+    networks:
+      redis-cluster:
+        ipv4_address: 172.30.0.10
+    command: >
+      bash -c "
+        sleep 3 &&
+        echo 'Creating Redis Cluster...' &&
+        redis-cli --cluster create
+          172.30.0.11:7001
+          172.30.0.12:7002
+          172.30.0.13:7003
+          --cluster-replicas 0
+          --cluster-yes &&
+        echo 'Redis Cluster created successfully'
+      "
+
+networks:
+  redis-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

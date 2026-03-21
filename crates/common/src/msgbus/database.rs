@@ -52,6 +52,15 @@ pub struct DatabaseConfig {
     pub password: Option<String>,
     /// If the database should use an SSL-enabled connection.
     pub ssl: bool,
+    /// If the Redis connection should use cluster mode.
+    /// Redis Cluster only supports database 0.
+    #[serde(default)]
+    pub cluster_mode: bool,
+    /// Additional Redis cluster seed node URLs (e.g. `["redis://host2:6380"]`).
+    /// The primary `host:port` is always used as the first seed node.
+    /// Only used when `cluster_mode` is `true`.
+    #[serde(default)]
+    pub cluster_nodes: Option<Vec<String>>,
     /// The timeout (in seconds) to wait for a new connection.
     pub connection_timeout: u16,
     /// The timeout (in seconds) to wait for a response.
@@ -76,6 +85,8 @@ impl Debug for DatabaseConfig {
             .field("username", &self.username)
             .field("password", &redacted)
             .field("ssl", &self.ssl)
+            .field("cluster_mode", &self.cluster_mode)
+            .field("cluster_nodes", &self.cluster_nodes)
             .field("connection_timeout", &self.connection_timeout)
             .field("response_timeout", &self.response_timeout)
             .field("number_of_retries", &self.number_of_retries)
@@ -96,6 +107,8 @@ impl Default for DatabaseConfig {
             username: None,
             password: None,
             ssl: false,
+            cluster_mode: false,
+            cluster_nodes: None,
             connection_timeout: 20,
             response_timeout: 20,
             number_of_retries: 100,

@@ -29,7 +29,9 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use redis::{AsyncCommands, aio::ConnectionManager};
+use redis::AsyncCommands;
+
+use super::RedisConnection;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
@@ -114,7 +116,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the Redis scan operation fails.
     pub async fn scan_keys(
-        con: &mut ConnectionManager,
+        con: &mut RedisConnection,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
         let mut result = Vec::new();
@@ -150,7 +152,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying Redis MGET operation fails.
     pub async fn read_bulk(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         keys: &[String],
     ) -> anyhow::Result<Vec<Option<Bytes>>> {
         if keys.is_empty() {
@@ -181,7 +183,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if `batch_size` is zero or if the underlying Redis MGET operation fails.
     pub async fn read_bulk_batched(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         keys: &[String],
         batch_size: usize,
     ) -> anyhow::Result<Vec<Option<Bytes>>> {
@@ -213,7 +215,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying Redis read operation fails or if the collection is unsupported.
     pub async fn read(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         key: &str,
     ) -> anyhow::Result<Vec<Bytes>> {
@@ -243,7 +245,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if loading any of the individual caches fails or combining data fails.
     pub async fn load_all(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
@@ -280,7 +282,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading currency data fails.
     pub async fn load_currencies(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
@@ -337,7 +339,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading instrument data fails.
     pub async fn load_instruments(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
@@ -406,7 +408,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading synthetic instrument data fails.
     pub async fn load_synthetics(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
@@ -475,7 +477,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading account data fails.
     pub async fn load_accounts(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
@@ -531,7 +533,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading order data fails.
     pub async fn load_orders(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
@@ -587,7 +589,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning keys or reading position data fails.
     pub async fn load_positions(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<PositionId, Position>> {
@@ -642,7 +644,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if scanning, bulk read, or deserialization fails.
     pub async fn load_custom_data(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         data_type: &DataType,
     ) -> anyhow::Result<Vec<CustomData>> {
@@ -703,7 +705,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_currency(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         code: &Ustr,
         encoding: SerializationEncoding,
@@ -725,7 +727,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_instrument(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         instrument_id: &InstrumentId,
         encoding: SerializationEncoding,
@@ -746,7 +748,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_synthetic(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         instrument_id: &InstrumentId,
         encoding: SerializationEncoding,
@@ -767,7 +769,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_account(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         account_id: &AccountId,
         encoding: SerializationEncoding,
@@ -788,7 +790,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_order(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         client_order_id: &ClientOrderId,
         encoding: SerializationEncoding,
@@ -809,7 +811,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_position(
-        con: &ConnectionManager,
+        con: &RedisConnection,
         trader_key: &str,
         position_id: &PositionId,
         encoding: SerializationEncoding,
@@ -832,7 +834,7 @@ impl DatabaseQueries {
             })
     }
 
-    async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    async fn read_index(conn: &mut RedisConnection, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let index_key = get_index_key(key)?;
         match index_key {
             INDEX_ORDER_IDS => Self::read_set(conn, key).await,
@@ -850,7 +852,7 @@ impl DatabaseQueries {
         }
     }
 
-    async fn read_string(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    async fn read_string(conn: &mut RedisConnection, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: Vec<u8> = conn.get(key).await?;
 
         if result.is_empty() {
@@ -860,18 +862,18 @@ impl DatabaseQueries {
         }
     }
 
-    async fn read_set(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    async fn read_set(conn: &mut RedisConnection, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: Vec<Bytes> = conn.smembers(key).await?;
         Ok(result)
     }
 
-    async fn read_hset(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    async fn read_hset(conn: &mut RedisConnection, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: HashMap<String, String> = conn.hgetall(key).await?;
         let json = serde_json::to_string(&result)?;
         Ok(vec![Bytes::from(json.into_bytes())])
     }
 
-    async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    async fn read_list(conn: &mut RedisConnection, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
         Ok(result)
     }

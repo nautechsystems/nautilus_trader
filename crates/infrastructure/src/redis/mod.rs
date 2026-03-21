@@ -27,8 +27,57 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
-use redis::RedisError;
+use redis::{Cmd, Pipeline, RedisFuture, RedisError, Value, aio, cluster_async::ClusterConnection};
 use semver::Version;
+
+/// A Redis connection that supports both single-node and cluster modes.
+///
+/// Wraps either a [`redis::aio::ConnectionManager`] (single-node) or a
+/// [`redis::cluster_async::ClusterConnection`] (cluster), exposing a unified
+/// [`redis::aio::ConnectionLike`] interface so that callers (cache, message bus,
+/// queries) do not need to know which mode is active.
+#[derive(Clone)]
+pub enum RedisConnection {
+    Single(aio::ConnectionManager),
+    Cluster(ClusterConnection),
+}
+
+impl std::fmt::Debug for RedisConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RedisConnection::Single(_) => f.debug_tuple("Single").finish(),
+            RedisConnection::Cluster(_) => f.debug_tuple("Cluster").finish(),
+        }
+    }
+}
+
+impl aio::ConnectionLike for RedisConnection {
+    fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
+        match self {
+            RedisConnection::Single(c) => c.req_packed_command(cmd),
+            RedisConnection::Cluster(c) => c.req_packed_command(cmd),
+        }
+    }
+
+    fn req_packed_commands<'a>(
+        &'a mut self,
+        cmd: &'a Pipeline,
+        offset: usize,
+        count: usize,
+    ) -> RedisFuture<'a, Vec<Value>> {
+        match self {
+            RedisConnection::Single(c) => c.req_packed_commands(cmd, offset, count),
+            RedisConnection::Cluster(c) => c.req_packed_commands(cmd, offset, count),
+        }
+    }
+
+    fn get_db(&self) -> i64 {
+        match self {
+            RedisConnection::Single(c) => c.get_db(),
+            RedisConnection::Cluster(c) => c.get_db(),
+        }
+    }
+}
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
 const REDIS_DELIMITER: char = ':';
@@ -149,45 +198,69 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 pub async fn create_redis_connection(
     con_name: &str,
     config: DatabaseConfig,
-) -> anyhow::Result<redis::aio::ConnectionManager> {
+) -> anyhow::Result<RedisConnection> {
     log::debug!("Creating {con_name} redis connection");
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     log::debug!("Connecting to {redacted_url}");
 
-    let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
-    let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
-    let number_of_retries = config.number_of_retries;
-    let exponent_base = config.exponent_base as f32;
+    if config.cluster_mode {
+        log::debug!("Using Redis Cluster mode");
+        let mut urls = vec![redis_url];
+        if let Some(nodes) = &config.cluster_nodes {
+            urls.extend(nodes.iter().cloned());
+        }
+        let client = redis::cluster::ClusterClient::new(urls)?;
+        let con = client.get_async_connection().await?;
+        let mut con = RedisConnection::Cluster(con);
 
-    // Use factor as min_delay base for backoff: factor * (exponent_base ^ tries)
-    let min_delay = Duration::from_millis(config.factor);
-    let max_delay = Duration::from_secs(config.max_delay);
+        let version = get_redis_version(&mut con).await?;
+        let min_version = Version::parse(REDIS_MIN_VERSION)?;
+        let con_msg = format!("Connected to redis cluster v{version}");
 
-    let client = redis::Client::open(redis_url)?;
+        if version >= min_version {
+            log::info!("{con_msg}");
+        } else {
+            log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
+        }
 
-    let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
-        .set_exponent_base(exponent_base)
-        .set_number_of_retries(number_of_retries)
-        .set_response_timeout(Some(response_timeout))
-        .set_connection_timeout(Some(connection_timeout))
-        .set_min_delay(min_delay)
-        .set_max_delay(max_delay);
-
-    let mut con = client
-        .get_connection_manager_with_config(connection_manager_config)
-        .await?;
-
-    let version = get_redis_version(&mut con).await?;
-    let min_version = Version::parse(REDIS_MIN_VERSION)?;
-    let con_msg = format!("Connected to redis v{version}");
-
-    if version >= min_version {
-        log::info!("{con_msg}");
+        Ok(con)
     } else {
-        log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
-    }
+        let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
+        let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
+        let number_of_retries = config.number_of_retries;
+        let exponent_base = config.exponent_base as f32;
 
-    Ok(con)
+        // Use factor as min_delay base for backoff: factor * (exponent_base ^ tries)
+        let min_delay = Duration::from_millis(config.factor);
+        let max_delay = Duration::from_secs(config.max_delay);
+
+        let client = redis::Client::open(redis_url)?;
+
+        let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
+            .set_exponent_base(exponent_base)
+            .set_number_of_retries(number_of_retries)
+            .set_response_timeout(Some(response_timeout))
+            .set_connection_timeout(Some(connection_timeout))
+            .set_min_delay(min_delay)
+            .set_max_delay(max_delay);
+
+        let con = client
+            .get_connection_manager_with_config(connection_manager_config)
+            .await?;
+        let mut con = RedisConnection::Single(con);
+
+        let version = get_redis_version(&mut con).await?;
+        let min_version = Version::parse(REDIS_MIN_VERSION)?;
+        let con_msg = format!("Connected to redis v{version}");
+
+        if version >= min_version {
+            log::info!("{con_msg}");
+        } else {
+            log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
+        }
+
+        Ok(con)
+    }
 }
 
 /// Flushes the entire Redis database for the specified connection.
@@ -195,9 +268,7 @@ pub async fn create_redis_connection(
 /// # Errors
 ///
 /// Returns an error if the FLUSHDB command fails.
-pub async fn flush_redis(
-    con: &mut redis::aio::ConnectionManager,
-) -> anyhow::Result<(), RedisError> {
+pub async fn flush_redis(con: &mut RedisConnection) -> anyhow::Result<(), RedisError> {
     redis::cmd(REDIS_FLUSHDB).exec_async(con).await
 }
 
@@ -233,9 +304,7 @@ pub fn get_stream_key(
 /// # Errors
 ///
 /// Returns an error if the INFO command fails or version parsing fails.
-pub async fn get_redis_version(
-    conn: &mut redis::aio::ConnectionManager,
-) -> anyhow::Result<Version> {
+pub async fn get_redis_version(conn: &mut RedisConnection) -> anyhow::Result<Version> {
     let info: String = redis::cmd("INFO").query_async(conn).await?;
     let version_str = match info.lines().find_map(|line| {
         if line.starts_with("redis_version:") {
@@ -399,5 +468,49 @@ mod tests {
     fn test_get_index_key_invalid() {
         let key = "no_index_pattern";
         assert!(get_index_key(key).is_err());
+    }
+
+    /// Run locally with: `docker compose -f docker-compose.redis-cluster.yml up -d`
+    /// Then: `cargo test -p nautilus-infrastructure -- --ignored test_redis_cluster`
+    #[rstest]
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_cluster_connect_and_read_write() {
+        let config: DatabaseConfig = serde_json::from_value(json!({
+            "host": "127.0.0.1",
+            "port": 7001,
+            "cluster_mode": true,
+            "cluster_nodes": [
+                "redis://127.0.0.1:7002",
+                "redis://127.0.0.1:7003"
+            ]
+        }))
+        .unwrap();
+
+        let mut conn = create_redis_connection("test-cluster", config)
+            .await
+            .expect("Failed to connect to Redis Cluster");
+        assert!(matches!(conn, RedisConnection::Cluster(_)));
+
+        // SET, GET, DEL through the cluster
+        let _: () = redis::cmd("SET")
+            .arg("test:cluster:key")
+            .arg("hello_cluster")
+            .query_async(&mut conn)
+            .await
+            .expect("SET failed");
+
+        let result: String = redis::cmd("GET")
+            .arg("test:cluster:key")
+            .query_async(&mut conn)
+            .await
+            .expect("GET failed");
+        assert_eq!(result, "hello_cluster");
+
+        let _: () = redis::cmd("DEL")
+            .arg("test:cluster:key")
+            .query_async(&mut conn)
+            .await
+            .expect("DEL failed");
     }
 }
