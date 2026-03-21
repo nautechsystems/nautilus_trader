@@ -305,8 +305,31 @@ pub fn get_stream_key(
 ///
 /// Returns an error if the INFO command fails or version parsing fails.
 pub async fn get_redis_version(conn: &mut RedisConnection) -> anyhow::Result<Version> {
-    let info: String = redis::cmd("INFO").query_async(conn).await?;
-    let version_str = match info.lines().find_map(|line| {
+    // Cluster INFO returns a map of node->info, single node returns a string.
+    let info_str: String = match conn {
+        RedisConnection::Single(_) => redis::cmd("INFO").query_async(conn).await?,
+        RedisConnection::Cluster(_) => {
+            let result: Value = redis::cmd("INFO").query_async(conn).await?;
+            match result {
+                Value::BulkString(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                Value::Map(pairs) => {
+                    // Take the info string from the first node
+                    pairs
+                        .into_iter()
+                        .find_map(|(_, v)| match v {
+                            Value::BulkString(bytes) => {
+                                Some(String::from_utf8_lossy(&bytes).to_string())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_default()
+                }
+                _ => String::new(),
+            }
+        }
+    };
+
+    let version_str = match info_str.lines().find_map(|line| {
         if line.starts_with("redis_version:") {
             line.split(':').nth(1).map(|s| s.trim().to_string())
         } else {
