@@ -673,8 +673,8 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use nautilus_common::testing::wait_until_async;
     use crate::redis::RedisConnection;
+    use nautilus_common::testing::wait_until_async;
     use rstest::*;
 
     use super::*;

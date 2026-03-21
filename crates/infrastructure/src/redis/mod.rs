@@ -19,6 +19,7 @@ pub mod cache;
 pub mod msgbus;
 pub mod queries;
 
+use std::fmt::Debug;
 use std::time::Duration;
 
 use nautilus_common::{
@@ -27,7 +28,7 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
-use redis::{Cmd, Pipeline, RedisFuture, RedisError, Value, aio, cluster_async::ClusterConnection};
+use redis::{Cmd, Pipeline, RedisError, RedisFuture, Value, aio, cluster_async::ClusterConnection};
 use semver::Version;
 
 /// A Redis connection that supports both single-node and cluster modes.
@@ -42,11 +43,11 @@ pub enum RedisConnection {
     Cluster(ClusterConnection),
 }
 
-impl std::fmt::Debug for RedisConnection {
+impl Debug for RedisConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RedisConnection::Single(_) => f.debug_tuple("Single").finish(),
-            RedisConnection::Cluster(_) => f.debug_tuple("Cluster").finish(),
+            Self::Single(_) => f.debug_tuple("Single").finish(),
+            Self::Cluster(_) => f.debug_tuple("Cluster").finish(),
         }
     }
 }
@@ -54,8 +55,8 @@ impl std::fmt::Debug for RedisConnection {
 impl aio::ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         match self {
-            RedisConnection::Single(c) => c.req_packed_command(cmd),
-            RedisConnection::Cluster(c) => c.req_packed_command(cmd),
+            Self::Single(c) => c.req_packed_command(cmd),
+            Self::Cluster(c) => c.req_packed_command(cmd),
         }
     }
 
@@ -66,15 +67,15 @@ impl aio::ConnectionLike for RedisConnection {
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
         match self {
-            RedisConnection::Single(c) => c.req_packed_commands(cmd, offset, count),
-            RedisConnection::Cluster(c) => c.req_packed_commands(cmd, offset, count),
+            Self::Single(c) => c.req_packed_commands(cmd, offset, count),
+            Self::Cluster(c) => c.req_packed_commands(cmd, offset, count),
         }
     }
 
     fn get_db(&self) -> i64 {
         match self {
-            RedisConnection::Single(c) => c.get_db(),
-            RedisConnection::Cluster(c) => c.get_db(),
+            Self::Single(c) => c.get_db(),
+            Self::Cluster(c) => c.get_db(),
         }
     }
 }
@@ -206,6 +207,7 @@ pub async fn create_redis_connection(
     if config.cluster_mode {
         log::debug!("Using Redis Cluster mode");
         let mut urls = vec![redis_url];
+
         if let Some(nodes) = &config.cluster_nodes {
             urls.extend(nodes.iter().cloned());
         }

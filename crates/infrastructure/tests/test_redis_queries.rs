@@ -26,7 +26,8 @@ mod serial_tests {
     };
     use nautilus_core::{Params, UUID4};
     use nautilus_infrastructure::redis::{
-        cache::RedisCacheDatabase, create_redis_connection, queries::DatabaseQueries,
+        RedisConnection, cache::RedisCacheDatabase, create_redis_connection,
+        queries::DatabaseQueries,
     };
     use nautilus_model::{
         data::{
@@ -45,7 +46,7 @@ mod serial_tests {
         LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
     }
 
-    async fn get_redis_connection() -> nautilus_infrastructure::redis::RedisConnection {
+    async fn get_redis_connection() -> RedisConnection {
         let config = DatabaseConfig {
             database_type: "redis".to_string(),
             host: Some("localhost".to_string()),
