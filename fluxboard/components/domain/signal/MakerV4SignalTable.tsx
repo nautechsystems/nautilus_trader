@@ -17,6 +17,7 @@ type MakerV4DisplayRow = SignalStrategy & {
   _makerLeg: MakerV4LegSnapshot | null;
   _hedgeLeg: MakerV4LegSnapshot | null;
   _operator: MakerV4OperatorPayload | null;
+  _sourceFingerprint: string;
   _quoteHealthUsable: boolean;
   _statusLabel: ReturnType<typeof describeTradingStatus>;
   _lastUpdateMs: number | null;
@@ -195,6 +196,22 @@ function resolveLiveRecentAgeMs(row: MakerV4DisplayRow, nowMs: number): number |
   return resolveLiveAgeMs(row._recentAgeMs, row._ageAsOfMs, nowMs);
 }
 
+function buildMakerV4SourceFingerprint(row: SignalStrategy): string {
+  return JSON.stringify({
+    running: row.running ?? null,
+    tradeable: row.tradeable ?? null,
+    blocked: row.blocked ?? null,
+    balances_ok: row.balances_ok ?? null,
+    params: row.params ?? null,
+    state: row.state ?? null,
+    maker_v4: row.maker_v4 ?? null,
+    legs: row.legs ?? null,
+    legs_order: row.legs_order ?? null,
+    maker_role_map: row.maker_role_map ?? null,
+    meta: row.meta ?? null,
+  });
+}
+
 function formatLegAge(
   leg: MakerV4LegSnapshot | null | undefined,
   ageAsOfMs: number | null,
@@ -241,6 +258,7 @@ function buildMakerV4DisplayRow(
     _makerLeg: quoteSnapshot?.maker_leg ?? null,
     _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
     _operator: row.maker_v4?.operator ?? null,
+    _sourceFingerprint: buildMakerV4SourceFingerprint(row),
     _quoteHealthUsable: quoteHealthUsable,
     _statusLabel: describeTradingStatus(status),
     _lastUpdateMs: lastUpdateMs,
@@ -282,6 +300,7 @@ function didMakerV4SourceRowChange(
     || existing.legs_order !== sourceRow.legs_order
     || existing.maker_role_map !== sourceRow.maker_role_map
     || existing.meta !== sourceRow.meta
+    || existing._sourceFingerprint !== buildMakerV4SourceFingerprint(sourceRow)
   );
 }
 
@@ -290,6 +309,7 @@ function reconcileMakerV4DisplayRows({
   currentRowById,
   currentSourceRowById,
   changedRowIds,
+  forceRefreshAll,
   sourceRows,
   nowMs,
   clockAnchorMs,
@@ -298,6 +318,7 @@ function reconcileMakerV4DisplayRows({
   currentRowById: Map<string, MakerV4DisplayRow>;
   currentSourceRowById: Map<string, SignalStrategy>;
   changedRowIds?: readonly string[] | null;
+  forceRefreshAll?: boolean;
   sourceRows: readonly SignalStrategy[];
   nowMs: number;
   clockAnchorMs?: number | null;
@@ -311,11 +332,12 @@ function reconcileMakerV4DisplayRows({
     const nextId = sourceRow.id;
     const existing = currentRowById.get(nextId);
     const previousSourceRow = currentSourceRowById.get(nextId);
-    const sourceRowChanged = changedRowIdSet
-      ? changedRowIdSet.has(nextId)
-      : previousSourceRow == null
-        || previousSourceRow !== sourceRow
-        || didMakerV4SourceRowChange(existing, sourceRow);
+    const sourceRowChanged = forceRefreshAll
+      || (changedRowIdSet
+        ? changedRowIdSet.has(nextId)
+        : previousSourceRow == null
+          || previousSourceRow !== sourceRow
+          || didMakerV4SourceRowChange(existing, sourceRow));
     const needsInitialServerRealignment = (
       existing != null
       && clockAnchorMs != null
@@ -474,16 +496,23 @@ export default function MakerV4SignalTable({
   const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
   const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
   const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
+  const previousLiveDataVersionRef = useRef<number | undefined>(liveDataVersion);
   const data = useMemo<MakerV4DisplayRow[]>(() => {
-    return reconcileMakerV4DisplayRows({
+    const forceRefreshAll =
+      changedRowIds == null
+      && liveDataVersion !== previousLiveDataVersionRef.current;
+    const reconciledRows = reconcileMakerV4DisplayRows({
       currentRows: displayRowsRef.current,
       currentRowById: displayRowByIdRef.current,
       currentSourceRowById: displaySourceRowByIdRef.current,
       changedRowIds,
+      forceRefreshAll,
       sourceRows,
       nowMs,
       clockAnchorMs,
     });
+    previousLiveDataVersionRef.current = liveDataVersion;
+    return reconciledRows;
   }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [

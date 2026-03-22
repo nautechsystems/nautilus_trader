@@ -392,6 +392,129 @@ describe('MakerV4SignalTable', () => {
     expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
   });
 
+  it('reconciles nested in-place state mutations through liveDataVersion without rebuilding the maker v4 data array', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    strategy.running = undefined as any;
+    strategy.params = {
+      ...strategy.params,
+      bot_on: '1',
+    };
+    const rows = [strategy];
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={1}
+        nowProvider={() => 1_700_000_000_500}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
+    });
+
+    const initial = dataTablePropsHistory.at(-1);
+    if (!strategy.state) {
+      throw new Error('expected strategy state');
+    }
+    strategy.state.ts_ms = 1_699_999_994_500;
+
+    rerender(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={2}
+        nowProvider={() => 1_700_000_000_500}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Pending')).toBeInTheDocument();
+    });
+
+    const latest = dataTablePropsHistory.at(-1);
+    expect(latest?.data).toBe(initial?.data);
+    expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
+  });
+
+  it('recomputes derived trading status for nested in-place maker v4 mutations when liveDataVersion changes without changedRowIds', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    strategy.params = {
+      ...strategy.params,
+      bot_on: '1',
+    };
+    const rows = [strategy];
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
+    });
+
+    const initial = dataTablePropsHistory.at(-1);
+    const initialRow = (initial?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+    expect(initialRow?._statusLabel?.label).toBe('Enabled');
+    if (!strategy.maker_v4?.quote_snapshot) {
+      throw new Error('expected maker_v4 quote snapshot in test fixture');
+    }
+    strategy.maker_v4.quote_snapshot.hedge_ready = false;
+
+    rerender(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={2}
+      />,
+    );
+
+    const latest = dataTablePropsHistory.at(-1);
+    const latestRow = (latest?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+    await waitFor(() => {
+      expect(latestRow?._statusLabel?.label).toBe('Pending');
+    });
+    expect(latest?.data).toBe(initial?.data);
+    expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
+  });
+
+  it('reconciles nested in-place maker v4 mutations when liveDataVersion changes without changedRowIds', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    const rows = [strategy];
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2.0 bps')).toBeInTheDocument();
+    });
+
+    if (!strategy.maker_v4?.quote_snapshot?.maker_leg) {
+      throw new Error('Expected maker leg quote snapshot');
+    }
+    strategy.maker_v4.quote_snapshot.maker_leg.feed_state = 'stale';
+
+    rerender(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={2}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('stale').length).toBeGreaterThanOrEqual(1);
+    });
+
+    const latest = dataTablePropsHistory.at(-1);
+    expect(latest?.data).toBe(dataTablePropsHistory[0]?.data);
+    expect(latest?.liveDataVersion).toBe(2);
+  });
+
   it('avoids rebuilding untouched maker v4 rows on a single-row live update', async () => {
     renderActualDataTable = false;
     const accessCounts = new Map<string, number>();
