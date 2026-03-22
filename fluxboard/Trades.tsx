@@ -108,6 +108,14 @@ type TradeStreamCursor = {
   lastSeq: number;
 };
 
+function matchesTradeStreamEpoch(
+  cursor: Pick<TradeStreamCursor, 'streamId' | 'snapshotRevision'>,
+  streamId: string | undefined,
+  snapshotRevision: RealtimeSnapshotRevision | undefined,
+): boolean {
+  return cursor.streamId === streamId && cursor.snapshotRevision === snapshotRevision;
+}
+
 const getTradeRowSortKey = (row: TradeRow): number => {
   if (typeof row.ts === 'number' && Number.isFinite(row.ts)) {
     return row.ts;
@@ -613,6 +621,8 @@ export default function Trades({
   const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
   const streamCursorRef = useRef<TradeStreamCursor>({ lastSeq });
   const gapRecoveryTargetSeqRef = useRef<number | null>(null);
+  const gapRecoveryBaseSeqRef = useRef<number | null>(null);
+  const gapRecoveryObservedReplaySeqsRef = useRef<Set<number>>(new Set());
   const lastUpdateRef = useRef<number>(lastUpdate);
   const loadingRef = useRef<boolean>(loading);
   const isResyncingRef = useRef<boolean>(isResyncing);
@@ -677,17 +687,54 @@ export default function Trades({
     trimControllerRows();
   }, [trimControllerRows]);
 
-  const reconcileGapRecoveryTarget = useCallback((lastSeq: number): number | null => {
-    const target = gapRecoveryTargetSeqRef.current;
-    if (target == null) {
-      return null;
-    }
-    if (lastSeq >= target) {
-      gapRecoveryTargetSeqRef.current = null;
-      return null;
-    }
-    return target;
+  const clearGapRecoveryState = useCallback(() => {
+    gapRecoveryTargetSeqRef.current = null;
+    gapRecoveryBaseSeqRef.current = null;
+    gapRecoveryObservedReplaySeqsRef.current.clear();
   }, []);
+
+  const beginGapRecovery = useCallback((baseSeq: number, targetSeq: number) => {
+    if (gapRecoveryBaseSeqRef.current == null) {
+      gapRecoveryBaseSeqRef.current = baseSeq;
+    }
+    gapRecoveryTargetSeqRef.current = Math.max(
+      gapRecoveryTargetSeqRef.current ?? targetSeq,
+      targetSeq,
+    );
+  }, []);
+
+  const reconcileGapRecoveryTarget = useCallback((
+    lastSeq: number,
+    replaySeqs?: Iterable<number>,
+  ): { acknowledgedSeq: number; targetSeq: number | null } => {
+    const target = gapRecoveryTargetSeqRef.current;
+    const base = gapRecoveryBaseSeqRef.current;
+    if (target == null || base == null) {
+      return { acknowledgedSeq: lastSeq, targetSeq: null };
+    }
+
+    let acknowledgedSeq = base;
+    if (replaySeqs) {
+      for (const replaySeq of replaySeqs) {
+        if (replaySeq > acknowledgedSeq) {
+          gapRecoveryObservedReplaySeqsRef.current.add(replaySeq);
+        }
+      }
+    }
+
+    while (gapRecoveryObservedReplaySeqsRef.current.has(acknowledgedSeq + 1)) {
+      gapRecoveryObservedReplaySeqsRef.current.delete(acknowledgedSeq + 1);
+      acknowledgedSeq += 1;
+    }
+
+    gapRecoveryBaseSeqRef.current = acknowledgedSeq;
+    if (acknowledgedSeq >= target) {
+      clearGapRecoveryState();
+      return { acknowledgedSeq, targetSeq: null };
+    }
+
+    return { acknowledgedSeq, targetSeq: target };
+  }, [clearGapRecoveryState]);
 
   const syncSurfaceState = useCallback(() => {
     let nextState: RealtimeSurfaceState;
@@ -808,9 +855,12 @@ export default function Trades({
 
   useEffect(() => {
     latestSeqRef.current = lastSeq;
-    streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, lastSeq);
+    const recoveryState = reconcileGapRecoveryTarget(lastSeq);
+    streamCursorRef.current.lastSeq = recoveryState.targetSeq == null
+      ? Math.max(streamCursorRef.current.lastSeq, lastSeq)
+      : recoveryState.acknowledgedSeq;
     syncSurfaceState();
-  }, [lastSeq, syncSurfaceState]);
+  }, [lastSeq, syncSurfaceState, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     pollDelayRef.current = pollDelay;
@@ -942,7 +992,7 @@ export default function Trades({
           lastSeq: nextLastSeq,
         };
         latestSeqRef.current = nextLastSeq;
-        gapRecoveryTargetSeqRef.current = null;
+        clearGapRecoveryState();
         catchingUpRef.current = false;
 
         const nextUpdate = Date.now();
@@ -981,6 +1031,7 @@ export default function Trades({
       recomputeIsViewingLatest,
       advanceTradeReplayCursor,
       syncSurfaceState,
+      clearGapRecoveryState,
     ],
   );
 
@@ -1195,23 +1246,24 @@ export default function Trades({
       }
       try {
         const pollResyncId = resyncIdRef.current;
-        const streamCursor = streamCursorRef.current;
-        const requestedSinceSeq = streamCursor.lastSeq;
+        const requestCursor = { ...streamCursorRef.current };
+        const requestedSinceSeq = requestCursor.lastSeq;
         const deltaCursor = {
           sinceSeq: requestedSinceSeq,
-          streamId: streamCursor.streamId,
-          snapshotRevision: streamCursor.snapshotRevision,
+          streamId: requestCursor.streamId,
+          snapshotRevision: requestCursor.snapshotRevision,
         };
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
 
         if (!isActiveRef.current) {
           return;
         }
+        const latestStreamCursor = streamCursorRef.current;
         const responseStreamId =
           typeof delta.stream_id === 'string' && delta.stream_id.trim()
             ? delta.stream_id.trim()
-            : streamCursor.streamId;
-        const responseSnapshotRevision = delta.snapshot_revision ?? streamCursor.snapshotRevision;
+            : requestCursor.streamId;
+        const responseSnapshotRevision = delta.snapshot_revision ?? requestCursor.snapshotRevision;
         const deltaRowsMaxSeq = (delta.rows || []).reduce(
           (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
           0,
@@ -1220,12 +1272,37 @@ export default function Trades({
           typeof delta.last_seq === 'number'
             ? Math.max(delta.last_seq, deltaRowsMaxSeq)
             : deltaRowsMaxSeq;
+        const requestEpochStillCurrent = matchesTradeStreamEpoch(
+          latestStreamCursor,
+          requestCursor.streamId,
+          requestCursor.snapshotRevision,
+        );
+        const responseMatchesLatestEpoch = matchesTradeStreamEpoch(
+          latestStreamCursor,
+          responseStreamId,
+          responseSnapshotRevision,
+        );
+        const responseMatchesRequestEpoch = matchesTradeStreamEpoch(
+          requestCursor,
+          responseStreamId,
+          responseSnapshotRevision,
+        );
+        const staleSupersededResponse =
+          !requestEpochStillCurrent
+          && responseMatchesRequestEpoch
+          && !responseMatchesLatestEpoch;
+        if (staleSupersededResponse) {
+          return;
+        }
         const hasStreamMismatch =
-          (streamCursor.streamId && responseStreamId && responseStreamId !== streamCursor.streamId)
-          || (
-            streamCursor.snapshotRevision != null
-            && responseSnapshotRevision != null
-            && responseSnapshotRevision !== streamCursor.snapshotRevision
+          !responseMatchesLatestEpoch
+          && (
+            (latestStreamCursor.streamId && responseStreamId && responseStreamId !== latestStreamCursor.streamId)
+            || (
+              latestStreamCursor.snapshotRevision != null
+              && responseSnapshotRevision != null
+              && responseSnapshotRevision !== latestStreamCursor.snapshotRevision
+            )
           );
         if (hasStreamMismatch) {
           catchingUpRef.current = true;
@@ -1236,20 +1313,28 @@ export default function Trades({
           });
           return;
         }
+        const replayRows = [...(delta.rows || [])];
+        const replaySeqs = replayRows
+          .map((row) => coerceFiniteNumber((row as any)?.seq))
+          .filter((seq): seq is number => seq !== undefined);
+        const recoveryState = reconcileGapRecoveryTarget(latestStreamCursor.lastSeq, replaySeqs);
+        const nextCursorLastSeq = recoveryState.targetSeq == null
+          ? (
+              effectiveDeltaLastSeq > 0
+                ? Math.max(latestStreamCursor.lastSeq, effectiveDeltaLastSeq)
+                : latestStreamCursor.lastSeq
+            )
+          : recoveryState.acknowledgedSeq;
         streamCursorRef.current = {
           contractVersion:
             typeof delta.contract_version === 'number'
               ? delta.contract_version
-              : streamCursor.contractVersion,
+              : latestStreamCursor.contractVersion,
           streamId: responseStreamId,
           snapshotRevision: responseSnapshotRevision,
-          lastSeq:
-            effectiveDeltaLastSeq > 0
-              ? Math.max(streamCursor.lastSeq, effectiveDeltaLastSeq)
-              : streamCursor.lastSeq,
+          lastSeq: nextCursorLastSeq,
         };
 
-        // DEFENSIVE FIX: Validate sequence consistency
         const deltaLastSeq = effectiveDeltaLastSeq > 0 ? effectiveDeltaLastSeq : null;
         const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
@@ -1258,13 +1343,10 @@ export default function Trades({
         const seqAdvanced =
           hasNumericLastSeq
           && deltaLastSeq > requestedSinceSeq;
-        const currentGapRecoveryTargetSeq = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
+        const currentGapRecoveryTargetSeq = recoveryState.targetSeq;
         const gapRecoveryResolved =
           currentGapRecoveryTargetSeq == null
-          || (
-            hasNumericLastSeq
-            && deltaLastSeq >= currentGapRecoveryTargetSeq
-          );
+          || streamCursorRef.current.lastSeq >= currentGapRecoveryTargetSeq;
         if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
             `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
@@ -1301,7 +1383,6 @@ export default function Trades({
         } else {
           let pollAcknowledgedCurrentEpoch = false;
           let appliedCurrentEpoch = false;
-          const replayRows = [...(delta.rows || [])];
           advanceTradeReplayCursor(replayRows);
           const rowsForView = filterEventsForFilters(replayRows, filtersRef.current);
           if (rowsForView.length) {
@@ -1381,10 +1462,10 @@ export default function Trades({
             socketConnectedRef.current
             && replayRows.length < DELTA_LIMIT
             && replayResolvedCurrentEpoch
-            && reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq) == null
+            && currentGapRecoveryTargetSeq == null
           ) {
             catchingUpRef.current = false;
-          } else if (reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq) != null) {
+          } else if (currentGapRecoveryTargetSeq != null) {
             catchingUpRef.current = true;
           }
           if (!isActiveRef.current) {
@@ -1560,20 +1641,22 @@ export default function Trades({
         syncSurfaceState();
         return;
       }
-      const hasSeqGap =
-        typeof event.seq === 'number'
-        && currentStreamCursor.streamId != null
+      const hasExactCurrentEpoch =
+        currentStreamCursor.streamId != null
         && currentStreamCursor.snapshotRevision != null
         && eventStreamId != null
         && eventSnapshotRevision != null
         && eventStreamId === currentStreamCursor.streamId
-        && eventSnapshotRevision === currentStreamCursor.snapshotRevision
+        && eventSnapshotRevision === currentStreamCursor.snapshotRevision;
+      const hasCompatibleRecoveryEpoch =
+        hasExactCurrentEpoch
+        || (eventStreamId == null && eventSnapshotRevision == null);
+      const hasSeqGap =
+        typeof event.seq === 'number'
+        && hasExactCurrentEpoch
         && event.seq > currentStreamCursor.lastSeq + 1;
       if (hasSeqGap) {
-        gapRecoveryTargetSeqRef.current = Math.max(
-          gapRecoveryTargetSeqRef.current ?? 0,
-          event.seq,
-        );
+        beginGapRecovery(currentStreamCursor.lastSeq, event.seq);
         catchingUpRef.current = true;
         syncSurfaceState();
         schedulePoll();
@@ -1583,15 +1666,10 @@ export default function Trades({
       const shouldDeferEventDuringRecovery =
         typeof event.seq === 'number'
         && pendingGapTargetSeq != null
-        && currentStreamCursor.streamId != null
-        && currentStreamCursor.snapshotRevision != null
-        && eventStreamId != null
-        && eventSnapshotRevision != null
-        && eventStreamId === currentStreamCursor.streamId
-        && eventSnapshotRevision === currentStreamCursor.snapshotRevision
+        && hasCompatibleRecoveryEpoch
         && event.seq > currentStreamCursor.lastSeq;
       if (shouldDeferEventDuringRecovery) {
-        gapRecoveryTargetSeqRef.current = Math.max(pendingGapTargetSeq, event.seq);
+        beginGapRecovery(currentStreamCursor.lastSeq, event.seq);
         catchingUpRef.current = true;
         syncSurfaceState();
         schedulePoll();
@@ -1615,7 +1693,9 @@ export default function Trades({
         latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
         streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, event.seq);
       }
-      const outstandingGapRecoveryTargetSeq = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
+      const recoveryState = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
+      streamCursorRef.current.lastSeq = recoveryState.acknowledgedSeq;
+      const outstandingGapRecoveryTargetSeq = recoveryState.targetSeq;
       const passesFilters = rowMatchesFilters(event, filtersRef.current);
       const rowVisibleInCurrentStore = Array.isArray(storeRows)
         && storeRows.some((row) => row?.row_id === event.row_id);
@@ -1661,7 +1741,7 @@ export default function Trades({
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery]);
 
   useEffect(() => {
     const pending: any[] = [];
