@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const dataTablePropsHistory: Array<{ data: unknown; liveDataVersion: unknown }> = [];
+let renderActualDataTable = true;
 
 vi.mock('@/components/ui/table/DataTable', async () => {
   const actual = await vi.importActual<any>('@/components/ui/table/DataTable');
@@ -13,6 +14,9 @@ vi.mock('@/components/ui/table/DataTable', async () => {
         data: props.data,
         liveDataVersion: props.liveDataVersion,
       });
+      if (!renderActualDataTable) {
+        return null;
+      }
       const ActualDataTable = actual.DataTable;
       return <ActualDataTable {...props} />;
     },
@@ -189,7 +193,28 @@ function buildMakerV4Strategy(): SignalStrategy {
   };
 }
 
+function buildTrackedMakerV4Strategy(id: string, accessCounts: Map<string, number>, overrides: Partial<SignalStrategy> = {}): SignalStrategy {
+  const strategy = buildMakerV4Strategy();
+  strategy.id = id;
+  const makerV4 = overrides.maker_v4 ?? strategy.maker_v4;
+  Object.assign(strategy, overrides);
+  Object.defineProperty(strategy, 'maker_v4', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessCounts.set(id, (accessCounts.get(id) ?? 0) + 1);
+      return makerV4;
+    },
+  });
+  return strategy;
+}
+
 describe('MakerV4SignalTable', () => {
+  afterEach(() => {
+    renderActualDataTable = true;
+    dataTablePropsHistory.length = 0;
+  });
+
   it('renders a dedicated maker v4 signal table with both venue legs, route, and strategy-published spreads', () => {
     render(
       <MakerV4SignalTable
@@ -355,6 +380,52 @@ describe('MakerV4SignalTable', () => {
     const latest = dataTablePropsHistory.at(-1);
     expect(latest?.data).toBe(initial?.data);
     expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
+  });
+
+  it('avoids rebuilding untouched maker v4 rows on a single-row live update', async () => {
+    renderActualDataTable = false;
+    const accessCounts = new Map<string, number>();
+    const firstRow = buildTrackedMakerV4Strategy('maker_v4_first', accessCounts);
+    const changedRow = buildTrackedMakerV4Strategy('maker_v4_changed', accessCounts);
+    const thirdRow = buildTrackedMakerV4Strategy('maker_v4_third', accessCounts);
+
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={[firstRow, changedRow, thirdRow]}
+        liveDataVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(dataTablePropsHistory.at(-1)?.liveDataVersion).toBe(1);
+    });
+
+    const countsBefore = new Map(accessCounts);
+    const updatedChangedRow = buildTrackedMakerV4Strategy('maker_v4_changed', accessCounts, {
+      maker_v4: {
+        ...changedRow.maker_v4,
+        quote_snapshot: {
+          ...changedRow.maker_v4?.quote_snapshot,
+          mid_spread_bps: 9.0,
+        },
+      } as any,
+    });
+
+    rerender(
+      <MakerV4SignalTable
+        rows={[firstRow, updatedChangedRow, thirdRow]}
+        liveDataVersion={2}
+        changedRowIds={['maker_v4_changed']}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(dataTablePropsHistory.at(-1)?.liveDataVersion).toBe(2);
+    });
+
+    expect(accessCounts.get('maker_v4_first')).toBe(countsBefore.get('maker_v4_first'));
+    expect(accessCounts.get('maker_v4_third')).toBe(countsBefore.get('maker_v4_third'));
+    expect(accessCounts.get('maker_v4_changed')).toBeGreaterThan(countsBefore.get('maker_v4_changed') ?? 0);
   });
 
   it('switches the equities signal route to the dedicated maker v4 table while filters stay available', async () => {

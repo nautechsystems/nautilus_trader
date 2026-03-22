@@ -72,9 +72,9 @@ vi.mock('@/components/ui/popover/Popover', () => ({
   PopoverContent: ({ children }: any) => <div>{children}</div>,
 }));
 
-function renderSignalTable() {
+function renderSignalTable(pathname = '/signal') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[pathname]}>
       <SignalTable />
     </MemoryRouter>
   );
@@ -559,6 +559,55 @@ describe('SignalTable Behavioral Tests', () => {
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
+
+    it('resets recovery backoff after a successful invalidate-driven snapshot recovery', async () => {
+      vi.useFakeTimers();
+      (socket as any).connected = true;
+
+      renderSignalTable('/signal');
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      const marketUpdateHandler = (socket.on as any).mock.calls.find(
+        (call: any[]) => call[0] === 'market_update'
+      )?.[1];
+      expect(typeof marketUpdateHandler).toBe('function');
+
+      act(() => {
+        marketUpdateHandler({
+          strategies: { changed: ['strategy_a'] },
+          server_time: '2024-01-01 12:00:01',
+          server_ts_ms: 1_700_000_000_001,
+        });
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        marketUpdateHandler({
+          strategies: { changed: ['strategy_b'] },
+          server_time: '2024-01-01 12:00:02',
+          server_ts_ms: 1_700_000_000_002,
+        });
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(3);
+      vi.useRealTimers();
+    });
   });
 
   describe('Filter Behavior', () => {
@@ -587,6 +636,36 @@ describe('SignalTable Behavioral Tests', () => {
       });
     });
 
+    it('recomputes filtered rows immediately when a steady-state live delta changes trading status', async () => {
+      const pausedStrategy = createMockStrategy('live_filter_target', { params: { bot_on: '0' } });
+      initSignalState({ rows: [pausedStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      const { rerender } = renderSignalTable('/signal');
+
+      await userEvent.click(screen.getByText('Filters'));
+
+      const tradingFilterLabel = screen.getByText('Trading', { selector: 'label' });
+      const tradingFilter = tradingFilterLabel.parentElement?.querySelector('select') as HTMLSelectElement;
+      await userEvent.selectOptions(tradingFilter, 'Pending');
+
+      await waitFor(() => {
+        expect(screen.queryByText('live_filter_target')).not.toBeInTheDocument();
+      });
+
+      const enabledStrategy = createMockStrategy('live_filter_target', { params: { bot_on: '1' } });
+      initSignalState({ rows: [enabledStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      rerender(
+        <MemoryRouter initialEntries={['/signal']}>
+          <SignalTable />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('live_filter_target')).toBeInTheDocument();
+      });
+    });
+
     it('filters strategies by strategy ID text', async () => {
       const strategies = [
         createMockStrategy('plume_rooster_bybit'),
@@ -608,6 +687,108 @@ describe('SignalTable Behavioral Tests', () => {
         expect(screen.getByText('plume_rooster_bybit')).toBeInTheDocument();
         expect(screen.getByText('weth_rooster_bybit')).toBeInTheDocument();
         expect(screen.queryByText('sei_sailor_bybit')).not.toBeInTheDocument();
+      });
+    });
+
+    it('recomputes maker-suite facet options immediately when a steady-state live delta changes maker metadata', async () => {
+      const makerStrategy = createMockStrategy('maker_live_facets', {
+        strategy_family: 'maker_v3',
+        meta: {
+          class: 'maker_v3_dual_cex',
+          strategy_groups: 'tokenmm',
+          base_asset: 'PLUME',
+        } as any,
+        legs: {
+          'binance_spot:PLUMEUSDT': {
+            contract_id: 'binance_spot:PLUMEUSDT',
+            exchange: 'binance_spot',
+            symbol: 'PLUMEUSDT',
+            base_asset: 'PLUME',
+            product_type: 'spot',
+            update_time: '2024-01-01 12:00:00',
+          } as any,
+          'okx:PLUMEUSDT-PERP': {
+            contract_id: 'okx:PLUMEUSDT-PERP',
+            exchange: 'okx',
+            symbol: 'PLUMEUSDT-PERP',
+            base_asset: 'PLUME',
+            product_type: 'perp',
+            update_time: '2024-01-01 12:00:00',
+          } as any,
+        } as any,
+        legs_order: ['binance_spot:PLUMEUSDT', 'okx:PLUMEUSDT-PERP'] as any,
+        maker_role_map: {
+          maker_leg: 'okx:PLUMEUSDT-PERP',
+          ref_leg: 'binance_spot:PLUMEUSDT',
+        } as any,
+        maker_v3: {
+          quote_snapshot: {
+            maker_exchange: 'okx',
+            ref_exchange: 'binance_spot',
+          },
+        } as any,
+      });
+
+      initSignalState({ rows: [makerStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      const { rerender } = renderSignalTable('/tokenmm/signal');
+
+      await userEvent.click(screen.getByText('Filters'));
+
+      const assetFilterLabel = screen.getByText('Asset', { selector: 'label' });
+      const assetFilter = assetFilterLabel.parentElement?.querySelector('select') as HTMLSelectElement;
+      expect(within(assetFilter).getAllByRole('option').map((option) => option.textContent)).toEqual(
+        expect.arrayContaining(['PLUME'])
+      );
+      expect(within(assetFilter).queryByRole('option', { name: 'ETH' })).not.toBeInTheDocument();
+
+      const updatedMakerStrategy = createMockStrategy('maker_live_facets', {
+        strategy_family: 'maker_v3',
+        meta: {
+          class: 'maker_v3_dual_cex',
+          strategy_groups: 'tokenmm',
+          base_asset: 'ETH',
+        } as any,
+        legs: {
+          'binance_spot:ETHUSDT': {
+            contract_id: 'binance_spot:ETHUSDT',
+            exchange: 'binance_spot',
+            symbol: 'ETHUSDT',
+            base_asset: 'ETH',
+            product_type: 'spot',
+            update_time: '2024-01-01 12:00:00',
+          } as any,
+          'hyperliquid:ETH-PERP': {
+            contract_id: 'hyperliquid:ETH-PERP',
+            exchange: 'hyperliquid',
+            symbol: 'ETH-PERP',
+            base_asset: 'ETH',
+            product_type: 'perp',
+            update_time: '2024-01-01 12:00:00',
+          } as any,
+        } as any,
+        legs_order: ['binance_spot:ETHUSDT', 'hyperliquid:ETH-PERP'] as any,
+        maker_role_map: {
+          maker_leg: 'hyperliquid:ETH-PERP',
+          ref_leg: 'binance_spot:ETHUSDT',
+        } as any,
+        maker_v3: {
+          quote_snapshot: {
+            maker_exchange: 'hyperliquid',
+            ref_exchange: 'binance_spot',
+          },
+        } as any,
+      });
+      initSignalState({ rows: [updatedMakerStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      rerender(
+        <MemoryRouter initialEntries={['/tokenmm/signal']}>
+          <SignalTable />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(within(assetFilter).getByRole('option', { name: 'ETH' })).toBeInTheDocument();
       });
     });
   });

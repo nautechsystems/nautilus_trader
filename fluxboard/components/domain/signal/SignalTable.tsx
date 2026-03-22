@@ -1925,6 +1925,8 @@ export default function SignalTable({
   const previousDisplayedIdsRef = useRef<string[]>([]);
   const previousAgeSortTickRef = useRef(ageSortTick);
   const wsConnectedRef = useRef(false);
+  const resetRecoveryRef = useRef<() => void>(() => undefined);
+  const makerV4ChangedRowIdsRef = useRef<readonly string[] | null>(null);
 
   useEffect(() => {
     return () => {
@@ -2040,6 +2042,7 @@ export default function SignalTable({
       lastUpdateRef.current = now;
       setBalanceSummary(data.balance_summary ?? null);
       setLoading(false);
+      resetRecoveryRef.current();
       return true;
     } catch (error) {
       if (import.meta.env?.DEV) {
@@ -2070,6 +2073,7 @@ export default function SignalTable({
   const resetRecovery = useCallback(() => {
     recovery.scheduler.reset();
   }, [recovery.scheduler]);
+  resetRecoveryRef.current = resetRecovery;
 
   const handleRefresh = useCallback(async () => {
     const refreshed = await fetchSnapshot({ markRefreshing: true });
@@ -2330,6 +2334,7 @@ export default function SignalTable({
       || nextIds.some((id, index) => id !== previousIds[index]);
 
     if (orderChanged || hasCustomSort) {
+      makerV4ChangedRowIdsRef.current = null;
       realtimeController.applySnapshot(
         visibleRows
           .map((row) => buildEnrichedSignalRow(row, serverNowMs))
@@ -2351,6 +2356,9 @@ export default function SignalTable({
       });
 
       if (deltas.length > 0) {
+        makerV4ChangedRowIdsRef.current = deltas
+          .filter((delta): delta is Extract<RealtimeRowDelta<EnrichedRow>, { kind: 'upsert' }> => delta.kind === 'upsert')
+          .map((delta) => delta.row.id);
         realtimeController.applyDelta(deltas);
         setSortingState((current) => (current.length > 0 ? [...current] : current));
       }
@@ -2392,12 +2400,12 @@ export default function SignalTable({
     }
 
     return filters;
-  }, [enrichedRows, isMakerSuiteProfile]);
+  }, [enrichedRows, isMakerSuiteProfile, liveDataVersion]);
 
   // Apply filters
   const filteredRows = useMemo(() => {
     return applyFilters(enrichedRows, filters, { columns: signalFilters });
-  }, [enrichedRows, filters, signalFilters]);
+  }, [enrichedRows, filters, signalFilters, liveDataVersion]);
 
   const shouldUseMakerV4Table = useMemo(() => {
     if (familyScope === 'maker_v4') return true;
@@ -2892,7 +2900,12 @@ export default function SignalTable({
       />
       <PanelBody ref={handleVisibilityRootRef}>
         {shouldUseMakerV4Table ? (
-          <MakerV4SignalTable rows={filteredRows} loading={loading} liveDataVersion={liveDataVersion} />
+          <MakerV4SignalTable
+            rows={filteredRows}
+            loading={loading}
+            liveDataVersion={liveDataVersion}
+            changedRowIds={makerV4ChangedRowIdsRef.current}
+          />
         ) : (
           <DataTable
             data={filteredRows}

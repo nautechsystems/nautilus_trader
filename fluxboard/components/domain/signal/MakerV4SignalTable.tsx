@@ -200,36 +200,57 @@ function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayR
 function reconcileMakerV4DisplayRows({
   currentRows,
   currentRowById,
+  currentSourceRowById,
+  changedRowIds,
   sourceRows,
   nowMs,
 }: {
   currentRows: MakerV4DisplayRow[];
   currentRowById: Map<string, MakerV4DisplayRow>;
+  currentSourceRowById: Map<string, SignalStrategy>;
+  changedRowIds?: readonly string[] | null;
   sourceRows: readonly SignalStrategy[];
   nowMs: number;
 }) {
   const nextRows: MakerV4DisplayRow[] = [];
   const nextRowById = new Map<string, MakerV4DisplayRow>();
+  const nextSourceRowById = new Map<string, SignalStrategy>();
+  const changedRowIdSet = changedRowIds ? new Set(changedRowIds) : null;
 
   sourceRows.forEach((sourceRow) => {
     const nextId = sourceRow.id;
-    const nextDisplayRow = buildMakerV4DisplayRow(sourceRow, nowMs);
     const existing = currentRowById.get(nextId);
+    const previousSourceRow = currentSourceRowById.get(nextId);
+
+    if (existing && changedRowIdSet && previousSourceRow === sourceRow && !changedRowIdSet.has(nextId)) {
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
+      return;
+    }
+
+    const nextDisplayRow = buildMakerV4DisplayRow(sourceRow, nowMs);
     if (existing) {
       patchDisplayRowInPlace(existing, nextDisplayRow);
       nextRows.push(existing);
       nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
       return;
     }
 
     nextRows.push(nextDisplayRow);
     nextRowById.set(nextId, nextDisplayRow);
+    nextSourceRowById.set(nextId, sourceRow);
   });
 
   currentRows.splice(0, currentRows.length, ...nextRows);
   currentRowById.clear();
   nextRowById.forEach((value, key) => {
     currentRowById.set(key, value);
+  });
+  currentSourceRowById.clear();
+  nextSourceRowById.forEach((value, key) => {
+    currentSourceRowById.set(key, value);
   });
 
   return currentRows;
@@ -317,24 +338,29 @@ export default function MakerV4SignalTable({
   loading = false,
   nowProvider = () => Date.now(),
   liveDataVersion,
+  changedRowIds,
 }: {
   rows?: SignalStrategy[];
   strategies?: SignalStrategy[];
   loading?: boolean;
   nowProvider?: () => number;
   liveDataVersion?: number;
+  changedRowIds?: readonly string[] | null;
 }) {
   const sourceRows = rows ?? strategies ?? [];
   const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
   const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
+  const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
   const data = useMemo<MakerV4DisplayRow[]>(() => {
     return reconcileMakerV4DisplayRows({
       currentRows: displayRowsRef.current,
       currentRowById: displayRowByIdRef.current,
+      currentSourceRowById: displaySourceRowByIdRef.current,
+      changedRowIds,
       sourceRows,
       nowMs: nowProvider(),
     });
-  }, [liveDataVersion, nowProvider, sourceRows]);
+  }, [changedRowIds, liveDataVersion, nowProvider, sourceRows]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
