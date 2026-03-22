@@ -289,8 +289,11 @@ pub struct MarketPriceResult {
 
 /// Calculates the market-crossing price and expected base quantity by walking the order book.
 ///
-/// The CLOB API returns asks and bids in descending order, so this function
-/// reverses the iteration to walk best-first (matching the rs-clob-client SDK).
+/// Sorts levels deterministically before walking:
+/// - BUY (asks): ascending by price — best (lowest) ask first
+/// - SELL (bids): descending by price — best (highest) bid first
+///
+/// This ensures correct results regardless of the CLOB API's response ordering.
 ///
 /// For BUY: walks asks best-first, accumulates `size * price` (USDC) until >= amount.
 ///          Also accumulates the exact shares at each level for precise base qty.
@@ -307,20 +310,28 @@ pub fn calculate_market_price(
         anyhow::bail!("Empty order book: no liquidity available for market order");
     }
 
+    // Parse and sort levels deterministically so we never depend on API ordering.
+    // BUY: asks ascending (best/lowest first). SELL: bids descending (best/highest first).
+    let mut parsed_levels: Vec<(Decimal, Decimal)> = book_levels
+        .iter()
+        .map(|l| {
+            let price = Decimal::from_str_exact(&l.price).unwrap_or(Decimal::ZERO);
+            let size = Decimal::from_str_exact(&l.size).unwrap_or(Decimal::ZERO);
+            (price, size)
+        })
+        .filter(|(p, s)| !p.is_zero() && !s.is_zero())
+        .collect();
+
+    match side {
+        PolymarketOrderSide::Buy => parsed_levels.sort_by(|a, b| a.0.cmp(&b.0)),
+        PolymarketOrderSide::Sell => parsed_levels.sort_by(|a, b| b.0.cmp(&a.0)),
+    }
+
     let mut remaining = amount;
     let mut last_price = Decimal::ZERO;
     let mut total_base_qty = Decimal::ZERO;
 
-    // Reverse iteration: CLOB API returns levels worst-first,
-    // we walk best-first (matching rs-clob-client SDK `.iter().rev()`)
-    for level in book_levels.iter().rev() {
-        let price = Decimal::from_str_exact(&level.price).unwrap_or(Decimal::ZERO);
-        let size = Decimal::from_str_exact(&level.size).unwrap_or(Decimal::ZERO);
-
-        if price.is_zero() || size.is_zero() {
-            continue;
-        }
-
+    for &(price, size) in &parsed_levels {
         last_price = price;
 
         match side {
@@ -576,8 +587,7 @@ mod tests {
         assert_ne!(id_a, id_b);
     }
 
-    // All test levels are in DESCENDING order matching the CLOB API format.
-    // The function reverses them internally to walk best-first.
+    // Tests use various input orderings to prove the function sorts deterministically.
 
     #[rstest]
     fn test_calculate_market_price_buy_single_level() {
@@ -585,8 +595,7 @@ mod tests {
             price: "0.55".to_string(),
             size: "200.0".to_string(),
         }];
-        let result =
-            calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
+        let result = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
         // 50 USDC / 0.55 per share = ~90.909 shares
         assert!(result.expected_base_qty > dec!(90));
@@ -594,12 +603,8 @@ mod tests {
 
     #[rstest]
     fn test_calculate_market_price_buy_walks_multiple_levels() {
-        // Asks descending (API format): worst first
+        // Asks in arbitrary order — function sorts ascending for BUY
         let levels = vec![
-            ClobBookLevel {
-                price: "0.60".to_string(),
-                size: "200.0".to_string(),
-            },
             ClobBookLevel {
                 price: "0.55".to_string(),
                 size: "100.0".to_string(),
@@ -608,10 +613,14 @@ mod tests {
                 price: "0.50".to_string(),
                 size: "10.0".to_string(),
             },
+            ClobBookLevel {
+                price: "0.60".to_string(),
+                size: "200.0".to_string(),
+            },
         ];
-        // Reversed walk (best first): 0.50/10 → 5 USDC (10 shares), 0.55/100 → 15 USDC (27.27 shares)
-        let result =
-            calculate_market_price(&levels, dec!(20), PolymarketOrderSide::Buy).unwrap();
+        // Sorted ascending: 0.50/10, 0.55/100, 0.60/200
+        // Walk: 0.50/10 → 5 USDC (10 shares), 0.55/100 → 15 USDC (27.27 shares)
+        let result = calculate_market_price(&levels, dec!(20), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
         let expected = dec!(10) + dec!(15) / dec!(0.55);
         assert_eq!(result.expected_base_qty, expected);
@@ -619,44 +628,44 @@ mod tests {
 
     #[rstest]
     fn test_calculate_market_price_buy_small_order_uses_best_ask() {
-        // Asks descending: worst first, best (0.20) last
+        // Asks in mixed order — function sorts to find best (0.20) first
         let levels = vec![
-            ClobBookLevel {
-                price: "0.999".to_string(),
-                size: "100.0".to_string(),
-            },
             ClobBookLevel {
                 price: "0.50".to_string(),
                 size: "50.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.999".to_string(),
+                size: "100.0".to_string(),
             },
             ClobBookLevel {
                 price: "0.20".to_string(),
                 size: "72.0".to_string(),
             },
         ];
+        // Sorted ascending: 0.20/72, 0.50/50, 0.999/100
         // 5 USDC at best ask 0.20: 72 * 0.20 = 14.4 USDC available, fills entirely
-        let result =
-            calculate_market_price(&levels, dec!(5), PolymarketOrderSide::Buy).unwrap();
+        let result = calculate_market_price(&levels, dec!(5), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.20));
         assert_eq!(result.expected_base_qty, dec!(25)); // 5 / 0.20 = 25 shares
     }
 
     #[rstest]
     fn test_calculate_market_price_sell_walks_levels() {
-        // Bids descending (API format): best first
+        // Bids in ascending order — function sorts descending for SELL (best bid first)
         let levels = vec![
-            ClobBookLevel {
-                price: "0.50".to_string(),
-                size: "50.0".to_string(),
-            },
             ClobBookLevel {
                 price: "0.48".to_string(),
                 size: "100.0".to_string(),
             },
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
         ];
-        // Reversed: [0.48/100, 0.50/50]. Walk: 0.48 gives 80 (has 100) → fills
-        let result =
-            calculate_market_price(&levels, dec!(80), PolymarketOrderSide::Sell).unwrap();
+        // Sorted descending: 0.50/50, 0.48/100
+        // Walk: 0.50 gives 50, need 30 more from 0.48 → fills
+        let result = calculate_market_price(&levels, dec!(80), PolymarketOrderSide::Sell).unwrap();
         assert_eq!(result.crossing_price, dec!(0.48));
         assert_eq!(result.expected_base_qty, dec!(80));
     }
@@ -675,9 +684,96 @@ mod tests {
             size: "10.0".to_string(),
         }];
         // 10 * 0.55 = 5.5 USDC < 50 USDC needed, returns what's available
-        let result =
-            calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
+        let result = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
         assert_eq!(result.expected_base_qty, dec!(10)); // only 10 shares available
+    }
+
+    #[rstest]
+    fn test_calculate_market_price_buy_order_independent_of_input_ordering() {
+        let levels_ascending = vec![
+            ClobBookLevel {
+                price: "0.20".to_string(),
+                size: "72.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.999".to_string(),
+                size: "100.0".to_string(),
+            },
+        ];
+        let levels_descending = vec![
+            ClobBookLevel {
+                price: "0.999".to_string(),
+                size: "100.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.20".to_string(),
+                size: "72.0".to_string(),
+            },
+        ];
+        let levels_shuffled = vec![
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.20".to_string(),
+                size: "72.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.999".to_string(),
+                size: "100.0".to_string(),
+            },
+        ];
+
+        let r1 =
+            calculate_market_price(&levels_ascending, dec!(20), PolymarketOrderSide::Buy).unwrap();
+        let r2 =
+            calculate_market_price(&levels_descending, dec!(20), PolymarketOrderSide::Buy).unwrap();
+        let r3 =
+            calculate_market_price(&levels_shuffled, dec!(20), PolymarketOrderSide::Buy).unwrap();
+
+        assert_eq!(r1.crossing_price, r2.crossing_price);
+        assert_eq!(r2.crossing_price, r3.crossing_price);
+        assert_eq!(r1.expected_base_qty, r2.expected_base_qty);
+        assert_eq!(r2.expected_base_qty, r3.expected_base_qty);
+    }
+
+    #[rstest]
+    fn test_calculate_market_price_sell_order_independent_of_input_ordering() {
+        let levels_a = vec![
+            ClobBookLevel {
+                price: "0.48".to_string(),
+                size: "100.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
+        ];
+        let levels_b = vec![
+            ClobBookLevel {
+                price: "0.50".to_string(),
+                size: "50.0".to_string(),
+            },
+            ClobBookLevel {
+                price: "0.48".to_string(),
+                size: "100.0".to_string(),
+            },
+        ];
+
+        let r1 = calculate_market_price(&levels_a, dec!(80), PolymarketOrderSide::Sell).unwrap();
+        let r2 = calculate_market_price(&levels_b, dec!(80), PolymarketOrderSide::Sell).unwrap();
+
+        assert_eq!(r1.crossing_price, r2.crossing_price);
+        assert_eq!(r1.expected_base_qty, r2.expected_base_qty);
     }
 }
