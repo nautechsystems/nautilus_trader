@@ -1694,6 +1694,7 @@ export const api = {
     const rows = (data.rows || [])
       .map((row, index) => normalizeTradeEventCandidate(row, index, resolvedOffset + 1))
       .filter((row): row is TradeEvent => Boolean(row));
+    const maxSeq = rows.reduce((acc, row) => Math.max(acc, Number(row.seq) || 0), 0);
     const returned = rows.length;
     const totalCount = data.total ?? data.total_records ?? 0;
     const nextCursorValue = typeof data.next_cursor === 'string' ? data.next_cursor : null;
@@ -1709,7 +1710,7 @@ export const api = {
     return {
       rows,
       total: totalCount,
-      last_seq: data.last_seq,
+      last_seq: typeof data.last_seq === 'number' ? Math.max(data.last_seq, maxSeq) : maxSeq,
       contract_version: typeof data.contract_version === 'number' ? data.contract_version : undefined,
       stream_id: typeof data.stream_id === 'string' ? data.stream_id : undefined,
       snapshot_revision:
@@ -1799,7 +1800,10 @@ export const api = {
     const maxSeq = rows.reduce((acc, row) => Math.max(acc, Number(row.seq) || 0), 0);
     return {
       rows,
-      last_seq: typeof data.last_seq === 'number' ? data.last_seq : (maxSeq > 0 ? maxSeq : sinceSeq),
+      last_seq:
+        typeof data.last_seq === 'number'
+          ? Math.max(data.last_seq, maxSeq)
+          : (maxSeq > 0 ? maxSeq : sinceSeq),
       reset_required: data.reset_required,
       contract_version: typeof data.contract_version === 'number' ? data.contract_version : undefined,
       stream_id: typeof data.stream_id === 'string' ? data.stream_id : undefined,

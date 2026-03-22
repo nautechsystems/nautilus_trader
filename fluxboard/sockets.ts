@@ -23,6 +23,14 @@ export enum SocketConnectionStatus {
 
 let socketStatus: SocketConnectionStatus = SocketConnectionStatus.IDLE;
 
+const getTestSocketFactory = (): (() => Socket) | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const factory = (window as any).__fluxboardTestSocketFactory;
+  return typeof factory === 'function' ? factory as () => Socket : null;
+};
+
 const setSocketStatus = (status: SocketConnectionStatus): void => {
   socketStatus = status;
 };
@@ -57,6 +65,8 @@ export const getSocket = (): Socket => {
     const configuredBackendUrl = String(import.meta.env.VITE_BACKEND_URL || '').trim();
     const backendUrl = configuredBackendUrl === '/' ? '' : configuredBackendUrl;
     currentSocketProfile = getPathProfile();
+    const testSocketFactory = getTestSocketFactory();
+    const usingTestSocket = Boolean(testSocketFactory);
 
     const autoConnect = !disconnectRequested;
     setSocketStatus(
@@ -65,26 +75,28 @@ export const getSocket = (): Socket => {
         : SocketConnectionStatus.DISCONNECT_REQUESTED,
     );
 
-    socketInstance = io(backendUrl, {
-      path: '/socket.io',  // NO trailing slash
-      // Server runs with threading mode; disable WS upgrade to avoid issues
-      transports: ['polling'],
-      // Allow cookies/headers when hosted on a different port during dev
-      withCredentials: true,
-      reconnection: true,
-      // Limit reconnection attempts to prevent infinite loops
-      reconnectionAttempts: 10,  // Changed from Infinity
-      reconnectionDelay: 1000,   // Start with 1s delay
-      reconnectionDelayMax: 10000, // Max 10s delay
-      timeout: 20000,
-      // Add exponential backoff multiplier
-      randomizationFactor: 0.5,
-      // Prevent accidental reconnect when explicit disconnect was requested.
-      autoConnect,
-      query: {
-        profile: currentSocketProfile,
-      },
-    });
+    socketInstance = usingTestSocket
+      ? testSocketFactory!()
+      : io(backendUrl, {
+          path: '/socket.io',  // NO trailing slash
+          // Server runs with threading mode; disable WS upgrade to avoid issues
+          transports: ['polling'],
+          // Allow cookies/headers when hosted on a different port during dev
+          withCredentials: true,
+          reconnection: true,
+          // Limit reconnection attempts to prevent infinite loops
+          reconnectionAttempts: 10,  // Changed from Infinity
+          reconnectionDelay: 1000,   // Start with 1s delay
+          reconnectionDelayMax: 10000, // Max 10s delay
+          timeout: 20000,
+          // Add exponential backoff multiplier
+          randomizationFactor: 0.5,
+          // Prevent accidental reconnect when explicit disconnect was requested.
+          autoConnect,
+          query: {
+            profile: currentSocketProfile,
+          },
+        });
 
     // Prevent auto-reconnection when explicitly disconnected (e.g., on PnL page)
     const reconnectHandler = () => {
@@ -168,6 +180,10 @@ export const getSocket = (): Socket => {
           console.log('[socket] reconnect blocked - disconnect requested');
         }
       });
+    }
+
+    if (usingTestSocket && autoConnect && !socketInstance.connected) {
+      socketInstance.connect();
     }
   }
 

@@ -160,7 +160,7 @@ describe('Trades recovery regressions', () => {
     }
   });
 
-  it('uses timestamp fallback polling on tokenmm when snapshot last_seq is unusable', async () => {
+  it('derives a standard sinceSeq cursor from tokenmm snapshot rows when backend last_seq is zero', async () => {
     (window.location as any).pathname = '/tokenmm/trades';
     setupStore();
     mockGetTrades.mockResolvedValue(makeSnapshotResponse([
@@ -181,6 +181,13 @@ describe('Trades recovery regressions', () => {
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
 
     mockGetTradesDelta.mockClear();
+    const disconnectHandler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'disconnect')?.[1] as ((reason: string) => void) | undefined;
+    expect(disconnectHandler).toBeInstanceOf(Function);
+
+    act(() => {
+      disconnectHandler?.('transport close');
+    });
+
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
     });
@@ -188,75 +195,60 @@ describe('Trades recovery regressions', () => {
     await waitFor(() => expect(mockGetTradesDelta).toHaveBeenCalledTimes(1));
     expect(mockGetTradesDelta).toHaveBeenCalledWith(
       expect.objectContaining({
+        sinceSeq: 202,
         streamId: 'tokenmm-trades',
         snapshotRevision: 'snap-2',
-        afterMs: 1_700_000_002_000,
-        afterRowId: 'tokenmm-b',
-        afterVersion: 1,
       }),
       500,
     );
+    const [cursor] = mockGetTradesDelta.mock.calls[0];
+    expect(cursor.afterMs).toBeUndefined();
   });
 
-  it('drops replay rows that are not newer than the persisted tokenmm cursor tuple', async () => {
+  it('keeps zero-trade tokenmm snapshots healthy until recovery begins, then replays with sinceSeq 0', async () => {
     (window.location as any).pathname = '/tokenmm/trades';
-    const { applyDelta } = setupStore();
-    mockGetTrades.mockResolvedValue(makeSnapshotResponse([
-      makeTradeRow({
-        row_id: 'tokenmm-b',
-        seq: 202,
-        ts: 1_700_000_002_000,
-        ts_ms: 1_700_000_002_000,
-        version: 1,
-      } as Partial<TradeRow>),
-    ], {
+    setupStore();
+    mockGetTrades.mockResolvedValue(makeSnapshotResponse([], {
       last_seq: 0,
       stream_id: 'tokenmm-trades',
-      snapshot_revision: 'snap-3',
+      snapshot_revision: 'snap-empty',
     }));
-    mockGetTradesDelta.mockResolvedValue(makeDeltaResponse([
-      makeTradeRow({
-        row_id: 'tokenmm-b',
-        seq: 202,
-        ts: 1_700_000_002_000,
-        ts_ms: 1_700_000_002_000,
-        version: 1,
-      } as Partial<TradeRow>),
-      makeTradeRow({
-        row_id: 'tokenmm-b',
-        seq: 203,
-        ts: 1_700_000_002_000,
-        ts_ms: 1_700_000_002_000,
-        version: 2,
-      } as Partial<TradeRow>),
-      makeTradeRow({
-        row_id: 'tokenmm-c',
-        seq: 204,
-        ts: 1_700_000_002_000,
-        ts_ms: 1_700_000_002_000,
-        version: 1,
-      } as Partial<TradeRow>),
-    ], {
+    mockGetTradesDelta.mockResolvedValue(makeDeltaResponse([], {
       last_seq: 0,
       stream_id: 'tokenmm-trades',
-      snapshot_revision: 'snap-3',
+      snapshot_revision: 'snap-empty',
     }));
 
     render(<Trades />);
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
 
-    applyDelta.mockClear();
     mockGetTradesDelta.mockClear();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
     });
 
-    await waitFor(() => expect(applyDelta).toHaveBeenCalledTimes(1));
-    const [rows] = applyDelta.mock.calls[0] as [TradeRow[]];
-    expect(rows.map((row) => `${row.row_id}:${row.version}`)).toEqual([
-      'tokenmm-b:2',
-      'tokenmm-c:1',
-    ]);
+    expect(mockGetTradesDelta).not.toHaveBeenCalled();
+
+    const disconnectHandler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'disconnect')?.[1] as ((reason: string) => void) | undefined;
+    expect(disconnectHandler).toBeInstanceOf(Function);
+
+    act(() => {
+      disconnectHandler?.('transport close');
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+
+    await waitFor(() => expect(mockGetTradesDelta).toHaveBeenCalledTimes(1));
+    const [cursor, limit] = mockGetTradesDelta.mock.calls[0];
+    expect(cursor).toMatchObject({
+      sinceSeq: 0,
+      streamId: 'tokenmm-trades',
+      snapshotRevision: 'snap-empty',
+    });
+    expect(cursor.afterMs).toBeUndefined();
+    expect(limit).toBe(500);
   });
 
   it('refreshes the snapshot when a filtered visible row is deleted by a non-matching socket event', async () => {

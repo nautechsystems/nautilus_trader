@@ -32,7 +32,6 @@ import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
 import { exportCSV, generateTimestampFilename } from './utils/export';
 import { isTradesDecisionDetailsEnabled } from './config/featureFlags';
 import { computeTradesRollups } from './components/trades/rollups';
-import { resolvePathnameProfile } from './config/uiProfiles';
 import { RealtimeSurfaceState, type RealtimeSnapshotRevision } from './lib/realtime/types';
 
 const PERF_RENDER_ENABLED = typeof import.meta !== 'undefined'
@@ -612,7 +611,6 @@ export default function Trades({
   const lastReconnectCatchupAtRef = useRef<number>(0);
   const latestTradeTsMsRef = useRef<number>(0);
   const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
-  const deltaCursorModeRef = useRef<'since_seq' | 'after'>('since_seq');
   const streamCursorRef = useRef<TradeStreamCursor>({ lastSeq });
   const lastUpdateRef = useRef<number>(lastUpdate);
   const loadingRef = useRef<boolean>(loading);
@@ -685,10 +683,8 @@ export default function Trades({
     } else if (
       catchingUpRef.current
       || isResyncingRef.current
-      || deltaCursorModeRef.current === 'after'
       || !streamCursorRef.current.streamId
       || streamCursorRef.current.snapshotRevision == null
-      || streamCursorRef.current.lastSeq <= 0
     ) {
       nextState = RealtimeSurfaceState.RECOVERING;
     } else {
@@ -898,37 +894,42 @@ export default function Trades({
         }
 
         advanceTradeReplayCursor(response.rows);
+        const snapshotRowsMaxSeq = (response.rows || []).reduce(
+          (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
+          0,
+        );
+        const currentStreamCursor = streamCursorRef.current;
+        const responseStreamId =
+          typeof response.stream_id === 'string' && response.stream_id.trim()
+            ? response.stream_id.trim()
+            : currentStreamCursor.streamId;
+        const responseSnapshotRevision =
+          response.snapshot_revision ?? currentStreamCursor.snapshotRevision;
+        const snapshotLastSeq =
+          typeof response.last_seq === 'number'
+            ? Math.max(0, response.last_seq, snapshotRowsMaxSeq)
+            : snapshotRowsMaxSeq;
+        const snapshotEpochChanged =
+          (currentStreamCursor.streamId && responseStreamId && responseStreamId !== currentStreamCursor.streamId)
+          || (
+            currentStreamCursor.snapshotRevision != null
+            && responseSnapshotRevision != null
+            && responseSnapshotRevision !== currentStreamCursor.snapshotRevision
+          );
+        const nextLastSeq = snapshotEpochChanged
+          ? snapshotLastSeq
+          : Math.max(currentStreamCursor.lastSeq, snapshotLastSeq);
         streamCursorRef.current = {
           contractVersion:
             typeof response.contract_version === 'number'
               ? response.contract_version
-              : streamCursorRef.current.contractVersion,
-          streamId:
-            typeof response.stream_id === 'string' && response.stream_id.trim()
-              ? response.stream_id.trim()
-              : streamCursorRef.current.streamId,
-          snapshotRevision:
-            response.snapshot_revision ?? streamCursorRef.current.snapshotRevision,
-          lastSeq:
-            typeof response.last_seq === 'number'
-              ? Math.max(streamCursorRef.current.lastSeq, response.last_seq)
-              : streamCursorRef.current.lastSeq,
+              : currentStreamCursor.contractVersion,
+          streamId: responseStreamId,
+          snapshotRevision: responseSnapshotRevision,
+          lastSeq: nextLastSeq,
         };
-
-        const activeProfile = typeof window === 'undefined'
-          ? 'default'
-          : resolvePathnameProfile(window.location.pathname);
-        if (activeProfile === 'tokenmm' && (response.last_seq ?? 0) <= 0) {
-          deltaCursorModeRef.current = 'after';
-          catchingUpRef.current = true;
-        } else {
-          deltaCursorModeRef.current = 'since_seq';
-          catchingUpRef.current = false;
-        }
-
-        if (typeof response.last_seq === 'number') {
-          latestSeqRef.current = Math.max(latestSeqRef.current, response.last_seq);
-        }
+        latestSeqRef.current = nextLastSeq;
+        catchingUpRef.current = false;
 
         const nextUpdate = Date.now();
         lastUpdateRef.current = nextUpdate;
@@ -1180,23 +1181,13 @@ export default function Trades({
       }
       try {
         const pollResyncId = resyncIdRef.current;
-        const requestedSinceSeq = latestSeqRef.current;
-        const usingTimestampFallback = deltaCursorModeRef.current === 'after';
-        const replayCursor = latestTradeReplayCursorRef.current;
         const streamCursor = streamCursorRef.current;
-        const deltaCursor = usingTimestampFallback
-          ? {
-              afterMs: replayCursor?.tsMs ?? latestTradeTsMsRef.current,
-              afterRowId: replayCursor?.rowId,
-              afterVersion: replayCursor?.version,
-              streamId: streamCursor.streamId,
-              snapshotRevision: streamCursor.snapshotRevision,
-            }
-          : {
-              sinceSeq: requestedSinceSeq,
-              streamId: streamCursor.streamId,
-              snapshotRevision: streamCursor.snapshotRevision,
-            };
+        const requestedSinceSeq = streamCursor.lastSeq;
+        const deltaCursor = {
+          sinceSeq: requestedSinceSeq,
+          streamId: streamCursor.streamId,
+          snapshotRevision: streamCursor.snapshotRevision,
+        };
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
 
         if (!isActiveRef.current) {
@@ -1207,6 +1198,14 @@ export default function Trades({
             ? delta.stream_id.trim()
             : streamCursor.streamId;
         const responseSnapshotRevision = delta.snapshot_revision ?? streamCursor.snapshotRevision;
+        const deltaRowsMaxSeq = (delta.rows || []).reduce(
+          (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
+          0,
+        );
+        const effectiveDeltaLastSeq =
+          typeof delta.last_seq === 'number'
+            ? Math.max(delta.last_seq, deltaRowsMaxSeq)
+            : deltaRowsMaxSeq;
         const hasStreamMismatch =
           (streamCursor.streamId && responseStreamId && responseStreamId !== streamCursor.streamId)
           || (
@@ -1231,19 +1230,18 @@ export default function Trades({
           streamId: responseStreamId,
           snapshotRevision: responseSnapshotRevision,
           lastSeq:
-            typeof delta.last_seq === 'number'
-              ? Math.max(streamCursor.lastSeq, delta.last_seq)
+            effectiveDeltaLastSeq > 0
+              ? Math.max(streamCursor.lastSeq, effectiveDeltaLastSeq)
               : streamCursor.lastSeq,
         };
 
         // DEFENSIVE FIX: Validate sequence consistency
-        const deltaLastSeq = typeof delta.last_seq === 'number' ? delta.last_seq : null;
+        const deltaLastSeq = effectiveDeltaLastSeq > 0 ? effectiveDeltaLastSeq : null;
         const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
-          !usingTimestampFallback
-          && hasNumericLastSeq
+          hasNumericLastSeq
           && deltaLastSeq >= requestedSinceSeq;
-        if (!usingTimestampFallback && hasNumericLastSeq && !seqIsNonRegressive) {
+        if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
             `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
             `frontend latestSeq (${requestedSinceSeq}). This suggests missed trades. ` +
@@ -1279,9 +1277,7 @@ export default function Trades({
         } else {
           let pollAcknowledgedCurrentEpoch = false;
           let appliedCurrentEpoch = false;
-          const replayRows = usingTimestampFallback
-            ? filterTradeRowsAfterReplayCursor(delta.rows, replayCursor)
-            : [...(delta.rows || [])];
+          const replayRows = [...(delta.rows || [])];
           advanceTradeReplayCursor(replayRows);
           const rowsForView = filterEventsForFilters(replayRows, filtersRef.current);
           if (rowsForView.length) {
@@ -1325,10 +1321,7 @@ export default function Trades({
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (usingTimestampFallback) {
-              emptyPollCountRef.current = 0;
-              pollAcknowledgedCurrentEpoch = true;
-            } else if (seqIsNonRegressive) {
+            if (seqIsNonRegressive) {
               const lastSeq = delta.last_seq as number;
               // Empty rows with an advancing (or equal) sequence is a successful reconciliation.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
@@ -1354,7 +1347,6 @@ export default function Trades({
           }
           if (
             socketConnectedRef.current
-            && !usingTimestampFallback
             && replayRows.length < DELTA_LIMIT
           ) {
             catchingUpRef.current = false;
@@ -1532,6 +1524,22 @@ export default function Trades({
         syncSurfaceState();
         return;
       }
+      const hasSeqGap =
+        typeof event.seq === 'number'
+        && currentStreamCursor.streamId != null
+        && currentStreamCursor.snapshotRevision != null
+        && eventStreamId != null
+        && eventSnapshotRevision != null
+        && eventStreamId === currentStreamCursor.streamId
+        && eventSnapshotRevision === currentStreamCursor.snapshotRevision
+        && currentStreamCursor.lastSeq > 0
+        && event.seq > currentStreamCursor.lastSeq + 1;
+      if (hasSeqGap) {
+        catchingUpRef.current = true;
+        syncSurfaceState();
+        schedulePoll();
+        return;
+      }
       streamCursorRef.current = {
         contractVersion:
           typeof (event as any).contract_version === 'number'
@@ -1594,7 +1602,7 @@ export default function Trades({
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll]);
 
   useEffect(() => {
     const pending: any[] = [];

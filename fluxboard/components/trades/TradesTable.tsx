@@ -113,10 +113,10 @@ const alignForColumn = (columnId: string): 'left' | 'right' | 'center' =>
 
 const CellRenderer = memo(({
   cell,
-  liveDataVersion,
+  renderToken,
 }: {
   cell: Cell<TradeRow, unknown>;
-  liveDataVersion: number;
+  renderToken: string;
 }) => {
   const align = alignForColumn(cell.column.id);
   return (
@@ -130,21 +130,19 @@ const CellRenderer = memo(({
     </div>
   );
 }, (prev, next) => {
-  if (prev.liveDataVersion !== next.liveDataVersion) return false;
+  if (prev.renderToken !== next.renderToken) return false;
   if (prev.cell.id !== next.cell.id) return false;
-  const prevValue = prev.cell.getValue();
-  const nextValue = next.cell.getValue();
-  return prevValue === nextValue && prev.cell.column.id === next.cell.column.id;
+  return prev.cell.column.id === next.cell.column.id;
 });
 
 type RowProps = {
   row: Row<TradeRow>;
   style: CSSProperties;
   gridTemplate: string;
-  liveDataVersion: number;
+  renderToken: string;
 };
 
-const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate, liveDataVersion }) => (
+const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate, renderToken }) => (
   <div
     className="trades-row"
     style={{
@@ -154,7 +152,7 @@ const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate, liveData
     }}
   >
     {row.getVisibleCells().map((cell) => (
-      <CellRenderer key={cell.id} cell={cell} liveDataVersion={liveDataVersion} />
+      <CellRenderer key={cell.id} cell={cell} renderToken={renderToken} />
     ))}
   </div>
 ), (prev, next) => (
@@ -162,7 +160,7 @@ const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate, liveData
   && prev.style?.transform === next.style?.transform
   && prev.style?.top === next.style?.top
   && prev.gridTemplate === next.gridTemplate
-  && prev.liveDataVersion === next.liveDataVersion
+  && prev.renderToken === next.renderToken
 ));
 
 export function TradesTable({
@@ -224,7 +222,21 @@ export function TradesTable({
   });
 
   const rows = table.getRowModel().rows;
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  if (liveCacheReset) {
+    rows.forEach((row) => {
+      (row as any)._valuesCache = {};
+      (row as any)._uniqueValuesCache = {};
+    });
+    previousLiveDataVersionRef.current = liveDataVersion;
+  }
   const reachEndNotifiedRef = useRef(-1);
+
+  const getRowRenderToken = useCallback((row: Row<TradeRow>) => {
+    const original = row.original;
+    return `${row.id}:${String(original?.version ?? '')}:${String(original?.seq ?? '')}`;
+  }, []);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -385,7 +397,7 @@ export function TradesTable({
               transform: 'none',
             }}
             gridTemplate={gridTemplate}
-            liveDataVersion={liveDataVersion}
+            renderToken={getRowRenderToken(row)}
           />
         ))}
 
@@ -415,7 +427,7 @@ export function TradesTable({
                     height: ROW_HEIGHT,
                   }}
                   gridTemplate={gridTemplate}
-                  liveDataVersion={liveDataVersion}
+                  renderToken={getRowRenderToken(row)}
                 />
               );
             })}

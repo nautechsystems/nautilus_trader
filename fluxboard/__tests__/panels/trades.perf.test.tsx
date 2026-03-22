@@ -330,17 +330,18 @@ describe('Trades Panel Performance', () => {
 
     it('should handle rapid updates without performance degradation', async () => {
       const trades = generateMockTrades(1000);
-      const { rerender } = render(<TradesTable trades={trades} />);
+      const { rerender } = render(<TradesTable trades={trades} liveDataVersion={0} />);
 
       const durations: number[] = [];
 
-      // Perform 20 rapid updates
+      // Perform 20 rapid in-place updates on the same visible row to match the realtime hot path.
       for (let i = 0; i < 20; i++) {
-        const updatedTrades = [...trades];
-        updatedTrades[0] = { ...updatedTrades[0], price: 100 + i };
+        trades[0].price = 100 + i;
+        trades[0].version += 1;
+        trades[0].seq += 1;
 
         const start = performance.now();
-        rerender(<TradesTable trades={updatedTrades} />);
+        rerender(<TradesTable trades={trades} liveDataVersion={i + 1} />);
         durations.push(performance.now() - start);
       }
 

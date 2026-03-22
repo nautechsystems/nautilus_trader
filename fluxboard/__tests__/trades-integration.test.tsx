@@ -74,6 +74,19 @@ const baseRows = [
   },
 ];
 
+const makeTradeRow = (overrides: Record<string, unknown> = {}) => ({
+  row_id: 'trade-row',
+  seq: 1,
+  version: 1,
+  ts: 1,
+  time: '2025-01-01T00:00:01Z',
+  coin: 'PLUME/USDT',
+  exchange: 'bybit',
+  side: 'buy',
+  price: 100,
+  ...overrides,
+});
+
 describe('Trades integration flows', () => {
   beforeEach(() => {
     getTrades.mockReset();
@@ -172,6 +185,76 @@ describe('Trades integration flows', () => {
     );
   });
 
+  it('enters recovery and replays from the last acknowledged seq when a socket seq gap is detected', async () => {
+    getTradesDelta.mockResolvedValueOnce({
+      rows: [
+        makeTradeRow({
+          row_id: 'gap-3',
+          seq: 3,
+          ts: 3,
+          time: '2025-01-01T00:00:03Z',
+          side: 'sell',
+        }),
+        makeTradeRow({
+          row_id: 'gap-4',
+          seq: 4,
+          ts: 4,
+          time: '2025-01-01T00:00:04Z',
+        }),
+        makeTradeRow({
+          row_id: 'gap-5',
+          seq: 5,
+          ts: 5,
+          time: '2025-01-01T00:00:05Z',
+        }),
+      ],
+      last_seq: 5,
+      reset_required: false,
+      stream_id: 'trades-main',
+      snapshot_revision: 17,
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-5',
+        seq: 5,
+        version: 1,
+        ts: 5,
+        time: '2025-01-01T00:00:05Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    const propsAfterGap = mockTable.mock.calls[mockTable.mock.calls.length - 1]?.[0];
+    expect(propsAfterGap.trades.map((row: any) => row.row_id)).not.toContain('gap-5');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalledTimes(1));
+    expect(getTradesDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sinceSeq: 2,
+        streamId: 'trades-main',
+        snapshotRevision: 17,
+      }),
+      500,
+    );
+
+  });
+
   it('keeps the rendered trades array stable for in-place live updates', async () => {
     render(<Trades />);
     await waitFor(() => {
@@ -210,6 +293,55 @@ describe('Trades integration flows', () => {
       expect(updatedOldRow).toBe(initialOldRow);
       expect(updatedOldRow.price).toBe(999);
     });
+  });
+
+  it('keeps zero-seq snapshots on the standard sinceSeq cursor and only replays after recovery begins', async () => {
+    getTrades.mockResolvedValueOnce({
+      rows: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+      last_seq: 0,
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-empty',
+    });
+    getTradesDelta.mockResolvedValueOnce({
+      rows: [],
+      last_seq: 0,
+      reset_required: false,
+      stream_id: 'tokenmm-trades',
+      snapshot_revision: 'snap-empty',
+    });
+    (window.location as any).pathname = '/tokenmm/trades';
+
+    render(<Trades />);
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(1));
+
+    getTradesDelta.mockClear();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    expect(getTradesDelta).not.toHaveBeenCalled();
+
+    act(() => {
+      socketHandlers.disconnect?.('transport close');
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalledTimes(1));
+    const [cursor, limit] = getTradesDelta.mock.calls[0];
+    expect(cursor).toMatchObject({
+      sinceSeq: 0,
+      streamId: 'tokenmm-trades',
+      snapshotRevision: 'snap-empty',
+    });
+    expect(cursor.afterMs).toBeUndefined();
+    expect(limit).toBe(500);
   });
 
   it('normalizes nested FluxAPI trade_update payloads (trade object) into full blotter rows', async () => {
