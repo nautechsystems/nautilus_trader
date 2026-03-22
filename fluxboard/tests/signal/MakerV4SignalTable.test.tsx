@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
+import { StrictMode, Suspense, forwardRef, startTransition, useImperativeHandle, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { colors } from '@/lib/tokens';
@@ -210,6 +212,63 @@ function buildTrackedMakerV4Strategy(id: string, accessCounts: Map<string, numbe
   });
   return strategy;
 }
+
+function createSuspendGate() {
+  let released = false;
+  let resolvePromise: (() => void) | null = null;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = () => {
+      released = true;
+      resolve();
+    };
+  });
+
+  function Gate() {
+    if (!released) {
+      throw promise;
+    }
+    return null;
+  }
+
+  return {
+    Gate,
+    release() {
+      resolvePromise?.();
+    },
+  };
+}
+
+type TransitionHarnessHandle = {
+  update(next: { liveDataVersion?: number; blocker?: ReactElement | null }): void;
+};
+
+const TransitionHarness = forwardRef<TransitionHarnessHandle, { rows: SignalStrategy[] }>(
+  function TransitionHarness({ rows }, ref) {
+    const [liveDataVersion, setLiveDataVersion] = useState(1);
+    const [blocker, setBlocker] = useState<ReactNode>(null);
+
+    useImperativeHandle(ref, () => ({
+      update(next) {
+        startTransition(() => {
+          if (next.liveDataVersion !== undefined) {
+            setLiveDataVersion(next.liveDataVersion);
+          }
+          setBlocker(next.blocker ?? null);
+        });
+      },
+    }), []);
+
+    return (
+      <Suspense fallback={null}>
+        <MakerV4SignalTable
+          rows={rows}
+          liveDataVersion={liveDataVersion}
+        />
+        {blocker}
+      </Suspense>
+    );
+  },
+);
 
 async function flushAsyncRender() {
   await act(async () => {
@@ -477,6 +536,107 @@ describe('MakerV4SignalTable', () => {
     });
     expect(latest?.data).toBe(initial?.data);
     expect(latest?.liveDataVersion).not.toBe(initial?.liveDataVersion);
+  });
+
+  it('preserves the full-row liveDataVersion fallback across strict-mode double renders', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    strategy.params = {
+      ...strategy.params,
+      bot_on: '1',
+    };
+    const rows = [strategy];
+    const { rerender } = render(
+      <StrictMode>
+        <MakerV4SignalTable
+          rows={rows}
+          liveDataVersion={1}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
+    });
+    const committedRow = (dataTablePropsHistory.at(-1)?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+    expect(committedRow?._statusLabel?.label).toBe('Enabled');
+
+    if (!strategy.maker_v4?.quote_snapshot) {
+      throw new Error('expected maker_v4 quote snapshot in test fixture');
+    }
+    strategy.maker_v4.quote_snapshot.hedge_ready = false;
+
+    rerender(
+      <StrictMode>
+        <MakerV4SignalTable
+          rows={rows}
+          liveDataVersion={2}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      const latest = dataTablePropsHistory.at(-1);
+      const latestRow = (latest?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+      expect(latestRow?._statusLabel?.label).toBe('Pending');
+    });
+  });
+
+  it('retries the full-row liveDataVersion fallback after an interrupted suspended render', async () => {
+    dataTablePropsHistory.length = 0;
+    const strategy = buildMakerV4Strategy();
+    strategy.params = {
+      ...strategy.params,
+      bot_on: '1',
+    };
+    const rows = [strategy];
+    const harnessRef: { current: TransitionHarnessHandle | null } = { current: null };
+    render(
+      <TransitionHarness
+        ref={(value) => {
+          harnessRef.current = value;
+        }}
+        rows={rows}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Enabled')).toBeInTheDocument();
+    });
+    const committedRow = (dataTablePropsHistory.at(-1)?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+    expect(committedRow?._statusLabel?.label).toBe('Enabled');
+
+    if (!strategy.maker_v4?.quote_snapshot) {
+      throw new Error('expected maker_v4 quote snapshot in test fixture');
+    }
+    strategy.maker_v4.quote_snapshot.hedge_ready = false;
+
+    const gate = createSuspendGate();
+    act(() => {
+      harnessRef.current?.update({
+        liveDataVersion: 2,
+        blocker: <gate.Gate />,
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(committedRow?._statusLabel?.label).toBe('Enabled');
+
+    await act(async () => {
+      gate.release();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const latest = dataTablePropsHistory.at(-1);
+      const latestRow = (latest?.data as Array<{ _statusLabel?: { label?: string } }> | undefined)?.[0];
+      expect(latestRow?._statusLabel?.label).toBe('Pending');
+    });
   });
 
   it('reconciles nested in-place maker v4 mutations when liveDataVersion changes without changedRowIds', async () => {

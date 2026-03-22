@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/table/DataTable';
@@ -281,6 +281,18 @@ function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayR
   });
 }
 
+function didMakerV4DisplayRowChange(
+  existing: MakerV4DisplayRow,
+  next: MakerV4DisplayRow,
+): boolean {
+  const existingKeys = Object.keys(existing);
+  const nextKeys = Object.keys(next);
+  if (existingKeys.length !== nextKeys.length) {
+    return true;
+  }
+  return nextKeys.some((key) => existing[key as keyof MakerV4DisplayRow] !== next[key as keyof MakerV4DisplayRow]);
+}
+
 function didMakerV4SourceRowChange(
   existing: MakerV4DisplayRow | undefined,
   sourceRow: SignalStrategy,
@@ -357,8 +369,7 @@ function reconcileMakerV4DisplayRows({
       clockAnchorMs ?? nowMs,
       ageAnchorSource,
     );
-    if (existing) {
-      patchDisplayRowInPlace(existing, nextDisplayRow);
+    if (existing && didMakerV4DisplayRowChange(existing, nextDisplayRow) === false) {
       nextRows.push(existing);
       nextRowById.set(nextId, existing);
       nextSourceRowById.set(nextId, sourceRow);
@@ -370,17 +381,17 @@ function reconcileMakerV4DisplayRows({
     nextSourceRowById.set(nextId, sourceRow);
   });
 
-  currentRows.splice(0, currentRows.length, ...nextRows);
-  currentRowById.clear();
-  nextRowById.forEach((value, key) => {
-    currentRowById.set(key, value);
-  });
-  currentSourceRowById.clear();
-  nextSourceRowById.forEach((value, key) => {
-    currentSourceRowById.set(key, value);
-  });
+  const didRowsChange = (
+    currentRows.length !== nextRows.length
+    || nextRows.some((row, index) => currentRows[index] !== row)
+  );
 
-  return currentRows;
+  return {
+    rows: nextRows,
+    rowById: nextRowById,
+    sourceRowById: nextSourceRowById,
+    didRowsChange,
+  };
 }
 
 function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
@@ -497,11 +508,12 @@ export default function MakerV4SignalTable({
   const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
   const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
   const previousLiveDataVersionRef = useRef<number | undefined>(liveDataVersion);
-  const data = useMemo<MakerV4DisplayRow[]>(() => {
+  const [, forceCommittedRender] = useState(0);
+  const reconciledData = useMemo(() => {
     const forceRefreshAll =
       changedRowIds == null
       && liveDataVersion !== previousLiveDataVersionRef.current;
-    const reconciledRows = reconcileMakerV4DisplayRows({
+    return reconcileMakerV4DisplayRows({
       currentRows: displayRowsRef.current,
       currentRowById: displayRowByIdRef.current,
       currentSourceRowById: displaySourceRowByIdRef.current,
@@ -511,9 +523,66 @@ export default function MakerV4SignalTable({
       nowMs,
       clockAnchorMs,
     });
-    previousLiveDataVersionRef.current = liveDataVersion;
-    return reconciledRows;
   }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
+  const data = displayRowsRef.current.length === 0
+    ? reconciledData.rows
+    : displayRowsRef.current;
+
+  useLayoutEffect(() => {
+    if (displayRowsRef.current.length === 0) {
+      displayRowsRef.current = reconciledData.rows;
+      displayRowByIdRef.current = reconciledData.rowById;
+      displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+      previousLiveDataVersionRef.current = liveDataVersion;
+      return;
+    }
+
+    let shouldForceCommittedRender = false;
+
+    if (reconciledData.didRowsChange) {
+      const nextCommittedRows: MakerV4DisplayRow[] = [];
+      const nextCommittedRowById = new Map<string, MakerV4DisplayRow>();
+
+      reconciledData.rows.forEach((nextRow, index) => {
+        const existing = displayRowByIdRef.current.get(nextRow.id);
+        if (existing) {
+          if (existing !== nextRow) {
+            patchDisplayRowInPlace(existing, nextRow);
+            shouldForceCommittedRender = true;
+          }
+          nextCommittedRows.push(existing);
+          nextCommittedRowById.set(nextRow.id, existing);
+          if (displayRowsRef.current[index] !== existing) {
+            shouldForceCommittedRender = true;
+          }
+          return;
+        }
+
+        nextCommittedRows.push(nextRow);
+        nextCommittedRowById.set(nextRow.id, nextRow);
+        shouldForceCommittedRender = true;
+      });
+
+      if (
+        displayRowsRef.current.length !== nextCommittedRows.length
+        || nextCommittedRows.some((row, index) => displayRowsRef.current[index] !== row)
+      ) {
+        displayRowsRef.current.splice(0, displayRowsRef.current.length, ...nextCommittedRows);
+        shouldForceCommittedRender = true;
+      }
+
+      displayRowByIdRef.current = nextCommittedRowById;
+    } else {
+      displayRowByIdRef.current = reconciledData.rowById;
+    }
+
+    displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+    previousLiveDataVersionRef.current = liveDataVersion;
+
+    if (shouldForceCommittedRender) {
+      forceCommittedRender((value) => value + 1);
+    }
+  }, [reconciledData, liveDataVersion]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
