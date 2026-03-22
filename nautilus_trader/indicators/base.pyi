@@ -1,0 +1,13 @@
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+
+class Indicator:
+    name: str
+    has_inputs: bool
+    initialized: bool
+
+    def handle_quote_tick(self, tick: QuoteTick) -> None: ...
+    def handle_trade_tick(self, tick: TradeTick) -> None: ...
+    def handle_bar(self, bar: Bar) -> None: ...
+    def reset(self) -> None: ...
