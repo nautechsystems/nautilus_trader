@@ -92,6 +92,30 @@ register_arrow(
     decoder=make_dict_deserializer(BinanceBar),
 )
 
+BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
+    {
+        "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+        "mark": pa.string(),
+        "index": pa.string(),
+        "estimated_settle": pa.string(),
+        "funding_rate": pa.string(),
+        "next_funding_ns": pa.uint64(),
+        "ts_event": pa.uint64(),
+        "ts_init": pa.uint64(),
+    },
+)
+
+NAUTILUS_ARROW_SCHEMA[BinanceFuturesMarkPriceUpdate] = (
+    BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA
+)
+
+register_arrow(
+    BinanceFuturesMarkPriceUpdate,
+    BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA,
+    encoder=make_dict_serializer(BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA),
+    decoder=make_dict_deserializer(BinanceFuturesMarkPriceUpdate),
+)
+
 __all__ = [
     "BINANCE",
     "BINANCE_CLIENT_ID",
