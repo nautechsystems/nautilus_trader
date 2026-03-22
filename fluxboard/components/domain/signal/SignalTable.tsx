@@ -2903,6 +2903,8 @@ export default function SignalTable({
           <MakerV4SignalTable
             rows={filteredRows}
             loading={loading}
+            nowProvider={getServerNowMs}
+            clockAnchorMs={serverTsMs}
             liveDataVersion={liveDataVersion}
             changedRowIds={makerV4ChangedRowIdsRef.current}
           />

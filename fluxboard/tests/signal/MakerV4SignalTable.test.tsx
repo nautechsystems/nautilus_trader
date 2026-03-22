@@ -27,7 +27,7 @@ vi.mock('@/components/ui/table/DataTable', async () => {
 
 import { api } from '@/api';
 import SignalTable from '@/components/domain/signal/SignalTable';
-import MakerV4SignalTable from '@/components/domain/signal/MakerV4SignalTable';
+import MakerV4SignalTable, { buildLegTooltip } from '@/components/domain/signal/MakerV4SignalTable';
 import { useSignalStore } from '@/stores';
 import type { SignalStrategy } from '@/types';
 
@@ -288,7 +288,7 @@ describe('MakerV4SignalTable', () => {
     );
 
     expect(screen.getByRole('button', { name: /Age/i })).toBeInTheDocument();
-    expect(screen.getByText('18s')).toBeInTheDocument();
+    expect(screen.getByText('9s')).toBeInTheDocument();
     expect(screen.getByText(/Paused/i)).toBeInTheDocument();
     expect(screen.getByText(/Blocked/i)).toBeInTheDocument();
     expect(screen.getByText(/Quote health/i)).toBeInTheDocument();
@@ -475,7 +475,7 @@ describe('MakerV4SignalTable', () => {
     expect(screen.queryByText('FV market')).not.toBeInTheDocument();
   });
 
-  it('keeps Maker V4 route age, recency, and stale color ticking on a quiet feed', async () => {
+  it('keeps Maker V4 route age, newest-leg recency, and stale color ticking on a quiet feed', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_000_500);
 
@@ -510,7 +510,7 @@ describe('MakerV4SignalTable', () => {
     expect(lastUpdatedCell).not.toBeNull();
     expect(ageCell?.textContent).toContain('3s');
     expect(ageCell).toHaveStyle({ color: colors.text.primary });
-    expect(lastUpdatedCell?.textContent).toContain('(3s ago)');
+    expect(lastUpdatedCell?.textContent).toContain('(1s ago)');
 
     act(() => {
       vi.advanceTimersByTime(1000);
@@ -521,6 +521,18 @@ describe('MakerV4SignalTable', () => {
     lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
     expect(ageCell?.textContent).toContain('4s');
     expect(ageCell).toHaveStyle({ color: colors.semantic.warning.DEFAULT });
-    expect(lastUpdatedCell?.textContent).toContain('(4s ago)');
+    expect(lastUpdatedCell?.textContent).toContain('(2s ago)');
+  });
+
+  it('keeps maker market tooltip ages ticking from the live age anchor', () => {
+    const strategy = buildMakerV4Strategy();
+    const makerLeg = strategy.maker_v4?.quote_snapshot?.maker_leg ?? null;
+
+    expect(
+      buildLegTooltip(makerLeg, 1_700_000_001_500, 1_700_000_001_500, null),
+    ).toContain('Age: 1s');
+    expect(
+      buildLegTooltip(makerLeg, 1_700_000_001_500, 1_700_000_002_500, null),
+    ).toContain('Age: 2s');
   });
 });

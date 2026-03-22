@@ -21,6 +21,7 @@ type MakerV4DisplayRow = SignalStrategy & {
   _statusLabel: ReturnType<typeof describeTradingStatus>;
   _lastUpdateMs: number | null;
   _lastAgeMs: number | null;
+  _recentAgeMs: number | null;
   _ageAsOfMs: number | null;
 };
 
@@ -121,6 +122,23 @@ function deriveLastAgeMs(
   return Math.max(0, nowMs - lastUpdateMs);
 }
 
+function deriveRecentAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return Math.min(...snapshotAges);
+  }
+  if (lastUpdateMs == null) return null;
+  return Math.max(0, nowMs - lastUpdateMs);
+}
+
 function deriveAgeAsOfMs(
   snapshot: MakerV4QuoteSnapshot | null,
   lastUpdateMs: number | null,
@@ -132,7 +150,7 @@ function deriveAgeAsOfMs(
     coerceNumber(snapshot?.ref_leg?.age_ms),
   ].filter((value): value is number => value != null);
   if (snapshotAges.length > 0) {
-    return lastUpdateMs ?? nowMs;
+    return nowMs;
   }
   if (lastUpdateMs == null) return null;
   return nowMs;
@@ -172,6 +190,10 @@ function resolveLiveDisplayAgeMs(row: MakerV4DisplayRow, nowMs: number): number 
   return resolveLiveAgeMs(row._lastAgeMs, row._ageAsOfMs, nowMs);
 }
 
+function resolveLiveRecentAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._recentAgeMs, row._ageAsOfMs, nowMs);
+}
+
 function formatLegAge(
   leg: MakerV4LegSnapshot | null | undefined,
   ageAsOfMs: number | null,
@@ -200,6 +222,7 @@ function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4Disp
   const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
   const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
   const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const recentAgeMs = deriveRecentAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
   const ageAsOfMs = deriveAgeAsOfMs(quoteSnapshot, lastUpdateMs, nowMs);
   const status = deriveStrategyStatus({
     running: resolveSignalRunning(row, nowMs),
@@ -217,6 +240,7 @@ function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4Disp
     _statusLabel: describeTradingStatus(status),
     _lastUpdateMs: lastUpdateMs,
     _lastAgeMs: lastAgeMs,
+    _recentAgeMs: recentAgeMs,
     _ageAsOfMs: ageAsOfMs,
   };
 }
@@ -310,17 +334,23 @@ function formatLegPrices(leg: MakerV4LegSnapshot | null | undefined): string {
   return `${parts[0]} / ${parts[1]} / ${parts[2]}`;
 }
 
-function buildLegTooltip(leg: MakerV4LegSnapshot | null | undefined, fallback: string): string | undefined {
+export function buildLegTooltip(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+  fallbackAgeMs: number | null,
+): string | undefined {
   if (!leg) return undefined;
   const feedState = formatStateWord(leg.feed_state);
   const quoteState = formatStateWord(leg.quote_state);
   const pricingUsable = typeof leg.pricing_usable === 'boolean' ? leg.pricing_usable : null;
   const hedgeUsable = typeof leg.hedge_usable === 'boolean' ? leg.hedge_usable : null;
   const reasonCode = String(leg.reason_code ?? '').trim();
+  const liveAgeMs = resolveLiveAgeMs(coerceNumber(leg.age_ms), ageAsOfMs, nowMs) ?? fallbackAgeMs;
   const lines = [
     formatLegLine(leg),
     `Bid / Mid / Ask: ${formatLegPrices(leg)}`,
-    `Age: ${leg.age_ms != null ? fmtAgeSec(Number(leg.age_ms)) : fallback}`,
+    `Age: ${liveAgeMs != null ? fmtAgeSec(liveAgeMs) : '—'}`,
   ];
   if (feedState || quoteState) {
     lines.push(`Feed: ${feedState ?? '—'} · Quote: ${quoteState ?? '—'}`);
@@ -341,15 +371,19 @@ function buildLegTooltip(leg: MakerV4LegSnapshot | null | undefined, fallback: s
 
 function LegSummary({
   leg,
-  fallbackAgeLabel,
+  ageAsOfMs,
+  nowMs,
+  fallbackAgeMs,
 }: {
   leg: MakerV4LegSnapshot | null | undefined;
-  fallbackAgeLabel: string;
+  ageAsOfMs: number | null;
+  nowMs: number;
+  fallbackAgeMs: number | null;
 }): ReactNode {
   if (!leg) {
     return <span className="text-xs text-neutral-500">—</span>;
   }
-  const tooltip = buildLegTooltip(leg, fallbackAgeLabel);
+  const tooltip = buildLegTooltip(leg, ageAsOfMs, nowMs, fallbackAgeMs);
   const feedState = formatStateWord(leg.feed_state);
   const quoteState = formatStateWord(leg.quote_state);
   const healthLabel = feedState || quoteState
@@ -373,6 +407,7 @@ export default function MakerV4SignalTable({
   strategies,
   loading = false,
   nowProvider = () => Date.now(),
+  clockAnchorMs,
   liveDataVersion,
   changedRowIds,
 }: {
@@ -380,6 +415,7 @@ export default function MakerV4SignalTable({
   strategies?: SignalStrategy[];
   loading?: boolean;
   nowProvider?: () => number;
+  clockAnchorMs?: number | null;
   liveDataVersion?: number;
   changedRowIds?: readonly string[] | null;
 }) {
@@ -399,9 +435,9 @@ export default function MakerV4SignalTable({
       currentSourceRowById: displaySourceRowByIdRef.current,
       changedRowIds,
       sourceRows,
-      nowMs: nowProvider(),
+      nowMs: clockAnchorMs ?? nowMs,
     });
-  }, [changedRowIds, liveDataVersion, nowProvider, sourceRows]);
+  }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
@@ -488,11 +524,9 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => (
         <LegSummary
           leg={row.original._makerLeg}
-          fallbackAgeLabel={
-            resolveLiveDisplayAgeMs(row.original, nowMs) != null
-              ? fmtAgeSec(resolveLiveDisplayAgeMs(row.original, nowMs))
-              : '—'
-          }
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={resolveLiveDisplayAgeMs(row.original, nowMs)}
         />
       ),
     },
@@ -502,10 +536,16 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => (
         <LegSummary
           leg={row.original._hedgeLeg}
-          fallbackAgeLabel={
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
-              ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
-              : (resolveLiveDisplayAgeMs(row.original, nowMs) != null ? fmtAgeSec(resolveLiveDisplayAgeMs(row.original, nowMs)) : '—')
+              ? (resolveLiveAgeMs(
+                  Number(row.original._quoteSnapshot.ibkr_quote_age_ms),
+                  row.original._ageAsOfMs,
+                  nowMs,
+                ) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              : resolveLiveDisplayAgeMs(row.original, nowMs)
           }
         />
       ),
@@ -671,12 +711,14 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => {
         const lastUpdateMs = row.original._lastUpdateMs;
         const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
+        const recentAgeMs = resolveLiveRecentAgeMs(row.original, nowMs);
         if (lastUpdateMs == null) {
           return <span className="text-xs text-neutral-500">—</span>;
         }
         const tooltip = [
           `Last update: ${formatLocal(lastUpdateMs)}`,
-          `Age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+          `Recency: ${recentAgeMs != null ? fmtAgeSec(recentAgeMs) : '—'}`,
+          `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
           `IBKR quote age: ${
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
               ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
@@ -687,7 +729,7 @@ export default function MakerV4SignalTable({
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <span className="cursor-help text-xs text-neutral-300">
               {formatLocal(lastUpdateMs)}
-              {ageMs != null && <span className="text-neutral-500"> ({Math.max(0, Math.floor(ageMs / 1000))}s ago)</span>}
+              {recentAgeMs != null && <span className="text-neutral-500"> ({Math.max(0, Math.floor(recentAgeMs / 1000))}s ago)</span>}
             </span>
           </SimpleTooltip>
         );
