@@ -18,6 +18,7 @@ Trades is migrated in this lane to the realtime-standard controller shape for th
 - The historical tokenmm timestamp fallback remains in place when the snapshot cursor is unusable (`last_seq <= 0`), but that path is now explicitly treated as degraded recovery instead of healthy steady state.
 - The owned baseline failure in `Trades.recovery.test.tsx` was part of this lane: the test API mock now exports `deriveCanonicalNaming`, and the snapshot-refresh regression is covered.
 - The default `pnpm --dir fluxboard exec vitest run ...` invocation still respects the repo's quarantined Vitest excludes, so full owned verification for the Trades bundle was run with `VITEST_FULL=1`.
+- `fluxboard/e2e/realtime-cutovers/trades.spec.ts` is present as an explicit `test.fixme(...)` placeholder until the app exposes a deterministic Trades fixture and supported realtime inspection surface.
 - No Playwright cutover run was executed in this lane.
 
 ## Verification
