@@ -1803,7 +1803,7 @@ export const api = {
       last_seq:
         typeof data.last_seq === 'number'
           ? Math.max(data.last_seq, maxSeq)
-          : (maxSeq > 0 ? maxSeq : sinceSeq),
+          : (maxSeq > 0 ? maxSeq : undefined),
       reset_required: data.reset_required,
       contract_version: typeof data.contract_version === 'number' ? data.contract_version : undefined,
       stream_id: typeof data.stream_id === 'string' ? data.stream_id : undefined,

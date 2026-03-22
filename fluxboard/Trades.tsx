@@ -612,6 +612,7 @@ export default function Trades({
   const latestTradeTsMsRef = useRef<number>(0);
   const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
   const streamCursorRef = useRef<TradeStreamCursor>({ lastSeq });
+  const gapRecoveryTargetSeqRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(lastUpdate);
   const loadingRef = useRef<boolean>(loading);
   const isResyncingRef = useRef<boolean>(isResyncing);
@@ -929,6 +930,7 @@ export default function Trades({
           lastSeq: nextLastSeq,
         };
         latestSeqRef.current = nextLastSeq;
+        gapRecoveryTargetSeqRef.current = null;
         catchingUpRef.current = false;
 
         const nextUpdate = Date.now();
@@ -1182,6 +1184,7 @@ export default function Trades({
       try {
         const pollResyncId = resyncIdRef.current;
         const streamCursor = streamCursorRef.current;
+        const gapRecoveryTargetSeq = gapRecoveryTargetSeqRef.current;
         const requestedSinceSeq = streamCursor.lastSeq;
         const deltaCursor = {
           sinceSeq: requestedSinceSeq,
@@ -1241,6 +1244,15 @@ export default function Trades({
         const seqIsNonRegressive =
           hasNumericLastSeq
           && deltaLastSeq >= requestedSinceSeq;
+        const seqAdvanced =
+          hasNumericLastSeq
+          && deltaLastSeq > requestedSinceSeq;
+        const gapRecoveryResolved =
+          gapRecoveryTargetSeq == null
+          || (
+            hasNumericLastSeq
+            && deltaLastSeq >= gapRecoveryTargetSeq
+          );
         if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
             `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
@@ -1300,6 +1312,9 @@ export default function Trades({
             if (typeof delta.last_seq === 'number') {
               latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
             }
+            if (!appliedCurrentEpoch && seqIsNonRegressive && gapRecoveryResolved) {
+              pollAcknowledgedCurrentEpoch = true;
+            }
 
             if (liveNewRows > 0) {
               playSoundForSeq(typeof delta.last_seq === 'number' ? delta.last_seq : undefined);
@@ -1316,17 +1331,19 @@ export default function Trades({
             if (typeof delta.last_seq === 'number') {
               latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
             }
-            if (seqIsNonRegressive) {
+            if (seqIsNonRegressive && gapRecoveryResolved) {
               pollAcknowledgedCurrentEpoch = true;
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (seqIsNonRegressive) {
+            if (seqIsNonRegressive && (gapRecoveryTargetSeq == null || seqAdvanced)) {
               const lastSeq = delta.last_seq as number;
-              // Empty rows with an advancing (or equal) sequence is a successful reconciliation.
+              // Empty rows only reconcile a seq-gap recovery when the backend advances beyond sinceSeq.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
               emptyPollCountRef.current = 0;
-              pollAcknowledgedCurrentEpoch = true;
+              if (gapRecoveryResolved) {
+                pollAcknowledgedCurrentEpoch = true;
+              }
             } else {
               // Empty rows without a usable sequence might indicate a problem.
               emptyPollCountRef.current += 1;
@@ -1339,7 +1356,10 @@ export default function Trades({
               }
             }
           }
-          if (appliedCurrentEpoch || pollAcknowledgedCurrentEpoch) {
+          const replayResolvedCurrentEpoch =
+            gapRecoveryResolved
+            && (appliedCurrentEpoch || pollAcknowledgedCurrentEpoch);
+          if (replayResolvedCurrentEpoch) {
             markGlobalResyncApplied('trades', pollResyncId);
             const nextUpdate = Date.now();
             lastUpdateRef.current = nextUpdate;
@@ -1348,7 +1368,9 @@ export default function Trades({
           if (
             socketConnectedRef.current
             && replayRows.length < DELTA_LIMIT
+            && replayResolvedCurrentEpoch
           ) {
+            gapRecoveryTargetSeqRef.current = null;
             catchingUpRef.current = false;
           }
           if (!isActiveRef.current) {
@@ -1532,9 +1554,12 @@ export default function Trades({
         && eventSnapshotRevision != null
         && eventStreamId === currentStreamCursor.streamId
         && eventSnapshotRevision === currentStreamCursor.snapshotRevision
-        && currentStreamCursor.lastSeq > 0
         && event.seq > currentStreamCursor.lastSeq + 1;
       if (hasSeqGap) {
+        gapRecoveryTargetSeqRef.current = Math.max(
+          gapRecoveryTargetSeqRef.current ?? 0,
+          event.seq,
+        );
         catchingUpRef.current = true;
         syncSurfaceState();
         schedulePoll();
