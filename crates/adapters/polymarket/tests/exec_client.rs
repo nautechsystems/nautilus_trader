@@ -279,6 +279,10 @@ async fn handle_get_book(State(state): State<TestServerState>) -> Response {
     }
 }
 
+async fn handle_get_fee_rate() -> impl IntoResponse {
+    Json(json!({"base_fee": "0"}))
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -297,6 +301,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/markets", get(handle_gamma_markets))
         .route("/book", get(handle_get_book))
+        .route("/fee-rate", get(handle_get_fee_rate))
         .route("/health", get(handle_health))
         .with_state(state)
 }

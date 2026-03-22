@@ -35,8 +35,8 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{
-            ClobBookResponse, PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport,
-            TickSizeResponse,
+            ClobBookResponse, FeeRateResponse, PolymarketOpenOrder, PolymarketOrder,
+            PolymarketTradeReport, TickSizeResponse,
         },
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
@@ -381,6 +381,12 @@ impl PolymarketClobHttpClient {
     pub async fn get_tick_size(&self, token_id: &str) -> Result<TickSizeResponse> {
         let params = [("token_id", token_id)];
         self.send_get("/tick-size", Some(&params), false).await
+    }
+
+    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
+        let params = [("token_id", token_id)];
+        self.send_get("/fee-rate", Some(&params), false).await
     }
 
     /// Fetches the order book for a token from the CLOB API (public endpoint).

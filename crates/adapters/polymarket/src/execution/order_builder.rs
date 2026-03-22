@@ -75,6 +75,7 @@ impl PolymarketOrderBuilder {
         expiration: &str,
         neg_risk: bool,
         tick_decimals: u32,
+        fee_rate_bps: Decimal,
     ) -> anyhow::Result<PolymarketOrder> {
         let (maker_amount, taker_amount) =
             compute_maker_taker_amounts(price, quantity, side, tick_decimals);
@@ -85,6 +86,7 @@ impl PolymarketOrderBuilder {
             taker_amount,
             expiration,
             neg_risk,
+            fee_rate_bps,
         )
     }
 
@@ -93,6 +95,7 @@ impl PolymarketOrderBuilder {
     /// `amount` semantics differ by side:
     /// - BUY: `amount` is USDC to spend
     /// - SELL: `amount` is shares to sell
+    #[allow(clippy::too_many_arguments)]
     pub fn build_market_order(
         &self,
         token_id: &str,
@@ -101,11 +104,20 @@ impl PolymarketOrderBuilder {
         amount: Decimal,
         neg_risk: bool,
         tick_decimals: u32,
+        fee_rate_bps: Decimal,
     ) -> anyhow::Result<PolymarketOrder> {
         let (maker_amount, taker_amount) =
             compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
         // Market orders never expire
-        self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
+        self.build_and_sign(
+            token_id,
+            side,
+            maker_amount,
+            taker_amount,
+            "0",
+            neg_risk,
+            fee_rate_bps,
+        )
     }
 
     /// Validates a limit order before building, returning a denial reason if invalid.
@@ -185,6 +197,7 @@ impl PolymarketOrderBuilder {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_and_sign(
         &self,
         token_id: &str,
@@ -193,6 +206,7 @@ impl PolymarketOrderBuilder {
         taker_amount: Decimal,
         expiration: &str,
         neg_risk: bool,
+        fee_rate_bps: Decimal,
     ) -> anyhow::Result<PolymarketOrder> {
         let salt = generate_salt();
 
@@ -206,7 +220,7 @@ impl PolymarketOrderBuilder {
             taker_amount,
             expiration: expiration.to_string(),
             nonce: "0".to_string(),
-            fee_rate_bps: Decimal::ZERO,
+            fee_rate_bps,
             side,
             signature_type: self.signature_type,
             signature: String::new(),

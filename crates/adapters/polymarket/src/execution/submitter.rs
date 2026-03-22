@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -53,6 +54,7 @@ pub(crate) struct OrderSubmitter {
     http_client: PolymarketClobHttpClient,
     order_builder: Arc<PolymarketOrderBuilder>,
     retry_manager: Arc<RetryManager<Error>>,
+    fee_rate_cache: Arc<DashMap<String, Decimal>>,
 }
 
 impl OrderSubmitter {
@@ -65,7 +67,25 @@ impl OrderSubmitter {
             http_client,
             order_builder,
             retry_manager: Arc::new(RetryManager::new(retry_config)),
+            fee_rate_cache: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Returns the fee rate in basis points for a token, fetching from the API on cache miss.
+    async fn get_fee_rate_bps(&self, token_id: &str) -> anyhow::Result<Decimal> {
+        if let Some(rate) = self.fee_rate_cache.get(token_id) {
+            return Ok(*rate);
+        }
+
+        let response = self
+            .http_client
+            .get_fee_rate(token_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch fee rate: {e}"))?;
+
+        self.fee_rate_cache
+            .insert(token_id.to_string(), response.base_fee);
+        Ok(response.base_fee)
     }
 
     /// Builds a signed limit order and posts it with retry on transient failures.
@@ -98,6 +118,8 @@ impl OrderSubmitter {
             _ => "0".to_string(),
         };
 
+        let fee_rate_bps = self.get_fee_rate_bps(token_id).await?;
+
         let poly_order = self
             .order_builder
             .build_limit_order(
@@ -108,6 +130,7 @@ impl OrderSubmitter {
                 &expiration,
                 neg_risk,
                 tick_decimals,
+                fee_rate_bps,
             )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -164,6 +187,8 @@ impl OrderSubmitter {
         let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
 
+        let fee_rate_bps = self.get_fee_rate_bps(token_id).await?;
+
         let poly_order = self
             .order_builder
             .build_market_order(
@@ -173,6 +198,7 @@ impl OrderSubmitter {
                 amount_dec,
                 neg_risk,
                 tick_decimals,
+                fee_rate_bps,
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 

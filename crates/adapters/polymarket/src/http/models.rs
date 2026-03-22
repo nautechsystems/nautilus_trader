@@ -294,6 +294,15 @@ pub struct TickSizeResponse {
     pub minimum_tick_size: f64,
 }
 
+/// Fee rate response from CLOB `GET /fee-rate`.
+///
+/// Returns the taker fee rate in basis points for a given token.
+#[derive(Clone, Debug, Deserialize)]
+pub struct FeeRateResponse {
+    /// Fee rate in basis points.
+    pub base_fee: Decimal,
+}
+
 /// A single price level from the CLOB order book.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ClobBookLevel {
@@ -612,6 +621,18 @@ mod tests {
         let response: ClobBookResponse = serde_json::from_str(json).unwrap();
         assert!(response.bids.is_empty());
         assert!(response.asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_fee_rate_response_zero() {
+        let response: FeeRateResponse = load("clob_fee_rate_response_zero.json");
+        assert_eq!(response.base_fee, dec!(0));
+    }
+
+    #[rstest]
+    fn test_fee_rate_response_nonzero() {
+        let response: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
+        assert_eq!(response.base_fee, dec!(150));
     }
 
     #[rstest]
