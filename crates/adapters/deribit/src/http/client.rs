@@ -95,6 +95,77 @@ use crate::{
 /// The API maximum is 1000.
 pub const DERIBIT_HISTORICAL_TRADES_MAX_COUNT: u32 = 1000;
 
+// Dedup and cursor state for timestamp-based trade pagination.
+// Deribit provides no offset cursor, so when multiple trades share
+// one millisecond we use trade-ID dedup to avoid reprocessing.
+// If an entire page contains only seen IDs we advance past that
+// millisecond, which can skip trades when >1000 share one timestamp.
+struct TradePaginator {
+    seen_ids: AHashSet<String>,
+    cursor: i64,
+    end: i64,
+}
+
+impl TradePaginator {
+    fn new(start: i64, end: i64) -> Self {
+        Self {
+            seen_ids: AHashSet::new(),
+            cursor: start,
+            end,
+        }
+    }
+
+    // Returns indices of new (unseen) items and advances the cursor.
+    // Returns None when the page is empty (pagination should stop).
+    fn advance(
+        &mut self,
+        ids: &[String],
+        timestamps: &[i64],
+        has_more: bool,
+    ) -> Option<Vec<usize>> {
+        if ids.is_empty() {
+            return None;
+        }
+
+        let prev_seen = self.seen_ids.len();
+        let mut new_indices = Vec::new();
+        let mut last_ts = self.cursor;
+
+        for (i, id) in ids.iter().enumerate() {
+            last_ts = timestamps[i];
+
+            if self.seen_ids.insert(id.clone()) {
+                new_indices.push(i);
+            }
+        }
+
+        if !has_more {
+            return Some(new_indices);
+        }
+
+        let new_count = self.seen_ids.len() - prev_seen;
+
+        if new_count == 0 {
+            self.cursor = last_ts + 1;
+        } else {
+            self.cursor = last_ts;
+        }
+
+        Some(new_indices)
+    }
+
+    // Strict greater-than so pages at exactly end_ms are still
+    // fetched (Deribit treats start_timestamp as inclusive).
+    fn is_exhausted(&self) -> bool {
+        self.cursor > self.end
+    }
+
+    fn reset(&mut self, start: i64) {
+        self.seen_ids.clear();
+        self.cursor = start;
+    }
+}
+
 /// Low-level Deribit HTTP client for raw API operations.
 ///
 /// This client handles JSON-RPC 2.0 protocol, request signing, rate limiting,
@@ -1036,20 +1107,19 @@ impl DeribitHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let mut current_start_timestamp = start_dt.timestamp_millis();
-        let end_timestamp = end_dt.timestamp_millis();
+        let start_ms = start_dt.timestamp_millis();
+        let end_ms = end_dt.timestamp_millis();
         let ts_init = self.generate_ts_init();
         let mut all_trades = Vec::new();
-        let mut has_more = true;
+        let mut paginator = TradePaginator::new(start_ms, end_ms);
 
-        // Paginate through all trades in the time range
-        while has_more {
+        loop {
             let params = GetLastTradesByInstrumentAndTimeParams::new(
                 instrument_id.symbol.to_string(),
-                current_start_timestamp,
-                end_timestamp,
+                paginator.cursor,
+                end_ms,
                 Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
-                Some("asc".to_string()), // Sort ascending for pagination
+                Some("asc".to_string()),
             );
 
             let full_response = self
@@ -1062,16 +1132,21 @@ impl DeribitHttpClient {
                 .result
                 .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
 
-            has_more = response_data.has_more;
+            let ids: Vec<String> = response_data
+                .trades
+                .iter()
+                .map(|t| t.trade_id.clone())
+                .collect();
+            let timestamps: Vec<i64> = response_data.trades.iter().map(|t| t.timestamp).collect();
 
-            if response_data.trades.is_empty() {
+            let Some(new_indices) = paginator.advance(&ids, &timestamps, response_data.has_more)
+            else {
                 break;
-            }
+            };
 
-            // Track last timestamp for pagination
-            let mut last_timestamp = current_start_timestamp;
+            for i in &new_indices {
+                let raw_trade = &response_data.trades[*i];
 
-            for raw_trade in &response_data.trades {
                 match parse_trade_tick(
                     raw_trade,
                     instrument_id,
@@ -1080,10 +1155,8 @@ impl DeribitHttpClient {
                     ts_init,
                 ) {
                     Ok(trade) => {
-                        last_timestamp = raw_trade.timestamp;
                         all_trades.push(trade);
 
-                        // If user specified a limit, stop when reached
                         if let Some(max) = limit
                             && all_trades.len() >= max as usize
                         {
@@ -1101,12 +1174,7 @@ impl DeribitHttpClient {
                 }
             }
 
-            // Move start timestamp forward for next page
-            // Add 1ms to avoid re-fetching the last trade
-            current_start_timestamp = last_timestamp + 1;
-
-            // Safety check: if we're past the end timestamp, stop
-            if current_start_timestamp >= end_timestamp {
+            if !response_data.has_more || paginator.is_exhausted() {
                 break;
             }
         }
@@ -1141,7 +1209,7 @@ impl DeribitHttpClient {
         bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
-        _limit: Option<u32>,
+        limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
@@ -1211,13 +1279,20 @@ impl DeribitHttpClient {
             };
 
         let ts_init = self.generate_ts_init();
-        let bars = parse_bars(
+        let mut bars = parse_bars(
             &chart_data,
             bar_type,
             price_precision,
             size_precision,
             ts_init,
         )?;
+
+        if let Some(max) = limit {
+            let max = max as usize;
+            if bars.len() > max {
+                bars.drain(..bars.len() - max);
+            }
+        }
 
         log::info!("Parsed {} bars for {}", bars.len(), bar_type);
 
@@ -1243,14 +1318,11 @@ impl DeribitHttpClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> anyhow::Result<OrderBook> {
-        // Get instrument from cache to determine precisions
         let (price_precision, size_precision) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
                 (instrument.price_precision(), instrument.size_precision())
             } else {
-                // Default precisions if instrument not cached
-                log::warn!("Instrument {instrument_id} not in cache, using default precisions");
-                (8u8, 8u8)
+                anyhow::bail!("Instrument {instrument_id} not in cache");
             };
 
         let params = GetOrderBookParams::new(instrument_id.symbol.to_string(), depth);
@@ -1557,17 +1629,13 @@ impl DeribitHttpClient {
             }
         };
 
-        // Track seen trade IDs to deduplicate across page boundaries when
-        // multiple trades share the same millisecond timestamp.
-        let mut seen_trade_ids: AHashSet<String> = AHashSet::new();
+        let mut paginator = TradePaginator::new(start_ms, end_ms);
 
         if let Some(instrument_id) = instrument_id {
-            let mut current_start = start_ms;
-
             loop {
                 let params = GetUserTradesByInstrumentAndTimeParams {
                     instrument_name: instrument_id.symbol.to_string(),
-                    start_timestamp: current_start,
+                    start_timestamp: paginator.cursor,
                     end_timestamp: end_ms,
                     count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
                     sorting: Some("asc".to_string()),
@@ -1579,39 +1647,29 @@ impl DeribitHttpClient {
 
                 let Some(data) = response.result else { break };
 
-                let prev_seen = seen_trade_ids.len();
-                for trade in &data.trades {
-                    if seen_trade_ids.insert(trade.trade_id.clone()) {
-                        parse_and_add(trade);
-                    }
-                }
-                let new_count = seen_trade_ids.len() - prev_seen;
+                let ids: Vec<String> = data.trades.iter().map(|t| t.trade_id.clone()).collect();
+                let timestamps: Vec<i64> = data.trades.iter().map(|t| t.timestamp as i64).collect();
 
-                let Some(last_trade) = data.trades.last() else {
+                let Some(new_indices) = paginator.advance(&ids, &timestamps, data.has_more) else {
                     break;
                 };
 
-                if !data.has_more {
-                    break;
+                for i in &new_indices {
+                    parse_and_add(&data.trades[*i]);
                 }
 
-                // Advance past the boundary timestamp when all trades were
-                // already seen, preventing an infinite loop on duplicate pages
-                if new_count == 0 {
-                    current_start = last_trade.timestamp as i64 + 1;
-                } else {
-                    current_start = last_trade.timestamp as i64;
+                if !data.has_more || paginator.is_exhausted() {
+                    break;
                 }
             }
         } else {
             for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
-                let mut current_start = start_ms;
-                seen_trade_ids.clear();
+                paginator.reset(start_ms);
 
                 loop {
                     let params = GetUserTradesByCurrencyAndTimeParams {
                         currency,
-                        start_timestamp: current_start,
+                        start_timestamp: paginator.cursor,
                         end_timestamp: end_ms,
                         kind: None,
                         count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
@@ -1624,28 +1682,21 @@ impl DeribitHttpClient {
 
                     let Some(data) = response.result else { break };
 
-                    let prev_seen = seen_trade_ids.len();
-                    for trade in &data.trades {
-                        if seen_trade_ids.insert(trade.trade_id.clone()) {
-                            parse_and_add(trade);
-                        }
-                    }
-                    let new_count = seen_trade_ids.len() - prev_seen;
+                    let ids: Vec<String> = data.trades.iter().map(|t| t.trade_id.clone()).collect();
+                    let timestamps: Vec<i64> =
+                        data.trades.iter().map(|t| t.timestamp as i64).collect();
 
-                    let Some(last_trade) = data.trades.last() else {
+                    let Some(new_indices) = paginator.advance(&ids, &timestamps, data.has_more)
+                    else {
                         break;
                     };
 
-                    if !data.has_more {
-                        break;
+                    for i in &new_indices {
+                        parse_and_add(&data.trades[*i]);
                     }
 
-                    // Advance past the boundary timestamp when all trades were
-                    // already seen, preventing an infinite loop on duplicate pages
-                    if new_count == 0 {
-                        current_start = last_trade.timestamp as i64 + 1;
-                    } else {
-                        current_start = last_trade.timestamp as i64;
+                    if !data.has_more || paginator.is_exhausted() {
+                        break;
                     }
                 }
             }
@@ -1790,5 +1841,91 @@ mod tests {
             assert!(keys.contains(&key.to_string()));
         }
         assert!(keys.contains(&format!("deribit:{method}")));
+    }
+
+    #[rstest]
+    fn test_paginator_empty_page_returns_none() {
+        let mut p = TradePaginator::new(100, 200);
+        assert!(p.advance(&[], &[], true).is_none());
+    }
+
+    #[rstest]
+    fn test_paginator_single_page_no_more() {
+        let mut p = TradePaginator::new(100, 200);
+        let ids = vec!["t1".into(), "t2".into()];
+        let ts = vec![150, 160];
+
+        let result = p.advance(&ids, &ts, false);
+        assert_eq!(result, Some(vec![0, 1]));
+    }
+
+    #[rstest]
+    fn test_paginator_dedup_across_pages() {
+        let mut p = TradePaginator::new(100, 200);
+
+        // First page: two new trades
+        let ids1 = vec!["t1".into(), "t2".into()];
+        let ts1 = vec![150, 150];
+        let r1 = p.advance(&ids1, &ts1, true);
+        assert_eq!(r1, Some(vec![0, 1]));
+        assert_eq!(p.cursor, 150);
+
+        // Second page: t2 repeated, t3 new
+        let ids2 = vec!["t2".into(), "t3".into()];
+        let ts2 = vec![150, 150];
+        let r2 = p.advance(&ids2, &ts2, false);
+        assert_eq!(r2, Some(vec![1])); // Only t3 is new
+    }
+
+    #[rstest]
+    fn test_paginator_all_duplicates_advances_past_timestamp() {
+        let mut p = TradePaginator::new(100, 200);
+
+        // First page
+        let ids = vec!["t1".into(), "t2".into()];
+        let ts = vec![150, 150];
+        p.advance(&ids, &ts, true);
+        assert_eq!(p.cursor, 150);
+
+        // Second page: same trades again (all duplicates)
+        let r2 = p.advance(&ids, &ts, true);
+        assert_eq!(r2, Some(vec![])); // No new items
+        assert_eq!(p.cursor, 151); // Advanced past 150
+    }
+
+    #[rstest]
+    fn test_paginator_is_exhausted_strict_greater_than() {
+        let mut p = TradePaginator::new(100, 150);
+
+        let ids = vec!["t1".into()];
+        let ts = vec![150];
+        p.advance(&ids, &ts, true);
+
+        // Cursor at end (150) should NOT be exhausted
+        assert_eq!(p.cursor, 150);
+        assert!(!p.is_exhausted());
+
+        // All duplicates: cursor advances to 151
+        p.advance(&ids, &ts, true);
+        assert_eq!(p.cursor, 151);
+        assert!(p.is_exhausted());
+    }
+
+    #[rstest]
+    fn test_paginator_reset_clears_state() {
+        let mut p = TradePaginator::new(100, 200);
+
+        let ids = vec!["t1".into()];
+        let ts = vec![150];
+        p.advance(&ids, &ts, true);
+        assert_eq!(p.seen_ids.len(), 1);
+
+        p.reset(100);
+        assert_eq!(p.cursor, 100);
+        assert!(p.seen_ids.is_empty());
+
+        // Same ID is now treated as new
+        let r = p.advance(&ids, &ts, false);
+        assert_eq!(r, Some(vec![0]));
     }
 }

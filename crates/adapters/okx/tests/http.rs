@@ -3155,3 +3155,78 @@ async fn test_request_funding_rates() {
         InstrumentId::from("BTC-USDT-SWAP.OKX")
     );
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            post(|_headers: HeaderMap| async {
+                Json(load_test_data("http_place_algo_order_rejected.json"))
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    wait_for_server(addr, "/api/v5/public/instruments").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let result = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("Orejtest"),
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            Quantity::from("0.01"),
+            Some(Price::from("50000")),
+            Some(TriggerType::Default),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(result.is_err(), "non-zero sCode should return error");
+    let err = result.unwrap_err();
+    let err_str = err.to_string();
+    assert!(
+        err_str.contains("51000"),
+        "error should contain sCode 51000, was: {err_str}"
+    );
+    assert!(
+        err_str.contains("Parameter instId error"),
+        "error should contain sMsg, was: {err_str}"
+    );
+}

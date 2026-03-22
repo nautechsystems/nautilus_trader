@@ -204,7 +204,7 @@ rand = { version = "0.10.0", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redis = { version = "1.0.5", default-features = false, features = [
+redis = { version = "1.1.0", default-features = false, features = [
   "cluster",
   "cluster-async",
   "connection-manager",
@@ -307,7 +307,7 @@ alloy-signer-local = { version = "1.7.3", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.7"
-arc-swap = "1.8.2"
+arc-swap = "1.9.0"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
 databento = { version = "0.44.0", default-features = false, features = [
@@ -372,9 +372,9 @@ walkdir = "2.5.0"
 cargo-audit = "0.22.1"
 cargo-deny = "0.19.0"
 cargo-edit = "0.13.9"
-cargo-llvm-cov = "0.8.4"
+cargo-llvm-cov = "0.8.5"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.131"
+cargo-nextest = "0.9.132"
 cargo-vet = "0.10.2"
 lychee = "0.23.0"
 

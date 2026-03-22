@@ -623,7 +623,7 @@ async fn test_websocket_connection() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
 
     wait_until_async(
@@ -713,7 +713,7 @@ async fn test_trades_subscription_flow() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -769,7 +769,7 @@ async fn test_book_subscription_snapshot() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -825,7 +825,7 @@ async fn test_ticker_subscription_flow() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     // Set mark price subs so handler emits MarkPriceUpdate from ticker
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
@@ -887,7 +887,7 @@ async fn test_quote_subscription_flow() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -943,7 +943,7 @@ async fn test_chart_subscription_flow() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -999,7 +999,7 @@ async fn test_multiple_subscriptions() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1048,7 +1048,7 @@ async fn test_unsubscribe() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1109,7 +1109,7 @@ async fn test_heartbeat_enable() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1143,7 +1143,7 @@ async fn test_heartbeat_test_request_response() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1209,7 +1209,7 @@ async fn test_subscription_failure_handling() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1252,7 +1252,7 @@ async fn test_reconnection_after_disconnect() {
     let instruments = load_test_instruments();
 
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1310,7 +1310,7 @@ async fn test_instrument_cache_usage() {
     let mut client = create_test_client(&ws_url);
 
     // Cache instruments before connect
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     client.connect().await.expect("connect failed");
     client
@@ -1405,7 +1405,7 @@ async fn test_authentication_success() {
     let instruments = load_test_instruments();
 
     let mut client = create_authenticated_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1437,7 +1437,7 @@ async fn test_authentication_session_scope() {
     let instruments = load_test_instruments();
 
     let mut client = create_authenticated_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1474,7 +1474,7 @@ async fn test_authentication_without_credentials_fails() {
 
     // Create client explicitly without credentials (bypasses env var resolution)
     let mut client = create_test_client_without_credentials(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1500,7 +1500,7 @@ async fn test_raw_subscription_requires_authentication() {
     let instruments = load_test_instruments();
 
     let mut client = create_authenticated_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1531,7 +1531,7 @@ async fn test_raw_subscription_after_authentication() {
     let instruments = load_test_instruments();
 
     let mut client = create_authenticated_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1582,7 +1582,7 @@ async fn test_100ms_subscription_without_authentication() {
 
     // Create client without credentials (public only)
     let mut client = create_test_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1627,7 +1627,7 @@ async fn test_reconnection_with_reauthentication() {
     let instruments = load_test_instruments();
 
     let mut client = create_authenticated_client(&ws_url);
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)

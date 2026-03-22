@@ -94,7 +94,7 @@ runs:
         echo "PYTHON_LIB_DIR: $PYTHON_LIB_DIR"
         echo "RUSTFLAGS: $RUSTFLAGS"
 
-        uv build --wheel
+        bash scripts/ci/retry-on-corruption.sh uv build --wheel
         ls -lh dist/
       env:
         INPUTS_PYTHON_VERSION: ${{ inputs.python-version }}

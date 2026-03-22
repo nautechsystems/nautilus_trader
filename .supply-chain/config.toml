@@ -299,7 +299,7 @@ version = "1.0.102"
 criteria = "safe-to-deploy"
 
 [[exemptions.arc-swap]]
-version = "1.8.2"
+version = "1.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arcstr]]
@@ -424,6 +424,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.async-compression]]
 version = "0.4.41"
+criteria = "safe-to-deploy"
+
+[[exemptions.async-lock]]
+version = "3.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-stream]]
@@ -1042,6 +1046,10 @@ criteria = "safe-to-deploy"
 version = "5.4.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.event-listener-strategy]]
+version = "0.5.4"
+criteria = "safe-to-deploy"
+
 [[exemptions.eventsource-stream]]
 version = "0.2.3"
 criteria = "safe-to-deploy"
@@ -1438,10 +1446,6 @@ criteria = "safe-to-deploy"
 version = "0.8.4"
 criteria = "safe-to-run"
 
-[[exemptions.matrixmultiply]]
-version = "0.3.10"
-criteria = "safe-to-deploy"
-
 [[exemptions.md-5]]
 version = "0.10.6"
 criteria = "safe-to-deploy"
@@ -1598,10 +1602,6 @@ criteria = "safe-to-deploy"
 version = "0.54.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.ndarray]]
-version = "0.17.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.nix]]
 version = "0.31.2"
 criteria = "safe-to-deploy"
@@ -1634,10 +1634,6 @@ criteria = "safe-to-deploy"
 version = "0.7.5"
 criteria = "safe-to-deploy"
 
-[[exemptions.numpy]]
-version = "0.28.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.nybbles]]
 version = "0.4.8"
 criteria = "safe-to-deploy"
@@ -1668,10 +1664,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ordered-float]]
 version = "2.10.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.ordered-float]]
-version = "5.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.page_size]]
@@ -1768,10 +1760,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.portable-atomic]]
 version = "1.13.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.portable-atomic-util]]
-version = "0.2.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.ppv-lite86]]
@@ -1902,12 +1890,8 @@ criteria = "safe-to-deploy"
 version = "4.4.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.rawpointer]]
-version = "0.2.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.redis]]
-version = "1.0.5"
+version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]

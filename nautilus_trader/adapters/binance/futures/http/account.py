@@ -125,7 +125,7 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         return self._get_resp_decoder.decode(raw)
 
     async def post(self, params: PostParameters) -> BinanceStatusCode:
-        method_type = HttpMethod.GET
+        method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         return self._post_resp_decoder.decode(raw)
 

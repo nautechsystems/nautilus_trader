@@ -1640,12 +1640,12 @@ requires-dist = [
     { name = "nautilus-ibapi", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==10.43.2" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "pandas", specifier = ">=2.3.3,<3.0.0" },
-    { name = "plotly", marker = "extra == 'visualization'", specifier = ">=6.3.1,<7.0.0" },
+    { name = "plotly", marker = "extra == 'visualization'", specifier = ">=6.6.0,<7.0.0" },
     { name = "portion", specifier = ">=2.6.1" },
     { name = "protobuf", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==5.29.5" },
     { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = ">=0.34.6,<1.0.0" },
     { name = "pyarrow", specifier = ">=23.0.1" },
-    { name = "pytz", specifier = ">=2025.2.0" },
+    { name = "pytz", specifier = ">=2026.1.0" },
     { name = "tqdm", specifier = ">=4.67.3,<5.0.0" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = "==0.22.1,<1.0.0" },
 ]
@@ -1657,9 +1657,9 @@ dev = [
     { name = "jupytext", specifier = ">=1.19.1,<2.0.0" },
     { name = "mypy", specifier = "==1.19.1,<2.0.0" },
     { name = "pandas-stubs", specifier = ">=2.3.3,<3.0.0" },
-    { name = "pre-commit", specifier = ">=4.5.0,<5.0.0" },
+    { name = "pre-commit", specifier = ">=4.5.1,<5.0.0" },
     { name = "ruff", specifier = "==0.15.7" },
-    { name = "setuptools", specifier = ">=80" },
+    { name = "setuptools", specifier = ">=82" },
     { name = "types-pytz", specifier = ">=2025.2,<2026.0" },
     { name = "types-toml", specifier = ">=0.10.2,<1.0.0" },
 ]
@@ -1672,7 +1672,7 @@ docs = [
 ]
 test = [
     { name = "aiohttp", specifier = ">=3.13.3,<4.0.0" },
-    { name = "coverage", specifier = ">=7.13.4,<8.0.0" },
+    { name = "coverage", specifier = ">=7.13.5,<8.0.0" },
     { name = "pytest", specifier = ">=7.4.4,<8.0.0" },
     { name = "pytest-aiohttp", specifier = ">=1.1.0,<2.0.0" },
     { name = "pytest-asyncio", specifier = "==0.23.8" },

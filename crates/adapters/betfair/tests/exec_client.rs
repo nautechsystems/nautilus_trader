@@ -38,6 +38,7 @@ use nautilus_common::{
         execution::{
             cancel::{CancelAllOrders, CancelOrder},
             modify::ModifyOrder,
+            report::{GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder},
             submit::SubmitOrder,
         },
     },
@@ -927,6 +928,309 @@ async fn test_ocm_handler_handles_full_image() {
     }
 
     assert!(found_report, "Expected Report event from FULL_IMAGE OCM");
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_voided_partial_emits_both_fill_and_void() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, mut data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_VOIDED_partial.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+    while data_rx.try_recv().is_ok() {}
+
+    // Should receive execution report (fill + status for sm=60)
+    let mut found_report = false;
+    for _ in 0..10 {
+        match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(_))) => {
+                found_report = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+    assert!(
+        found_report,
+        "Expected Report event for partially voided order"
+    );
+
+    // Should also receive Custom data event for BetfairOrderVoided (sv=40)
+    let data_event = tokio::time::timeout(Duration::from_secs(3), data_rx.recv())
+        .await
+        .expect("timeout waiting for voided data event")
+        .expect("channel closed");
+
+    assert!(
+        matches!(data_event, DataEvent::Data(Data::Custom(_))),
+        "Expected Custom data event for voided portion, found: {data_event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_no_void_event_when_sv_zero() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, mut data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_FILLED_sv_zero.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+    while data_rx.try_recv().is_ok() {}
+
+    // Should receive execution report for the fill
+    let mut found_report = false;
+    for _ in 0..10 {
+        match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(_))) => {
+                found_report = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+    assert!(found_report, "Expected Report event for filled order");
+
+    // Should NOT receive a void data event (sv=0)
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let data_event = data_rx.try_recv();
+    assert!(
+        data_event.is_err(),
+        "Should not emit void event when sv=0, found: {data_event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_registers_customer_order_ref() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.181005744-86362-0.BETFAIR", "O-RFO-001", "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    let cmd = make_submit_order_cmd(&order);
+    client.submit_order(&cmd).unwrap();
+
+    // Wait for submitted + accepted
+    let _ = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+
+    // Verify the mock server received the placeOrders call
+    let has_place_orders = state
+        .betting_methods
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|m| m == "SportsAPING/v1.0/placeOrders");
+    assert!(has_place_orders, "Expected placeOrders call");
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_filled_no_avp_uses_order_price() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_FILLED_no_avp.json");
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    // Expect execution report (fill and/or status report)
+    let mut found_report = false;
+    for _ in 0..10 {
+        match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(_))) => {
+                found_report = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+
+    assert!(
+        found_report,
+        "Expected Report event for no-avp filled order"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports() {
+    let (addr, state) = start_mock_http().await;
+
+    // Override listCurrentOrders to return executable orders
+    let fixture = load_fixture("rest/list_current_orders_executable.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/listCurrentOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(
+        !reports.is_empty(),
+        "Expected at least one order status report"
+    );
+
+    for report in &reports {
+        assert!(!report.venue_order_id.to_string().is_empty());
+        assert!(report.price.is_some());
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports() {
+    let (addr, state) = start_mock_http().await;
+
+    // Override listCurrentOrders to return executed orders with fills
+    let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        "SportsAPING/v1.0/listCurrentOrders".to_string(),
+        v["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+
+    let cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+
+    assert!(
+        !reports.is_empty(),
+        "Expected at least one fill report from executed orders"
+    );
+
+    for report in &reports {
+        assert!(report.last_qty.as_f64() > 0.0);
+    }
 
     client.disconnect().await.unwrap();
     let _ = server.await;

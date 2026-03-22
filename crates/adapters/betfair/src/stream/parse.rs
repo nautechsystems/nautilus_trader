@@ -2085,4 +2085,277 @@ mod tests {
         let fill = result.unwrap();
         assert_eq!(fill.last_qty, Quantity::from("5.00"));
     }
+
+    #[rstest]
+    fn test_fill_tracker_overfill_rejected() {
+        let mut tracker = FillTracker::new();
+
+        // sm=30 exceeds order size s=20
+        let uo = make_test_uo(
+            "999001",
+            Decimal::new(20, 0),
+            Some(Decimal::new(30, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+
+        let instrument_id = InstrumentId::from("1.234567-999001-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        let result =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(
+            result.is_none(),
+            "overfill (sm > order_qty) should be rejected"
+        );
+    }
+
+    #[rstest]
+    fn test_fill_tracker_zero_sm_returns_none() {
+        let mut tracker = FillTracker::new();
+
+        let uo = make_test_uo("999002", Decimal::new(10, 0), Some(Decimal::ZERO), None);
+
+        let instrument_id = InstrumentId::from("1.234567-999002-0.0.BETFAIR");
+        let result = tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        assert!(result.is_none(), "zero sm should not produce a fill");
+    }
+
+    #[rstest]
+    fn test_fill_tracker_no_avp_uses_order_price() {
+        let data = load_test_json("stream/ocm_FILLED_no_avp.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let fill = tracker
+                .maybe_fill_report(
+                    uo,
+                    uo.s,
+                    instrument_id,
+                    AccountId::from("BETFAIR-001"),
+                    Currency::GBP(),
+                    ts,
+                    ts,
+                )
+                .expect("should produce fill even without avp");
+
+            // No avp field, so fill price falls back to order price (p=3.5)
+            assert_eq!(fill.last_qty.as_f64(), 25.0);
+            assert_eq!(fill.last_px.as_f64(), 3.5);
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_weighted_avg_back_calculation() {
+        let mut tracker = FillTracker::new();
+        let instrument_id = InstrumentId::from("1.234567-999003-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        // First fill: 10 @ avp=2.0
+        let uo1 = make_test_uo(
+            "999003",
+            Decimal::new(30, 0),
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(20, 1)),
+        );
+        let fill1 = tracker
+            .maybe_fill_report(&uo1, uo1.s, instrument_id, account_id, currency, ts, ts)
+            .expect("first fill");
+        assert_eq!(fill1.last_px.as_f64(), 2.0);
+        assert_eq!(fill1.last_qty.as_f64(), 10.0);
+
+        // Second fill: sm=20, avp=2.5
+        // Back-calc: (2.5*20 - 2.0*10) / 10 = (50-20)/10 = 3.0
+        let uo2 = make_test_uo(
+            "999003",
+            Decimal::new(30, 0),
+            Some(Decimal::new(20, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let fill2 = tracker
+            .maybe_fill_report(&uo2, uo2.s, instrument_id, account_id, currency, ts, ts)
+            .expect("second fill");
+        assert_eq!(fill2.last_qty.as_f64(), 10.0);
+        assert_eq!(fill2.last_px.as_f64(), 3.0);
+    }
+
+    #[rstest]
+    fn test_fill_tracker_negative_fill_price_falls_back_to_avp() {
+        let mut tracker = FillTracker::new();
+        let instrument_id = InstrumentId::from("1.234567-999004-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        // First fill: 10 @ avp=5.0
+        let uo1 = make_test_uo(
+            "999004",
+            Decimal::new(20, 0),
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(50, 1)),
+        );
+        tracker
+            .maybe_fill_report(&uo1, uo1.s, instrument_id, account_id, currency, ts, ts)
+            .expect("first fill");
+
+        // Second fill: sm=15, avp=1.0
+        // Back-calc: (1.0*15 - 5.0*10) / 5 = (15-50)/5 = -7.0
+        // Negative price should fall back to avp=1.0
+        let uo2 = make_test_uo(
+            "999004",
+            Decimal::new(20, 0),
+            Some(Decimal::new(15, 0)),
+            Some(Decimal::new(10, 1)),
+        );
+        let fill2 = tracker
+            .maybe_fill_report(&uo2, uo2.s, instrument_id, account_id, currency, ts, ts)
+            .expect("second fill should use avp fallback");
+        assert_eq!(fill2.last_qty.as_f64(), 5.0);
+        assert_eq!(fill2.last_px.as_f64(), 1.0);
+    }
+
+    #[rstest]
+    fn test_fill_tracker_prune_clears_state() {
+        let mut tracker = FillTracker::new();
+        let instrument_id = InstrumentId::from("1.234567-999005-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::from("GBP");
+        let ts = UnixNanos::default();
+
+        // Fill order fully
+        let uo = make_test_uo(
+            "999005",
+            Decimal::new(10, 0),
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let fill1 =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(fill1.is_some());
+
+        // Same data again - deduplicated
+        let fill2 =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(fill2.is_none(), "should be deduplicated");
+
+        // Prune the bet
+        tracker.prune("999005");
+
+        // After prune, same data can produce a fill again (simulates re-processing)
+        let fill3 =
+            tracker.maybe_fill_report(&uo, uo.s, instrument_id, account_id, currency, ts, ts);
+        assert!(fill3.is_some(), "after prune, should produce fill again");
+    }
+
+    #[rstest]
+    fn test_fill_tracker_sm_none_returns_none() {
+        let mut tracker = FillTracker::new();
+
+        // sm=None (no matched quantity field at all)
+        let uo = make_test_uo("999006", Decimal::new(10, 0), None, None);
+
+        let instrument_id = InstrumentId::from("1.234567-999006-0.0.BETFAIR");
+        let result = tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        assert!(result.is_none(), "None sm should not produce a fill");
+    }
+
+    #[rstest]
+    fn test_fill_tracker_partial_void_still_emits_fill() {
+        let data = load_test_json("stream/ocm_VOIDED_partial.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let fill = tracker
+                .maybe_fill_report(
+                    uo,
+                    uo.s,
+                    instrument_id,
+                    AccountId::from("BETFAIR-001"),
+                    Currency::GBP(),
+                    ts,
+                    ts,
+                )
+                .expect("should produce fill for matched portion");
+
+            // Order: s=100, sm=60, sv=40 -> fill qty should be 60
+            assert_eq!(fill.last_qty.as_f64(), 60.0);
+            assert_eq!(fill.last_px.as_f64(), 1.5);
+            assert_eq!(fill.order_side, OrderSide::Sell);
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_no_fill_when_sv_zero_and_fully_filled() {
+        let data = load_test_json("stream/ocm_FILLED_sv_zero.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let fill = tracker
+                .maybe_fill_report(
+                    uo,
+                    uo.s,
+                    instrument_id,
+                    AccountId::from("BETFAIR-001"),
+                    Currency::GBP(),
+                    ts,
+                    ts,
+                )
+                .expect("fully filled order should produce fill");
+
+            assert_eq!(fill.last_qty.as_f64(), 50.0);
+            assert_eq!(fill.last_px.as_f64(), 2.0);
+
+            // sv=0, so no void event should be generated (tested separately)
+            assert_eq!(uo.sv, Some(Decimal::ZERO));
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
 }

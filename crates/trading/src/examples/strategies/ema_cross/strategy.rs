@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Dual-EMA crossover strategy.
-//!
-//! Subscribes to quotes for a single instrument, maintains fast and slow
-//! exponential moving averages, and submits market orders when the fast
-//! EMA crosses above (buy) or below (sell) the slow EMA.
+//! Dual-EMA crossover strategy implementation.
 
 use std::{
     fmt::Debug,
@@ -43,12 +39,12 @@ use crate::strategy::{Strategy, StrategyConfig, StrategyCore};
 /// Generates buy signals when the fast EMA crosses above the slow EMA,
 /// and sell signals when the fast crosses below.
 pub struct EmaCross {
-    core: StrategyCore,
-    instrument_id: InstrumentId,
-    trade_size: Quantity,
-    ema_fast: ExponentialMovingAverage,
-    ema_slow: ExponentialMovingAverage,
-    prev_fast_above: Option<bool>,
+    pub(super) core: StrategyCore,
+    pub(super) instrument_id: InstrumentId,
+    pub(super) trade_size: Quantity,
+    pub(super) ema_fast: ExponentialMovingAverage,
+    pub(super) ema_slow: ExponentialMovingAverage,
+    pub(super) prev_fast_above: Option<bool>,
 }
 
 impl EmaCross {

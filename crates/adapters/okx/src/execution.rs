@@ -65,7 +65,10 @@ use crate::{
     http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
     websocket::{
         client::OKXWebSocketClient,
-        dispatch::{OrderIdentity, WsDispatchState, dispatch_ws_message},
+        dispatch::{
+            AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_ws_message,
+            emit_algo_cancel_rejections, emit_batch_cancel_failure,
+        },
         parse::OrderStateSnapshot,
     },
 };
@@ -553,6 +556,73 @@ impl OKXExecutionClient {
         tasks.push(handle);
     }
 
+    // Partitions algo cancel orders into regular and advance, then spawns
+    // HTTP tasks for each group with per-item and batch-level rejection handling.
+    fn dispatch_algo_cancels(&self, items: Vec<(OKXCancelAlgoOrderRequest, AlgoCancelContext)>) {
+        let mut regular_requests = Vec::new();
+        let mut regular_contexts = Vec::new();
+        let mut advance_requests = Vec::new();
+        let mut advance_contexts = Vec::new();
+
+        let cache = self.core.cache();
+
+        for (request, ctx) in items {
+            let is_advance = cache
+                .order(&ctx.client_order_id)
+                .is_some_and(|o| is_advance_algo_order(o.order_type()));
+
+            if is_advance {
+                advance_requests.push(request);
+                advance_contexts.push(ctx);
+            } else {
+                regular_requests.push(request);
+                regular_contexts.push(ctx);
+            }
+        }
+
+        drop(cache);
+
+        if !regular_requests.is_empty() {
+            let client = self.http_client.clone();
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
+
+            self.spawn_task("cancel_algo_orders", async move {
+                match client.cancel_algo_orders(regular_requests).await {
+                    Ok(responses) => {
+                        emit_algo_cancel_rejections(&responses, &regular_contexts, &emitter, clock);
+                    }
+                    Err(e) => {
+                        let msg = format!("{e}");
+                        emit_batch_cancel_failure(&regular_contexts, &msg, &emitter, clock);
+                        anyhow::bail!("{e}");
+                    }
+                }
+                Ok(())
+            });
+        }
+
+        if !advance_requests.is_empty() {
+            let client = self.http_client.clone();
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
+
+            self.spawn_task("cancel_advance_algo_orders", async move {
+                match client.cancel_advance_algo_orders(advance_requests).await {
+                    Ok(responses) => {
+                        emit_algo_cancel_rejections(&responses, &advance_contexts, &emitter, clock);
+                    }
+                    Err(e) => {
+                        let msg = format!("{e}");
+                        emit_batch_cancel_failure(&advance_contexts, &msg, &emitter, clock);
+                        anyhow::bail!("{e}");
+                    }
+                }
+                Ok(())
+            });
+        }
+    }
+
     fn abort_pending_tasks(&self) {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         for handle in tasks.drain(..) {
@@ -682,7 +752,9 @@ impl ExecutionClient for OKXExecutionClient {
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
                     AHashMap::new();
+
                 pin_mut!(stream);
+
                 while let Some(message) = stream.next().await {
                     dispatch_ws_message(
                         message,
@@ -716,7 +788,9 @@ impl ExecutionClient for OKXExecutionClient {
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
                     AHashMap::new();
+
                 pin_mut!(stream);
+
                 while let Some(message) = stream.next().await {
                     dispatch_ws_message(
                         message,
@@ -731,6 +805,7 @@ impl ExecutionClient for OKXExecutionClient {
                     );
                 }
             });
+
             self.ws_business_stream_handle = Some(handle);
         }
 
@@ -1086,14 +1161,6 @@ impl ExecutionClient for OKXExecutionClient {
 
         reports.append(&mut margin_reports);
 
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
-
         Ok(reports)
     }
 
@@ -1394,53 +1461,37 @@ impl ExecutionClient for OKXExecutionClient {
 
             // OKX doesn't support algo cancel via private WebSocket, must use HTTP
             if !algo_orders.is_empty() {
-                let http_client = self.http_client.clone();
-                let mut regular_algo_requests = Vec::new();
-                let mut advance_algo_requests = Vec::new();
-
-                for (instrument_id, client_order_id, venue_order_id, _trader_id, _strategy_id) in
-                    algo_orders
-                {
-                    let request = OKXCancelAlgoOrderRequest {
-                        inst_id: instrument_id.symbol.to_string(),
-                        inst_id_code: None,
-                        algo_id: venue_order_id.map(|id| id.to_string()),
-                        algo_cl_ord_id: if venue_order_id.is_none() {
-                            Some(client_order_id.to_string())
-                        } else {
-                            None
+                let items: Vec<_> = algo_orders
+                    .into_iter()
+                    .map(
+                        |(
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            _trader_id,
+                            strategy_id,
+                        )| {
+                            let request = OKXCancelAlgoOrderRequest {
+                                inst_id: instrument_id.symbol.to_string(),
+                                inst_id_code: None,
+                                algo_id: venue_order_id.map(|id| id.to_string()),
+                                algo_cl_ord_id: if venue_order_id.is_none() {
+                                    Some(client_order_id.to_string())
+                                } else {
+                                    None
+                                },
+                            };
+                            let ctx = AlgoCancelContext {
+                                client_order_id,
+                                instrument_id,
+                                strategy_id,
+                                venue_order_id,
+                            };
+                            (request, ctx)
                         },
-                    };
-
-                    let cache = self.core.cache();
-                    let is_advance = cache
-                        .order(&client_order_id)
-                        .is_some_and(|o| is_advance_algo_order(o.order_type()));
-                    drop(cache);
-
-                    if is_advance {
-                        advance_algo_requests.push(request);
-                    } else {
-                        regular_algo_requests.push(request);
-                    }
-                }
-
-                if !regular_algo_requests.is_empty() {
-                    let client = http_client.clone();
-                    self.spawn_task("cancel_algo_orders", async move {
-                        client.cancel_algo_orders(regular_algo_requests).await?;
-                        Ok(())
-                    });
-                }
-
-                if !advance_algo_requests.is_empty() {
-                    self.spawn_task("cancel_advance_algo_orders", async move {
-                        http_client
-                            .cancel_advance_algo_orders(advance_algo_requests)
-                            .await?;
-                        Ok(())
-                    });
-                }
+                    )
+                    .collect();
+                self.dispatch_algo_cancels(items);
             }
 
             Ok(())
@@ -1481,51 +1532,29 @@ impl ExecutionClient for OKXExecutionClient {
 
         // OKX doesn't support algo cancel via private WebSocket, must use HTTP
         if !algo_orders.is_empty() {
-            let http_client = self.http_client.clone();
-            let mut regular_algo_requests = Vec::new();
-            let mut advance_algo_requests = Vec::new();
-
-            let cache = self.core.cache();
-            for cancel in algo_orders {
-                let request = OKXCancelAlgoOrderRequest {
-                    inst_id: cancel.instrument_id.symbol.to_string(),
-                    inst_id_code: None,
-                    algo_id: cancel.venue_order_id.map(|id| id.to_string()),
-                    algo_cl_ord_id: if cancel.venue_order_id.is_none() {
-                        Some(cancel.client_order_id.to_string())
-                    } else {
-                        None
-                    },
-                };
-
-                let is_advance = cache
-                    .order(&cancel.client_order_id)
-                    .is_some_and(|o| is_advance_algo_order(o.order_type()));
-
-                if is_advance {
-                    advance_algo_requests.push(request);
-                } else {
-                    regular_algo_requests.push(request);
-                }
-            }
-            drop(cache);
-
-            if !regular_algo_requests.is_empty() {
-                let client = http_client.clone();
-                self.spawn_task("cancel_algo_orders", async move {
-                    client.cancel_algo_orders(regular_algo_requests).await?;
-                    Ok(())
-                });
-            }
-
-            if !advance_algo_requests.is_empty() {
-                self.spawn_task("cancel_advance_algo_orders", async move {
-                    http_client
-                        .cancel_advance_algo_orders(advance_algo_requests)
-                        .await?;
-                    Ok(())
-                });
-            }
+            let items: Vec<_> = algo_orders
+                .into_iter()
+                .map(|cancel| {
+                    let request = OKXCancelAlgoOrderRequest {
+                        inst_id: cancel.instrument_id.symbol.to_string(),
+                        inst_id_code: None,
+                        algo_id: cancel.venue_order_id.map(|id| id.to_string()),
+                        algo_cl_ord_id: if cancel.venue_order_id.is_none() {
+                            Some(cancel.client_order_id.to_string())
+                        } else {
+                            None
+                        },
+                    };
+                    let ctx = AlgoCancelContext {
+                        client_order_id: cancel.client_order_id,
+                        instrument_id: cancel.instrument_id,
+                        strategy_id: cancel.strategy_id,
+                        venue_order_id: cancel.venue_order_id,
+                    };
+                    (request, ctx)
+                })
+                .collect();
+            self.dispatch_algo_cancels(items);
         }
 
         Ok(())

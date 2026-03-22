@@ -6963,3 +6963,222 @@ fn test_l1_queue_position_pending_resolved_by_any_side_trade(
         1,
     );
 }
+
+#[rstest]
+fn test_triggered_stop_market_removed_from_matching_core_after_trade_trigger(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let ask1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask1).unwrap();
+
+    let ask2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask2).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-9");
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1001.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut stop_order, account_id);
+    assert!(engine.order_exists(client_order_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1001.00"),
+        Quantity::from("8.000"),
+        AggressorSide::Buyer,
+        TradeId::new("repro-1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Stop order should have triggered and filled",
+    );
+    assert!(
+        !engine.order_exists(client_order_id),
+        "Filled stop order should be removed from matching core"
+    );
+}
+
+#[rstest]
+fn test_fully_filled_limit_order_removed_from_core(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("5.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1501.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut limit_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Limit order should have filled immediately",
+    );
+    assert!(
+        !engine.order_exists(client_order_id),
+        "Filled limit order should be removed from matching core",
+    );
+}
+
+#[rstest]
+fn test_triggered_stop_limit_removed_from_core_after_fill(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_limit = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1005.00"))
+        .price(Price::from("1010.00"))
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut stop_limit, account_id);
+    assert!(engine.order_exists(client_order_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Trade triggers the stop (ask crosses trigger price)
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1005.00"),
+        Quantity::from("10.000"),
+        AggressorSide::Buyer,
+        TradeId::new("trigger-1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "Stop limit order should have triggered and filled",
+    );
+    assert!(
+        !engine.order_exists(client_order_id),
+        "Filled stop limit order should be removed from matching core",
+    );
+}
+
+#[rstest]
+fn test_fully_filled_market_to_limit_not_in_core(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("5.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut mtl_order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .build();
+
+    let submitted = TestOrderEventStubs::submitted(&mtl_order, account_id);
+    mtl_order.apply(submitted).unwrap();
+    engine.process_order(&mut mtl_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "MarketToLimit order should have filled",
+    );
+    assert!(
+        !engine.order_exists(client_order_id),
+        "Fully filled MarketToLimit should not rest in matching core",
+    );
+}

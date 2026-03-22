@@ -101,6 +101,10 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 - Prefer pytest-style free functions for Python tests instead of test classes with setup methods.
 - **Group assertions** when possible: perform all setup/act steps first, then assert together to avoid the act-assert-act smell.
 - Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and conciseness matter more than defensive error handling here.
+- Do not capture log output to assert on log messages. Log capture in tests is fragile because
+  loggers are global state, test execution order is non-deterministic, and the assertions
+  break when log wording changes. Instead, verify the observable behavior (return values,
+  state changes, side effects) that the log message reflects.
 
 For Rust-specific test conventions (module structure, `#[rstest]`, parameterization), see the [Rust guide](rust.md#testing-conventions).
 

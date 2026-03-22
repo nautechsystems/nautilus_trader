@@ -2688,6 +2688,15 @@ impl BybitHttpClient {
                 log::warn!("Missing credentials for fee rates, using defaults");
                 Ok(AHashMap::new())
             }
+            Err(BybitHttpError::BybitError {
+                error_code,
+                ref message,
+            }) => {
+                log::warn!(
+                    "Fee rate request rejected (error {error_code}: {message}), using defaults"
+                );
+                Ok(AHashMap::new())
+            }
             Err(e) => Err(e.into()),
         }
     }

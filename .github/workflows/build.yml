@@ -198,8 +198,11 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Set compile jobs from cache state
+        run: bash scripts/ci/set-cargo-build-jobs.sh
+
       - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -316,7 +319,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp"
+        run: make cargo-test EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -388,8 +391,11 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Set compile jobs from cache state
+        run: bash scripts/ci/set-cargo-build-jobs.sh
+
       - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)

@@ -32,9 +32,15 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use nautilus_okx::websocket::{
-    dispatch::{WsDispatchState, dispatch_execution_reports},
-    messages::ExecutionReport,
+use nautilus_okx::{
+    http::models::OKXCancelAlgoOrderResponse,
+    websocket::{
+        dispatch::{
+            AlgoCancelContext, WsDispatchState, dispatch_execution_reports,
+            emit_algo_cancel_rejections, emit_batch_cancel_failure,
+        },
+        messages::ExecutionReport,
+    },
 };
 use rstest::rstest;
 
@@ -580,4 +586,262 @@ fn test_submit_order_list_single_order() {
 
     assert_eq!(submits.len(), 1);
     assert_eq!(submits[0].client_order_id, cid);
+}
+
+fn make_algo_cancel_response(
+    algo_id: &str,
+    s_code: &str,
+    s_msg: &str,
+) -> OKXCancelAlgoOrderResponse {
+    OKXCancelAlgoOrderResponse {
+        algo_id: algo_id.to_string(),
+        s_code: Some(s_code.to_string()),
+        s_msg: Some(s_msg.to_string()),
+    }
+}
+
+fn make_algo_cancel_context(cid: &str) -> AlgoCancelContext {
+    AlgoCancelContext {
+        client_order_id: ClientOrderId::new(cid),
+        instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
+        strategy_id: StrategyId::from("STRATEGY-001"),
+        venue_order_id: Some(VenueOrderId::new("v-algo-1")),
+    }
+}
+
+fn make_fill_report_with_trade_id(cid: &str, trade_id: &str) -> FillReport {
+    FillReport::new(
+        AccountId::from("OKX-001"),
+        InstrumentId::from("ETH-USDT-SWAP.OKX"),
+        VenueOrderId::new("v-1"),
+        TradeId::new(trade_id),
+        OrderSide::Buy,
+        Quantity::new(1.0, 0),
+        Price::new(2000.0, 2),
+        Money::new(0.01, Currency::USDT()),
+        LiquiditySide::Taker,
+        Some(ClientOrderId::new(cid)),
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+#[rstest]
+fn test_trade_dedup_first_insert_returns_false() {
+    let state = WsDispatchState::default();
+    let trade_id = TradeId::new("t-100");
+
+    assert!(!state.check_and_insert_trade(trade_id));
+}
+
+#[rstest]
+fn test_trade_dedup_second_insert_returns_true() {
+    let state = WsDispatchState::default();
+    let trade_id = TradeId::new("t-100");
+
+    state.check_and_insert_trade(trade_id);
+
+    assert!(state.check_and_insert_trade(trade_id));
+}
+
+#[rstest]
+fn test_trade_dedup_different_trade_ids_are_independent() {
+    let state = WsDispatchState::default();
+
+    state.check_and_insert_trade(TradeId::new("t-100"));
+
+    assert!(!state.check_and_insert_trade(TradeId::new("t-200")));
+}
+
+#[rstest]
+fn test_dispatch_duplicate_fill_report_is_suppressed() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+
+    let fill = make_fill_report_with_trade_id("O-001", "t-dup-1");
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill.clone())], &emitter, &state);
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "duplicate fill should be suppressed");
+}
+
+#[rstest]
+fn test_dispatch_fills_with_different_trade_ids_both_emitted() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+
+    let fill1 = make_fill_report_with_trade_id("O-001", "t-1");
+    let fill2 = make_fill_report_with_trade_id("O-001", "t-2");
+    dispatch_execution_reports(
+        vec![ExecutionReport::Fill(fill1), ExecutionReport::Fill(fill2)],
+        &emitter,
+        &state,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2, "different trade_ids should both emit");
+}
+
+#[rstest]
+fn test_dispatch_duplicate_fill_still_updates_filled_state() {
+    let (emitter, _rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let cid = ClientOrderId::new("O-001");
+
+    let fill = make_fill_report_with_trade_id("O-001", "t-dup-2");
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill.clone())], &emitter, &state);
+
+    assert!(state.filled_orders.contains(&cid));
+
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+
+    assert!(state.filled_orders.contains(&cid));
+}
+
+#[rstest]
+fn test_algo_cancel_rejection_emits_for_nonzero_scode() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    let responses = vec![make_algo_cancel_response(
+        "algo-1",
+        "51000",
+        "Order not found",
+    )];
+    let contexts = vec![make_algo_cancel_context("O-001")];
+
+    emit_algo_cancel_rejections(&responses, &contexts, &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+
+    if let ExecutionEvent::Order(event) = &events[0] {
+        assert!(
+            format!("{event:?}").contains("CancelRejected"),
+            "expected CancelRejected event, was {event:?}"
+        );
+    } else {
+        panic!("expected ExecutionEvent::Order, was {:?}", events[0]);
+    }
+}
+
+#[rstest]
+fn test_algo_cancel_rejection_skips_success_scode() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    let responses = vec![make_algo_cancel_response("algo-1", "0", "")];
+    let contexts = vec![make_algo_cancel_context("O-001")];
+
+    emit_algo_cancel_rejections(&responses, &contexts, &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 0, "sCode=0 should not emit rejection");
+}
+
+#[rstest]
+fn test_algo_cancel_rejection_mixed_batch() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    let responses = vec![
+        make_algo_cancel_response("algo-1", "0", ""),
+        make_algo_cancel_response("algo-2", "51000", "Not found"),
+        make_algo_cancel_response("algo-3", "0", ""),
+    ];
+    let contexts = vec![
+        make_algo_cancel_context("O-001"),
+        make_algo_cancel_context("O-002"),
+        make_algo_cancel_context("O-003"),
+    ];
+
+    emit_algo_cancel_rejections(&responses, &contexts, &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "only one rejection in the batch");
+}
+
+#[rstest]
+fn test_algo_cancel_rejection_missing_context_does_not_panic() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    // More responses than contexts
+    let responses = vec![
+        make_algo_cancel_response("algo-1", "51000", "error"),
+        make_algo_cancel_response("algo-2", "51000", "error"),
+    ];
+    let contexts = vec![make_algo_cancel_context("O-001")];
+
+    emit_algo_cancel_rejections(&responses, &contexts, &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    // First item has context -> emits rejection; second has no context -> logs warning
+    assert_eq!(events.len(), 1);
+}
+
+#[rstest]
+fn test_batch_cancel_failure_emits_for_all_orders() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    let contexts = vec![
+        make_algo_cancel_context("O-001"),
+        make_algo_cancel_context("O-002"),
+        make_algo_cancel_context("O-003"),
+    ];
+
+    emit_batch_cancel_failure(&contexts, "network timeout", &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 3, "each order should get a rejection");
+}
+
+#[rstest]
+fn test_batch_cancel_failure_empty_contexts() {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+
+    emit_batch_cancel_failure(&[], "error", &emitter, clock);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trade_dedup_concurrent_inserts_only_one_wins() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let state = Arc::new(WsDispatchState::default());
+    let trade_id = TradeId::new("t-race");
+    let new_count = Arc::new(AtomicUsize::new(0));
+
+    let mut handles = Vec::new();
+
+    for _ in 0..10 {
+        let state = Arc::clone(&state);
+        let counter = Arc::clone(&new_count);
+        handles.push(tokio::spawn(async move {
+            if !state.check_and_insert_trade(trade_id) {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+    }
+
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    assert_eq!(
+        new_count.load(Ordering::SeqCst),
+        1,
+        "exactly one task should see the trade as new"
+    );
 }

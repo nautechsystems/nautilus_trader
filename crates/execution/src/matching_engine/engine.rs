@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     cell::RefCell,
     cmp::min,
@@ -2032,7 +2028,7 @@ impl OrderMatchingEngine {
     }
 
     /// Processes a cancel all orders command for an instrument.
-    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
+    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, _account_id: AccountId) {
         let instrument_id = command.instrument_id;
         let open_orders = self
             .cache
@@ -2526,6 +2522,11 @@ impl OrderMatchingEngine {
         // Process expiration before matching to prevent fills on expired instruments
         self.check_instrument_expiration();
 
+        // Expire GTD orders before matching to prevent fills on expired orders
+        if self.config.support_gtd_orders {
+            self.expire_gtd_orders(timestamp_ns);
+        }
+
         // Process bid actions before snapshotting asks so cross-side
         // contingencies (OCO/OUO) mutate state between sides
         for action in self.core.iterate_bids() {
@@ -2670,6 +2671,33 @@ impl OrderMatchingEngine {
                 hit
             }
             _ => true,
+        }
+    }
+
+    fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
+        for match_info in self.core.get_orders() {
+            let order = match self
+                .cache
+                .borrow()
+                .order(&match_info.client_order_id)
+                .cloned()
+            {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if order.is_closed() {
+                continue;
+            }
+
+            if order
+                .expire_time()
+                .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
+            {
+                let _ = self.core.delete_order(match_info.client_order_id);
+                self.cached_filled_qty.remove(&match_info.client_order_id);
+                self.expire_order(&order);
+            }
         }
     }
 
@@ -3064,7 +3092,7 @@ impl OrderMatchingEngine {
         if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id())
             && filled_qty >= &order.quantity()
         {
-            log::info!(
+            log::debug!(
                 "Ignoring fill as already filled pending application of events: {:?}, {:?}, {:?}, {:?}",
                 filled_qty,
                 order.quantity(),
@@ -3184,7 +3212,7 @@ impl OrderMatchingEngine {
                     && qty >= order.quantity()
                 {
                     log::debug!(
-                        "Ignoring fill as already filled pending pending application of events: {}, {}, {}, {}",
+                        "Ignoring fill as already filled pending application of events: {}, {}, {}, {}",
                         qty,
                         order.quantity(),
                         order.filled_qty(),
@@ -3311,7 +3339,7 @@ impl OrderMatchingEngine {
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
-            for (fill_px, fill_qty) in fills {
+            for (_fill_px, fill_qty) in fills {
                 total_size = total_size.add(*fill_qty);
             }
 
@@ -3425,7 +3453,7 @@ impl OrderMatchingEngine {
             );
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
-                // filled initial level
+                // Filled initial level
                 return;
             }
         }
@@ -3460,7 +3488,7 @@ impl OrderMatchingEngine {
         last_qty: Quantity,
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
-        position: Option<&Position>,
+        _position: Option<&Position>,
     ) {
         self.check_size_precision(last_qty.precision, "fill quantity")
             .unwrap();
@@ -3471,7 +3499,6 @@ impl OrderMatchingEngine {
                 let leaves_qty = order.quantity().saturating_sub(*filled_qty);
                 let last_qty = min(last_qty, leaves_qty);
                 let new_filled_qty = *filled_qty + last_qty;
-                // update cached filled qty
                 self.cached_filled_qty
                     .insert(order.client_order_id(), new_filled_qty);
             }
@@ -3481,7 +3508,6 @@ impl OrderMatchingEngine {
             }
         }
 
-        // calculate commission
         let commission = self
             .fee_model
             .get_commission(order, last_qty, last_px, &self.instrument)
@@ -3499,12 +3525,21 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
-        if order.is_passive() && order.is_closed() {
-            // Check if order exists in OrderMatching core, and delete it if it does
+        let fully_filled = self
+            .cached_filled_qty
+            .get(&order.client_order_id())
+            .is_some_and(|qty| qty >= &order.quantity());
+
+        if order.is_passive() && (order.is_closed() || fully_filled) {
             if self.core.order_exists(order.client_order_id()) {
                 let _ = self.core.delete_order(order.client_order_id());
             }
-            self.cached_filled_qty.remove(&order.client_order_id());
+
+            // Only clear cached fills when the order status reflects closure,
+            // callers like process_market_to_limit_order still need the entry
+            if order.is_closed() {
+                self.cached_filled_qty.remove(&order.client_order_id());
+            }
         }
 
         if !self.config.support_contingent_orders {

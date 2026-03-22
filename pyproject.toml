@@ -31,7 +31,7 @@ dependencies = [
   "pandas>=2.3.3,<3.0.0",
   "portion>=2.6.1",
   "pyarrow>=23.0.1",
-  "pytz>=2025.2.0",
+  "pytz>=2026.1.0",
   "tqdm>=4.67.3,<5.0.0",
   "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned to 0.22.1 for stability
 ]
@@ -82,23 +82,23 @@ ib = [
 ]
 docker = ["docker>=7.1.0,<8.0.0"]
 polymarket = ["py-clob-client>=0.34.6,<1.0.0"]
-visualization = ["plotly>=6.3.1,<7.0.0"]
+visualization = ["plotly>=6.6.0,<7.0.0"]
 
 [dependency-groups]
 dev = [
   "cython==3.2.4", # Pinned to 3.2.4 for stability
   "jupytext>=1.19.1,<2.0.0",
-  "setuptools>=80",
+  "setuptools>=82",
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",
-  "pre-commit>=4.5.0,<5.0.0",
+  "pre-commit>=4.5.1,<5.0.0",
   "ruff==0.15.7", # Pinned to 0.15.7 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
   "aiohttp>=3.13.3,<4.0.0",
-  "coverage>=7.13.4,<8.0.0",
+  "coverage>=7.13.5,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability

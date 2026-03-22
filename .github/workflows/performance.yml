@@ -112,8 +112,11 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Set compile jobs from cache state
+        run: bash scripts/ci/set-cargo-build-jobs.sh
+
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test NEXTEST_PROFILE=ci
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate

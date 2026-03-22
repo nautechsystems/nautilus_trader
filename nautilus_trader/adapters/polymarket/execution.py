@@ -866,18 +866,26 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             return
 
-        if order.venue_order_id is None:
-            self._log.warning("Cannot cancel on Polymarket: no VenueOrderId")
+        venue_order_id = order.venue_order_id
+        if venue_order_id is None:
+            # Check cache index: submit may have cached it before OrderAccepted was applied
+            venue_order_id = self._cache.venue_order_id(order.client_order_id)
+
+        if venue_order_id is None:
+            self._log.info(
+                f"Cancel for {command.client_order_id!r} deferred, "
+                "venue_order_id not yet available",
+            )
             return
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
                 "cancel_order",
-                [order.client_order_id, order.venue_order_id],
+                [order.client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.cancel,
-                order_id=order.venue_order_id.value,
+                order_id=venue_order_id.value,
             )
 
             if not response or not retry_manager.result:
@@ -890,7 +898,39 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
+                    venue_order_id=venue_order_id,
+                    reason=str(reason),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    async def _execute_deferred_cancel(
+        self,
+        order: Order,
+        venue_order_id: VenueOrderId,
+    ) -> None:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            response: JSON | None = await retry_manager.run(
+                "cancel_order",
+                [order.client_order_id, venue_order_id],
+                asyncio.to_thread,
+                self._http_client.cancel,
+                order_id=venue_order_id.value,
+            )
+
+            if not response or not retry_manager.result:
+                reason = retry_manager.message
+            else:
+                reason = response.get("not_canceled")
+
+            if reason:
+                self._generate_cancel_event(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=venue_order_id,
                     reason=str(reason),
                     ts_event=self._clock.timestamp_ns(),
                 )
@@ -1423,9 +1463,19 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if trade_event:
                     trade_event.set()
 
-                self._log.debug(
-                    f"Order {order.client_order_id} accepted, venue_order_id={venue_order_id}",
-                )
+                # Check if cancel was requested during the HTTP round-trip
+                if order.is_pending_cancel:
+                    self._log.info(
+                        f"Order {order.client_order_id!r} is pending cancel, "
+                        f"issuing deferred cancel for {venue_order_id!r}",
+                    )
+                    self.create_task(
+                        self._execute_deferred_cancel(order, venue_order_id),
+                    )
+                else:
+                    self._log.debug(
+                        f"Order {order.client_order_id} accepted, venue_order_id={venue_order_id}",
+                    )
             else:
                 reason = result.get("errorMsg", "Unknown error")
                 self.generate_order_rejected(
@@ -1642,6 +1692,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 trade_event = self._ack_events_trade.get(venue_order_id)
                 if trade_event:
                     trade_event.set()
+
+                # Check if cancel was requested during the HTTP round-trip
+                if order.is_pending_cancel:
+                    self._log.info(
+                        f"Order {order.client_order_id!r} is pending cancel, "
+                        f"issuing deferred cancel for {venue_order_id!r}",
+                    )
+                    self.create_task(
+                        self._execute_deferred_cancel(order, venue_order_id),
+                    )
         finally:
             await self._retry_manager_pool.release(retry_manager)
 

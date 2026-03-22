@@ -185,7 +185,7 @@ impl DeribitWebSocketClient {
             .into_iter()
             .map(|inst| pyobject_to_instrument_any(py, inst))
             .collect();
-        self.cache_instruments(instruments?);
+        self.cache_instruments(&instruments?);
         Ok(())
     }
 
@@ -229,7 +229,7 @@ impl DeribitWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        self.cache_instruments(instruments_any);
+        self.cache_instruments(&instruments_any);
 
         let mut client = self.clone();
 

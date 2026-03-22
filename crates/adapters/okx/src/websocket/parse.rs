@@ -37,7 +37,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -992,11 +992,10 @@ pub fn update_fee_fill_caches(
     if let Some(ref fee_str) = msg.fee
         && !fee_str.is_empty()
     {
-        let fee_ccy = if msg.fee_ccy.is_empty() {
-            Currency::USDT()
-        } else {
-            Currency::from(msg.fee_ccy.as_str())
-        };
+        let fee_dec = Decimal::from_str(fee_str).unwrap_or_default();
+        let fee_ccy = parse_fee_currency(msg.fee_ccy.as_str(), fee_dec, || {
+            format!("update_fee_fill_caches ord_id={}", msg.ord_id)
+        });
 
         if let Ok(total_fee) = crate::common::parse::parse_fee(Some(fee_str.as_str()), fee_ccy) {
             fee_cache.insert(msg.ord_id, total_fee);

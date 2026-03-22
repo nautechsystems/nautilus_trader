@@ -2021,6 +2021,7 @@ impl ExecutionClient for BetfairExecutionClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::Quantity;
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -2257,5 +2258,243 @@ mod tests {
         );
         assert!(state.terminal_orders.contains("bet2"));
         assert!(!state.terminal_orders.contains("bet1"));
+    }
+
+    #[rstest]
+    fn test_ocm_state_sync_from_orders_populates_fill_tracker() {
+        let mut state = OcmState::default();
+
+        let orders = vec![(
+            "bet_fill".to_string(),
+            ClientOrderId::from("O-FILL-001"),
+            Decimal::new(15, 0),
+            Decimal::new(30, 1),
+            false,
+        )];
+
+        state.sync_from_orders(&orders);
+
+        // Fill tracker should be pre-populated so that a stream update with
+        // sm=15 does NOT produce a duplicate fill
+        let uo = crate::stream::messages::UnmatchedOrder {
+            id: "bet_fill".to_string(),
+            p: Decimal::new(30, 1),
+            s: Decimal::new(20, 0),
+            side: crate::common::enums::StreamingSide::Back,
+            status: crate::common::enums::StreamingOrderStatus::Executable,
+            pt: crate::common::enums::StreamingPersistenceType::Lapse,
+            ot: crate::common::enums::StreamingOrderType::Limit,
+            pd: 1617863365000,
+            bsp: None,
+            rfo: Some("O-FILL-001".to_string()),
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp: Some(Decimal::new(30, 1)),
+            sm: Some(Decimal::new(15, 0)),
+            sr: None,
+            sl: None,
+            sc: None,
+            sv: None,
+            lsrc: None,
+        };
+
+        let instrument_id = InstrumentId::from("1.234567-12345-0.0.BETFAIR");
+        let result = state.fill_tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(
+            result.is_none(),
+            "synced fill should prevent duplicate fill report"
+        );
+    }
+
+    #[rstest]
+    fn test_ocm_state_sync_from_orders_incremental_fill_after_sync() {
+        let mut state = OcmState::default();
+
+        let orders = vec![(
+            "bet_inc".to_string(),
+            ClientOrderId::from("O-INC-001"),
+            Decimal::new(10, 0),
+            Decimal::new(25, 1),
+            false,
+        )];
+
+        state.sync_from_orders(&orders);
+
+        // Stream update with sm=18 (8 more than synced 10)
+        let uo = crate::stream::messages::UnmatchedOrder {
+            id: "bet_inc".to_string(),
+            p: Decimal::new(25, 1),
+            s: Decimal::new(20, 0),
+            side: crate::common::enums::StreamingSide::Lay,
+            status: crate::common::enums::StreamingOrderStatus::Executable,
+            pt: crate::common::enums::StreamingPersistenceType::Persist,
+            ot: crate::common::enums::StreamingOrderType::Limit,
+            pd: 1617863365000,
+            bsp: None,
+            rfo: Some("O-INC-001".to_string()),
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp: Some(Decimal::new(26, 1)),
+            sm: Some(Decimal::new(18, 0)),
+            sr: None,
+            sl: None,
+            sc: None,
+            sv: None,
+            lsrc: None,
+        };
+
+        let instrument_id = InstrumentId::from("1.234567-12345-0.0.BETFAIR");
+        let result = state.fill_tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let fill = result.expect("should produce incremental fill of 8");
+        assert_eq!(fill.last_qty, Quantity::from("8.00"));
+    }
+
+    #[rstest]
+    fn test_ocm_state_sync_from_orders_zero_filled_not_synced() {
+        let mut state = OcmState::default();
+
+        let orders = vec![(
+            "bet_zero".to_string(),
+            ClientOrderId::from("O-ZERO-001"),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            false,
+        )];
+
+        state.sync_from_orders(&orders);
+
+        // RFO should still be registered even if no fills
+        let rfo = make_customer_order_ref("O-ZERO-001");
+        assert!(state.resolve_client_order_id(Some(&rfo)).is_some());
+
+        // A stream update with sm=5 should produce a fill (not blocked by sync)
+        let uo = crate::stream::messages::UnmatchedOrder {
+            id: "bet_zero".to_string(),
+            p: Decimal::new(30, 1),
+            s: Decimal::new(10, 0),
+            side: crate::common::enums::StreamingSide::Back,
+            status: crate::common::enums::StreamingOrderStatus::Executable,
+            pt: crate::common::enums::StreamingPersistenceType::Lapse,
+            ot: crate::common::enums::StreamingOrderType::Limit,
+            pd: 1617863365000,
+            bsp: None,
+            rfo: None,
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp: Some(Decimal::new(30, 1)),
+            sm: Some(Decimal::new(5, 0)),
+            sr: None,
+            sl: None,
+            sc: None,
+            sv: None,
+            lsrc: None,
+        };
+        let instrument_id = InstrumentId::from("1.234567-12345-0.0.BETFAIR");
+        let result = state.fill_tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        assert!(
+            result.is_some(),
+            "zero-filled order should not block new fills"
+        );
+    }
+
+    #[rstest]
+    fn test_ocm_state_sync_multiple_open_and_closed() {
+        let mut state = OcmState::default();
+
+        let orders = vec![
+            (
+                "bet_a".to_string(),
+                ClientOrderId::from("O-A"),
+                Decimal::new(5, 0),
+                Decimal::new(20, 1),
+                false,
+            ),
+            (
+                "bet_b".to_string(),
+                ClientOrderId::from("O-B"),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                true,
+            ),
+            (
+                "bet_c".to_string(),
+                ClientOrderId::from("O-C"),
+                Decimal::new(100, 0),
+                Decimal::new(15, 1),
+                true,
+            ),
+            (
+                "bet_d".to_string(),
+                ClientOrderId::from("O-D"),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                false,
+            ),
+        ];
+
+        state.sync_from_orders(&orders);
+
+        // Open orders have RFO registered
+        assert!(
+            state
+                .resolve_client_order_id(Some(&make_customer_order_ref("O-A")))
+                .is_some()
+        );
+        assert!(
+            state
+                .resolve_client_order_id(Some(&make_customer_order_ref("O-D")))
+                .is_some()
+        );
+
+        // Closed orders are terminal
+        assert!(state.terminal_orders.contains("bet_b"));
+        assert!(state.terminal_orders.contains("bet_c"));
+        assert!(!state.terminal_orders.contains("bet_a"));
+        assert!(!state.terminal_orders.contains("bet_d"));
+
+        // Closed orders do NOT get RFO registered
+        assert!(
+            state
+                .resolve_client_order_id(Some(&make_customer_order_ref("O-B")))
+                .is_none()
+        );
     }
 }

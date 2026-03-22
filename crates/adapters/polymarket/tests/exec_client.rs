@@ -47,7 +47,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
     enums::{AccountType, AssetClass, CurrencyType, OmsType, OrderSide, OrderType, TimeInForce},
-    events::{AccountState, OrderEventAny},
+    events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue,
         VenueOrderId,
@@ -1538,4 +1538,295 @@ async fn test_batch_cancel_orders_with_partial_failure() {
     // No CancelRejected events expected.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(rx.try_recv().is_err());
+}
+
+fn submit_and_pending_cancel(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {
+    let account_id = AccountId::from("POLYMARKET-001");
+    let submitted = TestOrderEventStubs::submitted(order, account_id);
+    order.apply(submitted).unwrap();
+    cache.borrow_mut().update_order(order).unwrap();
+
+    let pending_cancel = OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None, // No venue_order_id yet
+    );
+    order
+        .apply(OrderEventAny::PendingCancel(pending_cancel))
+        .unwrap();
+    cache.borrow_mut().update_order(order).unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_deferred_when_no_venue_order_id() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let mut order = make_limit_order(
+        "O-DEFERRED-CANCEL",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    // Transition order to PENDING_CANCEL without a venue_order_id
+    submit_and_pending_cancel(&cache, &mut order);
+
+    // Cancel should be deferred (no venue_order_id available)
+    let cmd = make_cancel_cmd("O-DEFERRED-CANCEL", instrument_id);
+    client.cancel_order(&cmd).unwrap();
+
+    // No events emitted yet
+    assert!(rx.try_recv().is_err());
+
+    // Submit the order, triggering the HTTP response with a venue_order_id.
+    // handle_order_response detects the pending cancel and issues the deferred cancel.
+    let submit_cmd = make_submit_cmd(&order, instrument_id);
+    client.submit_order(&submit_cmd).unwrap();
+
+    // Submitted event (sync)
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Submitted");
+
+    // Accepted event (async, from HTTP response)
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Accepted");
+
+    // Deferred cancel fires against the mock server (returns success).
+    // A successful cancel produces no rejection event.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_deferred_with_already_done_response() {
+    let state = TestServerState::default();
+    // Mock server returns "already canceled or matched" for the cancel
+    *state.cancel_response.lock().await = Some(load_json("http_cancel_response_failed.json"));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let mut order = make_limit_order(
+        "O-DEFERRED-DONE",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    submit_and_pending_cancel(&cache, &mut order);
+
+    let cmd = make_cancel_cmd("O-DEFERRED-DONE", instrument_id);
+    client.cancel_order(&cmd).unwrap();
+
+    let submit_cmd = make_submit_cmd(&order, instrument_id);
+    client.submit_order(&submit_cmd).unwrap();
+
+    // Submitted
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Submitted");
+
+    // Accepted
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Accepted");
+
+    // Deferred cancel gets "already done" response, which is suppressed
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_deferred_with_rejection_response() {
+    let state = TestServerState::default();
+    // Mock server returns an unexpected cancel failure
+    *state.cancel_response.lock().await = Some(json!({
+        "not_canceled": "order not found"
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let mut order = make_limit_order(
+        "O-DEFERRED-REJECT",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    submit_and_pending_cancel(&cache, &mut order);
+
+    let cmd = make_cancel_cmd("O-DEFERRED-REJECT", instrument_id);
+    client.cancel_order(&cmd).unwrap();
+
+    let submit_cmd = make_submit_cmd(&order, instrument_id);
+    client.submit_order(&submit_cmd).unwrap();
+
+    // Submitted
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Submitted");
+
+    // Accepted
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Accepted");
+
+    // Deferred cancel gets "order not found" which emits CancelRejected
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "CancelRejected");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_uses_cache_index_fallback() {
+    // Simulates the window where _post_signed_order completed (venue_order_id
+    // cached in the index) but OrderAccepted has not yet been applied to the
+    // order object. cancel_order should find the ID via the cache index and
+    // proceed with the cancel directly, bypassing the deferred mechanism.
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+
+    let mut order = make_limit_order(
+        "O-CACHE-FALLBACK",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    // Transition to PENDING_CANCEL (no venue_order_id on the order object)
+    submit_and_pending_cancel(&cache, &mut order);
+
+    // Add venue_order_id to the cache INDEX only, simulating what
+    // handle_order_response does via emit_order_accepted -> cache update.
+    // The order object itself still has venue_order_id = None.
+    let vid = VenueOrderId::from("0xvenue-cache-fallback");
+    cache
+        .borrow_mut()
+        .add_venue_order_id(&ClientOrderId::from("O-CACHE-FALLBACK"), &vid, false)
+        .unwrap();
+
+    // cancel_order should find the venue_order_id in the cache index
+    // and send the cancel HTTP request directly (no deferred mechanism)
+    let cmd = make_cancel_cmd("O-CACHE-FALLBACK", instrument_id);
+    client.cancel_order(&cmd).unwrap();
+
+    // A successful cancel via the mock server produces no rejection event
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_cache_fallback_with_rejection() {
+    // Same cache index fallback path, but the venue returns an error so we
+    // can verify a CancelRejected event is emitted.
+    let state = TestServerState::default();
+    *state.cancel_response.lock().await = Some(json!({
+        "not_canceled": "order not found"
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+
+    let mut order = make_limit_order(
+        "O-CACHE-REJECT",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    submit_and_pending_cancel(&cache, &mut order);
+
+    let vid = VenueOrderId::from("0xvenue-cache-reject");
+    cache
+        .borrow_mut()
+        .add_venue_order_id(&ClientOrderId::from("O-CACHE-REJECT"), &vid, false)
+        .unwrap();
+
+    let cmd = make_cancel_cmd("O-CACHE-REJECT", instrument_id);
+    client.cancel_order(&cmd).unwrap();
+
+    // The cancel hit the venue, received "order not found", emits CancelRejected
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "CancelRejected");
 }

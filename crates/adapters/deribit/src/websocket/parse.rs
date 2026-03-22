@@ -49,18 +49,27 @@ use super::{
 };
 use crate::http::models::DeribitPosition;
 
-fn next_8_utc(from_ns: UnixNanos) -> UnixNanos {
+fn next_8_utc(from_ns: UnixNanos) -> anyhow::Result<UnixNanos> {
     let from_secs = from_ns.as_u64() / 1_000_000_000;
-    let dt = Utc.timestamp_opt(from_secs as i64, 0).unwrap();
+    let dt = Utc
+        .timestamp_opt(from_secs as i64, 0)
+        .single()
+        .context("failed to convert timestamp to UTC datetime")?;
     let next_8 = if dt.hour() < 8 {
-        dt.date_naive().and_hms_opt(8, 0, 0).unwrap().and_utc()
+        dt.date_naive()
+            .and_hms_opt(8, 0, 0)
+            .context("failed to construct 08:00 UTC time")?
+            .and_utc()
     } else {
         (dt.date_naive() + Duration::days(1))
             .and_hms_opt(8, 0, 0)
-            .unwrap()
+            .context("failed to construct next-day 08:00 UTC time")?
             .and_utc()
     };
-    UnixNanos::from(next_8.timestamp_nanos_opt().unwrap() as u64)
+    let nanos = next_8
+        .timestamp_nanos_opt()
+        .context("GTD expiry timestamp out of nanosecond range")?;
+    Ok(UnixNanos::from(nanos as u64))
 }
 
 /// Parses a Deribit trade message into a Nautilus `TradeTick`.
@@ -714,7 +723,10 @@ pub fn parse_user_order_msg(
         "stop_market" => OrderType::StopMarket,
         "take_limit" => OrderType::LimitIfTouched,
         "take_market" => OrderType::MarketIfTouched,
-        _ => OrderType::Limit, // Default to Limit for unknown types
+        other => {
+            log::warn!("Unknown Deribit order_type '{other}', defaulting to Limit");
+            OrderType::Limit
+        }
     };
 
     // Deribit supports: good_til_cancelled, good_til_day, fill_or_kill, immediate_or_cancel
@@ -742,7 +754,10 @@ pub fn parse_user_order_msg(
         "rejected" => OrderStatus::Rejected,
         "cancelled" => OrderStatus::Canceled,
         "untriggered" => OrderStatus::Accepted, // Pending trigger
-        _ => OrderStatus::Accepted,
+        other => {
+            log::warn!("Unknown Deribit order_state '{other}', defaulting to Accepted");
+            OrderStatus::Accepted
+        }
     };
 
     let price_precision = instrument.price_precision();
@@ -787,7 +802,7 @@ pub fn parse_user_order_msg(
     }
 
     if time_in_force == TimeInForce::Gtd {
-        let expire_time = next_8_utc(ts_accepted);
+        let expire_time = next_8_utc(ts_accepted)?;
         report = report.with_expire_time(expire_time);
     }
 
@@ -1145,7 +1160,10 @@ pub fn determine_order_event_type(
             // Rejections are handled separately via OrderRejected
             OrderEventType::None
         }
-        _ => OrderEventType::None,
+        other => {
+            log::warn!("Unknown Deribit order_state '{other}' in event routing, dropping");
+            OrderEventType::None
+        }
     }
 }
 

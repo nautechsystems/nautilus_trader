@@ -111,10 +111,17 @@ pub fn send_auth_request(
         scope,
     };
 
-    if let Ok(auth_params_value) = serde_json::to_value(&auth_params) {
-        let _ = cmd_tx.send(HandlerCommand::Authenticate {
-            auth_params: auth_params_value,
-        });
+    match serde_json::to_value(&auth_params) {
+        Ok(auth_params_value) => {
+            if let Err(e) = cmd_tx.send(HandlerCommand::Authenticate {
+                auth_params: auth_params_value,
+            }) {
+                log::error!("Failed to send auth command: {e}");
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to serialize auth params: {e}");
+        }
     }
 }
 

@@ -736,9 +736,9 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "arc-swap"
-version = "1.8.2"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9f3647c145568cec02c42054e07bdf9a5a698e15b466fb2341bfc393cd24aa5"
+checksum = "a07d1f37ff60921c83bdfc7407723bdefe89b44b98a9b772f225c8f9d67141a6"
 dependencies = [
  "rustversion",
 ]
@@ -1187,6 +1187,17 @@ dependencies = [
  "compression-core",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "async-lock"
+version = "3.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311"
+dependencies = [
+ "event-listener",
+ "event-listener-strategy",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -3463,6 +3474,16 @@ checksum = "e13b66accf52311f30a0db42147dadea9850cb48cd070028831ae5f5d4b856ab"
 dependencies = [
  "concurrent-queue",
  "parking",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "event-listener-strategy"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
+dependencies = [
+ "event-listener",
  "pin-project-lite",
 ]
 
@@ -7233,12 +7254,13 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "1.0.5"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b36964393906eb775b89b25b05b7b95685b8dd14062f1663a31ff93e75c452e5"
+checksum = "d76e41a79ae5cbb41257d84cf4cf0db0bb5a95b11bf05c62c351de4fe748620d"
 dependencies = [
  "arc-swap",
  "arcstr",
+ "async-lock",
  "backon",
  "bytes",
  "cfg-if",

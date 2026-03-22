@@ -3237,9 +3237,22 @@ impl OKXHttpClient {
             )
             .await?;
 
-        resp.into_iter()
+        let item = resp
+            .into_iter()
             .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+
+        if let Some(ref code) = item.s_code
+            && code != "0"
+        {
+            let msg = item.s_msg.clone().unwrap_or_default();
+            return Err(OKXHttpError::OkxError {
+                error_code: code.clone(),
+                message: msg,
+            });
+        }
+
+        Ok(item)
     }
 
     /// Cancels an algo order via HTTP.
@@ -3271,12 +3284,28 @@ impl OKXHttpClient {
             )
             .await?;
 
-        resp.into_iter()
+        let item = resp
+            .into_iter()
             .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+
+        if let Some(ref code) = item.s_code
+            && code != "0"
+        {
+            let msg = item.s_msg.clone().unwrap_or_default();
+            return Err(OKXHttpError::OkxError {
+                error_code: code.clone(),
+                message: msg,
+            });
+        }
+
+        Ok(item)
     }
 
     /// Cancels multiple algo orders via HTTP in a single request.
+    ///
+    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// fail the entire batch.
     ///
     /// # Errors
     ///
@@ -3296,7 +3325,8 @@ impl OKXHttpClient {
         let body =
             serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
 
-        self.inner
+        let resp: Vec<OKXCancelAlgoOrderResponse> = self
+            .inner
             .send_request::<_, ()>(
                 Method::POST,
                 "/api/v5/trade/cancel-algos",
@@ -3304,12 +3334,27 @@ impl OKXHttpClient {
                 Some(body),
                 true,
             )
-            .await
+            .await?;
+
+        for item in &resp {
+            if let Some(ref code) = item.s_code
+                && code != "0"
+            {
+                let msg = item.s_msg.as_deref().unwrap_or("");
+                log::warn!(
+                    "Algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
+                    item.algo_id
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     /// Cancels advance algo orders (trailing stop, iceberg, TWAP) via HTTP.
     ///
     /// These order types cannot use the standard `cancel-algos` endpoint.
+    /// Items with non-zero `sCode` are logged as warnings.
     ///
     /// # Errors
     ///
@@ -3329,7 +3374,8 @@ impl OKXHttpClient {
         let body =
             serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
 
-        self.inner
+        let resp: Vec<OKXCancelAlgoOrderResponse> = self
+            .inner
             .send_request::<_, ()>(
                 Method::POST,
                 "/api/v5/trade/cancel-advance-algos",
@@ -3337,7 +3383,21 @@ impl OKXHttpClient {
                 Some(body),
                 true,
             )
-            .await
+            .await?;
+
+        for item in &resp {
+            if let Some(ref code) = item.s_code
+                && code != "0"
+            {
+                let msg = item.s_msg.as_deref().unwrap_or("");
+                log::warn!(
+                    "Advance algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
+                    item.algo_id
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     /// Amends an algo order via HTTP.

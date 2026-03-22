@@ -377,8 +377,13 @@ impl DataClient for DeribitDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting data client: {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
+
+        // Cancel running stream tasks before replacing the token
+        self.cancellation_token.cancel();
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
 
         if let Ok(mut instruments) = self.instruments.write() {
             instruments.clear();
@@ -455,7 +460,7 @@ impl DataClient for DeribitDataClient {
         let mark_price_subs = self.mark_price_subs.clone();
         let index_price_subs = self.index_price_subs.clone();
         let ws = self.ws_client_mut()?;
-        ws.cache_instruments(all_instruments);
+        ws.cache_instruments(&all_instruments);
         ws.set_option_greeks_subs(option_greeks_subs);
         ws.set_mark_price_subs(mark_price_subs);
         ws.set_index_price_subs(index_price_subs);
@@ -1268,6 +1273,7 @@ impl DataClient for DeribitDataClient {
         }
 
         let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
@@ -1322,6 +1328,16 @@ impl DataClient for DeribitDataClient {
                     Err(e) => {
                         log::error!("Failed to fetch instruments for ANY/{product_type:?}: {e:?}");
                     }
+                }
+            }
+
+            // Propagate to HTTP and WebSocket caches so downstream
+            // requests use correct precisions.
+            if !all_instruments.is_empty() {
+                http_client.cache_instruments(all_instruments.clone());
+
+                if let Some(ws) = &ws_client {
+                    ws.cache_instruments(&all_instruments);
                 }
             }
 
@@ -1391,6 +1407,7 @@ impl DataClient for DeribitDataClient {
         );
 
         let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
@@ -1410,12 +1427,22 @@ impl DataClient for DeribitDataClient {
                 Ok(instrument) => {
                     log::info!("Successfully fetched instrument: {instrument_id}");
 
-                    // Cache the instrument
                     {
-                        let mut guard = instruments_cache
-                            .write()
-                            .expect("instrument cache lock poisoned");
-                        guard.insert(instrument.id(), instrument.clone());
+                        match instruments_cache.write() {
+                            Ok(mut guard) => {
+                                guard.insert(instrument.id(), instrument.clone());
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Instrument cache lock poisoned: {e}, skipping cache update"
+                                );
+                            }
+                        }
+                    }
+                    http_client.cache_instruments(vec![instrument.clone()]);
+
+                    if let Some(ws) = &ws_client {
+                        ws.cache_instruments(std::slice::from_ref(&instrument));
                     }
 
                     // Send response
@@ -1576,7 +1603,7 @@ impl DataClient for DeribitDataClient {
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
-        let client_id = self.client_id();
+        let client_id = request.client_id.unwrap_or(self.client_id());
         let params = request.params;
         let clock = self.clock;
         let venue = *DERIBIT_VENUE;

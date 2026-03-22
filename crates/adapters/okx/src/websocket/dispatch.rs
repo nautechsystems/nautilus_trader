@@ -29,7 +29,9 @@ use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType},
     events::{OrderAccepted, OrderEventAny, OrderFilled, OrderRejected},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     reports::FillReport,
     types::{Currency, Money, Quantity},
@@ -44,7 +46,7 @@ use crate::{
             parse_quantity,
         },
     },
-    http::models::{OKXAccount, OKXPosition},
+    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition},
     websocket::{
         enums::OKXWsOperation,
         handler::is_post_only_auto_cancel,
@@ -84,6 +86,7 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
+    pub emitted_trades: DashSet<TradeId>,
     clearing: AtomicBool,
 }
 
@@ -94,6 +97,7 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
+            emitted_trades: DashSet::default(),
             clearing: AtomicBool::new(false),
         }
     }
@@ -125,6 +129,25 @@ impl WsDispatchState {
     pub(crate) fn insert_triggered(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
+    }
+
+    /// Returns `true` if this trade was already emitted (duplicate).
+    /// Uses atomic insert to avoid TOCTOU races between concurrent streams.
+    pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
+        self.evict_if_full_trades();
+        !self.emitted_trades.insert(trade_id)
+    }
+
+    fn evict_if_full_trades(&self) {
+        if self.emitted_trades.len() >= DEDUP_CAPACITY
+            && self
+                .clearing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+        {
+            self.emitted_trades.clear();
+            self.clearing.store(false, Ordering::Release);
+        }
     }
 }
 
@@ -476,6 +499,8 @@ fn dispatch_order_messages(
                 );
                 state.order_identities.remove(&client_order_id);
                 order_state_cache.remove(&client_order_id);
+                fee_cache.remove(&msg.ord_id);
+                filled_qty_cache.remove(&msg.ord_id);
                 emitter.send_order_event(OrderEventAny::Rejected(rejected));
                 continue;
             }
@@ -636,25 +661,34 @@ fn dispatch_parsed_order_event(
             emitter.send_order_event(OrderEventAny::Updated(e));
         }
         ParsedOrderEvent::Fill(fill_report) => {
-            ensure_accepted_emitted(
-                client_order_id,
-                account_id,
-                venue_order_id,
-                identity,
-                emitter,
-                state,
-                ts_init,
-            );
-            state.insert_filled(client_order_id);
-            state.triggered_orders.remove(&client_order_id);
-            let filled = fill_report_to_order_filled(
-                &fill_report,
-                emitter.trader_id(),
-                identity,
-                instrument.quote_currency(),
-            );
+            let is_duplicate = state.check_and_insert_trade(fill_report.trade_id);
             is_terminal = venue_status == OKXOrderStatus::Filled;
-            emitter.send_order_event(OrderEventAny::Filled(filled));
+
+            if is_duplicate {
+                log::debug!(
+                    "Skipping duplicate fill for {client_order_id}: trade_id={}",
+                    fill_report.trade_id
+                );
+            } else {
+                ensure_accepted_emitted(
+                    client_order_id,
+                    account_id,
+                    venue_order_id,
+                    identity,
+                    emitter,
+                    state,
+                    ts_init,
+                );
+                state.insert_filled(client_order_id);
+                state.triggered_orders.remove(&client_order_id);
+                let filled = fill_report_to_order_filled(
+                    &fill_report,
+                    emitter.trader_id(),
+                    identity,
+                    instrument.quote_currency(),
+                );
+                emitter.send_order_event(OrderEventAny::Filled(filled));
+            }
         }
         ParsedOrderEvent::StatusOnly(report) => {
             is_terminal = matches!(
@@ -669,6 +703,9 @@ fn dispatch_parsed_order_event(
         state.order_identities.remove(&client_order_id);
         state.emitted_accepted.remove(&client_order_id);
         order_state_cache.remove(&client_order_id);
+        // Keep fee_cache and filled_qty_cache entries: replayed terminal
+        // messages go through the untracked report path and need prior
+        // cumulative state to avoid re-emitting the full fill quantity
     }
 }
 
@@ -841,6 +878,14 @@ pub fn dispatch_execution_reports(
                 emitter.send_order_status_report(order_report);
             }
             ExecutionReport::Fill(fill_report) => {
+                if state.check_and_insert_trade(fill_report.trade_id) {
+                    log::debug!(
+                        "Skipping duplicate fill report: trade_id={}",
+                        fill_report.trade_id
+                    );
+                    continue;
+                }
+
                 if let Some(cid) = fill_report.client_order_id {
                     state.insert_filled(cid);
                     state.triggered_orders.remove(&cid);
@@ -848,5 +893,68 @@ pub fn dispatch_execution_reports(
                 emitter.send_fill_report(fill_report);
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AlgoCancelContext {
+    pub client_order_id: ClientOrderId,
+    pub instrument_id: InstrumentId,
+    pub strategy_id: StrategyId,
+    pub venue_order_id: Option<VenueOrderId>,
+}
+
+// Contexts must correspond 1:1 with the requests that produced
+// the responses (OKX preserves request order in batch responses).
+pub fn emit_algo_cancel_rejections(
+    responses: &[OKXCancelAlgoOrderResponse],
+    contexts: &[AlgoCancelContext],
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    for (i, item) in responses.iter().enumerate() {
+        let code = item.s_code.as_deref().unwrap_or("0");
+        if code == "0" {
+            continue;
+        }
+
+        let msg = item.s_msg.as_deref().unwrap_or("");
+
+        if let Some(ctx) = contexts.get(i) {
+            let ts = clock.get_time_ns();
+            emitter.emit_order_cancel_rejected_event(
+                ctx.strategy_id,
+                ctx.instrument_id,
+                ctx.client_order_id,
+                ctx.venue_order_id,
+                msg,
+                ts,
+            );
+        } else {
+            log::warn!(
+                "Algo cancel rejected but no context at index {i}: \
+                 algo_id={} sCode={code} sMsg={msg}",
+                item.algo_id
+            );
+        }
+    }
+}
+
+pub fn emit_batch_cancel_failure(
+    contexts: &[AlgoCancelContext],
+    error: &str,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    for ctx in contexts {
+        let ts = clock.get_time_ns();
+        emitter.emit_order_cancel_rejected_event(
+            ctx.strategy_id,
+            ctx.instrument_id,
+            ctx.client_order_id,
+            ctx.venue_order_id,
+            error,
+            ts,
+        );
     }
 }

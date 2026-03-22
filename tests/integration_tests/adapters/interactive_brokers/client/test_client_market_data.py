@@ -1479,3 +1479,27 @@ async def test_process_tick_price_creates_index_price_update(ib_client):
     call_args = ib_client._handle_data.call_args[0][0]
     assert isinstance(call_args, IndexPriceUpdate)
     assert call_args.value == Price(7000.53, precision=2)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_historical_bars_replaces_stale_subscription(ib_client):
+    # Arrange
+    ib_client._request_id_seq = 999
+    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
+    ib_client._eclient.reqHistoricalData = Mock()
+    ib_client._eclient.cancelHistoricalData = Mock()
+
+    await ib_client.subscribe_historical_bars(bar_type, contract, True, True, {})
+    first_sub = ib_client._subscriptions.get(name=str(bar_type))
+    first_req_id = first_sub.req_id
+
+    # Act - call again (as _resubscribe_all does after gateway restart)
+    await ib_client.subscribe_historical_bars(bar_type, contract, True, True, {})
+    second_sub = ib_client._subscriptions.get(name=str(bar_type))
+
+    # Assert - fresh req_id allocated, old one cleaned up
+    assert second_sub.req_id != first_req_id
+    assert first_req_id not in ib_client._subscription_start_times
+    assert second_sub.req_id in ib_client._subscription_start_times
+    assert ib_client._eclient.reqHistoricalData.call_count == 2

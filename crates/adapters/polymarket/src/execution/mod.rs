@@ -28,7 +28,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -117,6 +117,7 @@ pub struct PolymarketExecutionClient {
     fill_tracker: Arc<OrderFillTrackerMap>,
     pending_fills: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
     pending_order_reports: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
+    pending_cancels: Arc<Mutex<AHashSet<ClientOrderId>>>,
 }
 
 impl PolymarketExecutionClient {
@@ -214,6 +215,7 @@ impl PolymarketExecutionClient {
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
             pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
             pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
+            pending_cancels: Arc::new(Mutex::new(AHashSet::new())),
         })
     }
 
@@ -666,6 +668,7 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
+        let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
         let size_precision = instrument.size_precision();
         let price_precision = instrument.price_precision();
@@ -686,7 +689,7 @@ impl PolymarketExecutionClient {
                 .await
             {
                 Ok(response) => {
-                    handle_order_response(
+                    if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(response),
                         &order,
                         &emitter,
@@ -694,10 +697,21 @@ impl PolymarketExecutionClient {
                         &fill_tracker,
                         &pending_fills,
                         &pending_order_reports,
+                        &pending_cancels,
                         account_id,
                         size_precision,
                         price_precision,
-                    );
+                    ) {
+                        execute_deferred_cancel(
+                            &submitter,
+                            &order,
+                            &order_id_str,
+                            venue_order_id,
+                            &emitter,
+                            clock,
+                        )
+                        .await;
+                    }
                 }
                 Err(e) => {
                     let ts = clock.get_time_ns();
@@ -732,6 +746,7 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let pending_fills = self.pending_fills.clone();
         let pending_order_reports = self.pending_order_reports.clone();
+        let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
         let size_precision = instrument.size_precision();
         let price_precision = instrument.price_precision();
@@ -794,7 +809,7 @@ impl PolymarketExecutionClient {
                         }
                     }
 
-                    handle_order_response(
+                    if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(response),
                         &order,
                         &emitter,
@@ -802,10 +817,21 @@ impl PolymarketExecutionClient {
                         &fill_tracker,
                         &pending_fills,
                         &pending_order_reports,
+                        &pending_cancels,
                         account_id,
                         size_precision,
                         price_precision,
-                    );
+                    ) {
+                        execute_deferred_cancel(
+                            &submitter,
+                            &order,
+                            &order_id_str,
+                            venue_order_id,
+                            &emitter,
+                            clock,
+                        )
+                        .await;
+                    }
                 }
                 Err(e) => {
                     let ts = clock.get_time_ns();
@@ -1032,8 +1058,26 @@ impl ExecutionClient for PolymarketExecutionClient {
         let venue_order_id = match order_ref.venue_order_id() {
             Some(id) => id,
             None => {
-                log::warn!("No venue_order_id for cancel: {}", cmd.client_order_id);
-                return Ok(());
+                // Check cache index: submit may have cached it before OrderAccepted was applied
+                match self
+                    .core
+                    .cache()
+                    .venue_order_id(&cmd.client_order_id)
+                    .copied()
+                {
+                    Some(id) => id,
+                    None => {
+                        log::info!(
+                            "Cancel for {} deferred, venue_order_id not yet available",
+                            cmd.client_order_id
+                        );
+                        self.pending_cancels
+                            .lock()
+                            .expect(MUTEX_POISONED)
+                            .insert(cmd.client_order_id);
+                        return Ok(());
+                    }
+                }
             }
         };
 
@@ -1444,10 +1488,11 @@ fn handle_order_response(
     fill_tracker: &Arc<OrderFillTrackerMap>,
     pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
     pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
+    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
     account_id: AccountId,
     size_precision: u8,
     price_precision: u8,
-) {
+) -> Option<(String, VenueOrderId)> {
     match result {
         Ok(response) => {
             if response.success {
@@ -1517,6 +1562,20 @@ fn handle_order_response(
                             }
                         }
                     }
+
+                    // Check if cancel was requested during the HTTP round-trip
+                    if pending_cancels
+                        .lock()
+                        .expect(MUTEX_POISONED)
+                        .remove(&order.client_order_id())
+                    {
+                        log::info!(
+                            "Order {} has pending cancel, issuing deferred cancel for {}",
+                            order.client_order_id(),
+                            venue_order_id
+                        );
+                        return Some((order_id, venue_order_id));
+                    }
                 } else {
                     log::warn!(
                         "Order accepted but no order_id returned for {}",
@@ -1529,11 +1588,51 @@ fn handle_order_response(
                     .unwrap_or_else(|| "unknown error".to_string());
                 let ts = clock.get_time_ns();
                 emitter.emit_order_rejected(order, &reason, ts, false);
+                pending_cancels
+                    .lock()
+                    .expect(MUTEX_POISONED)
+                    .remove(&order.client_order_id());
             }
         }
         Err(e) => {
             let ts = clock.get_time_ns();
             emitter.emit_order_rejected(order, &format!("HTTP request failed: {e}"), ts, false);
+            pending_cancels
+                .lock()
+                .expect(MUTEX_POISONED)
+                .remove(&order.client_order_id());
+        }
+    }
+    None
+}
+
+async fn execute_deferred_cancel(
+    submitter: &OrderSubmitter,
+    order: &OrderAny,
+    order_id_str: &str,
+    venue_order_id: VenueOrderId,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    match submitter.cancel_order(order_id_str).await {
+        Ok(response) => {
+            process_cancel_result(
+                &response,
+                order_id_str,
+                order,
+                venue_order_id,
+                emitter,
+                clock,
+            );
+        }
+        Err(e) => {
+            let ts = clock.get_time_ns();
+            emitter.emit_order_cancel_rejected(
+                order,
+                Some(venue_order_id),
+                &format!("Deferred cancel failed: {e}"),
+                ts,
+            );
         }
     }
 }

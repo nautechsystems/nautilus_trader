@@ -249,36 +249,21 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        description: Run the Clippy linter on the workspace
-        entry: cargo clippy
+        description: Run the Clippy linter on changed crates
+        entry: bash scripts/clippy-changed.sh
         language: system
-        args:
-          [
-            "--workspace",
-            "--all-targets",
-            "--features",
-            "ffi,python,high-precision,defi",
-            "--profile",
-            "nextest", # Reduce rebuild triggers between testing and linting
-            "--",
-            "-D",
-            "warnings",
-          ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
 
-      # TODO: Too slow for standard development flows
-      # - id: cargo-doc
-      #   name: cargo doc
-      #   description: Check documentation builds without errors or warnings
-      #   entry:
-      #     cargo doc --workspace --features "ffi,python,high-precision,defi"
-      #     --profile nextest --no-deps --quiet
-      #   language: system
-      #   files: '\.(rs|toml)$'
-      #   types: [file]
-      #   pass_filenames: false
+      - id: cargo-doc
+        name: cargo doc
+        description: Check documentation builds on changed crates
+        entry: bash scripts/doc-changed.sh
+        language: system
+        files: '\.(rs|toml)$'
+        types: [file]
+        pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting

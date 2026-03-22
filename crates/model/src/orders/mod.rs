@@ -318,7 +318,12 @@ pub trait Order: 'static + Send {
     /// Calculates potential overfill quantity without mutating order state.
     fn calculate_overfill(&self, fill_qty: Quantity) -> Quantity {
         let potential_filled = self.filled_qty() + fill_qty;
-        potential_filled.saturating_sub(self.quantity())
+        let quantity = self.quantity();
+        if potential_filled > quantity {
+            potential_filled - quantity
+        } else {
+            Quantity::zero(fill_qty.precision)
+        }
     }
 
     fn avg_px(&self) -> Option<f64>;
@@ -1448,6 +1453,29 @@ mod tests {
         // Order for 2450.5, if fill of 2488.0 arrives
         let overfill = order.calculate_overfill(Quantity::from("2488.0"));
         assert_eq!(overfill, Quantity::from("37.5"));
+    }
+
+    #[rstest]
+    fn test_calculate_overfill_zero_after_fractional_partial_fill() {
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from("1.000"))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let partial_fill = OrderFilledBuilder::default()
+            .last_qty(Quantity::from("0.072"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
+
+        // After filling 0.072 of 1.000, another 0.072 fill should not overfill
+        let overfill = order.calculate_overfill(Quantity::from("0.072"));
+        assert_eq!(overfill, Quantity::from("0.000"));
     }
 
     #[rstest]

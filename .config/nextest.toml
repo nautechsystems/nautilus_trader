@@ -5,6 +5,11 @@ large-data-tests = { max-threads = 1 }
 [profile.default]
 # Default settings
 
+[profile.ci]
+# GitHub Actions runners have 4 vCPUs and 16GB RAM.
+# Limit parallelism to avoid OOM kills from too many concurrent test processes.
+test-threads = 2
+
 [[profile.default.overrides]]
 filter = 'test(serial_tests)'
 test-group = 'serial-tests'

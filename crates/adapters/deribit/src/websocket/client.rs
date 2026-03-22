@@ -371,12 +371,28 @@ impl DeribitWebSocketClient {
     }
 
     /// Caches instruments for use during message parsing.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
         for inst in instruments {
             self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
+                .insert(inst.raw_symbol().inner(), inst.clone());
         }
         log::debug!("Cached {} instruments", self.instruments_cache.len());
+
+        // Send per-instrument updates to the live handler rather than
+        // a full snapshot, avoiding out-of-order snapshot races.
+        if self.is_active() {
+            for inst in instruments {
+                let tx = self.cmd_tx.clone();
+                let boxed = Box::new(inst.clone());
+
+                get_runtime().spawn(async move {
+                    let _ = tx
+                        .read()
+                        .await
+                        .send(HandlerCommand::UpdateInstrument(boxed));
+                });
+            }
+        }
     }
 
     /// Caches a single instrument.
@@ -440,8 +456,10 @@ impl DeribitWebSocketClient {
             handle.abort();
         }
 
-        // Reset stop signal
+        // Reset stop signal and subscription state so callers can
+        // resubscribe cleanly after a manual disconnect/connect cycle.
         self.signal.store(false, Ordering::Relaxed);
+        self.subscriptions_state.clear();
 
         // Create message handler and channel
         let (message_handler, raw_rx) = channel_message_handler();
@@ -883,13 +901,17 @@ impl DeribitWebSocketClient {
             return Ok(());
         }
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Subscribe {
-                channels: channels_to_subscribe.clone(),
-            })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Subscribe {
+            channels: channels_to_subscribe.clone(),
+        }) {
+            // Roll back: remove reference and clear pending_subscribe
+            for channel in &channels_to_subscribe {
+                self.subscriptions_state.remove_reference(channel);
+                self.subscriptions_state.mark_unsubscribe(channel);
+                self.subscriptions_state.confirm_unsubscribe(channel);
+            }
+            return Err(DeribitWsError::Send(e.to_string()));
+        }
 
         log::debug!(
             "Sent subscribe for {} channels",
@@ -914,13 +936,22 @@ impl DeribitWebSocketClient {
             return Ok(());
         }
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Unsubscribe {
-                channels: channels_to_unsubscribe.clone(),
-            })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Unsubscribe {
+            channels: channels_to_unsubscribe.clone(),
+        }) {
+            // Send only fails when the handler task is dead, meaning the
+            // connection is broken. Restore refcount and mark confirmed so
+            // the topic is not wedged in pending_unsubscribe. This may
+            // promote a pending_subscribe topic to confirmed, but that is
+            // harmless: connect() calls clear() on the next connection
+            // attempt, resetting all subscription state.
+            for channel in &channels_to_unsubscribe {
+                self.subscriptions_state.confirm_unsubscribe(channel);
+                self.subscriptions_state.add_reference(channel);
+                self.subscriptions_state.confirm_subscribe(channel);
+            }
+            return Err(DeribitWsError::Send(e.to_string()));
+        }
 
         log::debug!(
             "Sent unsubscribe for {} channels",

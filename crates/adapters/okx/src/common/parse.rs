@@ -278,6 +278,10 @@ pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let nanos = dt.timestamp_nanos_opt().ok_or_else(|| {
         anyhow::anyhow!("Failed to extract nanoseconds from timestamp: {timestamp}")
     })?;
+
+    if nanos < 0 {
+        anyhow::bail!("Negative nanosecond timestamp from: {timestamp}");
+    }
     Ok(UnixNanos::from(nanos as u64))
 }
 
@@ -940,7 +944,7 @@ pub fn parse_position_status_report(
                 );
             }
 
-            let quantity_dec = pos_dec.abs() / avg_px_dec;
+            let quantity_dec = (pos_dec.abs() / avg_px_dec).round_dp(size_precision as u32);
             (PositionSide::Short, quantity_dec)
         } else {
             anyhow::bail!(
@@ -4038,6 +4042,81 @@ mod tests {
         // Position is 244.56 USDT / 4092 USDT/ETH = 0.0597... ETH
         assert_eq!(report.quantity.to_string(), "0.0598");
         assert_eq!(report.venue_position_id, None); // Net mode
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_margin_short_rounds_to_size_precision() {
+        // 100.00 USDT / 3333.33 USDT/ETH = 0.030000030000... ETH
+        // Without round_dp this exceeds size_precision=4 and fails
+        let position = OKXPosition {
+            inst_id: Ustr::from("ETH-USDT"),
+            inst_type: OKXInstrumentType::Margin,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("margin-short-2")),
+            pos_side: OKXPositionSide::Net,
+            pos: "100.00".to_string(),
+            base_bal: "0".to_string(),
+            ccy: "USDT".to_string(),
+            fee: "0".to_string(),
+            lever: "3".to_string(),
+            last: "3333.33".to_string(),
+            mark_px: "3333.33".to_string(),
+            liq_px: "3500".to_string(),
+            mmr: "0.1".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("trade-round"),
+            notional_usd: "100.00".to_string(),
+            avg_px: "3333.33".to_string(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "50".to_string(),
+            mgn_ratio: "0.5".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "100.00".to_string(),
+            be_px: "3333.33".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "3333.33".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: "USDT".to_string(),
+            quote_bal: "100.00".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: String::new(),
+            usd_px: "3333.33".to_string(),
+        };
+
+        let report = parse_position_status_report(
+            &position,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("ETH-USDT.OKX"),
+            4, // size_precision=4
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity.to_string(), "0.0300");
+    }
+
+    #[rstest]
+    fn test_parse_rfc3339_timestamp_rejects_pre_epoch() {
+        let result = parse_rfc3339_timestamp("1960-01-01T00:00:00Z");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Negative nanosecond timestamp")
+        );
     }
 
     #[rstest]
