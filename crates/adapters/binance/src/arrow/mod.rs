@@ -13,20 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common types, constants, and utilities for the Binance adapter.
+//! Arrow serialization for Binance adapter types.
 
 pub mod bar;
-pub mod consts;
-pub mod credential;
-pub mod dispatch;
-pub mod encoder;
-pub mod enums;
-pub mod error;
-pub mod models;
-pub mod parse;
-pub mod status;
-pub mod symbol;
-pub mod urls;
-
-#[cfg(test)]
-pub mod testing;

@@ -22,6 +22,7 @@ use nautilus_core::{
 use nautilus_model::data::{
     Bar, DataFFI, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };
+use nautilus_serialization::arrow::custom::CustomDataDecoder;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
@@ -100,6 +101,24 @@ impl DataBackendSession {
                 .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
         }
+    }
+
+    /// Registers a Parquet file for a custom data type identified by `type_name`.
+    ///
+    /// The custom data type must have been registered via
+    /// `ensure_custom_data_registered::<T>()` before calling this method.
+    #[pyo3(name = "add_custom_file")]
+    #[pyo3(signature = (type_name, table_name, file_path, sql_query=None))]
+    fn py_add_custom_file(
+        mut slf: PyRefMut<'_, Self>,
+        type_name: &str,
+        table_name: &str,
+        file_path: &str,
+        sql_query: Option<&str>,
+    ) -> PyResult<()> {
+        let _guard = slf.runtime.enter();
+        slf.add_file::<CustomDataDecoder>(table_name, file_path, sql_query, Some(type_name))
+            .map_err(to_pyruntime_err)
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
