@@ -77,7 +77,7 @@ use self::{
 };
 use crate::{
     common::{
-        consts::{LOT_SIZE_SCALE, POLYMARKET_VENUE, USDC},
+        consts::{POLYMARKET_VENUE, USDC},
         credential::Secrets,
         enums::{
             PolymarketLiquiditySide, PolymarketOrderStatus, PolymarketTradeStatus, SignatureType,
@@ -756,7 +756,7 @@ impl PolymarketExecutionClient {
                 .submit_market_order(&token_id, side, amount, neg_risk, tick_decimals)
                 .await
             {
-                Ok((response, crossing_price)) => {
+                Ok((response, expected_base_qty)) => {
                     let mut order = order;
                     emitter.emit_order_submitted(&order);
 
@@ -764,48 +764,42 @@ impl PolymarketExecutionClient {
                     if response.success
                         && is_quote_qty
                         && side == OrderSide::Buy
-                        && !crossing_price.is_zero()
+                        && !expected_base_qty.is_zero()
+                        && let Ok(base_qty) =
+                            Quantity::from_decimal_dp(expected_base_qty, size_precision)
                     {
-                        let amt = amount.as_decimal().trunc_with_scale(LOT_SIZE_SCALE);
-                        let base_qty_dec =
-                            (amt / crossing_price).trunc_with_scale(tick_decimals + LOT_SIZE_SCALE);
+                        log::info!(
+                            "Converted {} quote quantity {} to base quantity {} \
+                             (expected from book walk)",
+                            order.instrument_id(),
+                            amount,
+                            base_qty,
+                        );
 
-                        if let Ok(base_qty) =
-                            Quantity::from_decimal_dp(base_qty_dec, size_precision)
-                        {
-                            log::info!(
-                                "Converted {} quote quantity {} to base quantity {} \
-                                 at crossing price {crossing_price}",
-                                order.instrument_id(),
-                                amount,
-                                base_qty,
-                            );
+                        let ts_now = clock.get_time_ns();
+                        let updated = OrderUpdated::new(
+                            order.trader_id(),
+                            order.strategy_id(),
+                            order.instrument_id(),
+                            order.client_order_id(),
+                            base_qty,
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            order.venue_order_id(),
+                            order.account_id(),
+                            order.price(),
+                            None,
+                            None,
+                            false, // is_quote_quantity
+                        );
 
-                            let ts_now = clock.get_time_ns();
-                            let updated = OrderUpdated::new(
-                                order.trader_id(),
-                                order.strategy_id(),
-                                order.instrument_id(),
-                                order.client_order_id(),
-                                base_qty,
-                                UUID4::new(),
-                                ts_now,
-                                ts_now,
-                                false,
-                                order.venue_order_id(),
-                                order.account_id(),
-                                order.price(),
-                                None,
-                                None,
-                                false, // is_quote_quantity
-                            );
+                        let event = OrderEventAny::Updated(updated);
+                        emitter.send_order_event(event.clone());
 
-                            let event = OrderEventAny::Updated(updated);
-                            emitter.send_order_event(event.clone());
-
-                            if let Err(e) = order.apply(event) {
-                                log::error!("Failed to apply quote-to-base OrderUpdated: {e}");
-                            }
+                        if let Err(e) = order.apply(event) {
+                            log::error!("Failed to apply quote-to-base OrderUpdated: {e}");
                         }
                     }
 

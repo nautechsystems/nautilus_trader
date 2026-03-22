@@ -137,7 +137,7 @@ impl OrderSubmitter {
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
     /// to find the crossing price, then builds and submits a FOK order.
     /// The book fetch is not retried (stale on retry); only the final POST is retried.
-    /// Returns `(OrderResponse, crossing_price)` on success.
+    /// Returns `(OrderResponse, expected_base_qty)` on success.
     pub async fn submit_market_order(
         &self,
         token_id: &str,
@@ -161,7 +161,7 @@ impl OrderSubmitter {
             PolymarketOrderSide::Sell => &book.bids,
         };
 
-        let price = calculate_market_price(levels, amount_dec, poly_side)
+        let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
 
         let poly_order = self
@@ -169,7 +169,7 @@ impl OrderSubmitter {
             .build_market_order(
                 token_id,
                 poly_side,
-                price,
+                result.crossing_price,
                 amount_dec,
                 neg_risk,
                 tick_decimals,
@@ -197,7 +197,7 @@ impl OrderSubmitter {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        Ok((response, price))
+        Ok((response, result.expected_base_qty))
     }
 
     /// Cancels a single order with retry on transient failures.
