@@ -4,6 +4,7 @@ import { useViewportClock } from '@/hooks/useViewportClock';
 type UseVisibleNowMsOptions = {
   intervalMs?: number;
   nowProvider?: () => number;
+  refreshKey?: unknown;
   disabled?: boolean;
   root?: Element | Document | null;
   detectScrollParent?: boolean;
@@ -22,6 +23,7 @@ type UseVisibleNowMsResult<T extends HTMLElement> = {
 export function useVisibleNowMs<T extends HTMLElement = HTMLElement>({
   intervalMs = 1000,
   nowProvider = Date.now,
+  refreshKey,
   disabled = false,
   root: _root,
   detectScrollParent: _detectScrollParent = true,
@@ -31,7 +33,7 @@ export function useVisibleNowMs<T extends HTMLElement = HTMLElement>({
     intervalMs,
     active: !disabled,
   });
-  const nowMs = useMemo(() => nowProvider(), [nowProvider, tick]);
+  const nowMs = useMemo(() => nowProvider(), [nowProvider, refreshKey, tick]);
   const isVisible = !disabled;
 
   const targetRef = useCallback((_node: T | null) => {}, []);

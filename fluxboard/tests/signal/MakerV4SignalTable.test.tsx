@@ -524,6 +524,69 @@ describe('MakerV4SignalTable', () => {
     expect(lastUpdatedCell?.textContent).toContain('(2s ago)');
   });
 
+  it('realigns the first post-sync frame to the server clock even when the browser clock was ahead', async () => {
+    let currentNow = 1_700_000_002_500;
+    const stableNowProvider = () => currentNow;
+    const strategy = buildMakerV4Strategy();
+    const { rerender, container } = render(
+      <MakerV4SignalTable
+        rows={[strategy]}
+        nowProvider={stableNowProvider}
+      />,
+    );
+
+    let ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    let lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell?.textContent).toContain('3s');
+    expect(lastUpdatedCell?.textContent).toContain('(1s ago)');
+
+    currentNow = 1_700_000_001_500;
+    rerender(
+      <MakerV4SignalTable
+        rows={[strategy]}
+        nowProvider={stableNowProvider}
+        clockAnchorMs={1_700_000_001_500}
+      />,
+    );
+
+    ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell?.textContent).toContain('3s');
+    expect(lastUpdatedCell?.textContent).toContain('(1s ago)');
+  });
+
+  it('does not reset unchanged maker v4 ages when the server clock advances without row updates', async () => {
+    let currentNow = 1_700_000_001_500;
+    const stableNowProvider = () => currentNow;
+    const strategy = buildMakerV4Strategy();
+    const { rerender, container } = render(
+      <MakerV4SignalTable
+        rows={[strategy]}
+        nowProvider={stableNowProvider}
+        clockAnchorMs={1_700_000_001_500}
+      />,
+    );
+
+    let ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    let lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell?.textContent).toContain('3s');
+    expect(lastUpdatedCell?.textContent).toContain('(1s ago)');
+
+    currentNow = 1_700_000_002_500;
+    rerender(
+      <MakerV4SignalTable
+        rows={[strategy]}
+        nowProvider={stableNowProvider}
+        clockAnchorMs={1_700_000_002_500}
+      />,
+    );
+
+    ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell?.textContent).toContain('4s');
+    expect(lastUpdatedCell?.textContent).toContain('(2s ago)');
+  });
+
   it('keeps maker market tooltip ages ticking from the live age anchor', () => {
     const strategy = buildMakerV4Strategy();
     const makerLeg = strategy.maker_v4?.quote_snapshot?.maker_leg ?? null;

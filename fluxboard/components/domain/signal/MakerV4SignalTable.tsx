@@ -23,6 +23,7 @@ type MakerV4DisplayRow = SignalStrategy & {
   _lastAgeMs: number | null;
   _recentAgeMs: number | null;
   _ageAsOfMs: number | null;
+  _ageAnchorSource: 'local' | 'server';
 };
 
 function coerceNumber(value: unknown): number | null {
@@ -217,7 +218,11 @@ function buildAgeTooltip(row: MakerV4DisplayRow, nowMs: number): string {
   return lines.join('\n');
 }
 
-function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4DisplayRow {
+function buildMakerV4DisplayRow(
+  row: SignalStrategy,
+  nowMs: number,
+  ageAnchorSource: MakerV4DisplayRow['_ageAnchorSource'],
+): MakerV4DisplayRow {
   const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
   const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
   const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
@@ -242,6 +247,7 @@ function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4Disp
     _lastAgeMs: lastAgeMs,
     _recentAgeMs: recentAgeMs,
     _ageAsOfMs: ageAsOfMs,
+    _ageAnchorSource: ageAnchorSource,
   };
 }
 
@@ -257,6 +263,28 @@ function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayR
   });
 }
 
+function didMakerV4SourceRowChange(
+  existing: MakerV4DisplayRow | undefined,
+  sourceRow: SignalStrategy,
+): boolean {
+  if (!existing) {
+    return true;
+  }
+  return (
+    existing.maker_v4 !== sourceRow.maker_v4
+    || existing.state !== sourceRow.state
+    || existing.running !== sourceRow.running
+    || existing.tradeable !== sourceRow.tradeable
+    || existing.blocked !== sourceRow.blocked
+    || existing.balances_ok !== sourceRow.balances_ok
+    || existing.params !== sourceRow.params
+    || existing.legs !== sourceRow.legs
+    || existing.legs_order !== sourceRow.legs_order
+    || existing.maker_role_map !== sourceRow.maker_role_map
+    || existing.meta !== sourceRow.meta
+  );
+}
+
 function reconcileMakerV4DisplayRows({
   currentRows,
   currentRowById,
@@ -264,6 +292,7 @@ function reconcileMakerV4DisplayRows({
   changedRowIds,
   sourceRows,
   nowMs,
+  clockAnchorMs,
 }: {
   currentRows: MakerV4DisplayRow[];
   currentRowById: Map<string, MakerV4DisplayRow>;
@@ -271,6 +300,7 @@ function reconcileMakerV4DisplayRows({
   changedRowIds?: readonly string[] | null;
   sourceRows: readonly SignalStrategy[];
   nowMs: number;
+  clockAnchorMs?: number | null;
 }) {
   const nextRows: MakerV4DisplayRow[] = [];
   const nextRowById = new Map<string, MakerV4DisplayRow>();
@@ -281,15 +311,30 @@ function reconcileMakerV4DisplayRows({
     const nextId = sourceRow.id;
     const existing = currentRowById.get(nextId);
     const previousSourceRow = currentSourceRowById.get(nextId);
+    const sourceRowChanged = changedRowIdSet
+      ? changedRowIdSet.has(nextId)
+      : previousSourceRow == null
+        || previousSourceRow !== sourceRow
+        || didMakerV4SourceRowChange(existing, sourceRow);
+    const needsInitialServerRealignment = (
+      existing != null
+      && clockAnchorMs != null
+      && existing._ageAnchorSource !== 'server'
+    );
 
-    if (existing && changedRowIdSet && previousSourceRow === sourceRow && !changedRowIdSet.has(nextId)) {
+    if (existing && !sourceRowChanged && !needsInitialServerRealignment) {
       nextRows.push(existing);
       nextRowById.set(nextId, existing);
       nextSourceRowById.set(nextId, sourceRow);
       return;
     }
 
-    const nextDisplayRow = buildMakerV4DisplayRow(sourceRow, nowMs);
+    const ageAnchorSource = clockAnchorMs != null ? 'server' : 'local';
+    const nextDisplayRow = buildMakerV4DisplayRow(
+      sourceRow,
+      clockAnchorMs ?? nowMs,
+      ageAnchorSource,
+    );
     if (existing) {
       patchDisplayRowInPlace(existing, nextDisplayRow);
       nextRows.push(existing);
@@ -423,6 +468,7 @@ export default function MakerV4SignalTable({
   const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
     intervalMs: 1000,
     nowProvider,
+    refreshKey: clockAnchorMs,
     disabled: loading && sourceRows.length === 0,
   });
   const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
@@ -435,7 +481,8 @@ export default function MakerV4SignalTable({
       currentSourceRowById: displaySourceRowByIdRef.current,
       changedRowIds,
       sourceRows,
-      nowMs: clockAnchorMs ?? nowMs,
+      nowMs,
+      clockAnchorMs,
     });
   }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
 
