@@ -677,6 +677,18 @@ export default function Trades({
     trimControllerRows();
   }, [trimControllerRows]);
 
+  const reconcileGapRecoveryTarget = useCallback((lastSeq: number): number | null => {
+    const target = gapRecoveryTargetSeqRef.current;
+    if (target == null) {
+      return null;
+    }
+    if (lastSeq >= target) {
+      gapRecoveryTargetSeqRef.current = null;
+      return null;
+    }
+    return target;
+  }, []);
+
   const syncSurfaceState = useCallback(() => {
     let nextState: RealtimeSurfaceState;
     if (loadingRef.current && tradesControllerRef.current.getSnapshot().rows.length === 0) {
@@ -1184,7 +1196,6 @@ export default function Trades({
       try {
         const pollResyncId = resyncIdRef.current;
         const streamCursor = streamCursorRef.current;
-        const gapRecoveryTargetSeq = gapRecoveryTargetSeqRef.current;
         const requestedSinceSeq = streamCursor.lastSeq;
         const deltaCursor = {
           sinceSeq: requestedSinceSeq,
@@ -1247,11 +1258,12 @@ export default function Trades({
         const seqAdvanced =
           hasNumericLastSeq
           && deltaLastSeq > requestedSinceSeq;
+        const currentGapRecoveryTargetSeq = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
         const gapRecoveryResolved =
-          gapRecoveryTargetSeq == null
+          currentGapRecoveryTargetSeq == null
           || (
             hasNumericLastSeq
-            && deltaLastSeq >= gapRecoveryTargetSeq
+            && deltaLastSeq >= currentGapRecoveryTargetSeq
           );
         if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
@@ -1336,7 +1348,7 @@ export default function Trades({
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (seqIsNonRegressive && (gapRecoveryTargetSeq == null || seqAdvanced)) {
+            if (seqIsNonRegressive && (currentGapRecoveryTargetSeq == null || seqAdvanced)) {
               const lastSeq = delta.last_seq as number;
               // Empty rows only reconcile a seq-gap recovery when the backend advances beyond sinceSeq.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
@@ -1369,9 +1381,11 @@ export default function Trades({
             socketConnectedRef.current
             && replayRows.length < DELTA_LIMIT
             && replayResolvedCurrentEpoch
+            && reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq) == null
           ) {
-            gapRecoveryTargetSeqRef.current = null;
             catchingUpRef.current = false;
+          } else if (reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq) != null) {
+            catchingUpRef.current = true;
           }
           if (!isActiveRef.current) {
             return;
@@ -1402,7 +1416,7 @@ export default function Trades({
         schedulePoll();
       }
     }, delay);
-  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, syncSurfaceState]);
+  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, syncSurfaceState, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     schedulePoll();
@@ -1565,6 +1579,24 @@ export default function Trades({
         schedulePoll();
         return;
       }
+      const pendingGapTargetSeq = gapRecoveryTargetSeqRef.current;
+      const shouldDeferEventDuringRecovery =
+        typeof event.seq === 'number'
+        && pendingGapTargetSeq != null
+        && currentStreamCursor.streamId != null
+        && currentStreamCursor.snapshotRevision != null
+        && eventStreamId != null
+        && eventSnapshotRevision != null
+        && eventStreamId === currentStreamCursor.streamId
+        && eventSnapshotRevision === currentStreamCursor.snapshotRevision
+        && event.seq > currentStreamCursor.lastSeq;
+      if (shouldDeferEventDuringRecovery) {
+        gapRecoveryTargetSeqRef.current = Math.max(pendingGapTargetSeq, event.seq);
+        catchingUpRef.current = true;
+        syncSurfaceState();
+        schedulePoll();
+        return;
+      }
       streamCursorRef.current = {
         contractVersion:
           typeof (event as any).contract_version === 'number'
@@ -1579,17 +1611,20 @@ export default function Trades({
         latestTradeTsMsRef.current = Math.max(latestTradeTsMsRef.current, eventTsMs);
       }
       advanceTradeReplayCursor([event]);
+      if (typeof event.seq === 'number') {
+        latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
+        streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, event.seq);
+      }
+      const outstandingGapRecoveryTargetSeq = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
       const passesFilters = rowMatchesFilters(event, filtersRef.current);
       const rowVisibleInCurrentStore = Array.isArray(storeRows)
         && storeRows.some((row) => row?.row_id === event.row_id);
       if (!passesFilters) {
-        if (typeof event.seq === 'number') {
-          latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
-          streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, event.seq);
-        }
         if (rowVisibleInCurrentStore || event.op === 'delete') {
           catchingUpRef.current = true;
           queueSnapshotRefreshRef.current?.(true);
+        } else {
+          catchingUpRef.current = outstandingGapRecoveryTargetSeq != null;
         }
         syncSurfaceState();
         return;
@@ -1611,23 +1646,22 @@ export default function Trades({
         setUnread((u) => u + 1);
       }
 
-      if (typeof event.seq === 'number') {
-        latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
-        streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, event.seq);
-      }
       queueSnapshotRefreshRef.current?.(!isLiveView);
-      if (appliedCurrentEpoch) {
+      if (appliedCurrentEpoch && outstandingGapRecoveryTargetSeq == null) {
         markGlobalResyncApplied('trades', messageResyncId);
       }
       const nextUpdate = Date.now();
       lastUpdateRef.current = nextUpdate;
       setLastUpdate(nextUpdate);
-      catchingUpRef.current = false;
+      catchingUpRef.current = outstandingGapRecoveryTargetSeq != null;
+      if (outstandingGapRecoveryTargetSeq != null) {
+        schedulePoll();
+      }
       syncSurfaceState();
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     const pending: any[] = [];

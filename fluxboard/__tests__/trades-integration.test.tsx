@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor, act, cleanup } from '@testing-library/react';
+import { render, waitFor, act, cleanup, screen } from '@testing-library/react';
 import Trades from '../Trades';
 import { useTradesStore } from '../stores';
 
@@ -86,6 +86,24 @@ const makeTradeRow = (overrides: Record<string, unknown> = {}) => ({
   price: 100,
   ...overrides,
 });
+
+const createDeferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
+const flushTradeSocketFrame = async () => {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
+};
 
 describe('Trades integration flows', () => {
   beforeEach(() => {
@@ -341,6 +359,239 @@ describe('Trades integration flows', () => {
       2,
       expect.objectContaining({
         sinceSeq: 2,
+        streamId: 'trades-main',
+        snapshotRevision: 17,
+      }),
+      500,
+    );
+  });
+
+  it('keeps recovery anchored to the last acknowledged seq when in-window socket events arrive during replay', async () => {
+    getTradesDelta.mockResolvedValueOnce({
+      rows: [
+        makeTradeRow({
+          row_id: 'gap-4',
+          seq: 4,
+          ts: 4,
+          time: '2025-01-01T00:00:04Z',
+          side: 'sell',
+        }),
+        makeTradeRow({
+          row_id: 'gap-5',
+          seq: 5,
+          ts: 5,
+          time: '2025-01-01T00:00:05Z',
+        }),
+      ],
+      last_seq: 5,
+      reset_required: false,
+      stream_id: 'trades-main',
+      snapshot_revision: 17,
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-5',
+        seq: 5,
+        version: 1,
+        ts: 5,
+        time: '2025-01-01T00:00:05Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    await flushTradeSocketFrame();
+    await waitFor(() => expect(screen.getByText('RECOVERING')).toBeTruthy());
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-3',
+        seq: 3,
+        version: 1,
+        ts: 3,
+        time: '2025-01-01T00:00:03Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    await flushTradeSocketFrame();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(screen.getByText('RECOVERING')).toBeTruthy();
+    expect(screen.queryByText('gap-3')).toBeNull();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalledTimes(1));
+    expect(getTradesDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sinceSeq: 2,
+        streamId: 'trades-main',
+        snapshotRevision: 17,
+      }),
+      500,
+    );
+  });
+
+  it('does not clear a newer gap target when an older delta response resolves late', async () => {
+    const firstDelta = createDeferred<{
+      rows: Array<Record<string, unknown>>;
+      last_seq: number;
+      reset_required: boolean;
+      stream_id: string;
+      snapshot_revision: number;
+    }>();
+
+    getTradesDelta
+      .mockImplementationOnce(() => firstDelta.promise)
+      .mockResolvedValueOnce({
+        rows: [
+          makeTradeRow({
+            row_id: 'gap-6',
+            seq: 6,
+            ts: 6,
+            time: '2025-01-01T00:00:06Z',
+            side: 'sell',
+          }),
+          makeTradeRow({
+            row_id: 'gap-7',
+            seq: 7,
+            ts: 7,
+            time: '2025-01-01T00:00:07Z',
+          }),
+        ],
+        last_seq: 7,
+        reset_required: false,
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-5',
+        seq: 5,
+        version: 1,
+        ts: 5,
+        time: '2025-01-01T00:00:05Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    await flushTradeSocketFrame();
+    await waitFor(() => expect(screen.getByText('RECOVERING')).toBeTruthy());
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalledTimes(1));
+    expect(getTradesDelta).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sinceSeq: 2,
+        streamId: 'trades-main',
+        snapshotRevision: 17,
+      }),
+      500,
+    );
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-7',
+        seq: 7,
+        version: 1,
+        ts: 7,
+        time: '2025-01-01T00:00:07Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    await flushTradeSocketFrame();
+    await waitFor(() => expect(screen.getByText('RECOVERING')).toBeTruthy());
+
+    await act(async () => {
+      firstDelta.resolve({
+        rows: [],
+        last_seq: 5,
+        reset_required: false,
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(screen.getByText('RECOVERING')).toBeTruthy();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'gap-6',
+        seq: 6,
+        version: 1,
+        ts: 6,
+        time: '2025-01-01T00:00:06Z',
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+      });
+    });
+
+    await flushTradeSocketFrame();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(screen.getByText('RECOVERING')).toBeTruthy();
+    expect(screen.queryByText('gap-6')).toBeNull();
+    expect(screen.queryByText('gap-7')).toBeNull();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalledTimes(2));
+    expect(getTradesDelta).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sinceSeq: 5,
         streamId: 'trades-main',
         snapshotRevision: 17,
       }),
