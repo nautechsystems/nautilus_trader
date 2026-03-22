@@ -10,6 +10,7 @@ import { formatLocal } from '@/utils/time';
 import { deriveStrategyStatus, describeTradingStatus } from '@/utils/strategyStatus';
 import { resolveSignalRunning } from '@/utils/signalRunState';
 import type { MakerV4LegSnapshot, MakerV4OperatorPayload, MakerV4QuoteSnapshot, SignalStrategy } from '@/types';
+import { useVisibleNowMs } from './useVisibleNowMs';
 
 type MakerV4DisplayRow = SignalStrategy & {
   _quoteSnapshot: MakerV4QuoteSnapshot | null;
@@ -20,6 +21,7 @@ type MakerV4DisplayRow = SignalStrategy & {
   _statusLabel: ReturnType<typeof describeTradingStatus>;
   _lastUpdateMs: number | null;
   _lastAgeMs: number | null;
+  _ageAsOfMs: number | null;
 };
 
 function coerceNumber(value: unknown): number | null {
@@ -119,6 +121,23 @@ function deriveLastAgeMs(
   return Math.max(0, nowMs - lastUpdateMs);
 }
 
+function deriveAgeAsOfMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return lastUpdateMs ?? nowMs;
+  }
+  if (lastUpdateMs == null) return null;
+  return nowMs;
+}
+
 function isLegUsable(leg: MakerV4LegSnapshot | null | undefined): boolean {
   if (!leg) return false;
   const feedState = formatStateWord(leg.feed_state);
@@ -143,17 +162,32 @@ function getAgeColor(ageMs: number | null): string {
   return colors.text.primary;
 }
 
-function formatLegAge(leg: MakerV4LegSnapshot | null | undefined): string {
-  const ageMs = coerceNumber(leg?.age_ms);
+function resolveLiveAgeMs(ageMs: number | null, ageAsOfMs: number | null, nowMs: number): number | null {
+  if (ageMs == null) return null;
+  if (ageAsOfMs == null) return ageMs;
+  return ageMs + Math.max(0, nowMs - ageAsOfMs);
+}
+
+function resolveLiveDisplayAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._lastAgeMs, row._ageAsOfMs, nowMs);
+}
+
+function formatLegAge(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+): string {
+  const ageMs = resolveLiveAgeMs(coerceNumber(leg?.age_ms), ageAsOfMs, nowMs);
   return ageMs == null ? '—' : fmtAgeSec(ageMs);
 }
 
-function buildAgeTooltip(row: MakerV4DisplayRow): string {
+function buildAgeTooltip(row: MakerV4DisplayRow, nowMs: number): string {
+  const ageMs = resolveLiveDisplayAgeMs(row, nowMs);
   const lines = [
-    `Worst leg age: ${row._lastAgeMs != null ? fmtAgeSec(row._lastAgeMs) : '—'}`,
-    `Maker leg: ${formatLegAge(row._makerLeg)}`,
-    `Hedge leg: ${formatLegAge(row._hedgeLeg)}`,
-    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null)}`,
+    `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+    `Maker leg: ${formatLegAge(row._makerLeg, row._ageAsOfMs, nowMs)}`,
+    `Hedge leg: ${formatLegAge(row._hedgeLeg, row._ageAsOfMs, nowMs)}`,
+    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null, row._ageAsOfMs, nowMs)}`,
   ];
   if (row._lastUpdateMs != null) {
     lines.push(`Last update: ${formatLocal(row._lastUpdateMs)}`);
@@ -166,6 +200,7 @@ function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4Disp
   const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
   const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
   const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const ageAsOfMs = deriveAgeAsOfMs(quoteSnapshot, lastUpdateMs, nowMs);
   const status = deriveStrategyStatus({
     running: resolveSignalRunning(row, nowMs),
     trading: row.params?.bot_on,
@@ -182,6 +217,7 @@ function buildMakerV4DisplayRow(row: SignalStrategy, nowMs: number): MakerV4Disp
     _statusLabel: describeTradingStatus(status),
     _lastUpdateMs: lastUpdateMs,
     _lastAgeMs: lastAgeMs,
+    _ageAsOfMs: ageAsOfMs,
   };
 }
 
@@ -348,6 +384,11 @@ export default function MakerV4SignalTable({
   changedRowIds?: readonly string[] | null;
 }) {
   const sourceRows = rows ?? strategies ?? [];
+  const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
+    intervalMs: 1000,
+    nowProvider,
+    disabled: loading && sourceRows.length === 0,
+  });
   const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
   const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
   const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
@@ -447,7 +488,11 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => (
         <LegSummary
           leg={row.original._makerLeg}
-          fallbackAgeLabel={row.original._lastAgeMs != null ? fmtAgeSec(row.original._lastAgeMs) : '—'}
+          fallbackAgeLabel={
+            resolveLiveDisplayAgeMs(row.original, nowMs) != null
+              ? fmtAgeSec(resolveLiveDisplayAgeMs(row.original, nowMs))
+              : '—'
+          }
         />
       ),
     },
@@ -459,8 +504,8 @@ export default function MakerV4SignalTable({
           leg={row.original._hedgeLeg}
           fallbackAgeLabel={
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
-              ? fmtAgeSec(Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
-              : (row.original._lastAgeMs != null ? fmtAgeSec(row.original._lastAgeMs) : '—')
+              ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              : (resolveLiveDisplayAgeMs(row.original, nowMs) != null ? fmtAgeSec(resolveLiveDisplayAgeMs(row.original, nowMs)) : '—')
           }
         />
       ),
@@ -598,15 +643,15 @@ export default function MakerV4SignalTable({
       },
     },
     {
-      accessorFn: (row) => row._lastAgeMs ?? Number.POSITIVE_INFINITY,
+      accessorFn: (row) => resolveLiveDisplayAgeMs(row, nowMs) ?? Number.POSITIVE_INFINITY,
       id: 'age_ms',
       header: 'Age',
       cell: ({ row }) => {
-        const ageMs = row.original._lastAgeMs;
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
         if (ageMs == null) {
           return <span className="text-xs text-neutral-500">—</span>;
         }
-        const tooltip = buildAgeTooltip(row.original);
+        const tooltip = buildAgeTooltip(row.original, nowMs);
         return (
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <span
@@ -625,7 +670,7 @@ export default function MakerV4SignalTable({
       header: 'Last Updated',
       cell: ({ row }) => {
         const lastUpdateMs = row.original._lastUpdateMs;
-        const ageMs = row.original._lastAgeMs;
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
         if (lastUpdateMs == null) {
           return <span className="text-xs text-neutral-500">—</span>;
         }
@@ -634,7 +679,7 @@ export default function MakerV4SignalTable({
           `Age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
           `IBKR quote age: ${
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
-              ? fmtAgeSec(Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
               : '—'
           }`,
         ].join('\n');
@@ -648,10 +693,10 @@ export default function MakerV4SignalTable({
         );
       },
     },
-  ], []);
+  ], [nowMs]);
 
   return (
-    <div data-testid="maker-v4-signal-table">
+    <div data-testid="maker-v4-signal-table" ref={targetRef}>
       <DataTable
         data={data}
         columns={columns}

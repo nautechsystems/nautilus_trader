@@ -1,6 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { colors } from '@/lib/tokens';
 
 const dataTablePropsHistory: Array<{ data: unknown; liveDataVersion: unknown }> = [];
 let renderActualDataTable = true;
@@ -209,10 +211,18 @@ function buildTrackedMakerV4Strategy(id: string, accessCounts: Map<string, numbe
   return strategy;
 }
 
+async function flushAsyncRender() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe('MakerV4SignalTable', () => {
   afterEach(() => {
     renderActualDataTable = true;
     dataTablePropsHistory.length = 0;
+    vi.useRealTimers();
   });
 
   it('renders a dedicated maker v4 signal table with both venue legs, route, and strategy-published spreads', () => {
@@ -278,7 +288,7 @@ describe('MakerV4SignalTable', () => {
     );
 
     expect(screen.getByRole('button', { name: /Age/i })).toBeInTheDocument();
-    expect(screen.getByText('9s')).toBeInTheDocument();
+    expect(screen.getByText('18s')).toBeInTheDocument();
     expect(screen.getByText(/Paused/i)).toBeInTheDocument();
     expect(screen.getByText(/Blocked/i)).toBeInTheDocument();
     expect(screen.getByText(/Quote health/i)).toBeInTheDocument();
@@ -463,5 +473,54 @@ describe('MakerV4SignalTable', () => {
     expect(screen.getByPlaceholderText(/Strategy ID/i)).toBeInTheDocument();
     expect(screen.getByTestId('maker-v4-signal-table')).toBeInTheDocument();
     expect(screen.queryByText('FV market')).not.toBeInTheDocument();
+  });
+
+  it('keeps Maker V4 route age, recency, and stale color ticking on a quiet feed', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_500);
+
+    const strategy = buildMakerV4Strategy();
+    (api.getSignalStrategies as any).mockResolvedValue({
+      strategies: [strategy],
+      server_time: '2024-01-01 12:00:00',
+      server_ts_ms: 1_700_000_001_500,
+    });
+    initSignalState({
+      rows: [strategy],
+      setRows: vi.fn(),
+      mergeStrategy: vi.fn(),
+      mergeStrategies: vi.fn(),
+    });
+
+    const { container } = render(
+      <MemoryRouter
+        initialEntries={['/equities/signal']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <SignalTable />
+      </MemoryRouter>,
+    );
+
+    await flushAsyncRender();
+    expect(screen.getByTestId('maker-v4-signal-table')).toBeInTheDocument();
+
+    let ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    let lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell).not.toBeNull();
+    expect(lastUpdatedCell).not.toBeNull();
+    expect(ageCell?.textContent).toContain('3s');
+    expect(ageCell).toHaveStyle({ color: colors.text.primary });
+    expect(lastUpdatedCell?.textContent).toContain('(3s ago)');
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    await flushAsyncRender();
+
+    ageCell = container.querySelector('tbody tr td:nth-child(9) span') as HTMLElement | null;
+    lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10) span') as HTMLElement | null;
+    expect(ageCell?.textContent).toContain('4s');
+    expect(ageCell).toHaveStyle({ color: colors.semantic.warning.DEFAULT });
+    expect(lastUpdatedCell?.textContent).toContain('(4s ago)');
   });
 });
