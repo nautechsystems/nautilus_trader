@@ -156,6 +156,26 @@ impl EncodeToRecordBatch for BinanceBar {
     }
 }
 
+/// Encodes a vector of [`BinanceBar`] into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if `data` is empty or encoding fails.
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
+pub fn binance_bar_to_arrow_record_batch(
+    data: &[BinanceBar],
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    let first = data
+        .first()
+        .expect("Chunk should have at least one element to encode");
+    let metadata = first.metadata();
+    BinanceBar::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
+}
+
 /// Decodes a `RecordBatch` into a vector of [`BinanceBar`].
 ///
 /// # Errors
