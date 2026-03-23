@@ -209,6 +209,13 @@ def test_ibkr_reference_balance_provider_refresh_marks_timeout_without_advancing
     snapshot = provider.refresh()
 
     assert snapshot is not None
+    assert snapshot["rows"] == [
+        {
+            "row_id": "existing-refresh",
+            "stale": True,
+            "include_in_reconciliation": False,
+        },
+    ]
     assert snapshot["projection_status"]["last_success_ts_ms"] == 1_700_000_000_000
     assert snapshot["projection_status"]["last_attempt_ts_ms"] > 1_700_000_000_000
     assert snapshot["projection_status"]["last_error_type"] == "TimeoutError"

@@ -31,6 +31,13 @@ def _format_money_display(value: float) -> str:
     return f"{'-$' if value < 0 else '$'}{abs(value):.2f}"
 
 
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _merge_projection_totals(
     current: dict[str, Any],
     incoming: Mapping[str, Any],
@@ -46,6 +53,28 @@ def _merge_projection_totals(
     if "withdrawable_raw" in merged:
         merged["withdrawable_display"] = _format_money_display(float(merged["withdrawable_raw"]))
     return merged
+
+
+def _projection_scope_stale(projection_status: Mapping[str, Any] | None) -> bool:
+    if not isinstance(projection_status, Mapping):
+        return False
+    last_attempt_ts_ms = _safe_int(projection_status.get("last_attempt_ts_ms"))
+    last_success_ts_ms = _safe_int(projection_status.get("last_success_ts_ms"))
+    stale_after_ms = _safe_int(projection_status.get("stale_after_ms")) or 0
+    if last_attempt_ts_ms is None or last_success_ts_ms is None or stale_after_ms <= 0:
+        return not bool(projection_status.get("healthy", False))
+    return (last_attempt_ts_ms - last_success_ts_ms) > stale_after_ms
+
+
+def _projection_rows_excluded_from_reconciliation(raw_rows: Any) -> bool:
+    if not isinstance(raw_rows, list):
+        return False
+    for row in raw_rows:
+        if not isinstance(row, Mapping):
+            continue
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            return True
+    return False
 
 
 def _profile_account_row_id(
@@ -101,6 +130,7 @@ def build_profile_account_snapshot(
     rows: list[dict[str, Any]] = []
     account_scope_ids: list[str] = []
     totals: dict[str, Any] = {}
+    scope_status: list[dict[str, Any]] = []
 
     for binding in bindings:
         provider = binding.provider
@@ -109,14 +139,32 @@ def build_profile_account_snapshot(
         provider_snapshot = provider.snapshot()
         if not isinstance(provider_snapshot, Mapping):
             continue
-        provider_totals = provider_snapshot.get("totals")
-        if isinstance(provider_totals, Mapping):
-            totals = _merge_projection_totals(totals, provider_totals)
-
         source_scope = str(provider_snapshot.get("source_scope") or "shared_account").strip() or "shared_account"
         account_scope_id = str(binding.account_scope_id).strip()
         if account_scope_id and account_scope_id not in account_scope_ids:
             account_scope_ids.append(account_scope_id)
+        projection_status = provider_snapshot.get("projection_status")
+        projection_status_mapping = (
+            dict(projection_status)
+            if isinstance(projection_status, Mapping)
+            else None
+        )
+        if account_scope_id and projection_status_mapping is not None:
+            scope_status.append(
+                {
+                    "account_scope_id": account_scope_id,
+                    "source_scope": source_scope,
+                    "projection_status": projection_status_mapping,
+                },
+            )
+        provider_totals = provider_snapshot.get("totals")
+        if (
+            isinstance(provider_totals, Mapping)
+            and not _projection_scope_stale(projection_status_mapping)
+            and not _projection_rows_excluded_from_reconciliation(provider_snapshot.get("rows"))
+        ):
+            totals = _merge_projection_totals(totals, provider_totals)
+
         source_strategy_ids = [
             str(strategy_id).strip()
             for strategy_id in binding.source_strategy_ids
@@ -142,15 +190,22 @@ def build_profile_account_snapshot(
                 )
             if source_strategy_ids:
                 normalized["source_strategy_ids"] = list(source_strategy_ids)
+            if projection_status_mapping is not None:
+                stale = _projection_scope_stale(projection_status_mapping)
+                normalized.setdefault("stale", stale)
+                normalized.setdefault("include_in_reconciliation", not stale)
             rows.append(normalized)
 
-    return {
+    payload = {
         "profile_id": profile_id,
         "account_scope_ids": account_scope_ids,
         "rows": rows,
         "totals": totals,
         "server_ts_ms": int(ts_ms),
     }
+    if scope_status:
+        payload["scope_status"] = scope_status
+    return payload
 
 
 def encode_profile_account_snapshot(payload: Mapping[str, Any]) -> str:

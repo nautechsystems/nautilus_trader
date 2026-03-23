@@ -159,6 +159,80 @@ def _timestamp_is_fresh(
     return parsed is not None and (now_ms_value - parsed) <= stale_after_ms
 
 
+def _projection_status_is_stale(projection_status: Mapping[str, Any] | None) -> bool:
+    if not isinstance(projection_status, Mapping):
+        return False
+    last_attempt_ts_ms = safe_int(projection_status.get("last_attempt_ts_ms"))
+    last_success_ts_ms = safe_int(projection_status.get("last_success_ts_ms"))
+    stale_after_ms = safe_int(projection_status.get("stale_after_ms")) or 0
+    if last_attempt_ts_ms is None or last_success_ts_ms is None or stale_after_ms <= 0:
+        return not bool(projection_status.get("healthy", False))
+    return (last_attempt_ts_ms - last_success_ts_ms) > stale_after_ms
+
+
+def _normalize_scope_status_entries(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
+        return []
+    return [dict(entry) for entry in payload if isinstance(entry, Mapping)]
+
+
+def _projection_rows_excluded_from_reconciliation(payload: Any) -> bool:
+    if not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
+        return False
+    for row in payload:
+        if not isinstance(row, Mapping):
+            continue
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            return True
+    return False
+
+
+def _merge_scope_status_entries(*groups: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    ordered_keys: list[tuple[str, str]] = []
+    for group in groups:
+        if not isinstance(group, Sequence):
+            continue
+        for entry in group:
+            if not isinstance(entry, Mapping):
+                continue
+            account_scope_id = decode_text(entry.get("account_scope_id")).strip()
+            source_scope = decode_text(entry.get("source_scope") or "shared_account").strip() or "shared_account"
+            if not account_scope_id:
+                continue
+            key = (account_scope_id, source_scope)
+            if key not in merged:
+                ordered_keys.append(key)
+            merged[key] = dict(entry)
+    return [merged[key] for key in ordered_keys]
+
+
+def _scope_status_entries_degraded(scope_status: Sequence[Mapping[str, Any]] | None) -> bool:
+    if not isinstance(scope_status, Sequence):
+        return False
+    for entry in scope_status:
+        if not isinstance(entry, Mapping):
+            continue
+        projection_status = entry.get("projection_status")
+        healthy = bool(projection_status.get("healthy", False)) if isinstance(projection_status, Mapping) else False
+        if not healthy or _projection_status_is_stale(projection_status if isinstance(projection_status, Mapping) else None):
+            return True
+    return False
+
+
+def _rows_for_reconciliation(rows: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    if not isinstance(rows, Sequence):
+        return []
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            continue
+        filtered.append(dict(row))
+    return filtered
+
+
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     ordered: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_PARAMS_ORDER:
@@ -758,7 +832,7 @@ class FluxApiStore:
         profile_id: str,
         *,
         limit: int = 200,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         max_items = max(1, min(2_000, int(limit)))
         key_prefix = (
             f"{self._config.identity.namespace}:{self._config.identity.schema_version}:"
@@ -813,6 +887,7 @@ class FluxApiStore:
 
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}
+        scope_status: list[dict[str, Any]] = []
         for key in sorted(projection_keys):
             payload = load_json(self._redis.get(key))
             if not isinstance(payload, Mapping):
@@ -820,11 +895,18 @@ class FluxApiStore:
             raw_rows = payload.get("rows")
             if isinstance(raw_rows, Sequence) and not isinstance(raw_rows, str | bytes):
                 rows.extend(dict(row) for row in raw_rows if isinstance(row, Mapping))
+            payload_scope_status = _normalize_scope_status_entries(payload.get("scope_status"))
+            if payload_scope_status:
+                scope_status = _merge_scope_status_entries(scope_status, payload_scope_status)
             raw_totals = payload.get("totals")
-            if isinstance(raw_totals, Mapping):
+            if (
+                isinstance(raw_totals, Mapping)
+                and not _scope_status_entries_degraded(payload_scope_status)
+                and not _projection_rows_excluded_from_reconciliation(raw_rows)
+            ):
                 totals = _merge_account_totals(totals, raw_totals)
 
-        return rows, totals
+        return rows, totals, scope_status
 
     def _tokenmm_inventory_overlay(
         self,
@@ -2313,8 +2395,13 @@ def create_flux_api_app(  # noqa: C901
             request_now_ms = now_ms()
             projection_rows: list[dict[str, Any]] = []
             projection_totals: dict[str, Any] = {}
+            projection_scope_status: list[dict[str, Any]] = []
             if profile_normalized == "equities":
-                projection_rows, projection_totals = store.load_profile_account_projection_rows(
+                (
+                    projection_rows,
+                    projection_totals,
+                    projection_scope_status,
+                ) = store.load_profile_account_projection_rows(
                     profile_normalized,
                 )
             portfolio_snapshot = (
@@ -2343,9 +2430,18 @@ def create_flux_api_app(  # noqa: C901
                             if isinstance(snapshot_accounts, Mapping)
                             else [],
                         )
+                        snapshot_scope_status = _normalize_scope_status_entries(
+                            snapshot_accounts.get("scope_status")
+                            if isinstance(snapshot_accounts, Mapping)
+                            else [],
+                        )
                         snapshot_account_rows_missing = not snapshot_account_rows
                         if projection_rows and snapshot_account_rows_missing:
                             snapshot_account_rows = [*snapshot_account_rows, *projection_rows]
+                        scope_status = _merge_scope_status_entries(
+                            snapshot_scope_status,
+                            projection_scope_status,
+                        )
                         snapshot_rows = combine_portfolio_snapshot_rows(
                             balance_rows=snapshot_balance_rows,
                             account_rows=snapshot_account_rows,
@@ -2369,12 +2465,18 @@ def create_flux_api_app(  # noqa: C901
                                     market_rows=market_rows,
                                 ),
                             )
-                        rows, risk_groups = build_balance_risk_groups(rows)
+                        reconciliation_rows = (
+                            _rows_for_reconciliation(rows)
+                            if profile_normalized == "equities"
+                            else [dict(row) for row in rows]
+                        )
+                        rows, _ = build_balance_risk_groups(rows)
+                        _, risk_groups = build_balance_risk_groups(reconciliation_rows)
                         response_ts_ms = safe_int(portfolio_snapshot.get("server_ts_ms")) or request_now_ms
                         base_currency = decode_text(portfolio_snapshot.get("base_currency")).strip().upper()
                         if not base_currency and len(inventory_summary["inventory_by_asset"]) == 1:
                             base_currency = next(iter(inventory_summary["inventory_by_asset"]))
-                        totals = _balances_totals(rows)
+                        totals = _balances_totals(reconciliation_rows)
                         if isinstance(snapshot_accounts, Mapping):
                             account_totals = snapshot_accounts.get("totals")
                             if isinstance(account_totals, Mapping):
@@ -2398,11 +2500,15 @@ def create_flux_api_app(  # noqa: C901
                                 "base_currency": base_currency,
                                 "inventory_by_asset": inventory_summary["inventory_by_asset"],
                                 "components": inventory_summary["components"],
-                                "degraded": inventory_summary["degraded"],
+                                "degraded": bool(
+                                    inventory_summary["degraded"]
+                                    or _scope_status_entries_degraded(scope_status)
+                                ),
                                 "missing_required": inventory_summary["missing_required"],
                                 "stale_required": inventory_summary["stale_required"],
                                 "null_qty_required": inventory_summary["null_qty_required"],
                                 "stale_after_ms": snapshot_stale_after_ms,
+                                **({"scope_status": scope_status} if scope_status else {}),
                             },
                         )
                 elif profile_normalized == "tokenmm":
@@ -2562,15 +2668,25 @@ def create_flux_api_app(  # noqa: C901
                         market_rows=market_rows,
                     ),
                 )
-            rows, risk_groups = build_balance_risk_groups(rows)
+            reconciliation_rows = (
+                _rows_for_reconciliation(rows)
+                if profile_normalized == "equities"
+                else [dict(row) for row in rows]
+            )
+            rows, _ = build_balance_risk_groups(rows)
+            _, risk_groups = build_balance_risk_groups(reconciliation_rows)
             missing_required = sorted(
                 component["strategy_id"]
                 for component in components
                 if component["required"] and component["missing"]
             )
-            degraded = bool(missing_required) or any(component["stale"] for component in components)
+            degraded = (
+                bool(missing_required)
+                or any(component["stale"] for component in components)
+                or _scope_status_entries_degraded(projection_scope_status)
+            )
             total_rows = len(rows)
-            totals = _balances_totals(rows)
+            totals = _balances_totals(reconciliation_rows)
             if projection_totals:
                 totals.update(projection_totals)
             return _ok(
@@ -2586,6 +2702,7 @@ def create_flux_api_app(  # noqa: C901
                     "degraded": degraded,
                     "missing_required": missing_required,
                     "stale_after_ms": TOKENMM_BALANCES_STALE_AFTER_MS,
+                    **({"scope_status": projection_scope_status} if projection_scope_status else {}),
                 },
             )
         else:

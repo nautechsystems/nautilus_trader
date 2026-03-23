@@ -1931,6 +1931,8 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
             },
         },
     }
+    assert portfolio_snapshot["accounts"]["totals"]["withdrawable_raw"] == 5000.0
+    assert "account_equity_raw" not in portfolio_snapshot["accounts"]["totals"]
 
 
 def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_v2() -> None:

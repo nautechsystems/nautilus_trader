@@ -29,6 +29,25 @@ IB_CLIENTS: dict[tuple, InteractiveBrokersClient] = {}
 IB_INSTRUMENT_PROVIDERS: dict[tuple, InteractiveBrokersInstrumentProvider] = {}
 
 
+def drop_cached_ib_client(
+    *,
+    host: str,
+    port: int | None,
+    client_id: int,
+) -> InteractiveBrokersClient | None:
+    client = IB_CLIENTS.pop((host, port, client_id), None)
+    if client is None:
+        return None
+
+    stop = getattr(client, "_stop", None)
+    if callable(stop):
+        try:
+            stop()
+        except Exception:
+            pass
+    return client
+
+
 def get_cached_ib_client(
     loop: asyncio.AbstractEventLoop,
     msgbus: MessageBus,

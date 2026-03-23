@@ -3076,6 +3076,9 @@ def test_balances_profile_equities_fallback_marks_stale_shared_account_scope_sta
 
     assert response.status_code == 200
     assert body["data"]["degraded"] is True
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(5000.0)
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(5000.0)
+    assert sum((group.get("gross_mv") or 0.0) for group in body["data"]["risk_groups"]) == pytest.approx(5000.0)
     assert len(body["data"]["scope_status"]) == 2
     assert {
         scope["account_scope_id"]
@@ -3313,6 +3316,9 @@ def test_balances_profile_equities_overlay_marks_stale_shared_account_scope_stat
     assert response.status_code == 200
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(5000.0)
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(5000.0)
+    assert sum((group.get("gross_mv") or 0.0) for group in body["data"]["risk_groups"]) == pytest.approx(5000.0)
     assert len(body["data"]["scope_status"]) == 2
     assert {
         scope["account_scope_id"]

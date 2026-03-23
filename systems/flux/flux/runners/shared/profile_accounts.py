@@ -130,6 +130,95 @@ def _locked_balance_text(total: Any, free: Any) -> str:
     return _decimal_text(locked)
 
 
+def _projection_stale_after_ms(refresh_interval_secs: float) -> int:
+    return max(1_000, int(refresh_interval_secs * 1_000))
+
+
+def _snapshot_last_success_ts_ms(snapshot: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(snapshot, Mapping):
+        return None
+    projection_status = snapshot.get("projection_status")
+    if isinstance(projection_status, Mapping):
+        value = projection_status.get("last_success_ts_ms")
+        if isinstance(value, int):
+            return value
+    rows = snapshot.get("rows")
+    if not isinstance(rows, list):
+        return None
+    row_ts_values = [
+        int(ts_ms)
+        for row in rows
+        if isinstance(row, Mapping)
+        for ts_ms in [row.get("ts_ms")]
+        if isinstance(ts_ms, int)
+    ]
+    return max(row_ts_values) if row_ts_values else None
+
+
+def _annotate_projection_success(
+    snapshot: Mapping[str, Any],
+    *,
+    attempt_ts_ms: int,
+    refresh_interval_secs: float,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(dict(snapshot))
+    rows = payload.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                row.setdefault("stale", False)
+                row.setdefault("include_in_reconciliation", True)
+    payload.setdefault("source_scope", "shared_account")
+    payload["projection_status"] = {
+        "healthy": True,
+        "last_success_ts_ms": attempt_ts_ms,
+        "last_attempt_ts_ms": attempt_ts_ms,
+        "last_error_type": None,
+        "last_error_message": None,
+        "stale_after_ms": _projection_stale_after_ms(refresh_interval_secs),
+    }
+    return payload
+
+
+def _annotate_projection_failure(
+    previous_snapshot: Mapping[str, Any] | None,
+    exc: Exception,
+    *,
+    attempt_ts_ms: int,
+    refresh_interval_secs: float,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(dict(previous_snapshot)) if isinstance(previous_snapshot, Mapping) else {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        rows = []
+    stale_after_ms = _projection_stale_after_ms(refresh_interval_secs)
+    last_success_ts_ms = _snapshot_last_success_ts_ms(previous_snapshot)
+    scope_stale = (
+        last_success_ts_ms is None
+        or (attempt_ts_ms - last_success_ts_ms) > stale_after_ms
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if scope_stale:
+            row["stale"] = True
+            row["include_in_reconciliation"] = False
+        else:
+            row.setdefault("stale", False)
+            row.setdefault("include_in_reconciliation", True)
+    payload["rows"] = rows
+    payload.setdefault("source_scope", "shared_account")
+    payload["projection_status"] = {
+        "healthy": False,
+        "last_success_ts_ms": last_success_ts_ms,
+        "last_attempt_ts_ms": attempt_ts_ms,
+        "last_error_type": type(exc).__name__,
+        "last_error_message": str(exc),
+        "stale_after_ms": stale_after_ms,
+    }
+    return payload
+
+
 def _extract_hyperliquid_account_totals(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         return {}
@@ -457,12 +546,25 @@ class HyperliquidAccountProjectionProvider:
         ):
             return self.snapshot()
 
+        attempt_ts_ms = int(time.time() * 1000)
         try:
-            self._latest_snapshot = asyncio.run(self._fetch_snapshot())
+            snapshot = asyncio.run(self._fetch_snapshot())
+            self._latest_snapshot = _annotate_projection_success(
+                snapshot,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
             self._last_refresh_monotonic = time.monotonic()
         except Exception as exc:
+            self._latest_snapshot = _annotate_projection_failure(
+                self._latest_snapshot,
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
             _ACCOUNT_PROJECTION_LOG.warning(
-                "Hyperliquid shared-account refresh failed: %s",
+                "Hyperliquid shared-account refresh failed (%s): %s",
+                type(exc).__name__,
                 exc,
             )
         return self.snapshot()
@@ -647,12 +749,25 @@ class BinanceFuturesAccountProjectionProvider:
         ):
             return self.snapshot()
 
+        attempt_ts_ms = int(time.time() * 1000)
         try:
-            self._latest_snapshot = asyncio.run(self._fetch_snapshot())
+            snapshot = asyncio.run(self._fetch_snapshot())
+            self._latest_snapshot = _annotate_projection_success(
+                snapshot,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
             self._last_refresh_monotonic = time.monotonic()
         except Exception as exc:
+            self._latest_snapshot = _annotate_projection_failure(
+                self._latest_snapshot,
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
             _ACCOUNT_PROJECTION_LOG.warning(
-                "Binance futures shared-account refresh failed: %s",
+                "Binance futures shared-account refresh failed (%s): %s",
+                type(exc).__name__,
                 exc,
             )
         return self.snapshot()
