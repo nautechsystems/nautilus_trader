@@ -1,16 +1,16 @@
 # Realtime Lane Status
 
 - lane: `lanes/task-8-rt-legacy-adapter`
-- owner: `spec-reviewer`
+- owner: `quality-reviewer`
 - branch: `lanes/task-8-rt-legacy-adapter`
 - worktree: `.worktrees/task-8-rt-legacy-adapter`
 - depends_on: `Task 5: Validate Shared Foundation Compatibility Matrix`
-- write_scope: `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md`, `fluxboard/sockets.test.ts`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`, `docs/plans/realtime-status/rt-legacy-adapter.md`
+- write_scope: `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md`, `fluxboard/sockets.test.ts`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`
 - rollout_control: `legacy adapter bridge for flag-off surfaces`
 - rollback_trigger: `flag-off regression or duplicate subscription path`
-- current status: `completed`
+- current status: `in_review_quality`
 - active task: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
-- current commit or diff: `parent 42faf81e47475b84765ae8f951f0724cac4b3ff8; pending follow-up diff 3 files changed, 162 insertions(+), 23 deletions(-) in fluxboard/hooks/useWebSocket.ts, fluxboard/README.md, fluxboard/__tests__/realtime/legacy-adapter.test.tsx`
+- current commit or diff: `9b6e8d04d27b5ea1a256dfb71acecbcf8bfced9c (4 files changed, 167 insertions(+), 28 deletions(-) from parent 42faf81e47475b84765ae8f951f0724cac4b3ff8)`
 - cutover_packet: `n/a`
 - canary_scope: `shared legacy adapter bridge`
 - minimum_canary_cohort: `n/a`
@@ -23,5 +23,5 @@
 - legacy_traffic_status: `legacy-default`
 - verification run: `baseline: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/compatibility-matrix.test.tsx passed (13 tests) on controller commit 8eaae3342b before Task 8 implementation began. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against the pre-Task-8 baseline because the hook had no third-argument bridge seam. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against commit 7d42f20516742ac257a4b7ac28291936dbe5c949 because registerSharedWebSocketBridge did not exist yet. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against parent ef22f3c6a5076b277346c013b9dc6f80922391d4 because flag-on surfaces still stayed on the legacy path unless resolveMode was injected. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against parent 42faf81e47475b84765ae8f951f0724cac4b3ff8 because late shared bridge registration did not resubscribe existing mounts and shared resolveMode was still ignored in the registered-bridge path. green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx passed (18 tests). green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/compatibility-matrix.test.tsx passed (23 tests).`
 - blockers: `none`
-- notes_last_update: `Task 8 lane created from controller commit 8eaae3342b. Initial implementer commit 7d42f20516742ac257a4b7ac28291936dbe5c949 added the optional bridge seam and adapter regression tests. Follow-up commit ce09c8cb9a8ec3bab1b8bbcd4daf5fe24a5e8f36 added the module-level shared bridge registry while preserving per-call overrides. Follow-up commit 42faf81e47475b84765ae8f951f0724cac4b3ff8 switched production bridge selection to the real realtime surface flag path via useWebSocket(surface) + isRealtimeStandardEnabled(surface). This follow-up makes shared bridge registration reactive for existing mounts, honors shared resolveMode in the registered bridge path with realtime flags as the fallback selector, and collapses the public hook/bridge API back to a single payload generic so the legacy path no longer lies about the handler payload type.`
-- next handoff: `register the shared bridge for the first flag-on surface and rely on the reactive hook-level store plus realtime-flag fallback instead of bespoke resubscribe or mode-selection glue`
+- notes_last_update: `Task 8 lane created from controller commit 8eaae3342b. Initial implementer commit 7d42f20516742ac257a4b7ac28291936dbe5c949 added the optional bridge seam and adapter regression tests. Follow-up commit ce09c8cb9a8ec3bab1b8bbcd4daf5fe24a5e8f36 added the module-level shared bridge registry while preserving per-call overrides. Follow-up commit 42faf81e47475b84765ae8f951f0724cac4b3ff8 switched production bridge selection to the real realtime surface flag path via useWebSocket(surface) + isRealtimeStandardEnabled(surface). Latest commit 9b6e8d04d27b5ea1a256dfb71acecbcf8bfced9c makes shared bridge registration reactive for existing mounts, honors shared resolveMode in the registered bridge path with realtime flags as the fallback selector, and collapses the public hook/bridge API back to a single payload generic so the legacy path no longer lies about the handler payload type.`
+- next handoff: `complete final quality review on 9b6e8d04d27b5ea1a256dfb71acecbcf8bfced9c; if clean, integrate the full Task 8 lane into controller and update the coordinator trackers`
