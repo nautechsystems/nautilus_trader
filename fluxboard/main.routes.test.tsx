@@ -90,6 +90,16 @@ describe('main route builder', () => {
     expect(routes.find((route) => route.path === 'equities')).toBeUndefined();
   });
 
+  it('does not expose parked scanners routes on the default surface', () => {
+    const routes = buildFluxboardChildRoutes(getUiSurface('default'), {
+      includeScannersHarness: true,
+      fallbackPath: '/',
+    });
+
+    expect(routes.find((route) => route.path === 'scanners')).toBeUndefined();
+    expect(routes.find((route) => route.path === 'scanners-harness')).toBeUndefined();
+  });
+
   it('exposes alerts but not order-view route on tokenmm surface', () => {
     const defaultRoutes = buildFluxboardChildRoutes(getUiSurface('default'), {
       includeScannersHarness: false,

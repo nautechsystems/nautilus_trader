@@ -100,6 +100,9 @@ describe('uiProfiles', () => {
     expect(surface.routePaths).not.toContain('/equities');
     expect(surface.routePaths).toContain('/market-data');
     expect(surface.routePaths).not.toContain('/hedger');
+    expect(surface.routePaths).not.toContain('/scanners');
+    expect(surface.routePaths).not.toContain('/scanners-harness');
+    expect(surface.navLinks).not.toContainEqual({ path: '/scanners', label: 'Scanners' });
     expect(surface.externalLinks.length).toBeGreaterThan(0);
   });
 

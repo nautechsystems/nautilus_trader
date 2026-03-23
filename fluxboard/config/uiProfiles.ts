@@ -40,7 +40,6 @@ const TRADER_NAV_LINKS = [
   { path: '/fv', label: 'FV' },
   { path: '/fx', label: 'FX' },
   { path: '/alerts', label: 'Alerts' },
-  { path: '/scanners', label: 'Scanners' },
 ] as const satisfies readonly NavLink[];
 
 const TRADER_ROUTE_PATHS = [
@@ -55,8 +54,6 @@ const TRADER_ROUTE_PATHS = [
   '/fv',
   '/fx',
   '/alerts',
-  '/scanners',
-  '/scanners-harness',
 ] as const;
 
 const MAKER_SUITE_CORE_NAV_LINKS = [
