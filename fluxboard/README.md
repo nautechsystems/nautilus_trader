@@ -179,6 +179,13 @@ New UI work should prefer tokens/theme variables over raw Tailwind color/spacing
 }
 ```
 
+`useWebSocket(event, handler)` remains the default legacy subscription path and makes no
+standard-payload assumptions. Surfaces opting into realtime standardization can pass a
+third argument with `surface`, an injected legacy `subscribe`, and a shared `bridge`
+that resolves `legacy` versus `standard` mode and owns the compatibility subscription.
+That keeps flag-off behavior unchanged while giving flag-on surfaces one reusable bridge
+seam instead of per-panel socket glue.
+
 ## API Endpoints (Proxied to :5022)
 
 - `GET /api/v1/signals` - Strategy state, quote status, and top-level operator signal rows
