@@ -33,10 +33,15 @@ function setPathname(pathname: string) {
   (window.location as unknown as { pathname?: string }).pathname = pathname;
 }
 
-vi.mock('./hooks', () => ({
-  usePolling: (fn: () => unknown | Promise<unknown>, interval: number, enabled?: boolean) =>
-    mockUsePolling(fn, interval, enabled),
-}));
+vi.mock('./hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./hooks')>();
+  return {
+    ...actual,
+    usePolling: (fn: () => unknown | Promise<unknown>, interval: number, enabled?: boolean) =>
+      mockUsePolling(fn, interval, enabled),
+    useWebSocket: vi.fn(),
+  };
+});
 
 const buildPayload = () => ({
   rows: [
@@ -161,7 +166,7 @@ describe('Balances component', () => {
   it('polls balances at the configured interval', async () => {
     render(<Balances />);
     await waitFor(() => {
-      expect(mockUsePolling).toHaveBeenCalledWith(expect.any(Function), INTERVALS.BALANCES_POLL, undefined);
+      expect(mockUsePolling).toHaveBeenCalledWith(expect.any(Function), INTERVALS.BALANCES_POLL, true);
       expect(mockedApi.getBalances).toHaveBeenCalledTimes(1);
     });
 

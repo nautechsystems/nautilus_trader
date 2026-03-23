@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-10-rt-market-balances`
+- owner: `coordinator`
+- branch: `lanes/task-10-rt-market-balances`
+- worktree: `.worktrees/task-10-rt-market-balances`
+- depends_on: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
+- write_scope: `fluxboard/MarketData.tsx`, `fluxboard/Balances.tsx`, `fluxboard/MarketData.test.tsx`, `fluxboard/Balances.test.tsx`, `fluxboard/__tests__/realtime/market-balances-standard.test.tsx`, `fluxboard/__tests__/panels/market-balances.perf.test.tsx`, `fluxboard/e2e/realtime-cutovers/market-balances.spec.ts`, `docs/plans/realtime-surfaces/marketdata-cutover.md`, `docs/plans/realtime-surfaces/balances-cutover.md`
+- rollout_control: `marketdata + balances flags + backend capability`
+- rollback_trigger: `freshness timer regression or mixed-contract drift`
+- current status: `in_review_spec`
+- active task: `Task 10: Migrate MarketData And Balances To The Standard`
+- current commit or diff: `working tree diff for Task 10 owned files`
+- cutover_packet: `docs/plans/realtime-surfaces/marketdata-cutover.md ; docs/plans/realtime-surfaces/balances-cutover.md`
+- canary_scope: `marketdata and balances realtime surfaces`
+- minimum_canary_cohort: `1 internal profile-scoped marketdata/balances canary for 7 consecutive days`
+- minimum_standard_subscribers: `1 flagged MarketData subscriber and 1 flagged Balances subscriber during the cleanup review window`
+- minimum_standard_event_volume: `50 bridge-routed market_update packets or recovery snapshots/day across MarketData + Balances`
+- alert_state: `green in lane-owned verification with compatibility-bridge limitations recorded in the cutover packets`
+- rollback_exercise_result: `pass via task-owned flag-off remount exercise in __tests__/realtime/market-balances-standard.test.tsx; live mid-session flag flips still require remount`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `targeted evidence captured via market-balances standard wiring test, polling-fallback perf slice, and cutover e2e request counts`
+- legacy_traffic_status: `legacy-default`
+- verification run: `pnpm install --frozen-lockfile passed in the Task 10 lane worktree. lane green: pnpm exec vitest run __tests__/realtime/market-balances-standard.test.tsx passed (7 tests), covering shared-clock wiring, MarketData-only rollout, Balances-only rollout, legacy-off baseline, and flag-off remount rollback. lane green: VITEST_FULL=1 pnpm exec vitest run __tests__/panels/market-balances.perf.test.tsx passed (3 tests), including the mounted-page fanout and page-anchor proof for a 200-row MarketData snapshot. lane green: VITEST_FULL=1 pnpm exec vitest run MarketData.test.tsx Balances.test.tsx __tests__/realtime/market-balances-standard.test.tsx __tests__/panels/market-balances.perf.test.tsx __tests__/realtime/legacy-adapter.test.tsx passed (5 files, 48 tests). lane green: pnpm build:test passed. lane green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/market-balances.spec.ts passed (2 tests). Existing MarketData coverage still emits React act() warnings in the focused Vitest slice.`
+- blockers: `none`
+- notes_last_update: `Controller completed the local TDD lane after reclaiming ownership from the failed wrong-workspace subagent passes. Task 10 now has the owned standard wiring tests, polling-fallback perf tests, the cutover e2e spec, and production-grade cutover packets. After the first realtime-risk review surfaced burst-handling flaws, the lane added serialized invalidate-only refreshes for both MarketData and Balances plus a task-owned flag-off remount exercise. After the follow-up spec review surfaced the freshness-clock gap, the lane moved both surfaces onto shared viewport clocks, removed task-local freshness intervals, added explicit MarketData-only and Balances-only rollout coverage, and tightened MarketData's proof to mounted-page behavior with bounded freshness fanout, stable page anchors, and no extra memoized sort before paging. The packets still record the remaining compatibility-phase limitation that these surfaces ride generic legacy market_update invalidation rather than dedicated backend lineage.`
+- next handoff: `Spec review should validate the tightened MarketData proof wording plus the now-explicit surface-isolation and rollback-remount evidence before quality review and integration.`
