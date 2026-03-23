@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-import importlib.util
+from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
 import sys
 from types import SimpleNamespace
 from types import ModuleType
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[5]
+@dataclass(frozen=True)
+class _IBOrderTagsStub:
+    outsideRth: bool = False
+    includeOvernight: bool = False
+
+    @property
+    def value(self) -> str:
+        return f"outsideRth={self.outsideRth};includeOvernight={self.includeOvernight}"
 
 
-def _load_trades_module() -> ModuleType:
-    module_path = _repo_root() / "systems/flux/flux/strategies/shared/trades.py"
-    spec = importlib.util.spec_from_file_location("task3_shared_trades", module_path)
-    assert spec is not None
-    assert spec.loader is not None
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+_IB_COMMON_STUB.IBOrderTags = _IBOrderTagsStub
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
 
 
-build_trade_payload = _load_trades_module().build_trade_payload
+from flux.strategies.shared.trades import build_trade_payload
 
 
 def _instrument(*, raw_symbol: str = "PLUMEUSDT") -> SimpleNamespace:
