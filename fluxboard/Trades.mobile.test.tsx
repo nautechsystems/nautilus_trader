@@ -43,7 +43,11 @@ vi.mock('./utils/storage', () => ({
 }));
 
 vi.mock('./components/trades/TradesTable', () => ({
-  TradesTable: () => <div data-testid="desktop-table" />,
+  TradesTable: (props: any) => (
+    <div data-testid="desktop-table">
+      {String(props.trades?.[0]?.qty ?? 'none')}
+    </div>
+  ),
 }));
 
 const mockGetTrades = vi.mocked(api.getTrades);
@@ -117,5 +121,34 @@ describe('Trades mobile layout', () => {
     expect(screen.getByRole('button', { name: /Prev/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Next/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Jump to latest/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps base quantity as the primary row qty on mobile tokenmm trades', async () => {
+    const okxRow = {
+      ...sampleRow,
+      row_id: 'okx-row',
+      instrument_id: 'PLUME-USDT-SWAP.OKX',
+      exchange: 'okx',
+      coin: 'PLUME',
+      qty: 100,
+      qty_base: '1000',
+      qty_venue: '100',
+    };
+    setupStore();
+    mockGetTrades.mockResolvedValueOnce({
+      rows: [okxRow],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      last_seq: 1,
+      has_more: false,
+      next_cursor: null,
+    } as any);
+
+    render(<Trades variant="mobile" showHeader={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop-table')).toHaveTextContent('1000');
+    });
   });
 });

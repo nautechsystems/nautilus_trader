@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import sqlite3
 
+from nautilus_trader.persistence.orders.actor import order_event_to_row
 from nautilus_trader.persistence.orders.schema import SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
 from nautilus_trader.persistence.orders.sqlite import connect
 from nautilus_trader.persistence.orders.sqlite import ensure_schema
 from nautilus_trader.persistence.orders.sqlite import insert_many
 from nautilus_trader.persistence.orders.sqlite import OrderActionRow
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
 TRADER_ID = "TESTER-001"
@@ -131,6 +134,48 @@ def test_order_action_row_is_constructible_with_named_fields() -> None:
     )
     assert row.decision_context_json == SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
     assert row.event_id == "event-001"
+
+
+def test_order_event_to_row_exposes_operator_quantity_fields_for_order_initialized_events() -> None:
+    instrument = TestInstrumentProvider.ethusdt_perp_binance()
+    order = TestExecStubs.limit_order(instrument=instrument)
+    initialized = order.init_event
+    initialized_dict = initialized.to_dict(initialized)
+    initialized_dict["instrument_id"] = "PLUME-USDT-SWAP.OKX"
+    initialized_dict["quantity"] = "100"
+    initialized_dict["order_qty_base"] = "1000"
+    initialized_dict["order_qty_venue"] = "100"
+    initialized_dict["qty_conversion_status"] = "exact_multiplier"
+    initialized_dict["qty_conversion_source"] = "generic:multiplier"
+
+    row = order_event_to_row(initialized_dict, event_type="OrderInitialized", ts_ingest=123)
+
+    assert row is not None
+    assert row.order_qty == "100"
+    assert row.order_qty_venue == "100"
+    assert row.order_qty_base == "1000"
+    assert row.qty_conversion_status == "exact_multiplier"
+    assert row.qty_conversion_source == "generic:multiplier"
+
+
+def test_order_event_to_row_exposes_matching_base_and_venue_qty_fields_for_identity_contracts() -> None:
+    instrument = TestInstrumentProvider.ethusdt_perp_binance()
+    order = TestExecStubs.limit_order(instrument=instrument)
+    initialized = order.init_event
+    initialized_dict = initialized.to_dict(initialized)
+    initialized_dict["order_qty_base"] = "100"
+    initialized_dict["order_qty_venue"] = "100"
+    initialized_dict["qty_conversion_status"] = "identity"
+    initialized_dict["qty_conversion_source"] = "generic:multiplier=1"
+
+    row = order_event_to_row(initialized_dict, event_type="OrderInitialized", ts_ingest=123)
+
+    assert row is not None
+    assert row.order_qty == "100"
+    assert row.order_qty_venue == "100"
+    assert row.order_qty_base == "100"
+    assert row.qty_conversion_status == "identity"
+    assert row.qty_conversion_source == "generic:multiplier=1"
 
 
 def test_insert_many_is_idempotent_on_trader_id_event_id(tmp_path) -> None:
@@ -254,6 +299,24 @@ def test_schema_default_decision_context_json_is_json_literal_null_not_sql_null(
     ).fetchone()
     assert row["decision_context_json"] == SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
     assert row["is_null"] == 0
+
+    conn.close()
+
+
+def test_order_action_schema_exposes_operator_quantity_columns(tmp_path) -> None:
+    db_path = tmp_path / "orders.sqlite"
+    conn = connect(str(db_path))
+    ensure_schema(conn)
+
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(order_action)").fetchall()
+    }
+
+    assert "order_qty_base" in columns
+    assert "order_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
 
     conn.close()
 

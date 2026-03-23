@@ -402,6 +402,65 @@ def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
     client.disconnect()
 
 
+def test_socket_emitter_trade_update_projects_base_qty_when_explicit_fields_are_present(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-okx-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
+    emitter.stop()
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    assert len(trade_packets) == 1
+    trade_payload = trade_packets[0]["args"][0]["trade"]
+    assert trade_payload["qty"] == "1000"
+    assert trade_payload["qty_base"] == "1000"
+    assert trade_payload["qty_venue"] == "100"
+    assert trade_payload["qty_conversion_status"] == "exact_multiplier"
+    client.disconnect()
+
+
 def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signals(
     flux_config,
     redis_client,

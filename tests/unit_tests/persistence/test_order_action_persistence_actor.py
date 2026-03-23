@@ -23,6 +23,14 @@ import pytest
 
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.orders.actor import OrderActionPersistenceActor
 from nautilus_trader.persistence.orders.actor import _current_ts_ingest_ns
 from nautilus_trader.persistence.orders.actor import _writer_startup_timeout_seconds
@@ -38,6 +46,35 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 ACTION_INTENT_TOPIC = "flux.makerv3.order_intent"
 EXECUTION_TIMING_TOPIC = "events.execution.timing"
+
+
+def _okx_linear_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("PLUME-USDT-SWAP"),
+            venue=Venue("OKX"),
+        ),
+        raw_symbol=Symbol("PLUME-USDT-SWAP"),
+        base_currency=Currency.from_str("PLUME"),
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=4,
+        size_precision=0,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("1"),
+        multiplier=Quantity.from_str("10"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={
+            "base_exposure_mode": "exact_multiplier",
+            "okx_ct_val": "10",
+            "okx_ct_val_ccy": "PLUME",
+            "okx_ct_type": "linear",
+            "okx_lot_sz": "1",
+        },
+    )
 
 
 def _row_count(db_path: str) -> int:
@@ -349,6 +386,74 @@ def test_actor_snapshots_order_initialized_tags_and_options_before_background_tr
     assert row is not None
     assert row["action_id"] is None
     assert row["order_px"] == original_order_px
+
+
+def test_actor_persists_operator_quantity_fields_for_exact_multiplier_order_initialized_events(tmp_path) -> None:
+    actor, _, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+    )
+    instrument = _okx_linear_perpetual()
+    actor.cache.add_instrument(instrument)
+    order = TestExecStubs.limit_order(instrument=instrument)
+    initialized = order.init_event
+
+    actor.start()
+    actor.on_order_event(initialized)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT order_qty, order_qty_venue, order_qty_base, qty_conversion_status, qty_conversion_source
+        FROM order_action
+        WHERE event_type = 'OrderInitialized' AND client_order_id = ?
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["order_qty"] == "100"
+    assert row["order_qty_venue"] == "100"
+    assert row["order_qty_base"] == "1000"
+    assert row["qty_conversion_status"] == "exact_multiplier"
+    assert row["qty_conversion_source"] == "generic:multiplier"
+
+
+def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_order_initialized_events(
+    tmp_path,
+) -> None:
+    actor, _, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.ethusdt_perp_binance()
+    actor.cache.add_instrument(instrument)
+    order = TestExecStubs.limit_order(instrument=instrument)
+    initialized = order.init_event
+
+    actor.start()
+    actor.on_order_event(initialized)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT order_qty, order_qty_venue, order_qty_base, qty_conversion_status, qty_conversion_source
+        FROM order_action
+        WHERE event_type = 'OrderInitialized' AND client_order_id = ?
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["order_qty"] == "100"
+    assert row["order_qty_venue"] == "100"
+    assert row["order_qty_base"] == "100"
+    assert row["qty_conversion_status"] == "identity"
+    assert row["qty_conversion_source"] == "generic:multiplier=1"
 
 
 def test_actor_ignores_order_filled_events_on_order_topic(tmp_path) -> None:

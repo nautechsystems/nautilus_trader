@@ -287,6 +287,69 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
     assert generated_row["version"] == 1
 
 
+def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_present(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-okx",
+                "seq": 101,
+                "ts_ms": 101_000,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "buy",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        trades_response = client.get("/api/v1/trades", query_string={"limit": 10, "offset": 0})
+        trades_body = trades_response.get_json()
+        delta_response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"since_seq": 100, "limit": 10},
+        )
+        delta_body = delta_response.get_json()
+
+    assert trades_response.status_code == 200
+    trade_row = trades_body["data"]["rows"][0]
+    assert trade_row["qty"] == "1000"
+    assert trade_row["qty_base"] == "1000"
+    assert trade_row["qty_venue"] == "100"
+    assert trade_row["qty_conversion_status"] == "exact_multiplier"
+
+    assert delta_response.status_code == 200
+    delta_row = delta_body["data"]["rows"][0]
+    assert delta_row["qty"] == "1000"
+    assert delta_row["qty_base"] == "1000"
+    assert delta_row["qty_venue"] == "100"
+    assert delta_row["row_id"] == "t-okx"
+
+
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
     flux_config,
     redis_client,

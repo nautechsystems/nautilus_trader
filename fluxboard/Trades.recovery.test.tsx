@@ -7,12 +7,17 @@ import { socket } from './sockets';
 import { useTradesStore } from './stores';
 import type { TradeRow } from './types';
 
-vi.mock('./api', () => ({
-  api: {
-    getTrades: vi.fn(),
-    getTradesDelta: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades: vi.fn(),
+      getTradesDelta: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./sockets', () => ({
   socket: {
@@ -274,5 +279,55 @@ describe('Trades recovery regressions', () => {
     });
 
     await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
+  });
+
+  it('passes base-first qty and explicit qty_venue through socket recovery normalization', async () => {
+    const { applyDelta } = setupStore();
+    mockGetTrades.mockResolvedValue({
+      rows: [],
+      total: 0,
+      page: 1,
+      page_size: 100,
+      last_seq: 0,
+      has_more: false,
+      next_cursor: null,
+    });
+    mockGetTradesDelta.mockResolvedValue({ rows: [], last_seq: 0, reset_required: false });
+
+    render(<Trades />);
+    await waitFor(() => expect(mockGetTrades).toHaveBeenCalledTimes(1));
+
+    const tradeUpdateHandler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
+    expect(tradeUpdateHandler).toBeInstanceOf(Function);
+
+    act(() => {
+      tradeUpdateHandler?.({
+        op: 'upsert',
+        row_id: 'row-okx',
+        seq: 6,
+        version: 1,
+        trade: {
+          row_id: 'row-okx',
+          version: 1,
+          seq: 6,
+          ts_ms: 1772700209799,
+          instrument_id: 'PLUME-USDT-SWAP.OKX',
+          exchange: 'okx',
+          side: '1',
+          price: '0.012736',
+          qty: '100',
+          qty_base: '1000',
+          qty_venue: '100',
+          qty_conversion_status: 'exact_multiplier',
+          trade_id: 'row-okx',
+          client_order_id: 'O-OKX-1',
+        },
+      });
+    });
+
+    await waitFor(() => expect(applyDelta).toHaveBeenCalledTimes(1));
+    const [rows] = applyDelta.mock.calls[0] as [Array<Record<string, unknown>>];
+    expect(rows[0]?.qty).toBe(1000);
+    expect(rows[0]?.qty_venue).toBe('100');
   });
 });

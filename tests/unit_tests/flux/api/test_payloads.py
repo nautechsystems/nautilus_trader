@@ -2375,6 +2375,35 @@ def test_build_trades_rows_derives_canonical_naming_fields_for_plume_instruments
     assert by_id["trade-okx-perp"]["display_name_long"] == "Okx PLUME Perp"
 
 
+def test_build_trades_rows_prefers_explicit_base_qty_for_operator_contract() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-okx-perp",
+                "ts_ms": 1700000000003,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+                "price": "0.012736",
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+    )
+
+    assert rows[0]["qty"] == "1000"
+    assert rows[0]["qty_base"] == "1000"
+    assert rows[0]["qty_venue"] == "100"
+    assert rows[0]["qty_conversion_status"] == "exact_multiplier"
+
+
 def test_enrich_balances_rows_adds_canonical_naming_fields() -> None:
     rows = [
         {

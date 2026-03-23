@@ -24,6 +24,14 @@ import pytest
 
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.fills.actor import ExecutionFillPersistenceActor
 from nautilus_trader.persistence.fills.actor import _writer_startup_timeout_seconds
 from nautilus_trader.persistence.fills.config import ExecutionFillPersistenceActorConfig
@@ -37,6 +45,35 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 ACTION_INTENT_TOPIC = "flux.makerv3.order_intent"
 EXECUTION_TIMING_TOPIC = "events.execution.timing"
+
+
+def _okx_linear_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("PLUME-USDT-SWAP"),
+            venue=Venue("OKX"),
+        ),
+        raw_symbol=Symbol("PLUME-USDT-SWAP"),
+        base_currency=Currency.from_str("PLUME"),
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=4,
+        size_precision=0,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("1"),
+        multiplier=Quantity.from_str("10"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={
+            "base_exposure_mode": "exact_multiplier",
+            "okx_ct_val": "10",
+            "okx_ct_val_ccy": "PLUME",
+            "okx_ct_type": "linear",
+            "okx_lot_sz": "1",
+        },
+    )
 
 
 def _make_fill(instrument, trade_id=None, ts_event: int = 123):
@@ -238,6 +275,64 @@ def test_actor_snapshots_fill_info_before_background_transform(tmp_path) -> None
     assert row is not None
     assert '"before"' in row["info_json"]
     assert '"after"' not in row["info_json"]
+
+
+def test_actor_persists_operator_quantity_fields_for_exact_multiplier_fills(tmp_path) -> None:
+    actor, _, db_path = _make_actor(tmp_path, run_writer_thread=False)
+    instrument = _okx_linear_perpetual()
+    actor.cache.add_instrument(instrument)
+    fill = _make_fill(instrument=instrument, ts_event=161)
+
+    actor.start()
+    actor.on_order_filled(fill)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT last_qty, last_qty_venue, last_qty_base, qty_conversion_status, qty_conversion_source
+        FROM execution_fill
+        WHERE event_id = ?
+        """,
+        (fill.id.value,),
+    )
+
+    assert row is not None
+    assert row["last_qty"] == "100"
+    assert row["last_qty_venue"] == "100"
+    assert row["last_qty_base"] == "1000"
+    assert row["qty_conversion_status"] == "exact_multiplier"
+    assert row["qty_conversion_source"] == "generic:multiplier"
+
+
+def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_fills(tmp_path) -> None:
+    actor, _, db_path = _make_actor(tmp_path, run_writer_thread=False)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    actor.cache.add_instrument(instrument)
+    fill = _make_fill(instrument=instrument, ts_event=162)
+
+    actor.start()
+    actor.on_order_filled(fill)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT last_qty, last_qty_venue, last_qty_base, qty_conversion_status, qty_conversion_source
+        FROM execution_fill
+        WHERE event_id = ?
+        """,
+        (fill.id.value,),
+    )
+
+    assert row is not None
+    assert row["last_qty"] == "100"
+    assert row["last_qty_venue"] == "100"
+    assert row["last_qty_base"] == "100"
+    assert row["qty_conversion_status"] == "identity"
+    assert row["qty_conversion_source"] == "generic:multiplier=1"
 
 
 def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
