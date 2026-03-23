@@ -8,9 +8,9 @@
 - write_scope: `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/__tests__/panels/signal.virtualization.test.tsx`, `fluxboard/e2e/realtime-soak.spec.ts`, `docs/plans/2026-03-19-fluxboard-performance-improvement-plan.md`, `systems/flux/docs/realtime-rollout.md`
 - rollout_control: `mixed-surface cleanup rehearsal before cleanup execution`
 - rollback_trigger: `soak failure, budget miss, or mixed-rollout instability`
-- current status: `in_review_spec`
+- current status: `completed`
 - active task: `Task 12: Run Final Rollout Validation And Cleanup Readiness Review`
-- current commit or diff: `working tree`
+- current commit or diff: `ec7349eb5a`
 - cutover_packet: `docs/plans/2026-03-19-fluxboard-performance-improvement-plan.md ; systems/flux/docs/realtime-rollout.md`
 - canary_scope: `final mixed-surface rollout validation for Signal, Trades, Alerts, MarketData, and Balances`
 - minimum_canary_cohort: `all active standard surfaces must have completed their per-surface cutover checkpoints before cleanup`
@@ -24,4 +24,4 @@
 - verification run: `pnpm build:test PASS; VITEST_FULL=1 pnpm exec vitest run __tests__/panels/signal.virtualization.test.tsx __tests__/panels/signal.test.tsx tests/signal/SignalTable.audit.test.tsx __tests__/ui/DataTable.test.tsx __tests__/realtime/baseline-budgets.test.tsx __tests__/realtime/compatibility-matrix.test.tsx PASS (65 tests); E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-soak.spec.ts PASS (1 test); PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus-trader-dev/.worktrees/task-3-rt-backend/.venv/bin/pytest -q tests/unit_tests/flux/api/test_realtime_contract.py tests/unit_tests/flux/api/test_tokenmm_compat.py --confcutdir=tests/unit_tests/flux/api PASS (28 tests) after temporary runtime-artifact links were added into the Task 12 worktree and then removed after verification`
 - blockers: `none`
 - notes_last_update: `The new realtime soak gate went red on mounted dashboard row count and exposed that the standard Signal table path was not actually wiring a virtualizer into DataTable. Task 12 fixed that regression in SignalTable, reran the mixed-surface rehearsal green, added explicit polling_only compatibility verification, and then closed the backend contract verification gap with a fresh 28-test pytest pass using the Task 3 backend venv plus temporary runtime-artifact links. The actual 7-day cleanup-review traffic thresholds still come from rollout metrics and cutover packets rather than this synthetic lane test.`
-- next handoff: `Run spec review on the working tree, then quality review, then commit and integrate the Task 12 lane.`
+- next handoff: `Cherry-pick ec7349eb5a into controller, then sync the shared tracker and controller-facing completion note.`
