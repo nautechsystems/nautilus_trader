@@ -14,15 +14,19 @@ class _FakeAccountProjectionProvider:
         *,
         rows: list[dict[str, Any]],
         totals: dict[str, Any] | None = None,
+        extra_snapshot_fields: dict[str, Any] | None = None,
     ) -> None:
         self._rows = rows
         self._totals = totals or {}
+        self._extra_snapshot_fields = extra_snapshot_fields or {}
 
     def snapshot(self) -> dict[str, Any] | None:
-        return {
+        snapshot = {
             "rows": list(self._rows),
             "totals": dict(self._totals),
         }
+        snapshot.update(self._extra_snapshot_fields)
+        return snapshot
 
 
 def test_profile_account_projection_publishes_ibkr_positions_without_strategy_snapshots() -> None:
@@ -190,6 +194,55 @@ def test_profile_account_projection_round_trip_preserves_rows_and_scope_keys() -
         )
         == "flux:v1:profile:account_projection:equities:ibkr.reference.main"
     )
+
+
+def test_profile_account_projection_preserves_projection_status_scope_status_and_row_reconciliation_flags() -> None:
+    from nautilus_trader.flux.common.account_projection import build_profile_account_snapshot
+
+    projection_status = {
+        "healthy": False,
+        "last_success_ts_ms": 1_700_000_000_000,
+        "last_attempt_ts_ms": 1_700_000_015_000,
+        "last_error_type": "TimeoutError",
+        "last_error_message": "",
+        "stale_after_ms": 15_000,
+    }
+
+    snapshot = build_profile_account_snapshot(
+        profile_id="equities",
+        bindings=[
+            ProfileAccountProviderBinding(
+                account_scope_id="ibkr.reference.main",
+                source_strategy_ids=("aapl_tradexyz_makerv4",),
+                provider=_FakeAccountProjectionProvider(
+                    rows=[
+                        {
+                            "exchange": "ibkr",
+                            "account": "U1234567",
+                            "asset": "USD",
+                            "total": "1000",
+                            "stale": True,
+                            "include_in_reconciliation": False,
+                        },
+                    ],
+                    extra_snapshot_fields={
+                        "projection_status": projection_status,
+                    },
+                ),
+            ),
+        ],
+        ts_ms=1_700_000_020_000,
+    )
+
+    assert snapshot["rows"][0]["stale"] is True
+    assert snapshot["rows"][0]["include_in_reconciliation"] is False
+    assert snapshot["scope_status"] == [
+        {
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": projection_status,
+        },
+    ]
 
 
 def test_account_scope_decoder_requires_provider_and_scope_id() -> None:

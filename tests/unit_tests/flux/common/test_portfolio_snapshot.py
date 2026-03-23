@@ -624,3 +624,57 @@ def test_build_portfolio_snapshot_v2_keeps_same_stock_multivenue_components_unde
         "pltr_tradexyz_makerv4",
         "pltr_binance_perp_makerv4",
     ]
+
+
+def test_build_portfolio_snapshot_v2_preserves_account_scope_status_and_reconciliation_flags() -> None:
+    snapshot = build_portfolio_snapshot_v2(
+        portfolio_id="equities",
+        inventory_by_asset={
+            "INTC": {
+                "base_currency": "INTC",
+                "global_qty_base": "0",
+            },
+        },
+        balance_rows=[],
+        account_rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U1234567",
+                "asset": "USD",
+                "total": "1000",
+                "mark_raw": 1.0,
+                "mv_raw": 1000.0,
+                "source_scope": "shared_account",
+                "account_scope_id": "ibkr.reference.main",
+                "source_strategy_ids": ["intc_binance_perp_makerv4"],
+                "stale": True,
+                "include_in_reconciliation": False,
+            },
+        ],
+        account_scope_status=[
+            {
+                "account_scope_id": "ibkr.reference.main",
+                "source_scope": "shared_account",
+                "projection_status": {
+                    "healthy": False,
+                    "last_success_ts_ms": 1_700_000_000_000,
+                    "last_error_type": "TimeoutError",
+                },
+            },
+        ],
+        now_ms_value=1_700_000_020_000,
+    )
+
+    assert snapshot["accounts"]["rows"][0]["stale"] is True
+    assert snapshot["accounts"]["rows"][0]["include_in_reconciliation"] is False
+    assert snapshot["accounts"]["scope_status"] == [
+        {
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_error_type": "TimeoutError",
+            },
+        },
+    ]

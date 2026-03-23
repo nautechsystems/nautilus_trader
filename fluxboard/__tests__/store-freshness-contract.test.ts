@@ -364,6 +364,33 @@ describe('store freshness contract', () => {
     expect(afterClear.lastUpdate).toBe(Date.parse('2026-02-11T00:00:07.000Z'));
   });
 
+  it('balances: freshness selector follows backend generated_at rather than payload receive time', () => {
+    vi.setSystemTime(new Date('2026-02-11T00:00:10.000Z'));
+
+    useBalancesStore.getState().setData({
+      rows: [
+        {
+          id: 'intc-parent',
+          coin: 'INTC',
+          canonical: 'INTC',
+          qty_raw: 3,
+          mv_raw: 132.3,
+          mark_raw: 44.1,
+          last_ts: 1000,
+          children: [],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 132.3, mv_display: '$132.30' },
+      generated_at: '2026-02-11T00:00:00.000Z',
+      risk_groups: [],
+    } as any);
+
+    const state = useBalancesStore.getState();
+    expect(state.lastReceiveTs).toBe(Date.parse('2026-02-11T00:00:10.000Z'));
+    expect(selectBalancesFreshnessTs(state)).toBe(Date.parse('2026-02-11T00:00:00.000Z'));
+  });
+
   it('freshness selectors prefer lastDataTs and handle lastUpdate fallback safely', () => {
     const withData = { lastUpdate: 10, lastDataTs: 20 } as any;
     const legacyOnly = { lastUpdate: 30, lastDataTs: undefined } as any;

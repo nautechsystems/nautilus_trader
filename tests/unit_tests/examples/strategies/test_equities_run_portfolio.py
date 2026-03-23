@@ -1432,6 +1432,105 @@ def test_equities_portfolio_runner_parses_portfolio_margin_cross_wallet_balances
     assert cash_row["row_id"] != "shared_account:acc:0"
 
 
+def test_equities_portfolio_runner_marks_portfolio_margin_projection_healthy_when_isolated_margin_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    class _FakeBinanceFuturesAccountHttpAPI:
+        def __init__(
+            self,
+            client: Any,
+            clock: Any,
+            account_type: Any,
+            private_api_family: Any | None = None,
+        ) -> None:
+            _ = (client, clock, account_type, private_api_family)
+
+        async def query_futures_account_info(self, recv_window: str | None = None) -> Any:
+            assert recv_window == "5000"
+            return SimpleNamespace(
+                totalMarginBalance="1025.5",
+                availableBalance="1000.0",
+                maxWithdrawAmount="995.0",
+                assets=[
+                    SimpleNamespace(
+                        asset="USDT",
+                        walletBalance="1000.0",
+                        availableBalance="975.0",
+                    ),
+                ],
+            )
+
+        async def query_futures_position_risk(
+            self,
+            symbol: str | None = None,
+            recv_window: str | None = None,
+        ) -> list[Any]:
+            assert symbol is None
+            assert recv_window == "5000"
+            return [
+                SimpleNamespace(
+                    symbol="PLTRUSDT",
+                    positionAmt="12.5",
+                    entryPrice="95.0",
+                    markPrice="96.0",
+                    unRealizedProfit="12.5",
+                    updateTime=1_700_000_000_000,
+                ),
+            ]
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_binance_http_client",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceFuturesAccountHttpAPI",
+        _FakeBinanceFuturesAccountHttpAPI,
+    )
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.BinanceSpotAccountHttpAPI",
+        type(
+            "_FakeBinanceSpotAccountHttpAPI",
+            (),
+            {
+                "__init__": lambda self, client, clock, account_type: None,
+                "query_spot_account_info": lambda self, recv_window=None: asyncio.sleep(0, result=SimpleNamespace(balances=[])),
+            },
+        ),
+    )
+
+    provider = build_account_projection_provider(
+        scope_config=decode_account_scopes(
+            [
+                {
+                    "scope_id": "binance.futures.main",
+                    "provider": "binance",
+                    "venue": "BINANCE_PERP",
+                    "api_key_env": "EQUITIES_BINANCE_API_KEY",
+                    "api_secret_env": "EQUITIES_BINANCE_API_SECRET",
+                    "account_type": "USDT_FUTURES",
+                    "private_api_family": "PORTFOLIO_MARGIN",
+                    "recv_window_ms": 5000,
+                },
+            ],
+        )[0],
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_makerv4",),
+    )
+
+    assert provider is not None
+    provider.refresh()
+    snapshot = provider.snapshot()
+
+    assert snapshot is not None
+    position_row = next(row for row in snapshot["rows"] if row.get("kind") == "position")
+    assert position_row["instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert snapshot["projection_status"]["healthy"] is True
+    assert snapshot["projection_status"]["last_error_type"] is None
+
+
 def test_equities_portfolio_runner_omits_empty_binance_shared_account_wrapper_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1638,6 +1737,174 @@ def test_equities_portfolio_aggregator_clears_stale_empty_account_projection() -
     snapshot = json.loads(snapshot_raw)
     assert snapshot["accounts"]["rows"] == []
     assert provider.refresh_calls == 2
+
+
+def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_refresh_failure() -> None:
+    class ValidationError(Exception):
+        pass
+
+    class _FailingProjectionProvider:
+        def __init__(self) -> None:
+            self.refresh_calls = 0
+            self._snapshot = {
+                "source_scope": "shared_account",
+                "rows": [
+                    {
+                        "exchange": "ibkr",
+                        "account": "U1234567",
+                        "asset": "USD",
+                        "total": "1000",
+                        "ts_ms": 1_700_000_000_000,
+                        "stale": True,
+                        "include_in_reconciliation": False,
+                    },
+                ],
+                "totals": {"account_equity_raw": 1000.0},
+                "projection_status": {
+                    "healthy": False,
+                    "last_success_ts_ms": 1_700_000_000_000,
+                    "last_attempt_ts_ms": 1_700_000_015_000,
+                    "last_error_type": "ValidationError",
+                    "last_error_message": "bad binance payload",
+                    "stale_after_ms": 15_000,
+                },
+            }
+
+        def refresh(self) -> None:
+            self.refresh_calls += 1
+            raise ValidationError("bad binance payload")
+
+        def snapshot(self) -> dict[str, Any]:
+            return {
+                "source_scope": self._snapshot["source_scope"],
+                "rows": [dict(row) for row in self._snapshot["rows"]],
+                "totals": dict(self._snapshot["totals"]),
+                "projection_status": dict(self._snapshot["projection_status"]),
+            }
+
+    class _HealthyProjectionProvider:
+        def __init__(self) -> None:
+            self.refresh_calls = 0
+            self._snapshot = {
+                "source_scope": "shared_account",
+                "rows": [
+                    {
+                        "exchange": "binance_perp",
+                        "account": "BINANCE_PERP-master",
+                        "asset": "USDT",
+                        "total": "5000",
+                        "ts_ms": 1_700_000_015_000,
+                        "stale": False,
+                        "include_in_reconciliation": True,
+                    },
+                ],
+                "totals": {"withdrawable_raw": 5000.0},
+                "projection_status": {
+                    "healthy": True,
+                    "last_success_ts_ms": 1_700_000_015_000,
+                    "last_attempt_ts_ms": 1_700_000_015_000,
+                    "last_error_type": None,
+                    "last_error_message": None,
+                    "stale_after_ms": 15_000,
+                },
+            }
+
+        def refresh(self) -> None:
+            self.refresh_calls += 1
+
+        def snapshot(self) -> dict[str, Any]:
+            return {
+                "source_scope": self._snapshot["source_scope"],
+                "rows": [dict(row) for row in self._snapshot["rows"]],
+                "totals": dict(self._snapshot["totals"]),
+                "projection_status": dict(self._snapshot["projection_status"]),
+            }
+
+    fake_redis = _FakeRedis()
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = []
+    aggregator._required_strategy_ids = set()
+    aggregator._base_assets = []
+    aggregator._strategy_ids_by_asset = {}
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["ibkr.reference.main", "binance.futures.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.reference.main",
+            source_strategy_ids=("intc_binance_perp_makerv4",),
+            provider=_FailingProjectionProvider(),
+        ),
+        ProfileAccountProviderBinding(
+            account_scope_id="binance.futures.main",
+            source_strategy_ids=("intc_binance_perp_makerv4",),
+            provider=_HealthyProjectionProvider(),
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    ibkr_projection_raw = fake_redis.get(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+        ),
+    )
+    assert ibkr_projection_raw is not None
+    ibkr_projection = json.loads(ibkr_projection_raw)
+    assert ibkr_projection["rows"][0]["stale"] is True
+    assert ibkr_projection["rows"][0]["include_in_reconciliation"] is False
+    assert ibkr_projection["scope_status"] == [
+        {
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_attempt_ts_ms": 1_700_000_015_000,
+                "last_error_type": "ValidationError",
+                "last_error_message": "bad binance payload",
+                "stale_after_ms": 15_000,
+            },
+        },
+    ]
+
+    portfolio_snapshot_raw = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert portfolio_snapshot_raw is not None
+    portfolio_snapshot = json.loads(portfolio_snapshot_raw)
+    assert portfolio_snapshot["accounts"]["scope_status"] == [
+        {
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_attempt_ts_ms": 1_700_000_015_000,
+                "last_error_type": "ValidationError",
+                "last_error_message": "bad binance payload",
+                "stale_after_ms": 15_000,
+            },
+        },
+        {
+            "account_scope_id": "binance.futures.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": True,
+                "last_success_ts_ms": 1_700_000_015_000,
+                "last_attempt_ts_ms": 1_700_000_015_000,
+                "last_error_type": None,
+                "last_error_message": None,
+                "stale_after_ms": 15_000,
+            },
+        },
+    ]
 
 
 def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_v2() -> None:

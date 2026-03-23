@@ -2904,6 +2904,220 @@ def test_balances_profile_equities_preserves_shared_account_provenance_fields(
     assert "strategy_id" not in ibkr_cash_row
 
 
+def test_balances_profile_equities_fallback_marks_stale_shared_account_scope_status(
+    monkeypatch,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_000_200)
+    strategy_id = "intc_binance_perp_makerv4"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="binance_perp",
+            reference_venue="ibkr",
+            execution_symbol="INTC/USDT",
+            reference_symbol="INTC/USD",
+        ),
+    )
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0", "bot_on": "0"})
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": strategy_id,
+                "exchange": "binance_perp",
+                "account": "BINANCE_PERP-master",
+                "asset": "USDT",
+                "free": "1",
+                "total": "1",
+                "ts_ms": 1_700_000_000_150,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["ibkr.reference.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:USD",
+                    "exchange": "ibkr",
+                    "account": "U1234567",
+                    "asset": "USD",
+                    "free": "1000",
+                    "total": "1000",
+                    "ts_ms": 1_700_000_000_000,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "ibkr.reference.main",
+                    "source_strategy_ids": [strategy_id],
+                    "stale": True,
+                    "include_in_reconciliation": False,
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 1000.0,
+            },
+            "scope_status": [
+                {
+                    "account_scope_id": "ibkr.reference.main",
+                    "source_scope": "shared_account",
+                    "projection_status": {
+                        "healthy": False,
+                        "last_success_ts_ms": 1_700_000_000_000,
+                        "last_attempt_ts_ms": 1_700_000_000_150,
+                        "last_error_type": "TimeoutError",
+                        "last_error_message": "",
+                        "stale_after_ms": 15_000,
+                    },
+                },
+            ],
+            "server_ts_ms": 1_700_000_000_150,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="binance.futures.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["binance.futures.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:binance.futures.main:cash:binance_perp:BINANCE_PERP-master:USDT",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE_PERP-master",
+                    "asset": "USDT",
+                    "free": "5000",
+                    "total": "5000",
+                    "ts_ms": 1_700_000_000_180,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "binance.futures.main",
+                    "source_strategy_ids": [strategy_id],
+                    "stale": False,
+                    "include_in_reconciliation": True,
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 5000.0,
+            },
+            "scope_status": [
+                {
+                    "account_scope_id": "binance.futures.main",
+                    "source_scope": "shared_account",
+                    "projection_status": {
+                        "healthy": True,
+                        "last_success_ts_ms": 1_700_000_000_180,
+                        "last_attempt_ts_ms": 1_700_000_000_180,
+                        "last_error_type": None,
+                        "last_error_message": None,
+                        "stale_after_ms": 15_000,
+                    },
+                },
+            ],
+            "server_ts_ms": 1_700_000_000_180,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="binance_perp",
+                symbol="INTC/USDT",
+                instrument_id="INTCUSDT-PERP.BINANCE_PERP",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="INTC/USD",
+                instrument_id="INTC.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="INTC",
+            quote_asset="USD",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+            strategy_version="v4",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="makerv4",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["degraded"] is True
+    assert body["data"]["scope_status"] == [
+        {
+            "account_scope_id": "binance.futures.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": True,
+                "last_success_ts_ms": 1_700_000_000_180,
+                "last_attempt_ts_ms": 1_700_000_000_180,
+                "last_error_type": None,
+                "last_error_message": None,
+                "stale_after_ms": 15_000,
+            },
+        },
+        {
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_attempt_ts_ms": 1_700_000_000_150,
+                "last_error_type": "TimeoutError",
+                "last_error_message": "",
+                "stale_after_ms": 15_000,
+            },
+        },
+    ]
+    stale_row = next(
+        row
+        for row in body["data"]["rows"]
+        if row.get("account_scope_id") == "ibkr.reference.main"
+    )
+    healthy_row = next(
+        row
+        for row in body["data"]["rows"]
+        if row.get("account_scope_id") == "binance.futures.main"
+    )
+    assert stale_row["stale"] is True
+    assert stale_row["include_in_reconciliation"] is False
+    assert healthy_row["stale"] is False
+    assert healthy_row["include_in_reconciliation"] is True
+
+
 def test_balances_profile_equities_preserves_shared_account_provenance_when_makerv3_and_makerv4_coexist(
     monkeypatch,
     redis_client,
