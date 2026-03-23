@@ -62,14 +62,14 @@ def test_makerv4_defaults_enable_instant_hedge_and_fee_controls() -> None:
     assert defaults["hedge_style"] == "ioc_through_mid"
     assert defaults["hedge_ioc_cross_mid_bps"] == 2.0
     assert defaults["hedge_ioc_max_cross_bps"] == 10.0
-    assert defaults["maker_fee_source"] == "hyperliquid_api"
+    assert defaults["maker_fee_source"] == "config"
     assert defaults["hedge_fee_source"] == "config"
     assert getattr(config, "hedge_fee_plan", None) == "ibkr_pro_tiered"
     assert defaults["hedge_fee_plan"] == "ibkr_pro_tiered"
     assert defaults["ibkr_fee_plan"] == "tiered"
     assert defaults["ibkr_fee_min_usd"] == 0.35
-    assert defaults["hl_taker_fee_bps"] == 4.5
-    assert defaults["hl_maker_fee_bps"] == 0.25
+    assert defaults["maker_taker_fee_bps"] == 4.5
+    assert defaults["maker_maker_fee_bps"] == 0.25
     assert defaults["assumed_hedge_fee_bps"] == 1.0
     assert schema["hedge_style"]["type"] == "select"
     assert schema["hedge_style"]["options"] == [
@@ -77,7 +77,8 @@ def test_makerv4_defaults_enable_instant_hedge_and_fee_controls() -> None:
     ]
     assert schema["maker_fee_source"]["type"] == "select"
     assert schema["maker_fee_source"]["options"] == [
-        ["hyperliquid_api", "Hyperliquid API"],
+        ["config", "Configured Assumption"],
+        ["hyperliquid_api", "Legacy Hyperliquid API"],
     ]
     assert schema["hedge_fee_source"]["type"] == "select"
     assert schema["hedge_fee_source"]["options"] == [
@@ -93,8 +94,8 @@ def test_makerv4_defaults_enable_instant_hedge_and_fee_controls() -> None:
         ["tiered", "Tiered"],
     ]
     assert schema["ibkr_fee_min_usd"]["type"] == "number"
-    assert schema["hl_taker_fee_bps"]["type"] == "number"
-    assert schema["hl_maker_fee_bps"]["type"] == "number"
+    assert schema["maker_taker_fee_bps"]["type"] == "number"
+    assert schema["maker_maker_fee_bps"]["type"] == "number"
 
 
 def test_makerv4_execution_mode_defaults_include_take_take_controls() -> None:
@@ -118,7 +119,7 @@ def test_makerv4_execution_mode_defaults_include_take_take_controls() -> None:
 def test_resolve_fee_rules_exposes_explicit_hedge_fee_plan_without_account_id() -> None:
     rules = fees_mod.resolve_fee_rules(
         runtime_params={
-            "maker_fee_source": "hyperliquid_api",
+            "maker_fee_source": "config",
             "hedge_fee_source": "config",
             "hedge_fee_plan": "ibkr_pro_tiered",
             "assumed_hedge_fee_bps": 1.25,
@@ -142,13 +143,13 @@ def test_params_manager_factory_uses_makerv4_param_set_and_select_defaults() -> 
             "ask_edge_take_bps": 8.5,
             "take_cooldown_ms": 2_500,
             "hedge_style": "ioc_through_mid",
-            "maker_fee_source": "hyperliquid_api",
+            "maker_fee_source": "config",
             "hedge_fee_source": "config",
             "hedge_fee_plan": "ibkr_pro_tiered",
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "hl_taker_fee_bps": 4.5,
-            "hl_maker_fee_bps": 0.25,
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.5,
         },
         ts_ms=123,
@@ -161,13 +162,13 @@ def test_params_manager_factory_uses_makerv4_param_set_and_select_defaults() -> 
     assert manager.defaults["ask_edge_take_bps"] == 5.0
     assert manager.defaults["take_cooldown_ms"] == 1_000
     assert manager.defaults["hedge_style"] == "ioc_through_mid"
-    assert manager.defaults["maker_fee_source"] == "hyperliquid_api"
+    assert manager.defaults["maker_fee_source"] == "config"
     assert manager.defaults["hedge_fee_source"] == "config"
     assert manager.defaults["hedge_fee_plan"] == "ibkr_pro_tiered"
     assert manager.defaults["ibkr_fee_plan"] == "tiered"
     assert manager.defaults["ibkr_fee_min_usd"] == 0.35
-    assert manager.defaults["hl_taker_fee_bps"] == 4.5
-    assert manager.defaults["hl_maker_fee_bps"] == 0.25
+    assert manager.defaults["maker_taker_fee_bps"] == 4.5
+    assert manager.defaults["maker_maker_fee_bps"] == 0.25
     assert manager.defaults["assumed_hedge_fee_bps"] == 1.0
 
 
@@ -192,6 +193,19 @@ def test_params_manager_rejects_unsupported_makerv4_select_updates() -> None:
         manager.publish_update({"ibkr_fee_plan": "smart"}, ts_ms=123)
 
 
+def test_params_manager_factory_loads_legacy_hyperliquid_maker_fee_source() -> None:
+    redis_client = _FakeRedis()
+    redis_client.hashes["flux:v1:params:aapl_tradexyz_makerv4"] = {
+        "maker_fee_source": b"hyperliquid_api",
+    }
+    strategy = MakerV4Strategy(config=_build_config())
+    manager = runtime_params_mod.params_manager_factory(redis_client=redis_client)(strategy)
+
+    loaded = manager.load()
+
+    assert loaded["maker_fee_source"] == "hyperliquid_api"
+
+
 def test_params_manager_rejects_unsupported_execution_mode_updates() -> None:
     redis_client = _FakeRedis()
     strategy = MakerV4Strategy(config=_build_config())
@@ -204,7 +218,7 @@ def test_params_manager_rejects_unsupported_execution_mode_updates() -> None:
 def test_resolve_fee_rules_uses_live_maker_fee_and_assumed_hedge_fee() -> None:
     rules = fees_mod.resolve_fee_rules(
         runtime_params={
-            "maker_fee_source": "hyperliquid_api",
+            "maker_fee_source": "config",
             "hedge_fee_source": "config",
             "assumed_hedge_fee_bps": 1.25,
         },
@@ -212,7 +226,7 @@ def test_resolve_fee_rules_uses_live_maker_fee_and_assumed_hedge_fee() -> None:
         fee_snapshot_age_s=Decimal("9"),
     )
 
-    assert rules.maker_fee_source == "hyperliquid_api"
+    assert rules.maker_fee_source == "config"
     assert rules.hedge_fee_source == "config"
     assert rules.maker_fee_bps == Decimal("0.35")
     assert rules.hedge_fee_bps == Decimal("1.25")
@@ -233,7 +247,7 @@ def test_resolve_fee_rules_rejects_unsupported_fee_sources() -> None:
     with pytest.raises(ValueError, match="Unsupported hedge fee source"):
         fees_mod.resolve_fee_rules(
             runtime_params={
-                "maker_fee_source": "hyperliquid_api",
+                "maker_fee_source": "config",
                 "hedge_fee_source": "live_oracle",
                 "assumed_hedge_fee_bps": 1.25,
             },

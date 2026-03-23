@@ -16,14 +16,62 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@equities-node-amd_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-amd_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-amd_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-amzn_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-amzn_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-amzn_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-amzn_binance_perp_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-amzn_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-amzn_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-amzn_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-amzn_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-baba_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-baba_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-baba_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-baba_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-coin_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-coin_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-coin_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-coin_binance_perp_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-coin_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-coin_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-coin_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-coin_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-crcl_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-crcl_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-crcl_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-crcl_binance_perp_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-crcl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-crcl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-crcl_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-crcl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-crwv_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-crwv_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-crwv_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-crwv_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-ewy_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-ewy_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-ewy_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-ewy_binance_perp_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-googl_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-googl_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-googl_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-googl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-hood_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-hood_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-hood_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-hood_binance_perp_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-hood_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-hood_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-hood_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-hood_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-intc_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-intc_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-intc_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-intc_binance_perp_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-intc_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-intc_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-intc_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-intc_tradexyz_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-meta_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-meta_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-meta_tradexyz_makerv4.service, \
@@ -32,6 +80,22 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@equities-node-msft_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-msft_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-msft_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-mstr_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-mstr_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-mstr_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-mstr_binance_perp_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-mstr_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-mstr_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-mstr_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-mstr_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-mu_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-mu_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-mu_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-mu_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-nflx_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-nflx_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-nflx_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-nflx_tradexyz_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-nvda_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-nvda_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-nvda_tradexyz_makerv4.service, \
@@ -40,13 +104,37 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@equities-node-orcl_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-orcl_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-orcl_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-pltr_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-pltr_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-pltr_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-pltr_binance_perp_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-pltr_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-pltr_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-pltr_tradexyz_makerv4.service, \
   /usr/bin/journalctl -u flux@equities-node-pltr_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-rivn_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-rivn_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-rivn_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-rivn_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-sndk_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-sndk_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-sndk_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-sndk_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-tsla_binance_perp_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-tsla_binance_perp_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-tsla_binance_perp_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-tsla_binance_perp_makerv4.service, \
   /usr/bin/systemctl start flux@equities-node-tsla_tradexyz_makerv4.service, \
   /usr/bin/systemctl stop flux@equities-node-tsla_tradexyz_makerv4.service, \
   /usr/bin/systemctl restart flux@equities-node-tsla_tradexyz_makerv4.service, \
-  /usr/bin/journalctl -u flux@equities-node-tsla_tradexyz_makerv4.service
+  /usr/bin/journalctl -u flux@equities-node-tsla_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-tsm_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-tsm_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-tsm_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-tsm_tradexyz_makerv4.service, \
+  /usr/bin/systemctl start flux@equities-node-usar_tradexyz_makerv4.service, \
+  /usr/bin/systemctl stop flux@equities-node-usar_tradexyz_makerv4.service, \
+  /usr/bin/systemctl restart flux@equities-node-usar_tradexyz_makerv4.service, \
+  /usr/bin/journalctl -u flux@equities-node-usar_tradexyz_makerv4.service
 
 ubuntu ALL=(root) NOPASSWD: FLUX_PULSE

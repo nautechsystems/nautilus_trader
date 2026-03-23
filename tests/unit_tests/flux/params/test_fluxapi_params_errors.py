@@ -169,3 +169,70 @@ def test_api_signals_read_returns_explicit_error_when_params_store_invalid() -> 
     assert body["api_version"] == "v1"
     assert body["error"]["code"] == "params_store_invalid"
     assert body["error"]["details"]["strategy_id"] == "s1"
+
+
+def test_api_params_read_accepts_legacy_alias_keys_when_schema_declares_aliases() -> None:
+    redis_client = _FakeRedis()
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id="s1",
+            strategy_instance_id="s1",
+            trader_id="trader_01",
+            external_strategy_id="s1",
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="venue_a",
+            reference_venue="venue_b",
+            execution_symbol="ABC/USDT",
+            reference_symbol="ABC/USDT",
+        ),
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),),
+        strategy_metadata=StrategyMetadata(
+            strategy_class="maker_v4",
+            strategy_groups="equities",
+            base_asset="ABC",
+            quote_asset="USDT",
+            param_set="makerv4",
+            strategy_family="maker_v4",
+        ),
+        params_schema={
+            "maker_taker_fee_bps": {
+                "type": "number",
+                "aliases": [["hl_taker_fee_bps"]],
+            },
+            "maker_maker_fee_bps": {
+                "type": "number",
+                "aliases": [["hl_maker_fee_bps"]],
+            },
+            "bot_on": {"type": "boolean"},
+        },
+        params_defaults={
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
+            "bot_on": False,
+        },
+    )
+    keys = FluxRedisKeys(strategy_id="s1")
+    redis_client.hashes[keys.params_hash_key()] = {
+        "hl_taker_fee_bps": b"6.0",
+        "hl_maker_fee_bps": b"0.5",
+    }
+
+    with app.test_client() as client:  # type: ignore[attr-defined]
+        response = client.get("/api/v1/params?strategy=s1")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["data"][0]["strategy_id"] == "s1"
+    assert body["data"][0]["params"]["maker_taker_fee_bps"] == 6.0
+    assert body["data"][0]["params"]["maker_maker_fee_bps"] == 0.5

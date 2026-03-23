@@ -727,7 +727,13 @@ def _derive_quote_snapshot_v4(
         if isinstance(raw_quote_snapshot, Mapping):
             quote_snapshot = dict(raw_quote_snapshot)
 
+    ibkr_max_quote_age_ms = (
+        safe_int(quote_snapshot.get("max_ibkr_quote_age_ms"))
+        or safe_int(params.get("max_ibkr_quote_age_ms"))
+        or 1_000
+    )
     quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
             quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
@@ -742,7 +748,7 @@ def _derive_quote_snapshot_v4(
             hedge_leg,
         ),
         leg_role="hedge",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     quote_snapshot["ref_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
@@ -750,7 +756,7 @@ def _derive_quote_snapshot_v4(
             ref_leg,
         ),
         leg_role="reference",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     hedge_leg_id_text = decode_text(hedge_leg_id).strip()
     if hedge_leg_id_text:
@@ -875,11 +881,15 @@ def _derive_makerv4_operator_payload(
                 fee_assumptions_map.get("ibkr_fee_min_usd"),
                 quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
             ),
-            "hl_taker_fee_bps": _first_valid_float(
+            "maker_taker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_taker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_taker_fee_bps"),
                 fee_assumptions_map.get("hl_taker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_taker_fee_bps"),
             ),
-            "hl_maker_fee_bps": _first_valid_float(
+            "maker_maker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_maker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_maker_fee_bps"),
                 fee_assumptions_map.get("hl_maker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_maker_fee_bps"),
             ),
@@ -931,6 +941,30 @@ def _maker_v4_quote_health_blocks_new_risk(
     if _first_valid_bool(hedge_leg_map.get("hedge_usable")) is False:
         return True
     return False
+
+
+def _maker_v4_can_render_from_quote_snapshot_while_paused(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+    bot_on: bool,
+    maker_leg: Mapping[str, Any] | None,
+    ref_leg: Mapping[str, Any] | None,
+) -> bool:
+    if bot_on:
+        return False
+    if not isinstance(quote_snapshot, Mapping):
+        return False
+    live_maker_ts_ms = coerce_ts_ms(maker_leg.get("ts_ms")) if isinstance(maker_leg, Mapping) else None
+    live_ref_ts_ms = coerce_ts_ms(ref_leg.get("ts_ms")) if isinstance(ref_leg, Mapping) else None
+    if live_maker_ts_ms is None:
+        return False
+    if live_ref_ts_ms is None:
+        return False
+    return not _maker_v4_quote_health_blocks_new_risk(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    )
 
 
 def _derive_quote_snapshot(
@@ -1414,7 +1448,18 @@ def build_signals_payload_impl(
     elif top_level_ts_ms is None and has_partial_strategy_state:
         state_stale = True
 
-    if state_stale:
+    suppress_state_stale_block = (
+        strategy_family == "maker_v4"
+        and _maker_v4_can_render_from_quote_snapshot_while_paused(
+            state=state,
+            quote_snapshot=quote_snapshot,
+            bot_on=bot_on,
+            maker_leg=maker_leg,
+            ref_leg=ref_leg,
+        )
+    )
+
+    if state_stale and not suppress_state_stale_block:
         managed = 0
         tradeable = False
         blocked = True
@@ -1428,7 +1473,7 @@ def build_signals_payload_impl(
         }
     md_health["state_stale"] = state_stale
 
-    if state_stale:
+    if state_stale and not suppress_state_stale_block:
         top_level_mode = "STALE"
         top_level_reason = "stale_state"
         top_level_skew_bps = None
@@ -1437,10 +1482,13 @@ def build_signals_payload_impl(
             quote_snapshot=quote_snapshot,
             bot_on=bot_on,
         )
-        top_level_reason = _top_level_signal_reason(
-            state=state,
-            quote_snapshot=quote_snapshot,
-        )
+        if suppress_state_stale_block and not bot_on:
+            top_level_reason = "bot_off"
+        else:
+            top_level_reason = _top_level_signal_reason(
+                state=state,
+                quote_snapshot=quote_snapshot,
+            )
         top_level_skew_bps = _top_level_signal_signed_skew_bps(
             pricing_adjustments=pricing_adjustments,
             quote_snapshot=quote_snapshot,

@@ -63,11 +63,11 @@ class MarginCallPosition(msgspec.Struct, frozen=True):
     s: str  # Symbol
     ps: BinanceFuturesPositionSide  # Position Side
     pa: str  # Position  Amount
-    mt: str  # Margin Type
     iw: str  # Isolated Wallet(if isolated position)
     mp: str  # MarkPrice
     up: str  # Unrealized PnL
     mm: str  # Maintenance Margin Required
+    mt: str | None = None  # Margin Type
 
 
 class BinanceFuturesMarginCallMsg(msgspec.Struct, frozen=True):
@@ -113,9 +113,9 @@ class BinanceFuturesPosition(msgspec.Struct, frozen=True):
     ep: str  # Entry price
     cr: str  # (Pre-free) Accumulated Realized
     up: str  # Unrealized PnL
-    mt: str  # Margin type
     iw: str  # Isolated wallet
     ps: BinanceFuturesPositionSide
+    mt: str | None = None  # Margin type
 
 
 class BinanceFuturesAccountUpdateData(msgspec.Struct, frozen=True):
@@ -195,7 +195,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     a: str  # Ask Notional
     m: bool  # Is trade the maker side
     R: bool  # Is reduce only
-    wt: BinanceFuturesWorkingType
+    wt: BinanceFuturesWorkingType | None = None
     ot: BinanceOrderType
     ps: BinanceFuturesPositionSide
     cp: bool | None = None  # If Close-All, pushed with conditional order
@@ -238,7 +238,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             expire_time=expire_time,
             price=price,
             trigger_price=trigger_price,
-            trigger_type=enum_parser.parse_binance_trigger_type(self.wt.value),
+            trigger_type=enum_parser.parse_binance_trigger_type(self.wt.value) if self.wt else None,
             trailing_offset=trailing_offset,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             quantity=Quantity.from_str(self.q),

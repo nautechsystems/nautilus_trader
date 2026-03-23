@@ -7,6 +7,7 @@ from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.bitget.constants import BITGET
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
@@ -135,6 +136,46 @@ def test_resolve_strategy_venues_sets_binance_testnet_defaults_in_paper() -> Non
     assert resolved.data_clients["BINANCE_SPOT"].environment == BinanceEnvironment.TESTNET
 
 
+def test_resolve_strategy_venues_passes_through_binance_private_api_family() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "BINANCE_SPOT",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "private_api_family": "PORTFOLIO_MARGIN",
+                        "execution": True,
+                    },
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "instrument_id": "PLTRUSDT.BINANCE_SPOT",
+                        "account_type": "SPOT",
+                    },
+                },
+            },
+        },
+        mode="live",
+        enable_execution=True,
+    )
+
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert (
+        resolved.data_clients["BINANCE_PERP"].private_api_family
+        == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+    )
+    assert (
+        resolved.exec_clients["BINANCE_PERP"].private_api_family
+        == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+    )
+
+
 def test_resolve_strategy_venues_sets_okx_demo_defaults_in_testnet() -> None:
     resolved = resolve_strategy_venues(
         config={
@@ -258,6 +299,97 @@ def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
         resolved.data_clients["IBKR"].instrument_provider.symbology_method
         == SymbologyMethod.IB_SIMPLIFIED
     )
+
+
+def test_resolve_strategy_venues_supports_binance_perp_execution_with_ibkr_reference() -> None:
+    interactive_brokers_config = pytest.importorskip(
+        "nautilus_trader.adapters.interactive_brokers.config",
+    )
+    InteractiveBrokersDataClientConfig = (
+        interactive_brokers_config.InteractiveBrokersDataClientConfig
+    )
+
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "PLTR.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4002,
+                        "ibg_client_id": 7,
+                        "execution": False,
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "BINANCE_PERP"
+    assert resolved.reference_venue == "IBKR"
+    assert str(resolved.execution_instrument_id) == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert str(resolved.reference_instrument_id) == "PLTR.NASDAQ"
+    assert set(resolved.data_clients) == {"BINANCE_PERP", "IBKR"}
+    assert set(resolved.exec_clients) == {"BINANCE_PERP"}
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
+
+
+def test_resolve_strategy_venues_defaults_binance_perp_alias_to_binance_adapter() -> None:
+    interactive_brokers_config = pytest.importorskip(
+        "nautilus_trader.adapters.interactive_brokers.config",
+    )
+    InteractiveBrokersDataClientConfig = (
+        interactive_brokers_config.InteractiveBrokersDataClientConfig
+    )
+
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "PLTR.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4002,
+                        "ibg_client_id": 7,
+                        "execution": False,
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "BINANCE_PERP"
+    assert str(resolved.execution_instrument_id) == "PLTRUSDT-PERP.BINANCE_PERP"
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
 
 
 def test_resolve_strategy_venues_supports_ibkr_reference_exec_client() -> None:

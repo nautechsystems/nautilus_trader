@@ -9,11 +9,14 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class StrategyContractEntry:
     """
-    Canonical equities strategy identity and shared-account scope contract.
+    Canonical equities strategy-route identity and shared-account scope contract.
     """
 
     strategy_id: str
     portfolio_asset_id: str
+    maker_venue: str
+    maker_symbol: str
+    market_type: str
     maker_instrument_id: str
     reference_instrument_id: str
     execution_account_scope_id: str
@@ -53,6 +56,9 @@ def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[Strate
             StrategyContractEntry(
                 strategy_id=_required_text(row, "strategy_id"),
                 portfolio_asset_id=_required_text(row, "portfolio_asset_id"),
+                maker_venue=_required_text(row, "maker_venue"),
+                maker_symbol=_required_text(row, "maker_symbol"),
+                market_type=_required_text(row, "market_type"),
                 maker_instrument_id=_required_text(row, "maker_instrument_id"),
                 reference_instrument_id=_required_text(row, "reference_instrument_id"),
                 execution_account_scope_id=_required_text(row, "execution_account_scope_id"),

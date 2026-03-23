@@ -2,11 +2,15 @@ from decimal import Decimal
 from typing import Final
 from typing import Literal
 
+import ibapi.client as ib_client_module
+import ibapi.client_utils as ib_client_utils
 import msgspec.structs
 from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.contract import FundAssetType
 from ibapi.contract import FundDistributionPolicyIndicator
+from ibapi.protobuf.Contract_pb2 import Contract as ContractProto
+from ibapi.protobuf.PlaceOrderRequest_pb2 import PlaceOrderRequest as PlaceOrderRequestProto
 from ibapi.tag_value import TagValue
 
 from nautilus_trader.config import NautilusConfig
@@ -17,6 +21,91 @@ from nautilus_trader.model.identifiers import Venue
 IB: Final[str] = "INTERACTIVE_BROKERS"
 IB_VENUE: Final[Venue] = Venue(IB)
 IB_CLIENT_ID: Final[ClientId] = ClientId(IB)
+
+
+def _set_contract_proto_primary_exchange(contract_proto: ContractProto, value: str) -> None:
+    if not value:
+        return
+    fields = contract_proto.DESCRIPTOR.fields_by_name
+    if "primaryExch" in fields:
+        contract_proto.primaryExch = value
+    elif "primaryExchange" in fields:
+        setattr(contract_proto, "primaryExchange", value)
+
+
+def _create_contract_proto_compat(contract, order) -> ContractProto:
+    contract_proto = ContractProto()
+    if ib_client_utils.isValidIntValue(contract.conId):
+        contract_proto.conId = contract.conId
+    if contract.symbol:
+        contract_proto.symbol = contract.symbol
+    if contract.secType:
+        contract_proto.secType = contract.secType
+    if contract.lastTradeDateOrContractMonth:
+        contract_proto.lastTradeDateOrContractMonth = contract.lastTradeDateOrContractMonth
+    if ib_client_utils.isValidFloatValue(contract.strike):
+        contract_proto.strike = contract.strike
+    if contract.right:
+        contract_proto.right = contract.right
+    if contract.multiplier:
+        contract_proto.multiplier = float(contract.multiplier)
+    if contract.exchange:
+        contract_proto.exchange = contract.exchange
+    _set_contract_proto_primary_exchange(contract_proto, getattr(contract, "primaryExchange", ""))
+    if contract.currency:
+        contract_proto.currency = contract.currency
+    if contract.localSymbol:
+        contract_proto.localSymbol = contract.localSymbol
+    if contract.tradingClass:
+        contract_proto.tradingClass = contract.tradingClass
+    if contract.secIdType:
+        contract_proto.secIdType = contract.secIdType
+    if contract.secId:
+        contract_proto.secId = contract.secId
+    if contract.includeExpired:
+        contract_proto.includeExpired = contract.includeExpired
+    if contract.comboLegsDescrip:
+        contract_proto.comboLegsDescrip = contract.comboLegsDescrip
+    if contract.description:
+        contract_proto.description = contract.description
+    if contract.issuerId:
+        contract_proto.issuerId = contract.issuerId
+
+    combo_leg_proto_list = ib_client_utils.createComboLegProtoList(contract, order)
+    if combo_leg_proto_list:
+        contract_proto.comboLegs.extend(combo_leg_proto_list)
+
+    delta_neutral_contract_proto = ib_client_utils.createDeltaNeutralContractProto(contract)
+    if delta_neutral_contract_proto is not None:
+        contract_proto.deltaNeutralContract.CopyFrom(delta_neutral_contract_proto)
+
+    return contract_proto
+
+
+def _create_place_order_request_proto_compat(orderId, contract, order) -> PlaceOrderRequestProto:
+    place_order_request_proto = PlaceOrderRequestProto()
+    if ib_client_utils.isValidIntValue(orderId):
+        place_order_request_proto.orderId = orderId
+    contract_proto = _create_contract_proto_compat(contract, order)
+    if contract_proto is not None:
+        place_order_request_proto.contract.CopyFrom(contract_proto)
+    order_proto = ib_client_utils.createOrderProto(order)
+    if order_proto is not None:
+        place_order_request_proto.order.CopyFrom(order_proto)
+    return place_order_request_proto
+
+
+def _patch_ibapi_place_order_proto_helpers() -> None:
+    if getattr(ib_client_module.createPlaceOrderRequestProto, "__nautilus_primary_exch_patch__", False):
+        return
+
+    ib_client_utils.createContractProto = _create_contract_proto_compat
+    ib_client_utils.createPlaceOrderRequestProto = _create_place_order_request_proto_compat
+    ib_client_module.createPlaceOrderRequestProto = _create_place_order_request_proto_compat
+    ib_client_module.createPlaceOrderRequestProto.__nautilus_primary_exch_patch__ = True
+
+
+_patch_ibapi_place_order_proto_helpers()
 
 
 class ContractId(int):

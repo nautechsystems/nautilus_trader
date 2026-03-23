@@ -2,6 +2,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
 from nautilus_trader.config import InstrumentProviderConfig
@@ -74,6 +75,9 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         Only needed for RSA keys (set explicitly to ``BinanceKeyType.RSA``).
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
         The account type for the client.
+    private_api_family : BinancePrivateApiFamily, default AUTO
+        The private/authenticated Binance API family to use for futures accounts.
+        Public market data remains on the standard market-data paths.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
@@ -99,6 +103,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret: str | None = None
     key_type: BinanceKeyType = BinanceKeyType.HMAC
     account_type: BinanceAccountType = BinanceAccountType.SPOT
+    private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
@@ -128,6 +133,9 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         Only needed for RSA keys (set explicitly to ``BinanceKeyType.RSA``).
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
         The account type for the client.
+    private_api_family : BinancePrivateApiFamily, default AUTO
+        The private/authenticated Binance API family to use for futures accounts.
+        Public market data remains on the standard market-data paths.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
@@ -186,6 +194,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret: str | None = None
     key_type: BinanceKeyType = BinanceKeyType.HMAC
     account_type: BinanceAccountType = BinanceAccountType.SPOT
+    private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO
     base_url_http: str | None = None
     base_url_ws: str | None = None
     base_url_ws_stream: str | None = None

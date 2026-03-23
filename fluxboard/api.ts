@@ -14,6 +14,7 @@ import type {
   FxPair,
   SignalStrategy,
   BalancesPayload,
+  BalanceScopeStatus,
   BalancesResponse,
   BalanceParentRow,
   BalanceChildRow,
@@ -387,6 +388,31 @@ function normalizeRiskGroups(groups: unknown): BalancesPayload['risk_groups'] {
             }))
         : [],
     }));
+}
+
+function normalizeBalanceScopeStatus(scopeStatus: unknown): BalanceScopeStatus[] {
+  if (!Array.isArray(scopeStatus)) return [];
+  return scopeStatus
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => {
+      const rawProjectionStatus = entry.projection_status;
+      const projection_status = rawProjectionStatus && typeof rawProjectionStatus === 'object'
+        ? {
+            healthy: typeof rawProjectionStatus.healthy === 'boolean' ? rawProjectionStatus.healthy : undefined,
+            last_success_ts_ms: coerceTimestampMs((rawProjectionStatus as Record<string, unknown>).last_success_ts_ms),
+            last_attempt_ts_ms: coerceTimestampMs((rawProjectionStatus as Record<string, unknown>).last_attempt_ts_ms),
+            last_error_type: coerceOptionalText((rawProjectionStatus as Record<string, unknown>).last_error_type) ?? null,
+            last_error_message: coerceOptionalText((rawProjectionStatus as Record<string, unknown>).last_error_message) ?? null,
+            stale_after_ms: toFiniteOptionalNumber((rawProjectionStatus as Record<string, unknown>).stale_after_ms) ?? null,
+          }
+        : null;
+      return {
+        account_scope_id: String(entry.account_scope_id ?? '').trim(),
+        source_scope: coerceOptionalText(entry.source_scope) ?? null,
+        projection_status,
+      };
+    })
+    .filter((entry) => entry.account_scope_id);
 }
 
 function toFiniteOptionalNumber(value: unknown): number | undefined {
@@ -1847,6 +1873,8 @@ export const api = {
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
       risk_groups: normalizeRiskGroups(payload.risk_groups),
+      degraded: Boolean((payload as Record<string, unknown>).degraded),
+      scope_status: normalizeBalanceScopeStatus((payload as Record<string, unknown>).scope_status),
     };
   },
 

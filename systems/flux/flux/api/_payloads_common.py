@@ -420,7 +420,9 @@ def canonical_naming_fields(
     pair = f"{base_asset}/{quote_asset}" if base_asset and quote_asset else (inventory_asset_text or raw_symbol)
 
     display_asset = inventory_asset_text or base_asset or raw_symbol or decode_text(symbol).strip().upper()
-    if (
+    if contract_type == "cash" and venue_root == "ibkr":
+        display_name_short = display_asset
+    elif (
         display_asset in _STABLE_CASH_ASSETS
         and not is_position
         and not instrument_text

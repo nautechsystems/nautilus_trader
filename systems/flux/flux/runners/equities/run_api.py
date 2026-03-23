@@ -6,7 +6,10 @@ import argparse
 import os
 import time
 import tomllib
+from datetime import UTC
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 from typing import Any
 from typing import cast
 
@@ -121,6 +124,162 @@ def _build_strategy_running_resolver(
             cache_expires_at = time.monotonic() + ttl_s
 
         return {strategy_id: cached_running.get(strategy_id) for strategy_id in deduped_ids}
+
+    return _resolve
+
+
+def _iso_timestamp_to_ms(value: Any) -> int | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(round(parsed.timestamp() * 1000))
+
+
+def _pulse_snapshot_to_alert_rows(
+    strategy_id: str,
+    *,
+    job_id: str,
+    snapshot: dict[str, Any] | None,
+    now_ms_value: int,
+) -> list[dict[str, Any]]:
+    if snapshot is None:
+        ts_ms = now_ms_value
+        row_id = f"pulse:{strategy_id}:pulse_job_unknown:{ts_ms}"
+        return [
+            {
+                "strategy_id": strategy_id,
+                "row_id": row_id,
+                "id": row_id,
+                "level": "ERROR",
+                "message": "Pulse runner is not registered",
+                "alert_key": "pulse_job_unknown",
+                "ts_ms": ts_ms,
+                "source": "pulse",
+                "job_id": job_id,
+                "status": "unknown",
+                "error_preview": None,
+                "error_count": 0,
+                "last_seen": None,
+            },
+        ]
+
+    status = _optional_text(snapshot.get("status")) or "unknown"
+    if status == "active":
+        return []
+
+    errors = snapshot.get("errors")
+    errors_map = errors if isinstance(errors, dict) else {}
+    error_preview = _optional_text(errors_map.get("preview"))
+    error_count = int(errors_map.get("count") or 0)
+    last_seen = _optional_text(errors_map.get("last_seen"))
+    ts_ms = _iso_timestamp_to_ms(last_seen) or now_ms_value
+    level = {
+        "failed": "CRITICAL",
+        "restarting": "WARNING",
+        "stopping": "WARNING",
+        "inactive": "ERROR",
+        "unknown": "ERROR",
+    }.get(status, "ERROR")
+    base_message = {
+        "failed": "Pulse runner failed",
+        "restarting": "Pulse runner restarting",
+        "stopping": "Pulse runner stopping",
+        "inactive": "Pulse runner inactive",
+        "unknown": "Pulse runner status unknown",
+    }.get(status, "Pulse runner has an unexpected status")
+    message = f"{base_message}: {error_preview}" if error_preview else base_message
+    alert_key = f"pulse_job_{status}"
+    row_id = f"pulse:{strategy_id}:{alert_key}:{ts_ms}"
+    return [
+        {
+            "strategy_id": strategy_id,
+            "row_id": row_id,
+            "id": row_id,
+            "level": level,
+            "message": message,
+            "alert_key": alert_key,
+            "ts_ms": ts_ms,
+            "source": "pulse",
+            "job_id": _optional_text(snapshot.get("id")) or job_id,
+            "status": status,
+            "error_preview": error_preview,
+            "error_count": error_count,
+            "last_seen": last_seen,
+        },
+    ]
+
+
+def _build_strategy_alerts_resolver(
+    *,
+    pulse_control: PulseControlPlane | None = None,
+    cache_ttl_s: float = 1.0,
+    now_ms_fn: Callable[[], int] | None = None,
+):
+    pulse = pulse_control or PulseControlPlane()
+    ttl_s = max(float(cache_ttl_s), 0.0)
+    cached_rows: dict[str, list[dict[str, Any]]] = {}
+    cache_expires_at = 0.0
+    current_now_ms = now_ms_fn or (lambda: int(time.time() * 1000))
+
+    def _resolve(strategy_ids: list[str] | tuple[str, ...]) -> dict[str, list[dict[str, Any]]]:
+        nonlocal cache_expires_at, cached_rows
+
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = _optional_text(strategy_id)
+            if strategy_text is None or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+        if not deduped_ids:
+            return {}
+
+        refresh_needed = time.monotonic() >= cache_expires_at or any(
+            strategy_id not in cached_rows for strategy_id in deduped_ids
+        )
+        if refresh_needed:
+            next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_rows)
+            now_ms_value = int(current_now_ms())
+            discover_services = getattr(pulse, "discover_services", None)
+            if callable(discover_services):
+                next_cache = {}
+                for service in discover_services():
+                    job_id = _optional_text(getattr(service, "job_id", None))
+                    if job_id is None or not job_id.startswith("equities-node-"):
+                        continue
+                    strategy_id = job_id.removeprefix("equities-node-").strip()
+                    if not strategy_id:
+                        continue
+                    snapshot = pulse.get_job_snapshot(job_id)
+                    next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
+                        strategy_id,
+                        job_id=job_id,
+                        snapshot=snapshot,
+                        now_ms_value=now_ms_value,
+                    )
+            for strategy_id in deduped_ids:
+                if strategy_id in next_cache:
+                    continue
+                job_id = f"equities-node-{strategy_id}"
+                snapshot = pulse.get_job_snapshot(job_id)
+                next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
+                    strategy_id,
+                    job_id=job_id,
+                    snapshot=snapshot,
+                    now_ms_value=now_ms_value,
+                )
+            cached_rows = next_cache
+            cache_expires_at = time.monotonic() + ttl_s
+
+        return {strategy_id: list(cached_rows.get(strategy_id, ())) for strategy_id in deduped_ids}
 
     return _resolve
 
@@ -659,6 +818,7 @@ def main() -> None:
             contracts,
         ),
         strategy_running_resolver=_build_strategy_running_resolver(),
+        strategy_alerts_resolver=_build_strategy_alerts_resolver(),
         strategy_metadata=metadata,
         strategy_metadata_resolver=strategy_metadata_map.__getitem__,
         profile_strategy_map=profile_strategy_map or None,

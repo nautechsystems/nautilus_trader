@@ -498,6 +498,21 @@ export type BalancesTotals = {
   withdrawable_display?: string | null;
 };
 
+export type BalanceProjectionStatus = {
+  healthy?: boolean | null;
+  last_success_ts_ms?: number | null;
+  last_attempt_ts_ms?: number | null;
+  last_error_type?: string | null;
+  last_error_message?: string | null;
+  stale_after_ms?: number | null;
+};
+
+export type BalanceScopeStatus = {
+  account_scope_id: string;
+  source_scope?: string | null;
+  projection_status?: BalanceProjectionStatus | null;
+};
+
 export type RiskGroup = {
   risk_key: string;
   label: string;
@@ -530,6 +545,8 @@ export type BalancesPayload = {
   generated_at: string;
   view: string;
   risk_groups?: RiskGroup[];
+  degraded?: boolean;
+  scope_status?: BalanceScopeStatus[];
 };
 
 export type BalancesResponse = {
@@ -739,8 +756,8 @@ export type MakerV4OperatorPayload = {
   fee_assumptions?: {
     ibkr_fee_plan?: string;
     ibkr_fee_min_usd?: number | null;
-    hl_taker_fee_bps?: number | null;
-    hl_maker_fee_bps?: number | null;
+    maker_taker_fee_bps?: number | null;
+    maker_maker_fee_bps?: number | null;
     assumed_hedge_fee_bps?: number | null;
   };
   hedge_backlog?: {

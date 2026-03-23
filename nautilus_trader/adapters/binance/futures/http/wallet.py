@@ -1,6 +1,7 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
@@ -80,11 +81,17 @@ class BinanceFuturesWalletHttpAPI:
         client: BinanceHttpClient,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
     ):
         self.client = client
         self._clock = clock
 
-        if account_type == BinanceAccountType.USDT_FUTURES:
+        if (
+            account_type == BinanceAccountType.USDT_FUTURES
+            and private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+        ):
+            self.base_endpoint = "/papi/v1/um/"
+        elif account_type == BinanceAccountType.USDT_FUTURES:
             self.base_endpoint = "/fapi/v1/"
         elif account_type == BinanceAccountType.COIN_FUTURES:
             self.base_endpoint = "/dapi/v1/"

@@ -46,7 +46,7 @@ def test_makerv4_registry_exposes_explicit_param_set_with_compatible_schema() ->
     assert registry.defaults["qty"] == 1.0
     assert registry.defaults["max_qty_global"] == 100.0
     assert registry.defaults["instant_hedge_enabled"] is True
-    assert registry.defaults["maker_fee_source"] == "hyperliquid_api"
+    assert registry.defaults["maker_fee_source"] == "config"
     assert registry.schema["n_orders1"]["type"] == MAKERV3_RUNTIME_PARAM_REGISTRY.schema["n_orders1"]["type"]
     assert registry.schema["hedge_style"] == {
         "type": "select",

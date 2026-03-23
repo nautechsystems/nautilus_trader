@@ -1,19 +1,26 @@
 import asyncio
 import json
 from decimal import Decimal
+import pkgutil
 from unittest.mock import AsyncMock
 
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAlgoOrder
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -50,6 +57,276 @@ from nautilus_trader.trading.strategy import Strategy
 
 
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+
+
+def test_portfolio_margin_futures_http_api_routes():
+    clock = LiveClock()
+    client = BinanceHttpClient(
+        clock=clock,
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
+        base_url="https://papi.binance.com/",
+    )
+    http_account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURES,
+        private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+    )
+
+    assert http_account._endpoint_futures_account.url_path == "/papi/v1/um/account"
+    assert http_account._endpoint_futures_position_risk.url_path == "/papi/v1/um/positionRisk"
+    assert http_account._endpoint_futures_position_mode.url_path == "/papi/v1/um/positionSide/dual"
+    assert http_account._endpoint_futures_all_open_orders.url_path == "/papi/v1/um/allOpenOrders"
+    assert http_account._endpoint_futures_cancel_multiple_orders.url_path == "/papi/v1/um/batchOrders"
+    assert http_account._endpoint_futures_leverage.url_path == "/papi/v1/um/leverage"
+    assert http_account._endpoint_futures_margin_type.url_path == "/papi/v1/um/marginType"
+    assert http_account._endpoint_futures_symbol_config.url_path == "/papi/v1/um/symbolConfig"
+    assert http_account._endpoint_futures_algo_order.url_path == "/papi/v1/um/conditional/order"
+    assert http_account._endpoint_futures_open_algo_orders.url_path == "/papi/v1/um/conditional/openOrders"
+    assert http_account._endpoint_futures_all_algo_orders.url_path == "/papi/v1/um/conditional/allOrders"
+    assert http_account._endpoint_futures_cancel_all_algo_orders.url_path == (
+        "/papi/v1/um/conditional/allOpenOrders"
+    )
+
+
+@pytest.mark.asyncio
+async def test_portfolio_margin_query_algo_order_uses_conditional_open_order_endpoint(mocker):
+    clock = LiveClock()
+    client = BinanceHttpClient(
+        clock=clock,
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
+        base_url="https://papi.binance.com/",
+    )
+    http_account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURES,
+        private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+    )
+    mock_send_request = mocker.patch(
+        target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        return_value=json.dumps(
+            {
+                "algoId": 12345,
+                "clientAlgoId": "algo-1",
+                "algoType": "CONDITIONAL",
+                "orderType": "STOP_MARKET",
+                "symbol": "ETHUSDT",
+                "side": "SELL",
+                "positionSide": "BOTH",
+                "timeInForce": "GTC",
+                "quantity": "1",
+                "algoStatus": "NEW",
+                "triggerPrice": "10099.00",
+                "price": "0",
+                "workingType": "CONTRACT_PRICE",
+                "activatePrice": None,
+                "callbackRate": None,
+                "reduceOnly": False,
+                "closePosition": False,
+                "priceProtect": False,
+                "selfTradePreventionMode": "NONE",
+            },
+        ).encode(),
+    )
+
+    await http_account.query_algo_order(client_algo_id="algo-1")
+
+    request = mock_send_request.call_args
+    assert request[0][0] == HttpMethod.GET
+    assert request[0][1] == "/papi/v1/um/conditional/openOrder"
+    assert request[1]["payload"]["clientAlgoId"] == "algo-1"
+
+
+def test_portfolio_margin_account_info_decodes_assets_without_wallet_balance_or_unrealized_profit():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "totalMarginBalance": "1025.5",
+        "availableBalance": "1000.0",
+        "maxWithdrawAmount": "995.0",
+        "assets": [
+            {
+                "asset": "USDT",
+                "marginBalance": "1000.0",
+                "maintMargin": "0.0",
+                "initialMargin": "0.0",
+                "positionInitialMargin": "0.0",
+                "openOrderInitialMargin": "0.0",
+                "crossWalletBalance": "1000.0",
+                "crossUnPnl": "0.0",
+                "availableBalance": "975.0",
+                "maxWithdrawAmount": "995.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].marginBalance == "1000.0"
+
+
+def test_portfolio_margin_account_info_decodes_assets_without_margin_balance():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "totalMarginBalance": "1025.5",
+        "availableBalance": "1000.0",
+        "maxWithdrawAmount": "995.0",
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "maintMargin": "0.0",
+                "initialMargin": "0.0",
+                "positionInitialMargin": "0.0",
+                "openOrderInitialMargin": "0.0",
+                "crossWalletBalance": "1000.0",
+                "crossUnPnl": "0.0",
+                "availableBalance": "975.0",
+                "maxWithdrawAmount": "995.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].walletBalance == "1000.0"
+
+
+def test_portfolio_margin_account_info_decodes_minimal_asset_balance_row():
+    payload = {
+        "feeTier": 0,
+        "canTrade": True,
+        "canDeposit": True,
+        "canWithdraw": True,
+        "updateTime": 0,
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "availableBalance": "975.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+    balances = decoded.parse_to_account_balances()
+
+    assert balances[0].total.as_decimal() == Decimal("1000.0")
+    assert balances[0].free.as_decimal() == Decimal("975.0")
+
+
+def test_portfolio_margin_account_info_decodes_without_fee_tier_metadata():
+    payload = {
+        "assets": [
+            {
+                "asset": "USDT",
+                "walletBalance": "1000.0",
+                "availableBalance": "975.0",
+            },
+        ],
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+
+    assert decoded.assets[0].walletBalance == "1000.0"
+
+
+def test_portfolio_margin_order_update_decodes_without_working_type():
+    raw = pkgutil.get_data(
+        package="tests.integration_tests.adapters.binance.resources.ws_messages",
+        resource="ws_futures_order_update_new_price_match.json",
+    )
+    payload = json.loads(raw)
+    del payload["data"]["o"]["wt"]
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesOrderUpdateWrapper,
+    )
+
+    assert decoded.data.o.wt is None
+
+
+def test_portfolio_margin_account_update_decodes_without_margin_type():
+    payload = {
+        "stream": "ACCOUNT_UPDATE",
+        "data": {
+            "e": "ACCOUNT_UPDATE",
+            "E": 1759347763200,
+            "T": 1759347763200,
+            "a": {
+                "m": "ORDER",
+                "B": [
+                    {
+                        "a": "USDT",
+                        "wb": "1000.0",
+                        "cw": "1000.0",
+                        "bc": "0.0",
+                    },
+                ],
+                "P": [
+                    {
+                        "s": "ETHUSDT",
+                        "pa": "0",
+                        "ep": "0.0",
+                        "cr": "0.0",
+                        "up": "0.0",
+                        "iw": "0.0",
+                        "ps": "BOTH",
+                    },
+                ],
+            },
+        },
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountUpdateWrapper,
+    )
+
+    assert decoded.data.a.P[0].mt is None
+
+
+def test_portfolio_margin_position_risk_decodes_without_isolated_margin():
+    payload = {
+        "symbol": "INTCUSDT",
+        "positionSide": "BOTH",
+        "positionAmt": "0",
+        "entryPrice": "0.0",
+        "markPrice": "44.12",
+        "unRealizedProfit": "0.0",
+        "liquidationPrice": "0.0",
+        "updateTime": 1759347763200,
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesPositionRisk,
+    )
+
+    assert decoded.isolatedMargin is None
 
 
 class TestBinanceFuturesExecutionClient:
@@ -138,6 +415,25 @@ class TestBinanceFuturesExecutionClient:
         )
 
         return
+
+    def test_portfolio_margin_spot_style_outbound_account_position_refreshes_full_state(
+        self,
+        mocker,
+    ):
+        create_task = mocker.patch.object(self.exec_client, "create_task")
+        generate_account_state = mocker.patch.object(self.exec_client, "generate_account_state")
+        raw = (
+            b'{"e":"outboundAccountPosition","E":1564034571105,"u":1564034571073,'
+            b'"B":[{"a":"USDT","f":"5000.00000000","l":"0.00000000"}]}'
+        )
+
+        self.exec_client._handle_user_ws_message(raw)
+
+        create_task.assert_called_once()
+        scheduled_coro = create_task.call_args.args[0]
+        assert scheduled_coro.cr_code.co_name == self.exec_client._update_account_state.__name__
+        scheduled_coro.close()
+        generate_account_state.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -571,6 +867,100 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
+
+    @pytest.mark.asyncio
+    async def test_submit_market_order_uses_papi_um_order_for_portfolio_margin(self, mocker):
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", False)
+
+        exec_client = BinanceFuturesExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        )
+        mocker.patch.object(exec_client, "_is_dual_side_position", False)
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        request = mock_send_request.call_args
+        assert request[0][1] == "/papi/v1/um/order"
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order_uses_pm_conditional_endpoint(self, mocker):
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+
+        exec_client = BinanceFuturesExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        )
+        mocker.patch.object(exec_client, "_is_dual_side_position", False)
+        mocker.patch.object(exec_client, "_use_reduce_only", True)
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        request = mock_send_request.call_args
+        assert request[0][1] == "/papi/v1/um/conditional/order"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1435,6 +1825,41 @@ class TestBinanceFuturesExecutionClient:
         call_args = mock_account.set_leverage.call_args
         assert call_args[0][0] == ETHUSDT_PERP_BINANCE.id
         assert call_args[0][1] == Decimal(20)
+
+    @pytest.mark.asyncio
+    async def test_update_account_state_tolerates_missing_portfolio_margin_update_time(
+        self,
+        mocker,
+    ):
+        account_info = BinanceFuturesAccountInfo(
+            feeTier=None,
+            canTrade=False,
+            canDeposit=True,
+            canWithdraw=True,
+            updateTime=None,
+            assets=[],
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_account_info",
+            return_value=account_info,
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_symbol_config",
+            return_value=[],
+        )
+        mock_generate_account_state = mocker.patch.object(self.exec_client, "generate_account_state")
+        mocker.patch.object(self.exec_client, "_await_account_registered", return_value=None)
+
+        before_ms = self.clock.timestamp_ms()
+        await self.exec_client._update_account_state()
+        after_ms = self.clock.timestamp_ms()
+
+        assert mock_generate_account_state.call_count == 1
+        ts_event = mock_generate_account_state.call_args.kwargs["ts_event"]
+        # millis_to_nanos goes through float conversion, so allow a tiny rounding skew.
+        assert (before_ms * 1_000_000) - 1_000 <= ts_event <= (after_ms * 1_000_000) + 1_000
 
     # -------------------------------------------------------------------------
     # Algo Order Cancellation Tests

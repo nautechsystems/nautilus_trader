@@ -139,6 +139,8 @@ describe('Balances component', () => {
       generatedAt: undefined,
       loading: false,
       lastUpdate: undefined,
+      degraded: false,
+      scopeStatus: [],
     });
     mockedApi.getBalances.mockResolvedValue(buildPayload());
     mockUsePolling.mockImplementation((fn, _interval, enabled = true) => {
@@ -185,6 +187,45 @@ describe('Balances component', () => {
     expect(screen.getByText('Account Equity')).toBeInTheDocument();
     expect(screen.getByText('Withdrawable')).toBeInTheDocument();
     expect(screen.getAllByText('$7478.39')).toHaveLength(2);
+  });
+
+  it('renders degraded shared-account scope status from balances payload', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      degraded: true,
+      scope_status: [
+        {
+          account_scope_id: 'ibkr.reference.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: false,
+            last_success_ts_ms: 1704067200000,
+            last_attempt_ts_ms: 1704067216000,
+            last_error_type: 'TimeoutError',
+            last_error_message: '',
+            stale_after_ms: 15000,
+          },
+        },
+        {
+          account_scope_id: 'binance.futures.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: true,
+            last_success_ts_ms: 1704067216000,
+            last_attempt_ts_ms: 1704067216000,
+            last_error_type: null,
+            last_error_message: null,
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await screen.findByText('Degraded reconciliation');
+    expect(screen.getByText(/ibkr\.reference\.main stale · TimeoutError/i)).toBeInTheDocument();
+    expect(screen.getByText(/binance\.futures\.main healthy/i)).toBeInTheDocument();
   });
 
   it('keeps non-zero quantity rows visible when market value is temporarily unavailable', async () => {

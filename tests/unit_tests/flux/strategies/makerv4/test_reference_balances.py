@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from flux.strategies.makerv4 import reference_balances
 
@@ -165,3 +167,56 @@ def test_ibkr_reference_balance_provider_waits_for_account_summary_end() -> None
     }
 
     assert set(balances) == {"HKD", "USD"}
+
+
+def test_ibkr_reference_balance_provider_refresh_marks_timeout_without_advancing_last_success_timestamp(
+    monkeypatch,
+) -> None:
+    class _FakeFuture:
+        def result(self, timeout: int | None = None) -> None:
+            _ = timeout
+            raise TimeoutError()
+
+    def _fake_run_coroutine_threadsafe(coro, loop):
+        _ = loop
+        coro.close()
+        return _FakeFuture()
+
+    monkeypatch.setattr(
+        reference_balances.asyncio,
+        "run_coroutine_threadsafe",
+        _fake_run_coroutine_threadsafe,
+    )
+
+    provider = reference_balances.IbkrReferenceBalanceSnapshotProvider(
+        reference_balances.IbkrReferenceBalanceSnapshotProviderConfig(
+            refresh_interval_secs=0.0,
+        ),
+    )
+    provider._standalone_runtime = SimpleNamespace(log=MagicMock(), loop=object())
+    provider._latest_snapshot = {
+        "rows": [{"row_id": "existing-refresh"}],
+        "projection_status": {
+            "healthy": True,
+            "last_success_ts_ms": 1_700_000_000_000,
+            "last_attempt_ts_ms": 1_700_000_000_000,
+            "last_error_type": None,
+            "last_error_message": None,
+            "stale_after_ms": 15_000,
+        },
+    }
+
+    snapshot = provider.refresh()
+
+    assert snapshot is not None
+    assert snapshot["rows"] == [
+        {
+            "row_id": "existing-refresh",
+            "stale": True,
+            "include_in_reconciliation": False,
+        },
+    ]
+    assert snapshot["projection_status"]["last_success_ts_ms"] == 1_700_000_000_000
+    assert snapshot["projection_status"]["last_attempt_ts_ms"] > 1_700_000_000_000
+    assert snapshot["projection_status"]["last_error_type"] == "TimeoutError"
+    assert snapshot["projection_status"]["healthy"] is False

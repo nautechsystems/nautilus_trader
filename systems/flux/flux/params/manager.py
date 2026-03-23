@@ -54,6 +54,11 @@ class FluxParamsManager:
 
         self._redis = redis_client
         self._schema = {str(name): dict(spec) for name, spec in schema.items()}
+        self._aliases_by_name = {
+            name: self._parse_aliases(spec.get("aliases"))
+            for name, spec in self._schema.items()
+        }
+        self._canonical_by_alias = self._build_canonical_by_alias(self._aliases_by_name)
         self._defaults = self._coerce_defaults(defaults)
         self._schema_version = schema_version
         self._param_set = safe_param_set
@@ -89,14 +94,25 @@ class FluxParamsManager:
                 f"Unknown params keys in {self.hash_key}: {unknown_fields}",
             )
 
-        raw_values = self._redis.hmget(self.hash_key, fields)
-        if len(raw_values) != len(fields):
+        requested_fields: list[str] = list(fields)
+        for aliases in self._aliases_by_name.values():
+            requested_fields.extend(alias for alias in aliases if alias not in requested_fields)
+
+        raw_values = self._redis.hmget(self.hash_key, requested_fields)
+        if len(raw_values) != len(requested_fields):
             raise RuntimeError(
-                f"Redis HMGET returned {len(raw_values)} values for {len(fields)} fields",
+                f"Redis HMGET returned {len(raw_values)} values for {len(requested_fields)} fields",
             )
+        raw_by_field = dict(zip(requested_fields, raw_values, strict=True))
 
         params: dict[str, Any] = {}
-        for name, raw in zip(fields, raw_values, strict=True):
+        for name in fields:
+            raw = raw_by_field.get(name)
+            if raw is None:
+                for alias in self._aliases_by_name.get(name, ()):
+                    raw = raw_by_field.get(alias)
+                    if raw is not None:
+                        break
             if raw is None:
                 params[name] = self._defaults.get(name)
                 continue
@@ -152,7 +168,8 @@ class FluxParamsManager:
     def _coerce_updates(self, updates: Mapping[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for name, raw in updates.items():
-            out[name] = self._coerce_value(name, raw)
+            canonical_name = self._canonical_name(name)
+            out[canonical_name] = self._coerce_value(canonical_name, raw)
         return out
 
     def _coerce_defaults(self, defaults: Mapping[str, Any]) -> dict[str, Any]:
@@ -164,6 +181,10 @@ class FluxParamsManager:
         for name in self._schema:
             out[name] = self._coerce_value(name, defaults[name])
         return out
+
+    def _canonical_name(self, name: Any) -> str:
+        text = str(name)
+        return self._canonical_by_alias.get(text, text)
 
     def _coerce_value(self, name: str, value: Any) -> Any:
         schema = self._schema.get(name)
@@ -226,6 +247,37 @@ class FluxParamsManager:
         if value is None:
             return ""
         return str(value)
+
+    @staticmethod
+    def _parse_aliases(raw_aliases: Any) -> tuple[str, ...]:
+        if raw_aliases is None:
+            return ()
+        if not isinstance(raw_aliases, (list, tuple)):
+            return ()
+        aliases: list[str] = []
+        for raw_alias in raw_aliases:
+            if isinstance(raw_alias, (list, tuple)) and raw_alias:
+                alias = str(raw_alias[0]).strip()
+            else:
+                alias = str(raw_alias).strip()
+            if alias:
+                aliases.append(alias)
+        return tuple(aliases)
+
+    @staticmethod
+    def _build_canonical_by_alias(
+        aliases_by_name: Mapping[str, tuple[str, ...]],
+    ) -> dict[str, str]:
+        canonical_by_alias: dict[str, str] = {}
+        for canonical_name, aliases in aliases_by_name.items():
+            for alias in aliases:
+                existing = canonical_by_alias.get(alias)
+                if existing is not None and existing != canonical_name:
+                    raise ValueError(
+                        f"Duplicate runtime param alias {alias!r} for {canonical_name!r} and {existing!r}",
+                    )
+                canonical_by_alias[alias] = canonical_name
+        return canonical_by_alias
 
     @staticmethod
     def _parse_bool(value: Any) -> bool | None:
@@ -310,7 +362,7 @@ class FluxParamsManager:
         }
 
     def _unknown_hash_fields(self) -> list[str]:
-        known = set(self._schema.keys())
+        known = set(self._schema.keys()) | set(self._canonical_by_alias.keys())
         unknown: list[str] = []
         for field in self._redis.hkeys(self.hash_key):
             name = self._decode(field)

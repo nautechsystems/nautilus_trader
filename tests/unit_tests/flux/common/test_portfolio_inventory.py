@@ -139,6 +139,52 @@ def test_aggregate_components_partial_mode_keeps_partial_sum_and_marks_incomplet
     assert payload["expected_component_count"] == 3
 
 
+def test_aggregate_components_keeps_multiple_strategy_contributors_in_one_stock_bucket() -> None:
+    payload = aggregate_components(
+        portfolio_id="equities",
+        base_currency="PLTR",
+        components={
+            "pltr_tradexyz_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("10"),
+                ts_ms=1_000,
+                maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+            "pltr_binance_perp_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_binance_perp_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("-4"),
+                ts_ms=1_000,
+                maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+                state="running",
+            ),
+        },
+        required_strategy_ids={
+            "pltr_tradexyz_makerv4",
+            "pltr_binance_perp_makerv4",
+        },
+        now_ms_value=2_000,
+    )
+
+    assert payload["base_currency"] == "PLTR"
+    assert payload["global_qty_base"] == "6"
+    assert payload["global_qty"] == "6"
+    assert payload["usable_component_count"] == 2
+    assert payload["expected_component_count"] == 2
+    assert [row["strategy_id"] for row in payload["components"]] == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    assert {row["maker_instrument_id"] for row in payload["components"]} == {
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "xyz:PLTR-USD-PERP.HYPERLIQUID",
+    }
+
+
 def test_aggregate_components_flags_stale_and_null_required_components_separately() -> None:
     payload = aggregate_components(
         portfolio_id="tokenmm",
@@ -326,3 +372,60 @@ def test_normalize_inventory_by_asset_canonicalizes_asset_keys() -> None:
     assert list(normalized) == ["AAPL", "MSFT"]
     assert normalized["AAPL"]["base_currency"] == "AAPL"
     assert normalized["MSFT"]["base_currency"] == "MSFT"
+
+
+def test_aggregate_components_nets_same_stock_multivenue_routes_and_keeps_route_metadata() -> None:
+    payload = aggregate_components(
+        portfolio_id="equities",
+        base_currency="PLTR",
+        components={
+            "pltr_tradexyz_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_tradexyz_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("10"),
+                local_position_qty_venue=Decimal("10"),
+                local_position_qty_base=Decimal("10"),
+                qty_conversion_status="identity",
+                qty_conversion_source="generic:multiplier=1",
+                ts_ms=1_000,
+                maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+                state="running",
+            ),
+            "pltr_binance_perp_makerv4": StrategyInventoryComponent(
+                strategy_id="pltr_binance_perp_makerv4",
+                portfolio_id="equities",
+                base_currency="PLTR",
+                local_qty_base=Decimal("5"),
+                local_position_qty_venue=Decimal("80"),
+                local_position_qty_base=Decimal("5"),
+                qty_conversion_status="converted",
+                qty_conversion_source="generic:multiplier=0.0625",
+                ts_ms=1_000,
+                maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+                state="running",
+            ),
+        },
+        required_strategy_ids={"pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"},
+        now_ms_value=2_000,
+    )
+
+    assert payload["global_qty_base"] == "15"
+    assert payload["global_qty"] == "15"
+    assert payload["global_qty_base_complete"] is True
+    assert payload["global_qty_complete"] is True
+    assert payload["degraded"] is False
+    assert payload["usable_component_count"] == 2
+    assert payload["expected_component_count"] == 2
+    assert [row["strategy_id"] for row in payload["components"]] == [
+        "pltr_binance_perp_makerv4",
+        "pltr_tradexyz_makerv4",
+    ]
+    binance_row = next(
+        row for row in payload["components"] if row["strategy_id"] == "pltr_binance_perp_makerv4"
+    )
+    assert binance_row["local_position_qty_venue"] == "80"
+    assert binance_row["local_position_qty_base"] == "5"
+    assert binance_row["qty_conversion_status"] == "converted"
+    assert binance_row["qty_conversion_source"] == "generic:multiplier=0.0625"
+    assert binance_row["maker_instrument_id"] == "PLTRUSDT-PERP.BINANCE_PERP"

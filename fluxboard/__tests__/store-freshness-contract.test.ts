@@ -230,6 +230,41 @@ describe('store freshness contract', () => {
       risk_groups: [{ risk_key: 'PLUME', label: 'PLUME', net_mv: 55 }],
     } as any);
     expect(useBalancesStore.getState().lastDataTs).toBe(Date.parse('2026-02-11T00:00:06.000Z'));
+
+    vi.setSystemTime(new Date('2026-02-11T00:00:08.000Z'));
+    useBalancesStore.getState().setData({
+      rows: [
+        {
+          id: 'plume-parent',
+          coin: 'PLUME',
+          canonical: 'PLUME',
+          qty_raw: 100,
+          mv_raw: 50,
+          mark_raw: 0.5,
+          last_ts: 1000,
+          children: [],
+        },
+      ],
+      total: 2,
+      totals: { mv_raw: 55, mv_display: '$55.00' },
+      generated_at: '2026-02-11T00:00:00.000Z',
+      risk_groups: [{ risk_key: 'PLUME', label: 'PLUME', net_mv: 55 }],
+      degraded: true,
+      scope_status: [
+        {
+          account_scope_id: 'ibkr.reference.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: false,
+            last_success_ts_ms: 10,
+            last_attempt_ts_ms: 20,
+            last_error_type: 'TimeoutError',
+            stale_after_ms: 5,
+          },
+        },
+      ],
+    } as any);
+    expect(useBalancesStore.getState().lastDataTs).toBe(Date.parse('2026-02-11T00:00:08.000Z'));
   });
 
   it('balances: setData advances lastDataTs when rendered child metadata changes without numeric changes', () => {
@@ -362,6 +397,33 @@ describe('store freshness contract', () => {
     expect(afterClear.lastDataTs).toBe(dataTs);
     expect(afterClear.lastReceiveTs).toBe(Date.parse('2026-02-11T00:00:00.000Z'));
     expect(afterClear.lastUpdate).toBe(Date.parse('2026-02-11T00:00:07.000Z'));
+  });
+
+  it('balances: freshness selector follows backend generated_at rather than payload receive time', () => {
+    vi.setSystemTime(new Date('2026-02-11T00:00:10.000Z'));
+
+    useBalancesStore.getState().setData({
+      rows: [
+        {
+          id: 'intc-parent',
+          coin: 'INTC',
+          canonical: 'INTC',
+          qty_raw: 3,
+          mv_raw: 132.3,
+          mark_raw: 44.1,
+          last_ts: 1000,
+          children: [],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 132.3, mv_display: '$132.30' },
+      generated_at: '2026-02-11T00:00:00.000Z',
+      risk_groups: [],
+    } as any);
+
+    const state = useBalancesStore.getState();
+    expect(state.lastReceiveTs).toBe(Date.parse('2026-02-11T00:00:10.000Z'));
+    expect(selectBalancesFreshnessTs(state)).toBe(Date.parse('2026-02-11T00:00:00.000Z'));
   });
 
   it('freshness selectors prefer lastDataTs and handle lastUpdate fallback safely', () => {
