@@ -127,6 +127,7 @@ export function useWebSocket<T = unknown>(
       ? 'standard'
       : 'legacy'
   );
+  const activeBridgeSubscribe = mode === 'standard' ? bridgeSubscribe ?? null : null;
 
   useEffect(() => {
     handlerRef.current = handler;
@@ -137,8 +138,8 @@ export function useWebSocket<T = unknown>(
       handlerRef.current(data);
     };
 
-    if (mode === 'standard' && bridgeSubscribe) {
-      return bridgeSubscribe({
+    if (activeBridgeSubscribe) {
+      return activeBridgeSubscribe({
         event,
         surface,
         legacySubscribe,
@@ -149,5 +150,5 @@ export function useWebSocket<T = unknown>(
     }
 
     return legacySubscribe(event, wrappedLegacyHandler);
-  }, [bridgeSubscribe, event, legacySubscribe, mode, surface]);
+  }, [activeBridgeSubscribe, event, legacySubscribe, surface]);
 }

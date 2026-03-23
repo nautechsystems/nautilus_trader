@@ -483,6 +483,45 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('does not churn flag-on surfaced legacy subscriptions when a late shared bridge still resolves to legacy', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      signal: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
+    const handler = vi.fn();
+    const legacyUnsubscribe = vi.fn();
+    const legacySubscribe = vi.fn(() => legacyUnsubscribe);
+    const sharedBridgeSubscribe = vi.fn(() => vi.fn());
+
+    const { unmount } = renderHook(() =>
+      hookRuntime.useWebSocket('signal:update', handler, {
+        surface: 'signal',
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      hookRuntime.registerSharedWebSocketBridge({
+        resolveMode: () => 'legacy',
+        subscribe: sharedBridgeSubscribe,
+      });
+    });
+
+    expect(sharedBridgeSubscribe).not.toHaveBeenCalled();
+    expect(legacyUnsubscribe).not.toHaveBeenCalled();
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('honors resolveMode from the registered shared bridge before falling back to realtime flags', async () => {
     const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
       global: true,
