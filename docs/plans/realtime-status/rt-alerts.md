@@ -5,23 +5,23 @@
 - branch: `lanes/task-9-rt-alerts`
 - worktree: `.worktrees/task-9-rt-alerts`
 - depends_on: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
-- write_scope: `fluxboard/Alerts.tsx`, `fluxboard/components/domain/alerts/AlertsTable.tsx`, `fluxboard/components/domain/alerts/AlertDetails.tsx`, `fluxboard/components/domain/alerts/index.ts`, `fluxboard/Alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.perf.test.tsx`, `fluxboard/__tests__/ui/AlertsTableAffordance.test.tsx`, `fluxboard/__tests__/ui/AlertsTableTypography.test.tsx`, `fluxboard/e2e/realtime-cutovers/alerts.spec.ts`, `docs/plans/realtime-surfaces/alerts-cutover.md`
+- write_scope: `fluxboard/App.tsx`, `fluxboard/lib/realtime/runtimeBridge.ts`, `fluxboard/Alerts.tsx`, `fluxboard/components/domain/alerts/AlertsTable.tsx`, `fluxboard/components/domain/alerts/AlertDetails.tsx`, `fluxboard/components/domain/alerts/index.ts`, `fluxboard/Alerts.test.tsx`, `fluxboard/App.test.tsx`, `fluxboard/__tests__/panels/alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.perf.test.tsx`, `fluxboard/__tests__/ui/AlertsTableAffordance.test.tsx`, `fluxboard/__tests__/ui/AlertsTableTypography.test.tsx`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`, `fluxboard/__tests__/realtime/runtime-bridge-bootstrap.test.ts`, `fluxboard/__tests__/realtime/alerts-cutover-packet.test.ts`, `fluxboard/e2e/realtime-cutovers/alerts.spec.ts`, `docs/plans/realtime-surfaces/alerts-cutover.md`
 - rollout_control: `alerts surface flag + backend capability`
 - rollback_trigger: `legacy payload dependency, recovery regression, or baseline alerts behavior drift`
-- current status: `in_review_spec`
+- current status: `in_progress`
 - active task: `Task 9: Migrate Alerts Surface To The Standard`
 - current commit or diff: `HEAD (lane tip)`
 - cutover_packet: `docs/plans/realtime-surfaces/alerts-cutover.md`
 - canary_scope: `alerts realtime surface`
-- minimum_canary_cohort: `pending`
-- minimum_standard_subscribers: `pending`
-- minimum_standard_event_volume: `pending`
-- alert_state: `pending`
-- rollback_exercise_result: `pending`
-- dashboards_playbooks: `pending`
-- rollout_metrics_snapshot: `pending`
+- minimum_canary_cohort: `1 internal profile-scoped /alerts canary for 7 consecutive days`
+- minimum_standard_subscribers: `1 flagged Alerts subscriber during the cleanup review window`
+- minimum_standard_event_volume: `50 bridge-routed market_update packets or recovery snapshots/day`
+- alert_state: `green in lane-owned verification; no active rollback trigger`
+- rollback_exercise_result: `pass via the flag-off Alerts test path preserving legacy fetch + polling behavior`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `legacy_event_counts.market_update plus client-observed initial fetch count, recovery fetch count per summary key, and surface health-state transitions`
 - legacy_traffic_status: `legacy-default`
-- verification run: `baseline red before Task 9 implementation: __tests__/panels/alerts.test.tsx failed on timer reset behavior and stale loading-copy expectations. green: VITEST_FULL=1 pnpm exec vitest run Alerts.test.tsx __tests__/panels/alerts.test.tsx __tests__/panels/alerts.perf.test.tsx __tests__/ui/AlertsTableAffordance.test.tsx __tests__/ui/AlertsTableTypography.test.tsx __tests__/realtime/legacy-adapter.test.tsx passed (6 files, 38 tests). green: pnpm build:test passed. green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts passed (1 spec).`
+- verification run: `baseline red before Task 9 implementation: __tests__/panels/alerts.test.tsx failed on timer reset behavior and stale loading-copy expectations. green: VITEST_FULL=1 pnpm exec vitest run __tests__/realtime/runtime-bridge-bootstrap.test.ts __tests__/realtime/alerts-cutover-packet.test.ts passed (2 files, 2 tests). green: VITEST_FULL=1 pnpm exec vitest run App.test.tsx Alerts.test.tsx __tests__/panels/alerts.test.tsx __tests__/panels/alerts.perf.test.tsx __tests__/ui/AlertsTableAffordance.test.tsx __tests__/ui/AlertsTableTypography.test.tsx __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/runtime-bridge-bootstrap.test.ts __tests__/realtime/alerts-cutover-packet.test.ts passed (9 files, 48 tests). green: pnpm build:test passed. green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts passed (1 spec).`
 - blockers: `none`
-- notes_last_update: `The lane fixed a real pre-existing auto-dismiss regression in AlertsTable, added standard-mode surface health with degraded-only polling in Alerts, moved rendered alerts rows onto a local realtime surface controller while keeping the Zustand store as a compatibility mirror, restored deterministic Alerts test teardown by moving the mocked polling hook off the render path and onto useEffect semantics, and added a deterministic Playwright cutover spec plus cutover packet for the Alerts surface. Full owned verification is now green in the lane.`
-- next handoff: `Spec review is active on the lane tip. If it passes, dispatch quality review on the same pinned diff and then integrate the approved lane commits back into controller.`
+- notes_last_update: `The lane fixed the pre-existing auto-dismiss regression in AlertsTable, added standard-mode surface health with degraded-only polling in Alerts, moved rendered alerts rows onto a local realtime surface controller while keeping the Zustand store as a compatibility mirror, restored deterministic Alerts test teardown by moving the mocked polling hook off the render path and onto useEffect semantics, then closed the remaining Task 9 review gaps by adding a real runtime shared-bridge bootstrap through App startup plus explicit packet-completeness tests and a production-grade cutover packet. Full owned verification is green in the lane.`
+- next handoff: `Commit the lane tip, dispatch spec review on the pinned diff, then dispatch quality review if spec passes.`
