@@ -66,6 +66,10 @@ ORDER_ACTION_COLUMN_NAMES = (
     "ts_ingest",
     "reconciliation",
     "payload_json",
+    "order_qty_base",
+    "order_qty_venue",
+    "qty_conversion_status",
+    "qty_conversion_source",
     "created_at",
 )
 
@@ -123,6 +127,10 @@ CREATE TABLE IF NOT EXISTS order_action (
   ts_ingest INTEGER NOT NULL,
   reconciliation INTEGER NOT NULL DEFAULT 0,
   payload_json TEXT NOT NULL DEFAULT '{{}}',
+  order_qty_base TEXT,
+  order_qty_venue TEXT,
+  qty_conversion_status TEXT,
+  qty_conversion_source TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (trader_id, event_id)
 );
@@ -178,6 +186,10 @@ ORDER_ACTION_MIGRATION_DEFAULTS = {
     "ts_ingest": "0",
     "reconciliation": "0",
     "payload_json": "'{}'",
+    "order_qty_base": "NULL",
+    "order_qty_venue": "NULL",
+    "qty_conversion_status": "NULL",
+    "qty_conversion_source": "NULL",
     "created_at": "(strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
 }
 
@@ -229,9 +241,13 @@ INSERT INTO order_action (
   ts_init,
   ts_ingest,
   reconciliation,
-  payload_json
+  payload_json,
+  order_qty_base,
+  order_qty_venue,
+  qty_conversion_status,
+  qty_conversion_source
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(trader_id, event_id) DO NOTHING
 """

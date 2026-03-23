@@ -26,6 +26,8 @@ from nautilus_trader.persistence._action_intent import ActionIntentRecord
 from nautilus_trader.persistence._action_intent import current_ts_ns
 from nautilus_trader.persistence._action_intent import iter_json_payload_mappings
 from nautilus_trader.persistence._action_intent import PLACE_INTENT_TYPE
+from nautilus_trader.persistence._operator_quantity import OperatorQuantitySnapshot
+from nautilus_trader.persistence._operator_quantity import snapshot_operator_quantity
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.persistence._async_sqlite import _AsyncSQLitePersistenceActor
 from nautilus_trader.persistence._async_sqlite import writer_startup_timeout_seconds
@@ -50,6 +52,7 @@ class _ExecutionFillEnvelope:
     client_order_id: str
     info: dict[str, Any]
     ts_ingest_ns: int
+    quantity: OperatorQuantitySnapshot
     action_intent: ActionIntentRecord | None
     execution_timing: ExecutionTimingRecord | None
 
@@ -133,12 +136,19 @@ class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillE
         now_ns = current_ts_ns(self.clock)
         self._action_intent_cache.prune(now_ns=now_ns)
         self._execution_timing_cache.prune(now_ns=now_ns)
+        instrument = self.cache.instrument(event.instrument_id)
         self._enqueue_payload(
             _ExecutionFillEnvelope(
                 event=event,
                 client_order_id=event.client_order_id.value,
                 info=copy.deepcopy(event.info),
                 ts_ingest_ns=now_ns,
+                quantity=snapshot_operator_quantity(
+                    instrument,
+                    event.last_qty,
+                    last_px=event.last_px,
+                    missing_metadata_source="persistence:instrument cache miss",
+                ),
                 action_intent=self._action_intent_cache.get(
                     client_order_id=event.client_order_id.value,
                     intent_type=PLACE_INTENT_TYPE,
@@ -162,6 +172,10 @@ class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillE
             action_intent=payload.action_intent,
             execution_timing=payload.execution_timing,
             ts_ingest_ns=payload.ts_ingest_ns,
+            last_qty_base=payload.quantity.qty_base,
+            last_qty_venue=payload.quantity.qty_venue,
+            qty_conversion_status=payload.quantity.qty_conversion_status,
+            qty_conversion_source=payload.quantity.qty_conversion_source,
             on_info_encode_error=self._on_info_encode_error,
         )
 

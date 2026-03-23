@@ -77,6 +77,10 @@ class OrderActionRow(NamedTuple):
     ts_ingest: int
     reconciliation: int
     payload_json: str
+    order_qty_base: str | None = None
+    order_qty_venue: str | None = None
+    qty_conversion_status: str | None = None
+    qty_conversion_source: str | None = None
 
 
 def connect(path: str) -> sqlite3.Connection:

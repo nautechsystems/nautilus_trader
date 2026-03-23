@@ -418,7 +418,7 @@ def test_actor_persists_operator_quantity_fields_for_exact_multiplier_order_init
     assert row["order_qty_venue"] == "100"
     assert row["order_qty_base"] == "1000"
     assert row["qty_conversion_status"] == "exact_multiplier"
-    assert row["qty_conversion_source"] == "generic:multiplier"
+    assert row["qty_conversion_source"] == "instrument.info:base_exposure_mode=exact_multiplier"
 
 
 def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_order_initialized_events(
@@ -454,6 +454,41 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_ord
     assert row["order_qty_base"] == "100"
     assert row["qty_conversion_status"] == "identity"
     assert row["qty_conversion_source"] == "generic:multiplier=1"
+
+
+def test_actor_marks_order_quantity_conversion_as_missing_metadata_when_instrument_is_unavailable(
+    tmp_path,
+) -> None:
+    actor, _, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+    )
+    instrument = _okx_linear_perpetual()
+    order = TestExecStubs.limit_order(instrument=instrument)
+    initialized = order.init_event
+    raw_qty = initialized.to_dict(initialized)["quantity"]
+
+    actor.start()
+    actor.on_order_event(initialized)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT order_qty, order_qty_venue, order_qty_base, qty_conversion_status, qty_conversion_source
+        FROM order_action
+        WHERE event_type = 'OrderInitialized' AND client_order_id = ?
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["order_qty"] == raw_qty
+    assert row["order_qty_venue"] == raw_qty
+    assert row["order_qty_base"] is None
+    assert row["qty_conversion_status"] == "missing_metadata"
+    assert row["qty_conversion_source"] == "persistence:instrument cache miss"
 
 
 def test_actor_ignores_order_filled_events_on_order_topic(tmp_path) -> None:

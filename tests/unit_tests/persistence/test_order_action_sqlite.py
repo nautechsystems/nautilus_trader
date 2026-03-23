@@ -437,5 +437,83 @@ def test_schema_uses_decision_context_json_and_intent_enrichment_columns(tmp_pat
     assert "ts_market_data_recv_ns" in columns
     assert "ts_submit_local_ns" in columns
     assert "ts_cancel_request_local_ns" in columns
+    assert "order_qty_base" in columns
+    assert "order_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
+
+    conn.close()
+
+
+def test_order_action_schema_rebuild_adds_operator_quantity_columns_to_legacy_tables(tmp_path) -> None:
+    db_path = tmp_path / "orders.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE order_action (
+          trader_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          strategy_id TEXT NOT NULL,
+          instrument_id TEXT NOT NULL,
+          client_order_id TEXT NOT NULL,
+          account_id TEXT,
+          venue_order_id TEXT,
+          position_id TEXT,
+          action_type TEXT NOT NULL,
+          action_state TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          signal_snapshot_json TEXT NOT NULL DEFAULT 'null',
+          order_side TEXT,
+          order_type TEXT,
+          time_in_force TEXT,
+          post_only INTEGER,
+          reduce_only INTEGER,
+          order_qty TEXT,
+          order_px TEXT,
+          rejection_reason TEXT,
+          ts_event INTEGER NOT NULL,
+          ts_init INTEGER NOT NULL,
+          ts_ingest INTEGER NOT NULL DEFAULT 0,
+          reconciliation INTEGER NOT NULL DEFAULT 0,
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (trader_id, event_id)
+        );
+        INSERT INTO order_action (
+          trader_id, event_id, strategy_id, instrument_id, client_order_id, action_type, action_state,
+          event_type, signal_snapshot_json, order_qty, ts_event, ts_init, ts_ingest, payload_json
+        ) VALUES (
+          'TESTER-001', 'event-legacy-001', 'EMA-001', 'ETHUSDT.BINANCE', 'client-legacy-001', 'PLACE',
+          'INITIALIZED', 'OrderInitialized', '{\"edge_bps\":\"1.2\"}', '100.00000000', 100, 99, 101, '{}'
+        );
+        """,
+    )
+
+    ensure_schema(conn)
+
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(order_action)").fetchall()
+    }
+    row = conn.execute(
+        """
+        SELECT decision_context_json, order_qty, order_qty_base, order_qty_venue, qty_conversion_status, qty_conversion_source
+        FROM order_action
+        WHERE event_id = 'event-legacy-001'
+        """,
+    ).fetchone()
+
+    assert "order_qty_base" in columns
+    assert "order_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
+    assert row is not None
+    assert row["decision_context_json"] == '{"edge_bps":"1.2"}'
+    assert row["order_qty"] == "100.00000000"
+    assert row["order_qty_base"] is None
+    assert row["order_qty_venue"] is None
+    assert row["qty_conversion_status"] is None
+    assert row["qty_conversion_source"] is None
 
     conn.close()

@@ -78,6 +78,10 @@ class ExecutionFillRow(NamedTuple):
     ts_open_order_recv_ns: int | None
     ts_order_status_recv_ns: int | None
     ts_exec_details_recv_ns: int | None
+    last_qty_base: str | None = None
+    last_qty_venue: str | None = None
+    qty_conversion_status: str | None = None
+    qty_conversion_source: str | None = None
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -121,6 +125,10 @@ def fill_to_row(
     action_intent: ActionIntentRecord | None = None,
     execution_timing: ExecutionTimingRecord | None = None,
     ts_ingest_ns: int = 0,
+    last_qty_base: str | None = None,
+    last_qty_venue: str | None = None,
+    qty_conversion_status: str | None = None,
+    qty_conversion_source: str | None = None,
     on_info_encode_error: Any | None = None,
 ) -> ExecutionFillRow:
     """
@@ -130,6 +138,7 @@ def fill_to_row(
     info_json = _encode_info_json(info, on_info_encode_error=on_info_encode_error)
     client_order_id = fill.client_order_id.value if client_order_id_override is None else client_order_id_override
     ib_latency = _extract_ib_latency(info)
+    persisted_last_qty = str(fill.last_qty) if last_qty_venue is None else last_qty_venue
 
     return ExecutionFillRow(
         fill.trader_id.value,
@@ -143,7 +152,7 @@ def fill_to_row(
         fill.position_id.value if fill.position_id else None,
         order_side_to_str(fill.order_side),
         order_type_to_str(fill.order_type),
-        str(fill.last_qty),
+        persisted_last_qty,
         str(fill.last_px),
         fill.currency.code,
         str(fill.commission),
@@ -176,6 +185,10 @@ def fill_to_row(
         ib_latency.get("ts_open_order_recv_ns"),
         ib_latency.get("ts_order_status_recv_ns"),
         ib_latency.get("ts_exec_details_recv_ns"),
+        last_qty_base,
+        last_qty_venue,
+        qty_conversion_status,
+        qty_conversion_source,
     )
 
 
@@ -257,6 +270,10 @@ def _alter_statements(columns: set[str]) -> list[str]:
         "ts_open_order_recv_ns": "ALTER TABLE execution_fill ADD COLUMN ts_open_order_recv_ns INTEGER",
         "ts_order_status_recv_ns": "ALTER TABLE execution_fill ADD COLUMN ts_order_status_recv_ns INTEGER",
         "ts_exec_details_recv_ns": "ALTER TABLE execution_fill ADD COLUMN ts_exec_details_recv_ns INTEGER",
+        "last_qty_base": "ALTER TABLE execution_fill ADD COLUMN last_qty_base TEXT",
+        "last_qty_venue": "ALTER TABLE execution_fill ADD COLUMN last_qty_venue TEXT",
+        "qty_conversion_status": "ALTER TABLE execution_fill ADD COLUMN qty_conversion_status TEXT",
+        "qty_conversion_source": "ALTER TABLE execution_fill ADD COLUMN qty_conversion_source TEXT",
     }
     for column_name, sql in additions.items():
         if column_name not in columns:

@@ -270,6 +270,10 @@ def test_execution_fill_schema_migrates_legacy_table_before_creating_new_indexes
     }
 
     assert "quote_cycle_id" in columns
+    assert "last_qty_base" in columns
+    assert "last_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
     assert "ts_submit_gateway_send_ns" in columns
     assert "execution_fill_quote_cycle_id_idx" in indexes
 

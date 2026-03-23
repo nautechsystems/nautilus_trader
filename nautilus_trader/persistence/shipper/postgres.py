@@ -141,6 +141,10 @@ CREATE TABLE IF NOT EXISTS {schema}.execution_fill (
   ts_open_order_recv_ns BIGINT,
   ts_order_status_recv_ns BIGINT,
   ts_exec_details_recv_ns BIGINT,
+  last_qty_base TEXT,
+  last_qty_venue TEXT,
+  qty_conversion_status TEXT,
+  qty_conversion_source TEXT,
   created_at TEXT NOT NULL,
   source_profile TEXT NOT NULL,
   source_host TEXT NOT NULL,
@@ -204,6 +208,10 @@ CREATE TABLE IF NOT EXISTS {schema}.order_action (
   ts_ingest BIGINT NOT NULL,
   reconciliation INTEGER NOT NULL DEFAULT 0,
   payload_json TEXT NOT NULL DEFAULT '{{}}',
+  order_qty_base TEXT,
+  order_qty_venue TEXT,
+  qty_conversion_status TEXT,
+  qty_conversion_source TEXT,
   created_at TEXT NOT NULL,
   source_profile TEXT NOT NULL,
   source_host TEXT NOT NULL,
@@ -287,6 +295,21 @@ CREATE INDEX IF NOT EXISTS quote_cycle_source_reason_ts_cycle_start_ns_idx
 """,
 }
 
+TABLE_ALTER_SQL: dict[str, tuple[str, ...]] = {
+    "execution_fill": (
+        "ALTER TABLE {schema}.execution_fill ADD COLUMN IF NOT EXISTS last_qty_base TEXT",
+        "ALTER TABLE {schema}.execution_fill ADD COLUMN IF NOT EXISTS last_qty_venue TEXT",
+        "ALTER TABLE {schema}.execution_fill ADD COLUMN IF NOT EXISTS qty_conversion_status TEXT",
+        "ALTER TABLE {schema}.execution_fill ADD COLUMN IF NOT EXISTS qty_conversion_source TEXT",
+    ),
+    "order_action": (
+        "ALTER TABLE {schema}.order_action ADD COLUMN IF NOT EXISTS order_qty_base TEXT",
+        "ALTER TABLE {schema}.order_action ADD COLUMN IF NOT EXISTS order_qty_venue TEXT",
+        "ALTER TABLE {schema}.order_action ADD COLUMN IF NOT EXISTS qty_conversion_status TEXT",
+        "ALTER TABLE {schema}.order_action ADD COLUMN IF NOT EXISTS qty_conversion_source TEXT",
+    ),
+}
+
 
 class TelemetryPostgresSink:
     def __init__(self, config: TelemetryPostgresConfig) -> None:
@@ -310,6 +333,9 @@ class TelemetryPostgresSink:
             )
             for ddl in TABLE_CREATE_SQL.values():
                 cursor.execute(ddl.format(schema=self._config.schema))
+            for statements in TABLE_ALTER_SQL.values():
+                for statement in statements:
+                    cursor.execute(statement.format(schema=self._config.schema))
         conn.commit()
 
     def validate_tables(self, table_names: Iterable[str]) -> None:

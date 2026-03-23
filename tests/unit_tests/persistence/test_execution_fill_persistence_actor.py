@@ -303,7 +303,7 @@ def test_actor_persists_operator_quantity_fields_for_exact_multiplier_fills(tmp_
     assert row["last_qty_venue"] == "100"
     assert row["last_qty_base"] == "1000"
     assert row["qty_conversion_status"] == "exact_multiplier"
-    assert row["qty_conversion_source"] == "generic:multiplier"
+    assert row["qty_conversion_source"] == "instrument.info:base_exposure_mode=exact_multiplier"
 
 
 def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_fills(tmp_path) -> None:
@@ -333,6 +333,36 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_fil
     assert row["last_qty_base"] == "100"
     assert row["qty_conversion_status"] == "identity"
     assert row["qty_conversion_source"] == "generic:multiplier=1"
+
+
+def test_actor_marks_fill_quantity_conversion_as_missing_metadata_when_instrument_is_unavailable(
+    tmp_path,
+) -> None:
+    actor, _, db_path = _make_actor(tmp_path, run_writer_thread=False)
+    instrument = _okx_linear_perpetual()
+    fill = _make_fill(instrument=instrument, ts_event=163)
+
+    actor.start()
+    actor.on_order_filled(fill)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT last_qty, last_qty_venue, last_qty_base, qty_conversion_status, qty_conversion_source
+        FROM execution_fill
+        WHERE event_id = ?
+        """,
+        (fill.id.value,),
+    )
+
+    assert row is not None
+    assert row["last_qty"] == str(fill.last_qty)
+    assert row["last_qty_venue"] == str(fill.last_qty)
+    assert row["last_qty_base"] is None
+    assert row["qty_conversion_status"] == "missing_metadata"
+    assert row["qty_conversion_source"] == "persistence:instrument cache miss"
 
 
 def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
