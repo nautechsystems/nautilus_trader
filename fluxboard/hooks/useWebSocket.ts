@@ -54,6 +54,14 @@ function getSharedWebSocketBridgeSnapshot(): WebSocketBridge<any> | null {
   return sharedWebSocketBridge;
 }
 
+function subscribeToNoopSharedBridge(): () => void {
+  return () => {};
+}
+
+function getNoSharedWebSocketBridgeSnapshot(): null {
+  return null;
+}
+
 export function registerSharedWebSocketBridge<T = unknown>(
   bridge: WebSocketBridge<T>,
 ): void {
@@ -102,12 +110,13 @@ export function useWebSocket<T = unknown>(
 ): void {
   // Use ref to always have the latest handler without recreating the subscription
   const handlerRef = useRef(handler);
-  const registeredSharedBridge = useSyncExternalStore(
-    subscribeToSharedWebSocketBridge,
-    getSharedWebSocketBridgeSnapshot,
-    getSharedWebSocketBridgeSnapshot,
-  );
   const surface = options?.surface;
+  const usesSharedBridgeStore = options?.bridge === undefined && isRealtimeSurface(surface);
+  const registeredSharedBridge = useSyncExternalStore(
+    usesSharedBridgeStore ? subscribeToSharedWebSocketBridge : subscribeToNoopSharedBridge,
+    usesSharedBridgeStore ? getSharedWebSocketBridgeSnapshot : getNoSharedWebSocketBridgeSnapshot,
+    usesSharedBridgeStore ? getSharedWebSocketBridgeSnapshot : getNoSharedWebSocketBridgeSnapshot,
+  );
   const legacySubscribe: WebSocketSubscription<T> = options?.subscribe ?? subscribeToSocket;
   const activeBridge = (options?.bridge ?? registeredSharedBridge) as WebSocketBridge<T> | null;
   const bridgeSubscribe = activeBridge?.subscribe;

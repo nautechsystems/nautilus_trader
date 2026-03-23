@@ -415,6 +415,41 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('does not churn legacy subscriptions without a surface when a shared bridge registers later', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      signal: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
+    const handler = vi.fn();
+    const legacyUnsubscribe = vi.fn();
+    const legacySubscribe = vi.fn(() => legacyUnsubscribe);
+
+    const { unmount } = renderHook(() =>
+      hookRuntime.useWebSocket('legacy:alerts', handler, {
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      hookRuntime.registerSharedWebSocketBridge({
+        subscribe: vi.fn(() => vi.fn()),
+      });
+    });
+
+    expect(legacyUnsubscribe).not.toHaveBeenCalled();
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('honors resolveMode from the registered shared bridge before falling back to realtime flags', async () => {
     const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
       global: true,
