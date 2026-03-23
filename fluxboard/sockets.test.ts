@@ -520,4 +520,70 @@ describe('sockets status state machine', () => {
     }));
     expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
   });
+
+  it('ignores stale subscribe acks from a superseded reconnect attempt', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onFailure = vi.fn();
+    const onSubscribed = vi.fn();
+    let currentResumeFromSeq = 3;
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'signal',
+        profile: 'default',
+        surface_query_key: 'signal|profile=default',
+        stream_id: 'signal-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 3,
+      },
+      resumeFromSeq: () => currentResumeFromSeq,
+      onEvent: vi.fn(),
+      onFailure,
+      onSubscribed,
+    });
+
+    const firstAck = control.socket.emit.mock.calls[0]?.[2];
+    expect(typeof firstAck).toBe('function');
+
+    control.emit('disconnect', 'transport close');
+    currentResumeFromSeq = 5;
+    control.emit('connect');
+
+    const secondAck = control.socket.emit.mock.calls[1]?.[2];
+    expect(typeof secondAck).toBe('function');
+
+    firstAck?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 3,
+      last_seq: 3,
+    });
+
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(control.socket.emit).not.toHaveBeenCalledWith('unsubscribe', { surface: 'signal' });
+
+    secondAck?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 5,
+      last_seq: 5,
+    });
+
+    expect(onSubscribed).toHaveBeenCalledTimes(1);
+    expect(onFailure).not.toHaveBeenCalled();
+  });
 });

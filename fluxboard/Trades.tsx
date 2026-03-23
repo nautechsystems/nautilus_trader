@@ -558,6 +558,7 @@ type FetchOptions = {
   cursor?: string | null;
   append?: boolean;
   resyncId?: number;
+  allowManualRefreshClear?: boolean;
 };
 
 export default function Trades({
@@ -615,6 +616,8 @@ export default function Trades({
   const [perfHarnessActive, setPerfHarnessActive] = useState(false);
   const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const [standardLineageGeneration, setStandardLineageGeneration] = useState<number | null>(null);
+  const [canonicalViewGeneration, setCanonicalViewGeneration] = useState(0);
   const tradesStandardActiveView = useMemo(
     () => tradesStandardEnabled && isCanonicalTradesRealtimeView(page, pageSize, sort, filters),
     [filters, page, pageSize, sort, tradesStandardEnabled],
@@ -666,7 +669,10 @@ export default function Trades({
   const isResyncingRef = useRef<boolean>(isResyncing);
   const surfaceStateRef = useRef<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
   const manualRefreshRequiredRef = useRef<boolean>(false);
+  const manualRefreshGenerationRef = useRef(0);
   const standardLineageRef = useRef<RealtimeSnapshotLineage | null>(null);
+  const canonicalViewGenerationRef = useRef(0);
+  const previousTradesStandardActiveViewRef = useRef(tradesStandardActiveView);
   const enqueueTradeMessageRef = useRef<(msg: any) => void>(() => undefined);
   const standardSnapshotRecoveryInFlightRef = useRef<boolean>(false);
 
@@ -817,12 +823,20 @@ export default function Trades({
 
   const requireManualRefresh = useCallback(() => {
     manualRefreshRequiredRef.current = true;
+    manualRefreshGenerationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (refreshTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
     standardSnapshotRecoveryInFlightRef.current = false;
     catchingUpRef.current = false;
     clearGapRecoveryState();
     setStandardLineage(null);
     surfaceStateRef.current = RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
     setSurfaceState(RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED);
+    setLoading(false);
   }, [clearGapRecoveryState]);
 
   const advanceTradeReplayCursor = useCallback((rows: Array<any> | undefined | null) => {
@@ -878,6 +892,17 @@ export default function Trades({
   useEffect(() => {
     standardLineageRef.current = standardLineage;
   }, [standardLineage]);
+
+  useEffect(() => {
+    const previous = previousTradesStandardActiveViewRef.current;
+    if (previous && !tradesStandardActiveView) {
+      canonicalViewGenerationRef.current += 1;
+      setCanonicalViewGeneration(canonicalViewGenerationRef.current);
+      setStandardLineageGeneration(null);
+      setStandardLineage(null);
+    }
+    previousTradesStandardActiveViewRef.current = tradesStandardActiveView;
+  }, [tradesStandardActiveView]);
 
   useEffect(() => {
     syncSurfaceState();
@@ -978,6 +1003,8 @@ export default function Trades({
       abortRef.current = ac;
       const requestSeq = requestSeqRef.current + 1;
       requestSeqRef.current = requestSeq;
+      const manualRefreshGeneration = manualRefreshGenerationRef.current;
+      const canonicalViewGenerationAtStart = canonicalViewGenerationRef.current;
       const isForegroundRequest = !options.silent;
 
       if (isForegroundRequest) {
@@ -1004,6 +1031,9 @@ export default function Trades({
           return;
         }
         if (!mountedRef.current) {
+          return;
+        }
+        if (manualRefreshGeneration !== manualRefreshGenerationRef.current) {
           return;
         }
 
@@ -1035,16 +1065,27 @@ export default function Trades({
         const realtimeLineage = requestUsesStandardLineage
           ? response.realtime
           : standardLineageRef.current;
+        const canClearManualRefresh = !manualRefreshRequiredRef.current || options.allowManualRefreshClear === true;
         if (tradesStandardEnabled) {
           if (requestUsesStandardLineage && realtimeLineage) {
-            clearManualRefreshRequired();
-            setStandardLineage({ ...realtimeLineage });
+            if (canClearManualRefresh) {
+              clearManualRefreshRequired();
+              setStandardLineage({ ...realtimeLineage });
+              setStandardLineageGeneration(canonicalViewGenerationAtStart);
+            } else {
+              setStandardLineage(null);
+              setStandardLineageGeneration(null);
+            }
           } else if (requestUsesStandardLineage) {
+            setStandardLineageGeneration(null);
             requireManualRefresh();
+          } else {
+            setStandardLineageGeneration(null);
           }
         } else {
           clearManualRefreshRequired();
           setStandardLineage(null);
+          setStandardLineageGeneration(null);
         }
         const currentStreamCursor = streamCursorRef.current;
         const responseStreamId =
@@ -1937,6 +1978,10 @@ export default function Trades({
       recoverStandardSnapshot();
       return;
     }
+    if (failure.type === 'lineage_mismatch') {
+      recoverStandardSnapshot();
+      return;
+    }
     requireManualRefresh();
   }, [recoverStandardSnapshot, requireManualRefresh]);
 
@@ -2011,7 +2056,11 @@ export default function Trades({
   }, [beginGapRecovery, recoverStandardSnapshot, schedulePoll, syncSurfaceState]);
 
   useStandardWebSocketSubscription({
-    enabled: tradesStandardActiveView && Boolean(standardLineage) && !manualRefreshRequiredRef.current,
+    enabled:
+      tradesStandardActiveView
+      && Boolean(standardLineage)
+      && standardLineageGeneration === canonicalViewGeneration
+      && !manualRefreshRequiredRef.current,
     lineage: tradesStandardEnabled ? standardLineage : null,
     resumeFromSeq: getStandardResumeFromSeq,
     onEvent: handleStandardRealtimeEvent,
@@ -2119,7 +2168,7 @@ export default function Trades({
     isAtTopRef.current = true;
     recomputeIsViewingLatest(true);
     scrollElementRef.current?.scrollTo({ top: 0 });
-    fetchPage();
+    fetchPage({ allowManualRefreshClear: true });
   }, [fetchPage, recomputeIsViewingLatest]);
 
   const handleToggleSound = useCallback(() => {

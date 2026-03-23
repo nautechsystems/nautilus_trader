@@ -140,6 +140,7 @@ type StandardSocketSubscription<TPayload> = {
   id: number;
   lineage: RealtimeSnapshotLineage;
   request: StandardSocketSubscribeRequest;
+  issueId: number;
   resolveResumeFromSeq: () => number;
   onEvent: (event: StandardSocketEventEnvelope<TPayload>) => void;
   onFailure?: (failure: StandardSocketFailure) => void;
@@ -249,12 +250,16 @@ export function createStandardSocketClient(
   };
 
   const issueSubscribe = (subscription: StandardSocketSubscription<any>) => {
-    subscription.request = buildStandardSubscribeRequest(
+    const issuedRequest = buildStandardSubscribeRequest(
       subscription.lineage,
       subscription.resolveResumeFromSeq(),
     );
-    resolvedSocket.emit('subscribe', subscription.request, (response: any) => {
-      if (!subscriptions.has(subscription.id)) {
+    subscription.request = issuedRequest;
+    subscription.issueId += 1;
+    const issuedRequestId = subscription.issueId;
+    resolvedSocket.emit('subscribe', issuedRequest, (response: any) => {
+      const activeSubscription = subscriptions.get(subscription.id);
+      if (!activeSubscription || activeSubscription.issueId !== issuedRequestId) {
         return;
       }
 
@@ -264,19 +269,19 @@ export function createStandardSocketClient(
         subscription.onFailure?.({
           type: 'subscribe_rejected',
           reason: String(ack?.reason ?? 'subscribe_rejected'),
-          requested: subscription.request,
+          requested: issuedRequest,
           ack,
         });
         return;
       }
 
-      if (!matchesStandardSubscribeAck(subscription.request, ack)) {
+      if (!matchesStandardSubscribeAck(issuedRequest, ack)) {
         removeSubscription(subscription.id);
-        emitSurfaceUnsubscribeIfUnused(subscription.request.surface);
+        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface);
         subscription.onFailure?.({
           type: 'lineage_mismatch',
           reason: 'ack_lineage_mismatch',
-          requested: subscription.request,
+          requested: issuedRequest,
           ack,
         });
         return;
@@ -284,14 +289,14 @@ export function createStandardSocketClient(
 
       if (
         typeof ack.accepted_start_seq === 'number'
-        && ack.accepted_start_seq !== subscription.request.resume_from_seq
+        && ack.accepted_start_seq !== issuedRequest.resume_from_seq
       ) {
         removeSubscription(subscription.id);
-        emitSurfaceUnsubscribeIfUnused(subscription.request.surface);
+        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface);
         subscription.onFailure?.({
           type: 'lineage_mismatch',
           reason: 'accepted_start_seq_mismatch',
-          requested: subscription.request,
+          requested: issuedRequest,
           ack,
         });
         return;
@@ -364,6 +369,7 @@ export function createStandardSocketClient(
         id: subscriptionId,
         lineage,
         request,
+        issueId: 0,
         resolveResumeFromSeq,
         onEvent,
         onFailure,

@@ -1982,6 +1982,7 @@ export default function SignalTable({
   const manualRefreshRequiredRef = useRef(false);
   const standardLineageRef = useRef<RealtimeSnapshotLineage | null>(null);
   const standardCursorSeqRef = useRef(0);
+  const snapshotGenerationRef = useRef(0);
   const resetRecoveryRef = useRef<() => void>(() => undefined);
   const makerV4ChangedRowIdsRef = useRef<readonly string[] | null>(null);
 
@@ -2040,11 +2041,38 @@ export default function SignalTable({
 
   const requireManualRefresh = useCallback(() => {
     manualRefreshRequiredRef.current = true;
+    snapshotGenerationRef.current += 1;
     standardLineageRef.current = null;
     standardCursorSeqRef.current = 0;
     resetRecoveryRef.current();
     setStandardLineage(null);
     setSurfaceState(RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED);
+  }, []);
+
+  const applyStandardSnapshotLineage = useCallback((nextLineage: RealtimeSnapshotLineage) => {
+    const previousLineage = standardLineageRef.current;
+    const nextLastSeq = Math.max(0, Math.trunc(nextLineage.last_seq));
+    const sameEpoch = Boolean(
+      previousLineage
+      && previousLineage.contract_version === nextLineage.contract_version
+      && previousLineage.surface === nextLineage.surface
+      && previousLineage.profile === nextLineage.profile
+      && previousLineage.surface_query_key === nextLineage.surface_query_key
+      && previousLineage.stream_id === nextLineage.stream_id
+      && String(previousLineage.snapshot_revision) === String(nextLineage.snapshot_revision),
+    );
+    standardLineageRef.current = { ...nextLineage };
+    standardCursorSeqRef.current = sameEpoch
+      ? Math.max(standardCursorSeqRef.current, nextLastSeq)
+      : nextLastSeq;
+    setStandardLineage({ ...nextLineage });
+  }, []);
+
+  const advanceStandardCursor = useCallback((seq: unknown) => {
+    if (typeof seq !== 'number' || !Number.isFinite(seq)) {
+      return;
+    }
+    standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(seq));
   }, []);
 
   const markRowsNonEmpty = useCallback((nowMs?: number) => {
@@ -2082,6 +2110,7 @@ export default function SignalTable({
   const fetchSnapshot = useCallback(async ({ markRefreshing = false }: { markRefreshing?: boolean } = {}) => {
     const requestStartedAtMs = Date.now();
     const requestSeq = ++restRequestSeqRef.current;
+    const snapshotGeneration = snapshotGenerationRef.current;
     if (markRefreshing) {
       setRefreshing(true);
     }
@@ -2090,6 +2119,7 @@ export default function SignalTable({
       const data = await api.getSignalStrategies(
         signalStandardEnabled ? { contractVersion: 2 } : undefined,
       );
+      if (snapshotGeneration !== snapshotGenerationRef.current) return false;
       if (requestSeq < restAppliedSeqRef.current) return false;
       restAppliedSeqRef.current = requestSeq;
 
@@ -2113,9 +2143,7 @@ export default function SignalTable({
       if (signalStandardEnabled) {
         if (data.realtime) {
           manualRefreshRequiredRef.current = false;
-          standardLineageRef.current = { ...data.realtime };
-          standardCursorSeqRef.current = Math.max(0, Math.trunc(data.realtime.last_seq));
-          setStandardLineage({ ...data.realtime });
+          applyStandardSnapshotLineage(data.realtime);
           setSurfaceState(RealtimeSurfaceState.LIVE);
         } else {
           requireManualRefresh();
@@ -2143,7 +2171,14 @@ export default function SignalTable({
         setRefreshing(false);
       }
     }
-  }, [applyVisibleSnapshotRows, isStrategyVisible, requireManualRefresh, setServerClock, signalStandardEnabled]);
+  }, [
+    applyStandardSnapshotLineage,
+    applyVisibleSnapshotRows,
+    isStrategyVisible,
+    requireManualRefresh,
+    setServerClock,
+    signalStandardEnabled,
+  ]);
 
   const handleRecoveryFetch = useCallback(() => {
     if (manualRefreshRequiredRef.current) {
@@ -2304,6 +2339,7 @@ export default function SignalTable({
     syncRealtimeEnvelope({
       server_ts_ms: event.server_ts_ms,
     });
+    advanceStandardCursor(event.seq);
 
     if (event.kind === 'heartbeat') {
       if (!manualRefreshRequiredRef.current) {
@@ -2322,9 +2358,6 @@ export default function SignalTable({
     }
 
     const payload = event.payload ?? {};
-    if (typeof event.seq === 'number' && Number.isFinite(event.seq)) {
-      standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(event.seq));
-    }
     const signalRows = Array.isArray(payload.signals) ? payload.signals : [];
     const changedIds = Array.isArray(payload?.strategies?.changed)
       ? payload.strategies.changed.filter((value: unknown) => typeof value === 'string')
@@ -2347,7 +2380,7 @@ export default function SignalTable({
     if (!manualRefreshRequiredRef.current) {
       setSurfaceState(RealtimeSurfaceState.LIVE);
     }
-  }, [applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
+  }, [advanceStandardCursor, applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
 
   useStandardWebSocketSubscription({
     enabled: signalStandardEnabled && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED,

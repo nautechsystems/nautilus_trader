@@ -177,6 +177,34 @@ vi.mock('@/sockets', () => {
               });
               return;
             }
+            const matchesLineage =
+              ack.contract_version === request.contract_version
+              && ack.surface === request.surface
+              && ack.profile === request.profile
+              && ack.surface_query_key === request.surface_query_key
+              && ack.stream_id === request.stream_id
+              && String(ack.snapshot_revision) === String(request.snapshot_revision);
+            if (!matchesLineage) {
+              onFailure?.({
+                type: 'lineage_mismatch',
+                reason: 'ack_lineage_mismatch',
+                requested: request,
+                ack,
+              });
+              return;
+            }
+            if (
+              typeof ack.accepted_start_seq === 'number'
+              && ack.accepted_start_seq !== request.resume_from_seq
+            ) {
+              onFailure?.({
+                type: 'lineage_mismatch',
+                reason: 'accepted_start_seq_mismatch',
+                requested: request,
+                ack,
+              });
+              return;
+            }
             onSubscribed?.(ack);
           });
         }
@@ -249,6 +277,16 @@ async function flushAsyncRender() {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('SignalTable Behavioral Tests', () => {
@@ -873,6 +911,100 @@ describe('SignalTable Behavioral Tests', () => {
       expect(subscription.resumeFromSeq()).toBe(5);
     });
 
+    it('keeps the standard signal cursor monotonic across heartbeat, invalidate, and snapshot recovery', async () => {
+      vi.useFakeTimers();
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: 1_700_000_000_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 3,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:05',
+          server_ts_ms: 1_700_000_005_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 4,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        });
+
+      renderSignalTable();
+      await flushAsyncRender();
+      expect((standardSocketClient as any).subscribe).toHaveBeenCalledTimes(1);
+
+      const subscription = (standardSocketClient as any).subscribe.mock.calls[0]?.[0];
+      expect(subscription.resumeFromSeq()).toBe(3);
+
+      act(() => {
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'heartbeat',
+          seq: 5,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: 1_700_000_000_005,
+          payload: {},
+        });
+      });
+
+      expect(subscription.resumeFromSeq()).toBe(5);
+
+      act(() => {
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'invalidate',
+          seq: 6,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: 1_700_000_000_006,
+          reason: 'refresh_required',
+          payload: {},
+        });
+      });
+
+      expect(subscription.resumeFromSeq()).toBe(6);
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+      expect(subscription.resumeFromSeq()).toBe(6);
+      vi.useRealTimers();
+    });
+
     it('applies matching realtime_event delta batches and ignores mismatched signal lineage', async () => {
       realtimeFlags.signal = true;
       (socket as any).connected = true;
@@ -1049,9 +1181,8 @@ describe('SignalTable Behavioral Tests', () => {
         });
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('Refresh required')).toBeInTheDocument();
-      });
+      await flushAsyncRender();
+      expect(screen.getByText('Refresh required')).toBeInTheDocument();
     });
 
     it('keeps manual refresh required sticky across reconnects in standard mode', async () => {
@@ -1175,6 +1306,102 @@ describe('SignalTable Behavioral Tests', () => {
       await flushAsyncRender();
 
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps manual refresh required when a stale recovery snapshot resolves after fail-closed', async () => {
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+      const deferred = createDeferred<any>();
+
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: 1_700_000_000_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 0,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockImplementationOnce(() => deferred.promise);
+
+      renderSignalTable();
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'invalidate',
+          seq: 1,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: 1_700_000_000_001,
+          reason: 'refresh_required',
+          payload: {},
+        });
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+      });
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'recovery_required',
+          seq: 2,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: 1_700_000_000_002,
+          reason: 'capability_withdrawn',
+          payload: {},
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Refresh required')).toBeInTheDocument();
+      });
+
+      deferred.resolve({
+        strategies: [],
+        server_time: '2024-01-01 12:00:05',
+        server_ts_ms: 1_700_000_005_000,
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 2,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Refresh required')).toBeInTheDocument();
+      expect((standardSocketClient as any).subscribe).toHaveBeenCalledTimes(1);
     });
 
     it('keeps the legacy signal listeners when the standard transport flag is off', async () => {
