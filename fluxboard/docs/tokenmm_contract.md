@@ -475,7 +475,16 @@ Trade row contract:
 1. Each row MUST include `row_id`, `ts_ms`, and `version`.
 2. `version` is required for deterministic reconnect/dedupe behavior.
 3. `row_id` is an opaque stable identifier; server may synthesize a fallback when producer rows are missing one.
-4. Trade blotter `qty` remains venue/native size unless a convention-consistent explicit `*_venue` / `*_base` pair is added alongside it.
+4. For TokenMM-facing REST rows, `qty` is operator-facing base quantity.
+5. When normalized trade exposure is available, rows MUST also publish:
+   - `qty_base`
+   - `qty_venue`
+   - `qty_conversion_status`
+   - `qty_conversion_source`
+6. Shared producer bare `qty` remains venue/native size; `qty_base` and `qty_venue` carry the normalized pair.
+7. Older raw SQLite rows may not have `*_base` / `*_venue` columns.
+8. Legacy Redis trade rows cannot be safely reinterpreted after the fact without producer-supplied normalized fields.
+9. Rollout requires a TokenMM trade-stream cutover/reset before enabling base-first `qty` in production.
 
 Request:
 
@@ -498,6 +507,10 @@ Response `data`:
       "side": "BUY",
       "price": 94220.5,
       "qty": 0.015,
+      "qty_base": 0.015,
+      "qty_venue": 0.015,
+      "qty_conversion_status": "identity",
+      "qty_conversion_source": "generic:multiplier=1",
       "fee": 0.12
     }
   ],
@@ -548,6 +561,7 @@ Delta cursor semantics:
 2. When `reset_required=true`, client must do a full reload via `GET /api/v1/trades`.
 3. When `reset_required=false` and `since_seq` is used, delta rows are oldest-to-newest and `last_seq` equals the last returned row.
 4. `after` is compatibility-only fallback and does not guarantee oldest-to-newest ordering.
+5. If production is switching from venue-native bare `qty` to base-first `qty`, perform a TokenMM trade-stream cutover/reset so cached Redis rows do not leak the legacy interpretation into the API.
 
 ### `GET /api/v1/alerts`
 
