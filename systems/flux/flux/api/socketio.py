@@ -29,6 +29,7 @@ from flux.api.payloads import coerce_ts_ms
 from flux.api.payloads import decode_text
 from flux.api.payloads import now_ms
 from flux.api.payloads import safe_int
+from flux.api._payloads_common import project_trade_quantity_fields
 from flux.runners.shared.strategy_set import normalize_profile as normalize_strategy_set_profile
 from flux.runners.shared.strategy_set import supported_profile_ids as supported_strategy_set_profiles
 
@@ -104,7 +105,7 @@ def _normalize_legs(value: Any) -> dict[str, Any]:
 
 
 def _normalize_trade_row(row: Mapping[str, Any], *, row_id: str, version: int) -> dict[str, Any]:
-    out = _copy_mapping(cast(Mapping[str, Any], row))
+    out = project_trade_quantity_fields(_copy_mapping(cast(Mapping[str, Any], row)))
     out["row_id"] = row_id
     out["version"] = version
     return out

@@ -222,6 +222,28 @@ def safe_bool(value: Any) -> bool | None:
     return None
 
 
+def project_trade_quantity_fields(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Project explicit trade quantity fields into the operator-facing API contract."""
+
+    out = dict(row)
+    qty = decode_text(out.get("qty")).strip()
+    qty_base = decode_text(out.get("qty_base")).strip()
+    qty_venue = decode_text(out.get("qty_venue")).strip()
+
+    if qty_venue:
+        out["qty_venue"] = qty_venue
+    elif qty:
+        out["qty_venue"] = qty
+
+    if qty_base:
+        out["qty_base"] = qty_base
+        out["qty"] = qty_base
+    elif qty:
+        out["qty"] = qty
+
+    return out
+
+
 def coerce_ts_ms(value: Any) -> int | None:
     """Coerce seconds, milliseconds, microseconds, nanoseconds, or ISO text into epoch ms."""
 
@@ -751,7 +773,7 @@ def build_trades_rows(
             else:
                 row_id = row_id or f"{strategy_id}:trade:{out['ts_ms']}:{index}"
         out["row_id"] = row_id
-        filtered.append(enrich_row_with_canonical_naming(out))
+        filtered.append(enrich_row_with_canonical_naming(project_trade_quantity_fields(out)))
     if since_seq is not None:
         # Delta mode must stream oldest unseen seq first to avoid skipping rows.
         filtered.sort(key=lambda item: safe_int(item.get("seq")) or 0)
