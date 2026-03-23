@@ -1879,6 +1879,14 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
     portfolio_snapshot_raw = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
     assert portfolio_snapshot_raw is not None
     portfolio_snapshot = json.loads(portfolio_snapshot_raw)
+    ibkr_rows = [
+        row
+        for row in portfolio_snapshot["accounts"]["rows"]
+        if row.get("account_scope_id") == "ibkr.reference.main"
+    ]
+    assert len(ibkr_rows) == 1
+    assert ibkr_rows[0]["stale"] is True
+    assert ibkr_rows[0]["include_in_reconciliation"] is False
     assert portfolio_snapshot["accounts"]["scope_status"] == [
         {
             "account_scope_id": "ibkr.reference.main",

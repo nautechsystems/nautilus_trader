@@ -210,5 +210,6 @@ def test_ibkr_reference_balance_provider_refresh_marks_timeout_without_advancing
 
     assert snapshot is not None
     assert snapshot["projection_status"]["last_success_ts_ms"] == 1_700_000_000_000
+    assert snapshot["projection_status"]["last_attempt_ts_ms"] > 1_700_000_000_000
     assert snapshot["projection_status"]["last_error_type"] == "TimeoutError"
     assert snapshot["projection_status"]["healthy"] is False
