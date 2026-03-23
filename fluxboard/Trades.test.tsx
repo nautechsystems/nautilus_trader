@@ -8,12 +8,17 @@ import { socket } from './sockets';
 import { playTradeClick } from './utils/sound';
 import type { TradeRow } from './types';
 
-vi.mock('./api', () => ({
-  api: {
-    getTrades: vi.fn(),
-    getTradesDelta: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades: vi.fn(),
+      getTradesDelta: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./sockets', () => ({
   socket: {

@@ -36,12 +36,17 @@ const { socketHandlers, socketMock, getTrades, getTradesDelta } = vi.hoisted(() 
 
 vi.mock('../sockets', () => ({ socket: socketMock }));
 
-vi.mock('../api', () => ({
-  api: {
-    getTrades,
-    getTradesDelta,
-  },
-}));
+vi.mock('../api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades,
+      getTradesDelta,
+    },
+  };
+});
 
 const baseRows = [
   {
