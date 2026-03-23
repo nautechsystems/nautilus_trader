@@ -2,6 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { socket } from '../sockets';
+import { isRealtimeStandardEnabled } from '../config/featureFlags';
+import {
+  REALTIME_STANDARD_SURFACES,
+  type RealtimeSurface,
+} from '../lib/realtime/constants';
 
 export type WebSocketSubscriptionMode = 'legacy' | 'standard';
 
@@ -51,6 +56,11 @@ function subscribeToSocket<T = unknown>(
   };
 }
 
+function isRealtimeSurface(surface?: string): surface is RealtimeSurface {
+  return surface !== undefined
+    && (REALTIME_STANDARD_SURFACES as readonly string[]).includes(surface);
+}
+
 /**
  * Hook to subscribe to WebSocket events with automatic cleanup
  *
@@ -76,9 +86,12 @@ export function useWebSocket<TLegacy = unknown, TStandard = TLegacy>(
   const legacySubscribe: WebSocketSubscription<TLegacy> = options?.subscribe ?? subscribeToSocket;
   const activeBridge = (options?.bridge ?? sharedWebSocketBridge) as WebSocketBridge<TLegacy, TStandard> | null;
   const bridgeSubscribe = activeBridge?.subscribe;
-  const mode = bridgeSubscribe
-    ? activeBridge?.resolveMode?.({ event, surface }) ?? 'legacy'
-    : 'legacy';
+  const explicitMode = options?.bridge?.resolveMode?.({ event, surface });
+  const mode = explicitMode ?? (
+    bridgeSubscribe && isRealtimeSurface(surface) && isRealtimeStandardEnabled(surface)
+      ? 'standard'
+      : 'legacy'
+  );
 
   useEffect(() => {
     handlerRef.current = handler;

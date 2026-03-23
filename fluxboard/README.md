@@ -183,8 +183,9 @@ New UI work should prefer tokens/theme variables over raw Tailwind color/spacing
 standard-payload assumptions. `useWebSocket(..., { surface, ... })` can route flag-on
 surfaces through one shared compatibility bridge registered at the hook module level via
 `registerSharedWebSocketBridge(...)`, with optional per-call bridge overrides for tests
-or special cases. That keeps flag-off behavior unchanged while giving flag-on surfaces a
-single reusable bridge seam instead of per-panel socket glue.
+or special cases. Production selection comes from the realtime surface flags for the
+provided `surface`, so flag-off surfaces stay on legacy subscriptions automatically while
+flag-on surfaces share one reusable bridge seam instead of per-panel socket glue.
 
 ## API Endpoints (Proxied to :5022)
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { disconnectSocket } from '@/sockets';
 import * as useWebSocketModule from '@/hooks/useWebSocket';
+import { REALTIME_STANDARD_STORAGE_FLAGS } from '@/lib/realtime/constants';
 
 const { useWebSocket } = useWebSocketModule;
 const registerSharedWebSocketBridge = (useWebSocketModule as any).registerSharedWebSocketBridge as
@@ -18,6 +19,9 @@ type FakeSocketControl = {
   socket: any;
   emit: (event: string, ...args: any[]) => void;
 };
+
+type RealtimeFlagName = keyof typeof REALTIME_STANDARD_STORAGE_FLAGS;
+type DynamicHookRuntime = Awaited<ReturnType<typeof loadFlagAwareHookRuntime>>;
 
 function createFakeSocket(): FakeSocketControl {
   const listeners = new Map<string, Set<EventHandler>>();
@@ -83,18 +87,49 @@ function createFakeSocket(): FakeSocketControl {
   return { socket, emit };
 }
 
+function setRealtimeFlags(flags: Partial<Record<RealtimeFlagName, boolean>>): void {
+  localStorage.clear();
+  for (const [name, enabled] of Object.entries(flags) as Array<[RealtimeFlagName, boolean | undefined]>) {
+    if (!enabled) {
+      continue;
+    }
+    localStorage.setItem(REALTIME_STANDARD_STORAGE_FLAGS[name], '1');
+  }
+}
+
+async function loadFlagAwareHookRuntime(
+  flags: Partial<Record<RealtimeFlagName, boolean>>,
+): Promise<{
+  hookRuntime: typeof import('@/hooks/useWebSocket');
+  socketsRuntime: typeof import('@/sockets');
+}> {
+  setRealtimeFlags(flags);
+  vi.resetModules();
+  const [hookRuntime, socketsRuntime] = await Promise.all([
+    import('@/hooks/useWebSocket'),
+    import('@/sockets'),
+  ]);
+  return { hookRuntime, socketsRuntime };
+}
+
 describe('useWebSocket legacy adapter foundation', () => {
   let socketControl: FakeSocketControl;
+  let resetDynamicRuntime: (() => void) | null;
 
   beforeEach(() => {
+    localStorage.clear();
     socketControl = createFakeSocket();
     (window as any).__fluxboardTestSocketFactory = () => socketControl.socket;
+    resetDynamicRuntime = null;
   });
 
   afterEach(() => {
+    resetDynamicRuntime?.();
+    resetDynamicRuntime = null;
     disconnectSocket();
     delete (window as any).__fluxboardTestSocketFactory;
     resetSharedWebSocketBridgeForTests?.();
+    localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -168,7 +203,7 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('routes flagged surfaces through the shared bridge subscription instead of the legacy subscriber', () => {
+  it('routes explicit bridge overrides through the injected bridge subscription', () => {
     const handler = vi.fn();
     const legacySubscribe = vi.fn(() => vi.fn());
     const resolveMode = vi.fn(() => 'standard' as const);
@@ -221,10 +256,58 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the registered shared bridge path when a surface opts in without passing a per-call bridge', () => {
+  it('keeps a surface on the legacy path when realtime standard flags are off', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({});
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
+    const handler = vi.fn();
+    const legacyUnsubscribe = vi.fn();
+    const legacyListeners: Array<(payload: unknown) => void> = [];
+    const legacySubscribe = vi.fn((event: string, legacyHandler: (payload: unknown) => void) => {
+      legacyListeners.push(legacyHandler);
+      return legacyUnsubscribe;
+    });
+    const sharedBridgeSubscribe = vi.fn(() => vi.fn());
+
+    hookRuntime.registerSharedWebSocketBridge({
+      subscribe: sharedBridgeSubscribe,
+    });
+
+    const { unmount } = renderHook(() =>
+      hookRuntime.useWebSocket('signal:update', handler, {
+        surface: 'signal',
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(sharedBridgeSubscribe).not.toHaveBeenCalled();
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+    expect(legacySubscribe).toHaveBeenCalledWith('signal:update', expect.any(Function));
+
+    act(() => {
+      legacyListeners[0]?.({ strategy_id: 'legacy-signal', source: 'legacy' });
+    });
+
+    expect(handler).toHaveBeenCalledWith({ strategy_id: 'legacy-signal', source: 'legacy' });
+
+    unmount();
+
+    expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the registered shared bridge path when the realtime standard surface flags are on', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      signal: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
     const handler = vi.fn();
     const legacySubscribe = vi.fn(() => vi.fn());
-    const resolveMode = vi.fn(() => 'standard' as const);
     const bridgeUnsubscribe = vi.fn();
     let bridgeHandler: ((payload: unknown) => void) | undefined;
     const sharedBridgeSubscribe = vi.fn((options: {
@@ -237,27 +320,20 @@ describe('useWebSocket legacy adapter foundation', () => {
       return bridgeUnsubscribe;
     });
 
-    expect(registerSharedWebSocketBridge).toEqual(expect.any(Function));
-
-    registerSharedWebSocketBridge?.({
-      resolveMode,
+    hookRuntime.registerSharedWebSocketBridge({
       subscribe: sharedBridgeSubscribe,
     });
 
     const { unmount } = renderHook(() =>
-      useWebSocket('standard:signal', handler, {
+      hookRuntime.useWebSocket('signal:update', handler, {
         surface: 'signal',
         subscribe: legacySubscribe,
       }),
     );
 
-    expect(resolveMode).toHaveBeenCalledWith({
-      event: 'standard:signal',
-      surface: 'signal',
-    });
     expect(sharedBridgeSubscribe).toHaveBeenCalledTimes(1);
     expect(sharedBridgeSubscribe).toHaveBeenCalledWith({
-      event: 'standard:signal',
+      event: 'signal:update',
       surface: 'signal',
       legacySubscribe,
       handler: expect.any(Function),
@@ -275,26 +351,30 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('prefers an explicit per-call bridge override over the registered shared bridge', () => {
+  it('prefers an explicit per-call bridge override over the registered shared bridge', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      alerts: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
     const handler = vi.fn();
     const legacySubscribe = vi.fn(() => vi.fn());
     const sharedBridgeSubscribe = vi.fn(() => vi.fn());
     const overrideUnsubscribe = vi.fn();
     const overrideBridgeSubscribe = vi.fn(() => overrideUnsubscribe);
 
-    expect(registerSharedWebSocketBridge).toEqual(expect.any(Function));
-
-    registerSharedWebSocketBridge?.({
-      resolveMode: () => 'standard' as const,
+    hookRuntime.registerSharedWebSocketBridge({
       subscribe: sharedBridgeSubscribe,
     });
 
     const { unmount } = renderHook(() =>
-      useWebSocket('override:alerts', handler, {
+      hookRuntime.useWebSocket('override:alerts', handler, {
         surface: 'alerts',
         subscribe: legacySubscribe,
         bridge: {
-          resolveMode: () => 'standard' as const,
           subscribe: overrideBridgeSubscribe,
         },
       }),
