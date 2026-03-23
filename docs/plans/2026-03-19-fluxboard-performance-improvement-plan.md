@@ -59,3 +59,51 @@ pnpm --dir fluxboard exec vitest run __tests__/realtime/baseline-budgets.test.ts
 - `fluxboard/components/trades/PerfHarness.tsx` now distinguishes measured local runtime telemetry from reference-only rollout baselines: the live card reports mounted-row DOM count and local apply-to-paint timing from synthetic deltas, while external freshness lag and snapshot cadence remain in the committed reference baseline card.
 - The default-collected runtime guard validates that `TradesPerfHarness` records real local delta samples and non-placeholder timing measurements. The mounted-row numeric gate itself remains enforced through the committed benchmark baseline contract because jsdom does not deterministically materialize the live virtual row DOM for this harness.
 - `fluxboard/__tests__/pnl-performance.test.tsx` and `fluxboard/__tests__/panels/trades.perf.test.tsx` no longer carry rollout-budget approval assertions in Task 2.
+
+## Task 12 Mixed-Surface Cleanup Rehearsal
+
+Task 12 adds a mixed-surface Playwright soak rehearsal at `fluxboard/e2e/realtime-soak.spec.ts` to prove that
+the committed budget contract still holds once the migrated surfaces run together under live invalidation pressure.
+
+### Gate scope
+
+The soak gate mounts:
+
+1. `Signal`, `Trades`, `Alerts`, and `Balances` together on `/dashboard`
+2. `MarketData` on `/market-data` in the same run
+3. `200` signal rows and `200` market-data rows
+4. `50` dashboard invalidations plus a trades cursor-gap recovery
+5. `50` market-data invalidations
+
+### Gate assertions
+
+The gate records these bounded mixed-surface checks:
+
+| Evidence | Expected bound |
+| --- | --- |
+| Dashboard mounted rows after live invalidations and panel collapse/expand | `<= 120` |
+| `Signal` recovery requests across `50` invalidations | `<= 3` |
+| `Alerts` recovery requests across `50` invalidations | `<= 3` |
+| `Balances` recovery requests across `50` invalidations | `<= 3` |
+| `Trades` gap recovery requests after injected gap | `exactly 1` delta replay |
+| `MarketData` recovery requests across `50` invalidations | `<= 3` |
+| Trades replay lineage | `since_seq=52`, `stream_id=trades-main`, `snapshot_revision=snap-1` |
+
+### 2026-03-23 rehearsal result
+
+- `pnpm build:test` passed before the soak gate.
+- A focused signal and budget verification suite, including the new Signal virtualization regression test and the compatibility matrix, passed with `65` tests.
+- `pnpm exec vitest run __tests__/realtime/compatibility-matrix.test.tsx` passed with `5` tests and kept the standard capability matrix pinned to `transportMode = polling_only`.
+- `E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-soak.spec.ts` passed with `1` mixed-surface soak test.
+
+This rehearsal does not replace the cleanup review window. The real minimum canary cohort, active
+standard-subscriber thresholds, minimum event-volume thresholds, and allowed legacy-traffic budgets
+still come from rollout dashboards and the per-surface cutover packets during that 7-day window.
+
+### Task 12 regression found by the gate
+
+The first red soak run failed on the mounted-row budget and exposed that the standard desktop
+`SignalTable` path was not actually supplying a virtualizer to `DataTable`. Task 12 corrected that
+wiring in `fluxboard/components/domain/signal/SignalTable.tsx`, reran the supporting focused tests,
+and only then reran the soak gate green. This is the canonical proof that the mounted-row budget now
+holds for the standard Signal surface inside the mixed dashboard scenario.

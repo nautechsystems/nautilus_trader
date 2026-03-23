@@ -30,6 +30,7 @@
 
 import { useEffect, useState, useMemo, memo, useRef, useCallback, type FC } from 'react';
 import { type ColumnDef, type SortingFn, type SortingState } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { isEqual } from 'lodash-es';
 import { useLocation } from 'react-router-dom';
 import { api } from '@/api';
@@ -1827,6 +1828,7 @@ export default function SignalTable({
   onRemove?: () => void;
   showHeader?: boolean;
 } = {}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const pathProfile = useMemo<PathProfile>(() => {
     const firstSegment = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
@@ -1971,6 +1973,7 @@ export default function SignalTable({
   }, [isAgeSortActive, rows.length]);
 
   const handleVisibilityRootRef = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
     setVisibilityRoot((prev) => (prev === node ? prev : node));
   }, []);
 
@@ -2411,6 +2414,16 @@ export default function SignalTable({
     if (familyScope === 'maker_v4') return true;
     return filteredRows.length > 0 && filteredRows.every((row) => row._strategyFamily === 'maker_v4');
   }, [familyScope, filteredRows]);
+  const signalRowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
+    count: !isMobile && !shouldUseMakerV4Table ? filteredRows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 44,
+    overscan: 8,
+  });
+  const shouldVirtualizeStandardTable = !isMobile
+    && !shouldUseMakerV4Table
+    && filteredRows.length > 0
+    && signalRowVirtualizer.getVirtualItems().length > 0;
 
   // Column definitions (TanStack Table format)
   const columns = useMemo<ColumnDef<EnrichedRow>[]>(() => {
@@ -2924,6 +2937,7 @@ export default function SignalTable({
             className={tableClassName}
             widthMode="content"
             columnWidthMode="explicit"
+            virtualizer={shouldVirtualizeStandardTable ? signalRowVirtualizer : undefined}
             mobileMode="cards"
             renderMobileRow={renderMobileRow}
           />

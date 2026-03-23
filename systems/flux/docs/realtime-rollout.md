@@ -9,14 +9,30 @@ This document describes the additive `contract_version=2` rollout controls imple
 2. The standard path is opt-in through:
    - HTTP snapshot request with `contract_version=2`
    - Socket.IO `subscribe` event carrying the returned lineage metadata
-3. The standard path currently supports `signal` and `trades` surfaces.
-4. The standard path is intentionally `invalidate_only` under the current polling transport.
-5. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
+3. The backend `contract_version=2` path currently supports `signal` and `trades` surfaces.
+4. The current frontend `Signal` and `Trades` panels still retain legacy event subscriptions while also
+   negotiating backend `contract_version=2` lineage.
+5. `alerts`, `balances`, and `marketData` currently use the frontend realtime standard over the shared
+   compatibility bridge, which still consumes legacy `market_update` invalidation traffic.
+6. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
+   trades additionally supports bounded delta replay for contiguous gaps before falling back to
+   `recovery_required`.
+7. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
    strategy set exactly matches the subscribable stream identity for that profile.
-6. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
-7. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
+8. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
+9. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
    profile-shaped REST fallbacks are not allowed to advertise `data.realtime` if `subscribe` would reject them.
-8. Non-canonical trades queries stay REST-only and omit `data.realtime`.
+10. Non-canonical trades queries stay REST-only and omit `data.realtime`.
+
+## Active Surface Matrix
+
+| Surface | Current live path | Recovery mode | Cleanup candidate |
+| --- | --- | --- | --- |
+| `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage plus active legacy `market_update` and `signal_delta` subscriptions | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until the panel no longer depends on legacy events |
+| `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage plus active legacy `trade_update` subscription | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until the panel no longer depends on legacy events |
+| `alerts` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
+| `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
+| `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
 
 ## Rollout state
 
@@ -103,7 +119,7 @@ Cursor semantics are surface-specific:
 
 ## Recovery behavior
 
-Current recovery mode is `invalidate_only`.
+Current backend recovery behavior is surface-specific.
 
 Implications:
 
@@ -112,8 +128,8 @@ Implications:
 3. `surface_query_key`, `stream_id`, and `snapshot_revision` are mandatory subscribe inputs; the server does not silently infer missing lineage.
 4. For signals and trades, `data.realtime.last_seq` is the standard surface-specific stream cursor, not a shared profile-wide counter.
 5. For trades, `data.realtime.last_seq` is also distinct from the `/api/v1/trades` row cursor.
-6. Any `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
-7. Trade scan overflow or cursor gaps emit `recovery_required` with `reason=trade_gap`.
+6. Signals currently use `invalidate_only`; any signal-side `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
+7. Trades first attempt bounded delta replay for contiguous gaps; trade scan overflow or unsupported gaps emit `recovery_required` with `reason=trade_gap`.
 
 ## Observability
 
@@ -132,6 +148,61 @@ Tracked buckets:
 
 These counters are process-local and intended for rollout smoke tests and integration instrumentation.
 
+Bridge-backed surfaces currently rely on mixed evidence during cleanup review:
+
+1. `legacy_event_counts.market_update` remains the backend-side proof that compatibility traffic exists.
+2. Surface-owned Playwright or Vitest rollout checks provide the client-observed request-count ceilings,
+   recovery counts, and visible health-state transitions for `alerts`, `balances`, and `marketData`.
+3. Cleanup review must not treat the absence of backend `contract_version=2` counters for those bridge
+   surfaces as permission to remove `market_update`.
+
+## Cleanup Rehearsal Gate
+
+The Task 12 frontend cleanup rehearsal is the mixed-surface Playwright soak:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-soak.spec.ts
+```
+
+The rehearsal runs a fake-socket mixed rollout with:
+
+1. `Signal`, `Trades`, `Alerts`, and `Balances` mounted together on `/dashboard`
+2. `MarketData` exercised on `/market-data` in the same run
+3. `200` signal rows and `200` market-data rows
+4. `50` mixed `market_update` invalidations for dashboard surfaces
+5. a trades cursor gap that must recover through exactly one delta replay
+6. `50` `market_update` invalidations for `MarketData`
+
+Pass criteria currently recorded by the rehearsal:
+
+1. mounted dashboard rows stay within the committed `<=120` gate
+2. `signal`, `alerts`, `balances`, and `marketData` stay within their bounded recovery request ceilings
+3. `trades` issues exactly one delta replay request after the injected gap
+4. the trades replay request preserves `since_seq`, `stream_id`, and `snapshot_revision`
+5. the visible UI shows the recovered alert, balances refresh, trades replay row, and market-data refresh
+
+Current recorded result on 2026-03-23 UTC: pass for the frontend cleanup rehearsal only.
+
+This rehearsal is not the 7-day cleanup review window. It proves bounded mixed-surface behavior and
+cleanup-boundary correctness under a deterministic harness. The live minimum canary cohort, active
+standard-subscriber thresholds, minimum event-volume thresholds, and allowed legacy-traffic levels still
+come from rollout dashboards plus the per-surface cutover packets during the cleanup review window.
+
+Task 12 also requires machine-checked proof that the negotiated transport mode remains `polling_only`.
+The current lane evidence for that requirement is the frontend compatibility matrix verification:
+
+```bash
+VITEST_FULL=1 pnpm exec vitest run __tests__/realtime/compatibility-matrix.test.tsx
+```
+
+That suite passed on 2026-03-23 UTC and explicitly pins `transportMode = polling_only` for the
+current standard-path capability matrix.
+
+The first red run of this gate exposed a real production-path gap: the standard `SignalTable` desktop path
+was not wiring the shared virtualizer into `DataTable`, which caused dashboard mounted rows to exceed the
+budget. Task 12 fixed that regression in `fluxboard/components/domain/signal/SignalTable.tsx`, then reran
+the rehearsal green.
+
 ## Operational guidance
 
 1. Start with legacy-only clients and confirm legacy event counts remain stable.
@@ -144,3 +215,7 @@ These counters are process-local and intended for rollout smoke tests and integr
    - new standard subscribes fail with `backend_kill_switch`
    - connected standard clients receive `recovery_required`
    - legacy clients continue receiving legacy events
+5. Use the mixed-surface cleanup rehearsal before removing duplicate frontend live paths.
+6. Do not remove backend `market_update`, `signal_delta`, or `trade_update` traffic solely because the
+   frontend cleanup rehearsal passed; backend legacy-event removal is only valid for surfaces that no longer
+   rely on legacy frontend subscriptions or the compatibility bridge.
