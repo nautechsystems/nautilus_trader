@@ -1,28 +1,27 @@
-# Realtime Legacy Adapter Lane Status
+# Realtime Lane Status
 
-**Goal:** Land the shared legacy socket adapter bridge foundation in `useWebSocket` so flag-off surfaces stay on raw legacy payload handling while flag-on surfaces can route through one shared compatibility bridge path.
-
-**Architecture:** Keep `useWebSocket(event, handler)` unchanged for all existing callsites. Add a module-level shared bridge registration path inside the hook module, allow `useWebSocket(..., { surface, ... })` to consume that shared bridge automatically, and preserve optional per-call bridge overrides for tests or exceptional wiring.
-
-**Tech Stack:** React, TypeScript, Vitest, Testing Library, Fluxboard Socket.IO hook.
-
-## Progress Tracker
-
-**Source of truth:** Update this table whenever task state, verification state, or commit state changes.
-
-| Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Overall | completed | main | none | `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`, `docs/plans/realtime-status/rt-legacy-adapter.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Parent landed commit before this follow-up: `7d42f20516742ac257a4b7ac28291936dbe5c949`; follow-up diff adds module-level shared bridge registration/resolution, expands adapter tests, and rewrites this note to the fixed-key tracker shape | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` PASS (`15` tests); `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/compatibility-matrix.test.tsx` PASS (`20` tests) | 2026-03-23 UTC follow-up review fix is implemented and verified locally; remaining work is downstream consumers registering and using the shared bridge |
-| Task 1: Add failing shared-bridge registration tests | completed | main | none | `fluxboard/__tests__/realtime/legacy-adapter.test.tsx` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Diff vs parent `7d42f20516742ac257a4b7ac28291936dbe5c949` adds shared-bridge registration and override coverage | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` RED: exit `1`; `2` new tests failed because `registerSharedWebSocketBridge` was undefined on the lane tip | Added focused tests that require a production shared bridge path and preserve per-call override precedence |
-| Task 2: Implement shared bridge registry in `useWebSocket` | completed | main | Task 1: Add failing shared-bridge registration tests | `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Diff vs parent `7d42f20516742ac257a4b7ac28291936dbe5c949` adds `registerSharedWebSocketBridge(...)`, `resetSharedWebSocketBridgeForTests()`, and shared-bridge resolution before per-call fallback | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` PASS (`15` tests) | Shared bridge path now exists in production hook code; 2-argument legacy subscriptions still route directly to the socket |
-| Task 3: Rewrite lane note to fixed-key status template | completed | main | Task 2: Implement shared bridge registry in `useWebSocket` | `docs/plans/realtime-status/rt-legacy-adapter.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Replaced the freeform note with the repo-standard Progress Tracker table and explicit verification/blocker/handoff sections | `git diff --check` PASS | This row is the required status-template conversion from the review findings |
-
-## Blockers
-
-- None in owned scope.
-
-## Next Handoff
-
-- Register one shared compatibility bridge for the first flag-on realtime surface instead of passing bespoke bridge objects at each callsite.
-- Keep flag-off surfaces on the unchanged 2-argument legacy path so no standard-payload assumptions leak into legacy-only panels.
-- Preserve `legacy-adapter.test.tsx` and `compatibility-matrix.test.tsx` in future rollout verification so shared-bridge regressions fail immediately.
+- lane: `lanes/task-8-rt-legacy-adapter`
+- owner: `spec-reviewer`
+- branch: `lanes/task-8-rt-legacy-adapter`
+- worktree: `.worktrees/task-8-rt-legacy-adapter`
+- depends_on: `Task 5: Validate Shared Foundation Compatibility Matrix`
+- write_scope: `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md`, `fluxboard/sockets.test.ts`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`
+- rollout_control: `legacy adapter bridge for flag-off surfaces`
+- rollback_trigger: `flag-off regression or duplicate subscription path`
+- current status: `in_review_spec`
+- active task: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
+- current commit or diff: `ce09c8cb9a8ec3bab1b8bbcd4daf5fe24a5e8f36 + coordinator tracker-format follow-up`
+- cutover_packet: `n/a`
+- canary_scope: `shared legacy adapter bridge`
+- minimum_canary_cohort: `n/a`
+- minimum_standard_subscribers: `n/a`
+- minimum_standard_event_volume: `n/a`
+- alert_state: `n/a`
+- rollback_exercise_result: `pending`
+- dashboards_playbooks: `pending`
+- rollout_metrics_snapshot: `pending`
+- legacy_traffic_status: `legacy-default`
+- verification run: `baseline: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/compatibility-matrix.test.tsx passed (13 tests) on controller commit 8eaae3342b before Task 8 implementation began. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against the pre-Task-8 baseline because the hook had no third-argument bridge seam. red: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx failed against commit 7d42f20516742ac257a4b7ac28291936dbe5c949 because `registerSharedWebSocketBridge` did not exist yet. green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx passed (15 tests). green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/compatibility-matrix.test.tsx passed (20 tests).`
+- blockers: `none`
+- notes_last_update: `Task 8 lane created from controller commit 8eaae3342b. Initial implementer commit 7d42f20516742ac257a4b7ac28291936dbe5c949 added the optional bridge seam and adapter regression tests, but spec review correctly identified that the production hook still lacked one shared bridge path and that the lane note did not match the required tracker template. Follow-up commit ce09c8cb9a8ec3bab1b8bbcd4daf5fe24a5e8f36 added the module-level shared bridge registry and shared-bridge registration tests while preserving optional per-call overrides for tests. This note now matches the required lane-status template for the second spec pass.`
+- next handoff: `complete spec review on the latest Task 8 lane diff; if clean, run quality review before controller integration`
