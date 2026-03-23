@@ -1242,6 +1242,7 @@ class FluxApiStore:
         since_ms: int | None,
         since_seq: int | None = None,
         scan_limit: int | None = None,
+        base_first_qty: bool = False,
     ) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
         if scan_limit is not None:
@@ -1262,9 +1263,10 @@ class FluxApiStore:
             limit=limit,
             since_ms=since_ms,
             since_seq=since_seq,
+            base_first_qty=base_first_qty,
         )
 
-    def load_all_trades_rows(self, strategy_id: str) -> list[dict[str, Any]]:
+    def load_all_trades_rows(self, strategy_id: str, *, base_first_qty: bool = False) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
         entries = self._redis.xrevrange(keys.trades_stream())
         rows = extract_stream_rows(entries)
@@ -1275,6 +1277,7 @@ class FluxApiStore:
             limit=max(1, len(filtered)),
             since_ms=None,
             since_seq=None,
+            base_first_qty=base_first_qty,
         )
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
@@ -2762,7 +2765,11 @@ def create_flux_api_app(  # noqa: C901
         total_count_override: int | None = None
         if has_filters or sort_ascending:
             for strategy_id in strategy_ids:
-                strategy_rows = store.load_all_trades_rows(strategy_id)
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
+                strategy_rows = store.load_all_trades_rows(
+                    strategy_id,
+                    base_first_qty=base_first_qty,
+                )
                 for row in strategy_rows:
                     normalized_row = dict(row)
                     normalized_row.setdefault("strategy_id", strategy_id)
@@ -2771,11 +2778,13 @@ def create_flux_api_app(  # noqa: C901
             total_count_override = 0
             page_span = max(1, offset + limit)
             for strategy_id in strategy_ids:
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
                 strategy_rows = store.load_trades_rows(
                     strategy_id,
                     limit=page_span,
                     since_ms=None,
                     since_seq=None,
+                    base_first_qty=base_first_qty,
                 )
                 for row in strategy_rows:
                     normalized_row = dict(row)
@@ -2877,8 +2886,9 @@ def create_flux_api_app(  # noqa: C901
 
             rows: list[dict[str, Any]] = []
             for strategy_id in strategy_ids:
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
                 strategy_rows = _rows_after_trade_replay_cursor(
-                    store.load_all_trades_rows(strategy_id),
+                    store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
                     after_ms=since_ms,
                     after_row_id=after_row_id,
                     after_version=after_version,
@@ -2897,6 +2907,7 @@ def create_flux_api_app(  # noqa: C901
             )
 
         strategy_id = strategy_ids[0]
+        base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
         if since_seq is not None:
             scan_limit = 2_000
             scanned_rows = store.load_trades_rows(
@@ -2905,6 +2916,7 @@ def create_flux_api_app(  # noqa: C901
                 since_ms=None,
                 since_seq=None,
                 scan_limit=scan_limit,
+                base_first_qty=base_first_qty,
             )
             seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
             parsed_seqs = [seq for seq in seq_values if seq is not None]
@@ -2956,7 +2968,10 @@ def create_flux_api_app(  # noqa: C901
             )
 
         if since_ms is not None:
-            rows = _rows_after_trade_ts(store.load_all_trades_rows(strategy_id), since_ms=since_ms)
+            rows = _rows_after_trade_ts(
+                store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
+                since_ms=since_ms,
+            )
             rows = rows[:limit]
             return _ok(
                 data={
@@ -2966,7 +2981,13 @@ def create_flux_api_app(  # noqa: C901
                 },
             )
 
-        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms, since_seq=None)
+        rows = store.load_trades_rows(
+            strategy_id,
+            limit=limit,
+            since_ms=since_ms,
+            since_seq=None,
+            base_first_qty=base_first_qty,
+        )
         return _ok(
             data={
                 "rows": rows,

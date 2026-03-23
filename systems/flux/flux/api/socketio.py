@@ -29,7 +29,6 @@ from flux.api.payloads import coerce_ts_ms
 from flux.api.payloads import decode_text
 from flux.api.payloads import now_ms
 from flux.api.payloads import safe_int
-from flux.api._payloads_common import project_trade_quantity_fields
 from flux.runners.shared.strategy_set import normalize_profile as normalize_strategy_set_profile
 from flux.runners.shared.strategy_set import supported_profile_ids as supported_strategy_set_profiles
 
@@ -69,6 +68,7 @@ class FluxSocketStoreProtocol(Protocol):
         since_ms: int | None,
         since_seq: int | None = None,
         scan_limit: int | None = None,
+        base_first_qty: bool = False,
     ) -> list[dict[str, Any]]: ...
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]: ...
@@ -105,10 +105,17 @@ def _normalize_legs(value: Any) -> dict[str, Any]:
 
 
 def _normalize_trade_row(row: Mapping[str, Any], *, row_id: str, version: int) -> dict[str, Any]:
-    out = project_trade_quantity_fields(_copy_mapping(cast(Mapping[str, Any], row)))
+    out = _copy_mapping(cast(Mapping[str, Any], row))
     out["row_id"] = row_id
     out["version"] = version
     return out
+
+
+def _metadata_is_tokenmm(metadata: Any) -> bool:
+    groups = decode_text(getattr(metadata, "strategy_groups", "")).strip().lower()
+    if not groups:
+        return False
+    return "tokenmm" in {part.strip() for part in groups.split(",") if part.strip()}
 
 
 def build_stable_signal_view(signal_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -502,15 +509,23 @@ class FluxSocketEmitter:
         for current_strategy_id in strategy_ids:
             next_trade_cursors[current_strategy_id] = int(next_trade_cursors.get(current_strategy_id, 0))
 
+        load_trades_parameters = inspect.signature(self._store.load_trades_rows).parameters
+        supports_base_first_qty = "base_first_qty" in load_trades_parameters
         scanned_trade_entries: list[tuple[int, dict[str, Any]]] = []
         trade_gap = False
         for current_strategy_id in strategy_ids:
+            current_metadata = self._metadata_resolver(current_strategy_id)
+            load_trades_kwargs: dict[str, Any] = {
+                "limit": self._trade_scan_limit,
+                "since_ms": None,
+                "since_seq": None,
+                "scan_limit": self._trade_scan_limit,
+            }
+            if supports_base_first_qty:
+                load_trades_kwargs["base_first_qty"] = _metadata_is_tokenmm(current_metadata)
             strategy_rows = self._store.load_trades_rows(
                 current_strategy_id,
-                limit=self._trade_scan_limit,
-                since_ms=None,
-                since_seq=None,
-                scan_limit=self._trade_scan_limit,
+                **load_trades_kwargs,
             )
             current_cursor = int(next_trade_cursors.get(current_strategy_id, 0))
             seq_values = [safe_int(row.get("seq")) for row in strategy_rows if isinstance(row, Mapping)]
