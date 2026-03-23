@@ -901,6 +901,17 @@ function normalizeTradeSide(value: unknown): string {
   return text;
 }
 
+function projectTradeQuantityPayload(row: Record<string, unknown>): {
+  qty: number | undefined;
+  qtyBaseText: string | undefined;
+  qtyVenueText: string | undefined;
+} {
+  const qtyBaseText = String(row.qty_base ?? '').trim() || undefined;
+  const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim() || undefined;
+  const qty = toFiniteOptionalNumber(qtyBaseText ?? row.qty);
+  return { qty, qtyBaseText, qtyVenueText };
+}
+
 function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed: number): TradeEvent | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const row = candidate as Record<string, unknown>;
@@ -916,7 +927,7 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
   const price = toFiniteOptionalNumber(row.price);
-  const qty = toFiniteOptionalNumber(row.qty);
+  const { qty, qtyBaseText, qtyVenueText } = projectTradeQuantityPayload(row);
   const derivedNotional = (price !== undefined && qty !== undefined) ? price * qty : undefined;
   const reportedNotional = toFiniteOptionalNumber(
     row.mv ??
@@ -972,6 +983,11 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
       typeof row.time === 'string' && row.time
         ? row.time
         : (tsMs ? new Date(tsMs).toISOString() : ''),
+    qty,
+    qty_base: qtyBaseText,
+    qty_venue: qtyVenueText,
+    qty_conversion_status: String(row.qty_conversion_status ?? '').trim() || undefined,
+    qty_conversion_source: String(row.qty_conversion_source ?? '').trim() || undefined,
     mv: notional,
   } as TradeEvent;
 }

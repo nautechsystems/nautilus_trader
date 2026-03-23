@@ -140,6 +140,17 @@ function coerceOptionalText(value: unknown): string | undefined {
   return text || undefined;
 }
 
+function projectTradeQuantityFields(event: TradeEvent): {
+  qty: number | undefined;
+  qtyBase: string | undefined;
+  qtyVenue: string | undefined;
+} {
+  const qtyBase = coerceOptionalText((event as any).qty_base);
+  const qtyVenue = coerceOptionalText((event as any).qty_venue ?? (event as any).qty);
+  const qty = coerceNumber(qtyBase ?? (event as any).qty);
+  return { qty, qtyBase, qtyVenue };
+}
+
 function deriveCoinFromSymbol(symbolText: string): string | undefined {
   const symbol = symbolText.trim().toUpperCase();
   if (!symbol) return undefined;
@@ -174,7 +185,7 @@ function normalizeTrade(event: TradeEvent): TradeRow | null {
       : 1;
 
   const price = coerceNumber(event.price as unknown);
-  const qty = coerceNumber(event.qty as unknown);
+  const { qty, qtyBase, qtyVenue } = projectTradeQuantityFields(event);
   const derivedMv = price !== undefined && qty !== undefined ? price * qty : undefined;
   const rawMv = coerceNumber((event as any).notional ?? (event as any).mv);
   const mv =
@@ -232,6 +243,10 @@ function normalizeTrade(event: TradeEvent): TradeRow | null {
     side,
     price: price ?? null,
     qty: qty ?? null,
+    qty_base: qtyBase ?? null,
+    qty_venue: qtyVenue ?? null,
+    qty_conversion_status: coerceOptionalText((event as any).qty_conversion_status) ?? null,
+    qty_conversion_source: coerceOptionalText((event as any).qty_conversion_source) ?? null,
     mv: mv ?? null,
     fee: fee ?? null,
     fee_asset_raw: (event as any).fee_asset_raw ?? (event as any).fee_currency ?? null,

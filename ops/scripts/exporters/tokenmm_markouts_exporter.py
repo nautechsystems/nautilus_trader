@@ -76,6 +76,18 @@ LIVE_FILL_QUERY_COLUMNS = (
     "last_qty AS fill_qty",
     "CAST(ts_event / 1000000 AS INTEGER) AS fill_ts_ms",
 )
+LIVE_NORMALIZED_FILL_QUERY_COLUMNS = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "order_side",
+    "instrument_id",
+    "last_px AS fill_px",
+    "COALESCE(last_qty_base, last_qty) AS fill_qty",
+    "last_qty_base AS fill_qty_base",
+    "COALESCE(last_qty_venue, last_qty) AS fill_qty_venue",
+    "CAST(ts_event / 1000000 AS INTEGER) AS fill_ts_ms",
+)
 FILL_QUERY_COLUMNS = LEGACY_FILL_QUERY_COLUMNS
 
 
@@ -181,6 +193,19 @@ def _fill_query_columns_for_path(fills_path: Path) -> tuple[str, ...]:
         "fill_ts_ms",
     }.issubset(columns):
         return LEGACY_FILL_QUERY_COLUMNS
+    if {
+        "trader_id",
+        "event_id",
+        "strategy_id",
+        "order_side",
+        "instrument_id",
+        "last_px",
+        "last_qty",
+        "last_qty_base",
+        "last_qty_venue",
+        "ts_event",
+    }.issubset(columns):
+        return LIVE_NORMALIZED_FILL_QUERY_COLUMNS
     if {
         "trader_id",
         "event_id",

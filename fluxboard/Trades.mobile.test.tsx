@@ -6,12 +6,17 @@ import { useTradesStore } from './stores';
 
 vi.mock('@/hooks/useIsMobile', () => ({ useIsMobile: () => true }));
 
-vi.mock('./api', () => ({
-  api: {
-    getTrades: vi.fn(),
-    getTradesDelta: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades: vi.fn(),
+      getTradesDelta: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./stores', async (importOriginal) => {
   const mod = await importOriginal<any>();

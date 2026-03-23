@@ -13,6 +13,8 @@ from research.tokenmm.telemetry_helpers import summarize_markouts
 from research.tokenmm.telemetry_helpers import summarize_markouts_by_group
 from research.tokenmm.telemetry_helpers import summarize_markouts_by_side
 from research.tokenmm.telemetry_helpers import compute_fill_notional
+from research.tokenmm.telemetry_helpers import enrich_fills
+from research.tokenmm.telemetry_helpers import merge_fills_and_markouts
 
 
 def _sample_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -127,6 +129,89 @@ def test_compute_fill_notional_uses_absolute_price_times_quantity() -> None:
     notionals = compute_fill_notional(frame)
 
     assert notionals.tolist() == pytest.approx([11.87, 30.0])
+
+
+def test_compute_fill_notional_prefers_explicit_base_quantity_columns() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "last_px": "0.012736",
+                "last_qty": "100",
+                "last_qty_base": "1000",
+                "last_qty_venue": "100",
+            },
+        ],
+    )
+
+    notionals = compute_fill_notional(frame)
+
+    assert notionals.tolist() == pytest.approx([12.736])
+
+
+def test_enrich_fills_prefers_explicit_base_quantity_fields_when_present() -> None:
+    fills = pd.DataFrame(
+        [
+            {
+                "trader_id": "t1",
+                "event_id": "e1",
+                "order_side": "BUY",
+                "strategy_id": "s1",
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "last_px": "0.012736",
+                "last_qty": "100",
+                "last_qty_base": "1000",
+                "last_qty_venue": "100",
+            },
+        ],
+    )
+
+    enriched = enrich_fills(fills)
+
+    assert enriched.loc[0, "fill_qty_num"] == pytest.approx(1000.0)
+    assert enriched.loc[0, "fill_qty_base_num"] == pytest.approx(1000.0)
+    assert enriched.loc[0, "fill_qty_venue_num"] == pytest.approx(100.0)
+    assert enriched.loc[0, "fill_notional"] == pytest.approx(12.736)
+
+
+def test_merge_fills_and_markouts_prefers_fill_context_quantities_over_raw_markout_qty() -> None:
+    fills = pd.DataFrame(
+        [
+            {
+                "trader_id": "t1",
+                "event_id": "e1",
+                "order_side": "BUY",
+                "strategy_id": "s1",
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "last_px": "0.012736",
+                "last_qty": "100",
+                "last_qty_base": "1000",
+                "last_qty_venue": "100",
+                "ts_event": 1_700_000_000_000_000_000,
+            },
+        ],
+    )
+    markouts = pd.DataFrame(
+        [
+            {
+                "trader_id": "t1",
+                "event_id": "e1",
+                "order_side": "BUY",
+                "strategy_id": "s1",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 30,
+                "target_ts_ms": 1_700_000_000_030,
+                "markout_bps": "8.5",
+                "fill_px": "0.012736",
+                "fill_qty": "100",
+                "resolution_status": "resolved",
+            },
+        ],
+    )
+
+    merged = merge_fills_and_markouts(fills=fills, markouts=markouts)
+
+    assert merged.loc[0, "fill_qty_num"] == pytest.approx(1000.0)
+    assert merged.loc[0, "fill_notional"] == pytest.approx(12.736)
 
 
 def test_summarize_markouts_returns_fill_count_gross_notional_and_horizon_columns() -> None:

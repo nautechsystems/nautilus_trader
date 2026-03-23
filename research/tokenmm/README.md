@@ -18,6 +18,13 @@ This directory is the notebook root for the optional localhost-only `flux@tokenm
   - optional balance / portfolio snapshot tables for directional context
 - Optional fill-time edge and extended-horizon sections activate only when a frozen FV extract exists at `research/tokenmm/data/tokenmm_fv_extract.csv`.
 
+## Quantity semantics
+
+- Research helpers treat explicit base-quantity fill fields as canonical when they are present:
+  - `last_qty_base` / `fill_qty_base` feed `fill_qty_num`
+  - `last_qty_venue` / `fill_qty_venue` are preserved as secondary/debug quantity context
+- Older rows without explicit normalized columns still fall back to raw `last_qty` / `fill_qty`, so pre-rollout telemetry should be interpreted with that caveat.
+
 ## Manual start
 
 ```bash

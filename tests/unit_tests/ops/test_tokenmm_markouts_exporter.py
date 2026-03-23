@@ -80,6 +80,56 @@ def test_build_fills_query_uses_compact_tuple_lookup() -> None:
     assert "SELECT trader_id, event_id, strategy_id, order_side, instrument_id, fill_px, fill_qty, fill_ts_ms" in query
 
 
+def test_fill_query_columns_for_path_prefers_live_normalized_quantity_columns(tmp_path: Path) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            last_px TEXT NOT NULL,
+            last_qty TEXT NOT NULL,
+            last_qty_base TEXT,
+            last_qty_venue TEXT,
+            qty_conversion_status TEXT,
+            qty_conversion_source TEXT,
+            ts_event INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_okx_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "last_px": "0.012736",
+                "last_qty": "100",
+                "last_qty_base": "1000",
+                "last_qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+                "ts_event": 1_700_000_000_000_000_000,
+            },
+        ],
+    )
+
+    columns = markouts_exporter._fill_query_columns_for_path(fills_path)
+    query = _build_fills_query(
+        [{"trader_id": "TRADER-1", "event_id": "fill-1"}],
+        select_columns=columns,
+    )
+
+    assert query is not None
+    assert "COALESCE(last_qty_base, last_qty) AS fill_qty" in query
+    assert "COALESCE(last_qty_venue, last_qty) AS fill_qty_venue" in query
+
+
 def test_build_markouts_query_projects_only_required_columns() -> None:
     query = _build_markouts_query(
         benchmark_name="fv_market_mid",
@@ -564,3 +614,50 @@ def test_load_markout_snapshot_supports_live_fill_schema_columns(tmp_path: Path)
     assert rows[0]["order_side"] == "BUY"
     assert rows[0]["fill_count"] == 1
     assert rows[0]["avg_bps"] == 8.5
+
+
+def test_live_fill_query_prefers_base_quantity_columns_when_available(tmp_path: Path) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            last_px TEXT NOT NULL,
+            last_qty TEXT NOT NULL,
+            last_qty_base TEXT,
+            last_qty_venue TEXT,
+            ts_event INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_okx_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "last_px": "0.012736",
+                "last_qty": "100",
+                "last_qty_base": "1000",
+                "last_qty_venue": "100",
+                "ts_event": 1_700_000_000_000_000_000,
+            },
+        ],
+    )
+
+    query = _build_fills_query(
+        [{"trader_id": "TRADER-1", "event_id": "fill-1"}],
+        select_columns=markouts_exporter._fill_query_columns_for_path(fills_path),
+    )
+
+    assert query is not None
+    assert "COALESCE(last_qty_base, last_qty) AS fill_qty" in query
+    assert "COALESCE(last_qty_venue, last_qty) AS fill_qty_venue" in query
+    assert "last_qty_base AS fill_qty_base" in query
