@@ -351,6 +351,119 @@ describe('useWebSocket legacy adapter foundation', () => {
     expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('reacts to shared bridge registration after mount without waiting for an unrelated rerender', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      signal: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
+    const handler = vi.fn();
+    const legacyUnsubscribe = vi.fn();
+    const legacyListeners: Array<(payload: unknown) => void> = [];
+    const legacySubscribe = vi.fn((event: string, legacyHandler: (payload: unknown) => void) => {
+      legacyListeners.push(legacyHandler);
+      return legacyUnsubscribe;
+    });
+    const bridgeUnsubscribe = vi.fn();
+    let bridgeHandler: ((payload: unknown) => void) | undefined;
+    const sharedBridgeSubscribe = vi.fn((options: {
+      event: string;
+      surface?: string;
+      legacySubscribe: typeof legacySubscribe;
+      handler: (payload: unknown) => void;
+    }) => {
+      bridgeHandler = options.handler;
+      return bridgeUnsubscribe;
+    });
+
+    const { unmount } = renderHook(() =>
+      hookRuntime.useWebSocket('signal:update', handler, {
+        surface: 'signal',
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+    expect(sharedBridgeSubscribe).not.toHaveBeenCalled();
+
+    act(() => {
+      hookRuntime.registerSharedWebSocketBridge({
+        subscribe: sharedBridgeSubscribe,
+      });
+    });
+
+    expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(sharedBridgeSubscribe).toHaveBeenCalledTimes(1);
+    expect(sharedBridgeSubscribe).toHaveBeenCalledWith({
+      event: 'signal:update',
+      surface: 'signal',
+      legacySubscribe,
+      handler: expect.any(Function),
+    });
+
+    act(() => {
+      bridgeHandler?.({ strategy_id: 'late-shared-bridge', source: 'standard' });
+    });
+
+    expect(handler).toHaveBeenCalledWith({ strategy_id: 'late-shared-bridge', source: 'standard' });
+
+    unmount();
+
+    expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors resolveMode from the registered shared bridge before falling back to realtime flags', async () => {
+    const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
+      global: true,
+      signal: true,
+    });
+    resetDynamicRuntime = () => {
+      hookRuntime.resetSharedWebSocketBridgeForTests?.();
+      socketsRuntime.disconnectSocket();
+    };
+    const handler = vi.fn();
+    const legacyUnsubscribe = vi.fn();
+    const legacyListeners: Array<(payload: unknown) => void> = [];
+    const legacySubscribe = vi.fn((event: string, legacyHandler: (payload: unknown) => void) => {
+      legacyListeners.push(legacyHandler);
+      return legacyUnsubscribe;
+    });
+    const sharedBridgeSubscribe = vi.fn(() => vi.fn());
+    const sharedResolveMode = vi.fn(() => 'legacy' as const);
+
+    hookRuntime.registerSharedWebSocketBridge({
+      resolveMode: sharedResolveMode,
+      subscribe: sharedBridgeSubscribe,
+    });
+
+    const { unmount } = renderHook(() =>
+      hookRuntime.useWebSocket('signal:update', handler, {
+        surface: 'signal',
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(sharedResolveMode).toHaveBeenCalledWith({
+      event: 'signal:update',
+      surface: 'signal',
+    });
+    expect(sharedBridgeSubscribe).not.toHaveBeenCalled();
+    expect(legacySubscribe).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      legacyListeners[0]?.({ strategy_id: 'shared-resolve-mode', source: 'legacy' });
+    });
+
+    expect(handler).toHaveBeenCalledWith({ strategy_id: 'shared-resolve-mode', source: 'legacy' });
+
+    unmount();
+
+    expect(legacyUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('prefers an explicit per-call bridge override over the registered shared bridge', async () => {
     const { hookRuntime, socketsRuntime }: DynamicHookRuntime = await loadFlagAwareHookRuntime({
       global: true,

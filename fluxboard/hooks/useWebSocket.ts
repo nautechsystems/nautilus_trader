@@ -1,6 +1,6 @@
 // useWebSocket hook - Simplify Socket.IO subscriptions
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { socket } from '../sockets';
 import { isRealtimeStandardEnabled } from '../config/featureFlags';
 import {
@@ -15,7 +15,7 @@ export type WebSocketSubscription<T = unknown> = (
   handler: (data: T) => void
 ) => () => void;
 
-export type WebSocketBridge<TLegacy = unknown, TStandard = TLegacy> = {
+export type WebSocketBridge<T = unknown> = {
   resolveMode?: (options: {
     event: string;
     surface?: string;
@@ -23,27 +23,47 @@ export type WebSocketBridge<TLegacy = unknown, TStandard = TLegacy> = {
   subscribe: (options: {
     event: string;
     surface?: string;
-    legacySubscribe: WebSocketSubscription<TLegacy>;
-    handler: (data: TStandard) => void;
+    legacySubscribe: WebSocketSubscription<T>;
+    handler: (data: T) => void;
   }) => () => void;
 };
 
-export type UseWebSocketOptions<TLegacy = unknown, TStandard = TLegacy> = {
+export type UseWebSocketOptions<T = unknown> = {
   surface?: string;
-  subscribe?: WebSocketSubscription<TLegacy>;
-  bridge?: WebSocketBridge<TLegacy, TStandard>;
+  subscribe?: WebSocketSubscription<T>;
+  bridge?: WebSocketBridge<T>;
 };
 
-let sharedWebSocketBridge: WebSocketBridge<any, any> | null = null;
+let sharedWebSocketBridge: WebSocketBridge<any> | null = null;
+const sharedWebSocketBridgeListeners = new Set<() => void>();
 
-export function registerSharedWebSocketBridge<TLegacy = unknown, TStandard = TLegacy>(
-  bridge: WebSocketBridge<TLegacy, TStandard>,
+function notifySharedWebSocketBridgeListeners(): void {
+  for (const listener of sharedWebSocketBridgeListeners) {
+    listener();
+  }
+}
+
+function subscribeToSharedWebSocketBridge(listener: () => void): () => void {
+  sharedWebSocketBridgeListeners.add(listener);
+  return () => {
+    sharedWebSocketBridgeListeners.delete(listener);
+  };
+}
+
+function getSharedWebSocketBridgeSnapshot(): WebSocketBridge<any> | null {
+  return sharedWebSocketBridge;
+}
+
+export function registerSharedWebSocketBridge<T = unknown>(
+  bridge: WebSocketBridge<T>,
 ): void {
-  sharedWebSocketBridge = bridge as WebSocketBridge<any, any>;
+  sharedWebSocketBridge = bridge as WebSocketBridge<any>;
+  notifySharedWebSocketBridgeListeners();
 }
 
 export function resetSharedWebSocketBridgeForTests(): void {
   sharedWebSocketBridge = null;
+  notifySharedWebSocketBridgeListeners();
 }
 
 function subscribeToSocket<T = unknown>(
@@ -75,18 +95,23 @@ function isRealtimeSurface(surface?: string): surface is RealtimeSurface {
  * });
  * ```
  */
-export function useWebSocket<TLegacy = unknown, TStandard = TLegacy>(
+export function useWebSocket<T = unknown>(
   event: string,
-  handler: (data: TStandard) => void,
-  options?: UseWebSocketOptions<TLegacy, TStandard>,
+  handler: (data: T) => void,
+  options?: UseWebSocketOptions<T>,
 ): void {
   // Use ref to always have the latest handler without recreating the subscription
   const handlerRef = useRef(handler);
+  const registeredSharedBridge = useSyncExternalStore(
+    subscribeToSharedWebSocketBridge,
+    getSharedWebSocketBridgeSnapshot,
+    getSharedWebSocketBridgeSnapshot,
+  );
   const surface = options?.surface;
-  const legacySubscribe: WebSocketSubscription<TLegacy> = options?.subscribe ?? subscribeToSocket;
-  const activeBridge = (options?.bridge ?? sharedWebSocketBridge) as WebSocketBridge<TLegacy, TStandard> | null;
+  const legacySubscribe: WebSocketSubscription<T> = options?.subscribe ?? subscribeToSocket;
+  const activeBridge = (options?.bridge ?? registeredSharedBridge) as WebSocketBridge<T> | null;
   const bridgeSubscribe = activeBridge?.subscribe;
-  const explicitMode = options?.bridge?.resolveMode?.({ event, surface });
+  const explicitMode = activeBridge?.resolveMode?.({ event, surface });
   const mode = explicitMode ?? (
     bridgeSubscribe && isRealtimeSurface(surface) && isRealtimeStandardEnabled(surface)
       ? 'standard'
@@ -98,8 +123,8 @@ export function useWebSocket<TLegacy = unknown, TStandard = TLegacy>(
   }, [handler]);
 
   useEffect(() => {
-    const wrappedLegacyHandler = (data: TLegacy) => {
-      handlerRef.current(data as TStandard);
+    const wrappedLegacyHandler = (data: T) => {
+      handlerRef.current(data);
     };
 
     if (mode === 'standard' && bridgeSubscribe) {
@@ -107,7 +132,7 @@ export function useWebSocket<TLegacy = unknown, TStandard = TLegacy>(
         event,
         surface,
         legacySubscribe,
-        handler: (data: TStandard) => {
+        handler: (data: T) => {
           handlerRef.current(data);
         },
       });
