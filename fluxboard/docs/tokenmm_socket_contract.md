@@ -93,7 +93,7 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `order_qty_base`
    - `qty_conversion_status`
    - `qty_conversion_source`
-4. Bare `qty` in trade payloads remains venue/native size unless a paired explicit base field is also present.
+4. For TokenMM `trade_update` payloads, bare `qty` is operator-facing base quantity.
 5. The current `qty_conversion_status` space is:
    - `identity`
    - `exact_multiplier`
@@ -308,9 +308,11 @@ Delete example:
 2. Client MUST assume events can be dropped while disconnected.
 3. After reconnect, client MUST resync via REST:
    - `GET /api/v1/signals?profile=tokenmm`
-   - `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)`
+   - `GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted
+   - `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available
    - `GET /api/v1/alerts?profile=tokenmm`
 4. Trade cursor fallback is deterministic:
+   - prefer persisted `last_seq` for reconnect-safe replay
    - persist `(last_trade_ts_ms, last_trade_row_id, last_trade_version)`
    - dedupe by `row_id` with highest `version` winning
    - drop rows where tuple `(ts_ms, row_id, version)` is `<=` persisted cursor tuple

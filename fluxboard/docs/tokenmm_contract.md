@@ -547,7 +547,11 @@ Response `data`:
       "symbol": "BTCUSDT",
       "side": "BUY",
       "price": 94220.5,
-      "qty": 0.015
+      "qty": 0.015,
+      "qty_base": 0.015,
+      "qty_venue": 0.015,
+      "qty_conversion_status": "identity",
+      "qty_conversion_source": "generic:multiplier=1"
     }
   ],
   "last_seq": 1092,

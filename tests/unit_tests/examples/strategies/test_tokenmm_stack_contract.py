@@ -1071,7 +1071,14 @@ def test_tokenmm_docs_define_base_first_operator_trade_quantity_contract() -> No
     assert "Shared producer bare `qty` remains venue/native size; `qty_base` and `qty_venue` carry the normalized pair." in rest_contract
     assert "Older raw SQLite rows may not have `*_base` / `*_venue` columns." in rest_contract
     assert "Rollout requires a TokenMM trade-stream cutover/reset before enabling base-first `qty` in production." in rest_contract
+    assert '"qty_base": 0.015' in rest_contract
+    assert '"qty_venue": 0.015' in rest_contract
+    assert '"qty_conversion_status": "identity"' in rest_contract
+    assert '"qty_conversion_source": "generic:multiplier=1"' in rest_contract
 
     assert "For TokenMM `trade_update` payloads, `trade.qty` is operator-facing base quantity." in socket_contract
     assert "Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields." in socket_contract
     assert "Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection." in socket_contract
+    assert "GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted" in socket_contract
+    assert "GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available" in socket_contract
+    assert "Bare `qty` in trade payloads remains venue/native size unless a paired explicit base field is also present." not in socket_contract
