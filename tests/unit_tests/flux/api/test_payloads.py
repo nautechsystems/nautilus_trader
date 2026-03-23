@@ -2402,6 +2402,7 @@ def test_build_trades_rows_prefers_explicit_base_qty_for_operator_contract() -> 
     assert rows[0]["qty_base"] == "1000"
     assert rows[0]["qty_venue"] == "100"
     assert rows[0]["qty_conversion_status"] == "exact_multiplier"
+    assert rows[0]["row_id"] == "trade-okx-perp"
 
 
 def test_enrich_balances_rows_adds_canonical_naming_fields() -> None:

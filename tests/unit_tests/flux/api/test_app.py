@@ -1798,15 +1798,21 @@ def test_trades_profile_tokenmm_projects_qty_as_base_when_explicit_fields_are_pr
     )
 
     with app.test_client() as client:
-        response = client.get("/api/v1/trades", query_string={"profile": "tokenmm"})
+        response = client.get(
+            "/api/v1/trades",
+            query_string={"profile": "tokenmm", "limit": 10, "offset": 0},
+        )
         body = response.get_json()
 
     assert response.status_code == 200
     row = body["data"]["rows"][0]
+    assert row["row_id"] == "t-okx"
     assert row["qty"] == "1000"
     assert row["qty_base"] == "1000"
     assert row["qty_venue"] == "100"
     assert row["qty_conversion_status"] == "exact_multiplier"
+    assert body["data"]["limit"] == 10
+    assert body["data"]["offset"] == 0
 
 
 def test_trades_with_strategy_query_keeps_per_strategy_debug_view_with_tokenmm_profile(

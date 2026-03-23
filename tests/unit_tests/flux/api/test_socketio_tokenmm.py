@@ -453,11 +453,14 @@ def test_socket_emitter_trade_update_projects_base_qty_when_explicit_fields_are_
     received = _take_socket_packets(client)
     trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
     assert len(trade_packets) == 1
-    trade_payload = trade_packets[0]["args"][0]["trade"]
+    packet_payload = trade_packets[0]["args"][0]
+    trade_payload = packet_payload["trade"]
+    assert packet_payload["row_id"] == "trade-okx-001"
     assert trade_payload["qty"] == "1000"
     assert trade_payload["qty_base"] == "1000"
     assert trade_payload["qty_venue"] == "100"
     assert trade_payload["qty_conversion_status"] == "exact_multiplier"
+    assert trade_payload["row_id"] == "trade-okx-001"
     client.disconnect()
 
 

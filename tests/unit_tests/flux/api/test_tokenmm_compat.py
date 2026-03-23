@@ -337,10 +337,13 @@ def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_pre
 
     assert trades_response.status_code == 200
     trade_row = trades_body["data"]["rows"][0]
+    assert trade_row["row_id"] == "t-okx"
     assert trade_row["qty"] == "1000"
     assert trade_row["qty_base"] == "1000"
     assert trade_row["qty_venue"] == "100"
     assert trade_row["qty_conversion_status"] == "exact_multiplier"
+    assert trades_body["data"]["limit"] == 10
+    assert trades_body["data"]["offset"] == 0
 
     assert delta_response.status_code == 200
     delta_row = delta_body["data"]["rows"][0]
@@ -348,6 +351,7 @@ def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_pre
     assert delta_row["qty_base"] == "1000"
     assert delta_row["qty_venue"] == "100"
     assert delta_row["row_id"] == "t-okx"
+    assert delta_body["data"]["last_seq"] == 101
 
 
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
