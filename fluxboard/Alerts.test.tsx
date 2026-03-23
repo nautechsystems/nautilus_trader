@@ -218,6 +218,7 @@ describe('Alerts', () => {
   });
 
   it('renders summary text for contextual alerts', () => {
+    mockStoreState.auto = false;
     mockStoreState.rows = [
       createAlert({
         title: 'Order rejected',

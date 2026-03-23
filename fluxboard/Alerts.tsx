@@ -21,6 +21,10 @@ import { Button } from './components/ui/button/Button';
 import { Dialog } from './components/ui/dialog/Dialog';
 import { Switch } from './components/ui/switch';
 import { Select } from './components/ui/select';
+import {
+  createRealtimeSurfaceController,
+  useRealtimeSurfaceController,
+} from './hooks/useRealtimeSurfaceController';
 import { isRealtimeStandardEnabled } from './config/featureFlags';
 import { RealtimeSurfaceState } from './lib/realtime/types';
 import { colors, STALE_THRESHOLDS, spacing, typography } from './lib/tokens';
@@ -46,6 +50,14 @@ function resolveAlertsSurfaceStatus(state: RealtimeSurfaceState): {
     default:
       return { label: 'SYNCING', status: 'muted' };
   }
+}
+
+function getAlertTimestamp(alert: Alert): number {
+  return alert.ts || alert.timestamp || 0;
+}
+
+function compareAlertRows(left: Alert, right: Alert): number {
+  return getAlertTimestamp(right) - getAlertTimestamp(left);
 }
 
 export default function Alerts({
@@ -86,6 +98,25 @@ export default function Alerts({
   const summaryRefreshRequestIdRef = useRef(0);
   const hasLoadedRef = useRef(false);
   const lastUpdateRef = useRef(lastUpdate);
+  const initialRowsRef = useRef(rows);
+  const alertsController = useMemo(() => createRealtimeSurfaceController<Alert>({
+    getRowId: (row) => row.id,
+    compareRows: compareAlertRows,
+    initialRows: initialRowsRef.current,
+  }), []);
+  const controllerState = useRealtimeSurfaceController(
+    alertsController,
+    (snapshot) => ({
+      rows: snapshot.rows,
+      dataVersion: snapshot.dataVersion,
+    }),
+    (left, right) => left.dataVersion === right.dataVersion && Object.is(left.rows, right.rows),
+  );
+  const controllerRows = controllerState.rows;
+
+  useEffect(() => () => {
+    alertsController.destroy();
+  }, [alertsController]);
 
   const syncSurfaceState = useCallback(() => {
     if (!alertsRealtimeStandardEnabled) {
@@ -132,6 +163,7 @@ export default function Alerts({
       if (summaryKey && summaryRequestId !== summaryRefreshRequestIdRef.current) {
         return;
       }
+      alertsController.applySnapshot(data);
       setRows(data);
       const receivedAt = Date.now();
       setLastUpdate(receivedAt);
@@ -162,7 +194,7 @@ export default function Alerts({
         setLoading(false);
       }
     }
-  }, [alertsRealtimeStandardEnabled, setRows, setLoading]);
+  }, [alertsController, alertsRealtimeStandardEnabled, setRows, setLoading]);
 
   // Load alerts from API (only show loading on first load)
   const loadAlerts = useCallback(async () => {
@@ -249,6 +281,7 @@ export default function Alerts({
         if (parsedAlerts.length === 0) {
           if (lastWebSocketDataRef.current === '__empty__') return;
           lastWebSocketDataRef.current = '__empty__';
+          alertsController.applySnapshot([]);
           setRows([]);
           const receivedAt = Date.now();
           setLastUpdate(receivedAt);
@@ -270,7 +303,7 @@ export default function Alerts({
           }
           lastWebSocketDataRef.current = dataHash;
 
-          // Set full alert list (backend sends complete snapshot)
+          alertsController.applySnapshot(parsedAlerts);
           setRows(parsedAlerts);
           const receivedAt = Date.now();
           setLastUpdate(receivedAt);
@@ -284,7 +317,7 @@ export default function Alerts({
           }
         }
       },
-      [alertsRealtimeStandardEnabled, setRows, refreshAlertsFromApi]
+      [alertsController, alertsRealtimeStandardEnabled, setRows, refreshAlertsFromApi]
     ),
     { surface: 'alerts' }
   );
@@ -297,6 +330,7 @@ export default function Alerts({
     }
     try {
       const data = await api.getAlerts();
+      alertsController.applySnapshot(data);
       setRows(data);
       const refreshedAt = Date.now();
       setLastUpdate(refreshedAt);
@@ -314,11 +348,12 @@ export default function Alerts({
     } finally {
       setRefreshing(false);
     }
-  }, [alertsRealtimeStandardEnabled, setRows]);
+  }, [alertsController, alertsRealtimeStandardEnabled, setRows]);
 
   const handleClearAll = useCallback(async () => {
     try {
       await api.clearAlerts();
+      alertsController.applySnapshot([]);
       clearAlerts();
       setShowClearConfirm(false);
     } catch (e) {
@@ -326,14 +361,14 @@ export default function Alerts({
         console.error('[alerts] Failed to clear alerts:', e);
       }
     }
-  }, [clearAlerts]);
+  }, [alertsController, clearAlerts]);
 
   // Filter alerts by level (memoized to prevent unnecessary re-renders)
   const filteredRows = useMemo(
-    () => rows.filter(
+    () => controllerRows.filter(
       (a) => !dismissedIds.has(a.id) && (levelFilter === 'ALL' || (a.severity || a.level) === levelFilter)
     ),
-    [rows, dismissedIds, levelFilter]
+    [controllerRows, dismissedIds, levelFilter]
   );
 
   // Extract header actions (following Balances.tsx pattern)
@@ -421,7 +456,7 @@ export default function Alerts({
       {/* Table with inline expansion */}
       <PanelBody>
         <AlertsTable
-          alerts={rows}
+          alerts={controllerRows}
           loading={loading}
           dismissedIds={dismissedIds}
           levelFilter={levelFilter}

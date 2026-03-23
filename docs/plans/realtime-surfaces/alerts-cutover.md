@@ -8,6 +8,7 @@ Worktree: `/home/ubuntu/nautilus-trader-dev/.worktrees/task-9-rt-alerts`
 
 Alerts is migrated in this lane to the realtime-standard surface shape for the owned frontend path:
 
+- rendered rows now flow through a local realtime surface controller instead of reading directly from the alerts store
 - standard mode exposes explicit surface health through `SYNCING`, `LIVE`, `LAGGING`, `STALE`, and `RECOVERING`
 - healthy steady state no longer keeps fallback polling hot; polling only re-enables while the surface is degraded
 - summary-only socket metadata now drives one explicit REST recovery pass instead of hidden repeated refresh loops
@@ -19,6 +20,10 @@ Alerts is migrated in this lane to the realtime-standard surface shape for the o
 ### Surface health and recovery
 
 `fluxboard/Alerts.tsx` now derives a surface state machine for the Alerts panel instead of treating "socket connected" as implicitly healthy. Initial standard-mode load starts in `SYNCING`, summary-only websocket payloads move the surface to `RECOVERING`, successful fetches return the surface to `LIVE`, and request failures degrade the panel to `STALE`.
+
+### Controller-backed render path
+
+`fluxboard/Alerts.tsx` now owns a local realtime surface controller for canonical row ordering. REST loads, socket snapshots, manual refreshes, and clear-all all apply snapshots through that controller, while the Zustand alerts store is kept in sync as a compatibility mirror for existing actions and tests.
 
 ### Polling discipline
 
@@ -48,4 +53,4 @@ This keeps the Alerts surface from paying the socket-plus-polling tax while live
 ## Exemption / Scope Notes
 
 - Alerts is currently a bounded operator feed, not a hundreds-of-rows trading grid. This cutover packet records a large-table exemption rather than claiming row-delta virtualization work that the surface does not yet need.
-- The surface is not controller-backed in this lane. The owned migration standard here is explicit health, degraded-only polling, surface-tagged live subscriptions, and stable timer behavior. If Alerts graduates into a genuinely high-cardinality surface, it should be moved onto the shared controller path with row-delta hot-path proof instead of relying on snapshot replacement.
+- Alerts still consumes full snapshots or summary-triggered recovery snapshots rather than one-row socket deltas. If the backend evolves this surface into high-cardinality live row deltas, the next step is proving controller-side delta application and visible-window stability under that traffic pattern instead of relying on snapshot replacement alone.
