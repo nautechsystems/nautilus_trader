@@ -98,6 +98,13 @@ MakerV3 publishes structured JSON payloads to canonical topics:
 - `flux.makerv3.trade`: order fill notices for downstream monitoring/analytics, including decision
   correlation fields when available.
 
+Trade payload quantity contract:
+
+- `qty` remains the shared venue-native fill quantity for backward compatibility on the producer topic.
+- `qty_venue` duplicates that explicit venue-native quantity for consumers that want a named field.
+- `qty_base` carries normalized base-asset exposure when instrument metadata allows conversion.
+- `qty_conversion_status` and `qty_conversion_source` explain whether `qty_base` is exact, degraded, or unavailable.
+
 MakerV3 telemetry is persisted across four surfaces:
 
 - `quote_cycle` for every decision pass, including no-order cycles.

@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+import importlib.util
 from decimal import Decimal
+from pathlib import Path
+import sys
 from types import SimpleNamespace
+from types import ModuleType
 
-from flux.strategies.shared.trades import build_trade_payload
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def _load_trades_module() -> ModuleType:
+    module_path = _repo_root() / "systems/flux/flux/strategies/shared/trades.py"
+    spec = importlib.util.spec_from_file_location("task3_shared_trades", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+build_trade_payload = _load_trades_module().build_trade_payload
 
 
 def _instrument(*, raw_symbol: str = "PLUMEUSDT") -> SimpleNamespace:
@@ -12,7 +33,8 @@ def _instrument(*, raw_symbol: str = "PLUMEUSDT") -> SimpleNamespace:
         base_currency=SimpleNamespace(code="PLUME"),
         quote_currency=SimpleNamespace(code="USDT"),
         multiplier=Decimal("10"),
-        info={"base_exposure_mode": "exact_multiplier"},
+        info={},
+        make_qty=lambda value: Decimal(str(value)),
     )
 
 
