@@ -117,6 +117,10 @@ function routePrefersKeyLabel(profile: PathProfile): boolean {
   return profile === 'tokenmm' || profile === 'equities';
 }
 
+function routeUsesBaseFirstTradeQty(profile: PathProfile): boolean {
+  return profile === 'tokenmm';
+}
+
 // Create enhanced API client instance with timeout, retry, and deduplication
 const apiClient = new APIClient(base);
 
@@ -908,7 +912,9 @@ function projectTradeQuantityPayload(row: Record<string, unknown>): {
 } {
   const qtyBaseText = String(row.qty_base ?? '').trim() || undefined;
   const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim() || undefined;
-  const qty = toFiniteOptionalNumber(qtyBaseText ?? row.qty);
+  const qty = toFiniteOptionalNumber(
+    routeUsesBaseFirstTradeQty(getActivePathProfile()) ? (qtyBaseText ?? row.qty) : row.qty,
+  );
   return { qty, qtyBaseText, qtyVenueText };
 }
 

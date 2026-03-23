@@ -174,6 +174,7 @@ const filterTradeRowsAfterReplayCursor = (
 const normalizeTradeEventLike = (candidate: any): any => {
   if (!candidate || typeof candidate !== 'object') return candidate;
   const row = candidate as Record<string, unknown>;
+  const baseFirstQty = typeof window !== 'undefined' && resolvePathnameProfile(window.location?.pathname) === 'tokenmm';
 
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
@@ -234,7 +235,9 @@ const normalizeTradeEventLike = (candidate: any): any => {
   }
   if (qtyBaseText) {
     row.qty_base = qtyBaseText;
-    row.qty = Number(qtyBaseText);
+    if (baseFirstQty) {
+      row.qty = Number(qtyBaseText);
+    }
   }
 
   if (row.mv == null && row.notional == null) {

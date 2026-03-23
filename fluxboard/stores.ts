@@ -17,6 +17,7 @@ import type {
   Alert,
   RiskGroup,
 } from './types';
+import { resolvePathnameProfile } from './config/uiProfiles';
 import type { ParamsProfileId } from './config/paramsProfiles';
 import { STORE_LIMITS, INTERVALS } from './constants';
 import { mergeSignalLegMaps } from './utils/signalLegs';
@@ -140,6 +141,11 @@ function coerceOptionalText(value: unknown): string | undefined {
   return text || undefined;
 }
 
+function routeUsesBaseFirstTradeQty(): boolean {
+  if (typeof window === 'undefined') return false;
+  return resolvePathnameProfile(window.location?.pathname) === 'tokenmm';
+}
+
 function projectTradeQuantityFields(event: TradeEvent): {
   qty: number | undefined;
   qtyBase: string | undefined;
@@ -147,7 +153,9 @@ function projectTradeQuantityFields(event: TradeEvent): {
 } {
   const qtyBase = coerceOptionalText((event as any).qty_base);
   const qtyVenue = coerceOptionalText((event as any).qty_venue ?? (event as any).qty);
-  const qty = coerceNumber(qtyBase ?? (event as any).qty);
+  const qty = coerceNumber(
+    routeUsesBaseFirstTradeQty() ? (qtyBase ?? (event as any).qty) : (event as any).qty,
+  );
   return { qty, qtyBase, qtyVenue };
 }
 

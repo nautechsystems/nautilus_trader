@@ -129,6 +129,7 @@ describe('Trades mobile layout', () => {
   });
 
   it('keeps base quantity as the primary row qty on mobile tokenmm trades', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
     const okxRow = {
       ...sampleRow,
       row_id: 'okx-row',

@@ -147,6 +147,7 @@ describe('api.getTrades', () => {
   });
 
   it('projects base quantity as canonical qty when qty_base and qty_venue are present', async () => {
+    setPathname('/tokenmm/trades');
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -181,6 +182,44 @@ describe('api.getTrades', () => {
       qty_conversion_status: 'exact_multiplier',
     });
     expect(result.rows[0]?.mv).toBeCloseTo(12.736, 10);
+  });
+
+  it('keeps venue qty as canonical on non-tokenmm routes even when qty_base is present', async () => {
+    setPathname('/trades');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            entry_id: '1772623943817-0',
+            ts_ms: 1772623943812,
+            version: 1,
+            strategy_id: 'generic_makerv3',
+            instrument_id: 'PLUME-USDT-SWAP.OKX',
+            side: '1',
+            price: '0.012736',
+            qty: '100',
+            qty_base: '1000',
+            qty_venue: '100',
+            qty_conversion_status: 'exact_multiplier',
+            trade_id: 'generic-okx-trade',
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows[0]).toMatchObject({
+      row_id: 'generic-okx-trade',
+      qty: 100,
+      qty_base: '1000',
+      qty_venue: '100',
+      qty_conversion_status: 'exact_multiplier',
+    });
+    expect(result.rows[0]?.mv).toBeCloseTo(1.2736, 10);
   });
 
   it('preserves canonical trade naming fields from backend payloads', async () => {

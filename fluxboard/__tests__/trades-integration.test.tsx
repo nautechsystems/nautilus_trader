@@ -174,6 +174,7 @@ describe('Trades integration flows', () => {
   });
 
   it('uses qty_base as the top-row quantity and preserves qty_venue for nested tokenmm trade updates', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
     render(<Trades />);
     await waitFor(() => expect(mockTable).toHaveBeenCalled());
 

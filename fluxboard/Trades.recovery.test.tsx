@@ -282,6 +282,7 @@ describe('Trades recovery regressions', () => {
   });
 
   it('passes base-first qty and explicit qty_venue through socket recovery normalization', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
     const { applyDelta } = setupStore();
     mockGetTrades.mockResolvedValue({
       rows: [],
