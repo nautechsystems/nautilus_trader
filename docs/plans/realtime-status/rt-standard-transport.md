@@ -8,9 +8,9 @@
 - write_scope: `fluxboard/api.ts`, `fluxboard/types.ts`, `fluxboard/hooks/useRealtimeChannel.ts`, `fluxboard/hooks/useWebSocket.ts`, `fluxboard/sockets.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Trades.tsx`, `fluxboard/__tests__/realtime/standard-socket-client.test.tsx`, `fluxboard/__tests__/panels/signal.test.tsx`, `fluxboard/__tests__/trades-integration.test.tsx`, `fluxboard/e2e/realtime-cutovers/signal.spec.ts`, `fluxboard/e2e/realtime-cutovers/trades.spec.ts`, `docs/plans/realtime-surfaces/signal-cutover.md`, `docs/plans/realtime-surfaces/trades-cutover.md`, `docs/plans/realtime-status/rt-standard-transport.md`, `systems/flux/docs/realtime-rollout.md`
 - rollout_control: `signal + trades surface flags with backend standard capability`
 - rollback_trigger: `lineage mismatch, standard live regression, or fail-closed behavior drift`
-- current status: `in_review_spec`
+- current status: `completed`
 - active task: `Task 14: Adopt Standard Socket Transport For Signal And Trades`
-- current commit or diff: `working tree diff in task-14 lane`
+- current commit or diff: `controller integration commit f9cda8ab3b (lane fix commit d698082c8e)`
 - cutover_packet: `docs/plans/realtime-surfaces/signal-cutover.md ; docs/plans/realtime-surfaces/trades-cutover.md`
 - canary_scope: `flagged Signal and Trades route cutovers`
 - minimum_canary_cohort: `1 internal Signal canary and 1 internal Trades canary for 7 consecutive days`
@@ -21,7 +21,7 @@
 - dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
 - rollout_metrics_snapshot: `standard_subscribe_counts, standard_recovery_required_counts, active_standard_subscribers, legacy_event_counts plus client-observed subscribe/unsubscribe and recovery state transitions`
 - legacy_traffic_status: `signal + trades frontend duplicate-path cleanup complete in flag-on mode; backend legacy traffic still retained for rollback clients and bridge-backed surfaces`
-- verification run: `lane green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx passed (5 files, 70 tests). lane green: pnpm build:test passed. lane green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/signal.spec.ts e2e/realtime-cutovers/trades.spec.ts passed (2 specs).`
-- blockers: `none in owned scope; pending spec + quality review before controller integration`
-- notes_last_update: `Task 14 now routes Signal and Trades through the shared standard socket client, preserves latest resume cursors across reconnects, hardens snapshot-revision identity matching, keeps Signal invalidate-only recovery armed across reconnects, makes manual-refresh state sticky for both surfaces, and restores legacy no-epoch trade_update compatibility for explicit flag-off mode. Browser cutover evidence now proves legacy steady-state listeners stay inactive in flag-on mode.`
-- next handoff: `Dispatch spec review on the Task 14 diff, then quality review, then integrate into rt-controller if both pass.`
+- verification run: `lane/controller green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx passed (21 suites, 76 tests). lane/controller green: pnpm build:test passed. lane/controller green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/signal.spec.ts e2e/realtime-cutovers/trades.spec.ts passed (2 specs).`
+- blockers: `none in owned scope`
+- notes_last_update: `Task 14 is integrated on controller. The follow-up hardening series ignores stale subscribe acks from superseded reconnect attempts, keeps the Signal standard cursor monotonic across heartbeat/invalidate/snapshot recovery, prevents late pre-fail-close Signal and Trades snapshots from clearing manual refresh state, treats recoverable trades lineage drift as background snapshot recovery instead of manual refresh, and gates canonical Trades re-entry on a fresh canonical snapshot before re-subscribing. Fresh spec review returned no findings; additional quality-review requests were dispatched but did not return usable findings before integration.`
+- next handoff: `Coordinator sync the shared root tracker to controller commit f9cda8ab3b and keep Task 13 blocked until bridge-backed surfaces stop relying on legacy events.`

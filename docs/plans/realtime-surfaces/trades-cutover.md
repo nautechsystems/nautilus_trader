@@ -23,8 +23,10 @@ Non-canonical trades views remain REST-only and do not advertise `data.realtime`
 - trade row ordering still uses the inner trade row `seq`; the standard envelope `seq` is tracked separately as the surface cursor
 - reconnect and resubscribe use the latest acknowledged standard cursor
 - standard envelope seq gaps trigger bounded HTTP delta recovery from the last acknowledged seq
-- `recovery_required` with `reason=trade_gap` triggers a canonical snapshot recovery; other standard failures fail closed
+- `recovery_required` with `reason=trade_gap` triggers a canonical snapshot recovery; recoverable subscribe lineage drift does the same instead of failing closed
 - `manual_refresh_required` is sticky across reconnects; the panel does not silently auto-recover until the user refreshes
+- queued recovery snapshots that started before `manual_refresh_required` are discarded and cannot silently clear the fail-closed state
+- returning from a non-canonical view waits for a fresh canonical snapshot before the standard subscription is re-armed
 - legacy events without epoch metadata remain compatible in flag-off mode and do not spuriously trigger snapshot refreshes
 
 ## Rollout Notes
@@ -36,7 +38,7 @@ Non-canonical trades views remain REST-only and do not advertise `data.realtime`
 ## Verification
 
 - `VITEST_FULL=1 pnpm --dir fluxboard exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx`
-  - Result: `5` files passed, `70` tests passed
+  - Result: `21` suites passed, `76` tests passed
 - `pnpm --dir fluxboard build:test`
   - Result: production bundle built successfully
 - `E2E_BASE_URL=http://127.0.0.1:4173 pnpm --dir fluxboard exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/trades.spec.ts`

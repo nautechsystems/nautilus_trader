@@ -125,11 +125,14 @@ Implications:
 
 1. `accepted_start_seq` in subscribe ack is the server-accepted surface-specific cursor after lineage validation.
 2. Clients must compare their requested cursor with `accepted_start_seq`.
-3. `surface_query_key`, `stream_id`, and `snapshot_revision` are mandatory subscribe inputs; the server does not silently infer missing lineage.
-4. For signals and trades, `data.realtime.last_seq` is the standard surface-specific stream cursor, not a shared profile-wide counter.
-5. For trades, `data.realtime.last_seq` is also distinct from the `/api/v1/trades` row cursor.
-6. Signals currently use `invalidate_only`; any signal-side `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
-7. Trades first attempt bounded delta replay for contiguous gaps; trade scan overflow or unsupported gaps emit `recovery_required` with `reason=trade_gap`.
+3. Clients must ignore stale subscribe acks from superseded reconnect attempts; only the latest in-flight subscribe attempt for a surface may mutate client state.
+4. `surface_query_key`, `stream_id`, and `snapshot_revision` are mandatory subscribe inputs; the server does not silently infer missing lineage.
+5. For signals and trades, `data.realtime.last_seq` is the standard surface-specific stream cursor, not a shared profile-wide counter.
+6. For trades, `data.realtime.last_seq` is also distinct from the `/api/v1/trades` row cursor.
+7. Signals currently use `invalidate_only`; any signal-side `recovery_required` event means the client must discard incremental merge state and fetch a fresh REST snapshot.
+8. Signal clients must keep the standard cursor monotonic across `delta_batch`, `heartbeat`, and `invalidate` packets so reconnect resumes never regress during quiet or invalidate-only windows.
+9. Trades first attempt bounded delta replay for contiguous gaps; trade scan overflow or unsupported gaps emit `recovery_required` with `reason=trade_gap`.
+10. Snapshot responses that started before `manual_refresh_required` must not clear the fail-closed state on the client.
 
 ## Observability
 
