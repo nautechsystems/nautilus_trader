@@ -6,7 +6,7 @@
  * Auto-dismisses INFO (10s) and WARNING (30s) alerts.
  */
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, normalizeAlertsSnapshotCandidate } from './api';
 import { useAlertsStore } from './stores';
 import { INTERVALS } from './constants';
@@ -15,13 +15,38 @@ import type { Alert, AlertLevel } from './types';
 import { AlertsTable, AlertDetails } from './components/domain/alerts';
 import { PanelHeader } from './components/shared/PanelHeader';
 import { PanelBody } from './components/shared/PanelBody';
+import { StatusPill } from './components/shared/StatusPill';
 import { PageShell } from './components/layout/PageShell';
 import { Button } from './components/ui/button/Button';
 import { Dialog } from './components/ui/dialog/Dialog';
 import { Switch } from './components/ui/switch';
 import { Select } from './components/ui/select';
+import { isRealtimeStandardEnabled } from './config/featureFlags';
+import { RealtimeSurfaceState } from './lib/realtime/types';
 import { colors, STALE_THRESHOLDS, spacing, typography } from './lib/tokens';
 import { useMobileLayout } from './hooks/useMobileLayout';
+
+function resolveAlertsSurfaceStatus(state: RealtimeSurfaceState): {
+  label: string;
+  status: 'ok' | 'warning' | 'critical' | 'muted';
+} {
+  switch (state) {
+    case RealtimeSurfaceState.LIVE:
+      return { label: 'LIVE', status: 'ok' };
+    case RealtimeSurfaceState.LAGGING:
+      return { label: 'LAGGING', status: 'warning' };
+    case RealtimeSurfaceState.STALE:
+      return { label: 'STALE', status: 'critical' };
+    case RealtimeSurfaceState.RECOVERING:
+      return { label: 'RECOVERING', status: 'warning' };
+    case RealtimeSurfaceState.SYNCING:
+      return { label: 'SYNCING', status: 'muted' };
+    case RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED:
+      return { label: 'REFRESH', status: 'critical' };
+    default:
+      return { label: 'SYNCING', status: 'muted' };
+  }
+}
 
 export default function Alerts({
   dense = false,
@@ -47,6 +72,10 @@ export default function Alerts({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [refreshing, setRefreshing] = useState(false);
+  const alertsRealtimeStandardEnabled = useMemo(() => isRealtimeStandardEnabled('alerts'), []);
+  const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(() => (
+    alertsRealtimeStandardEnabled ? RealtimeSurfaceState.SYNCING : RealtimeSurfaceState.LIVE
+  ));
   const { isMobile } = useMobileLayout();
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
 
@@ -56,11 +85,41 @@ export default function Alerts({
   const pendingAlertsSummaryRef = useRef<string>('');
   const summaryRefreshRequestIdRef = useRef(0);
   const hasLoadedRef = useRef(false);
+  const lastUpdateRef = useRef(lastUpdate);
+
+  const syncSurfaceState = useCallback(() => {
+    if (!alertsRealtimeStandardEnabled) {
+      return;
+    }
+    setSurfaceState((current) => {
+      if (current === RealtimeSurfaceState.RECOVERING) {
+        return current;
+      }
+      if (loading && !hasLoadedRef.current) {
+        return RealtimeSurfaceState.SYNCING;
+      }
+      if (!hasLoadedRef.current) {
+        return RealtimeSurfaceState.SYNCING;
+      }
+
+      const ageMs = Date.now() - lastUpdateRef.current;
+      if (ageMs > STALE_THRESHOLDS.NORMAL * 2) {
+        return RealtimeSurfaceState.STALE;
+      }
+      if (ageMs > STALE_THRESHOLDS.NORMAL) {
+        return RealtimeSurfaceState.LAGGING;
+      }
+      return RealtimeSurfaceState.LIVE;
+    });
+  }, [alertsRealtimeStandardEnabled, loading]);
 
   const refreshAlertsFromApi = useCallback(async (options?: { showLoading?: boolean; summaryKey?: string }) => {
     const shouldShowLoading = Boolean(options?.showLoading);
     const summaryKey = options?.summaryKey ?? '';
     const summaryRequestId = summaryKey ? (summaryRefreshRequestIdRef.current + 1) : 0;
+    if (alertsRealtimeStandardEnabled) {
+      setSurfaceState(summaryKey ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.SYNCING);
+    }
     if (shouldShowLoading) {
       setLoading(true);
     }
@@ -74,12 +133,20 @@ export default function Alerts({
         return;
       }
       setRows(data);
-      setLastUpdate(Date.now());
+      const receivedAt = Date.now();
+      setLastUpdate(receivedAt);
+      lastUpdateRef.current = receivedAt;
       hasLoadedRef.current = true;
+      if (alertsRealtimeStandardEnabled) {
+        setSurfaceState(RealtimeSurfaceState.LIVE);
+      }
       if (summaryKey) {
         lastAlertsSummaryRef.current = summaryKey;
       }
     } catch (e) {
+      if (alertsRealtimeStandardEnabled) {
+        setSurfaceState(RealtimeSurfaceState.STALE);
+      }
       if (import.meta.env?.DEV) {
         console.error('[alerts] Failed to load:', e);
       }
@@ -95,7 +162,7 @@ export default function Alerts({
         setLoading(false);
       }
     }
-  }, [setRows, setLoading]);
+  }, [alertsRealtimeStandardEnabled, setRows, setLoading]);
 
   // Load alerts from API (only show loading on first load)
   const loadAlerts = useCallback(async () => {
@@ -103,8 +170,39 @@ export default function Alerts({
     await refreshAlertsFromApi({ showLoading: isFirstLoad });
   }, [refreshAlertsFromApi]);
 
+  useEffect(() => {
+    lastUpdateRef.current = lastUpdate;
+  }, [lastUpdate]);
+
+  useEffect(() => {
+    if (!alertsRealtimeStandardEnabled) {
+      return;
+    }
+    void loadAlerts();
+  }, [alertsRealtimeStandardEnabled, loadAlerts]);
+
+  useEffect(() => {
+    if (!alertsRealtimeStandardEnabled) {
+      return undefined;
+    }
+    syncSurfaceState();
+    const intervalId = window.setInterval(() => {
+      syncSurfaceState();
+    }, 1_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [alertsRealtimeStandardEnabled, syncSurfaceState]);
+
+  const pollingEnabled = alertsRealtimeStandardEnabled
+    ? auto && (
+      surfaceState === RealtimeSurfaceState.LAGGING
+      || surfaceState === RealtimeSurfaceState.STALE
+    )
+    : auto;
+
   // Auto-refresh polling with usePolling hook
-  usePolling(loadAlerts, INTERVALS.ALERTS_POLL, auto);
+  usePolling(loadAlerts, INTERVALS.ALERTS_POLL, pollingEnabled);
 
   // Subscribe to live alert updates via WebSocket using useWebSocket hook
   useWebSocket<{ alerts?: unknown[] | { count?: number; latest_ts_ms?: number | null }; rows?: unknown[] }>(
@@ -122,7 +220,7 @@ export default function Alerts({
             lastAlertsSummaryRef.current !== summaryKey
             && pendingAlertsSummaryRef.current !== summaryKey
           ) {
-            void refreshAlertsFromApi({ summaryKey });
+            void refreshAlertsFromApi({ showLoading: !hasLoadedRef.current, summaryKey });
           }
           return;
         }
@@ -152,7 +250,12 @@ export default function Alerts({
           if (lastWebSocketDataRef.current === '__empty__') return;
           lastWebSocketDataRef.current = '__empty__';
           setRows([]);
-          setLastUpdate(Date.now());
+          const receivedAt = Date.now();
+          setLastUpdate(receivedAt);
+          lastUpdateRef.current = receivedAt;
+          if (alertsRealtimeStandardEnabled) {
+            setSurfaceState(RealtimeSurfaceState.LIVE);
+          }
           return;
         }
 
@@ -169,32 +272,49 @@ export default function Alerts({
 
           // Set full alert list (backend sends complete snapshot)
           setRows(parsedAlerts);
-          setLastUpdate(Date.now());
+          const receivedAt = Date.now();
+          setLastUpdate(receivedAt);
+          lastUpdateRef.current = receivedAt;
+          if (alertsRealtimeStandardEnabled) {
+            setSurfaceState(RealtimeSurfaceState.LIVE);
+          }
         } catch (e) {
           if (import.meta.env?.DEV) {
             console.error('[alerts] Failed to parse WebSocket alerts:', e);
           }
         }
       },
-      [setRows, lastWebSocketDataRef, refreshAlertsFromApi]
-    )
+      [alertsRealtimeStandardEnabled, setRows, refreshAlertsFromApi]
+    ),
+    { surface: 'alerts' }
   );
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    if (alertsRealtimeStandardEnabled) {
+      setSurfaceState(RealtimeSurfaceState.RECOVERING);
+    }
     try {
       const data = await api.getAlerts();
       setRows(data);
-      setLastUpdate(Date.now());
+      const refreshedAt = Date.now();
+      setLastUpdate(refreshedAt);
+      lastUpdateRef.current = refreshedAt;
+      if (alertsRealtimeStandardEnabled) {
+        setSurfaceState(RealtimeSurfaceState.LIVE);
+      }
     } catch (e) {
+      if (alertsRealtimeStandardEnabled) {
+        setSurfaceState(RealtimeSurfaceState.STALE);
+      }
       if (import.meta.env?.DEV) {
         console.error('[alerts] Refresh failed:', e);
       }
     } finally {
       setRefreshing(false);
     }
-  }, [setRows]);
+  }, [alertsRealtimeStandardEnabled, setRows]);
 
   const handleClearAll = useCallback(async () => {
     try {
@@ -255,6 +375,19 @@ export default function Alerts({
     </div>
   );
 
+  const surfaceStatus = alertsRealtimeStandardEnabled
+    ? resolveAlertsSurfaceStatus(surfaceState)
+    : null;
+  const titleActions = surfaceStatus ? (
+    <StatusPill
+      status={surfaceStatus.status}
+      label={surfaceStatus.label}
+      layout="inline"
+      size="xs"
+      tone="subtle"
+    />
+  ) : undefined;
+
   const handleRowClick = useCallback((alert: Alert) => {
     if (isMobile) {
       setSelectedAlert(alert);
@@ -273,6 +406,7 @@ export default function Alerts({
           lastUpdate={lastUpdate}
           staleThresholdMs={STALE_THRESHOLDS.NORMAL}
           onRemove={onRemove}
+          titleActions={titleActions}
           actions={headerActions}
         />
       )}

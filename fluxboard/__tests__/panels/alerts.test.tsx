@@ -363,7 +363,7 @@ describe('AlertsTable Interactions', () => {
       />
     );
 
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByText('Loading alerts...')).toBeInTheDocument();
   });
 
   it('should show empty state', () => {

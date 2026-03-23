@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-9-rt-alerts`
+- owner: `coordinator`
+- branch: `lanes/task-9-rt-alerts`
+- worktree: `.worktrees/task-9-rt-alerts`
+- depends_on: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
+- write_scope: `fluxboard/Alerts.tsx`, `fluxboard/components/domain/alerts/AlertsTable.tsx`, `fluxboard/components/domain/alerts/AlertDetails.tsx`, `fluxboard/components/domain/alerts/index.ts`, `fluxboard/Alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.perf.test.tsx`, `fluxboard/__tests__/ui/AlertsTableAffordance.test.tsx`, `fluxboard/__tests__/ui/AlertsTableTypography.test.tsx`, `fluxboard/e2e/realtime-cutovers/alerts.spec.ts`, `docs/plans/realtime-surfaces/alerts-cutover.md`
+- rollout_control: `alerts surface flag + backend capability`
+- rollback_trigger: `legacy payload dependency, recovery regression, or baseline alerts behavior drift`
+- current status: `in_progress`
+- active task: `Task 9: Migrate Alerts Surface To The Standard`
+- current commit or diff: `working tree`
+- cutover_packet: `docs/plans/realtime-surfaces/alerts-cutover.md`
+- canary_scope: `alerts realtime surface`
+- minimum_canary_cohort: `pending`
+- minimum_standard_subscribers: `pending`
+- minimum_standard_event_volume: `pending`
+- alert_state: `pending`
+- rollback_exercise_result: `pending`
+- dashboards_playbooks: `pending`
+- rollout_metrics_snapshot: `pending`
+- legacy_traffic_status: `legacy-default`
+- verification run: `baseline red before Task 9 implementation: __tests__/panels/alerts.test.tsx failed on timer reset behavior and stale loading-copy expectations. green: VITEST_FULL=1 pnpm exec vitest run Alerts.test.tsx __tests__/panels/alerts.test.tsx __tests__/panels/alerts.perf.test.tsx __tests__/ui/AlertsTableAffordance.test.tsx __tests__/ui/AlertsTableTypography.test.tsx __tests__/realtime/legacy-adapter.test.tsx passed (6 files, 38 tests). green: pnpm build:test passed. green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts passed (1 spec).`
+- blockers: `none`
+- notes_last_update: `The lane fixed a real pre-existing auto-dismiss regression in AlertsTable, added standard-mode surface health with degraded-only polling in Alerts, restored deterministic Alerts test teardown by moving the mocked polling hook off the render path and onto useEffect semantics, and added a deterministic Playwright cutover spec plus cutover packet for the Alerts surface. Full owned verification is now green in the lane.`
+- next handoff: `Dispatch spec review followed by quality review on the completed Task 9 diff, then commit and integrate back into controller if both reviewers approve.`
