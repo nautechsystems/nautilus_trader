@@ -351,6 +351,88 @@ describe('DataTable', () => {
     });
   });
 
+  it('keeps the unsorted stable-data fast path when sorting state targets a missing column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const columnsWithoutAge = columns.filter((column) => (column as { accessorKey?: string }).accessorKey !== 'age');
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columnsWithoutAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columnsWithoutAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
+  it('keeps the unsorted stable-data fast path when sorting state targets a non-sortable column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const columnsWithStaticAge = columns.map((column) => (
+      (column as { accessorKey?: string }).accessorKey === 'age'
+        ? { ...column, enableSorting: false }
+        : column
+    ));
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columnsWithStaticAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columnsWithStaticAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
   it('measures rendered virtual rows for variable-height virtualization', () => {
     const measureElement = vi.fn();
     const virtualizer = {

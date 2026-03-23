@@ -127,6 +127,34 @@ export interface DataTableDebugMetrics {
   rowCount: number;
 }
 
+function collectSortableLeafColumnIds<T>(columnDefs: ColumnDef<T>[]): Set<string> {
+  const sortableColumnIds = new Set<string>();
+
+  const visit = (colDefs: ColumnDef<T>[]) => {
+    colDefs.forEach((column) => {
+      const childColumns = (column as ColumnDef<T> & { columns?: ColumnDef<T>[] }).columns;
+      if (childColumns && childColumns.length > 0) {
+        visit(childColumns);
+        return;
+      }
+
+      if ((column as ColumnDef<T> & { enableSorting?: boolean }).enableSorting === false) {
+        return;
+      }
+
+      const columnKeyRaw = (column as ColumnDef<T> & { id?: string; accessorKey?: string | number }).id
+        ?? (column as ColumnDef<T> & { accessorKey?: string | number }).accessorKey;
+
+      if (columnKeyRaw !== undefined && columnKeyRaw !== null) {
+        sortableColumnIds.add(String(columnKeyRaw));
+      }
+    });
+  };
+
+  visit(columnDefs);
+  return sortableColumnIds;
+}
+
 /**
  * DataTable - Generic table component with TanStack Table
  *
@@ -190,19 +218,6 @@ function DataTableInner<T>({
   }, [sortingState]);
 
   const currentSorting = sortingState ?? internalSorting;
-  const previousLiveDataVersionRef = useRef(liveDataVersion);
-  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
-  const hasActiveSorting = sortable && currentSorting.length > 0;
-  const effectiveData = useMemo(
-    () => (liveCacheReset && hasActiveSorting ? [...data] : data),
-    [data, hasActiveSorting, liveCacheReset]
-  );
-  const effectiveSorting = useMemo(
-    () => (liveCacheReset && hasActiveSorting
-      ? currentSorting.map((entry) => ({ ...entry }))
-      : currentSorting),
-    [currentSorting, hasActiveSorting, liveCacheReset]
-  );
 
   const handleSortingChange = useCallback(
     (updater: SortingState | ((old: SortingState) => SortingState)) => {
@@ -290,6 +305,35 @@ function DataTableInner<T>({
 
     return filterColumns(columns);
   }, [columns, isMobileViewport, mobileMode, primarySet, secondarySet]);
+
+  const activeSortableColumnIds = useMemo(
+    () => collectSortableLeafColumnIds(resolvedColumns),
+    [resolvedColumns]
+  );
+  const appliedSorting = useMemo(
+    () => {
+      if (currentSorting.length === 0) {
+        return currentSorting;
+      }
+
+      const nextSorting = currentSorting.filter((entry) => activeSortableColumnIds.has(entry.id));
+      return nextSorting.length === currentSorting.length ? currentSorting : nextSorting;
+    },
+    [activeSortableColumnIds, currentSorting]
+  );
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  const hasActiveSorting = sortable && appliedSorting.length > 0;
+  const effectiveData = useMemo(
+    () => (liveCacheReset && hasActiveSorting ? [...data] : data),
+    [data, hasActiveSorting, liveCacheReset]
+  );
+  const effectiveSorting = useMemo(
+    () => (liveCacheReset && hasActiveSorting
+      ? appliedSorting.map((entry) => ({ ...entry }))
+      : appliedSorting),
+    [appliedSorting, hasActiveSorting, liveCacheReset]
+  );
 
   // Group data if grouping function provided
   const groupedData = useMemo(() => {
@@ -423,7 +467,7 @@ function DataTableInner<T>({
   const previousRowModelRef = useRef<ReturnType<typeof table.getRowModel>>();
 
   // Extract current sort state for indicators
-  const currentSort = currentSorting[0];
+  const currentSort = appliedSorting[0];
   const sortColumn = currentSort?.id ?? null;
   const sortDirection = currentSort?.desc ? 'desc' : 'asc';
 
