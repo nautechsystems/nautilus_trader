@@ -111,7 +111,8 @@ export function useWebSocket<T = unknown>(
   // Use ref to always have the latest handler without recreating the subscription
   const handlerRef = useRef(handler);
   const surface = options?.surface;
-  const usesSharedBridgeStore = options?.bridge === undefined && isRealtimeSurface(surface);
+  const surfaceUsesRealtimeStandard = isRealtimeSurface(surface) && isRealtimeStandardEnabled(surface);
+  const usesSharedBridgeStore = options?.bridge === undefined && surfaceUsesRealtimeStandard;
   const registeredSharedBridge = useSyncExternalStore(
     usesSharedBridgeStore ? subscribeToSharedWebSocketBridge : subscribeToNoopSharedBridge,
     usesSharedBridgeStore ? getSharedWebSocketBridgeSnapshot : getNoSharedWebSocketBridgeSnapshot,
@@ -122,7 +123,7 @@ export function useWebSocket<T = unknown>(
   const bridgeSubscribe = activeBridge?.subscribe;
   const explicitMode = activeBridge?.resolveMode?.({ event, surface });
   const mode = explicitMode ?? (
-    bridgeSubscribe && isRealtimeSurface(surface) && isRealtimeStandardEnabled(surface)
+    bridgeSubscribe && surfaceUsesRealtimeStandard
       ? 'standard'
       : 'legacy'
   );
