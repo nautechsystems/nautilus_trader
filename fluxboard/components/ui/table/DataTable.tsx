@@ -190,6 +190,18 @@ function DataTableInner<T>({
   }, [sortingState]);
 
   const currentSorting = sortingState ?? internalSorting;
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  const effectiveData = useMemo(
+    () => (liveCacheReset && currentSorting.length > 0 ? [...data] : data),
+    [currentSorting.length, data, liveCacheReset]
+  );
+  const effectiveSorting = useMemo(
+    () => (liveCacheReset && currentSorting.length > 0
+      ? currentSorting.map((entry) => ({ ...entry }))
+      : currentSorting),
+    [currentSorting, liveCacheReset]
+  );
 
   const handleSortingChange = useCallback(
     (updater: SortingState | ((old: SortingState) => SortingState)) => {
@@ -384,10 +396,10 @@ function DataTableInner<T>({
   // Memoize table configuration
   const tableConfig = useMemo(
     () => ({
-      data,
+      data: effectiveData,
       columns: expandedColumns,
       state: {
-        sorting: currentSorting,
+        sorting: effectiveSorting,
         expanded: currentExpanded,
         ...(rowSelection && { rowSelection }),
       },
@@ -402,13 +414,12 @@ function DataTableInner<T>({
       enableSorting: sortable,
       enableExpanding: enableRowExpansion,
     }),
-    [data, expandedColumns, currentSorting, currentExpanded, sortable, enableRowSelection, enableRowExpansion, rowSelection, onRowSelectionChange, handleSortingChange, handleExpandedChange, getRowId]
+    [effectiveData, expandedColumns, effectiveSorting, currentExpanded, sortable, enableRowSelection, enableRowExpansion, rowSelection, onRowSelectionChange, handleSortingChange, handleExpandedChange, getRowId]
   );
 
   const table = useReactTable(tableConfig as any);
-  const previousDataRef = useRef(data);
+  const previousDataRef = useRef(effectiveData);
   const previousRowModelRef = useRef<ReturnType<typeof table.getRowModel>>();
-  const previousLiveDataVersionRef = useRef(liveDataVersion);
 
   // Extract current sort state for indicators
   const currentSort = currentSorting[0];
@@ -417,13 +428,14 @@ function DataTableInner<T>({
 
   const densityStyles = getDensityStyles(dense, densityMode);
 
-  const rowModel = table.getRowModel();
-  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
   if (liveCacheReset) {
-    rowModel.rows.forEach((row) => {
+    previousRowModelRef.current?.rows.forEach((row) => {
       (row as any)._valuesCache = {};
       (row as any)._uniqueValuesCache = {};
     });
+  }
+  const rowModel = table.getRowModel();
+  if (liveCacheReset) {
     previousLiveDataVersionRef.current = liveDataVersion;
   }
   const rows = rowModel.rows;
@@ -447,15 +459,15 @@ function DataTableInner<T>({
 
   useEffect(() => {
     const metrics: DataTableDebugMetrics = {
-      coreRowModelInvalidated: previousDataRef.current !== data,
+      coreRowModelInvalidated: previousDataRef.current !== effectiveData,
       liveCacheReset,
       rowModelStable: previousRowModelRef.current === rowModel,
       rowCount: rows.length,
     };
     onDebugMetrics?.(metrics);
-    previousDataRef.current = data;
+    previousDataRef.current = effectiveData;
     previousRowModelRef.current = rowModel;
-  }, [data, liveCacheReset, onDebugMetrics, rowModel, rows.length]);
+  }, [effectiveData, liveCacheReset, onDebugMetrics, rowModel, rows.length]);
 
   const renderTableCells = (row: Row<T>) =>
     row.getVisibleCells().map((cell) => {

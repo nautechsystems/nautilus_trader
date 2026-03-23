@@ -290,7 +290,16 @@ function didMakerV4DisplayRowChange(
   if (existingKeys.length !== nextKeys.length) {
     return true;
   }
-  return nextKeys.some((key) => existing[key as keyof MakerV4DisplayRow] !== next[key as keyof MakerV4DisplayRow]);
+  return nextKeys.some((key) => {
+    if (key === '_statusLabel') {
+      return (
+        existing._statusLabel.label !== next._statusLabel.label
+        || existing._statusLabel.subLabel !== next._statusLabel.subLabel
+        || existing._statusLabel.variant !== next._statusLabel.variant
+      );
+    }
+    return existing[key as keyof MakerV4DisplayRow] !== next[key as keyof MakerV4DisplayRow];
+  });
 }
 
 function didMakerV4SourceRowChange(
@@ -508,6 +517,7 @@ export default function MakerV4SignalTable({
   const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
   const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
   const previousLiveDataVersionRef = useRef<number | undefined>(liveDataVersion);
+  const [committedTableLiveDataVersion, setCommittedTableLiveDataVersion] = useState<number | undefined>(liveDataVersion);
   const [, forceCommittedRender] = useState(0);
   const reconciledData = useMemo(() => {
     const forceRefreshAll =
@@ -534,10 +544,12 @@ export default function MakerV4SignalTable({
       displayRowByIdRef.current = reconciledData.rowById;
       displaySourceRowByIdRef.current = reconciledData.sourceRowById;
       previousLiveDataVersionRef.current = liveDataVersion;
+      setCommittedTableLiveDataVersion(liveDataVersion);
       return;
     }
 
     let shouldForceCommittedRender = false;
+    let shouldAdvanceCommittedTableVersion = false;
 
     if (reconciledData.didRowsChange) {
       const nextCommittedRows: MakerV4DisplayRow[] = [];
@@ -549,6 +561,7 @@ export default function MakerV4SignalTable({
           if (existing !== nextRow) {
             patchDisplayRowInPlace(existing, nextRow);
             shouldForceCommittedRender = true;
+            shouldAdvanceCommittedTableVersion = true;
           }
           nextCommittedRows.push(existing);
           nextCommittedRowById.set(nextRow.id, existing);
@@ -561,14 +574,16 @@ export default function MakerV4SignalTable({
         nextCommittedRows.push(nextRow);
         nextCommittedRowById.set(nextRow.id, nextRow);
         shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
       });
 
-      if (
+      const didStructureChange =
         displayRowsRef.current.length !== nextCommittedRows.length
-        || nextCommittedRows.some((row, index) => displayRowsRef.current[index] !== row)
-      ) {
-        displayRowsRef.current.splice(0, displayRowsRef.current.length, ...nextCommittedRows);
+        || nextCommittedRows.some((row, index) => displayRowsRef.current[index] !== row);
+      if (didStructureChange) {
+        displayRowsRef.current = nextCommittedRows;
         shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
       }
 
       displayRowByIdRef.current = nextCommittedRowById;
@@ -579,10 +594,14 @@ export default function MakerV4SignalTable({
     displaySourceRowByIdRef.current = reconciledData.sourceRowById;
     previousLiveDataVersionRef.current = liveDataVersion;
 
+    if (shouldAdvanceCommittedTableVersion && committedTableLiveDataVersion !== liveDataVersion) {
+      setCommittedTableLiveDataVersion(liveDataVersion);
+    }
+
     if (shouldForceCommittedRender) {
       forceCommittedRender((value) => value + 1);
     }
-  }, [reconciledData, liveDataVersion]);
+  }, [committedTableLiveDataVersion, reconciledData, liveDataVersion]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
@@ -889,7 +908,7 @@ export default function MakerV4SignalTable({
         columns={columns}
         getRowId={(row) => row.id}
         sortable
-        liveDataVersion={liveDataVersion}
+        liveDataVersion={committedTableLiveDataVersion}
         dense={false}
         loading={loading}
         emptyMessage={loading ? 'Loading strategies...' : 'No Maker V4 strategies found'}

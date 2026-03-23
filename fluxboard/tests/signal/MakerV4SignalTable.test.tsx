@@ -238,6 +238,12 @@ function createSuspendGate() {
   };
 }
 
+function getVisibleMakerV4StrategyOrder(): string[] {
+  const table = screen.getByRole('table');
+  return Array.from(table.querySelectorAll('tbody tr'))
+    .map((row) => row.querySelector('td')?.textContent?.trim() ?? '');
+}
+
 type TransitionHarnessHandle = {
   update(next: { liveDataVersion?: number; blocker?: ReactElement | null }): void;
 };
@@ -719,6 +725,56 @@ describe('MakerV4SignalTable', () => {
     expect(accessCounts.get('maker_v4_first')).toBe(countsBefore.get('maker_v4_first'));
     expect(accessCounts.get('maker_v4_third')).toBe(countsBefore.get('maker_v4_third'));
     expect(accessCounts.get('maker_v4_changed')).toBeGreaterThan(countsBefore.get('maker_v4_changed') ?? 0);
+  });
+
+  it('recomputes the mid-spread sort order after a committed liveDataVersion patch', async () => {
+    const lowerSpread = buildMakerV4Strategy();
+    lowerSpread.id = 'maker_v4_low';
+    if (!lowerSpread.maker_v4?.quote_snapshot) {
+      throw new Error('expected lower spread maker_v4 quote snapshot');
+    }
+    lowerSpread.maker_v4.quote_snapshot.mid_spread_bps = 2.0;
+
+    const higherSpread = buildMakerV4Strategy();
+    higherSpread.id = 'maker_v4_high';
+    if (!higherSpread.maker_v4?.quote_snapshot) {
+      throw new Error('expected higher spread maker_v4 quote snapshot');
+    }
+    higherSpread.maker_v4.quote_snapshot.mid_spread_bps = 5.0;
+
+    const rows = [lowerSpread, higherSpread];
+    const { rerender } = render(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={1}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2.0 bps')).toBeInTheDocument();
+      expect(screen.getByText('5.0 bps')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Mid Spread'));
+    await waitFor(() => {
+      expect(getVisibleMakerV4StrategyOrder()).toEqual(['maker_v4_high', 'maker_v4_low']);
+    });
+
+    lowerSpread.maker_v4.quote_snapshot.mid_spread_bps = 9.0;
+
+    rerender(
+      <MakerV4SignalTable
+        rows={rows}
+        liveDataVersion={2}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('9.0 bps')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(getVisibleMakerV4StrategyOrder()).toEqual(['maker_v4_low', 'maker_v4_high']);
+    });
   });
 
   it('switches the equities signal route to the dedicated maker v4 table while filters stay available', async () => {

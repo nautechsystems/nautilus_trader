@@ -40,6 +40,13 @@ const columns: ColumnDef<TestData>[] = [
   },
 ];
 
+function getVisibleNameOrder(): string[] {
+  return screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) => within(row).getAllByRole('cell')[1]?.textContent ?? '');
+}
+
 describe('DataTable', () => {
   it('renders table with data', () => {
     render(<DataTable data={mockData} columns={columns} />);
@@ -260,6 +267,48 @@ describe('DataTable', () => {
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
       coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
+  it('recomputes accessor-backed sort order when liveDataVersion changes but data identity stays stable', async () => {
+    const user = userEvent.setup();
+    const liveData = [
+      { id: 1, name: 'Alpha', age: 20, email: 'alpha@example.com' },
+      { id: 2, name: 'Bravo', age: 30, email: 'bravo@example.com' },
+    ];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    await user.click(screen.getByText('Age'));
+    expect(getVisibleNameOrder()).toEqual(['Bravo', 'Alpha']);
+
+    liveData[0].age = 40;
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleNameOrder()).toEqual(['Alpha', 'Bravo']);
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });
