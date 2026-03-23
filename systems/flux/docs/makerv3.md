@@ -96,7 +96,9 @@ MakerV3 publishes structured JSON payloads to canonical topics:
 - `flux.makerv3.order_intent`: per-order place/cancel intent payloads used to enrich persistent
   `order_action` and `execution_fill` rows.
 - `flux.makerv3.trade`: order fill notices for downstream monitoring/analytics, including decision
-  correlation fields when available.
+  correlation fields when available. Bare `qty` remains the legacy venue-native execution size on
+  this shared topic; explicit `qty_base`, `qty_venue`, `qty_conversion_status`, and
+  `qty_conversion_source` fields carry normalized quantity context for consumers that need it.
 
 Trade payload quantity contract:
 
