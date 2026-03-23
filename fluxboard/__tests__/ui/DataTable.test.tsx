@@ -313,6 +313,44 @@ describe('DataTable', () => {
     });
   });
 
+  it('keeps the unsorted stable-data fast path when sorting state exists but sorting is disabled', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable={false}
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable={false}
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
   it('measures rendered virtual rows for variable-height virtualization', () => {
     const measureElement = vi.fn();
     const virtualizer = {

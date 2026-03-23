@@ -192,15 +192,16 @@ function DataTableInner<T>({
   const currentSorting = sortingState ?? internalSorting;
   const previousLiveDataVersionRef = useRef(liveDataVersion);
   const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  const hasActiveSorting = sortable && currentSorting.length > 0;
   const effectiveData = useMemo(
-    () => (liveCacheReset && currentSorting.length > 0 ? [...data] : data),
-    [currentSorting.length, data, liveCacheReset]
+    () => (liveCacheReset && hasActiveSorting ? [...data] : data),
+    [data, hasActiveSorting, liveCacheReset]
   );
   const effectiveSorting = useMemo(
-    () => (liveCacheReset && currentSorting.length > 0
+    () => (liveCacheReset && hasActiveSorting
       ? currentSorting.map((entry) => ({ ...entry }))
       : currentSorting),
-    [currentSorting, liveCacheReset]
+    [currentSorting, hasActiveSorting, liveCacheReset]
   );
 
   const handleSortingChange = useCallback(
