@@ -300,6 +300,7 @@ describe('Trades recovery regressions', () => {
     const tradeUpdateHandler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
     expect(tradeUpdateHandler).toBeInstanceOf(Function);
 
+    applyDelta.mockClear();
     act(() => {
       tradeUpdateHandler?.({
         op: 'upsert',

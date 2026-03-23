@@ -577,6 +577,7 @@ describe('Trades pagination and snapshot loading', () => {
     const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
     expect(handler).toBeInstanceOf(Function);
 
+    applyDelta.mockClear();
     act(() => {
       handler?.({
         op: 'upsert',
