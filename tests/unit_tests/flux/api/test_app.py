@@ -3919,8 +3919,12 @@ def test_balances_profile_equities_portfolio_snapshot_v2_marks_stale_shared_acco
     assert response.status_code == 200
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
-    assert body["data"]["scope_status"] == [
-        {
+    scope_status = {
+        scope["account_scope_id"]: scope
+        for scope in body["data"]["scope_status"]
+    }
+    assert scope_status == {
+        "ibkr.reference.main": {
             "account_scope_id": "ibkr.reference.main",
             "source_scope": "shared_account",
             "projection_status": {
@@ -3932,7 +3936,7 @@ def test_balances_profile_equities_portfolio_snapshot_v2_marks_stale_shared_acco
                 "stale_after_ms": 15_000,
             },
         },
-        {
+        "binance.futures.main": {
             "account_scope_id": "binance.futures.main",
             "source_scope": "shared_account",
             "projection_status": {
@@ -3944,7 +3948,7 @@ def test_balances_profile_equities_portfolio_snapshot_v2_marks_stale_shared_acco
                 "stale_after_ms": 15_000,
             },
         },
-    ]
+    }
     stale_row = next(
         row
         for row in body["data"]["rows"]
@@ -4119,25 +4123,33 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlay_preserves_scope
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
     scope_status = {
-        scope["account_scope_id"]: scope["projection_status"]
+        scope["account_scope_id"]: scope
         for scope in body["data"]["scope_status"]
     }
     assert scope_status == {
         "ibkr.reference.main": {
-            "healthy": False,
-            "last_success_ts_ms": 100_000,
-            "last_attempt_ts_ms": 123_000,
-            "last_error_type": "TimeoutError",
-            "last_error_message": "",
-            "stale_after_ms": 15_000,
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 100_000,
+                "last_attempt_ts_ms": 123_000,
+                "last_error_type": "TimeoutError",
+                "last_error_message": "",
+                "stale_after_ms": 15_000,
+            },
         },
         "binance.futures.main": {
-            "healthy": True,
-            "last_success_ts_ms": 123_020,
-            "last_attempt_ts_ms": 123_020,
-            "last_error_type": None,
-            "last_error_message": None,
-            "stale_after_ms": 15_000,
+            "account_scope_id": "binance.futures.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": True,
+                "last_success_ts_ms": 123_020,
+                "last_attempt_ts_ms": 123_020,
+                "last_error_type": None,
+                "last_error_message": None,
+                "stale_after_ms": 15_000,
+            },
         },
     }
     stale_row = next(

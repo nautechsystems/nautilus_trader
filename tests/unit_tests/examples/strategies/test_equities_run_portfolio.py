@@ -1861,8 +1861,12 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
     ibkr_projection = json.loads(ibkr_projection_raw)
     assert ibkr_projection["rows"][0]["stale"] is True
     assert ibkr_projection["rows"][0]["include_in_reconciliation"] is False
-    assert ibkr_projection["scope_status"] == [
-        {
+    scope_status = {
+        scope["account_scope_id"]: scope
+        for scope in ibkr_projection["scope_status"]
+    }
+    assert scope_status == {
+        "ibkr.reference.main": {
             "account_scope_id": "ibkr.reference.main",
             "source_scope": "shared_account",
             "projection_status": {
@@ -1874,7 +1878,7 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
                 "stale_after_ms": 15_000,
             },
         },
-    ]
+    }
 
     portfolio_snapshot_raw = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
     assert portfolio_snapshot_raw is not None
@@ -1887,8 +1891,12 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
     assert len(ibkr_rows) == 1
     assert ibkr_rows[0]["stale"] is True
     assert ibkr_rows[0]["include_in_reconciliation"] is False
-    assert portfolio_snapshot["accounts"]["scope_status"] == [
-        {
+    scope_status = {
+        scope["account_scope_id"]: scope
+        for scope in portfolio_snapshot["accounts"]["scope_status"]
+    }
+    assert scope_status == {
+        "ibkr.reference.main": {
             "account_scope_id": "ibkr.reference.main",
             "source_scope": "shared_account",
             "projection_status": {
@@ -1900,7 +1908,7 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
                 "stale_after_ms": 15_000,
             },
         },
-        {
+        "binance.futures.main": {
             "account_scope_id": "binance.futures.main",
             "source_scope": "shared_account",
             "projection_status": {
@@ -1912,7 +1920,7 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
                 "stale_after_ms": 15_000,
             },
         },
-    ]
+    }
 
 
 def test_equities_portfolio_aggregator_publishes_multi_asset_portfolio_snapshot_v2() -> None:

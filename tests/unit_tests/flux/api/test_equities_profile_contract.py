@@ -3077,25 +3077,33 @@ def test_balances_profile_equities_fallback_marks_stale_shared_account_scope_sta
     assert response.status_code == 200
     assert body["data"]["degraded"] is True
     scope_status = {
-        scope["account_scope_id"]: scope["projection_status"]
+        scope["account_scope_id"]: scope
         for scope in body["data"]["scope_status"]
     }
     assert scope_status == {
         "binance.futures.main": {
-            "healthy": True,
-            "last_success_ts_ms": 1_700_000_000_180,
-            "last_attempt_ts_ms": 1_700_000_000_180,
-            "last_error_type": None,
-            "last_error_message": None,
-            "stale_after_ms": 15_000,
+            "account_scope_id": "binance.futures.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": True,
+                "last_success_ts_ms": 1_700_000_000_180,
+                "last_attempt_ts_ms": 1_700_000_000_180,
+                "last_error_type": None,
+                "last_error_message": None,
+                "stale_after_ms": 15_000,
+            },
         },
         "ibkr.reference.main": {
-            "healthy": False,
-            "last_success_ts_ms": 1_700_000_000_000,
-            "last_attempt_ts_ms": 1_700_000_000_150,
-            "last_error_type": "TimeoutError",
-            "last_error_message": "",
-            "stale_after_ms": 15_000,
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_attempt_ts_ms": 1_700_000_000_150,
+                "last_error_type": "TimeoutError",
+                "last_error_message": "",
+                "stale_after_ms": 15_000,
+            },
         },
     }
     stale_row = next(
@@ -3301,25 +3309,33 @@ def test_balances_profile_equities_overlay_marks_stale_shared_account_scope_stat
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
     scope_status = {
-        scope["account_scope_id"]: scope["projection_status"]
+        scope["account_scope_id"]: scope
         for scope in body["data"]["scope_status"]
     }
     assert scope_status == {
         "binance.futures.main": {
-            "healthy": True,
-            "last_success_ts_ms": 1_700_000_000_180,
-            "last_attempt_ts_ms": 1_700_000_000_180,
-            "last_error_type": None,
-            "last_error_message": None,
-            "stale_after_ms": 15_000,
+            "account_scope_id": "binance.futures.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": True,
+                "last_success_ts_ms": 1_700_000_000_180,
+                "last_attempt_ts_ms": 1_700_000_000_180,
+                "last_error_type": None,
+                "last_error_message": None,
+                "stale_after_ms": 15_000,
+            },
         },
         "ibkr.reference.main": {
-            "healthy": False,
-            "last_success_ts_ms": 1_700_000_000_000,
-            "last_attempt_ts_ms": 1_700_000_000_150,
-            "last_error_type": "TimeoutError",
-            "last_error_message": "",
-            "stale_after_ms": 15_000,
+            "account_scope_id": "ibkr.reference.main",
+            "source_scope": "shared_account",
+            "projection_status": {
+                "healthy": False,
+                "last_success_ts_ms": 1_700_000_000_000,
+                "last_attempt_ts_ms": 1_700_000_000_150,
+                "last_error_type": "TimeoutError",
+                "last_error_message": "",
+                "stale_after_ms": 15_000,
+            },
         },
     }
     stale_row = next(
