@@ -110,40 +110,51 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
     }
 
-    /// Scans Redis for keys matching the given `pattern`.
+    /// Discovers Redis keys matching the given `pattern`.
+    ///
+    /// In single-node mode this uses incremental SCAN to avoid blocking.
+    /// In cluster mode SCAN is not supported across shards, so KEYS is
+    /// used instead (the `redis` crate fans it out to all primaries and
+    /// merges the results).
     ///
     /// # Errors
     ///
-    /// Returns an error if the Redis scan operation fails.
+    /// Returns an error if the underlying Redis operation fails.
     pub async fn scan_keys(
         con: &mut RedisConnection,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        let mut result = Vec::new();
-        let mut cursor = 0u64;
+        if con.is_cluster() {
+            // KEYS is routed to AllPrimaries by the redis crate cluster
+            // driver, which merges the results from every shard.
+            let keys: Vec<String> = redis::cmd("KEYS").arg(&pattern).query_async(con).await?;
+            Ok(keys)
+        } else {
+            let mut result = Vec::new();
+            let mut cursor = 0u64;
 
-        loop {
-            let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
-                .arg(cursor)
-                .arg("MATCH")
-                .arg(&pattern)
-                .arg("COUNT")
-                .arg(5000)
-                .query_async(con)
-                .await?;
+            loop {
+                let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
+                    .arg(cursor)
+                    .arg("MATCH")
+                    .arg(&pattern)
+                    .arg("COUNT")
+                    .arg(5000)
+                    .query_async(con)
+                    .await?;
 
-            let (new_cursor, keys) = scan_result;
-            result.extend(keys);
+                let (new_cursor, keys) = scan_result;
+                result.extend(keys);
 
-            // If cursor is 0, we've completed the full scan
-            if new_cursor == 0 {
-                break;
+                if new_cursor == 0 {
+                    break;
+                }
+
+                cursor = new_cursor;
             }
 
-            cursor = new_cursor;
+            Ok(result)
         }
-
-        Ok(result)
     }
 
     /// Bulk reads multiple keys from Redis using MGET for efficiency.

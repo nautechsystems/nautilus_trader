@@ -372,7 +372,6 @@ async fn drain_buffer(
     buffer: &mut VecDeque<BusMessage>,
 ) -> anyhow::Result<()> {
     let mut pipe = redis::pipe();
-    pipe.atomic();
 
     for msg in buffer.drain(..) {
         let items: Vec<(&str, &[u8])> = vec![

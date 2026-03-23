@@ -363,7 +363,9 @@ class DatabaseConfig(NautilusConfig, frozen=True):
             f"username={self.username}, "
             f"password={redacted_password}, "
             f"ssl={self.ssl}, "
-            f"timeout={self.timeout})"
+            f"timeout={self.timeout}, "
+            f"cluster_mode={self.cluster_mode}, "
+            f"cluster_nodes={self.cluster_nodes})"
         )
 
 

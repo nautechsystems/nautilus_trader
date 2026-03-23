@@ -43,6 +43,14 @@ pub enum RedisConnection {
     Cluster(ClusterConnection),
 }
 
+impl RedisConnection {
+    /// Returns `true` if this connection is in cluster mode.
+    #[must_use]
+    pub fn is_cluster(&self) -> bool {
+        matches!(self, Self::Cluster(_))
+    }
+}
+
 impl Debug for RedisConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -211,7 +219,17 @@ pub async fn create_redis_connection(
         if let Some(nodes) = &config.cluster_nodes {
             urls.extend(nodes.iter().cloned());
         }
-        let client = redis::cluster::ClusterClient::new(urls)?;
+
+        let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
+        let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
+
+        let client = redis::cluster::ClusterClientBuilder::new(urls)
+            .connection_timeout(connection_timeout)
+            .response_timeout(response_timeout)
+            .retries(config.number_of_retries as u32)
+            .retry_wait_formula(config.factor, config.exponent_base)
+            .max_retry_wait(config.max_delay)
+            .build()?;
         let con = client.get_async_connection().await?;
         let mut con = RedisConnection::Cluster(con);
 
@@ -324,9 +342,13 @@ pub async fn get_redis_version(conn: &mut RedisConnection) -> anyhow::Result<Ver
                             }
                             _ => None,
                         })
-                        .unwrap_or_default()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Could not extract INFO response from any cluster node")
+                        })?
                 }
-                _ => String::new(),
+                other => {
+                    anyhow::bail!("Unexpected cluster INFO response type: {other:?}")
+                }
             }
         }
     };

@@ -631,7 +631,6 @@ async fn drain_buffer(
     buffer: &mut VecDeque<DatabaseCommand>,
 ) {
     let mut pipe = redis::pipe();
-    pipe.atomic();
 
     for msg in buffer.drain(..) {
         let key = if let Some(key) = msg.key {
