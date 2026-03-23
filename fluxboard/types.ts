@@ -498,6 +498,21 @@ export type BalancesTotals = {
   withdrawable_display?: string | null;
 };
 
+export type BalanceProjectionStatus = {
+  healthy?: boolean | null;
+  last_success_ts_ms?: number | null;
+  last_attempt_ts_ms?: number | null;
+  last_error_type?: string | null;
+  last_error_message?: string | null;
+  stale_after_ms?: number | null;
+};
+
+export type BalanceScopeStatus = {
+  account_scope_id: string;
+  source_scope?: string | null;
+  projection_status?: BalanceProjectionStatus | null;
+};
+
 export type RiskGroup = {
   risk_key: string;
   label: string;
@@ -530,6 +545,8 @@ export type BalancesPayload = {
   generated_at: string;
   view: string;
   risk_groups?: RiskGroup[];
+  degraded?: boolean;
+  scope_status?: BalanceScopeStatus[];
 };
 
 export type BalancesResponse = {

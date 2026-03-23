@@ -13,6 +13,7 @@ import type {
   BalanceChildRow,
   BalancesTotals,
   BalancesPayload,
+  BalanceScopeStatus,
   Alert,
   RiskGroup,
 } from './types';
@@ -1205,6 +1206,8 @@ type BalancesStore = {
   lastDataTs?: number;  // Last timestamp when balance data changed
   lastReceiveTs?: number;  // Last timestamp when a payload was received
   riskGroups: RiskGroup[];
+  degraded: boolean;
+  scopeStatus: BalanceScopeStatus[];
   riskSort: { column: 'underlying' | 'net_qty' | 'net_mv' | 'long_mv' | 'short_mv' | 'gross_mv' | 'sources'; direction: 'asc' | 'desc' };
   setData: (data: BalancesPayload) => void;
   setLoading: (loading: boolean) => void;
@@ -1364,6 +1367,35 @@ function riskGroupsEqual(prev: RiskGroup[], next: RiskGroup[]): boolean {
   return true;
 }
 
+function balanceScopeStatusesEqual(prev: BalanceScopeStatus[], next: BalanceScopeStatus[]): boolean {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i += 1) {
+    const a = prev[i];
+    const b = next[i];
+    if (!b) return false;
+    if (
+      a.account_scope_id !== b.account_scope_id
+      || (a.source_scope ?? null) !== (b.source_scope ?? null)
+    ) {
+      return false;
+    }
+    const aProjection = a.projection_status;
+    const bProjection = b.projection_status;
+    if (
+      (aProjection?.healthy ?? null) !== (bProjection?.healthy ?? null)
+      || (aProjection?.last_success_ts_ms ?? null) !== (bProjection?.last_success_ts_ms ?? null)
+      || (aProjection?.last_attempt_ts_ms ?? null) !== (bProjection?.last_attempt_ts_ms ?? null)
+      || (aProjection?.last_error_type ?? null) !== (bProjection?.last_error_type ?? null)
+      || (aProjection?.last_error_message ?? null) !== (bProjection?.last_error_message ?? null)
+      || (aProjection?.stale_after_ms ?? null) !== (bProjection?.stale_after_ms ?? null)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export const useBalancesStore = create<BalancesStore>((set) => ({
   rows: [],
   totals: null,
@@ -1374,6 +1406,8 @@ export const useBalancesStore = create<BalancesStore>((set) => ({
   lastDataTs: undefined,
   lastReceiveTs: undefined,
   riskGroups: [],
+  degraded: false,
+  scopeStatus: [],
   riskSort: { column: 'gross_mv', direction: 'desc' },
 
   setData: (data) =>
@@ -1391,12 +1425,16 @@ export const useBalancesStore = create<BalancesStore>((set) => ({
       const nextTotals = data.totals ?? state.totals;
       const nextTotalCount = typeof data.total === 'number' ? data.total : state.totalCount;
       const nextRiskGroups = data.risk_groups ?? state.riskGroups ?? [];
+      const nextDegraded = Boolean(data.degraded);
+      const nextScopeStatus = data.scope_status ?? state.scopeStatus ?? [];
       const dataChanged =
         !noChange
         || nextGeneratedAt !== state.generatedAt
         || !balancesTotalsEqual(state.totals, nextTotals)
         || nextTotalCount !== state.totalCount
-        || !riskGroupsEqual(state.riskGroups, nextRiskGroups);
+        || !riskGroupsEqual(state.riskGroups, nextRiskGroups)
+        || nextDegraded !== state.degraded
+        || !balanceScopeStatusesEqual(state.scopeStatus, nextScopeStatus);
       const nextLastUpdate = Date.now();
       return {
         rows: noChange ? state.rows : capped,
@@ -1407,6 +1445,8 @@ export const useBalancesStore = create<BalancesStore>((set) => ({
         lastDataTs: dataChanged ? nextLastUpdate : state.lastDataTs,
         lastReceiveTs: nextLastUpdate,
         riskGroups: nextRiskGroups,
+        degraded: nextDegraded,
+        scopeStatus: nextScopeStatus,
       };
     }),
 
@@ -1419,7 +1459,13 @@ export const useBalancesStore = create<BalancesStore>((set) => ({
  * Usage: const lastUpdate = useBalancesStore(selectBalancesLastUpdate);
  */
 export const selectBalancesLastUpdate = (state: BalancesStore) => state.lastUpdate;
-export const selectBalancesFreshnessTs = (state: BalancesStore) => state.lastDataTs ?? state.lastUpdate;
+export const selectBalancesFreshnessTs = (state: BalancesStore) => {
+  const generatedAt = state.generatedAt ? Date.parse(state.generatedAt) : Number.NaN;
+  if (Number.isFinite(generatedAt)) {
+    return generatedAt;
+  }
+  return state.lastDataTs ?? state.lastUpdate;
+};
 
 /**
  * Balances Store Selectors
@@ -1451,6 +1497,8 @@ export const selectBalancesGeneratedAt = (state: BalancesStore) => state.generat
 export const selectBalancesTotalCount = (state: BalancesStore) => state.totalCount;
 export const selectBalancesRiskGroups = (state: BalancesStore) => state.riskGroups;
 export const selectBalancesRiskSort = (state: BalancesStore) => state.riskSort;
+export const selectBalancesDegraded = (state: BalancesStore) => state.degraded;
+export const selectBalancesScopeStatus = (state: BalancesStore) => state.scopeStatus;
 export const selectBalancesByExchange = (
   state: BalancesStore,
   exchange: string,

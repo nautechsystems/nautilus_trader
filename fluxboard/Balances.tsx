@@ -10,8 +10,10 @@ import {
   selectBalancesRows,
   selectBalancesLoading,
   selectBalancesTotals,
+  selectBalancesDegraded,
   selectBalancesRiskGroups,
   selectBalancesRiskSort,
+  selectBalancesScopeStatus,
   shallow,
 } from './stores';
 import { usePolling } from './hooks';
@@ -26,7 +28,7 @@ import { Button } from './components/ui/button/Button';
 import { Switch } from './components/ui/switch';
 import { Tooltip, TooltipProvider } from './components/ui/tooltip';
 import { TableFilter, applyFilters, type ColumnFilter, type FilterValues } from './components/shared/TableFilter';
-import type { BalanceParentRow, BalanceChildRow } from './types';
+import type { BalanceParentRow, BalanceChildRow, BalanceScopeStatus } from './types';
 import { RiskTable, type RiskSortState } from './components/balances/RiskTable';
 import {
   DUST_THRESHOLD,
@@ -231,6 +233,24 @@ const childComparator =
       dir,
     );
 
+const isScopeStatusDegraded = (scope: BalanceScopeStatus): boolean => {
+  const projectionStatus = scope.projection_status;
+  if (!projectionStatus) return false;
+  if (projectionStatus.healthy === false) return true;
+  const lastAttemptTsMs = projectionStatus.last_attempt_ts_ms ?? null;
+  const lastSuccessTsMs = projectionStatus.last_success_ts_ms ?? null;
+  const staleAfterMs = projectionStatus.stale_after_ms ?? null;
+  if (
+    lastAttemptTsMs == null
+    || lastSuccessTsMs == null
+    || staleAfterMs == null
+    || staleAfterMs <= 0
+  ) {
+    return false;
+  }
+  return (lastAttemptTsMs - lastSuccessTsMs) > staleAfterMs;
+};
+
 const SortIndicator = ({ active, dir }: { active: boolean; dir: SortDir }) => {
   if (!active) {
     return <ChevronsUpDown className="h-3 w-3 text-text-muted" aria-hidden="true" />;
@@ -256,8 +276,10 @@ export default function Balances({
   const rows = useBalancesStore(selectBalancesRows, shallow);
   const totals = useBalancesStore(selectBalancesTotals);
   const loading = useBalancesStore(selectBalancesLoading);
+  const degraded = useBalancesStore(selectBalancesDegraded);
   const riskGroups = useBalancesStore(selectBalancesRiskGroups, shallow);
   const riskSort = useBalancesStore(selectBalancesRiskSort);
+  const scopeStatus = useBalancesStore(selectBalancesScopeStatus, shallow);
   const setData = useBalancesStore((state) => state.setData);
   const setLoading = useBalancesStore((state) => state.setLoading);
   const setRiskSort = useBalancesStore((state) => state.setRiskSort);
@@ -564,6 +586,11 @@ export default function Balances({
     if ((totals.mv_raw ?? 0) > 0 && totals.mv_display) return totals.mv_display;
     return null;
   }, [totals]);
+
+  const degradedScopeStatus = useMemo(
+    () => scopeStatus.filter((scope) => isScopeStatusDegraded(scope)),
+    [scopeStatus],
+  );
 
   const handleRiskSortChange = useCallback(
     (next: RiskSortState) => {
@@ -1025,6 +1052,55 @@ export default function Balances({
               <span className="font-semibold">{item.display ?? formatMoney(item.raw ?? 0)}</span>
             </div>
           ))}
+        </div>
+      )}
+      {(degraded || scopeStatus.length > 0) && (
+        <div
+          className={cn(
+            'border-b px-4 py-3',
+            degraded
+              ? 'border-amber-500/30 bg-amber-500/10'
+              : 'border-emerald-500/20 bg-emerald-500/10',
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                'rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
+                degraded
+                  ? 'border-amber-500/40 text-amber-200'
+                  : 'border-emerald-500/30 text-emerald-200',
+              )}
+            >
+              {degraded ? 'Degraded reconciliation' : 'Shared-account scopes healthy'}
+            </span>
+            <span className="text-xs text-text-muted">
+              {degraded
+                ? `${degradedScopeStatus.length || scopeStatus.length} scope${(degradedScopeStatus.length || scopeStatus.length) === 1 ? '' : 's'} degraded`
+                : `${scopeStatus.length} scope${scopeStatus.length === 1 ? '' : 's'} publishing healthy shared-account state`}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {scopeStatus.map((scope) => {
+              const degradedScope = isScopeStatusDegraded(scope);
+              const errorType = scope.projection_status?.last_error_type;
+              return (
+                <span
+                  key={`${scope.account_scope_id}:${scope.source_scope ?? 'shared_account'}`}
+                  className={cn(
+                    'rounded-md border px-2 py-1 text-xs',
+                    degradedScope
+                      ? 'border-amber-500/30 bg-black/20 text-amber-100'
+                      : 'border-emerald-500/20 bg-black/10 text-emerald-100',
+                  )}
+                >
+                  {scope.account_scope_id}
+                  {degradedScope ? ' stale' : ' healthy'}
+                  {errorType ? ` · ${errorType}` : ''}
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
       {mode === 'holdings' ? (
