@@ -10,8 +10,8 @@ This document describes the additive `contract_version=2` rollout controls imple
    - HTTP snapshot request with `contract_version=2`
    - Socket.IO `subscribe` event carrying the returned lineage metadata
 3. The backend `contract_version=2` path currently supports `signal` and `trades` surfaces.
-4. The current frontend `Signal` and `Trades` panels still retain legacy event subscriptions while also
-   negotiating backend `contract_version=2` lineage.
+4. The current frontend `Signal` and `Trades` panels use `subscribe` / `realtime_event` / `unsubscribe`
+   in flag-on mode; legacy event listeners remain only for explicit local flag-off rollback.
 5. `alerts`, `balances`, and `marketData` currently use the frontend realtime standard over the shared
    compatibility bridge, which still consumes legacy `market_update` invalidation traffic.
 6. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
@@ -28,8 +28,8 @@ This document describes the additive `contract_version=2` rollout controls imple
 
 | Surface | Current live path | Recovery mode | Cleanup candidate |
 | --- | --- | --- | --- |
-| `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage plus active legacy `market_update` and `signal_delta` subscriptions | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until the panel no longer depends on legacy events |
-| `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage plus active legacy `trade_update` subscription | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until the panel no longer depends on legacy events |
+| `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
+| `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in the canonical live view | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
 | `alerts` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
 | `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
 | `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
@@ -155,6 +155,15 @@ Bridge-backed surfaces currently rely on mixed evidence during cleanup review:
    recovery counts, and visible health-state transitions for `alerts`, `balances`, and `marketData`.
 3. Cleanup review must not treat the absence of backend `contract_version=2` counters for those bridge
    surfaces as permission to remove `market_update`.
+
+Task 14 also adds deterministic browser cutover evidence for the flag-on Signal and Trades routes:
+
+1. `signal.spec.ts` proves `subscribe` carries signal lineage, legacy `market_update` / `signal_delta` traffic is
+   ignored in flag-on steady state, `delta_batch` updates the live panel, reconnect preserves invalidate-only
+   recovery, `invalidate` triggers exactly one additional recovery snapshot, and route teardown emits `unsubscribe`.
+2. `trades.spec.ts` proves `subscribe` carries trades lineage, legacy `trade_update` traffic is ignored in flag-on
+   steady state, `delta_batch` updates the live table, healthy steady state avoids parallel `/api/v1/trades/delta`
+   replay, and `capability_withdrawn` stays fail-closed across reconnect while emitting `unsubscribe`.
 
 ## Cleanup Rehearsal Gate
 

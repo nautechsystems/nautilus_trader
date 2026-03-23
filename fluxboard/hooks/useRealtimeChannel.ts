@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  socket,
+  type StandardRealtimeEvent,
+  type StandardRealtimeSubscribeAck,
+  standardSocketClient,
+  type StandardSocketFailure,
+} from '../sockets';
+import {
   createRecoveryScheduler,
   type RecoveryEvent,
 } from './useRecoveryScheduler';
@@ -21,7 +28,7 @@ export interface RealtimeChannelAdapter<TSnapshot, TDelta> {
 }
 
 export interface RealtimeChannelState {
-  status: 'idle' | 'connecting' | 'live' | 'recovering';
+  status: 'idle' | 'connecting' | 'live' | 'recovering' | 'manual_refresh_required';
   reconnectAttempt: number;
   lastEventAt?: number;
   lastCloseReason?: string;
@@ -38,6 +45,154 @@ export interface UseRealtimeChannelOptions<TRow> {
 }
 
 export { createRealtimeSurfaceController } from './useRealtimeSurfaceController';
+
+export type StandardRealtimeLineage = {
+  contractVersion: number;
+  surface: string;
+  profile: string;
+  surfaceQueryKey: string;
+  streamId: string;
+  snapshotRevision: number | string;
+  resumeFromSeq: number | (() => number);
+};
+
+export interface UseStandardRealtimeSubscriptionOptions {
+  enabled?: boolean;
+  lineage?: StandardRealtimeLineage | null;
+  onSubscribed?: (ack: StandardRealtimeSubscribeAck) => void;
+  onRejected?: (ack: StandardRealtimeSubscribeAck) => void;
+  onEvent?: (event: StandardRealtimeEvent) => void;
+  onConnect?: () => void;
+  onDisconnect?: (reason?: unknown) => void;
+  onConnectError?: (error: unknown) => void;
+  onReconnectAttempt?: (attempt: number) => void;
+}
+
+export function useStandardRealtimeSubscription({
+  enabled = true,
+  lineage,
+  onSubscribed,
+  onRejected,
+  onEvent,
+  onConnect,
+  onDisconnect,
+  onConnectError,
+  onReconnectAttempt,
+}: UseStandardRealtimeSubscriptionOptions): void {
+  const lineageRef = useRef<StandardRealtimeLineage | null>(lineage ?? null);
+  const lineageKey = enabled && lineage
+    ? [
+        lineage.contractVersion,
+        lineage.surface,
+        lineage.profile,
+        lineage.surfaceQueryKey,
+        lineage.streamId,
+        String(lineage.snapshotRevision),
+      ].join('|')
+    : 'disabled';
+
+  useEffect(() => {
+    lineageRef.current = lineage ?? null;
+  }, [lineageKey, lineage]);
+
+  useEffect(() => {
+    let isActive = true;
+    const current = enabled ? lineageRef.current : null;
+    const unsubscribeStandard = current
+      ? standardSocketClient.subscribe({
+          lineage: {
+            contract_version: current.contractVersion,
+            surface: current.surface,
+            profile: current.profile,
+            surface_query_key: current.surfaceQueryKey,
+            stream_id: current.streamId,
+            snapshot_revision: current.snapshotRevision,
+            last_seq:
+              typeof current.resumeFromSeq === 'function'
+                ? current.resumeFromSeq()
+                : current.resumeFromSeq,
+          },
+          resumeFromSeq: current.resumeFromSeq,
+          onEvent: (event) => {
+            if (!isActive) {
+              return;
+            }
+            onEvent?.(event as StandardRealtimeEvent);
+          },
+          onFailure: (failure: StandardSocketFailure) => {
+            if (!isActive) {
+              return;
+            }
+            const rejection = (
+              failure.type === 'recovery_required'
+                ? undefined
+                : failure.ack
+            ) ?? {
+              accepted: false,
+              contract_version: failure.requested.contract_version,
+              surface: failure.requested.surface,
+              profile: failure.requested.profile,
+              surface_query_key: failure.requested.surface_query_key,
+              stream_id: failure.requested.stream_id,
+              snapshot_revision: failure.requested.snapshot_revision,
+              reason: failure.reason,
+            };
+            onRejected?.(rejection as StandardRealtimeSubscribeAck);
+          },
+          onSubscribed: (ack) => {
+            if (!isActive) {
+              return;
+            }
+            onSubscribed?.(ack as StandardRealtimeSubscribeAck);
+          },
+        })
+      : undefined;
+
+    const handleConnect = () => {
+      onConnect?.();
+    };
+
+    const handleDisconnect = (reason?: unknown) => {
+      onDisconnect?.(reason);
+    };
+
+    const handleConnectError = (error: unknown) => {
+      onConnectError?.(error);
+    };
+
+    const handleReconnectAttempt = (attempt: number) => {
+      onReconnectAttempt?.(attempt);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('reconnect_attempt', handleReconnectAttempt);
+
+    if (enabled && socket.connected) {
+      handleConnect();
+    }
+
+    return () => {
+      isActive = false;
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('reconnect_attempt', handleReconnectAttempt);
+      unsubscribeStandard?.();
+    };
+  }, [
+    enabled,
+    lineageKey,
+    onConnect,
+    onConnectError,
+    onDisconnect,
+    onEvent,
+    onReconnectAttempt,
+    onRejected,
+    onSubscribed,
+  ]);
+}
 
 export function useRealtimeChannel<TRow>({
   channelKey,

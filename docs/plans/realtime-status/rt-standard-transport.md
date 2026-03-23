@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-14-rt-standard-transport`
+- owner: `coordinator`
+- branch: `lanes/task-14-rt-standard-transport`
+- worktree: `.worktrees/task-14-rt-standard-transport`
+- depends_on: `Task 12: Run Final Rollout Validation And Cleanup Readiness Review`
+- write_scope: `fluxboard/api.ts`, `fluxboard/types.ts`, `fluxboard/hooks/useRealtimeChannel.ts`, `fluxboard/hooks/useWebSocket.ts`, `fluxboard/sockets.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Trades.tsx`, `fluxboard/__tests__/realtime/standard-socket-client.test.tsx`, `fluxboard/__tests__/panels/signal.test.tsx`, `fluxboard/__tests__/trades-integration.test.tsx`, `fluxboard/e2e/realtime-cutovers/signal.spec.ts`, `fluxboard/e2e/realtime-cutovers/trades.spec.ts`, `docs/plans/realtime-surfaces/signal-cutover.md`, `docs/plans/realtime-surfaces/trades-cutover.md`, `docs/plans/realtime-status/rt-standard-transport.md`, `systems/flux/docs/realtime-rollout.md`
+- rollout_control: `signal + trades surface flags with backend standard capability`
+- rollback_trigger: `lineage mismatch, standard live regression, or fail-closed behavior drift`
+- current status: `in_review_spec`
+- active task: `Task 14: Adopt Standard Socket Transport For Signal And Trades`
+- current commit or diff: `working tree diff in task-14 lane`
+- cutover_packet: `docs/plans/realtime-surfaces/signal-cutover.md ; docs/plans/realtime-surfaces/trades-cutover.md`
+- canary_scope: `flagged Signal and Trades route cutovers`
+- minimum_canary_cohort: `1 internal Signal canary and 1 internal Trades canary for 7 consecutive days`
+- minimum_standard_subscribers: `1 flagged Signal subscriber and 1 flagged Trades subscriber during cleanup review`
+- minimum_standard_event_volume: `50 signal standard packets/day and 50 trades standard packets/day during cleanup review`
+- alert_state: `green in lane verification; no active rollback trigger`
+- rollback_exercise_result: `pass in owned tests via local flag-off rollback, subscribe rejection, and capability withdrawal`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `standard_subscribe_counts, standard_recovery_required_counts, active_standard_subscribers, legacy_event_counts plus client-observed subscribe/unsubscribe and recovery state transitions`
+- legacy_traffic_status: `signal + trades frontend duplicate-path cleanup complete in flag-on mode; backend legacy traffic still retained for rollback clients and bridge-backed surfaces`
+- verification run: `lane green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx passed (5 files, 70 tests). lane green: pnpm build:test passed. lane green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/signal.spec.ts e2e/realtime-cutovers/trades.spec.ts passed (2 specs).`
+- blockers: `none in owned scope; pending spec + quality review before controller integration`
+- notes_last_update: `Task 14 now routes Signal and Trades through the shared standard socket client, preserves latest resume cursors across reconnects, hardens snapshot-revision identity matching, keeps Signal invalidate-only recovery armed across reconnects, makes manual-refresh state sticky for both surfaces, and restores legacy no-epoch trade_update compatibility for explicit flag-off mode. Browser cutover evidence now proves legacy steady-state listeners stay inactive in flag-on mode.`
+- next handoff: `Dispatch spec review on the Task 14 diff, then quality review, then integrate into rt-controller if both pass.`

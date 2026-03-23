@@ -1,52 +1,47 @@
-# Signal Realtime Cutover
+# Signal Realtime Standard Cutover
+
+Date: 2026-03-23
+Branch: `lanes/task-14-rt-standard-transport`
+Worktree: `/home/ubuntu/nautilus-trader-dev/.worktrees/task-14-rt-standard-transport`
 
 ## Status
 
-`2026-03-19`: local frontend cutover is implemented for the Signal surface in `lanes/task-6-rt-signal`.
+Signal now uses the backend standard Socket.IO contract in the flag-on path:
 
-This is not a blanket claim that the entire live rollout is finished. It means the owned Signal panel path now matches the realtime-standard frontend shape closely enough for the local task gate:
+- the panel requests `contract_version=2` on the canonical `/api/v1/signals` snapshot
+- the frontend subscribes with backend lineage via `subscribe`
+- live standard packets arrive on `realtime_event`
+- teardown uses `unsubscribe`
+- the legacy `market_update` and `signal_delta` listeners are no longer part of the flag-on steady state
 
-- rendered table state is driven through the shared realtime surface controller
-- row age ticking uses the shared viewport clock instead of per-row timers or visibility observers
-- changed-id socket payloads schedule one-shot invalidation recovery instead of immediate snapshot thrash
-- Maker V4 rows reconcile in place through `liveDataVersion` so a single-row update does not force a new mapped data array
+Local rollback still exists through the per-surface feature flag. If the backend rejects the subscribe or withdraws capability mid-session, the panel fails closed into `manual_refresh_required` rather than silently dropping back to legacy transport.
 
-## What Changed
+## Behavioral Contract
 
-### Standard controller path
+- Signal standard recovery remains `invalidate_only`.
+- Matching `delta_batch` packets merge row updates into the existing panel state and advance the standard cursor.
+- `invalidate` schedules one bounded snapshot refresh instead of immediate snapshot thrash.
+- Lineage mismatches are ignored.
+- Reconnect resubscribe uses the latest acknowledged standard cursor, not the original snapshot cursor.
+- Socket disconnect/reconnect keeps invalidate-only recovery armed instead of canceling the scheduled snapshot.
+- `manual_refresh_required` is sticky across reconnects; the panel does not silently auto-recover until the user refreshes.
 
-`fluxboard/components/domain/signal/SignalTable.tsx` now keeps the zustand signal store as the raw merge source for compatibility, but the displayed `EnrichedRow[]` is synchronized into `createRealtimeSurfaceController(...)` and consumed through `useRealtimeSurfaceController(...)`.
+## Rollout Notes
 
-Implications:
-
-- steady-state row deltas patch the controller in place
-- the no-filter hot path keeps the visible data array stable
-- custom user sorts intentionally fall back to snapshot rebuilds so TanStack Table can recompute ordering correctly with the current `DataTable` contract
-
-### Recovery semantics
-
-The old overlap of polling + watchdog + immediate changed-id refresh is removed from the Signal surface. Recovery now uses `useRecoveryScheduler(...)`:
-
-- initial load still fetches a snapshot
-- socket connect triggers a sync snapshot
-- socket disconnect, connect errors, reconnect attempts, and changed-id invalidations schedule one recovery fetch
-- repeated invalidations while recovery is already pending do not queue repeated snapshot fetches
-
-This is intentionally invalidate-only recovery, not continuous fallback polling.
-
-### Shared clock
-
-`fluxboard/components/domain/signal/useVisibleNowMs.ts` now delegates to the shared viewport clock. The Signal surface no longer allocates per-row `IntersectionObserver`s or per-row timers in the large-table path.
+- The current backend transport is still `polling_only`.
+- Backend legacy event removal is still blocked by bridge-backed surfaces and explicit flag-off rollback support.
+- Signal is ready for frontend duplicate-path cleanup review, not backend legacy-event cleanup.
 
 ## Verification
 
-Local task verification passed with:
-
-```bash
-VITEST_FULL=1 pnpm --dir fluxboard exec vitest run tests/signal/SignalTable.audit.test.tsx tests/signal/SignalTable.sourceOfTruth.test.tsx components/domain/signal/SignalTable.age-ticking.test.tsx components/domain/signal/SignalTable.store.test.ts tests/signal/MakerV4SignalTable.test.tsx __tests__/panels/signal.test.tsx
-```
+- `VITEST_FULL=1 pnpm --dir fluxboard exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx`
+  - Result: `5` files passed, `64` tests passed
+- `pnpm --dir fluxboard build:test`
+  - Result: production bundle built successfully
+- `E2E_BASE_URL=http://127.0.0.1:4173 pnpm --dir fluxboard exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/signal.spec.ts`
+  - Result: `1` cutover spec passed; it proved `subscribe` carried signal lineage, no legacy steady-state listeners handled `market_update` / `signal_delta`, standard `delta_batch` updated the live row state, reconnect preserved invalidate-only recovery, `invalidate` forced exactly one additional recovery snapshot, and route teardown emitted `unsubscribe`
 
 ## Known Limits
 
-- `fluxboard/e2e/realtime-cutovers/signal.spec.ts` is present only as a `test.fixme(...)`. The app does not yet expose a deterministic Signal realtime fixture or a supported socket/debug inspection surface for Playwright, so pretending this browser cutover is covered would be dishonest.
-- Existing test runs still emit React `act(...)` warnings from shared tooltip behavior in unrelated UI plumbing. The owned task verification passes despite those warnings.
+- The browser harness proves the frontend contract against a deterministic test socket, not against a live backend environment.
+- Existing Signal Vitest runs still emit shared `act(...)` warnings from unrelated tooltip plumbing.

@@ -238,4 +238,286 @@ describe('sockets status state machine', () => {
     ioCalls[0].control.emit('connect');
     expect(bumpGlobalResyncMock).toHaveBeenCalledTimes(1);
   });
+
+  it('re-subscribes active standard subscriptions after socket reconnects', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onSubscribed = vi.fn();
+    const onEvent = vi.fn();
+    let currentResumeFromSeq = 7;
+    const lineage = {
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      last_seq: currentResumeFromSeq,
+    };
+
+    const unsubscribe = client.subscribe({
+      lineage,
+      resumeFromSeq: () => currentResumeFromSeq,
+      onEvent,
+      onSubscribed,
+    });
+
+    expect(control.socket.emit).toHaveBeenCalledWith(
+      'subscribe',
+      expect.objectContaining({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        resume_from_seq: 7,
+      }),
+      expect.any(Function),
+    );
+    const firstAck = control.socket.emit.mock.calls[0]?.[2];
+    expect(typeof firstAck).toBe('function');
+    firstAck({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 7,
+      last_seq: 7,
+    });
+    expect(onSubscribed).toHaveBeenCalledTimes(1);
+
+    control.emit('disconnect', 'transport close');
+    currentResumeFromSeq = 8;
+    control.emit('connect');
+
+    expect(control.socket.emit).toHaveBeenCalledTimes(2);
+    expect(control.socket.emit).toHaveBeenLastCalledWith(
+      'subscribe',
+      expect.objectContaining({
+        surface: 'trades',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        resume_from_seq: 8,
+      }),
+      expect.any(Function),
+    );
+    const secondAck = control.socket.emit.mock.calls[1]?.[2];
+    expect(typeof secondAck).toBe('function');
+    secondAck({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 8,
+      last_seq: 8,
+    });
+    expect(onSubscribed).toHaveBeenCalledTimes(2);
+
+    control.emit('realtime_event', {
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      kind: 'delta_batch',
+      seq: 8,
+      server_ts_ms: 1_700_000_000_008,
+      payload: { trades: [] },
+    });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
+  });
+
+  it('keeps same-surface subscriptions isolated until the last consumer unsubscribes', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const lineage = {
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      last_seq: 3,
+    };
+
+    const unsubscribeA = client.subscribe({ lineage, onEvent: vi.fn() });
+    const ackA = control.socket.emit.mock.calls[0]?.[2];
+    ackA?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 3,
+      last_seq: 3,
+    });
+
+    const unsubscribeB = client.subscribe({ lineage, onEvent: vi.fn() });
+    const ackB = control.socket.emit.mock.calls[1]?.[2];
+    ackB?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 3,
+      last_seq: 3,
+    });
+
+    unsubscribeA();
+    expect(control.socket.emit).not.toHaveBeenCalledWith('unsubscribe', { surface: 'signal' });
+
+    unsubscribeB();
+    expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'signal' });
+  });
+
+  it('accepts subscribe acks and realtime events when snapshot revisions differ only by type', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onSubscribed = vi.fn();
+    const onEvent = vi.fn();
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 17,
+        last_seq: 4,
+      },
+      onEvent,
+      onSubscribed,
+    });
+
+    const ack = control.socket.emit.mock.calls[0]?.[2];
+    ack?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: '17',
+      accepted_start_seq: 4,
+      last_seq: 4,
+    });
+
+    expect(onSubscribed).toHaveBeenCalledTimes(1);
+
+    control.emit('realtime_event', {
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      stream_id: 'trades-main',
+      snapshot_revision: '17',
+      kind: 'delta_batch',
+      seq: 5,
+      server_ts_ms: 1_700_000_000_005,
+      payload: { trades: [] },
+    });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits unsubscribe when an accepted subscribe ack mismatches the requested lineage', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onFailure = vi.fn();
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'signal',
+        profile: 'default',
+        surface_query_key: 'signal|profile=default',
+        stream_id: 'signal-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 3,
+      },
+      onEvent: vi.fn(),
+      onFailure,
+    });
+
+    const ack = control.socket.emit.mock.calls[0]?.[2];
+    ack?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'other-snap',
+      accepted_start_seq: 3,
+      last_seq: 3,
+    });
+
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'lineage_mismatch',
+      reason: 'ack_lineage_mismatch',
+    }));
+    expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'signal' });
+  });
+
+  it('emits unsubscribe when an accepted subscribe ack changes the accepted start seq', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onFailure = vi.fn();
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 4,
+      },
+      onEvent: vi.fn(),
+      onFailure,
+    });
+
+    const ack = control.socket.emit.mock.calls[0]?.[2];
+    ack?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 9,
+      last_seq: 9,
+    });
+
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'lineage_mismatch',
+      reason: 'accepted_start_seq_mismatch',
+    }));
+    expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
+  });
 });

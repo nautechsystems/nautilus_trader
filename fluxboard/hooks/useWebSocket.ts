@@ -1,12 +1,19 @@
 // useWebSocket hook - Simplify Socket.IO subscriptions
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { socket } from '../sockets';
+import {
+  socket,
+  standardSocketClient,
+  type StandardSocketEventEnvelope,
+  type StandardSocketFailure,
+  type StandardSocketSubscribeAck,
+} from '../sockets';
 import { isRealtimeStandardEnabled } from '../config/featureFlags';
 import {
   REALTIME_STANDARD_SURFACES,
   type RealtimeSurface,
 } from '../lib/realtime/constants';
+import type { RealtimeSnapshotLineage } from '../types';
 
 export type WebSocketSubscriptionMode = 'legacy' | 'standard';
 
@@ -74,6 +81,15 @@ export function resetSharedWebSocketBridgeForTests(): void {
   notifySharedWebSocketBridgeListeners();
 }
 
+export type UseStandardWebSocketSubscriptionOptions<TPayload = unknown> = {
+  enabled?: boolean;
+  lineage?: RealtimeSnapshotLineage | null;
+  resumeFromSeq?: number | (() => number);
+  onEvent: (event: StandardSocketEventEnvelope<TPayload>) => void;
+  onFailure?: (failure: StandardSocketFailure) => void;
+  onSubscribed?: (ack: StandardSocketSubscribeAck) => void;
+};
+
 function subscribeToSocket<T = unknown>(
   event: string,
   handler: (data: T) => void,
@@ -82,6 +98,80 @@ function subscribeToSocket<T = unknown>(
   return () => {
     socket.off(event, handler);
   };
+}
+
+export function useStandardWebSocketSubscription<TPayload = unknown>({
+  enabled = true,
+  lineage,
+  resumeFromSeq,
+  onEvent,
+  onFailure,
+  onSubscribed,
+}: UseStandardWebSocketSubscriptionOptions<TPayload>): void {
+  const lineageKey = enabled && lineage
+    ? [
+        lineage.contract_version,
+        lineage.surface,
+        lineage.profile,
+        lineage.surface_query_key,
+        lineage.stream_id,
+        String(lineage.snapshot_revision),
+      ].join('|')
+    : 'disabled';
+  const onEventRef = useRef(onEvent);
+  const onFailureRef = useRef(onFailure);
+  const onSubscribedRef = useRef(onSubscribed);
+  const lineageRef = useRef<RealtimeSnapshotLineage | null>(lineage ?? null);
+  const resumeFromSeqRef = useRef<number | (() => number) | undefined>(resumeFromSeq);
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  useEffect(() => {
+    onFailureRef.current = onFailure;
+  }, [onFailure]);
+
+  useEffect(() => {
+    onSubscribedRef.current = onSubscribed;
+  }, [onSubscribed]);
+
+  useEffect(() => {
+    lineageRef.current = lineage ?? null;
+  }, [lineageKey, lineage]);
+
+  useEffect(() => {
+    resumeFromSeqRef.current = resumeFromSeq;
+  }, [resumeFromSeq]);
+
+  useEffect(() => {
+    if (!enabled || !lineage) {
+      return undefined;
+    }
+
+    return standardSocketClient.subscribe<TPayload>({
+      lineage,
+      resumeFromSeq: () => {
+        const currentLineage = lineageRef.current ?? lineage;
+        const resolved = typeof resumeFromSeqRef.current === 'function'
+          ? resumeFromSeqRef.current()
+          : resumeFromSeqRef.current;
+        if (typeof resolved === 'number' && Number.isFinite(resolved)) {
+          return resolved;
+        }
+        return currentLineage.last_seq;
+      },
+      onEvent: (event) => {
+        onEventRef.current(event as StandardSocketEventEnvelope<TPayload>);
+      },
+      onFailure: (failure) => {
+        onFailureRef.current?.(failure as StandardSocketFailure);
+      },
+      onSubscribed: (ack) => {
+        onSubscribedRef.current?.(ack as StandardSocketSubscribeAck);
+      },
+    });
+  }, [enabled, lineageKey, lineage]);
 }
 
 function isRealtimeSurface(surface?: string): surface is RealtimeSurface {

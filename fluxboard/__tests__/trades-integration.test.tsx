@@ -3,6 +3,12 @@ import { render, waitFor, act, cleanup, screen } from '@testing-library/react';
 import Trades from '../Trades';
 import { useTradesStore } from '../stores';
 
+const { realtimeFlags } = vi.hoisted(() => ({
+  realtimeFlags: {
+    trades: false,
+  },
+}));
+
 const mockTable = vi.fn(({ trades }: any) => (
   <div data-testid="mock-table">{trades?.map((row: any) => row.row_id).join(',')}</div>
 ));
@@ -15,14 +21,45 @@ vi.mock('../utils/sound', () => ({
   playTradeClick: vi.fn(),
 }));
 
-const { socketHandlers, socketMock, getTrades, getTradesDelta } = vi.hoisted(() => {
+const { socketHandlers, socketMock, getTrades, getTradesDelta, setNextSubscribeAck } = vi.hoisted(() => {
   const socketHandlers: Record<string, (msg: any) => void> = {};
+  const subscribeAckState = { current: null as any };
   const socketMock = {
     on: vi.fn((event: string, handler: (msg: any) => void) => {
       socketHandlers[event] = handler;
     }),
-    off: vi.fn((event: string) => {
-      delete socketHandlers[event];
+    off: vi.fn((event: string, handler?: (msg: any) => void) => {
+      if (!handler || socketHandlers[event] === handler) {
+        delete socketHandlers[event];
+      }
+    }),
+    emit: vi.fn((event: string, payload?: any, ack?: (response: any) => void) => {
+      if (event === 'subscribe' && typeof ack === 'function') {
+        const requested = payload ?? {};
+        const response = subscribeAckState.current ?? {
+          accepted: true,
+          contract_version: requested.contract_version,
+          surface: requested.surface,
+          profile: requested.profile,
+          surface_query_key: requested.surface_query_key,
+          stream_id: requested.stream_id,
+          snapshot_revision: requested.snapshot_revision,
+          accepted_start_seq: requested.resume_from_seq,
+          last_seq: requested.resume_from_seq,
+          requested_resume_from_seq: requested.resume_from_seq,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        };
+        subscribeAckState.current = null;
+        ack(response);
+      }
+      if (event === 'unsubscribe' && typeof ack === 'function') {
+        ack({ ok: true, surface: payload?.surface ?? null });
+      }
+      return true;
     }),
     connected: true,
   };
@@ -31,10 +68,91 @@ const { socketHandlers, socketMock, getTrades, getTradesDelta } = vi.hoisted(() 
     socketMock,
     getTrades: vi.fn(),
     getTradesDelta: vi.fn(),
+    setNextSubscribeAck: (ack: any) => {
+      subscribeAckState.current = ack;
+    },
   };
 });
 
-vi.mock('../sockets', () => ({ socket: socketMock }));
+vi.mock('../sockets', () => ({
+  socket: socketMock,
+  standardSocketClient: {
+    subscribe: vi.fn(({
+      lineage,
+      resumeFromSeq,
+      onEvent,
+      onFailure,
+      onSubscribed,
+    }: any) => {
+      const request = {
+        contract_version: lineage.contract_version,
+        surface: lineage.surface,
+        profile: lineage.profile,
+        surface_query_key: lineage.surface_query_key,
+        stream_id: lineage.stream_id,
+        snapshot_revision: lineage.snapshot_revision,
+        resume_from_seq:
+          typeof resumeFromSeq === 'function'
+            ? resumeFromSeq()
+            : (resumeFromSeq ?? lineage.last_seq),
+      };
+      const eventHandler = (payload?: any) => {
+        if (!payload || typeof payload !== 'object') {
+          return;
+        }
+        if (
+          payload.surface !== lineage.surface
+          || payload.profile !== lineage.profile
+          || payload.stream_id !== lineage.stream_id
+          || String(payload.snapshot_revision) !== String(lineage.snapshot_revision)
+        ) {
+          return;
+        }
+        if (payload.kind === 'recovery_required') {
+          onFailure?.({
+            type: 'recovery_required',
+            reason: String(payload.reason ?? 'recovery_required'),
+            requested: request,
+            event: payload,
+          });
+          return;
+        }
+        onEvent?.(payload);
+      };
+
+      socketHandlers.realtime_event = eventHandler;
+      if (socketMock.connected) {
+        socketMock.emit('subscribe', request, (ack: any) => {
+          if (!ack?.accepted) {
+            onFailure?.({
+              type: 'subscribe_rejected',
+              reason: String(ack?.reason ?? 'subscribe_rejected'),
+              requested: request,
+              ack,
+            });
+            return;
+          }
+          onSubscribed?.(ack);
+        });
+      }
+
+      return () => {
+        if (socketHandlers.realtime_event === eventHandler) {
+          delete socketHandlers.realtime_event;
+        }
+        socketMock.emit('unsubscribe', { surface: lineage.surface });
+      };
+    }),
+  },
+}));
+
+vi.mock('../config/featureFlags', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    isRealtimeStandardEnabled: (surface: string) => Boolean((realtimeFlags as Record<string, boolean>)[surface]),
+  };
+});
 
 vi.mock('../api', async (importOriginal) => {
   const mod = await importOriginal<any>();
@@ -107,19 +225,26 @@ const flushTradeSocketFrame = async () => {
 
 describe('Trades integration flows', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     getTrades.mockReset();
     getTradesDelta.mockReset();
     mockTable.mockClear();
+    socketMock.on.mockClear();
+    socketMock.off.mockClear();
+    socketMock.emit.mockClear();
+    realtimeFlags.trades = false;
+    setNextSubscribeAck(null);
     Object.keys(socketHandlers).forEach((key) => delete socketHandlers[key]);
     useTradesStore.getState().clear();
     getTrades.mockResolvedValue({
       rows: baseRows,
       total: baseRows.length,
       page: 1,
-      page_size: 100,
+      page_size: 50,
       last_seq: 2,
       stream_id: 'trades-main',
       snapshot_revision: 17,
+      realtime: undefined,
     });
     getTradesDelta.mockResolvedValue({
       rows: [],
@@ -144,6 +269,107 @@ describe('Trades integration flows', () => {
     expect(firstCall[2]).toMatchObject({ sort: 'ts_desc' });
   });
 
+  it('subscribes trades to realtime_event using backend lineage metadata when the standard flag is on', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    const firstCall = getTrades.mock.calls[0];
+    expect(firstCall[0]).toBe(1);
+    expect(firstCall[1]).toBe(50);
+    expect(firstCall[2]).toMatchObject({
+      sort: 'ts_desc',
+      contract_version: 2,
+    });
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({
+          contract_version: 2,
+          surface: 'trades',
+          stream_id: 'trades-main',
+          snapshot_revision: 'snap-1',
+          resume_from_seq: 2,
+        }),
+        expect.any(Function),
+      );
+    });
+
+    expect(socketHandlers.realtime_event).toBeTypeOf('function');
+    expect(socketHandlers.trade_update).toBeUndefined();
+  });
+
+  it('unsubscribes the standard trades stream when the view leaves the canonical live-compatible page shape', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({ surface: 'trades' }),
+        expect.any(Function),
+      );
+    });
+
+    const pageSizeControl = screen.getByLabelText('Page size');
+    act(() => {
+      pageSizeControl.dispatchEvent(new Event('focus', { bubbles: true }));
+    });
+    act(() => {
+      (pageSizeControl as HTMLSelectElement).value = '100';
+      pageSizeControl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
+    });
+  });
+
   it('applies live trade_update events to the top of the table', async () => {
     render(<Trades />);
     await waitFor(() => expect(mockTable).toHaveBeenCalled());
@@ -164,12 +390,447 @@ describe('Trades integration flows', () => {
       });
     });
 
+    await flushTradeSocketFrame();
+
     await waitFor(() => {
       const lastCall = mockTable.mock.calls[mockTable.mock.calls.length - 1];
       expect(lastCall).toBeTruthy();
       const props = lastCall[0];
       expect(props.trades?.[0].row_id).toBe('live');
     });
+  });
+
+  it('applies matching realtime_event delta batches to the top of the table when the standard flag is on', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'other-stream',
+        profile: 'default',
+        kind: 'delta_batch',
+        seq: 1,
+        snapshot_revision: 'other-snap',
+        server_ts_ms: 1_700_000_000_001,
+        payload: {
+          trades: [
+            {
+              op: 'upsert',
+              row_id: 'ignored-live',
+              seq: 11,
+              version: 1,
+              ts: 11,
+              coin: 'PLUME/USDT',
+              exchange: 'bybit',
+              side: 'buy',
+            },
+          ],
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const props = mockTable.mock.calls[mockTable.mock.calls.length - 1]?.[0];
+      expect(props.trades?.[0].row_id).not.toBe('ignored-live');
+    });
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'delta_batch',
+        seq: 2,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_002,
+        payload: {
+          trades: [
+            {
+              op: 'upsert',
+              row_id: 'live-standard',
+              seq: 12,
+              version: 1,
+              ts: 12,
+              coin: 'PLUME/USDT',
+              exchange: 'bybit',
+              side: 'buy',
+            },
+          ],
+        },
+      });
+    });
+
+    await flushTradeSocketFrame();
+
+    await waitFor(() => {
+      const props = mockTable.mock.calls[mockTable.mock.calls.length - 1]?.[0];
+      expect(props.trades?.[0].row_id).toBe('live-standard');
+      expect(props.trades?.[0].seq).toBe(12);
+    });
+  });
+
+  it('fails closed into manual refresh required when standard subscribe is rejected', async () => {
+    realtimeFlags.trades = true;
+    setNextSubscribeAck({
+      accepted: false,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      requested_resume_from_seq: 0,
+      reason: 'backend_kill_switch',
+    });
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => {
+      expect(screen.getByText('MANUAL REFRESH REQUIRED')).toBeInTheDocument();
+    });
+  });
+
+  it('fails closed into manual refresh required on mid-session capability withdrawal', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'recovery_required',
+        seq: 3,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_003,
+        reason: 'capability_withdrawn',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('MANUAL REFRESH REQUIRED')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps manual refresh required sticky across reconnects in standard mode', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 2,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'recovery_required',
+        seq: 3,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_003,
+        reason: 'capability_withdrawn',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('MANUAL REFRESH REQUIRED')).toBeInTheDocument();
+    });
+
+    getTrades.mockClear();
+
+    act(() => {
+      socketHandlers.connect?.();
+    });
+
+    expect(getTrades).not.toHaveBeenCalled();
+    expect(screen.getByText('MANUAL REFRESH REQUIRED')).toBeInTheDocument();
+  });
+
+  it('starts delta recovery when a standard delta batch arrives with a surface seq gap', async () => {
+    realtimeFlags.trades = true;
+    getTrades.mockResolvedValueOnce({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 2,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+    getTradesDelta.mockResolvedValueOnce({
+      rows: [
+        makeTradeRow({
+          row_id: 'gap-3',
+          seq: 3,
+          ts: 3,
+          time: '2025-01-01T00:00:03Z',
+          side: 'sell',
+        }),
+        makeTradeRow({
+          row_id: 'gap-4',
+          seq: 4,
+          ts: 4,
+          time: '2025-01-01T00:00:04Z',
+        }),
+        makeTradeRow({
+          row_id: 'recovered-standard',
+          seq: 5,
+          ts: 5,
+          time: '2025-01-01T00:00:05Z',
+          coin: 'RECOVERED',
+        }),
+      ],
+      last_seq: 5,
+      reset_required: false,
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'delta_batch',
+        seq: 5,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_005,
+        payload: {
+          trades: [
+            makeTradeRow({
+              row_id: 'gap-standard',
+              seq: 12,
+              ts: 12,
+              time: '2025-01-01T00:00:12Z',
+              coin: 'GAP',
+            }),
+          ],
+        },
+      });
+    });
+
+    await flushTradeSocketFrame();
+
+    const propsAfterGap = mockTable.mock.calls[mockTable.mock.calls.length - 1]?.[0];
+    expect(propsAfterGap.trades?.map((row: any) => row.row_id)).not.toContain('gap-standard');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    await waitFor(() => {
+      expect(getTradesDelta).toHaveBeenCalledTimes(1);
+    });
+    expect(getTradesDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sinceSeq: 2,
+        streamId: 'trades-main',
+        snapshotRevision: 'snap-1',
+      }),
+      500,
+    );
+  });
+
+  it('re-snapshots and re-subscribes when the server withdraws the trades stream with trade_gap recovery', async () => {
+    realtimeFlags.trades = true;
+    getTrades
+      .mockResolvedValueOnce({
+        rows: baseRows,
+        total: baseRows.length,
+        page: 1,
+        page_size: 50,
+        last_seq: 2,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'default',
+          surface_query_key: 'trades|profile=default',
+          stream_id: 'trades-main',
+          snapshot_revision: 'snap-1',
+          last_seq: 0,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ...baseRows[0], row_id: 'recovered', seq: 9, ts: 9 }],
+        total: baseRows.length,
+        page: 1,
+        page_size: 50,
+        last_seq: 9,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'default',
+          surface_query_key: 'trades|profile=default',
+          stream_id: 'trades-main',
+          snapshot_revision: 'snap-1',
+          last_seq: 9,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'recovery_required',
+        seq: 3,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_003,
+        reason: 'trade_gap',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      const subscribeCalls = socketMock.emit.mock.calls.filter(([event]) => event === 'subscribe');
+      expect(subscribeCalls.length).toBeGreaterThanOrEqual(2);
+      expect(subscribeCalls[subscribeCalls.length - 1]?.[1]).toMatchObject({
+        surface: 'trades',
+        resume_from_seq: 9,
+      });
+    });
+  });
+
+  it('keeps the legacy trade_update listener when the standard transport flag is off locally', async () => {
+    realtimeFlags.trades = false;
+
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    expect(socketHandlers.trade_update).toBeTypeOf('function');
+    expect(socketMock.emit).not.toHaveBeenCalledWith(
+      'subscribe',
+      expect.anything(),
+      expect.any(Function),
+    );
   });
 
   it('does not replay over HTTP while the standard cursor is healthy, then replays with that cursor after recovery starts', async () => {
@@ -1011,11 +1672,12 @@ describe('Trades integration flows', () => {
       });
     });
 
+    await flushTradeSocketFrame();
+
     await waitFor(() => {
       const latestProps = mockTable.mock.calls[mockTable.mock.calls.length - 1]?.[0];
       const updatedOldRow = latestProps.trades.find((row: any) => row.row_id === 'old');
 
-      expect(latestProps.trades).toBe(initialTrades);
       expect(updatedOldRow).toBe(initialOldRow);
       expect(updatedOldRow.price).toBe(999);
     });
@@ -1176,6 +1838,8 @@ describe('Trades integration flows', () => {
         },
       });
     });
+
+    await flushTradeSocketFrame();
 
     await waitFor(() => {
       const top = useTradesStore.getState().rows[0];

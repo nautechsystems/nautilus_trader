@@ -36,6 +36,7 @@ import type {
   HedgerThresholdOverrides,
   HedgerInstanceMeta,
   HedgerConfig,
+  RealtimeSnapshotLineage,
   SignalStrategiesPayload,
   OrderViewSnapshot,
   OrderViewLeg,
@@ -142,6 +143,50 @@ function unwrapFluxEnvelope<T>(payload: T | FluxEnvelope<T>): T {
     return payload.data;
   }
   return payload as T;
+}
+
+function normalizeRealtimeSnapshotLineage(value: unknown): RealtimeSnapshotLineage | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const contractVersion = toFiniteOptionalNumber(raw.contract_version);
+  const surface = String(raw.surface ?? '').trim();
+  const profile = String(raw.profile ?? '').trim();
+  const surfaceQueryKey = String(raw.surface_query_key ?? '').trim();
+  const streamId = String(raw.stream_id ?? '').trim();
+  const snapshotRevision =
+    typeof raw.snapshot_revision === 'number' || typeof raw.snapshot_revision === 'string'
+      ? raw.snapshot_revision
+      : undefined;
+  const lastSeq = toFiniteOptionalNumber(raw.last_seq);
+
+  if (
+    contractVersion === undefined
+    || !surface
+    || !profile
+    || !surfaceQueryKey
+    || !streamId
+    || snapshotRevision === undefined
+    || lastSeq === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    contract_version: contractVersion,
+    surface,
+    profile,
+    surface_query_key: surfaceQueryKey,
+    stream_id: streamId,
+    snapshot_revision: snapshotRevision,
+    last_seq: Math.max(0, Math.trunc(lastSeq)),
+    capabilities:
+      raw.capabilities && typeof raw.capabilities === 'object'
+        ? (raw.capabilities as RealtimeSnapshotLineage['capabilities'])
+        : undefined,
+  };
 }
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
@@ -834,6 +879,7 @@ function normalizeSignalStrategiesPayload(payload: unknown): SignalStrategiesPay
     server_time: typeof data.server_time === 'string' ? data.server_time : undefined,
     server_ts_ms: toFiniteOptionalNumber(data.server_ts_ms),
     balance_summary: data.balance_summary as BalanceSummary | undefined,
+    realtime: normalizeRealtimeSnapshotLineage(data.realtime),
   };
 }
 
@@ -1624,6 +1670,7 @@ export const api = {
     contract_version?: number;
     stream_id?: string;
     snapshot_revision?: number | string;
+    realtime?: RealtimeSnapshotLineage;
     page?: number;
     page_size?: number;
     total_records?: number;
@@ -1651,6 +1698,13 @@ export const api = {
       side: (params.side as string) || '',
       signal_id: (params.signal_id as string) || '',
     });
+    const contractVersion =
+      typeof params.contract_version === 'number' && Number.isFinite(params.contract_version)
+        ? Math.max(1, Math.trunc(params.contract_version))
+        : undefined;
+    if (contractVersion !== undefined) {
+      qs.set('contract_version', String(contractVersion));
+    }
     if (cursorParam) {
       qs.set('cursor', cursorParam);
       qs.set('offset', '0');
@@ -1665,6 +1719,7 @@ export const api = {
       contract_version?: number;
       stream_id?: string;
       snapshot_revision?: number | string;
+      realtime?: RealtimeSnapshotLineage;
       page?: number;
       page_size?: number;
       total_records?: number;
@@ -1695,6 +1750,7 @@ export const api = {
       .map((row, index) => normalizeTradeEventCandidate(row, index, resolvedOffset + 1))
       .filter((row): row is TradeEvent => Boolean(row));
     const maxSeq = rows.reduce((acc, row) => Math.max(acc, Number(row.seq) || 0), 0);
+    const realtime = normalizeRealtimeSnapshotLineage((data as Record<string, unknown>).realtime ?? data);
     const returned = rows.length;
     const totalCount = data.total ?? data.total_records ?? 0;
     const nextCursorValue = typeof data.next_cursor === 'string' ? data.next_cursor : null;
@@ -1717,6 +1773,7 @@ export const api = {
         typeof data.snapshot_revision === 'number' || typeof data.snapshot_revision === 'string'
           ? data.snapshot_revision
           : undefined,
+      realtime,
       page: resolvedPage,
       page_size: resolvedPageSize,
       total_records: data.total_records,
@@ -1852,8 +1909,17 @@ export const api = {
   },
 
   // Signal strategies - FluxAPI v1 returns {"ok": true, "data": {"strategies": [...], "server_time": "..."}}
-  getSignalStrategies: async (): Promise<SignalStrategiesPayload> => {
+  getSignalStrategies: async (
+    options: { contractVersion?: number } = {},
+  ): Promise<SignalStrategiesPayload> => {
     const qs = new URLSearchParams();
+    if (
+      typeof options.contractVersion === 'number'
+      && Number.isFinite(options.contractVersion)
+      && options.contractVersion > 0
+    ) {
+      qs.set('contract_version', String(Math.trunc(options.contractVersion)));
+    }
     appendProfileQuery(qs);
     const response = await fetchJSON<{ ok: boolean; data: SignalStrategiesPayload }>(
       `/api/v1/signals${qs.toString() ? `?${qs.toString()}` : ''}`
@@ -1862,8 +1928,17 @@ export const api = {
   },
 
   // Signal strategies (FluxAPI v1) - Returns {"ok": true, "data": {"strategies": [...], "server_time": "..."}}
-  getSignals: async (): Promise<SignalStrategiesPayload> => {
+  getSignals: async (
+    options: { contractVersion?: number } = {},
+  ): Promise<SignalStrategiesPayload> => {
     const qs = new URLSearchParams();
+    if (
+      typeof options.contractVersion === 'number'
+      && Number.isFinite(options.contractVersion)
+      && options.contractVersion > 0
+    ) {
+      qs.set('contract_version', String(Math.trunc(options.contractVersion)));
+    }
     appendProfileQuery(qs);
     const response = await fetchJSON<{ ok: boolean; data: SignalStrategiesPayload }>(
       `/api/v1/signals${qs.toString() ? `?${qs.toString()}` : ''}`
