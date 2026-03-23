@@ -433,6 +433,105 @@ describe('DataTable', () => {
     });
   });
 
+  it('keeps the unsorted stable-data fast path when sorting state targets an id-only display column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const displayOnlyColumns: ColumnDef<TestData>[] = [
+      columns[1]!,
+      {
+        id: 'status',
+        header: 'Status',
+        cell: ({ row }) => (row.original.age >= 40 ? 'Active' : 'Idle'),
+      },
+    ];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={displayOnlyColumns}
+        sortable
+        initialSorting={[{ id: 'status', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={displayOnlyColumns}
+        sortable
+        initialSorting={[{ id: 'status', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: false,
+      liveCacheReset: true,
+    });
+  });
+
+  it('recomputes accessorFn sort order when the runtime sort id comes from the string header', () => {
+    const liveData = [
+      { id: 1, name: 'Alpha', age: 20, email: 'alpha@example.com' },
+      { id: 2, name: 'Bravo', age: 30, email: 'bravo@example.com' },
+    ];
+    const metrics: DataTableDebugMetrics[] = [];
+    const accessorFnColumns: ColumnDef<TestData>[] = [
+      columns[1]!,
+      {
+        header: 'Derived Age',
+        accessorFn: (row) => row.age,
+      },
+    ];
+    const getVisibleDerivedAgeNameOrder = () => screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent ?? '');
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={accessorFnColumns}
+        sortable
+        initialSorting={[{ id: 'Derived Age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleDerivedAgeNameOrder()).toEqual(['Bravo', 'Alpha']);
+
+    liveData[0].age = 40;
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={accessorFnColumns}
+        sortable
+        initialSorting={[{ id: 'Derived Age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleDerivedAgeNameOrder()).toEqual(['Alpha', 'Bravo']);
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
   it('measures rendered virtual rows for variable-height virtualization', () => {
     const measureElement = vi.fn();
     const virtualizer = {

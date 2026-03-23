@@ -127,6 +127,38 @@ export interface DataTableDebugMetrics {
   rowCount: number;
 }
 
+function resolveRuntimeSortableColumnId<T>(columnDef: ColumnDef<T>): string | null {
+  const typedColumnDef = columnDef as ColumnDef<T> & {
+    accessorFn?: unknown;
+    accessorKey?: string | number;
+    enableSorting?: boolean;
+    header?: unknown;
+    id?: string;
+  };
+
+  if (typedColumnDef.enableSorting === false) {
+    return null;
+  }
+
+  const hasAccessor = typedColumnDef.accessorFn != null || typedColumnDef.accessorKey != null;
+  if (!hasAccessor) {
+    return null;
+  }
+
+  if (typedColumnDef.id != null) {
+    return String(typedColumnDef.id);
+  }
+
+  if (typedColumnDef.accessorKey != null) {
+    const accessorKey = String(typedColumnDef.accessorKey);
+    return typeof String.prototype.replaceAll === 'function'
+      ? accessorKey.replaceAll('.', '_')
+      : accessorKey.replace(/\./g, '_');
+  }
+
+  return typeof typedColumnDef.header === 'string' ? typedColumnDef.header : null;
+}
+
 function collectSortableLeafColumnIds<T>(columnDefs: ColumnDef<T>[]): Set<string> {
   const sortableColumnIds = new Set<string>();
 
@@ -138,15 +170,9 @@ function collectSortableLeafColumnIds<T>(columnDefs: ColumnDef<T>[]): Set<string
         return;
       }
 
-      if ((column as ColumnDef<T> & { enableSorting?: boolean }).enableSorting === false) {
-        return;
-      }
-
-      const columnKeyRaw = (column as ColumnDef<T> & { id?: string; accessorKey?: string | number }).id
-        ?? (column as ColumnDef<T> & { accessorKey?: string | number }).accessorKey;
-
-      if (columnKeyRaw !== undefined && columnKeyRaw !== null) {
-        sortableColumnIds.add(String(columnKeyRaw));
+      const runtimeColumnId = resolveRuntimeSortableColumnId(column);
+      if (runtimeColumnId != null) {
+        sortableColumnIds.add(runtimeColumnId);
       }
     });
   };
