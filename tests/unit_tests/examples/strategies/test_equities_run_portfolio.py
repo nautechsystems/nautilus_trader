@@ -1861,6 +1861,11 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
     ibkr_projection = json.loads(ibkr_projection_raw)
     assert ibkr_projection["rows"][0]["stale"] is True
     assert ibkr_projection["rows"][0]["include_in_reconciliation"] is False
+    assert len(ibkr_projection["scope_status"]) == 1
+    assert {
+        scope["account_scope_id"]
+        for scope in ibkr_projection["scope_status"]
+    } == {"ibkr.reference.main"}
     scope_status = {
         scope["account_scope_id"]: scope
         for scope in ibkr_projection["scope_status"]
@@ -1891,6 +1896,11 @@ def test_equities_portfolio_aggregator_preserves_stale_projection_scope_after_re
     assert len(ibkr_rows) == 1
     assert ibkr_rows[0]["stale"] is True
     assert ibkr_rows[0]["include_in_reconciliation"] is False
+    assert len(portfolio_snapshot["accounts"]["scope_status"]) == 2
+    assert {
+        scope["account_scope_id"]
+        for scope in portfolio_snapshot["accounts"]["scope_status"]
+    } == {"ibkr.reference.main", "binance.futures.main"}
     scope_status = {
         scope["account_scope_id"]: scope
         for scope in portfolio_snapshot["accounts"]["scope_status"]

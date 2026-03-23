@@ -3919,6 +3919,11 @@ def test_balances_profile_equities_portfolio_snapshot_v2_marks_stale_shared_acco
     assert response.status_code == 200
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
+    assert len(body["data"]["scope_status"]) == 2
+    assert {
+        scope["account_scope_id"]
+        for scope in body["data"]["scope_status"]
+    } == {"ibkr.reference.main", "binance.futures.main"}
     scope_status = {
         scope["account_scope_id"]: scope
         for scope in body["data"]["scope_status"]
@@ -4122,6 +4127,11 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlay_preserves_scope
     assert response.status_code == 200
     assert body["data"]["source"] == "portfolio_snapshot_v2"
     assert body["data"]["degraded"] is True
+    assert len(body["data"]["scope_status"]) == 2
+    assert {
+        scope["account_scope_id"]
+        for scope in body["data"]["scope_status"]
+    } == {"ibkr.reference.main", "binance.futures.main"}
     scope_status = {
         scope["account_scope_id"]: scope
         for scope in body["data"]["scope_status"]
