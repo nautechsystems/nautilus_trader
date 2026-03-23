@@ -80,6 +80,13 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
 ]
 
 
+# Rust custom data types that have been registered via ensure_custom_data_registered
+# and can be queried through the DataFusion/Rust backend using add_custom_file.
+# Types listed here must have compatible Arrow schemas between their Python and Rust
+# encoders, and must be written with the Rust encoder for the Rust read path to work.
+_RUST_CUSTOM_DATA_TYPES: set[str] = set()
+
+
 class FeatherFile(NamedTuple):
     path: str
     class_name: str
@@ -1630,8 +1637,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 Bar,
                 MarkPriceUpdate,
             )
-            and files is None
-        ):  # Rust backend doesn't support custom files yet
+            or self._is_rust_custom_data(data_cls)
+        ) and files is None:
             data = self._query_rust(
                 data_cls=data_cls,
                 identifiers=identifiers,
@@ -1768,7 +1775,16 @@ class ParquetDataCatalog(BaseDataCatalog):
             If the data class is not supported by the Rust backend.
 
         """
-        data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
+        data_type: NautilusDataType | None = ParquetDataCatalog._nautilus_data_cls_to_data_type(
+            data_cls,
+        )
+        custom_type_name: str | None = data_cls.__name__ if data_type is None else None
+
+        if data_type is None and custom_type_name is None:
+            raise RuntimeError(
+                f"unsupported `data_cls` for Rust parquet, was {data_cls.__name__}",
+            )
+
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
@@ -1790,6 +1806,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     start=start,
                     end=end,
                     where=where,
+                    custom_type_name=custom_type_name,
                 )
         else:
             # Use directory-based registration for efficiency. DataFusion handles
@@ -1810,6 +1827,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     start=start,
                     end=end,
                     where=where,
+                    custom_type_name=custom_type_name,
                 )
 
         return session
@@ -1818,11 +1836,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         session: DataBackendSession,
         file: str,
-        data_type: NautilusDataType,
+        data_type: NautilusDataType | None,
         file_prefix: str,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
+        custom_type_name: str | None = None,
     ) -> None:
         # Extract identifier from file path and filename to create meaningful table names
         identifier = file.split("/")[-2]
@@ -1838,17 +1857,22 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
 
         file_uri = self._build_file_uri(file)
-        session.add_file(data_type, table, file_uri, query)
+
+        if custom_type_name is not None:
+            session.add_custom_file(custom_type_name, table, file_uri, query)
+        else:
+            session.add_file(data_type, table, file_uri, query)  # type: ignore[arg-type]
 
     def _register_directory_table(
         self,
         session: DataBackendSession,
         directory: str,
-        data_type: NautilusDataType,
+        data_type: NautilusDataType | None,
         file_prefix: str,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
+        custom_type_name: str | None = None,
     ) -> None:
         # Extract identifier from directory path
         identifier = directory.split("/")[-1]
@@ -1866,7 +1890,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         file_uri = self._build_file_uri(directory)
         if not file_uri.endswith("/"):
             file_uri = file_uri + "/"
-        session.add_file(data_type, table, file_uri, query)
+
+        if custom_type_name is not None:
+            session.add_custom_file(custom_type_name, table, file_uri, query)
+        else:
+            session.add_file(data_type, table, file_uri, query)  # type: ignore[arg-type]
 
     def _build_file_uri(self, file: str) -> str:
         """
@@ -1951,7 +1979,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
     @staticmethod
-    def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
+    def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType | None:
         if data_cls in (OrderBookDelta, OrderBookDeltas):
             return NautilusDataType.OrderBookDelta
         elif data_cls == OrderBookDepth10:
@@ -1965,7 +1993,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         elif data_cls == MarkPriceUpdate:
             return NautilusDataType.MarkPriceUpdate
         else:
-            raise RuntimeError(f"unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
+            return None
+
+    @staticmethod
+    def _is_rust_custom_data(data_cls: type) -> bool:
+        """
+        Check if data_cls is a Rust custom data type with Arrow support.
+        """
+        return hasattr(data_cls, "__name__") and data_cls.__name__ in _RUST_CUSTOM_DATA_TYPES
 
     def _build_query(
         self,

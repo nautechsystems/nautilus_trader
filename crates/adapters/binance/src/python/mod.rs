@@ -25,6 +25,8 @@ pub mod enums;
 pub mod factories;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::data::ensure_rust_extractor_registered;
+use nautilus_serialization::ensure_custom_data_registered;
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     get_global_pyo3_registry,
@@ -32,7 +34,10 @@ use nautilus_system::{
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::{BinanceEnvironment, BinancePositionSide, BinanceProductType},
+    common::{
+        bar::BinanceBar,
+        enums::{BinanceEnvironment, BinancePositionSide, BinanceProductType},
+    },
     config::{BinanceDataClientConfig, BinanceExecClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
 };
@@ -101,10 +106,15 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BinanceProductType>()?;
     m.add_class::<BinanceEnvironment>()?;
     m.add_class::<BinancePositionSide>()?;
+    m.add_class::<BinanceBar>()?;
     m.add_class::<BinanceDataClientConfig>()?;
     m.add_class::<BinanceExecClientConfig>()?;
     m.add_class::<BinanceDataClientFactory>()?;
     m.add_class::<BinanceExecutionClientFactory>()?;
+
+    // Register BinanceBar for Arrow/JSON serialization and Python extraction
+    ensure_custom_data_registered::<BinanceBar>();
+    let _ = ensure_rust_extractor_registered::<BinanceBar>();
 
     let registry = get_global_pyo3_registry();
 
