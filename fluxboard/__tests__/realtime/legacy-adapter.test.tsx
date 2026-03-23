@@ -2,7 +2,15 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { disconnectSocket } from '@/sockets';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import * as useWebSocketModule from '@/hooks/useWebSocket';
+
+const { useWebSocket } = useWebSocketModule;
+const registerSharedWebSocketBridge = (useWebSocketModule as any).registerSharedWebSocketBridge as
+  | ((bridge: unknown) => void)
+  | undefined;
+const resetSharedWebSocketBridgeForTests = (useWebSocketModule as any).resetSharedWebSocketBridgeForTests as
+  | (() => void)
+  | undefined;
 
 type EventHandler = (...args: any[]) => void;
 
@@ -86,6 +94,7 @@ describe('useWebSocket legacy adapter foundation', () => {
   afterEach(() => {
     disconnectSocket();
     delete (window as any).__fluxboardTestSocketFactory;
+    resetSharedWebSocketBridgeForTests?.();
     vi.restoreAllMocks();
   });
 
@@ -210,6 +219,93 @@ describe('useWebSocket legacy adapter foundation', () => {
     unmount();
 
     expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the registered shared bridge path when a surface opts in without passing a per-call bridge', () => {
+    const handler = vi.fn();
+    const legacySubscribe = vi.fn(() => vi.fn());
+    const resolveMode = vi.fn(() => 'standard' as const);
+    const bridgeUnsubscribe = vi.fn();
+    let bridgeHandler: ((payload: unknown) => void) | undefined;
+    const sharedBridgeSubscribe = vi.fn((options: {
+      event: string;
+      surface?: string;
+      legacySubscribe: typeof legacySubscribe;
+      handler: (payload: unknown) => void;
+    }) => {
+      bridgeHandler = options.handler;
+      return bridgeUnsubscribe;
+    });
+
+    expect(registerSharedWebSocketBridge).toEqual(expect.any(Function));
+
+    registerSharedWebSocketBridge?.({
+      resolveMode,
+      subscribe: sharedBridgeSubscribe,
+    });
+
+    const { unmount } = renderHook(() =>
+      useWebSocket('standard:signal', handler, {
+        surface: 'signal',
+        subscribe: legacySubscribe,
+      }),
+    );
+
+    expect(resolveMode).toHaveBeenCalledWith({
+      event: 'standard:signal',
+      surface: 'signal',
+    });
+    expect(sharedBridgeSubscribe).toHaveBeenCalledTimes(1);
+    expect(sharedBridgeSubscribe).toHaveBeenCalledWith({
+      event: 'standard:signal',
+      surface: 'signal',
+      legacySubscribe,
+      handler: expect.any(Function),
+    });
+    expect(legacySubscribe).not.toHaveBeenCalled();
+
+    act(() => {
+      bridgeHandler?.({ strategy_id: 'shared-bridge', source: 'standard' });
+    });
+
+    expect(handler).toHaveBeenCalledWith({ strategy_id: 'shared-bridge', source: 'standard' });
+
+    unmount();
+
+    expect(bridgeUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers an explicit per-call bridge override over the registered shared bridge', () => {
+    const handler = vi.fn();
+    const legacySubscribe = vi.fn(() => vi.fn());
+    const sharedBridgeSubscribe = vi.fn(() => vi.fn());
+    const overrideUnsubscribe = vi.fn();
+    const overrideBridgeSubscribe = vi.fn(() => overrideUnsubscribe);
+
+    expect(registerSharedWebSocketBridge).toEqual(expect.any(Function));
+
+    registerSharedWebSocketBridge?.({
+      resolveMode: () => 'standard' as const,
+      subscribe: sharedBridgeSubscribe,
+    });
+
+    const { unmount } = renderHook(() =>
+      useWebSocket('override:alerts', handler, {
+        surface: 'alerts',
+        subscribe: legacySubscribe,
+        bridge: {
+          resolveMode: () => 'standard' as const,
+          subscribe: overrideBridgeSubscribe,
+        },
+      }),
+    );
+
+    expect(overrideBridgeSubscribe).toHaveBeenCalledTimes(1);
+    expect(sharedBridgeSubscribe).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(overrideUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it('does not duplicate bridge subscriptions when only the handler changes and cleans up on unmount', () => {

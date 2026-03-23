@@ -180,11 +180,11 @@ New UI work should prefer tokens/theme variables over raw Tailwind color/spacing
 ```
 
 `useWebSocket(event, handler)` remains the default legacy subscription path and makes no
-standard-payload assumptions. Surfaces opting into realtime standardization can pass a
-third argument with `surface`, an injected legacy `subscribe`, and a shared `bridge`
-that resolves `legacy` versus `standard` mode and owns the compatibility subscription.
-That keeps flag-off behavior unchanged while giving flag-on surfaces one reusable bridge
-seam instead of per-panel socket glue.
+standard-payload assumptions. `useWebSocket(..., { surface, ... })` can route flag-on
+surfaces through one shared compatibility bridge registered at the hook module level via
+`registerSharedWebSocketBridge(...)`, with optional per-call bridge overrides for tests
+or special cases. That keeps flag-off behavior unchanged while giving flag-on surfaces a
+single reusable bridge seam instead of per-panel socket glue.
 
 ## API Endpoints (Proxied to :5022)
 

@@ -1,57 +1,28 @@
-# Realtime Legacy Adapter Foundation Status
+# Realtime Legacy Adapter Lane Status
 
-Date: 2026-03-23
-Branch: `lanes/task-8-rt-legacy-adapter`
-Worktree: `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter`
+**Goal:** Land the shared legacy socket adapter bridge foundation in `useWebSocket` so flag-off surfaces stay on raw legacy payload handling while flag-on surfaces can route through one shared compatibility bridge path.
 
-## Current Commit / Diff
+**Architecture:** Keep `useWebSocket(event, handler)` unchanged for all existing callsites. Add a module-level shared bridge registration path inside the hook module, allow `useWebSocket(..., { surface, ... })` to consume that shared bridge automatically, and preserve optional per-call bridge overrides for tests or exceptional wiring.
 
-- Base commit before this lane commit: `8eaae3342b7c2fdc2bbb49a9edf9eaaaa1b8d770`
-- Owned file changes in this lane:
-  - `fluxboard/hooks/useWebSocket.ts` modified
-  - `fluxboard/README.md` modified
-  - `fluxboard/__tests__/realtime/legacy-adapter.test.tsx` added
-- Tracked diff summary before commit: `2 files changed, 67 insertions(+), 9 deletions(-)`
-- `fluxboard/sockets.test.ts` stayed unchanged; the existing socket state-machine coverage remains part of the verification bundle.
+**Tech Stack:** React, TypeScript, Vitest, Testing Library, Fluxboard Socket.IO hook.
 
-## TDD Verification
+## Progress Tracker
 
-### RED
+**Source of truth:** Update this table whenever task state, verification state, or commit state changes.
 
-- Command: `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx`
-- Result: exit `1`
-- Failure summary:
-  - `sockets.test.ts` passed (`8` tests)
-  - `__tests__/realtime/legacy-adapter.test.tsx` failed `4` of `5` tests
-  - The failures were the intended seam failures: `resolveMode` had `0` calls, the shared `bridge.subscribe` path had `0` calls, and the injected legacy subscribe path had `0` calls because `useWebSocket` only supported the legacy 2-argument subscription shape.
-
-### GREEN
-
-- Command: `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx`
-- Result: exit `0`; `2` files passed, `13` tests passed
-- Command: `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/compatibility-matrix.test.tsx`
-- Result: exit `0`; `3` files passed, `18` tests passed
-
-## What Changed
-
-- `useWebSocket` now accepts an optional third argument with:
-  - `surface`
-  - injected legacy `subscribe`
-  - shared `bridge.resolveMode(...)`
-  - shared `bridge.subscribe(...)`
-- The default `useWebSocket(event, handler)` path still subscribes directly to the legacy socket and forwards the raw payload without standard-contract assumptions.
-- When the resolved mode is `standard`, the hook routes through the shared bridge seam instead of the direct socket subscriber.
-- The hook still uses a handler ref, so handler-only rerenders do not create duplicate subscriptions.
-- Mode flips clean up the previous legacy or bridge subscription before subscribing again.
-- `fluxboard/README.md` now documents the third-argument adapter seam and the expectation that flag-on surfaces reuse a shared bridge.
+| Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Overall | completed | main | none | `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`, `docs/plans/realtime-status/rt-legacy-adapter.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Parent landed commit before this follow-up: `7d42f20516742ac257a4b7ac28291936dbe5c949`; follow-up diff adds module-level shared bridge registration/resolution, expands adapter tests, and rewrites this note to the fixed-key tracker shape | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` PASS (`15` tests); `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/compatibility-matrix.test.tsx` PASS (`20` tests) | 2026-03-23 UTC follow-up review fix is implemented and verified locally; remaining work is downstream consumers registering and using the shared bridge |
+| Task 1: Add failing shared-bridge registration tests | completed | main | none | `fluxboard/__tests__/realtime/legacy-adapter.test.tsx` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Diff vs parent `7d42f20516742ac257a4b7ac28291936dbe5c949` adds shared-bridge registration and override coverage | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` RED: exit `1`; `2` new tests failed because `registerSharedWebSocketBridge` was undefined on the lane tip | Added focused tests that require a production shared bridge path and preserve per-call override precedence |
+| Task 2: Implement shared bridge registry in `useWebSocket` | completed | main | Task 1: Add failing shared-bridge registration tests | `fluxboard/hooks/useWebSocket.ts`, `fluxboard/README.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Diff vs parent `7d42f20516742ac257a4b7ac28291936dbe5c949` adds `registerSharedWebSocketBridge(...)`, `resetSharedWebSocketBridgeForTests()`, and shared-bridge resolution before per-call fallback | `VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/legacy-adapter.test.tsx` PASS (`15` tests) | Shared bridge path now exists in production hook code; 2-argument legacy subscriptions still route directly to the socket |
+| Task 3: Rewrite lane note to fixed-key status template | completed | main | Task 2: Implement shared bridge registry in `useWebSocket` | `docs/plans/realtime-status/rt-legacy-adapter.md` | `lanes/task-8-rt-legacy-adapter` | `/home/ubuntu/nautilus-trader-dev/.worktrees/task-8-rt-legacy-adapter` | Replaced the freeform note with the repo-standard Progress Tracker table and explicit verification/blocker/handoff sections | `git diff --check` PASS | This row is the required status-template conversion from the review findings |
 
 ## Blockers
 
 - None in owned scope.
-- Follow-on surfaces still need to provide one shared bridge implementation and choose when `resolveMode(...)` returns `standard`.
 
 ## Next Handoff
 
-- Reuse the new `useWebSocket(..., options)` seam for the first flag-on panel instead of introducing per-panel bridge glue.
-- Keep the bridge implementation shared and inject it through the hook so flag-off surfaces continue to use the untouched legacy path.
-- Retain the new adapter regression suite plus `compatibility-matrix.test.tsx` in subsequent rollout verification so bridge wiring cannot regress silently.
+- Register one shared compatibility bridge for the first flag-on realtime surface instead of passing bespoke bridge objects at each callsite.
+- Keep flag-off surfaces on the unchanged 2-argument legacy path so no standard-payload assumptions leak into legacy-only panels.
+- Preserve `legacy-adapter.test.tsx` and `compatibility-matrix.test.tsx` in future rollout verification so shared-bridge regressions fail immediately.

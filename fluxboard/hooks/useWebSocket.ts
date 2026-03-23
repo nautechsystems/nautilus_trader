@@ -29,6 +29,18 @@ export type UseWebSocketOptions<TLegacy = unknown, TStandard = TLegacy> = {
   bridge?: WebSocketBridge<TLegacy, TStandard>;
 };
 
+let sharedWebSocketBridge: WebSocketBridge<any, any> | null = null;
+
+export function registerSharedWebSocketBridge<TLegacy = unknown, TStandard = TLegacy>(
+  bridge: WebSocketBridge<TLegacy, TStandard>,
+): void {
+  sharedWebSocketBridge = bridge as WebSocketBridge<any, any>;
+}
+
+export function resetSharedWebSocketBridgeForTests(): void {
+  sharedWebSocketBridge = null;
+}
+
 function subscribeToSocket<T = unknown>(
   event: string,
   handler: (data: T) => void,
@@ -62,9 +74,10 @@ export function useWebSocket<TLegacy = unknown, TStandard = TLegacy>(
   const handlerRef = useRef(handler);
   const surface = options?.surface;
   const legacySubscribe: WebSocketSubscription<TLegacy> = options?.subscribe ?? subscribeToSocket;
-  const bridgeSubscribe = options?.bridge?.subscribe;
+  const activeBridge = (options?.bridge ?? sharedWebSocketBridge) as WebSocketBridge<TLegacy, TStandard> | null;
+  const bridgeSubscribe = activeBridge?.subscribe;
   const mode = bridgeSubscribe
-    ? options?.bridge?.resolveMode?.({ event, surface }) ?? 'legacy'
+    ? activeBridge?.resolveMode?.({ event, surface }) ?? 'legacy'
     : 'legacy';
 
   useEffect(() => {
