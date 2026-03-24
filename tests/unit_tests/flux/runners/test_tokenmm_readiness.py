@@ -4,12 +4,13 @@ from __future__ import annotations
 def _signal_payload(
     *,
     strategy_id: str,
+    state: str = "bot_off",
     state_stale: bool = False,
     signal_state_age_ms: int = 1_000,
 ) -> dict[str, object]:
     return {
         "id": strategy_id,
-        "state": {"state": "bot_off"},
+        "state": {"state": state},
         "debug": {
             "md_health": {
                 "state_stale": state_stale,
@@ -77,4 +78,41 @@ def test_evaluate_tokenmm_readiness_marks_stale_signal_state_not_ready() -> None
     assert result.ok is False
     assert result.checks["signals"].ok is False
     assert result.summary["stale_signal_strategy_ids"] == ["plumeusdt_bybit_perp_makerv3"]
+    assert result.summary["failed_checks"] == ["signals"]
+
+
+def test_evaluate_tokenmm_readiness_marks_blocked_reconciliation_not_ready() -> None:
+    from flux.runners.tokenmm.readiness import evaluate_tokenmm_readiness
+
+    result = evaluate_tokenmm_readiness(
+        required_strategy_ids=("plumeusdt_bybit_perp_makerv3",),
+        signals_payload={
+            "server_ts_ms": 1_700_000_005_000,
+            "strategies": [
+                _signal_payload(
+                    strategy_id="plumeusdt_bybit_perp_makerv3",
+                    state="blocked_reconciliation",
+                ),
+            ],
+        },
+        state_streams_by_strategy_id={
+            "plumeusdt_bybit_perp_makerv3": {
+                "key": "flux:v1:in:stream:live:plumeusdt_bybit_perp_makerv3:flux.makerv3.state",
+                "entry_id": "1700000004000-0",
+                "ts_ms": 1_700_000_004_000,
+                "age_ms": 1_000,
+                "present": True,
+            },
+        },
+        now_ms_value=1_700_000_005_000,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].ok is False
+    assert result.checks["signals"].details["blocked_reconciliation_strategy_ids"] == [
+        "plumeusdt_bybit_perp_makerv3",
+    ]
+    assert result.summary["blocked_reconciliation_strategy_ids"] == [
+        "plumeusdt_bybit_perp_makerv3",
+    ]
     assert result.summary["failed_checks"] == ["signals"]

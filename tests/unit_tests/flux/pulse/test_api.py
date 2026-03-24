@@ -254,7 +254,8 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
     payload = response.get_json()
     assert payload["shell_links"] == _expected_shell_links("tokenmm")
     assert payload["total"] == 2
-    assert payload["active"] == 1
+    assert payload["active"] == 0
+    assert payload["degraded"] == 1
     assert payload["failed"] == 1
     assert payload["jobs"][0] == {
         "cmd": "python -m flux.runners.tokenmm.run_api",
@@ -279,7 +280,8 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
                 "failed_checks": ["readiness_fetch"],
             },
         },
-        "status": "active",
+        "status": "degraded",
+        "systemd_status": "active",
         "unit": "flux@tokenmm-api",
         "uptime": "15min",
     }
@@ -301,6 +303,7 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
         "prefix": "tokenmm",
         "readiness": None,
         "status": "failed",
+        "systemd_status": "failed",
         "unit": "flux@tokenmm-bridge",
         "uptime": None,
     }
@@ -351,7 +354,10 @@ def test_list_jobs_returns_shared_host_shell_links_when_equities_proxy_is_config
     assert payload["shell_links"] == _expected_shell_links("tokenmm", "equities")
 
 
-def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path) -> None:
+def test_list_jobs_scopes_active_job_errors_to_current_activation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)
     (env_dir / "tokenmm-api.env").write_text(
@@ -392,6 +398,10 @@ def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path
         env_dir=env_dir,
         command_runner=runner,
         sudo_prefix=["sudo"],
+    )
+    monkeypatch.setattr(
+        "flux.pulse.api._fetch_job_readiness",
+        lambda service: {"ok": True, "summary": {"failed_checks": []}},
     )
     app = Flask(__name__)
     control_plane.register_routes(app)
@@ -588,7 +598,8 @@ def test_get_job_snapshot_includes_tokenmm_readiness_for_api_services(
     snapshot = control_plane.get_job_snapshot("tokenmm-api")
 
     assert snapshot is not None
-    assert snapshot["status"] == "active"
+    assert snapshot["status"] == "degraded"
+    assert snapshot["systemd_status"] == "active"
     assert snapshot["readiness"] == {
         "ok": False,
         "summary": {

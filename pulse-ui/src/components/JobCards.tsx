@@ -35,6 +35,10 @@ function formatTimestamp(timestamp: string | null | undefined): string {
   }).format(parsed);
 }
 
+function livenessStatus(job: Job): string {
+  return job.systemd_status || job.status || job.state || "inactive";
+}
+
 export function JobCards({
   groupKey,
   groupLabel,
@@ -47,9 +51,10 @@ export function JobCards({
   onViewError,
 }: JobCardsProps) {
   const activeCount = jobs.filter((job) => (job.status || job.state) === "active").length;
+  const degradedCount = jobs.filter((job) => (job.status || job.state) === "degraded").length;
   const inactiveCount = jobs.filter((job) => (job.status || job.state) === "inactive").length;
   const failedCount = jobs.filter((job) => (job.status || job.state) === "failed").length;
-  const hasRunning = activeCount > 0;
+  const hasRunning = jobs.some((job) => livenessStatus(job) === "active");
   const hasStartable = inactiveCount > 0 || failedCount > 0;
 
   return (
@@ -58,7 +63,9 @@ export function JobCards({
         <div>
           <div className="group-row__label">{groupLabel}</div>
           <div className="group-row__summary">
-            {jobs.length} jobs, {activeCount} active{failedCount ? `, ${failedCount} failed` : ""}
+            {jobs.length} jobs, {activeCount} active
+            {degradedCount ? `, ${degradedCount} degraded` : ""}
+            {failedCount ? `, ${failedCount} failed` : ""}
           </div>
         </div>
 
@@ -101,9 +108,10 @@ export function JobCards({
           const jobId = job.id || job.name;
           const jobBusy = busy || busyJobIds.has(jobId);
           const status = job.status || job.state || "inactive";
-          const canStart = status === "inactive" || status === "failed";
-          const canStop = status === "active";
-          const canRestart = status === "active";
+          const systemdStatus = livenessStatus(job);
+          const canStart = systemdStatus === "inactive" || systemdStatus === "failed";
+          const canStop = systemdStatus === "active";
+          const canRestart = systemdStatus === "active";
 
           return (
             <article key={jobId} className="job-card" role="listitem">

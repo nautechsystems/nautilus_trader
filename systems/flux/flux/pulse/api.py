@@ -225,6 +225,16 @@ def _fetch_job_readiness(service: PulseService) -> dict[str, Any] | None:
     return data
 
 
+def _effective_service_status(
+    *,
+    systemd_status: str,
+    readiness: dict[str, Any] | None,
+) -> str:
+    if systemd_status == "active" and readiness is not None and readiness.get("ok") is not True:
+        return "degraded"
+    return systemd_status
+
+
 def _past_tense(action: str) -> str:
     return ACTION_PAST_TENSE[action]
 
@@ -288,6 +298,7 @@ class PulseControlPlane:
                     "shell_links": self._shell_links(services),
                     "total": len(jobs),
                     "active": sum(1 for job in jobs if job["status"] == "active"),
+                    "degraded": sum(1 for job in jobs if job["status"] == "degraded"),
                     "failed": sum(1 for job in jobs if job["status"] == "failed"),
                 },
             )
@@ -482,10 +493,15 @@ class PulseControlPlane:
             check=False,
         )
         readiness = _fetch_job_readiness(service) if status == "active" else None
+        effective_status = _effective_service_status(
+            systemd_status=status,
+            readiness=readiness,
+        )
         return {
             "id": service.job_id,
             "name": service.job_id,
-            "status": status,
+            "status": effective_status,
+            "systemd_status": status,
             "pid": int(pid_match.group(1)) if pid_match else None,
             "memory": memory_match.group(1) if memory_match else None,
             "uptime": _extract_uptime(output, status=status),

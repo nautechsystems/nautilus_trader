@@ -262,6 +262,7 @@ cdef class MessageBus:
     cdef tuple[type] _publishable_types
     cdef set[type] _streaming_types
     cdef bint _resolved
+    cdef bint _publish_shutdown_requested
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""

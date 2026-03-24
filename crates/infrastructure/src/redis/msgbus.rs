@@ -52,6 +52,10 @@ const MSGBUS_STREAM: &str = "msgbus-stream";
 const MSGBUS_HEARTBEAT: &str = "msgbus-heartbeat";
 const HEARTBEAT_TOPIC: &str = "health:heartbeat";
 const TRIM_BUFFER_SECS: u64 = 60;
+const PUBLISH_RETRY_MAX_ATTEMPTS: usize = 10;
+const PUBLISH_RETRY_MAX_DELAY_SECS: u64 = 5;
+const PUBLISH_RETRY_MAX_FACTOR_MS: u64 = 100;
+const PUBLISH_RETRY_MAX_EXPONENT_BASE: u64 = 2;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 
@@ -253,7 +257,8 @@ pub async fn publish_messages(
         .database
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, db_config.clone()).await?;
+    let publish_db_config = publish_retry_config(db_config);
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, publish_db_config).await?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
 
     // Auto-trimming
@@ -281,15 +286,15 @@ pub async fn publish_messages(
                         log::debug!("Received close message");
                         // Ensure we exit the loop after flushing any remaining messages.
                         if !buffer.is_empty() {
-                            flush_buffer_with_retries(
+                            drain_buffer(
                                 &mut con,
-                                db_config,
                                 &stream_key,
                                 config.stream_per_topic,
                                 autotrim_duration,
                                 &mut last_trim_index,
                                 &mut buffer,
-                            ).await?;
+                            )
+                            .await?;
                         }
                         break;
                     }
@@ -298,15 +303,15 @@ pub async fn publish_messages(
 
                     if buffer_interval.is_zero() {
                         // Immediate flush mode
-                        flush_buffer_with_retries(
+                        drain_buffer(
                             &mut con,
-                            db_config,
                             &stream_key,
                             config.stream_per_topic,
                             autotrim_duration,
                             &mut last_trim_index,
                             &mut buffer,
-                        ).await?;
+                        )
+                        .await?;
                     }
                 } else {
                     log::debug!("Channel hung up");
@@ -317,15 +322,15 @@ pub async fn publish_messages(
             // unnecessarily waking the task when immediate flushing is enabled.
             () = &mut flush_timer, if !buffer_interval.is_zero() => {
                 if !buffer.is_empty() {
-                    flush_buffer_with_retries(
+                    drain_buffer(
                         &mut con,
-                        db_config,
                         &stream_key,
                         config.stream_per_topic,
                         autotrim_duration,
                         &mut last_trim_index,
                         &mut buffer,
-                    ).await?;
+                    )
+                    .await?;
                 }
 
                 // Schedule the next tick
@@ -336,9 +341,8 @@ pub async fn publish_messages(
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        flush_buffer_with_retries(
+        drain_buffer(
             &mut con,
-            db_config,
             &stream_key,
             config.stream_per_topic,
             autotrim_duration,
@@ -352,48 +356,20 @@ pub async fn publish_messages(
     Ok(())
 }
 
-async fn flush_buffer_with_retries(
-    conn: &mut redis::aio::ConnectionManager,
-    db_config: &DatabaseConfig,
-    stream_key: &str,
-    stream_per_topic: bool,
-    autotrim_duration: Option<Duration>,
-    last_trim_index: &mut HashMap<String, usize>,
-    buffer: &mut VecDeque<BusMessage>,
-) -> anyhow::Result<()> {
-    let max_attempts = db_config.number_of_retries.saturating_add(1).max(1);
-
-    for attempt in 0..max_attempts {
-        match drain_buffer(
-            conn,
-            stream_key,
-            stream_per_topic,
-            autotrim_duration,
-            last_trim_index,
-            buffer,
-        )
-        .await
-        {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                if attempt + 1 == max_attempts {
-                    return Err(error);
-                }
-
-                let delay = publish_retry_delay(db_config, attempt);
-                log::warn!(
-                    "Redis msgbus publish flush failed on attempt {}/{max_attempts}: {error}. Retrying in {delay:?}",
-                    attempt + 1,
-                );
-                tokio::time::sleep(delay).await;
-                *conn = create_redis_connection(MSGBUS_PUBLISH, db_config.clone()).await?;
-            }
-        }
-    }
-
-    unreachable!("publish retry loop always returns on success or terminal failure")
+fn publish_retry_config(config: &DatabaseConfig) -> DatabaseConfig {
+    let mut publish_config = config.clone();
+    publish_config.number_of_retries = publish_config
+        .number_of_retries
+        .min(PUBLISH_RETRY_MAX_ATTEMPTS);
+    publish_config.exponent_base = publish_config
+        .exponent_base
+        .clamp(1, PUBLISH_RETRY_MAX_EXPONENT_BASE);
+    publish_config.max_delay = publish_config.max_delay.min(PUBLISH_RETRY_MAX_DELAY_SECS);
+    publish_config.factor = publish_config.factor.clamp(1, PUBLISH_RETRY_MAX_FACTOR_MS);
+    publish_config
 }
 
+#[cfg(test)]
 fn publish_retry_delay(config: &DatabaseConfig, attempt: usize) -> Duration {
     let exponent = config.exponent_base.saturating_pow(attempt as u32);
     let delay_ms = config.factor.saturating_mul(exponent);
@@ -978,15 +954,15 @@ mod serial_tests {
 
     // Tradeable node state must never silently stop publishing while the process keeps running.
     #[rstest]
-    fn test_default_publish_retry_budget_is_bounded() {
-        let config = DatabaseConfig::default();
+    fn test_publish_retry_budget_is_bounded_for_msgbus_publishers() {
+        let config = publish_retry_config(&DatabaseConfig::default());
         let total_retry_delay: Duration = (0..config.number_of_retries)
             .map(|attempt| publish_retry_delay(&config, attempt))
             .sum();
 
         assert!(
             total_retry_delay <= Duration::from_secs(30),
-            "default publish retry budget should fail closed quickly, got {total_retry_delay:?}",
+            "msgbus publish retry budget should fail closed quickly, got {total_retry_delay:?}",
         );
     }
 
@@ -1037,7 +1013,7 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_publish_messages_retries_after_transient_redis_write_failure(
+    async fn test_publish_messages_fail_closed_instead_of_replaying_buffer_after_write_failure(
         #[future] redis_connection: ConnectionManager,
     ) {
         let _lock = acquire_redis_test_lock().await;
@@ -1073,43 +1049,22 @@ mod serial_tests {
         tokio::time::sleep(Duration::from_millis(250)).await;
         let _: () = con.del(&stream_key).await.unwrap();
 
-        let mut probe = con.clone();
-        let stream_key_for_read = stream_key.clone();
-        let publish_result = tokio::time::timeout(Duration::from_secs(2), async move {
-            loop {
-                let messages: RedisStreamBulk =
-                    probe.xread(&[&stream_key_for_read], &["0"]).await.unwrap();
-                if !messages.is_empty() {
-                    return messages;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await;
+        let task_result = tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("publish task should fail closed quickly")
+            .unwrap();
+        let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
 
-        match publish_result {
-            Ok(messages) => {
-                let stream_msgs = messages[0].get(&stream_key).unwrap();
-                let stream_msg_array = &stream_msgs[0].values().next().unwrap();
-                let decoded_message = decode_bus_message(stream_msg_array).unwrap();
-                assert_eq!(decoded_message.topic, "retry_topic");
-                assert_eq!(decoded_message.payload, Bytes::from_static(b"retry_payload"));
+        flush_redis(&mut con).await.unwrap();
 
-                tx.send(BusMessage::new_close()).unwrap();
-                assert!(handle.await.unwrap().is_ok());
-                flush_redis(&mut con).await.unwrap();
-            }
-            Err(_) => {
-                if !handle.is_finished() {
-                    handle.abort();
-                }
-                let task_result = handle.await;
-                flush_redis(&mut con).await.unwrap();
-                panic!(
-                    "publish task did not retry the transient write failure: {task_result:?}"
-                );
-            }
-        }
+        assert!(
+            task_result.is_err(),
+            "write failure should terminate publishing instead of replaying buffered messages",
+        );
+        assert!(
+            messages.is_empty(),
+            "failed flush should not replay the buffered batch after the error condition is cleared",
+        );
     }
 
     #[rstest]

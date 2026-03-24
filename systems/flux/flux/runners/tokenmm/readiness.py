@@ -11,6 +11,7 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 
 
 DEFAULT_STATE_STREAM_MAX_AGE_MS = 30_000
+BLOCKED_RECONCILIATION = "blocked_reconciliation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,11 @@ def _signal_state_age_ms(payload: Mapping[str, Any]) -> int | None:
     return safe_int(_signal_md_health(payload).get("signal_state_age_ms"))
 
 
+def _signal_state_name(payload: Mapping[str, Any]) -> str:
+    state = _mapping(payload.get("state"))
+    return decode_text(state.get("state")).strip().lower()
+
+
 def _state_stream_ts_ms(entry_id: str | None) -> int | None:
     text = (entry_id or "").strip()
     if not text:
@@ -142,6 +148,7 @@ def evaluate_tokenmm_readiness(
     signal_rows = _signal_rows_by_strategy_id(signals_payload)
     missing_signal_strategy_ids: list[str] = []
     stale_signal_strategy_ids: list[str] = []
+    blocked_reconciliation_strategy_ids: list[str] = []
     missing_state_stream_strategy_ids: list[str] = []
     stale_state_stream_strategy_ids: list[str] = []
     signal_state_age_ms_by_strategy_id: dict[str, int] = {}
@@ -157,6 +164,8 @@ def evaluate_tokenmm_readiness(
                 signal_state_age_ms_by_strategy_id[strategy_id] = signal_state_age_ms
             if _signal_state_stale(signal_row):
                 stale_signal_strategy_ids.append(strategy_id)
+            if _signal_state_name(signal_row) == BLOCKED_RECONCILIATION:
+                blocked_reconciliation_strategy_ids.append(strategy_id)
 
         state_stream = _mapping(state_streams_by_strategy_id.get(strategy_id))
         state_stream_age_ms = safe_int(state_stream.get("age_ms"))
@@ -170,14 +179,23 @@ def evaluate_tokenmm_readiness(
 
     missing_signal_strategy_ids = _sorted_texts(missing_signal_strategy_ids)
     stale_signal_strategy_ids = _sorted_texts(stale_signal_strategy_ids)
+    blocked_reconciliation_strategy_ids = _sorted_texts(blocked_reconciliation_strategy_ids)
     missing_state_stream_strategy_ids = _sorted_texts(missing_state_stream_strategy_ids)
     stale_state_stream_strategy_ids = _sorted_texts(stale_state_stream_strategy_ids)
 
-    signals_ok = not missing_signal_strategy_ids and not stale_signal_strategy_ids
+    signals_ok = (
+        not missing_signal_strategy_ids
+        and not stale_signal_strategy_ids
+        and not blocked_reconciliation_strategy_ids
+    )
     state_streams_ok = (
         not missing_state_stream_strategy_ids and not stale_state_stream_strategy_ids
     )
-    signal_failures = _sorted_texts(missing_signal_strategy_ids + stale_signal_strategy_ids)
+    signal_failures = _sorted_texts(
+        missing_signal_strategy_ids
+        + stale_signal_strategy_ids
+        + blocked_reconciliation_strategy_ids,
+    )
     state_stream_failures = _sorted_texts(
         missing_state_stream_strategy_ids + stale_state_stream_strategy_ids,
     )
@@ -190,13 +208,14 @@ def evaluate_tokenmm_readiness(
             summary=(
                 "All required TokenMM strategies expose fresh signals."
                 if signals_ok
-                else f"{len(signal_failures)} strategy signals are missing or stale."
+                else f"{len(signal_failures)} strategy signals are missing, stale, or blocked."
             ),
             details={
                 "now_ms": now_ms_value,
                 "required_strategy_ids": list(required_strategy_ids),
                 "missing_signal_strategy_ids": missing_signal_strategy_ids,
                 "stale_signal_strategy_ids": stale_signal_strategy_ids,
+                "blocked_reconciliation_strategy_ids": blocked_reconciliation_strategy_ids,
                 "signal_state_age_ms_by_strategy_id": signal_state_age_ms_by_strategy_id,
             },
         ),
@@ -235,6 +254,7 @@ def evaluate_tokenmm_readiness(
             "ready_strategy_count": ready_strategy_count,
             "missing_signal_strategy_ids": missing_signal_strategy_ids,
             "stale_signal_strategy_ids": stale_signal_strategy_ids,
+            "blocked_reconciliation_strategy_ids": blocked_reconciliation_strategy_ids,
             "missing_state_stream_strategy_ids": missing_state_stream_strategy_ids,
             "stale_state_stream_strategy_ids": stale_state_stream_strategy_ids,
             "failed_checks": failed_checks,

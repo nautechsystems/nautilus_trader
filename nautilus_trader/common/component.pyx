@@ -2279,6 +2279,7 @@ cdef class MessageBus:
 
         self._streaming_types = set()
         self._resolved = False
+        self._publish_shutdown_requested = False
 
         # Counters
         self.sent_count = 0
@@ -2763,17 +2764,30 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes = None
+        cdef ShutdownSystem shutdown_command
         if isinstance(msg, self._publishable_types):
-            if external_pub and self._database is not None and not self._database.is_closed():
-                if isinstance(msg, bytes):
-                    payload_bytes = msg
+            if external_pub and self._database is not None:
+                if self._database.is_closed():
+                    if not self._publish_shutdown_requested:
+                        self._publish_shutdown_requested = True
+                        shutdown_command = ShutdownSystem(
+                            trader_id=self.trader_id,
+                            component_id=ComponentId("MessageBus"),
+                            command_id=UUID4(),
+                            ts_init=self._clock.timestamp_ns(),
+                            reason=f"Message bus backing database closed while publishing '{topic}'",
+                        )
+                        self.publish_c("commands.system.shutdown", shutdown_command, False)
                 else:
-                    payload_bytes = self.serializer.serialize(msg)
+                    if isinstance(msg, bytes):
+                        payload_bytes = msg
+                    else:
+                        payload_bytes = self.serializer.serialize(msg)
 
-                self._database.publish(
-                    topic,
-                    payload_bytes,
-                )
+                    self._database.publish(
+                        topic,
+                        payload_bytes,
+                    )
 
             for listener in self._listeners:
                 if listener.is_closed():

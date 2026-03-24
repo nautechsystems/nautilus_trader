@@ -106,6 +106,11 @@ export function TopBar({
         </div>
         <div className="stat-card">
           <AlertTriangle size={14} />
+          <span className="stat-card__label">Degraded</span>
+          <strong className="text-warning">{stats.degraded}</strong>
+        </div>
+        <div className="stat-card">
+          <AlertTriangle size={14} />
           <span className="stat-card__label">Failed</span>
           <strong className="text-danger">{stats.failed}</strong>
         </div>

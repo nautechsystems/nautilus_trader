@@ -53,10 +53,10 @@ impl Default for DatabaseConfig {
             ssl: false,
             connection_timeout: 20,
             response_timeout: 20,
-            number_of_retries: 10,
+            number_of_retries: 100,
             exponent_base: 2,
-            max_delay: 5,
-            factor: 100,
+            max_delay: 1000,
+            factor: 2,
         }
     }
 }
@@ -160,10 +160,10 @@ mod tests {
         assert!(!config.ssl);
         assert_eq!(config.connection_timeout, 20);
         assert_eq!(config.response_timeout, 20);
-        assert_eq!(config.number_of_retries, 10);
+        assert_eq!(config.number_of_retries, 100);
         assert_eq!(config.exponent_base, 2);
-        assert_eq!(config.max_delay, 5);
-        assert_eq!(config.factor, 100);
+        assert_eq!(config.max_delay, 1000);
+        assert_eq!(config.factor, 2);
     }
 
     #[rstest]
