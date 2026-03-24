@@ -1164,4 +1164,44 @@ describe('profile-scoped read APIs', () => {
     expect(alerts[0]?.id).toBe('alert-from-alerts-key');
     expect(alerts[0]?.level).toBe('CRITICAL');
   });
+
+  it('requests alerts contract_version 2 and preserves realtime lineage metadata on the returned rows', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'alert-standard-1',
+            severity: 'warning',
+            message: 'standard alerts snapshot',
+            timestamp: 1_700_000_000,
+            details: {},
+          },
+        ],
+        realtime: {
+          contract_version: 2,
+          surface: 'alerts',
+          profile: 'default',
+          surface_query_key: 'alerts|profile=default',
+          stream_id: 'alerts-main',
+          snapshot_revision: 'alerts-snap-1',
+          last_seq: 9,
+        },
+      },
+    });
+
+    const alerts = await api.getAlerts({ contractVersion: 2 });
+
+    expect(fetchJSONMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/alerts?contract_version=2'),
+      undefined,
+    );
+    expect((alerts as any).realtime).toEqual(expect.objectContaining({
+      contract_version: 2,
+      surface: 'alerts',
+      stream_id: 'alerts-main',
+      snapshot_revision: 'alerts-snap-1',
+      last_seq: 9,
+    }));
+  });
 });

@@ -8,6 +8,7 @@ import { useAlertsStore } from './stores';
 const mockGetAlerts = vi.hoisted(() => vi.fn());
 const mockUsePolling = vi.hoisted(() => vi.fn());
 const mockUseWebSocket = vi.hoisted(() => vi.fn());
+const mockUseStandardWebSocketSubscription = vi.hoisted(() => vi.fn());
 
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>();
@@ -24,6 +25,7 @@ vi.mock('./api', async (importOriginal) => {
 vi.mock('./hooks/index', () => ({
   usePolling: (...args: any[]) => mockUsePolling(...args),
   useWebSocket: (...args: any[]) => mockUseWebSocket(...args),
+  useStandardWebSocketSubscription: (...args: any[]) => mockUseStandardWebSocketSubscription(...args),
 }));
 
 type AlertsStoreState = {
@@ -62,6 +64,7 @@ describe('Alerts wiring', () => {
     mockGetAlerts.mockReset();
     mockUsePolling.mockReset();
     mockUseWebSocket.mockReset();
+    mockUseStandardWebSocketSubscription.mockReset();
     wsHandler = null;
 
     storeState = {
@@ -84,6 +87,9 @@ describe('Alerts wiring', () => {
 
     mockUsePolling.mockImplementation(() => {
       // Keep polling side effects disabled in these websocket wiring tests.
+    });
+    mockUseStandardWebSocketSubscription.mockImplementation(() => {
+      // Wiring tests cover the legacy snapshot path only.
     });
 
     mockUseWebSocket.mockImplementation((_event: string, handler: (payload: unknown) => void) => {
@@ -204,7 +210,12 @@ describe('Alerts wiring', () => {
   it('keeps existing alerts when the REST refresh fails transiently', async () => {
     storeState.rows = [createAlert({ id: 'existing-alert', message: 'keep me' })];
     mockGetAlerts.mockRejectedValueOnce(new Error('temporary failure'));
+    let invoked = false;
     mockUsePolling.mockImplementation((fn: () => Promise<void>) => {
+      if (invoked) {
+        return;
+      }
+      invoked = true;
       void fn();
     });
 

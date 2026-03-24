@@ -24,7 +24,7 @@ const makeAlert = (overrides: Partial<AlertFixture> = {}): AlertFixture => ({
 });
 
 test.describe('Alerts realtime cutover', () => {
-  test('stays idle while healthy and uses summary invalidation recovery when the standard surface is enabled', async ({ page, baseURL }) => {
+  test('uses standard subscribe and summary invalidation recovery when the standard surface is enabled', async ({ page, baseURL }) => {
     const alertRequests: string[] = [];
 
     await page.addInitScript(() => {
@@ -69,9 +69,33 @@ test.describe('Alerts realtime cutover', () => {
           listeners.get(event)?.delete(handler);
           return testSocket;
         },
-        emit(event: string, payload?: any) {
+        emit(event: string, payload?: any, ack?: (response: any) => void) {
           if (event === 'set_profile') {
             testSocket.profile = payload?.profile;
+            return true;
+          }
+          if (event === 'subscribe' && typeof ack === 'function') {
+            ack({
+              accepted: true,
+              contract_version: payload?.contract_version,
+              surface: payload?.surface,
+              profile: payload?.profile,
+              surface_query_key: payload?.surface_query_key,
+              stream_id: payload?.stream_id,
+              snapshot_revision: payload?.snapshot_revision,
+              accepted_start_seq: payload?.resume_from_seq,
+              last_seq: payload?.resume_from_seq,
+              requested_resume_from_seq: payload?.resume_from_seq,
+              capabilities: {
+                recovery_mode: 'invalidate_only',
+                replay_supported: false,
+                transport_mode: 'polling_only',
+              },
+            });
+            return true;
+          }
+          if (event === 'unsubscribe' && typeof ack === 'function') {
+            ack({ ok: true, surface: payload?.surface ?? null });
             return true;
           }
           emit(event, payload);
@@ -146,6 +170,20 @@ test.describe('Alerts realtime cutover', () => {
             has_more: false,
             next_offset: null,
             next_cursor: null,
+            realtime: {
+              contract_version: 2,
+              surface: 'alerts',
+              profile: 'default',
+              surface_query_key: 'alerts|profile=default',
+              stream_id: 'alerts-main',
+              snapshot_revision: 'alerts-snap-1',
+              last_seq: requestNumber === 1 ? 0 : 1,
+              capabilities: {
+                recovery_mode: 'invalidate_only',
+                replay_supported: false,
+                transport_mode: 'polling_only',
+              },
+            },
           },
         }),
       });
@@ -155,14 +193,27 @@ test.describe('Alerts realtime cutover', () => {
 
     await expect(page.getByRole('cell', { name: 'Initial warning' }).first()).toBeVisible();
     await expect(page.getByText(/^LIVE$/)).toBeVisible();
+    const requestsAtHealthyIdleStart = alertRequests.length;
     await page.waitForTimeout(1_200);
-    expect(alertRequests).toHaveLength(1);
+    const requestsBeforeInvalidate = alertRequests.length;
+    expect(requestsAtHealthyIdleStart).toBeGreaterThanOrEqual(1);
+    expect(requestsBeforeInvalidate).toBe(requestsAtHealthyIdleStart);
 
     await page.evaluate(() => {
-      (window as any).__fluxboardTestSocket.__emitServer('market_update', {
-        alerts: {
-          count: 1,
-          latest_ts_ms: 1_700_000_100_000,
+      (window as any).__fluxboardTestSocket.__emitServer('realtime_event', {
+        contract_version: 2,
+        surface: 'alerts',
+        profile: 'default',
+        stream_id: 'alerts-main',
+        kind: 'invalidate',
+        seq: 1,
+        snapshot_revision: 'alerts-snap-1',
+        server_ts_ms: 1_700_000_100_000,
+        payload: {
+          alerts: {
+            count: 1,
+            latest_ts_ms: 1_700_000_100_000,
+          },
         },
       });
     });
@@ -170,6 +221,6 @@ test.describe('Alerts realtime cutover', () => {
     await expect(page.getByText('RECOVERING')).toBeVisible();
     await expect(page.getByRole('cell', { name: 'Recovered alert after summary refresh' }).first()).toBeVisible();
     await expect(page.getByText(/^LIVE$/)).toBeVisible();
-    expect(alertRequests).toHaveLength(2);
+    expect(alertRequests.length).toBeGreaterThan(requestsBeforeInvalidate);
   });
 });

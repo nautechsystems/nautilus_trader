@@ -998,6 +998,7 @@ function attachAlertsPaginationMetadata(
     has_more?: boolean;
     next_offset?: number | null;
     next_cursor?: string | null;
+    realtime?: RealtimeSnapshotLineage;
   };
   if (!payload || typeof payload !== 'object') {
     return out;
@@ -1018,6 +1019,8 @@ function attachAlertsPaginationMetadata(
   if (typeof payload.has_more === 'boolean') out.has_more = payload.has_more;
   if (nextOffset !== undefined) out.next_offset = nextOffset;
   if (nextCursor !== undefined) out.next_cursor = nextCursor;
+  const realtime = normalizeRealtimeSnapshotLineage(payload.realtime ?? payload);
+  if (realtime) out.realtime = realtime;
   return out;
 }
 
@@ -2111,8 +2114,12 @@ export const api = {
   },
 
   // Alerts - Flask returns {"alerts": [...]}
-  getAlerts: async (): Promise<Alert[]> => {
+  getAlerts: async (options?: { contractVersion?: number }): Promise<Alert[]> => {
     const qs = new URLSearchParams();
+    const contractVersion = options?.contractVersion;
+    if (typeof contractVersion === 'number' && Number.isFinite(contractVersion)) {
+      qs.set('contract_version', String(Math.max(1, Math.trunc(contractVersion))));
+    }
     appendProfileQuery(qs);
     const response = await fetchJSON<FluxEnvelope<{
       rows?: Alert[];

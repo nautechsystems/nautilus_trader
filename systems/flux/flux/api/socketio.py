@@ -47,7 +47,7 @@ SOCKETIO_FAILURE_BACKOFF_CAP_S = 30.0
 SOCKETIO_FAILURE_STREAK_CAP = 6
 REALTIME_STANDARD_CONTRACT_VERSION = 2
 REALTIME_STANDARD_EVENT = "realtime_event"
-REALTIME_SUPPORTED_SURFACES = ("signal", "trades")
+REALTIME_SUPPORTED_SURFACES = ("signal", "trades", "alerts")
 REALTIME_STANDARD_SNAPSHOT_REVISION = 1
 REALTIME_HEARTBEAT_JITTER_TOLERANCE_MS = 250
 REALTIME_MISSED_HEARTBEATS_BEFORE_STALE = 2
@@ -1298,6 +1298,32 @@ class FluxSocketEmitter:
                                 subscription,
                                 kind="heartbeat",
                                 seq=self.current_standard_seq(profile, "signal"),
+                                payload={},
+                            )
+
+                alerts_subscriptions = active_subscriptions.get("alerts", [])
+                if alerts_subscriptions:
+                    if alerts_changed:
+                        alerts_seq = self._next_standard_seq(profile, "alerts")
+                        payload = {
+                            "alerts": {
+                                "count": alerts_signature[0],
+                                "latest_ts_ms": alerts_signature[1],
+                            },
+                        }
+                        for subscription in alerts_subscriptions:
+                            self._emit_standard_event(
+                                subscription,
+                                kind="invalidate",
+                                seq=alerts_seq,
+                                payload=payload,
+                            )
+                    else:
+                        for subscription in alerts_subscriptions:
+                            self._emit_standard_event(
+                                subscription,
+                                kind="heartbeat",
+                                seq=self.current_standard_seq(profile, "alerts"),
                                 payload={},
                             )
 

@@ -1857,6 +1857,41 @@ def create_flux_api_app(  # noqa: C901
                 return None
         return stream_metadata
 
+    def _canonical_alerts_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any] | None:
+        if requested_strategy:
+            return None
+        if limit != 50:
+            return None
+        if offset != 0:
+            return None
+        normalized_profile = normalize_profile(profile_text)
+        if not normalized_profile:
+            return None
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
+            surface="alerts",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="alerts",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "alerts"),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
     def _response(
         *,
         ok: bool,
@@ -2885,6 +2920,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/alerts")
     def api_alerts() -> Response:
+        contract_version = _requested_contract_version()
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         offset = _clamp_offset(request.args.get("offset"), default=0)
         requested_strategy = decode_text(request.args.get("strategy")).strip()
@@ -2893,6 +2929,7 @@ def create_flux_api_app(  # noqa: C901
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
+            strategy_ids = [strategy_id]
             all_rows = store.load_all_alerts_rows(strategy_id)
         elif profile_strategy_ids:
             strategy_ids = profile_strategy_ids
@@ -2907,6 +2944,7 @@ def create_flux_api_app(  # noqa: C901
             )
         else:
             strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            strategy_ids = [strategy_id]
             all_rows = store.load_all_alerts_rows(strategy_id)
 
         total = len(all_rows)
@@ -2921,6 +2959,16 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_alerts_realtime_metadata(
+                requested_strategy=requested_strategy,
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                limit=limit,
+                offset=offset,
+            )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
         return _ok(data=payload)
 
     @app.delete("/api/v1/alerts")

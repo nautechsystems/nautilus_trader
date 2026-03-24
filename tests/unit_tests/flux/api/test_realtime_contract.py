@@ -119,6 +119,24 @@ def _trades_snapshot(
         return response.get_json()
 
 
+def _alerts_snapshot(
+    app,
+    *,
+    profile: str = "tokenmm",
+    query: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with app.test_client() as client:
+        query_string = {"profile": profile, "contract_version": 2}
+        if query is not None:
+            query_string.update(query)
+        response = client.get(
+            "/api/v1/alerts",
+            query_string=query_string,
+        )
+        assert response.status_code == 200
+        return response.get_json()
+
+
 def _subscribe_without_background_emitter(
     socket_client,
     emitter,
@@ -196,6 +214,67 @@ def test_signals_snapshot_contract_version_two_exposes_realtime_metadata(
     assert realtime["last_seq"] == 0
     assert realtime["capabilities"]["recovery_mode"] == "invalidate_only"
     assert realtime["capabilities"]["replay_supported"] is False
+
+
+def test_alerts_snapshot_contract_version_two_exposes_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    body = _alerts_snapshot(app)
+    realtime = body["data"]["realtime"]
+
+    assert realtime["contract_version"] == 2
+    assert realtime["surface"] == "alerts"
+    assert realtime["profile"] == "tokenmm"
+    assert realtime["surface_query_key"]
+    assert realtime["stream_id"]
+    assert realtime["snapshot_revision"] == 1
+    assert realtime["last_seq"] == 0
+    assert realtime["capabilities"]["recovery_mode"] == "invalidate_only"
+    assert realtime["capabilities"]["replay_supported"] is False
+
+
+def test_alerts_noncanonical_queries_withhold_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    for query in (
+        {"limit": 10},
+        {"offset": 1},
+        {"strategy": flux_config.identity.strategy_id},
+    ):
+        body = _alerts_snapshot(app, query=query)
+        assert "realtime" not in body["data"]
 
 
 def test_signals_noncanonical_queries_withhold_realtime_metadata(
@@ -312,6 +391,158 @@ def test_standard_contract_polling_only_transport_subscribes_and_receives_heartb
     assert payload["stream_id"] == ack["stream_id"]
     assert payload["snapshot_revision"] == ack["snapshot_revision"]
     assert isinstance(payload["server_ts_ms"], int)
+    client.disconnect()
+
+
+def test_standard_alerts_transport_subscribes_and_receives_heartbeat(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _alerts_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="alerts"),
+    )
+
+    assert ack["accepted"] is True
+    assert ack["contract_version"] == 2
+    assert ack["surface"] == "alerts"
+    assert ack["accepted_start_seq"] == 0
+    assert ack["capabilities"]["recovery_mode"] == "invalidate_only"
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "alerts"
+    assert payload["profile"] == "tokenmm"
+    assert payload["kind"] == "heartbeat"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    assert isinstance(payload["server_ts_ms"], int)
+    client.disconnect()
+
+
+def test_standard_alerts_change_emits_invalidate_with_summary(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _alerts_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="alerts"),
+    )
+    assert ack["accepted"] is True
+    _ = _take_realtime_packets(client)
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.streams[keys.alerts()] = list(redis_client.streams.get(keys.alerts(), [])) + [
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "row_id": "alert-002",
+            "ts_ms": 1_700_000_000_900,
+            "message": "another-alert",
+        },
+    ]
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "alerts"
+    assert payload["kind"] == "invalidate"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    assert payload["payload"]["alerts"]["count"] == 2
+    assert payload["payload"]["alerts"]["latest_ts_ms"] == 1_700_000_000_900
+    client.disconnect()
+
+
+def test_standard_alerts_subscribe_emits_recovery_required_on_mid_session_withdrawal(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _alerts_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="alerts"),
+    )
+
+    assert ack["accepted"] is True
+    assert ack["surface_query_key"] == snapshot["data"]["realtime"]["surface_query_key"]
+    assert ack["stream_id"] == snapshot["data"]["realtime"]["stream_id"]
+    assert ack["snapshot_revision"] == snapshot["data"]["realtime"]["snapshot_revision"]
+    assert ack["last_seq"] == snapshot["data"]["realtime"]["last_seq"]
+
+    app.extensions["flux_realtime_rollout"]["surface_enabled"]["alerts"] = False
+    emitter.emit_once(profile="tokenmm")
+    packets = _take_realtime_packets(client)
+
+    assert len(packets) == 1
+    payload = packets[0]["args"][0]
+    assert payload["kind"] == "recovery_required"
+    assert payload["reason"] == "capability_withdrawn"
     client.disconnect()
 
 

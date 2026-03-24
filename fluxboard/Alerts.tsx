@@ -10,8 +10,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, normalizeAlertsSnapshotCandidate } from './api';
 import { useAlertsStore } from './stores';
 import { INTERVALS } from './constants';
-import { usePolling, useWebSocket } from './hooks/index';
-import type { Alert, AlertLevel } from './types';
+import { usePolling, useStandardWebSocketSubscription, useWebSocket } from './hooks/index';
+import type { Alert, AlertLevel, RealtimeSnapshotLineage } from './types';
 import { AlertsTable, AlertDetails } from './components/domain/alerts';
 import { PanelHeader } from './components/shared/PanelHeader';
 import { PanelBody } from './components/shared/PanelBody';
@@ -60,6 +60,23 @@ function compareAlertRows(left: Alert, right: Alert): number {
   return getAlertTimestamp(right) - getAlertTimestamp(left);
 }
 
+type AlertsRealtimeSummary = {
+  count?: number;
+  latest_ts_ms?: number | null;
+};
+
+type AlertsSnapshotWithRealtime = Alert[] & {
+  realtime?: RealtimeSnapshotLineage;
+};
+
+function getAlertsRealtimeLineage(rows: Alert[]): RealtimeSnapshotLineage | null {
+  return ((rows as AlertsSnapshotWithRealtime).realtime ?? null);
+}
+
+function buildAlertsSummaryKey(summary: AlertsRealtimeSummary | null | undefined, seq?: number): string {
+  return `summary:${String(summary?.count ?? '')}:${String(summary?.latest_ts_ms ?? '')}:${String(seq ?? '')}`;
+}
+
 export default function Alerts({
   dense = false,
   onRemove,
@@ -90,12 +107,15 @@ export default function Alerts({
   ));
   const { isMobile } = useMobileLayout();
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
 
   // Track last WebSocket data to prevent redundant updates
   const lastWebSocketDataRef = useRef<string>('');
   const lastAlertsSummaryRef = useRef<string>('');
   const pendingAlertsSummaryRef = useRef<string>('');
   const summaryRefreshRequestIdRef = useRef(0);
+  const refreshRequestIdRef = useRef(0);
+  const authoritativeRecoveryPendingRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const lastUpdateRef = useRef(lastUpdate);
   const initialRowsRef = useRef(rows);
@@ -132,6 +152,12 @@ export default function Alerts({
       if (!hasLoadedRef.current) {
         return RealtimeSurfaceState.SYNCING;
       }
+      if (!standardLineage) {
+        return RealtimeSurfaceState.STALE;
+      }
+      if (authoritativeRecoveryPendingRef.current) {
+        return RealtimeSurfaceState.STALE;
+      }
 
       const ageMs = Date.now() - lastUpdateRef.current;
       if (ageMs > STALE_THRESHOLDS.NORMAL * 2) {
@@ -142,12 +168,19 @@ export default function Alerts({
       }
       return RealtimeSurfaceState.LIVE;
     });
-  }, [alertsRealtimeStandardEnabled, loading]);
+  }, [alertsRealtimeStandardEnabled, loading, standardLineage]);
 
-  const refreshAlertsFromApi = useCallback(async (options?: { showLoading?: boolean; summaryKey?: string }) => {
+  const refreshAlertsFromApi = useCallback(async (options?: {
+    showLoading?: boolean;
+    summaryKey?: string;
+    authoritativeRecovery?: boolean;
+  }) => {
     const shouldShowLoading = Boolean(options?.showLoading);
     const summaryKey = options?.summaryKey ?? '';
+    const authoritativeRecovery = Boolean(options?.authoritativeRecovery);
     const summaryRequestId = summaryKey ? (summaryRefreshRequestIdRef.current + 1) : 0;
+    const refreshRequestId = refreshRequestIdRef.current + 1;
+    refreshRequestIdRef.current = refreshRequestId;
     if (alertsRealtimeStandardEnabled) {
       setSurfaceState(summaryKey ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.SYNCING);
     }
@@ -158,11 +191,22 @@ export default function Alerts({
       summaryRefreshRequestIdRef.current = summaryRequestId;
       pendingAlertsSummaryRef.current = summaryKey;
     }
+    if (authoritativeRecovery) {
+      authoritativeRecoveryPendingRef.current = true;
+    }
     try {
-      const data = await api.getAlerts();
+      const data = await api.getAlerts(
+        alertsRealtimeStandardEnabled ? { contractVersion: 2 } : undefined,
+      );
+      if (refreshRequestId !== refreshRequestIdRef.current) {
+        return;
+      }
       if (summaryKey && summaryRequestId !== summaryRefreshRequestIdRef.current) {
         return;
       }
+      const nextLineage = getAlertsRealtimeLineage(data);
+      setStandardLineage(nextLineage);
+      authoritativeRecoveryPendingRef.current = false;
       alertsController.applySnapshot(data);
       setRows(data);
       const receivedAt = Date.now();
@@ -170,12 +214,20 @@ export default function Alerts({
       lastUpdateRef.current = receivedAt;
       hasLoadedRef.current = true;
       if (alertsRealtimeStandardEnabled) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        setSurfaceState(
+          nextLineage ? RealtimeSurfaceState.LIVE : RealtimeSurfaceState.STALE,
+        );
       }
       if (summaryKey) {
         lastAlertsSummaryRef.current = summaryKey;
       }
     } catch (e) {
+      if (refreshRequestId !== refreshRequestIdRef.current) {
+        return;
+      }
+      if (summaryKey && summaryRequestId !== summaryRefreshRequestIdRef.current) {
+        return;
+      }
       if (alertsRealtimeStandardEnabled) {
         setSurfaceState(RealtimeSurfaceState.STALE);
       }
@@ -208,6 +260,7 @@ export default function Alerts({
 
   useEffect(() => {
     if (!alertsRealtimeStandardEnabled) {
+      setStandardLineage(null);
       return;
     }
     void loadAlerts();
@@ -236,9 +289,74 @@ export default function Alerts({
   // Auto-refresh polling with usePolling hook
   usePolling(loadAlerts, INTERVALS.ALERTS_POLL, pollingEnabled);
 
+  const requestAlertsSummaryRefresh = useCallback((summary: AlertsRealtimeSummary | null | undefined, seq?: number) => {
+    const summaryKey = buildAlertsSummaryKey(summary, seq);
+    if (
+      lastAlertsSummaryRef.current === summaryKey
+      || pendingAlertsSummaryRef.current === summaryKey
+    ) {
+      return;
+    }
+    void refreshAlertsFromApi({
+      showLoading: !hasLoadedRef.current,
+      summaryKey,
+      authoritativeRecovery: true,
+    });
+  }, [refreshAlertsFromApi]);
+
+  const markRealtimeActivity = useCallback(() => {
+    if (alertsRealtimeStandardEnabled && !standardLineage) {
+      return;
+    }
+    if (authoritativeRecoveryPendingRef.current) {
+      return;
+    }
+    const receivedAt = Date.now();
+    setLastUpdate(receivedAt);
+    lastUpdateRef.current = receivedAt;
+    if (alertsRealtimeStandardEnabled) {
+      setSurfaceState((current) => (
+        current === RealtimeSurfaceState.RECOVERING
+          ? current
+          : RealtimeSurfaceState.LIVE
+      ));
+    }
+  }, [alertsRealtimeStandardEnabled, standardLineage]);
+
+  useStandardWebSocketSubscription<{ alerts?: AlertsRealtimeSummary }>({
+    enabled: alertsRealtimeStandardEnabled && Boolean(standardLineage),
+    lineage: alertsRealtimeStandardEnabled ? standardLineage : null,
+    onEvent: (event) => {
+      if (event.kind === 'heartbeat') {
+        markRealtimeActivity();
+        return;
+      }
+
+      const alertsSummary = event.payload?.alerts;
+      if (event.kind === 'invalidate') {
+        if (alertsRealtimeStandardEnabled) {
+          setSurfaceState(RealtimeSurfaceState.RECOVERING);
+        }
+        requestAlertsSummaryRefresh(alertsSummary, event.seq);
+      }
+    },
+    onFailure: () => {
+      if (alertsRealtimeStandardEnabled) {
+        setSurfaceState(RealtimeSurfaceState.RECOVERING);
+      }
+      void refreshAlertsFromApi({
+        showLoading: !hasLoadedRef.current,
+        authoritativeRecovery: true,
+      });
+    },
+    onSubscribed: () => {
+      markRealtimeActivity();
+    },
+  });
+
   // Subscribe to live alert updates via WebSocket using useWebSocket hook
   useWebSocket<{ alerts?: unknown[] | { count?: number; latest_ts_ms?: number | null }; rows?: unknown[] }>(
-    'market_update',
+    alertsRealtimeStandardEnabled ? '__alerts_legacy_disabled__' : 'market_update',
     useCallback(
       (payload) => {
         const alertsSummary = payload && typeof payload === 'object' ? (payload as any).alerts : undefined;
@@ -247,13 +365,7 @@ export default function Alerts({
           && typeof alertsSummary === 'object'
           && !Array.isArray(alertsSummary)
         ) {
-          const summaryKey = `summary:${String((alertsSummary as any).count ?? '')}:${String((alertsSummary as any).latest_ts_ms ?? '')}`;
-          if (
-            lastAlertsSummaryRef.current !== summaryKey
-            && pendingAlertsSummaryRef.current !== summaryKey
-          ) {
-            void refreshAlertsFromApi({ showLoading: !hasLoadedRef.current, summaryKey });
-          }
+          requestAlertsSummaryRefresh(alertsSummary as AlertsRealtimeSummary);
           return;
         }
 
@@ -317,28 +429,44 @@ export default function Alerts({
           }
         }
       },
-      [alertsController, alertsRealtimeStandardEnabled, setRows, refreshAlertsFromApi]
+      [alertsController, alertsRealtimeStandardEnabled, setRows, requestAlertsSummaryRefresh]
     ),
-    { surface: 'alerts' }
+    alertsRealtimeStandardEnabled ? undefined : { surface: 'alerts' }
   );
 
   // Manual refresh handler
   const handleRefresh = useCallback(async () => {
+    const refreshRequestId = refreshRequestIdRef.current + 1;
+    refreshRequestIdRef.current = refreshRequestId;
     setRefreshing(true);
     if (alertsRealtimeStandardEnabled) {
       setSurfaceState(RealtimeSurfaceState.RECOVERING);
     }
     try {
-      const data = await api.getAlerts();
+      const data = await api.getAlerts(
+        alertsRealtimeStandardEnabled ? { contractVersion: 2 } : undefined,
+      );
+      if (refreshRequestId !== refreshRequestIdRef.current) {
+        return;
+      }
+      const nextLineage = getAlertsRealtimeLineage(data);
+      setStandardLineage(nextLineage);
+      authoritativeRecoveryPendingRef.current = false;
       alertsController.applySnapshot(data);
       setRows(data);
       const refreshedAt = Date.now();
       setLastUpdate(refreshedAt);
       lastUpdateRef.current = refreshedAt;
+      hasLoadedRef.current = true;
       if (alertsRealtimeStandardEnabled) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        setSurfaceState(
+          nextLineage ? RealtimeSurfaceState.LIVE : RealtimeSurfaceState.STALE,
+        );
       }
     } catch (e) {
+      if (refreshRequestId !== refreshRequestIdRef.current) {
+        return;
+      }
       if (alertsRealtimeStandardEnabled) {
         setSurfaceState(RealtimeSurfaceState.STALE);
       }
