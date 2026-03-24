@@ -234,6 +234,34 @@ def test_portfolio_margin_account_info_decodes_minimal_asset_balance_row():
     assert balances[0].free.as_decimal() == Decimal("975.0")
 
 
+def test_portfolio_margin_account_info_uses_cross_wallet_balance_when_wallet_fields_absent():
+    payload = {
+        "assets": [
+            {
+                "asset": "USDT",
+                "crossWalletBalance": "1250.5",
+                "crossUnPnl": "0.0",
+                "initialMargin": "0.0",
+                "maintMargin": "0.0",
+                "openOrderInitialMargin": "0.0",
+                "positionInitialMargin": "0.0",
+                "updateTime": 0,
+            },
+        ],
+        "positions": [],
+        "tradeGroupId": 1,
+    }
+
+    decoded = msgspec.json.decode(
+        json.dumps(payload).encode(),
+        type=BinanceFuturesAccountInfo,
+    )
+    balances = decoded.parse_to_account_balances()
+
+    assert balances[0].total.as_decimal() == Decimal("1250.5")
+    assert balances[0].free.as_decimal() == Decimal("1250.5")
+
+
 def test_portfolio_margin_account_info_decodes_without_fee_tier_metadata():
     payload = {
         "assets": [
@@ -267,6 +295,152 @@ def test_portfolio_margin_order_update_decodes_without_working_type():
     )
 
     assert decoded.data.o.wt is None
+
+
+class TestBinanceFuturesPortfolioMarginExecutionClient:
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        self.loop = request.getfixturevalue("event_loop")
+        self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+
+        self.trader_id = TestIdStubs.trader_id()
+        self.venue = BINANCE_VENUE
+        self.account_id = AccountId(f"{self.venue.value}-001")
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        self.cache = TestComponentStubs.cache()
+
+        self.http_client = BinanceHttpClient(
+            clock=self.clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://fapi.binance.com/",
+        )
+
+        self.provider = BinanceFuturesInstrumentProvider(
+            client=self.http_client,
+            clock=self.clock,
+            config=InstrumentProviderConfig(load_all=True),
+        )
+
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        self.exec_client = BinanceFuturesExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(),
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
+        )
+
+    def test_portfolio_margin_futures_user_stream_ignores_spot_events(self):
+        self.exec_client._handle_user_ws_message(b'{"e":"executionReport"}')
+
+    def test_portfolio_margin_futures_order_update_decodes_without_original_order_type(self):
+        raw = json.dumps(
+            {
+                "e": "ORDER_TRADE_UPDATE",
+                "E": 1700000000000,
+                "T": 1700000000000,
+                "o": {
+                    "s": "ETHUSDT",
+                    "c": "client-1",
+                    "S": "BUY",
+                    "o": "LIMIT",
+                    "f": "GTC",
+                    "q": "1",
+                    "p": "2000",
+                    "ap": "0",
+                    "sp": "0",
+                    "x": "NEW",
+                    "X": "NEW",
+                    "i": 12345,
+                    "l": "0",
+                    "z": "0",
+                    "L": "0",
+                    "N": None,
+                    "n": None,
+                    "T": 1700000000000,
+                    "t": 0,
+                    "b": "0",
+                    "a": "0",
+                    "m": False,
+                    "R": False,
+                    "wt": "CONTRACT_PRICE",
+                    "ps": "BOTH",
+                    "cp": False,
+                    "pP": False,
+                    "si": 0,
+                    "ss": 0,
+                    "rp": "0",
+                    "gtd": 0,
+                    "W": 1700000000000,
+                    "V": "NONE",
+                },
+            },
+        ).encode()
+
+        decoded = self.exec_client._decoder_futures_order_update.decode(raw)
+
+        assert decoded.o.c == "client-1"
+        assert decoded.o.ot is None
+
+    def test_portfolio_margin_futures_order_update_decodes_live_pm_new_order_shape(self):
+        raw = json.dumps(
+            {
+                "e": "ORDER_TRADE_UPDATE",
+                "T": 1774348587885,
+                "E": 1774348587892,
+                "fs": "UM",
+                "o": {
+                    "s": "PLUMEUSDT",
+                    "c": "O-20260324-103627-PERP-000-2",
+                    "S": "SELL",
+                    "o": "LIMIT",
+                    "f": "GTX",
+                    "q": "1000",
+                    "p": "0.0105800",
+                    "ap": "0",
+                    "sp": "0",
+                    "x": "NEW",
+                    "X": "NEW",
+                    "i": 933400855,
+                    "l": "0",
+                    "z": "0",
+                    "L": "0",
+                    "n": "0",
+                    "N": "USDT",
+                    "T": 1774348587885,
+                    "t": 0,
+                    "b": "0",
+                    "a": "10.5800000",
+                    "m": False,
+                    "R": False,
+                    "ps": "BOTH",
+                    "rp": "0",
+                    "V": "EXPIRE_MAKER",
+                    "pm": "PM_NONE",
+                    "gtd": 0,
+                },
+            },
+        ).encode()
+
+        decoded = self.exec_client._decoder_futures_order_update.decode(raw)
+
+        assert decoded.o.pP is None
+        assert decoded.o.si is None
+        assert decoded.o.ss is None
 
 
 def test_portfolio_margin_account_update_decodes_without_margin_type():
@@ -1860,6 +2034,36 @@ class TestBinanceFuturesExecutionClient:
         ts_event = mock_generate_account_state.call_args.kwargs["ts_event"]
         # millis_to_nanos goes through float conversion, so allow a tiny rounding skew.
         assert (before_ms * 1_000_000) - 1_000 <= ts_event <= (after_ms * 1_000_000) + 1_000
+
+    @pytest.mark.asyncio
+    async def test_update_account_state_tolerates_missing_portfolio_margin_can_trade_flag(
+        self,
+        mocker,
+    ):
+        account_info = BinanceFuturesAccountInfo(
+            feeTier=None,
+            canTrade=None,
+            canDeposit=None,
+            canWithdraw=None,
+            updateTime=1234567890000,
+            assets=[],
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_account_info",
+            return_value=account_info,
+        )
+        mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_futures_symbol_config",
+            return_value=[],
+        )
+        mock_generate_account_state = mocker.patch.object(self.exec_client, "generate_account_state")
+        mocker.patch.object(self.exec_client, "_await_account_registered", return_value=None)
+
+        await self.exec_client._update_account_state()
+
+        assert mock_generate_account_state.call_count == 1
 
     # -------------------------------------------------------------------------
     # Algo Order Cancellation Tests

@@ -342,6 +342,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
             self._last_maker_position_activity_ns = 0
             self._bounded_convergence_next_start_side = OrderSide.BUY
+            self._side_quote_blockers: dict[str, dict[str, Any]] = {}
 
         def on_start(self) -> None:
             """
@@ -370,6 +371,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._latest_maker_position_report_snapshot = None
             self._last_maker_position_activity_ns = 0
             self._bounded_convergence_next_start_side = OrderSide.BUY
+            self._side_quote_blockers.clear()
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -948,24 +950,187 @@ if _NAUTILUS_IMPORT_ERROR is None:
             return payload or None
 
         def _quote_blockers_payload(self, *, state: str | None = None) -> list[dict[str, Any]]:
+            blockers: list[dict[str, Any]] = []
             pending_cancel_count = len(self._pending_cancel_client_order_ids)
-            if pending_cancel_count <= 0:
-                return []
-            state_name = str(state or getattr(self, "_last_state_name", None) or "").strip().lower()
-            reason_code = (
-                "pending_cancel_stuck"
-                if state_name == "blocked_pending_cancel"
-                else "pending_cancel_in_flight"
+            if pending_cancel_count > 0:
+                state_name = str(state or getattr(self, "_last_state_name", None) or "").strip().lower()
+                reason_code = (
+                    "pending_cancel_stuck"
+                    if state_name == "blocked_pending_cancel"
+                    else "pending_cancel_in_flight"
+                )
+                blocker: dict[str, Any] = {
+                    "reason_code": reason_code,
+                    "pending_cancel_count": pending_cancel_count,
+                }
+                quote_progress = self._quote_progress_payload() or {}
+                oldest_pending_cancel_age_ms = quote_progress.get("oldest_pending_cancel_age_ms")
+                if oldest_pending_cancel_age_ms is not None:
+                    blocker["oldest_pending_cancel_age_ms"] = oldest_pending_cancel_age_ms
+                blockers.append(blocker)
+
+            for side in ("BUY", "SELL"):
+                blocker = self._side_quote_blockers.get(side)
+                if blocker:
+                    blockers.append(dict(blocker))
+
+            return blockers
+
+        def _resolve_order_side(
+            self,
+            client_order_id: ClientOrderId | str | None,
+        ) -> str | None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return None
+
+            place_intent = self._latest_place_intent_by_client_order_id.get(client_order_id_str)
+            if isinstance(place_intent, Mapping):
+                side_text = _order_side_text(place_intent.get("side"))
+                if side_text:
+                    return side_text
+
+            cache = self._inventory_cache()
+            order_fn = getattr(cache, "order", None)
+            if callable(order_fn):
+                with suppress(Exception):
+                    cached_order = order_fn(client_order_id_str)
+                    side_text = _order_side_text(getattr(cached_order, "side", None))
+                    if side_text:
+                        return side_text
+
+            for order in self._managed_orders():
+                if str(getattr(order, "client_order_id", "") or "") != client_order_id_str:
+                    continue
+                side_text = _order_side_text(getattr(order, "side", None))
+                if side_text:
+                    return side_text
+
+            return None
+
+        def _spot_borrow_recovery_threshold_qty(self, side: OrderSide | str | None) -> Decimal | None:
+            if _order_side_text(side) != "SELL" or not self._maker_instrument_is_spot():
+                return None
+            if self._order_qty is None:
+                return None
+            instrument = self._maker_instrument or self._instruments.get(self.config.maker_instrument_id)
+            if instrument is None:
+                qty = _to_decimal_or_none(self._order_qty)
+                return None if qty is None else abs(qty)
+
+            exposure = inventory_mod.base_exposure_from_venue_qty(
+                instrument,
+                self._order_qty,
+                last_px=self._inventory_base_exposure_last_px(),
             )
-            blocker: dict[str, Any] = {
-                "reason_code": reason_code,
-                "pending_cancel_count": pending_cancel_count,
+            qty = exposure.base_qty if exposure.base_qty is not None else exposure.venue_qty
+            return None if qty is None else abs(qty)
+
+        def _has_spot_borrow_recovery_inventory(self, side: OrderSide | str | None) -> bool:
+            if _order_side_text(side) != "SELL":
+                return False
+            recovery_qty = self._spot_borrow_recovery_threshold_qty(side)
+            if recovery_qty is None:
+                return False
+            maker_local_spot_qty = self._maker_local_spot_qty(self._maker_base_currency_code())
+            if maker_local_spot_qty is None:
+                return False
+            return maker_local_spot_qty >= recovery_qty
+
+        def _record_spot_borrow_block(
+            self,
+            *,
+            side: OrderSide | str | None,
+            reason: str,
+            now_ns: int,
+        ) -> bool:
+            side_text = _order_side_text(side)
+            if side_text != "SELL" or not self._maker_instrument_is_spot():
+                return False
+
+            exchange_code = failures_mod.extract_exchange_error_code(reason)
+            existing = self._side_quote_blockers.get(side_text)
+            blocked_since_ts_ms = (
+                int(existing.get("blocked_since_ts_ms"))
+                if isinstance(existing, Mapping) and existing.get("blocked_since_ts_ms") is not None
+                else int(now_ns // 1_000_000)
+            )
+            blocker = {
+                "reason_code": "spot_borrow_cap",
+                "blocked_side": side_text,
+                "exchange_code": exchange_code,
+                "raw_reason": str(reason),
+                "blocked_since_ts_ms": blocked_since_ts_ms,
             }
-            quote_progress = self._quote_progress_payload() or {}
-            oldest_pending_cancel_age_ms = quote_progress.get("oldest_pending_cancel_age_ms")
-            if oldest_pending_cancel_age_ms is not None:
-                blocker["oldest_pending_cancel_age_ms"] = oldest_pending_cancel_age_ms
-            return [blocker]
+            self._side_quote_blockers[side_text] = blocker
+            self._publish_event(
+                "spot_borrow_blocked",
+                blocked_side=side_text,
+                exchange_code=exchange_code,
+                raw_reason=str(reason),
+                blocked_since_ts_ms=blocked_since_ts_ms,
+            )
+            return True
+
+        def _clear_spot_borrow_block(
+            self,
+            *,
+            side: OrderSide | str | None,
+            now_ns: int,
+            recovery: str,
+        ) -> bool:
+            side_text = _order_side_text(side)
+            if side_text is None:
+                return False
+            blocker = self._side_quote_blockers.pop(side_text, None)
+            if blocker is None:
+                return False
+            self._publish_event(
+                "spot_borrow_recovered",
+                blocked_side=side_text,
+                recovery=recovery,
+                exchange_code=blocker.get("exchange_code"),
+                blocked_since_ts_ms=blocker.get("blocked_since_ts_ms"),
+                recovered_ts_ms=int(now_ns // 1_000_000),
+            )
+            return True
+
+        def _handle_spot_borrow_block(
+            self,
+            *,
+            now_ns: int,
+            reason: str,
+            source_event: str,
+            client_order_id: ClientOrderId | str | None,
+        ) -> bool:
+            if not failures_mod.is_spot_borrow_block_reason(reason):
+                return False
+            side_text = self._resolve_order_side(client_order_id)
+            if side_text != "SELL":
+                return False
+
+            self._record_spot_borrow_block(
+                side=side_text,
+                reason=reason,
+                now_ns=now_ns,
+            )
+            ask_orders = [
+                order
+                for order in self._managed_orders()
+                if _order_side_text(getattr(order, "side", None)) == "SELL"
+            ]
+            if ask_orders:
+                self._cancel_managed_quotes(
+                    "spot_borrow_cap",
+                    managed_orders=ask_orders,
+                )
+            self._publish_state(getattr(self, "_last_state_name", None) or "running")
+            self.log.warning(
+                "Spot borrow cap blocking ask quoting "
+                f"strategy_id={self._external_strategy_id} source_event={source_event} "
+                f"client_order_id={client_order_id} reason={reason}",
+            )
+            return True
 
         def _record_order_event_progress(self, event: Any) -> None:
             now_ns = getattr(event, "ts_event", None)
@@ -1171,14 +1336,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     now_ns = int(self.clock.timestamp_ns())
             if now_ns is None:
                 return
-            self._pop_place_intent(getattr(event, "client_order_id", None))
+            client_order_id = getattr(event, "client_order_id", None)
+            if self._handle_spot_borrow_block(
+                now_ns=int(now_ns),
+                reason=reason,
+                source_event="order_rejected",
+                client_order_id=client_order_id,
+            ):
+                self._pop_place_intent(client_order_id)
+                return
+            self._pop_place_intent(client_order_id)
             if failures_mod.is_venue_protection_reason(reason):
                 failures_mod.handle_venue_protection(
                     self,
                     now_ns=int(now_ns),
                     reason=reason,
                     source_event="order_rejected",
-                    client_order_id=getattr(event, "client_order_id", None),
+                    client_order_id=client_order_id,
                 )
                 return
             if failures_mod.is_terminal_order_denial_reason(reason):
@@ -1186,7 +1360,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     now_ns=int(now_ns),
                     reason=reason,
                     source_event="order_rejected",
-                    client_order_id=getattr(event, "client_order_id", None),
+                    client_order_id=client_order_id,
                 )
                 return
             self._track_order_rejection_alert(
@@ -1223,14 +1397,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     now_ns = int(self.clock.timestamp_ns())
             if now_ns is None:
                 return
-            self._pop_place_intent(getattr(event, "client_order_id", None))
+            client_order_id = getattr(event, "client_order_id", None)
+            if self._handle_spot_borrow_block(
+                now_ns=int(now_ns),
+                reason=reason,
+                source_event="order_denied",
+                client_order_id=client_order_id,
+            ):
+                self._pop_place_intent(client_order_id)
+                return
+            self._pop_place_intent(client_order_id)
             if failures_mod.is_venue_protection_reason(reason):
                 failures_mod.handle_venue_protection(
                     self,
                     now_ns=int(now_ns),
                     reason=reason,
                     source_event="order_denied",
-                    client_order_id=getattr(event, "client_order_id", None),
+                    client_order_id=client_order_id,
                 )
                 return
             if failures_mod.is_terminal_order_denial_reason(reason):
@@ -1238,7 +1421,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     now_ns=int(now_ns),
                     reason=reason,
                     source_event="order_denied",
-                    client_order_id=getattr(event, "client_order_id", None),
+                    client_order_id=client_order_id,
                 )
                 return
             self._track_order_rejection_alert(
@@ -2643,6 +2826,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return 0
             if now_ns is None:
                 now_ns = int(self.clock.timestamp_ns())
+            side_text = _order_side_text(side)
+            if side_text and side_text in self._side_quote_blockers:
+                if self._has_spot_borrow_recovery_inventory(side):
+                    self._clear_spot_borrow_block(
+                        side=side,
+                        now_ns=now_ns,
+                        recovery="inventory_recovered",
+                    )
+                else:
+                    return 0
             if self._has_active_cancel_reject_cooldown(
                 now_ns=now_ns,
                 managed_orders=active_orders,

@@ -54,6 +54,37 @@ def _resolve_environment(
     return environment or BinanceEnvironment.LIVE
 
 
+def _http_quota_config(
+    account_type: BinanceAccountType,
+    base_url: str,
+) -> tuple[list[tuple[str, Quota]], Quota]:
+    if account_type.is_portfolio_margin and "papi.binance." in base_url:
+        global_quota = Quota.rate_per_minute(6000)
+        return [
+            ("binance:papi:global", global_quota),
+            ("binance:papi/v1/margin/order", Quota.rate_per_minute(3000)),
+            ("binance:papi/v1/margin/allOrders", Quota.rate_per_minute(int(3000 / 20))),
+        ], global_quota
+
+    if account_type.is_spot_or_margin:
+        global_quota = Quota.rate_per_minute(6000)
+        return [
+            ("binance:global", global_quota),
+            ("binance:api/v3/order", Quota.rate_per_minute(3000)),
+            ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
+            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
+        ], global_quota
+
+    global_quota = Quota.rate_per_minute(2400)
+    return [
+        ("binance:global", global_quota),
+        ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
+        ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
+        ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),
+        ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
+    ], global_quota
+
+
 @lru_cache(1)
 def get_cached_binance_http_client(
     clock: LiveClock,
@@ -110,30 +141,11 @@ def get_cached_binance_http_client(
     elif key_type == BinanceKeyType.ED25519 or (api_secret and is_ed25519_private_key(api_secret)):
         ed25519_private_key = api_secret
 
-    # Set up rate limit quotas
-    global_key = "binance:global"
-
-    if account_type.is_spot:
-        # Spot
-        global_quota = Quota.rate_per_minute(6000)
-        ratelimiter_default_quota = global_quota
-        ratelimiter_quotas: list[tuple[str, Quota]] = [
-            (global_key, global_quota),
-            ("binance:api/v3/order", Quota.rate_per_minute(3000)),
-            ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
-            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
-        ]
-    else:
-        # Futures
-        global_quota = Quota.rate_per_minute(2400)
-        ratelimiter_default_quota = global_quota
-        ratelimiter_quotas = [
-            (global_key, global_quota),
-            ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
-            ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
-            ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),
-            ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
-        ]
+    resolved_base_url = base_url or default_http_base_url
+    ratelimiter_quotas, ratelimiter_default_quota = _http_quota_config(
+        account_type,
+        resolved_base_url,
+    )
 
     return BinanceHttpClient(
         clock=clock,
@@ -141,7 +153,7 @@ def get_cached_binance_http_client(
         api_secret=api_secret,
         rsa_private_key=rsa_private_key,
         ed25519_private_key=ed25519_private_key,
-        base_url=base_url or default_http_base_url,
+        base_url=resolved_base_url,
         ratelimiter_quotas=ratelimiter_quotas,
         ratelimiter_default_quota=ratelimiter_default_quota,
         proxy_url=proxy_url,
@@ -292,7 +304,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             proxy_url=config.proxy_url,
         )
         private_client: BinanceHttpClient = public_client
-        if config.account_type.is_futures:
+        if config.account_type.is_futures or config.account_type.is_portfolio_margin:
             private_base_url = config.base_url_http or get_private_http_base_url(
                 config.account_type,
                 private_api_family=config.private_api_family,
@@ -434,7 +446,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         )
 
         private_client: BinanceHttpClient = public_client
-        if config.account_type.is_futures:
+        if config.account_type.is_futures or config.account_type.is_portfolio_margin:
             private_base_url = config.base_url_http or get_private_http_base_url(
                 config.account_type,
                 private_api_family=config.private_api_family,
@@ -483,6 +495,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                market_client=public_client,
                 environment=environment,
                 api_key=api_key,
                 api_secret=api_secret,

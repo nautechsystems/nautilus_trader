@@ -531,6 +531,9 @@ class BinanceAccountHttpAPI:
         if account_type.is_spot:
             self.base_endpoint = "/api/v3/"
             user_trades_url = self.base_endpoint + "myTrades"
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            self.base_endpoint = "/papi/v1/margin/"
+            user_trades_url = self.base_endpoint + "myTrades"
         elif account_type == BinanceAccountType.MARGIN:
             self.base_endpoint = "/sapi/v1/margin/"
             user_trades_url = self.base_endpoint + "myTrades"

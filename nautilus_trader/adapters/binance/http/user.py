@@ -169,6 +169,9 @@ class BinanceUserDataHttpAPI:
         if account_type == BinanceAccountType.SPOT:
             listen_key_url = "/api/v3/userDataStream"
             self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            listen_key_url = "/papi/v1/listenKey"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         elif account_type == BinanceAccountType.MARGIN:
             self._endpoint_listenkey = None
             self._endpoint_listentoken = BinanceListenTokenHttp(client, "/sapi/v1/userListenToken")

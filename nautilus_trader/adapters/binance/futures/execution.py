@@ -144,15 +144,15 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
         # Register additional futures websocket user data event handlers
         self._futures_user_ws_handlers = {
-            BinanceFuturesEventType.ACCOUNT_UPDATE: self._handle_account_update,
-            BinanceFuturesEventType.ORDER_TRADE_UPDATE: self._handle_order_trade_update,
-            BinanceFuturesEventType.OUTBOUND_ACCOUNT_POSITION: self._handle_spot_style_account_update,
-            BinanceFuturesEventType.BALANCE_UPDATE: self._handle_spot_style_balance_update,
-            BinanceFuturesEventType.MARGIN_CALL: self._handle_margin_call,
-            BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE: self._handle_account_config_update,
-            BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
-            BinanceFuturesEventType.TRADE_LITE: self._handle_trade_lite,
-            BinanceFuturesEventType.ALGO_UPDATE: self._handle_algo_update,
+            BinanceFuturesEventType.ACCOUNT_UPDATE.value: self._handle_account_update,
+            BinanceFuturesEventType.ORDER_TRADE_UPDATE.value: self._handle_order_trade_update,
+            BinanceFuturesEventType.OUTBOUND_ACCOUNT_POSITION.value: self._handle_spot_style_account_update,
+            BinanceFuturesEventType.BALANCE_UPDATE.value: self._handle_spot_style_balance_update,
+            BinanceFuturesEventType.MARGIN_CALL.value: self._handle_margin_call,
+            BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE.value: self._handle_account_config_update,
+            BinanceFuturesEventType.LISTEN_KEY_EXPIRED.value: self._handle_listen_key_expired,
+            BinanceFuturesEventType.TRADE_LITE.value: self._handle_trade_lite,
+            BinanceFuturesEventType.ALGO_UPDATE.value: self._handle_algo_update,
         }
 
         self._use_trade_lite = config.use_trade_lite
@@ -172,11 +172,14 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         account_info: BinanceFuturesAccountInfo = (
             await self._futures_http_account.query_futures_account_info(recv_window=str(5000))
         )
-        if account_info.canTrade:
+        if account_info.canTrade is True:
             self._log.info("Binance API key authenticated", LogColor.GREEN)
             self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")
-        else:
+        elif account_info.canTrade is False:
             self._log.error("Binance API key does not have trading permissions")
+        else:
+            self._log.info("Binance API key authenticated", LogColor.GREEN)
+            self._log.info("Binance account response omitted trading-permission flag")
         ts_event_ms = account_info.updateTime
         if ts_event_ms is None:
             ts_event_ms = self._clock.timestamp_ms()
@@ -653,7 +656,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
             msg = self._decoder_futures_user_msg.decode(raw)
-            self._futures_user_ws_handlers[msg.e](raw)
+            handler = self._futures_user_ws_handlers.get(msg.e)
+            if handler is None:
+                self._log.debug(
+                    f"Ignoring unsupported Binance futures user stream event {msg.e!r}",
+                )
+                return
+            handler(raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
 

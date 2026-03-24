@@ -99,10 +99,7 @@ def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type
     )
 
     assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
-        "MARGIN",
-        "PORTFOLIO_MARGIN",
-    }
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
 
 
@@ -137,14 +134,29 @@ def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
         ),
     )
 
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
-        "MARGIN",
-        "PORTFOLIO_MARGIN",
-    }
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
     assert strategy_config["strategy"]["force_bot_off_on_start"] is True
     assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_binance_perp_strategy_uses_portfolio_margin_private_api_family() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_perp_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    perp_venue = strategy_config["node"]["venues"]["BINANCE_PERP"]
+    spot_venue = strategy_config["node"]["venues"]["BINANCE_SPOT"]
+
+    assert perp_venue["api_key_env"] == "BINANCE_API_KEY"
+    assert perp_venue["api_secret_env"] == "BINANCE_API_SECRET"
+    assert perp_venue["account_type"] == "USDT_FUTURES"
+    assert perp_venue["private_api_family"] == "PORTFOLIO_MARGIN"
+    assert spot_venue["api_key_env"] == "BINANCE_API_KEY"
+    assert spot_venue["api_secret_env"] == "BINANCE_API_SECRET"
 
 
 def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:

@@ -513,6 +513,42 @@ def test_on_order_pending_cancel_state_exports_quote_blocker_metadata(
     assert state_payload["quote_blockers"][0]["oldest_pending_cancel_age_ms"] == 0
 
 
+def test_publish_state_exports_spot_borrow_blocker_metadata(clocked_strategy_factory) -> None:
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+    )
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: [SimpleNamespace(client_order_id="BID-1", side=OrderSide.BUY)]
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason=(
+            "binance_http_error: status=400 code=51006 "
+            "msg=Exceeds maximum borrowable amount."
+        ),
+        now_ns=1_000_000_000,
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["maker_quote_status"] == {
+        "bid_open": 1,
+        "ask_open": 0,
+        "bid_depth": 5,
+        "ask_depth": 5,
+        "bid_blocked": 4,
+        "ask_blocked": 5,
+    }
+    assert state_payload["quote_blockers"][0]["reason_code"] == "spot_borrow_cap"
+    assert state_payload["quote_blockers"][0]["blocked_side"] == "SELL"
+    assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
+
+
 def test_publish_state_exports_explicit_quote_health_reason_codes(
     clocked_strategy_factory,
 ) -> None:

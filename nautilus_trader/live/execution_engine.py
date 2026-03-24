@@ -2530,6 +2530,9 @@ class LiveExecutionEngine(ExecutionEngine):
             allow_startup_external_cleanup=allow_startup_external_cleanup,
         )
 
+        if allow_startup_external_cleanup:
+            self._restore_startup_orphan_position_lineage(mass_status)
+
         # Deduplicate orders in mass status
         self._deduplicate_mass_status_orders(mass_status)
 
@@ -2805,6 +2808,104 @@ class LiveExecutionEngine(ExecutionEngine):
                 f"Removed {len(orders_to_remove)} duplicate/skipped order(s) from reconciliation "
                 f"({len(duplicate_venue_order_ids)} duplicates, {len(orders_to_skip)} already in cache)",
                 LogColor.YELLOW,
+            )
+
+    def _restore_startup_orphan_position_lineage(self, mass_status: ExecutionMassStatus) -> None:
+        """
+        Restore missing cached netting positions from closed filled order lineage.
+
+        Startup reconciliation can see cached FILLED orders whose position record was lost while the
+        venue still reports that quantity as part of the live net position. Restoring the cached
+        position lineage lets exact-match deduplication remain safe for those orders.
+        """
+        restored_position_ids: list[PositionId] = []
+
+        for instrument_id, position_reports in mass_status.position_reports.items():
+            if any(report.venue_position_id is not None for report in position_reports):
+                continue
+
+            venue_signed_qty = sum(
+                (report.signed_decimal_qty for report in position_reports),
+                start=Decimal("0"),
+            )
+            if venue_signed_qty == 0:
+                continue
+
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                continue
+
+            current_signed_qty = sum(
+                (
+                    position.signed_decimal_qty()
+                    for position in self._cache.positions_open(
+                        venue=None,
+                        instrument_id=instrument_id,
+                        account_id=position_reports[0].account_id if position_reports else None,
+                    )
+                ),
+                start=Decimal("0"),
+            )
+            diff_signed_qty = venue_signed_qty - current_signed_qty
+            if diff_signed_qty == 0:
+                continue
+
+            candidate_positions: list[Position] = []
+            for cached_order in self._cache.orders(instrument_id=instrument_id):
+                if cached_order.is_open:
+                    continue
+
+                position_id = cached_order.position_id
+                if position_id is None or self._cache.position(position_id) is not None:
+                    continue
+
+                if cached_order.filled_qty.as_decimal() == 0:
+                    continue
+
+                fills = [event for event in cached_order.events if isinstance(event, OrderFilled)]
+                if not fills:
+                    continue
+
+                restored_position = Position(instrument=instrument, fill=fills[0])
+                for fill in fills[1:]:
+                    restored_position.apply(fill)
+
+                restored_signed_qty = restored_position.signed_decimal_qty()
+                if restored_signed_qty == 0:
+                    continue
+                if (diff_signed_qty > 0 and restored_signed_qty <= 0) or (
+                    diff_signed_qty < 0 and restored_signed_qty >= 0
+                ):
+                    continue
+                if abs(diff_signed_qty - restored_signed_qty) >= abs(diff_signed_qty):
+                    continue
+
+                candidate_positions.append(restored_position)
+
+            candidate_positions.sort(key=lambda position: position.ts_last, reverse=True)
+
+            for restored_position in candidate_positions:
+                restored_signed_qty = restored_position.signed_decimal_qty()
+                if abs(diff_signed_qty - restored_signed_qty) >= abs(diff_signed_qty):
+                    continue
+
+                self._log.warning(
+                    f"Restoring startup orphan cached position lineage for {instrument_id}: "
+                    f"position_id={restored_position.id!r} missing from cache, "
+                    f"restored_signed_qty={restored_signed_qty}, diff_signed_qty={diff_signed_qty}",
+                )
+                self._cache.add_position(restored_position, OmsType.NETTING)
+                restored_position_ids.append(restored_position.id)
+                diff_signed_qty -= restored_signed_qty
+
+                if diff_signed_qty == 0:
+                    break
+
+        if restored_position_ids:
+            self._log.info(
+                f"Restored {len(restored_position_ids)} startup orphan cached position(s): "
+                f"{[position_id.value for position_id in restored_position_ids]}",
+                LogColor.BLUE,
             )
 
     def _validate_reconciliation_state(

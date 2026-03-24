@@ -53,6 +53,13 @@ def get_private_http_base_url(
     environment: BinanceEnvironment,
     is_us: bool,
 ) -> str:
+    if account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+        if environment != BinanceEnvironment.LIVE:
+            raise ValueError("Portfolio margin private API routing is only supported on Binance live")
+        if is_us:
+            raise ValueError("Portfolio margin private API routing is not supported on Binance US")
+        return "https://papi.binance.com"
+
     if not account_type.is_futures or private_api_family != BinancePrivateApiFamily.PORTFOLIO_MARGIN:
         return get_http_base_url(account_type, environment, is_us)
 
@@ -162,6 +169,13 @@ def get_user_stream_base_url(
     environment: BinanceEnvironment,
     is_us: bool,
 ) -> str:
+    if account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+        if environment != BinanceEnvironment.LIVE:
+            raise ValueError("Portfolio margin user stream routing is only supported on Binance live")
+        if is_us:
+            raise ValueError("Portfolio margin user stream routing is not supported on Binance US")
+        return "wss://fstream.binance.com/pm"
+
     if not account_type.is_futures or private_api_family != BinancePrivateApiFamily.PORTFOLIO_MARGIN:
         return get_ws_base_url(account_type, environment, is_us)
 

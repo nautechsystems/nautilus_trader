@@ -205,9 +205,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             is_us=config.us,
         )
 
-        # Futures events arrive on a separate stream (different endpoint)
+        # Some account types deliver user events on a separate stream endpoint.
         stream_base_url: str | None = None
-        if account_type.is_futures:
+        if account_type.is_futures or account_type.is_portfolio_margin:
             stream_base_url = config.base_url_ws_stream or get_user_stream_base_url(
                 account_type=account_type,
                 private_api_family=config.private_api_family,
@@ -221,11 +221,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             is_ed25519 = is_ed25519_private_key(api_secret)
 
-        # Futures + HMAC needs REST listenKey fallback
-        # (Binance Futures WS API session.logon only accepts Ed25519)
+        # Cross margin, PM spot, and Futures + HMAC need REST-backed user stream setup.
         http_client_for_ws: BinanceHttpClient | None = None
         account_type_for_ws: BinanceAccountType | None = None
-        if account_type == BinanceAccountType.MARGIN:
+        if account_type in (
+            BinanceAccountType.MARGIN,
+            BinanceAccountType.PORTFOLIO_MARGIN,
+        ):
             http_client_for_ws = client
             account_type_for_ws = account_type
         elif account_type.is_futures and (
@@ -531,14 +533,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if command.open_only:
                 binance_orders = binance_open_orders
             else:
+                order_history_limit = 1_000 if self._binance_account_type.is_futures else 500
                 for active_symbol in active_symbols:
                     # Here we don't pass a `start_time` or `end_time` as order reports appear to go
                     # randomly missing when these are specified. We filter on the Nautilus side below.
-                    # Explicitly setting limit to the max lookback of 1000, in the future we should
-                    # add pagination.
+                    # Explicitly set the per-endpoint max lookback. Spot-style allOrders endpoints
+                    # reject limits above 500, while futures-style endpoints accept 1000.
                     response = await self._http_account.query_all_orders(
                         symbol=active_symbol,
-                        limit=1_000,
+                        limit=order_history_limit,
                     )
                     binance_orders.extend(response)
         except BinanceError as e:
@@ -827,7 +830,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     if isinstance(last_exc, BinanceError)
                     else False
                 )
-                if self._portfolio_margin_unsupported_reason is None:
+                if (
+                    not self._binance_account_type.is_portfolio_margin
+                    and self._portfolio_margin_unsupported_reason is None
+                ):
                     self._portfolio_margin_unsupported_reason = (
                         _portfolio_margin_unsupported_reason(last_exc)
                     )

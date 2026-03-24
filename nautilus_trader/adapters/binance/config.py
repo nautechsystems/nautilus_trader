@@ -1,3 +1,5 @@
+import msgspec
+
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
@@ -113,6 +115,14 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     update_instruments_interval_mins: PositiveInt | None = 60
     use_agg_trade_ticks: bool = False
 
+    def __post_init__(self) -> None:
+        if isinstance(self.account_type, str):
+            msgspec.structs.force_setattr(
+                self,
+                "account_type",
+                BinanceAccountType(self.account_type),
+            )
+
 
 class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     """
@@ -214,3 +224,11 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
     futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None = None
     log_rejected_due_post_only_as_warning: bool = True
+
+    def __post_init__(self) -> None:
+        if isinstance(self.account_type, str):
+            msgspec.structs.force_setattr(
+                self,
+                "account_type",
+                BinanceAccountType(self.account_type),
+            )

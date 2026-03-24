@@ -5,6 +5,7 @@ This client uses the authenticated WebSocket API endpoint with
 `session.logon`. Supports both Ed25519 and HMAC API keys.
 
 Spot uses `userDataStream.subscribe` — events arrive inline on the same connection.
+Portfolio Margin spot uses REST listenKey plus the dedicated PM stream.
 Futures + Ed25519 uses `userDataStream.start` via WS API — events are delivered on
 a separate stream connection at `{stream_base_url}/ws/{listenKey}`.
 Futures + HMAC uses REST API for listenKey management (Binance Futures WS API
@@ -157,7 +158,14 @@ class BinanceUserDataWebSocketClient:
 
     @property
     def _use_rest_listen_key(self) -> bool:
-        return self._is_futures and self._http_user is not None
+        return (
+            self._http_user is not None
+            and self._account_type in (
+                BinanceAccountType.PORTFOLIO_MARGIN,
+                BinanceAccountType.USDT_FUTURES,
+                BinanceAccountType.COIN_FUTURES,
+            )
+        )
 
     @property
     def _use_margin_listen_token(self) -> bool:
@@ -223,7 +231,7 @@ class BinanceUserDataWebSocketClient:
         self._is_recovery_failed = False
 
         if self._use_rest_listen_key:
-            self._log.info("Using REST listenKey mode (HMAC Futures)", LogColor.BLUE)
+            self._log.info("Using REST listenKey mode", LogColor.BLUE)
             return
 
         self._log.debug(f"Connecting to {self._base_url}...")
@@ -526,7 +534,7 @@ class BinanceUserDataWebSocketClient:
 
     async def _connect_stream(self, listen_key: str) -> None:
         if self._stream_base_url is None:
-            raise RuntimeError("stream_base_url is required for futures")
+            raise RuntimeError("stream_base_url is required for REST listenKey streams")
 
         stream_url = f"{self._stream_base_url}/ws/{listen_key}"
         self._log.debug(

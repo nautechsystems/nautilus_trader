@@ -64,11 +64,19 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
             if self.walletBalance is not None
             else self.marginBalance
             if self.marginBalance is not None
+            else self.crossWalletBalance
+            if self.crossWalletBalance is not None
             else self.availableBalance
             if self.availableBalance is not None
             else "0"
         )
-        free_raw = self.availableBalance if self.availableBalance is not None else total_raw
+        free_raw = (
+            self.availableBalance
+            if self.availableBalance is not None
+            else self.crossWalletBalance
+            if self.crossWalletBalance is not None
+            else total_raw
+        )
         # This calculation is currently mixing wallet cash balance and the available balance after
         # considering margin collateral. As a temporary measure we're taking the `min` to
         # disregard free amounts above the cash balance, but still considering where not all

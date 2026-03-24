@@ -43,7 +43,7 @@ class BinanceFuturesUserMsgData(msgspec.Struct, frozen=True):
     Inner struct for execution WebSocket messages from Binance.
     """
 
-    e: BinanceFuturesEventType
+    e: str
 
 
 class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
@@ -196,14 +196,14 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     m: bool  # Is trade the maker side
     R: bool  # Is reduce only
     wt: BinanceFuturesWorkingType | None = None
-    ot: BinanceOrderType
+    ot: BinanceOrderType | None = None
     ps: BinanceFuturesPositionSide
     cp: bool | None = None  # If Close-All, pushed with conditional order
     AP: str | None = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
     cr: str | None = None  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
-    pP: bool  # ignore
-    si: int  # ignore
-    ss: int  # ignore
+    pP: bool | None = None  # ignore
+    si: int | None = None  # ignore
+    ss: int | None = None  # ignore
     rp: str  # Realized Profit of the trade
     gtd: int  # TIF GTD order auto cancel time
     W: int | None = None  # Working Time (when order was added to the book)

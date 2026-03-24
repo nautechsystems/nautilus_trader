@@ -4,6 +4,7 @@ import pytest
 
 from flux.runners.live.venues import resolve_strategy_venues
 from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
@@ -174,6 +175,34 @@ def test_resolve_strategy_venues_passes_through_binance_private_api_family() -> 
         resolved.exec_clients["BINANCE_PERP"].private_api_family
         == BinancePrivateApiFamily.PORTFOLIO_MARGIN
     )
+
+
+def test_resolve_strategy_venues_supports_binance_portfolio_margin_spot_execution() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_SPOT",
+                "reference_venue": "BINANCE_SPOT",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                        "account_type": "PORTFOLIO_MARGIN",
+                        "execution": True,
+                    },
+                },
+            },
+        },
+        mode="live",
+        enable_execution=True,
+    )
+
+    assert isinstance(resolved.data_clients["BINANCE_SPOT"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_SPOT"], BinanceExecClientConfig)
+    assert resolved.data_clients["BINANCE_SPOT"].account_type == BinanceAccountType.PORTFOLIO_MARGIN
+    assert resolved.exec_clients["BINANCE_SPOT"].account_type == BinanceAccountType.PORTFOLIO_MARGIN
 
 
 def test_resolve_strategy_venues_sets_okx_demo_defaults_in_testnet() -> None:

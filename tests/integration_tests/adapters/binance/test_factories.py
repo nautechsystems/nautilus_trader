@@ -447,3 +447,26 @@ class TestBinanceFactories:
             exec_client._instrument_provider._http_wallet._endpoint_futures_commission_rate.url_path
             == "/papi/v1/um/commissionRate"
         )
+
+    def test_create_binance_portfolio_margin_spot_exec_client_uses_split_public_private_routing(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.PORTFOLIO_MARGIN,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceSpotExecutionClient)
+        assert exec_client._http_client.base_url == "https://papi.binance.com"
+        assert exec_client._http_market.client.base_url == "https://api.binance.com"
+        assert exec_client._ws_client._stream_base_url == "wss://fstream.binance.com/pm"
+        assert exec_client._instrument_provider._http_market.client.base_url == "https://api.binance.com"
