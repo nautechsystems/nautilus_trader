@@ -98,3 +98,75 @@ def test_component_is_missing_optional_only_for_nonrequired_missing_components()
     assert module._component_is_missing_optional({"missing": True, "required": False}) is True
     assert module._component_is_missing_optional({"missing": True, "required": True}) is False
     assert module._component_is_missing_optional({"missing": False, "required": False}) is False
+
+
+def test_main_fails_closed_when_profile_readiness_is_unhealthy(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    strategy_id = "plumeusdt_bybit_perp_makerv3"
+
+    def _fake_fetch_enveloped_data(*, base_url: str, path: str, timeout: float):
+        assert base_url == "http://127.0.0.1:5022"
+        assert timeout == 5.0
+        if path == module.PROFILE_READINESS_PATH:
+            return {
+                "ok": False,
+                "summary": {
+                    "failed_checks": ["state_stream_freshness"],
+                    "stale_state_stream_strategy_ids": [strategy_id],
+                },
+            }
+        if path == module.PROFILE_SIGNALS_PATH:
+            return {
+                "strategies": [
+                    {
+                        "id": strategy_id,
+                        "meta": {"base_asset": "PLUME"},
+                        "state": {
+                            "state": "bot_off",
+                            "local_qty_base": "0",
+                            "global_qty_base": "0",
+                            "global_qty_base_complete": True,
+                            "aggregation_mode": "complete",
+                        },
+                    },
+                ],
+            }
+        if path == module.PROFILE_BALANCES_PATH:
+            return {
+                "source": "portfolio_snapshot",
+                "global_qty_base": "0",
+                "global_qty_base_complete": True,
+                "aggregation_mode": "complete",
+                "components": [
+                    {
+                        "strategy_id": strategy_id,
+                        "local_qty_base": "0",
+                        "local_position_qty_base": "0",
+                    },
+                ],
+            }
+        if path == module._strategy_balances_path(strategy_id):
+            return {"rows": []}
+        raise AssertionError(f"unexpected path: {path}")
+
+    module._fetch_enveloped_data = _fake_fetch_enveloped_data
+    module._fetch_json = lambda **_: {
+        "jobs": [
+            {
+                "id": f"tokenmm-node-{strategy_id}",
+                "group_key": "tokenmm",
+                "status": "inactive",
+            },
+        ],
+    }
+
+    exit_code = module.main(["--config", str(tmp_path / "missing.toml")])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "TOKENMM RISK AUDIT FAILED" in captured.err
+    assert "readiness" in captured.err.lower()
+    assert "state_stream_freshness" in captured.err

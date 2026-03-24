@@ -19,6 +19,7 @@ from urllib.request import urlopen
 
 PROFILE_SIGNALS_PATH = "/api/v1/signals?profile=tokenmm"
 PROFILE_BALANCES_PATH = "/api/v1/balances?profile=tokenmm"
+PROFILE_READINESS_PATH = "/api/v1/readiness?profile=tokenmm"
 STRATEGY_BALANCES_PATH_PREFIX = "/api/v1/balances?strategy="
 PULSE_JOBS_PATH = "/api/pulse/jobs"
 BLOCKED_RECONCILIATION = "blocked_reconciliation"
@@ -352,6 +353,40 @@ def _append_error(errors: list[str], message: str) -> None:
     errors.append(message)
 
 
+def _readiness_failure_message(readiness_payload: Mapping[str, Any]) -> str:
+    summary = _as_mapping(readiness_payload.get("summary"))
+    failed_checks = list(summary.get("failed_checks") or [])
+    stale_state_streams = list(summary.get("stale_state_stream_strategy_ids") or [])
+    missing_state_streams = list(summary.get("missing_state_stream_strategy_ids") or [])
+    stale_signals = list(summary.get("stale_signal_strategy_ids") or [])
+    missing_signals = list(summary.get("missing_signal_strategy_ids") or [])
+
+    details: list[str] = []
+    if failed_checks:
+        details.append(f"failed_checks={','.join(str(item) for item in failed_checks)}")
+    if stale_state_streams:
+        details.append(
+            "stale_state_stream_strategy_ids="
+            + ",".join(str(item) for item in stale_state_streams),
+        )
+    if missing_state_streams:
+        details.append(
+            "missing_state_stream_strategy_ids="
+            + ",".join(str(item) for item in missing_state_streams),
+        )
+    if stale_signals:
+        details.append(
+            "stale_signal_strategy_ids=" + ",".join(str(item) for item in stale_signals),
+        )
+    if missing_signals:
+        details.append(
+            "missing_signal_strategy_ids=" + ",".join(str(item) for item in missing_signals),
+        )
+    if not details:
+        return "readiness returned ok=false without diagnostic summary"
+    return "; ".join(details)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -387,6 +422,19 @@ def main(argv: list[str] | None = None) -> int:
     base_url = _normalize_base_url(args.base_url)
     config_path = Path(args.config)
     expected_strategy_ids = list(args.strategy_ids) or _read_tokenmm_strategy_ids(config_path)
+    errors: list[str] = []
+
+    readiness_payload = _fetch_enveloped_data(
+        base_url=base_url,
+        path=PROFILE_READINESS_PATH,
+        timeout=args.timeout,
+    )
+    if readiness_payload.get("ok") is not True:
+        _append_error(
+            errors,
+            "TokenMM readiness is unhealthy: "
+            + _readiness_failure_message(readiness_payload),
+        )
 
     signals_data = _fetch_enveloped_data(
         base_url=base_url,
@@ -414,8 +462,6 @@ def main(argv: list[str] | None = None) -> int:
     signals_by_id = {row.strategy_id: row for row in signal_rows if row.strategy_id}
     if not expected_strategy_ids:
         expected_strategy_ids = list(signals_by_id)
-
-    errors: list[str] = []
 
     missing_signal_rows = [sid for sid in expected_strategy_ids if sid not in signals_by_id]
     if missing_signal_rows:

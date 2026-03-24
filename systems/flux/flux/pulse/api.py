@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -12,6 +13,9 @@ from pathlib import Path
 from typing import Any
 from typing import Protocol
 from typing import cast
+from urllib.error import HTTPError
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from flask import Blueprint
 from flask import Response
@@ -49,6 +53,8 @@ SHELL_SURFACE_LABELS = {
     "tokenmm": "TokenMM",
     "equities": "Equities",
 }
+TOKENMM_READINESS_PATH = "/api/v1/readiness?profile=tokenmm"
+READINESS_TIMEOUT_SECS = 2.0
 
 
 class CommandRunner(Protocol):
@@ -167,6 +173,56 @@ def _extract_error_info(logs_text: str) -> dict[str, Any]:
         "last_seen": last_seen,
         "preview": preview,
     }
+
+
+def _service_readiness_url(service: PulseService) -> str | None:
+    command = (service.cmd or "").strip()
+    if service.port is None or "flux.runners.tokenmm.run_api" not in command:
+        return None
+    return f"http://127.0.0.1:{service.port}{TOKENMM_READINESS_PATH}"
+
+
+def _fetch_job_readiness(service: PulseService) -> dict[str, Any] | None:
+    url = _service_readiness_url(service)
+    if url is None:
+        return None
+    try:
+        with urlopen(url, timeout=READINESS_TIMEOUT_SECS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["readiness_fetch"],
+                "error": f"HTTP {exc.code}",
+            },
+        }
+    except (URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["readiness_fetch"],
+                "error": type(exc).__name__,
+            },
+        }
+    if not isinstance(payload, dict):
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["readiness_fetch"],
+                "error": "invalid_payload",
+            },
+        }
+    data = payload.get("data")
+    if payload.get("ok") is not True or not isinstance(data, dict):
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["readiness_fetch"],
+                "error": "invalid_envelope",
+            },
+        }
+    return data
 
 
 def _past_tense(action: str) -> str:
@@ -425,6 +481,7 @@ class PulseControlPlane:
             text=True,
             check=False,
         )
+        readiness = _fetch_job_readiness(service) if status == "active" else None
         return {
             "id": service.job_id,
             "name": service.job_id,
@@ -440,6 +497,7 @@ class PulseControlPlane:
             "cmd": service.cmd,
             "unit": self._unit_name(service.job_id),
             "errors": _extract_error_info(logs_result.stdout or ""),
+            "readiness": readiness,
         }
 
     def _dispatch_action(self, service: PulseService, action: str) -> Any:
