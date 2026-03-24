@@ -398,6 +398,7 @@ def test_actor_persists_operator_quantity_fields_for_exact_multiplier_order_init
     actor.cache.add_instrument(instrument)
     order = TestExecStubs.limit_order(instrument=instrument)
     initialized = order.init_event
+    raw_qty = initialized.to_dict(initialized)["quantity"]
 
     actor.start()
     actor.on_order_event(initialized)
@@ -414,7 +415,7 @@ def test_actor_persists_operator_quantity_fields_for_exact_multiplier_order_init
         (order.client_order_id.value,),
     )
     assert row is not None
-    assert row["order_qty"] == "100"
+    assert row["order_qty"] == raw_qty
     assert row["order_qty_venue"] == "100"
     assert row["order_qty_base"] == "1000"
     assert row["qty_conversion_status"] == "exact_multiplier"
@@ -433,6 +434,7 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_ord
     actor.cache.add_instrument(instrument)
     order = TestExecStubs.limit_order(instrument=instrument)
     initialized = order.init_event
+    raw_qty = initialized.to_dict(initialized)["quantity"]
 
     actor.start()
     actor.on_order_event(initialized)
@@ -449,7 +451,7 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_ord
         (order.client_order_id.value,),
     )
     assert row is not None
-    assert row["order_qty"] == "100"
+    assert row["order_qty"] == raw_qty
     assert row["order_qty_venue"] == "100"
     assert row["order_qty_base"] == "100"
     assert row["qty_conversion_status"] == "identity"

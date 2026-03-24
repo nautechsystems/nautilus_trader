@@ -616,6 +616,37 @@ describe('Trades pagination and snapshot loading', () => {
     expect(rows[0]?.qty_venue).toBe('100');
   });
 
+  it('keeps the existing qty when tokenmm snapshot rows carry a malformed qty_base', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
+    const { setSnapshot } = await renderTrades({
+      apiResponse: {
+        rows: [
+          {
+            row_id: 'row-bad-base',
+            seq: 447,
+            version: 1,
+            ts_ms: 1_772_700_209_799,
+            instrument_id: 'PLUME-USDT-SWAP.OKX',
+            exchange: 'okx',
+            side: '1',
+            price: '0.012736',
+            qty: '100',
+            qty_base: 'not-a-number',
+            qty_venue: '100',
+            trade_id: 'row-bad-base',
+            client_order_id: 'O-bad-base',
+            strategy_id: 'plumeusdt_okx_perp_makerv3',
+          },
+        ],
+      },
+    });
+
+    const [rows] = setSnapshot.mock.calls.at(-1) as [Array<Record<string, unknown>>];
+    expect(rows[0]?.qty).toBe('100');
+    expect(rows[0]?.qty_base).toBe('not-a-number');
+    expect(rows[0]?.qty_venue).toBe('100');
+  });
+
   it('keeps venue qty primary on non-tokenmm socket updates even when qty_base is present', async () => {
     (window.location as any).pathname = '/trades';
     const { applyDelta } = await renderTrades();

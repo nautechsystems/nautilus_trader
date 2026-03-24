@@ -21,6 +21,7 @@ from flask import request
 
 from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api._payloads_balances import combine_portfolio_snapshot_rows
+from flux.api._payloads_common import tokenmm_trade_rows_require_reset
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
 from flux.api.payloads import build_alerts_rows
@@ -75,6 +76,21 @@ DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
 _LOG = logging.getLogger(__name__)
 TOKENMM_BALANCES_STALE_AFTER_MS = 30_000
 PARAMS_RUNNING_STALE_AFTER_MS = 3_000
+
+
+def _tokenmm_trade_rows_require_reset_for_strategies(
+    strategy_ids: Sequence[str],
+    metadata_resolver: Callable[[str], StrategyMetadata],
+    stream_reset_resolver: Callable[[str], bool],
+) -> bool:
+    if not strategy_ids:
+        return False
+    for strategy_id in strategy_ids:
+        if not _strategy_groups_include_tokenmm(metadata_resolver(strategy_id)):
+            continue
+        if stream_reset_resolver(strategy_id):
+            return True
+    return False
 
 
 class RedisPipelineProtocol(Protocol):
@@ -1279,6 +1295,13 @@ class FluxApiStore:
             since_seq=None,
             base_first_qty=base_first_qty,
         )
+
+    def tokenmm_trade_stream_requires_reset(self, strategy_id: str) -> bool:
+        keys = self._keys_for_strategy(strategy_id)
+        entries = self._redis.xrevrange(keys.trades_stream())
+        rows = extract_stream_rows(entries)
+        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+        return tokenmm_trade_rows_require_reset(filtered)
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
@@ -2815,6 +2838,26 @@ def create_flux_api_app(  # noqa: C901
                 continue
             filtered_rows.append(row)
 
+        if _tokenmm_trade_rows_require_reset_for_strategies(
+            strategy_ids=strategy_ids,
+            metadata_resolver=_metadata_for_strategy,
+            stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
+        ):
+            payload: dict[str, Any] = {
+                "rows": [],
+                "total": 0,
+                "limit": limit,
+                "requested_limit": int(requested_limit if requested_limit is not None else limit),
+                "effective_limit": limit,
+                "max_limit": 200,
+                "offset": offset,
+                "has_more": False,
+                "last_seq": 0,
+                "sort": sort_label,
+                "reset_required": True,
+            }
+            return _ok(data=payload)
+
         if multi_strategy_profile_fanout:
             filtered_rows.sort(
                 key=_trade_sort_key,
@@ -2865,6 +2908,18 @@ def create_flux_api_app(  # noqa: C901
             and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
+        if _tokenmm_trade_rows_require_reset_for_strategies(
+            strategy_ids=strategy_ids,
+            metadata_resolver=_metadata_for_strategy,
+            stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
+        ):
+            return _ok(
+                data={
+                    "rows": [],
+                    "last_seq": 0,
+                    "reset_required": True,
+                },
+            )
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))

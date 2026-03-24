@@ -220,7 +220,7 @@ def order_event_to_row(
         normalized_qty_conversion_source = normalized_qty_conversion_source or _optional_text(
             data.get("qty_conversion_source"),
         )
-        order_qty = normalized_order_qty_venue or _optional_text(data.get("quantity"))
+        order_qty = _optional_text(data.get("quantity")) or normalized_order_qty_venue
         order_px = _extract_order_px(data.get("options"))
 
     if event_type in ("OrderRejected", "OrderCancelRejected"):

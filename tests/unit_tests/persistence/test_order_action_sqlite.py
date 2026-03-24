@@ -142,7 +142,7 @@ def test_order_event_to_row_exposes_operator_quantity_fields_for_order_initializ
     initialized = order.init_event
     initialized_dict = initialized.to_dict(initialized)
     initialized_dict["instrument_id"] = "PLUME-USDT-SWAP.OKX"
-    initialized_dict["quantity"] = "100"
+    initialized_dict["quantity"] = "100.000"
     initialized_dict["order_qty_base"] = "1000"
     initialized_dict["order_qty_venue"] = "100"
     initialized_dict["qty_conversion_status"] = "exact_multiplier"
@@ -151,7 +151,7 @@ def test_order_event_to_row_exposes_operator_quantity_fields_for_order_initializ
     row = order_event_to_row(initialized_dict, event_type="OrderInitialized", ts_ingest=123)
 
     assert row is not None
-    assert row.order_qty == "100"
+    assert row.order_qty == "100.000"
     assert row.order_qty_venue == "100"
     assert row.order_qty_base == "1000"
     assert row.qty_conversion_status == "exact_multiplier"
@@ -163,6 +163,7 @@ def test_order_event_to_row_exposes_matching_base_and_venue_qty_fields_for_ident
     order = TestExecStubs.limit_order(instrument=instrument)
     initialized = order.init_event
     initialized_dict = initialized.to_dict(initialized)
+    raw_qty = initialized_dict["quantity"]
     initialized_dict["order_qty_base"] = "100"
     initialized_dict["order_qty_venue"] = "100"
     initialized_dict["qty_conversion_status"] = "identity"
@@ -171,7 +172,7 @@ def test_order_event_to_row_exposes_matching_base_and_venue_qty_fields_for_ident
     row = order_event_to_row(initialized_dict, event_type="OrderInitialized", ts_ingest=123)
 
     assert row is not None
-    assert row.order_qty == "100"
+    assert row.order_qty == raw_qty
     assert row.order_qty_venue == "100"
     assert row.order_qty_base == "100"
     assert row.qty_conversion_status == "identity"

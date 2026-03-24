@@ -164,7 +164,7 @@ def test_fill_to_row_exposes_operator_quantity_fields_for_exact_multiplier_contr
         qty_conversion_source="generic:multiplier",
     )
 
-    assert row.last_qty == "100"
+    assert row.last_qty == str(fill.last_qty)
     assert row.last_qty_venue == "100"
     assert row.last_qty_base == "1000"
     assert row.qty_conversion_status == "exact_multiplier"
@@ -173,6 +173,7 @@ def test_fill_to_row_exposes_operator_quantity_fields_for_exact_multiplier_contr
 
 def test_fill_to_row_exposes_matching_base_and_venue_qty_fields_for_identity_contracts() -> None:
     fill = _make_fill(instrument=TestInstrumentProvider.btcusdt_binance(), ts_event=655)
+    raw_qty = str(fill.last_qty)
 
     row = fill_to_row(
         fill,
@@ -182,7 +183,7 @@ def test_fill_to_row_exposes_matching_base_and_venue_qty_fields_for_identity_con
         qty_conversion_source="generic:multiplier=1",
     )
 
-    assert row.last_qty == "100"
+    assert row.last_qty == raw_qty
     assert row.last_qty_venue == "100"
     assert row.last_qty_base == "100"
     assert row.qty_conversion_status == "identity"

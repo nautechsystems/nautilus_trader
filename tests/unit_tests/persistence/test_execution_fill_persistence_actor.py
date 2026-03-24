@@ -299,7 +299,7 @@ def test_actor_persists_operator_quantity_fields_for_exact_multiplier_fills(tmp_
     )
 
     assert row is not None
-    assert row["last_qty"] == "100"
+    assert row["last_qty"] == str(fill.last_qty)
     assert row["last_qty_venue"] == "100"
     assert row["last_qty_base"] == "1000"
     assert row["qty_conversion_status"] == "exact_multiplier"
@@ -311,6 +311,7 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_fil
     instrument = TestInstrumentProvider.btcusdt_binance()
     actor.cache.add_instrument(instrument)
     fill = _make_fill(instrument=instrument, ts_event=162)
+    raw_qty = str(fill.last_qty)
 
     actor.start()
     actor.on_order_filled(fill)
@@ -328,7 +329,7 @@ def test_actor_persists_matching_base_and_venue_quantity_fields_for_identity_fil
     )
 
     assert row is not None
-    assert row["last_qty"] == "100"
+    assert row["last_qty"] == raw_qty
     assert row["last_qty_venue"] == "100"
     assert row["last_qty_base"] == "100"
     assert row["qty_conversion_status"] == "identity"

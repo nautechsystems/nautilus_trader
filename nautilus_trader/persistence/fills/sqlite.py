@@ -138,7 +138,7 @@ def fill_to_row(
     info_json = _encode_info_json(info, on_info_encode_error=on_info_encode_error)
     client_order_id = fill.client_order_id.value if client_order_id_override is None else client_order_id_override
     ib_latency = _extract_ib_latency(info)
-    persisted_last_qty = str(fill.last_qty) if last_qty_venue is None else last_qty_venue
+    persisted_last_qty = str(fill.last_qty)
 
     return ExecutionFillRow(
         fill.trader_id.value,

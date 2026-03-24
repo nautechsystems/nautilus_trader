@@ -239,6 +239,20 @@ def project_trade_quantity_fields(
     return out
 
 
+def tokenmm_trade_rows_require_reset(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Return ``True`` when TokenMM trade rows still rely on legacy bare-qty semantics."""
+
+    for row in rows:
+        qty_text = decode_text(row.get("qty")).strip()
+        if not qty_text:
+            continue
+        qty_base_text = decode_text(row.get("qty_base")).strip()
+        qty_venue_text = decode_text(row.get("qty_venue")).strip()
+        if not qty_base_text or not qty_venue_text:
+            return True
+    return False
+
+
 def coerce_ts_ms(value: Any) -> int | None:
     """Coerce seconds, milliseconds, microseconds, nanoseconds, or ISO text into epoch ms."""
 

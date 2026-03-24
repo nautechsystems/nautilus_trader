@@ -354,6 +354,173 @@ def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_pre
     assert delta_body["data"]["last_seq"] == 101
 
 
+def test_tokenmm_trades_snapshot_and_delta_require_reset_when_legacy_rows_lack_normalized_qty(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-legacy",
+                "seq": 101,
+                "ts_ms": 101_000,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "buy",
+                "price": "0.012736",
+                "qty": "100",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        trades_response = client.get("/api/v1/trades", query_string={"limit": 10, "offset": 0})
+        trades_body = trades_response.get_json()
+        delta_response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"since_seq": 0, "limit": 10},
+        )
+        delta_body = delta_response.get_json()
+
+    assert trades_response.status_code == 200
+    assert trades_body["data"]["reset_required"] is True
+    assert trades_body["data"]["rows"] == []
+    assert trades_body["data"]["last_seq"] == 0
+
+    assert delta_response.status_code == 200
+    assert delta_body["data"]["reset_required"] is True
+    assert delta_body["data"]["rows"] == []
+    assert delta_body["data"]["last_seq"] == 0
+
+
+def test_tokenmm_trades_snapshot_requires_reset_when_legacy_rows_fall_outside_visible_page(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-legacy-101",
+                "seq": 101,
+                "ts_ms": 101_000,
+                "qty": "1",
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-102",
+                "seq": 102,
+                "ts_ms": 102_000,
+                "qty": "1",
+                "qty_base": "1",
+                "qty_venue": "1",
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-103",
+                "seq": 103,
+                "ts_ms": 103_000,
+                "qty": "1",
+                "qty_base": "1",
+                "qty_venue": "1",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/trades", query_string={"limit": 2, "offset": 0})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["reset_required"] is True
+    assert body["data"]["rows"] == []
+    assert body["data"]["last_seq"] == 0
+
+
+def test_tokenmm_trades_delta_requires_reset_when_legacy_rows_fall_outside_bounded_scan(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-legacy-1",
+                "seq": 1,
+                "ts_ms": 1_000,
+                "qty": "1",
+            },
+            *[
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": f"t-{seq}",
+                    "seq": seq,
+                    "ts_ms": seq * 1_000,
+                    "qty": "1",
+                    "qty_base": "1",
+                    "qty_venue": "1",
+                }
+                for seq in range(2, 2_002)
+            ],
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/trades/delta", query_string={"since_seq": 2_000, "limit": 10})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["reset_required"] is True
+    assert body["data"]["rows"] == []
+    assert body["data"]["last_seq"] == 0
+
+
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
     flux_config,
     redis_client,

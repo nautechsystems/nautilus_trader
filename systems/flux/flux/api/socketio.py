@@ -141,6 +141,7 @@ def build_stable_signal_view(signal_payload: Mapping[str, Any]) -> dict[str, Any
         if isinstance(md_health, Mapping):
             normalized_md_health = _copy_mapping(cast(Mapping[str, Any], md_health))
             normalized_md_health.pop("strategy_state_age_ms", None)
+            normalized_md_health.pop("signal_state_age_ms", None)
             normalized_debug["md_health"] = normalized_md_health
         stable["debug"] = normalized_debug
 
@@ -299,6 +300,7 @@ class FluxSocketEmitter:
         self._alerts_by_profile: dict[str, tuple[int, int | None, str]] = {}
         self._failure_streak_by_profile: dict[str, int] = {}
         self._backoff_until_by_profile: dict[str, float] = {}
+        self._tokenmm_clean_trade_streams: set[str] = set()
         self._trade_poll_limit = SOCKETIO_TRADE_POLL_LIMIT
         self._trade_scan_limit = SOCKETIO_TRADE_SCAN_LIMIT
         self._alerts_preview_limit = SOCKETIO_ALERTS_PREVIEW_LIMIT
@@ -419,6 +421,21 @@ class FluxSocketEmitter:
             self._seq_by_profile[profile] = seq
             return seq
 
+    def _tokenmm_trade_stream_requires_reset(self, strategy_id: str, metadata: Any) -> bool:
+        if not _metadata_is_tokenmm(metadata):
+            return False
+        if strategy_id in self._tokenmm_clean_trade_streams:
+            return False
+        stream_reset_resolver = getattr(self._store, "tokenmm_trade_stream_requires_reset", None)
+        if not callable(stream_reset_resolver):
+            return False
+        requires_reset = bool(stream_reset_resolver(strategy_id))
+        if requires_reset:
+            self._tokenmm_clean_trade_streams.discard(strategy_id)
+            return True
+        self._tokenmm_clean_trade_streams.add(strategy_id)
+        return False
+
     def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:
         ids: list[str] = []
         if self._strategy_ids_resolver is not None:
@@ -515,6 +532,15 @@ class FluxSocketEmitter:
         trade_gap = False
         for current_strategy_id in strategy_ids:
             current_metadata = self._metadata_resolver(current_strategy_id)
+            if self._tokenmm_trade_stream_requires_reset(current_strategy_id, current_metadata):
+                _LOG.warning(
+                    "Flux socket emitter detected TokenMM legacy trade rows without normalized qty fields profile=%s strategy_id=%s",
+                    profile,
+                    current_strategy_id,
+                )
+                trade_gap = True
+                next_trade_cursors[current_strategy_id] = 0
+                continue
             load_trades_kwargs: dict[str, Any] = {
                 "limit": self._trade_scan_limit,
                 "since_ms": None,
