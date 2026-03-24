@@ -9,11 +9,11 @@ This document describes the additive `contract_version=2` rollout controls imple
 2. The standard path is opt-in through:
    - HTTP snapshot request with `contract_version=2`
    - Socket.IO `subscribe` event carrying the returned lineage metadata
-3. The backend `contract_version=2` path currently supports `signal` and `trades` surfaces.
-4. The current frontend `Signal` and `Trades` panels use `subscribe` / `realtime_event` / `unsubscribe`
-   in flag-on mode; legacy event listeners remain only for explicit local flag-off rollback.
-5. `alerts` and `balances` currently use the frontend realtime standard over the shared compatibility
-   bridge, which still consumes legacy `market_update` invalidation traffic and still blocks backend cleanup.
+3. The backend `contract_version=2` path currently supports `signal`, `trades`, and `alerts` surfaces.
+4. The current frontend `Signal`, `Trades`, and `Alerts` panels use `subscribe` / `realtime_event` /
+   `unsubscribe` in flag-on mode; legacy event listeners remain only for explicit local flag-off rollback.
+5. `balances` currently uses the frontend realtime standard over the shared compatibility bridge, which
+   still consumes legacy `market_update` invalidation traffic and still blocks backend cleanup.
 6. `marketData` remains documented on the same compatibility bridge path today, but it is parked from the
    active cleanup wave until a separate product-owner decision either retires the route or funds a real
    backend standard contract for it.
@@ -33,7 +33,7 @@ This document describes the additive `contract_version=2` rollout controls imple
 | --- | --- | --- | --- |
 | `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
 | `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in the canonical live view | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
-| `alerts` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no until the surface gets a real backend contract or is retired |
+| `alerts` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and remaining bridge-backed surfaces are resolved |
 | `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no until the surface gets a real backend contract or is retired |
 | `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | parked from the active cleanup wave; do not spend more cleanup-wave implementation here, and do not treat it as retired without an explicit route/product decision |
 
@@ -162,7 +162,7 @@ Bridge-backed surfaces currently rely on mixed evidence during cleanup review:
    `marketData` surface.
 3. Cleanup review must not treat the absence of backend `contract_version=2` counters for those bridge
    surfaces as permission to remove `market_update`.
-4. For the current wave, only `alerts` and `balances` are active bridge-backed cleanup blockers. `marketData`
+4. For the current wave, only `balances` is still an active bridge-backed cleanup blocker. `marketData`
    remains documented for operational awareness but is parked pending a separate route or contract decision.
 
 Task 14 also adds deterministic browser cutover evidence for the flag-on Signal and Trades routes:

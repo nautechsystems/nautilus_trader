@@ -6,24 +6,24 @@ Worktree: `/home/ubuntu/nautilus-trader-dev/.worktrees/task-9-rt-alerts`
 
 ## Surface Summary
 
-Alerts is now on the Task 8 shared bridge plus controller path for the owned frontend surface:
+Alerts now uses the real backend standard contract plus the controller path for the owned frontend surface:
 
 - rendered rows flow through a local realtime surface controller instead of reading directly from the alerts store
 - standard mode exposes explicit surface health through `SYNCING`, `LIVE`, `LAGGING`, `STALE`, and `RECOVERING`
 - healthy steady state no longer keeps fallback polling hot; polling only re-enables while the surface is degraded
-- summary-only socket metadata now drives one explicit REST recovery pass instead of hidden repeated refresh loops
-- the runtime installs the shared websocket bridge during `App.tsx` bootstrap, so surfaced `useWebSocket(..., { surface: 'alerts' })` calls enter the bridge path before the panel mounts
+- standard socket events now drive one explicit REST recovery pass instead of hidden repeated refresh loops
+- flag-on mode now subscribes through backend-issued alerts lineage (`contract_version=2`) over `subscribe` / `realtime_event` / `unsubscribe`; the shared websocket bridge remains only as the flag-off rollback path
 - auto-dismiss timer scheduling is stable across equivalent rerenders, so warning/info rows do not silently defer dismissals under parent churn
 
 ## Per-Surface Adoption Template
 
 - surface name: `alerts`
 - surface_query_key shape: `alerts:<profile>`
-- stream_id shape: `legacy:market_update:alerts:<profile>` while Alerts remains on the compatibility bridge; when backend lineage exists for `GET /api/v1/alerts?contract_version=2`, this packet should be updated to the server-issued `stream_id`
+- stream_id shape: backend-issued lineage returned by canonical `GET /api/v1/alerts?contract_version=2` snapshots
 - entity ID and delete semantics: canonical row identity is `alert.id`; row dismissals are client-local and do not delete source rows; server-side removals arrive only as authoritative snapshot replacement, including `[]` after `DELETE /api/v1/alerts`; summary-only websocket metadata never synthesizes row deletes
 - authoritative ordering source: `fluxboard/Alerts.tsx` applies all snapshots through `createRealtimeSurfaceController(...)` with `compareAlertRows` sorting by descending `ts || timestamp`, and snapshot payloads remain authoritative for canonical order
 - snapshot endpoint: `GET /api/v1/alerts`
-- live event families used: legacy `market_update` packets carrying either `alerts` summary metadata (`count`, `latest_ts_ms`) or full `alerts` / `rows` snapshot arrays; Alerts does not yet have a dedicated `contract_version=2` live family
+- live event families used: standard `realtime_event` envelopes for `heartbeat`, `invalidate`, and `recovery_required`; REST recovery remains authoritative for row snapshots
 - recovery mode capability (`replay_supported` vs `invalidate_only`): `invalidate_only`
 - replay window or invalidate-only recovery behavior: summary-only websocket metadata triggers exactly one explicit recovery snapshot fetch through `refreshAlertsFromApi({ summaryKey })`; duplicate summaries coalesce via `pendingAlertsSummaryRef`; there is no bounded delta replay window for Alerts today
 - row cap and overscan policy: current Alerts traffic is a bounded operator feed, so this packet records a large-table exemption; the panel renders the full filtered list and overscan is not applicable until the surface can exceed the large-table threshold
@@ -86,6 +86,6 @@ This keeps the Alerts surface from paying the socket-plus-polling tax while live
 
 ## Exemption / Scope Notes
 
-- Alerts remains in the active cleanup wave. This packet does not grant backend-cleanup readiness on its own because the surface is still bridge-backed over legacy `market_update`; Task 15 still requires either a dedicated backend standard contract for Alerts or an explicit retirement decision.
+- Alerts is no longer a Task 15 cleanup blocker. Backend legacy-event cleanup is still blocked by Balances and explicit rollback-client support, but Alerts itself now uses backend-issued standard lineage in flag-on mode.
 - Alerts is currently a bounded operator feed, not a hundreds-of-rows trading grid. This cutover packet records a large-table exemption rather than claiming row-delta virtualization work that the surface does not yet need.
 - Alerts still consumes full snapshots or summary-triggered recovery snapshots rather than one-row socket deltas. If the backend evolves this surface into high-cardinality live row deltas, the next step is proving controller-side delta application and visible-window stability under that traffic pattern instead of relying on snapshot replacement alone.
