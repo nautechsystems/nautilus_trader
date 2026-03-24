@@ -122,13 +122,14 @@ impl PolymarketDataApiHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const PAGE_SIZE: u32 = 500;
-        const MAX_PAGES: u32 = 100;
+        // Polymarket Data API rejects offsets >= 3000
+        const MAX_OFFSET: u32 = 3000;
 
         let page_size = limit.map_or(PAGE_SIZE, |l| l.min(PAGE_SIZE));
         let mut all_trades: Vec<DataApiTrade> = Vec::new();
         let mut offset: u32 = 0;
 
-        for _ in 0..MAX_PAGES {
+        loop {
             let page = self
                 .get_trades(condition_id, Some(page_size), Some(offset))
                 .await
@@ -148,6 +149,10 @@ impl PolymarketDataApiHttpClient {
                 break;
             }
             offset += count;
+            // API hard limit on offset
+            if offset >= MAX_OFFSET {
+                break;
+            }
         }
 
         // Apply final truncation to honour the caller's limit
