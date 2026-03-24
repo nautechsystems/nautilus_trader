@@ -1068,6 +1068,13 @@ impl ExecutionClient for PolymarketExecutionClient {
                 "Cannot cancel order that is not open: {}",
                 cmd.client_order_id
             );
+            let ts = self.clock.get_time_ns();
+            self.emitter.emit_order_cancel_rejected(
+                order_ref,
+                order_ref.venue_order_id(),
+                &format!("Order is not open (status: {:?})", order_ref.status()),
+                ts,
+            );
             return Ok(());
         }
 

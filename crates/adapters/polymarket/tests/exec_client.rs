@@ -1433,8 +1433,9 @@ async fn test_cancel_order_skips_non_open_order() {
     let cmd = make_cancel_cmd("O-CANCEL-INIT", instrument_id);
     client.cancel_order(&cmd).unwrap();
 
-    // No event should be emitted since the order is not open
-    assert!(rx.try_recv().is_err());
+    // CancelRejected is emitted synchronously for non-open orders
+    let event = rx.try_recv().expect("Expected CancelRejected event");
+    assert_order_event(event, "CancelRejected");
 }
 
 #[rstest]
