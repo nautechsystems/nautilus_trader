@@ -6139,6 +6139,114 @@ class TestHedgeModeReconciliation:
         assert cleanup_orders
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_does_not_cleanup_startup_position_when_targeted_query_returns_none_but_bulk_open_order_report_exists(
+        self,
+    ):
+        """
+        Startup cleanup must not treat a targeted-query `None` as venue truth when the
+        bulk open-order sweep still reports the order.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        cached_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        cached_position_fill = TestEventStubs.order_filled(
+            cached_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-STARTUP-GUARD-001"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("STARTUP-GUARD-FILL-001"),
+        )
+        cached_position = Position(instrument=AUDUSD_SIM, fill=cached_position_fill)
+        self.cache.add_position(cached_position, OmsType.NETTING)
+
+        cached_open_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("STARTUP-GUARD-ORDER-001"),
+        )
+        cached_open_order.apply(
+            TestEventStubs.order_submitted(
+                cached_open_order,
+                account_id=startup_account_id,
+            ),
+        )
+        cached_open_order.apply(
+            TestEventStubs.order_accepted(
+                cached_open_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("STARTUP-GUARD-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(cached_open_order)
+
+        self.client.add_order_status_report(
+            OrderStatusReport(
+                account_id=startup_account_id,
+                instrument_id=AUDUSD_SIM.id,
+                client_order_id=cached_open_order.client_order_id,
+                venue_order_id=cached_open_order.venue_order_id,
+                order_side=OrderSide.BUY,
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                order_status=OrderStatus.ACCEPTED,
+                price=Price.from_str("1.00000"),
+                quantity=Quantity.from_int(1_500),
+                filled_qty=Quantity.zero(),
+                report_id=UUID4(),
+                ts_accepted=0,
+                ts_last=0,
+                ts_init=0,
+            ),
+        )
+
+        async def targeted_query_returns_none(_command):
+            return None
+
+        self.client.generate_order_status_report = targeted_query_returns_none
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is False
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == cached_position.id
+        guarded_order = self.cache.order(cached_open_order.client_order_id)
+        assert guarded_order is not None
+        assert guarded_order.status == OrderStatus.ACCEPTED
+        assert not [
+            order
+            for order in self.cache.orders()
+            if order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(1_500)
+        ]
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_uses_open_only_with_targeted_open_order_queries_when_startup_positions_exist(
         self,
     ):

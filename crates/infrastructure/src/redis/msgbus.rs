@@ -978,6 +978,19 @@ mod serial_tests {
 
     // Tradeable node state must never silently stop publishing while the process keeps running.
     #[rstest]
+    fn test_default_publish_retry_budget_is_bounded() {
+        let config = DatabaseConfig::default();
+        let total_retry_delay: Duration = (0..config.number_of_retries)
+            .map(|attempt| publish_retry_delay(&config, attempt))
+            .sum();
+
+        assert!(
+            total_retry_delay <= Duration::from_secs(30),
+            "default publish retry budget should fail closed quickly, got {total_retry_delay:?}",
+        );
+    }
+
+    #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_drain_buffer_preserves_messages_when_pipeline_write_fails(
         #[future] redis_connection: ConnectionManager,
