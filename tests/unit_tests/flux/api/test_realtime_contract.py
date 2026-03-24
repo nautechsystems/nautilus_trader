@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from flux.api import socketio as socketio_module
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 
@@ -131,6 +132,26 @@ def _alerts_snapshot(
             query_string.update(query)
         response = client.get(
             "/api/v1/alerts",
+            query_string=query_string,
+        )
+        assert response.status_code == 200
+        return response.get_json()
+
+
+def _balances_snapshot(
+    app,
+    *,
+    profile: str | None = "tokenmm",
+    query: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with app.test_client() as client:
+        query_string: dict[str, Any] = {"contract_version": 2}
+        if profile is not None:
+            query_string["profile"] = profile
+        if query is not None:
+            query_string.update(query)
+        response = client.get(
+            "/api/v1/balances",
             query_string=query_string,
         )
         assert response.status_code == 200
@@ -274,6 +295,66 @@ def test_alerts_noncanonical_queries_withhold_realtime_metadata(
         {"strategy": flux_config.identity.strategy_id},
     ):
         body = _alerts_snapshot(app, query=query)
+        assert "realtime" not in body["data"]
+
+
+def test_balances_snapshot_contract_version_two_exposes_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    body = _balances_snapshot(app)
+    realtime = body["data"]["realtime"]
+
+    assert realtime["contract_version"] == 2
+    assert realtime["surface"] == "balances"
+    assert realtime["profile"] == "tokenmm"
+    assert realtime["surface_query_key"]
+    assert realtime["stream_id"]
+    assert realtime["snapshot_revision"] == 1
+    assert realtime["last_seq"] == 0
+    assert realtime["capabilities"]["recovery_mode"] == "invalidate_only"
+    assert realtime["capabilities"]["replay_supported"] is False
+
+
+def test_balances_noncanonical_queries_withhold_realtime_metadata(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    for query in (
+        {"limit": 10},
+        {"strategy": flux_config.identity.strategy_id},
+    ):
+        body = _balances_snapshot(app, query=query)
         assert "realtime" not in body["data"]
 
 
@@ -442,6 +523,602 @@ def test_standard_alerts_transport_subscribes_and_receives_heartbeat(
     assert payload["snapshot_revision"] == ack["snapshot_revision"]
     assert isinstance(payload["server_ts_ms"], int)
     client.disconnect()
+
+
+def test_standard_balances_transport_subscribes_and_receives_heartbeat(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _balances_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="balances"),
+    )
+
+    assert ack["accepted"] is True
+    assert ack["contract_version"] == 2
+    assert ack["surface"] == "balances"
+    assert ack["accepted_start_seq"] == 0
+    assert ack["capabilities"]["recovery_mode"] == "invalidate_only"
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "balances"
+    assert payload["profile"] == "tokenmm"
+    assert payload["kind"] == "heartbeat"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    assert isinstance(payload["server_ts_ms"], int)
+    client.disconnect()
+
+
+def test_standard_balances_change_emits_invalidate(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _balances_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="balances"),
+    )
+    assert ack["accepted"] is True
+
+    emitter.emit_once(profile="tokenmm")
+    initial_packets = _take_realtime_packets(client)
+    assert len(initial_packets) == 1
+    assert initial_packets[0]["args"][0]["kind"] == "heartbeat"
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "exchange": "venue_a",
+                "asset": "ABC",
+                "total": "2",
+                "ts_ms": 1_700_000_000_900,
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "balances"
+    assert payload["kind"] == "invalidate"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    client.disconnect()
+
+
+def test_standard_balances_change_after_subscribe_emits_invalidate_on_first_tick(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _balances_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="balances"),
+    )
+    assert ack["accepted"] is True
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "exchange": "venue_a",
+                "asset": "ABC",
+                "total": "2",
+                "ts_ms": 1_700_000_000_900,
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "balances"
+    assert payload["kind"] == "invalidate"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    client.disconnect()
+
+
+def test_legacy_market_update_emits_on_balances_only_change(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+
+    ack = _set_legacy_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
+
+    emitter.emit_once(profile="tokenmm")
+    _take_legacy_packets(client)
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "exchange": "venue_a",
+                "asset": "ABC",
+                "total": "2",
+                "ts_ms": 1_700_000_000_900,
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    legacy_packets = _take_legacy_packets(client)
+
+    market_updates = [packet for packet in legacy_packets if packet.get("name") == "market_update"]
+    assert len(market_updates) == 1
+    payload = market_updates[0]["args"][0]
+    assert payload["profile"] == "tokenmm"
+    assert isinstance(payload["seq"], int)
+    client.disconnect()
+
+
+def test_standard_balances_portfolio_snapshot_change_emits_invalidate(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(socketio_module, "now_ms", lambda: 1_700_000_001_000)
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "10",
+                "global_qty": "10",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": ["strategy_02"],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": True,
+                "ts_ms": 1_700_000_000_450,
+                "stale_after_ms": 30_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "10",
+                        "local_qty": "10",
+                        "ts_ms": 1_700_000_000_450,
+                        "state": "running",
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "10",
+                    "local_qty": "10",
+                    "ts_ms": 1_700_000_000_450,
+                    "state": "running",
+                },
+            ],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:ABC",
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "exchange": "venue_a",
+                        "asset": "ABC",
+                        "total": "10",
+                        "mv_raw": 20.0,
+                        "mark_raw": 2.0,
+                        "ts_ms": 1_700_000_000_450,
+                    },
+                ],
+            },
+            "server_ts_ms": 1_700_000_000_500,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _balances_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="balances"),
+    )
+    assert ack["accepted"] is True
+
+    emitter.emit_once(profile="tokenmm")
+    initial_packets = _take_realtime_packets(client)
+    assert len(initial_packets) == 1
+    assert initial_packets[0]["args"][0]["kind"] == "heartbeat"
+
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "10",
+                "global_qty": "10",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": [],
+                "stale_required": ["strategy_02"],
+                "null_qty_required": [],
+                "degraded": True,
+                "ts_ms": 1_700_000_000_700,
+                "stale_after_ms": 30_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "10",
+                        "local_qty": "10",
+                        "ts_ms": 1_700_000_000_700,
+                        "state": "running",
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "10",
+                    "local_qty": "10",
+                    "ts_ms": 1_700_000_000_700,
+                    "state": "running",
+                },
+            ],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:venue_a:ABC",
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "exchange": "venue_a",
+                        "asset": "ABC",
+                        "total": "10",
+                        "mv_raw": 20.0,
+                        "mark_raw": 2.0,
+                        "ts_ms": 1_700_000_000_450,
+                    },
+                ],
+            },
+            "server_ts_ms": 1_700_000_000_750,
+        },
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "balances"
+    assert payload["kind"] == "invalidate"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    client.disconnect()
+
+
+def test_standard_balances_market_row_change_emits_invalidate_for_fresh_snapshot(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(socketio_module, "now_ms", lambda: 1_700_000_001_000)
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "ABC",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "ABC",
+                "global_qty_base": "10",
+                "global_qty": "10",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": False,
+                "global_qty_complete": False,
+                "missing_required": [],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": False,
+                "ts_ms": 1_700_000_000_450,
+                "stale_after_ms": 30_000,
+                "components": [
+                    {
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "local_qty_base": "10",
+                        "local_qty": "10",
+                        "ts_ms": 1_700_000_000_450,
+                        "state": "running",
+                    },
+                ],
+            },
+            "components": [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "local_qty_base": "10",
+                    "local_qty": "10",
+                    "ts_ms": 1_700_000_000_450,
+                    "state": "running",
+                },
+            ],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:spot:venue_a:ABC/USDT",
+                        "strategy_id": flux_config.identity.strategy_id,
+                        "exchange": "venue_a",
+                        "symbol": "ABC/USDT",
+                        "asset": "ABC",
+                        "coin": "ABC",
+                        "total": "10",
+                        "mark_raw": None,
+                        "mv_raw": None,
+                        "ts_ms": 1_700_000_000_450,
+                    },
+                ],
+            },
+            "server_ts_ms": 1_700_000_000_500,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _balances_snapshot(app)
+
+    client = socketio.test_client(app)
+    ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="balances"),
+    )
+    assert ack["accepted"] is True
+
+    emitter.emit_once(profile="tokenmm")
+    initial_packets = _take_realtime_packets(client)
+    assert len(initial_packets) == 1
+    assert initial_packets[0]["args"][0]["kind"] == "heartbeat"
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.market_last(exchange="venue_a", base="ABC", quote="USDT"),
+        {"bid": 150.0, "ask": 151.0, "ts_ms": 1_700_000_000_900},
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    realtime_packets = _take_realtime_packets(client)
+
+    assert len(realtime_packets) == 1
+    payload = realtime_packets[0]["args"][0]
+    assert payload["contract_version"] == 2
+    assert payload["surface"] == "balances"
+    assert payload["kind"] == "invalidate"
+    assert payload["stream_id"] == ack["stream_id"]
+    assert payload["snapshot_revision"] == ack["snapshot_revision"]
+    client.disconnect()
+
+
+def test_canonical_balances_signature_ignores_filtered_raw_row_churn(
+    contract_catalog,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(socketio_module, "now_ms", lambda: 1_700_000_001_000)
+    base_row = {
+        "row_id": "strategy_01:cash:venue_a:ABC",
+        "strategy_id": "strategy_01",
+        "exchange": "venue_a",
+        "asset": "ABC",
+        "coin": "ABC",
+        "total": "10",
+        "mv_raw": 20.0,
+        "mark_raw": 2.0,
+        "ts_ms": 1_700_000_000_900,
+    }
+    filtered_row = {
+        "row_id": "strategy_01:cash:venue_a:DOGE",
+        "strategy_id": "strategy_01",
+        "exchange": "venue_a",
+        "asset": "DOGE",
+        "coin": "DOGE",
+        "total": "5",
+        "mv_raw": 1.0,
+        "mark_raw": 0.2,
+        "ts_ms": 1_700_000_000_900,
+    }
+    signature_a = socketio_module._canonical_balances_signature(
+        profile="tokenmm",
+        balances_rows_by_strategy={"strategy_01": [base_row, filtered_row]},
+        balance_snapshot_presence={"strategy_01": True},
+        portfolio_snapshot=None,
+        contracts=contract_catalog,
+        required_strategy_ids=["strategy_01"],
+        market_rows={},
+    )
+    signature_b = socketio_module._canonical_balances_signature(
+        profile="tokenmm",
+        balances_rows_by_strategy={
+            "strategy_01": [
+                base_row,
+                {
+                    **filtered_row,
+                    "total": "999",
+                    "mv_raw": 999.0,
+                    "mark_raw": 9.99,
+                },
+            ],
+        },
+        balance_snapshot_presence={"strategy_01": True},
+        portfolio_snapshot=None,
+        contracts=contract_catalog,
+        required_strategy_ids=["strategy_01"],
+        market_rows={},
+    )
+
+    assert signature_a == signature_b
+
+
+def test_standard_balances_snapshot_without_profile_uses_default_descriptor(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"default": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    snapshot = _balances_snapshot(app, profile=None)
+    realtime = snapshot["data"].get("realtime")
+
+    assert realtime is not None
+    assert realtime["surface"] == "balances"
+    assert realtime["profile"] == "tokenmm"
+    assert realtime["surface_query_key"]
+    assert realtime["stream_id"]
 
 
 def test_standard_alerts_change_emits_invalidate_with_summary(

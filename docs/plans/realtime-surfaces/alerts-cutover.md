@@ -30,9 +30,9 @@ Alerts now uses the real backend standard contract plus the controller path for 
 - allowed live sorts and filter rules: live order is fixed to timestamp-desc canonical ordering; client filtering is limited to level selection (`ALL`, `CRITICAL`, `ERROR`, `WARNING`, `INFO`); user-driven live resorting is not supported in this lane
 - degradation triggers and recovery thresholds: initial cold start is `SYNCING`; `LAGGING` starts when `Date.now() - lastUpdate > 10_000ms`; `STALE` starts when `Date.now() - lastUpdate > 20_000ms`; `RECOVERING` is entered for summary-triggered or manual refreshes; fallback polling is enabled only while `surfaceState` is `LAGGING` or `STALE`
 - health-state UX and action rules: the header `StatusPill` surfaces `SYNCING`, `LIVE`, `LAGGING`, `STALE`, `RECOVERING`, or `REFRESH`; manual refresh forces `RECOVERING`; clear-all applies controller snapshot `[]` plus store clear; failed fetches leave the surface in `STALE`
-- rollout flag, canary scope, rollback trigger, and rollback action: frontend rollout is controlled by `fluxboard:feature:realtime-standard` plus `fluxboard:feature:realtime-standard-alerts`; current backend capability remains the legacy `market_update` surface; canary scope is internal `/alerts` route usage on flagged profiles; rollback triggers are legacy payload dependency, duplicate recovery fetches, or alerts behavior drift; rollback action is to disable the Alerts surface flag, or the global realtime flag, and fall back to the legacy polling/socket path
-- minimum canary cohort and minimum standard-traffic thresholds required for cleanup: minimum canary cohort is one internal profile-scoped `/alerts` user for 7 consecutive days; minimum standard-traffic thresholds are at least one flagged Alerts subscriber and at least 50 bridge-routed `market_update` packets per day during the cleanup review window. Recovery snapshot counts remain supporting evidence and do not replace backend `legacy_event_counts.market_update`
-- required metrics, alert thresholds, dashboards, and rollback playbook refs: current rollout evidence must include `legacy_event_counts.market_update`, client-observed initial fetch count, recovery fetch count per unique summary key, and visible health-state transitions; alert thresholds are `>1` recovery fetch for the same summary key, any steady-state polling while the surface is `LIVE`, or `STALE` persisting for more than 20 seconds after new summary traffic; dashboard and playbook refs are `systems/flux/docs/realtime-rollout.md#Observability` and `systems/flux/docs/realtime-rollout.md#Operational-guidance`; Alerts will also adopt `active_standard_subscribers`, `standard_subscribe_counts`, and `standard_recovery_required_counts` when the backend exposes `contract_version=2` lineage for this surface
+- rollout flag, canary scope, rollback trigger, and rollback action: frontend rollout is controlled by `fluxboard:feature:realtime-standard` plus `fluxboard:feature:realtime-standard-alerts`; backend capability is the canonical alerts `contract_version=2` subscribe / realtime_event transport; canary scope is internal `/alerts` route usage on flagged profiles; rollback triggers are legacy payload dependency, duplicate recovery fetches, or alerts behavior drift; rollback action is to disable the Alerts surface flag, or the global realtime flag, and fall back to the legacy polling/socket path
+- minimum canary cohort and minimum standard-traffic thresholds required for cleanup: minimum canary cohort is one internal profile-scoped `/alerts` user for 7 consecutive days; minimum standard-traffic thresholds are at least one flagged Alerts subscriber and at least 50 alerts `realtime_event` packets per day during the cleanup review window. Recovery snapshot counts remain supporting evidence
+- required metrics, alert thresholds, dashboards, and rollback playbook refs: current rollout evidence must include `active_standard_subscribers.alerts:v2`, `standard_subscribe_counts`, `standard_recovery_required_counts`, client-observed initial fetch count, recovery fetch count per unique summary key, and visible health-state transitions; alert thresholds are `>1` recovery fetch for the same summary key, any steady-state polling while the surface is `LIVE`, or `STALE` persisting for more than 20 seconds after new summary traffic; dashboard and playbook refs are `systems/flux/docs/realtime-rollout.md#Observability` and `systems/flux/docs/realtime-rollout.md#Operational-guidance`
 - current alert state and rollback exercise result: current alert state is green in the lane-owned verification set with no active rollback trigger; rollback exercise result is pass via the flag-off Alerts test path, which preserved the legacy initial fetch plus polling behavior while the surfaced bridge stayed inactive
 - surface cutover readiness checkpoint results:
   - full per-surface adoption template: pass
@@ -41,7 +41,7 @@ Alerts now uses the real backend standard contract plus the controller path for 
   - mixed-rollout compatibility evidence under the current backend: pass via `fluxboard/__tests__/realtime/legacy-adapter.test.tsx` plus the runtime bridge bootstrap test
   - surface-specific hot-path proof or exemption: pass via `fluxboard/__tests__/panels/alerts.perf.test.tsx` plus the large-table exemption above
   - explicit rollback-to-flag-off exercise: pass via `fluxboard/Alerts.test.tsx`
-  - kill-switch, canary, and rollback actions validated against precedence rules: compatibility-path pass for frontend flag-off fallback and legacy backend behavior; backend `contract_version=2` kill-switch rehearsal is not yet applicable because Alerts is still using the compatibility bridge over legacy `market_update`
+  - kill-switch, canary, and rollback actions validated against precedence rules: pass for frontend flag-off fallback and backend `contract_version=2` capability withdrawal coverage
 
 ## Owned Changes
 
@@ -53,9 +53,9 @@ Alerts now uses the real backend standard contract plus the controller path for 
 
 `fluxboard/Alerts.tsx` owns a local realtime surface controller for canonical row ordering. REST loads, socket snapshots, manual refreshes, and clear-all all apply snapshots through that controller, while the Zustand alerts store is kept in sync as a compatibility mirror for existing actions and tests.
 
-### Shared bridge bootstrap
+### Runtime bootstrap
 
-`fluxboard/lib/realtime/runtimeBridge.ts` now registers the shared websocket bridge during app bootstrap, and `fluxboard/App.tsx` imports that module before routed surfaces mount. This converts `useWebSocket(..., { surface: 'alerts' })` from a test-only capability into a real runtime path.
+`fluxboard/lib/realtime/runtimeBridge.ts` now registers the shared websocket bridge during app bootstrap, and `fluxboard/App.tsx` imports that module before routed surfaces mount. Alerts itself now uses the standard socket client in flag-on mode; the bridge remains relevant for rollback and remaining compatibility surfaces only.
 
 ### Polling discipline
 
@@ -82,10 +82,10 @@ This keeps the Alerts surface from paying the socket-plus-polling tax while live
 - `pnpm preview -- --strictPort --host 127.0.0.1 --port 5000`
   - Result: Vite preview ignored the forwarded port flags in this invocation and served at `http://127.0.0.1:4173`
 - `E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts`
-  - Result: `1` cutover spec passed; it proved healthy steady state made `1` initial alerts fetch with no extra polling churn, then a summary-only `market_update` payload moved the surface through `RECOVERING` back to `LIVE` after exactly one recovery fetch
+  - Result: `1` cutover spec passed; it proved healthy steady state made `1` initial alerts fetch with no extra polling churn, then a summary-only standard alerts invalidation moved the surface through `RECOVERING` back to `LIVE` after exactly one recovery fetch
 
 ## Exemption / Scope Notes
 
-- Alerts is no longer a Task 15 cleanup blocker. Backend legacy-event cleanup is still blocked by Balances and explicit rollback-client support, but Alerts itself now uses backend-issued standard lineage in flag-on mode.
+- Alerts is no longer a Task 15 cleanup blocker. Backend legacy-event cleanup is still blocked by parked `MarketData` and explicit rollback-client support, but Alerts itself now uses backend-issued standard lineage in flag-on mode.
 - Alerts is currently a bounded operator feed, not a hundreds-of-rows trading grid. This cutover packet records a large-table exemption rather than claiming row-delta virtualization work that the surface does not yet need.
 - Alerts still consumes full snapshots or summary-triggered recovery snapshots rather than one-row socket deltas. If the backend evolves this surface into high-cardinality live row deltas, the next step is proving controller-side delta application and visible-window stability under that traffic pattern instead of relying on snapshot replacement alone.

@@ -65,6 +65,7 @@ const installTestSocket = async (
     }
 
     const listeners = new Map<string, Set<(payload?: any) => void>>();
+    const socketEmits: Array<{ event: string; payload: any }> = [];
     const getBucket = (event: string) => {
       let bucket = listeners.get(event);
       if (!bucket) {
@@ -102,9 +103,34 @@ const installTestSocket = async (
         listeners.get(event)?.delete(handler);
         return testSocket;
       },
-      emit(event: string, payload?: any) {
+      emit(event: string, payload?: any, ack?: (response: any) => void) {
+        socketEmits.push({ event, payload });
         if (event === 'set_profile') {
           testSocket.profile = payload?.profile;
+          return true;
+        }
+        if (event === 'subscribe' && typeof ack === 'function') {
+          ack({
+            accepted: true,
+            contract_version: payload?.contract_version,
+            surface: payload?.surface,
+            profile: payload?.profile,
+            surface_query_key: payload?.surface_query_key,
+            stream_id: payload?.stream_id,
+            snapshot_revision: payload?.snapshot_revision,
+            accepted_start_seq: payload?.resume_from_seq,
+            last_seq: payload?.resume_from_seq,
+            requested_resume_from_seq: payload?.resume_from_seq,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          });
+          return true;
+        }
+        if (event === 'unsubscribe' && typeof ack === 'function') {
+          ack({ ok: true, surface: payload?.surface ?? null });
           return true;
         }
         emit(event, payload);
@@ -135,6 +161,7 @@ const installTestSocket = async (
 
     (window as any).__fluxboardTestSocket = testSocket;
     (window as any).__fluxboardTestSocketFactory = () => testSocket;
+    (window as any).__fluxboardSocketEmits = socketEmits;
   }, flags);
 };
 
@@ -240,6 +267,20 @@ const makeBalancePayload = ({
       generated_at: '2026-03-23T00:00:00Z',
       view: 'parents_only',
       risk_groups: [],
+      realtime: {
+        contract_version: 2,
+        surface: 'balances',
+        profile: 'tokenmm',
+        surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snap-1',
+        last_seq: stable ? 1 : 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
     },
   };
 };
@@ -309,7 +350,7 @@ test.describe('MarketData and Balances realtime cutover', () => {
     expect(snapshotRequests).toHaveLength(2);
   });
 
-  test('Balances stays idle while healthy and refreshes once on market_update when the standard surface is enabled', async ({ page, baseURL }) => {
+  test('Balances uses standard subscribe and invalidation recovery when the standard surface is enabled', async ({ page, baseURL }) => {
     const balanceRequests: string[] = [];
     await installTestSocket(page, [
       'fluxboard:feature:realtime-standard',
@@ -347,18 +388,46 @@ test.describe('MarketData and Balances realtime cutover', () => {
     await expect(page.getByText('PLUME', { exact: true })).toBeVisible();
     await expect(page.getByText('Net Equity (Σ MV): $75.50')).toBeVisible();
     await expect(page.getByText('Account Equity')).toBeVisible();
+    const balanceSubscribe = await page.evaluate(() => {
+      const emits = (window as any).__fluxboardSocketEmits as Array<{ event: string; payload: any }>;
+      return emits.find((entry) => entry.event === 'subscribe' && entry.payload?.surface === 'balances')?.payload ?? null;
+    });
+    expect(balanceSubscribe).toMatchObject({
+      contract_version: 2,
+      surface: 'balances',
+      profile: 'tokenmm',
+      surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+      stream_id: 'balances:tokenmm:strategy_01',
+      snapshot_revision: 'balances-snap-1',
+      resume_from_seq: 0,
+    });
+
+    const requestsAtHealthyIdleStart = balanceRequests.length;
     await page.waitForTimeout(5_200);
-    expect(balanceRequests).toHaveLength(1);
+    expect(balanceRequests).toHaveLength(requestsAtHealthyIdleStart);
 
     await page.evaluate(() => {
-      (window as any).__fluxboardTestSocket.__emitServer('market_update', {
-        balances: { reason: 'test-refresh' },
+      (window as any).__fluxboardTestSocket.__emitServer('realtime_event', {
+        contract_version: 2,
+        surface: 'balances',
+        profile: 'tokenmm',
+        stream_id: 'balances:tokenmm:strategy_01',
+        kind: 'invalidate',
+        seq: 1,
+        snapshot_revision: 'balances-snap-1',
+        server_ts_ms: 1_700_000_100_000,
+        payload: {
+          balances: {
+            count: 1,
+            latest_ts_ms: 1_700_000_100_000,
+          },
+        },
       });
     });
 
     await expect(page.getByText('USDC', { exact: true })).toBeVisible();
     await expect(page.getByText('Net Equity (Σ MV): $2000.00')).toBeVisible();
     await expect(page.getByText('PLUME', { exact: true })).toHaveCount(0);
-    expect(balanceRequests).toHaveLength(2);
+    expect(balanceRequests).toHaveLength(requestsAtHealthyIdleStart + 1);
   });
 });

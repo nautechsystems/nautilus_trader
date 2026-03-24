@@ -9,23 +9,23 @@ This document describes the additive `contract_version=2` rollout controls imple
 2. The standard path is opt-in through:
    - HTTP snapshot request with `contract_version=2`
    - Socket.IO `subscribe` event carrying the returned lineage metadata
-3. The backend `contract_version=2` path currently supports `signal`, `trades`, and `alerts` surfaces.
-4. The current frontend `Signal`, `Trades`, and `Alerts` panels use `subscribe` / `realtime_event` /
+3. The backend `contract_version=2` path currently supports `signal`, `trades`, `alerts`, and `balances` surfaces.
+4. The current frontend `Signal`, `Trades`, `Alerts`, and `Balances` panels use `subscribe` / `realtime_event` /
    `unsubscribe` in flag-on mode; legacy event listeners remain only for explicit local flag-off rollback.
-5. `balances` currently uses the frontend realtime standard over the shared compatibility bridge, which
-   still consumes legacy `market_update` invalidation traffic and still blocks backend cleanup.
-6. `marketData` remains documented on the same compatibility bridge path today, but it is parked from the
+5. `marketData` remains documented on the compatibility bridge path today, but it is parked from the
    active cleanup wave until a separate product-owner decision either retires the route or funds a real
    backend standard contract for it.
-7. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
+6. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
    trades additionally supports bounded delta replay for contiguous gaps before falling back to
    `recovery_required`.
-8. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
+7. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
    strategy set exactly matches the subscribable stream identity for that profile.
-9. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
-10. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
+8. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
+9. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
    profile-shaped REST fallbacks are not allowed to advertise `data.realtime` if `subscribe` would reject them.
-11. Non-canonical trades queries stay REST-only and omit `data.realtime`.
+10. Balances only advertises realtime lineage for canonical profile-scoped `GET /api/v1/balances?contract_version=2&limit=50` snapshots that resolve to a subscribable normalized profile descriptor.
+11. Balances standard recovery is `invalidate_only`; the emitter watches both profile-scoped balances rows and the canonical portfolio snapshot source so portfolio-level changes also emit balances invalidations.
+12. Non-canonical trades and balances queries stay REST-only and omit `data.realtime`.
 
 ## Active Surface Matrix
 
@@ -34,7 +34,7 @@ This document describes the additive `contract_version=2` rollout controls imple
 | `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
 | `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in the canonical live view | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
 | `alerts` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and remaining bridge-backed surfaces are resolved |
-| `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no until the surface gets a real backend contract or is retired |
+| `balances` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in canonical profile-scoped views | `invalidate_only` with lineage | frontend duplicate-path cleanup yes; backend legacy-event cleanup still blocked by rollback clients and parked `marketData` |
 | `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | parked from the active cleanup wave; do not spend more cleanup-wave implementation here, and do not treat it as retired without an explicit route/product decision |
 
 ## Rollout state
@@ -50,10 +50,14 @@ Default shape:
     "surface_enabled": {
         "signal": True,
         "trades": True,
+        "alerts": True,
+        "balances": True,
     },
     "surface_canary_profiles": {
         "signal": None,
         "trades": None,
+        "alerts": None,
+        "balances": None,
     },
 }
 ```
@@ -149,7 +153,9 @@ Tracked buckets:
    - keyed by accept/reject reason
 3. `standard_recovery_required_counts`
    - keyed by recovery reason
-4. `legacy_event_counts`
+4. `standard_event_counts`
+   - keyed by `<surface>:<kind>` for emitted `realtime_event` traffic
+5. `legacy_event_counts`
    - keyed by legacy Socket.IO event name
 
 These counters are process-local and intended for rollout smoke tests and integration instrumentation.
@@ -158,12 +164,12 @@ Bridge-backed surfaces currently rely on mixed evidence during cleanup review:
 
 1. `legacy_event_counts.market_update` remains the backend-side proof that compatibility traffic exists.
 2. Surface-owned Playwright or Vitest rollout checks provide the client-observed request-count ceilings,
-   recovery counts, and visible health-state transitions for `alerts`, `balances`, and the parked
+   recovery counts, and visible health-state transitions for `alerts` and the parked
    `marketData` surface.
 3. Cleanup review must not treat the absence of backend `contract_version=2` counters for those bridge
    surfaces as permission to remove `market_update`.
-4. For the current wave, only `balances` is still an active bridge-backed cleanup blocker. `marketData`
-   remains documented for operational awareness but is parked pending a separate route or contract decision.
+4. For the current wave, `marketData` remains documented for operational awareness but is parked pending a
+   separate route or contract decision.
 
 Task 14 also adds deterministic browser cutover evidence for the flag-on Signal and Trades routes:
 

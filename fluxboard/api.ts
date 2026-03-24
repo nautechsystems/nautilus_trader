@@ -1875,8 +1875,15 @@ export const api = {
   },
 
   // Balances - FluxAPI v1 returns {"ok": true, "data": {...}}
-  getBalances: async (): Promise<BalancesPayload> => {
+  getBalances: async (options: { contractVersion?: number } = {}): Promise<BalancesPayload> => {
     const qs = new URLSearchParams();
+    if (
+      typeof options.contractVersion === 'number'
+      && Number.isFinite(options.contractVersion)
+      && options.contractVersion > 0
+    ) {
+      qs.set('contract_version', String(Math.trunc(options.contractVersion)));
+    }
     appendProfileQuery(qs);
     const response = await fetchJSON<BalancesResponse>(
       `/api/v1/balances${qs.toString() ? `?${qs.toString()}` : ''}`
@@ -1900,6 +1907,9 @@ export const api = {
         : new Date(
             coerceTimestampMs((payload as Record<string, unknown>).server_ts_ms) ?? Date.now(),
           ).toISOString();
+    const realtime = normalizeRealtimeSnapshotLineage(
+      (payload as Record<string, unknown>).realtime ?? payload,
+    );
     return {
       ...payload,
       rows,
@@ -1908,6 +1918,7 @@ export const api = {
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
       risk_groups: normalizeRiskGroups(payload.risk_groups),
+      realtime,
     };
   },
 

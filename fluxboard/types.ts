@@ -530,6 +530,7 @@ export type BalancesPayload = {
   generated_at: string;
   view: string;
   risk_groups?: RiskGroup[];
+  realtime?: RealtimeSnapshotLineage;
 };
 
 export type BalancesResponse = {

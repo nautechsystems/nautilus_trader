@@ -519,6 +519,49 @@ describe('profile-scoped read APIs', () => {
     expect(path).toContain('profile=equities');
   });
 
+  it('appends balances contract_version and preserves realtime lineage for canonical standard snapshots', async () => {
+    setPathname('/tokenmm/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [],
+        total: 0,
+        totals: {
+          mv_raw: 0,
+          mv_display: '$0.00',
+        },
+        realtime: {
+          contract_version: 2,
+          surface: 'balances',
+          profile: 'tokenmm',
+          surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+          stream_id: 'balances:tokenmm:strategy_01',
+          snapshot_revision: 'balances-snapshot-1',
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      },
+    });
+
+    const payload = await api.getBalances({ contractVersion: 2 });
+
+    const [path] = fetchJSONMock.mock.calls.at(-1) ?? [];
+    expect(path).toContain('/api/v1/balances?');
+    expect(path).toContain('profile=tokenmm');
+    expect(path).toContain('contract_version=2');
+    expect((payload as any).realtime).toMatchObject({
+      contract_version: 2,
+      surface: 'balances',
+      stream_id: 'balances:tokenmm:strategy_01',
+      snapshot_revision: 'balances-snapshot-1',
+      last_seq: 3,
+    });
+  });
+
   it('appends profile to alerts request on equities routes', async () => {
     setPathname('/equities/alerts');
     fetchJSONMock.mockResolvedValue({

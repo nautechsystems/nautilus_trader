@@ -21,6 +21,7 @@ const hookState = vi.hoisted(() => ({
     surface?: string;
     handler: (payload: unknown) => void;
   }>,
+  standardSubscriptionCalls: [] as Array<Record<string, any>>,
   pollingCalls: [] as Array<{
     interval: number;
     enabled: boolean | undefined;
@@ -81,6 +82,11 @@ vi.mock('../../hooks', async () => {
         hookState.websocketCalls.push({ event, surface: options?.surface, handler });
       }, [event, handler, options?.surface]);
     },
+    useStandardWebSocketSubscription: (options: Record<string, any>) => {
+      useEffect(() => {
+        hookState.standardSubscriptionCalls.push(options);
+      }, [options]);
+    },
   };
 });
 
@@ -89,6 +95,7 @@ describe('market/balances realtime standard surface wiring', () => {
     __resetViewportClockRegistryForTests();
     hookState.enabledSurfaces.clear();
     hookState.websocketCalls = [];
+    hookState.standardSubscriptionCalls = [];
     hookState.pollingCalls = [];
 
     marketSnapshotMock.mockResolvedValue({
@@ -137,6 +144,20 @@ describe('market/balances realtime standard surface wiring', () => {
       generated_at: '2024-01-01T00:00:00Z',
       view: 'parents_only',
       risk_groups: [],
+      realtime: {
+        contract_version: 2,
+        surface: 'balances',
+        profile: 'tokenmm',
+        surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
     });
   });
 
@@ -182,7 +203,7 @@ describe('market/balances realtime standard surface wiring', () => {
     });
   });
 
-  it('routes MarketData and Balances through market_update bridge subscriptions when standard flags are on', async () => {
+  it('keeps MarketData on the bridge while Balances uses the standard subscription when standard flags are on', async () => {
     hookState.enabledSurfaces.add('marketData');
     hookState.enabledSurfaces.add('balances');
 
@@ -201,13 +222,34 @@ describe('market/balances realtime standard surface wiring', () => {
     expect(hookState.websocketCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ event: 'market_update', surface: 'marketData' }),
-        expect.objectContaining({ event: 'market_update', surface: 'balances' }),
+      ]),
+    );
+    expect(hookState.standardSubscriptionCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          enabled: true,
+          lineage: expect.objectContaining({
+            contract_version: 2,
+            surface: 'balances',
+            stream_id: 'balances:tokenmm:strategy_01',
+          }),
+        }),
       ]),
     );
 
     await act(async () => {
-      hookState.websocketCalls.forEach(({ handler }) => {
-        handler({ market_data: { count: 1 }, balances: { count: 1 } });
+      hookState.websocketCalls.forEach(({ handler, surface }) => {
+        if (surface === 'marketData') {
+          handler({ market_data: { count: 1 } });
+        }
+      });
+      hookState.standardSubscriptionCalls.at(-1)?.onEvent?.({
+        kind: 'invalidate',
+        seq: 1,
+        contract_version: 2,
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        payload: {},
       });
       await flushPromises();
     });
@@ -238,7 +280,8 @@ describe('market/balances realtime standard surface wiring', () => {
     ).toHaveLength(1);
     expect(
       hookState.websocketCalls.filter((call) => call.surface === 'balances'),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
+    expect(hookState.standardSubscriptionCalls.some((call) => call.enabled === true)).toBe(false);
     expect(hookState.pollingCalls.some((call) => call.enabled === false)).toBe(true);
     expect(hookState.pollingCalls.some((call) => call.enabled !== false)).toBe(true);
   });
@@ -263,7 +306,15 @@ describe('market/balances realtime standard surface wiring', () => {
     ).toHaveLength(0);
     expect(
       hookState.websocketCalls.filter((call) => call.surface === 'balances'),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    expect(hookState.standardSubscriptionCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          enabled: true,
+          lineage: expect.objectContaining({ surface: 'balances' }),
+        }),
+      ]),
+    );
     expect(hookState.pollingCalls.some((call) => call.enabled === false)).toBe(true);
     expect(hookState.pollingCalls.some((call) => call.enabled !== false)).toBe(true);
   });
@@ -281,7 +332,12 @@ describe('market/balances realtime standard surface wiring', () => {
       expect(balancesSnapshotMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(hookState.websocketCalls.filter((call) => call.surface)).toEqual([]);
+    expect(hookState.websocketCalls.filter((call) => call.surface)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ surface: 'balances', event: 'market_update' }),
+      ]),
+    );
+    expect(hookState.standardSubscriptionCalls.some((call) => call.enabled === true)).toBe(false);
     expect(hookState.pollingCalls.some((call) => call.enabled !== false)).toBe(true);
   });
 
@@ -304,13 +360,21 @@ describe('market/balances realtime standard surface wiring', () => {
     expect(hookState.websocketCalls.filter((call) => call.surface)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ surface: 'marketData' }),
-        expect.objectContaining({ surface: 'balances' }),
+      ]),
+    );
+    expect(hookState.standardSubscriptionCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          enabled: true,
+          lineage: expect.objectContaining({ surface: 'balances' }),
+        }),
       ]),
     );
 
     firstRender.unmount();
     hookState.enabledSurfaces.clear();
     hookState.websocketCalls = [];
+    hookState.standardSubscriptionCalls = [];
     hookState.pollingCalls = [];
     vi.clearAllMocks();
 
@@ -359,6 +423,15 @@ describe('market/balances realtime standard surface wiring', () => {
       generated_at: '2024-01-01T00:00:00Z',
       view: 'parents_only',
       risk_groups: [],
+      realtime: {
+        contract_version: 2,
+        surface: 'balances',
+        profile: 'tokenmm',
+        surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        last_seq: 0,
+      },
     });
 
     render(
@@ -373,7 +446,12 @@ describe('market/balances realtime standard surface wiring', () => {
       expect(balancesSnapshotMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(hookState.websocketCalls.filter((call) => call.surface)).toEqual([]);
+    expect(hookState.websocketCalls.filter((call) => call.surface)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ surface: 'balances', event: 'market_update' }),
+      ]),
+    );
+    expect(hookState.standardSubscriptionCalls.some((call) => call.enabled === true)).toBe(false);
     expect(hookState.pollingCalls.some((call) => call.enabled !== false)).toBe(true);
   });
 
@@ -443,22 +521,46 @@ describe('market/balances realtime standard surface wiring', () => {
           mv_raw: 100,
           mv_display: '$100.00',
         },
-        generated_at: '2024-01-01T00:00:05Z',
-        view: 'parents_only',
-        risk_groups: [],
-      });
+      generated_at: '2024-01-01T00:00:05Z',
+      view: 'parents_only',
+      risk_groups: [],
+      realtime: {
+        contract_version: 2,
+        surface: 'balances',
+        profile: 'tokenmm',
+        surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        last_seq: 1,
+      },
+    });
 
     const marketHandler = hookState.websocketCalls.find((call) => call.surface === 'marketData')?.handler;
-    const balancesHandler = hookState.websocketCalls.find((call) => call.surface === 'balances')?.handler;
+    const balancesSubscription = hookState.standardSubscriptionCalls.at(-1);
+    const initialBalancesLineage = balancesSubscription?.lineage;
 
     expect(marketHandler).toBeTypeOf('function');
-    expect(balancesHandler).toBeTypeOf('function');
+    expect(balancesSubscription?.onEvent).toBeTypeOf('function');
 
     await act(async () => {
       marketHandler?.({ strategies: { changed: ['signal-a'] } });
       marketHandler?.({ strategies: { changed: ['signal-b'] } });
-      balancesHandler?.({ strategies: { changed: ['signal-a'] } });
-      balancesHandler?.({ strategies: { changed: ['signal-b'] } });
+      balancesSubscription?.onEvent?.({
+        kind: 'invalidate',
+        seq: 1,
+        contract_version: 2,
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        payload: {},
+      });
+      balancesSubscription?.onEvent?.({
+        kind: 'invalidate',
+        seq: 2,
+        contract_version: 2,
+        stream_id: 'balances:tokenmm:strategy_01',
+        snapshot_revision: 'balances-snapshot-1',
+        payload: {},
+      });
       await flushPromises();
     });
 
@@ -511,6 +613,15 @@ describe('market/balances realtime standard surface wiring', () => {
         generated_at: '2024-01-01T00:00:04Z',
         view: 'parents_only',
         risk_groups: [],
+        realtime: {
+          contract_version: 2,
+          surface: 'balances',
+          profile: 'tokenmm',
+          surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+          stream_id: 'balances:tokenmm:strategy_01',
+          snapshot_revision: 'balances-snapshot-1',
+          last_seq: 2,
+        },
       });
       await flushPromises();
       await flushPromises();
@@ -525,5 +636,10 @@ describe('market/balances realtime standard surface wiring', () => {
       expect(useMarketDataStore.getState().rows[0]?.coin).toBe('ETH/USDT');
       expect(useBalancesStore.getState().rows[0]?.canonical).toBe('USDC');
     });
+
+    const latestBalancesSubscription = [...hookState.standardSubscriptionCalls]
+      .reverse()
+      .find((call) => call.lineage?.surface === 'balances');
+    expect(latestBalancesSubscription?.lineage).toBe(initialBalancesLineage);
   });
 });

@@ -14,7 +14,7 @@ import {
   selectBalancesRiskSort,
   shallow,
 } from './stores';
-import { usePolling, useWebSocket } from './hooks';
+import { usePolling, useStandardWebSocketSubscription, useWebSocket } from './hooks';
 import { useMobileLayout } from './hooks/useMobileLayout';
 import { useViewportClock } from './hooks/useViewportClock';
 import { PanelHeader } from './components/shared/PanelHeader';
@@ -27,7 +27,7 @@ import { Button } from './components/ui/button/Button';
 import { Switch } from './components/ui/switch';
 import { Tooltip, TooltipProvider } from './components/ui/tooltip';
 import { TableFilter, applyFilters, type ColumnFilter, type FilterValues } from './components/shared/TableFilter';
-import type { BalanceParentRow, BalanceChildRow } from './types';
+import type { BalanceParentRow, BalanceChildRow, BalancesPayload, RealtimeSnapshotLineage } from './types';
 import { RiskTable, type RiskSortState } from './components/balances/RiskTable';
 import {
   DUST_THRESHOLD,
@@ -62,6 +62,25 @@ const LEGACY_EXPANDED_STORAGE_KEY = 'balances:expanded:v1';
 const BALANCES_CLOCK_KEY = 'surface:balances';
 
 const noopWebSocketSubscribe = () => () => {};
+
+function getBalancesRealtimeLineage(payload: BalancesPayload): RealtimeSnapshotLineage | null {
+  return payload.realtime ?? null;
+}
+
+function sameLineageIdentity(
+  left: RealtimeSnapshotLineage | null,
+  right: RealtimeSnapshotLineage | null,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return left.contract_version === right.contract_version
+    && left.surface === right.surface
+    && left.profile === right.profile
+    && left.surface_query_key === right.surface_query_key
+    && left.stream_id === right.stream_id
+    && String(left.snapshot_revision) === String(right.snapshot_revision);
+}
 
 function getFreshnessColor(timestampMs: number | null | undefined, nowMs: number): string {
   if (!timestampMs || timestampMs <= 0) {
@@ -407,6 +426,7 @@ export default function Balances({
   const [pollingFallbackEnabled, setPollingFallbackEnabled] = useState(
     () => !balancesRealtimeStandardEnabled,
   );
+  const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
   const lastOkMsRef = useRef<number | null>(null);
   const freshnessHealthNowMs = useViewportClock({
     clockKey: BALANCES_CLOCK_KEY,
@@ -444,6 +464,16 @@ export default function Balances({
   const abortRef = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const pendingRefreshRef = useRef(false);
+  const standardResumeSeqRef = useRef(0);
+
+  const markRealtimeHealthy = useCallback(() => {
+    const receivedAt = Date.now();
+    setLastOkMs(receivedAt);
+    lastOkMsRef.current = receivedAt;
+    if (balancesRealtimeStandardEnabled) {
+      setPollingFallbackEnabled(false);
+    }
+  }, [balancesRealtimeStandardEnabled]);
 
   useEffect(() => () => {
     balancesController.destroy();
@@ -486,17 +516,27 @@ export default function Balances({
 
     setLoading(true);
     try {
-      const data = await api.getBalances();
+      const data = await api.getBalances(
+        balancesRealtimeStandardEnabled ? { contractVersion: 2 } : undefined,
+      );
       if (!ac.signal.aborted) {
+        const nextLineage = getBalancesRealtimeLineage(data);
+        standardResumeSeqRef.current = Math.max(
+          0,
+          typeof nextLineage?.last_seq === 'number' ? nextLineage.last_seq : 0,
+        );
+        setStandardLineage((previousLineage) => (
+          sameLineageIdentity(previousLineage, nextLineage)
+            ? previousLineage
+            : nextLineage
+        ));
         if (balancesRealtimeStandardEnabled) {
           balancesController.applySnapshot(data.rows);
         }
         setData(data);
-        const receivedAt = Date.now();
-        setLastOkMs(receivedAt);
-        lastOkMsRef.current = receivedAt;
-        if (balancesRealtimeStandardEnabled) {
-          setPollingFallbackEnabled(false);
+        markRealtimeHealthy();
+        if (balancesRealtimeStandardEnabled && !nextLineage) {
+          setPollingFallbackEnabled(true);
         }
       }
     } catch (error) {
@@ -515,21 +555,55 @@ export default function Balances({
         void fetchBalancesImpl();
       }
     }
-  }, [balancesController, balancesRealtimeStandardEnabled, setData, setLoading]);
+  }, [balancesController, balancesRealtimeStandardEnabled, markRealtimeHealthy, setData, setLoading]);
 
   usePolling(fetchBalances, REFRESH_MS, pollingFallbackEnabled);
 
+  useStandardWebSocketSubscription({
+    enabled: balancesRealtimeStandardEnabled && Boolean(standardLineage),
+    lineage: balancesRealtimeStandardEnabled ? standardLineage : null,
+    resumeFromSeq: () => (
+      standardResumeSeqRef.current > 0
+        ? standardResumeSeqRef.current
+        : (standardLineage?.last_seq ?? 0)
+    ),
+    onEvent: (event) => {
+      if (typeof event.seq === 'number' && Number.isFinite(event.seq)) {
+        standardResumeSeqRef.current = Math.max(standardResumeSeqRef.current, event.seq);
+      }
+      if (event.kind === 'heartbeat') {
+        markRealtimeHealthy();
+        return;
+      }
+      if (event.kind === 'invalidate') {
+        void fetchBalances();
+      }
+    },
+    onFailure: () => {
+      if (balancesRealtimeStandardEnabled) {
+        setPollingFallbackEnabled(true);
+      }
+      void fetchBalances();
+    },
+    onSubscribed: (ack) => {
+      const acceptedSeq = typeof ack.accepted_start_seq === 'number' ? ack.accepted_start_seq : 0;
+      const lastSeq = typeof ack.last_seq === 'number' ? ack.last_seq : acceptedSeq;
+      standardResumeSeqRef.current = Math.max(standardResumeSeqRef.current, acceptedSeq, lastSeq);
+      markRealtimeHealthy();
+    },
+  });
+
   useWebSocket(
-    'market_update',
+    balancesRealtimeStandardEnabled ? '__balances_legacy_disabled__' : 'market_update',
     useCallback(() => {
-      if (!balancesRealtimeStandardEnabled) {
+      if (balancesRealtimeStandardEnabled) {
         return;
       }
       void fetchBalances();
     }, [balancesRealtimeStandardEnabled, fetchBalances]),
     balancesRealtimeStandardEnabled
-      ? { surface: 'balances' }
-      : { subscribe: noopWebSocketSubscribe },
+      ? { subscribe: noopWebSocketSubscribe }
+      : { surface: 'balances' },
   );
 
   useEffect(() => {
