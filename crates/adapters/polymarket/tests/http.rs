@@ -77,6 +77,7 @@ struct TestServerState {
     gamma_tags_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_search_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_clob_token_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
+    single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -95,6 +96,7 @@ impl Default for TestServerState {
             gamma_tags_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_search_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_clob_token_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -363,6 +365,15 @@ async fn handle_public_search(State(state): State<TestServerState>) -> Response 
     }
 }
 
+async fn handle_get_order(State(state): State<TestServerState>) -> Response {
+    let resp = state.single_order_response.lock().await;
+    match resp.as_ref() {
+        Some(v) => Json(v.clone()).into_response(),
+        // Simulate empty 200 OK (no body)
+        None => (StatusCode::OK, "").into_response(),
+    }
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -370,6 +381,7 @@ async fn handle_health() -> impl IntoResponse {
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/data/orders", get(handle_get_orders))
+        .route("/data/order/{id}", get(handle_get_order))
         .route("/data/trades", get(handle_get_trades))
         .route("/balance-allowance", get(handle_get_balance))
         .route(
@@ -1510,4 +1522,53 @@ fn test_build_gamma_params_from_empty_hashmap() {
     assert!(params.active.is_none());
     assert!(params.closed.is_none());
     assert!(params.volume_num_min.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_order_optional_empty_body_returns_none() {
+    let state = TestServerState::default();
+    // single_order_response is None → handler returns empty 200
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let result = client.get_order_optional("test-order-id").await.unwrap();
+    assert!(result.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_order_optional_null_body_returns_none() {
+    let state = TestServerState::default();
+    // Store literal JSON null
+    *state.single_order_response.lock().await = Some(json!(null));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let result = client.get_order_optional("test-order-id").await.unwrap();
+    assert!(result.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_order_optional_valid_json_returns_some() {
+    let state = TestServerState::default();
+    *state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let result = client.get_order_optional("test-order-id").await.unwrap();
+    assert!(result.is_some());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_order_empty_body_returns_error() {
+    let state = TestServerState::default();
+    // single_order_response is None → handler returns empty 200
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let result = client.get_order("test-order-id").await;
+    assert!(result.is_err());
 }

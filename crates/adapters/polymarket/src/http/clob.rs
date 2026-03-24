@@ -182,6 +182,42 @@ impl PolymarketClobHttpClient {
         }
     }
 
+    /// Like [`send_get`] but returns `Ok(None)` for empty or `null` response bodies
+    /// instead of a serde deserialization error.
+    async fn send_get_optional<P: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+        auth: bool,
+    ) -> Result<Option<T>> {
+        let headers = if auth {
+            Some(self.auth_headers("GET", path, ""))
+        } else {
+            None
+        };
+        let url = self.url(path);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, params, headers, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        if response.status.is_success() {
+            if response.body.is_empty() || response.body.as_ref() == b"null" {
+                Ok(None)
+            } else {
+                serde_json::from_slice(&response.body)
+                    .map(Some)
+                    .map_err(Error::Serde)
+            }
+        } else {
+            Err(Error::from_status_code(
+                response.status.as_u16(),
+                &response.body,
+            ))
+        }
+    }
+
     async fn send_post<T: DeserializeOwned>(&self, path: &str, body_bytes: Vec<u8>) -> Result<T> {
         let body_str =
             from_utf8(&body_bytes).map_err(|e| Error::decode(format!("UTF-8 error: {e}")))?;
@@ -260,10 +296,20 @@ impl PolymarketClobHttpClient {
         Ok(all)
     }
 
-    /// Fetches a single open order by ID.
-    pub async fn get_order(&self, order_id: &str) -> Result<PolymarketOpenOrder> {
+    /// Fetches a single open order by ID, returning `None` for empty/null responses.
+    pub async fn get_order_optional(&self, order_id: &str) -> Result<Option<PolymarketOpenOrder>> {
         let path = format!("/data/order/{order_id}");
-        self.send_get::<(), _>(&path, None::<&()>, true).await
+        self.send_get_optional::<(), _>(&path, None::<&()>, true)
+            .await
+    }
+
+    /// Fetches a single open order by ID.
+    ///
+    /// Returns an error if the order is not found (empty/null response).
+    pub async fn get_order(&self, order_id: &str) -> Result<PolymarketOpenOrder> {
+        self.get_order_optional(order_id)
+            .await?
+            .ok_or_else(|| Error::decode(format!("Order {order_id} not found (empty response)")))
     }
 
     /// Fetches all trades matching the given parameters (auto-paginated).

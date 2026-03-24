@@ -294,7 +294,9 @@ impl OrderSubmitter {
     }
 
     /// Fetches a single order by its venue order ID from the CLOB REST API.
-    pub async fn get_order(&self, order_id: &str) -> anyhow::Result<PolymarketOpenOrder> {
+    ///
+    /// Returns `Ok(None)` if the API returns an empty or `null` body (order not found / settled).
+    pub async fn get_order(&self, order_id: &str) -> anyhow::Result<Option<PolymarketOpenOrder>> {
         let http_client = self.http_client.clone();
         let oid = order_id.to_string();
 
@@ -304,7 +306,7 @@ impl OrderSubmitter {
                 || {
                     let http_client = http_client.clone();
                     let oid = oid.clone();
-                    async move { http_client.get_order(&oid).await }
+                    async move { http_client.get_order_optional(&oid).await }
                 },
                 |e| e.is_retryable(),
                 Error::transport,

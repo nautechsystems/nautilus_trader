@@ -1269,8 +1269,8 @@ impl ExecutionClient for PolymarketExecutionClient {
         let clock = self.clock;
 
         runtime.block_on(async {
-            match http_client.get_order(&venue_order_id).await {
-                Ok(order) => {
+            match http_client.get_order_optional(&venue_order_id).await {
+                Ok(Some(order)) => {
                     let report = parse_order_status_report(
                         &order,
                         instrument_id,
@@ -1281,6 +1281,9 @@ impl ExecutionClient for PolymarketExecutionClient {
                         clock.get_time_ns(),
                     );
                     emitter.send_order_status_report(report);
+                }
+                Ok(None) => {
+                    log::warn!("Order {venue_order_id} not found (empty response)");
                 }
                 Err(e) => {
                     log::warn!("Failed to query order {venue_order_id}: {e}");
@@ -1371,11 +1374,18 @@ impl ExecutionClient for PolymarketExecutionClient {
             }
         };
 
-        let order = self
+        let order = match self
             .http_client
-            .get_order(&venue_order_id)
+            .get_order_optional(&venue_order_id)
             .await
-            .context("failed to fetch order")?;
+            .context("failed to fetch order")?
+        {
+            Some(o) => o,
+            None => {
+                log::info!("Order {venue_order_id} not found (empty response)");
+                return Ok(None);
+            }
+        };
 
         let instrument = self.core.cache().instrument(&instrument_id).cloned();
         let (price_prec, size_prec) = match &instrument {
@@ -1691,7 +1701,11 @@ async fn check_fok_status(
     log::info!("FOK order {order_id} unresolved after 5s, checking REST status");
 
     let venue_order = match submitter.get_order(order_id).await {
-        Ok(o) => o,
+        Ok(Some(o)) => o,
+        Ok(None) => {
+            log::info!("FOK order {order_id} not found (empty response), WS will reconcile");
+            return;
+        }
         Err(e) => {
             log::warn!("FOK status check failed for {order_id}: {e}");
             return;
