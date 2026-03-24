@@ -27,6 +27,7 @@ Non-canonical trades views remain REST-only and do not advertise `data.realtime`
 - `manual_refresh_required` is sticky across reconnects; the panel does not silently auto-recover until the user refreshes
 - queued recovery snapshots that started before `manual_refresh_required` are discarded and cannot silently clear the fail-closed state
 - returning from a non-canonical view waits for a fresh canonical snapshot before the standard subscription is re-armed
+- reconnect still forces a fresh canonical snapshot after leave/re-enter churn even if an older canonical request resolves late
 - legacy events without epoch metadata remain compatible in flag-off mode and do not spuriously trigger snapshot refreshes
 
 ## Rollout Notes
@@ -38,7 +39,7 @@ Non-canonical trades views remain REST-only and do not advertise `data.realtime`
 ## Verification
 
 - `VITEST_FULL=1 pnpm --dir fluxboard exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx`
-  - Result: `21` suites passed, `76` tests passed
+  - Result: `77` tests passed
 - `pnpm --dir fluxboard build:test`
   - Result: production bundle built successfully
 - `E2E_BASE_URL=http://127.0.0.1:4173 pnpm --dir fluxboard exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/trades.spec.ts`
