@@ -658,12 +658,24 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
+    use std::sync::{Arc, OnceLock};
+
     use nautilus_common::testing::wait_until_async;
     use redis::aio::ConnectionManager;
     use rstest::*;
 
     use super::*;
     use crate::redis::flush_redis;
+
+    async fn acquire_redis_test_lock() -> tokio::sync::OwnedMutexGuard<()> {
+        static REDIS_TEST_LOCK: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+
+        REDIS_TEST_LOCK
+            .get_or_init(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+            .lock_owned()
+            .await
+    }
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
@@ -678,6 +690,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_terminate_signal(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -719,6 +732,7 @@ mod serial_tests {
     async fn test_stream_messages_when_receiver_closed(
         #[future] redis_connection: ConnectionManager,
     ) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -772,6 +786,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -829,6 +844,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -885,9 +901,189 @@ mod serial_tests {
         flush_redis(&mut con).await.unwrap();
     }
 
+    // Tradeable node state must never silently stop publishing while the process keeps running.
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_drain_buffer_preserves_messages_when_pipeline_write_fails(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let stream_key = "test:msgbus:wrongtype";
+        let _: () = con.set(stream_key, "blocked").await.unwrap();
+
+        let mut last_trim_index = HashMap::new();
+        let mut buffer = VecDeque::from([BusMessage::with_str_topic(
+            "retry_topic",
+            Bytes::from_static(b"retry_payload"),
+        )]);
+
+        let _result = drain_buffer(
+            &mut con,
+            stream_key,
+            false,
+            None,
+            &mut last_trim_index,
+            &mut buffer,
+        )
+        .await;
+        let remaining = buffer.clone();
+        let key_type: String = redis::cmd("TYPE")
+            .arg(stream_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+
+        flush_redis(&mut con).await.unwrap();
+
+        assert_eq!(key_type, "string");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "write failures must not consume buffered messages",
+        );
+        let msg = remaining.front().unwrap();
+        assert_eq!(msg.topic, "retry_topic");
+        assert_eq!(msg.payload, Bytes::from_static(b"retry_payload"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_retries_after_transient_redis_write_failure(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig {
+                number_of_retries: 1,
+                factor: 10,
+                max_delay: 1,
+                ..Default::default()
+            }),
+            stream_per_topic: false,
+            use_instance_id: true,
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let _: () = con.set(&stream_key, "blocked").await.unwrap();
+
+        let handle = tokio::spawn(async move {
+            publish_messages(rx, trader_id, instance_id, config).await
+        });
+
+        tx.send(BusMessage::with_str_topic(
+            "retry_topic",
+            Bytes::from_static(b"retry_payload"),
+        ))
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let _: () = con.del(&stream_key).await.unwrap();
+
+        let mut probe = con.clone();
+        let stream_key_for_read = stream_key.clone();
+        let publish_result = tokio::time::timeout(Duration::from_secs(2), async move {
+            loop {
+                let messages: RedisStreamBulk =
+                    probe.xread(&[&stream_key_for_read], &["0"]).await.unwrap();
+                if !messages.is_empty() {
+                    return messages;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        match publish_result {
+            Ok(messages) => {
+                let stream_msgs = messages[0].get(&stream_key).unwrap();
+                let stream_msg_array = &stream_msgs[0].values().next().unwrap();
+                let decoded_message = decode_bus_message(stream_msg_array).unwrap();
+                assert_eq!(decoded_message.topic, "retry_topic");
+                assert_eq!(decoded_message.payload, Bytes::from_static(b"retry_payload"));
+
+                tx.send(BusMessage::new_close()).unwrap();
+                assert!(handle.await.unwrap().is_ok());
+                flush_redis(&mut con).await.unwrap();
+            }
+            Err(_) => {
+                if !handle.is_finished() {
+                    handle.abort();
+                }
+                let task_result = handle.await;
+                flush_redis(&mut con).await.unwrap();
+                panic!(
+                    "publish task did not retry the transient write failure: {task_result:?}"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_task_exposes_terminal_failure_state(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig {
+                number_of_retries: 1,
+                factor: 10,
+                max_delay: 1,
+                ..Default::default()
+            }),
+            stream_per_topic: false,
+            use_instance_id: true,
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let _: () = con.set(&stream_key, "blocked").await.unwrap();
+
+        let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
+        db.publish(
+            Ustr::from("terminal_topic"),
+            Bytes::from_static(b"terminal_payload"),
+        );
+
+        let terminal_failure_exposed =
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if db.is_closed() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .is_ok();
+        let key_type: String = redis::cmd("TYPE")
+            .arg(&stream_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+
+        db.close();
+        flush_redis(&mut con).await.unwrap();
+
+        assert_eq!(key_type, "string");
+        assert!(
+            terminal_failure_exposed,
+            "terminal publish failure remained unobservable to the rest of the process",
+        );
+    }
+
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_multiple_streams(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -959,6 +1155,7 @@ mod serial_tests {
     async fn test_stream_messages_interleaved_at_different_rates(
         #[future] redis_connection: ConnectionManager,
     ) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -1045,6 +1242,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_close() {
+        let _lock = acquire_redis_test_lock().await;
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
