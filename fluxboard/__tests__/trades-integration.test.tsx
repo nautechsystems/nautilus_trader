@@ -215,4 +215,5 @@ describe('Trades integration flows', () => {
       expect(top.qty_venue).toBe('100');
     });
   });
+
 });

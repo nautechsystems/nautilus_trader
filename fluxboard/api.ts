@@ -912,8 +912,11 @@ function projectTradeQuantityPayload(row: Record<string, unknown>): {
 } {
   const qtyBaseText = String(row.qty_base ?? '').trim() || undefined;
   const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim() || undefined;
+  const baseFirstCandidate = toFiniteOptionalNumber(qtyBaseText);
   const qty = toFiniteOptionalNumber(
-    routeUsesBaseFirstTradeQty(getActivePathProfile()) ? (qtyBaseText ?? row.qty) : row.qty,
+    routeUsesBaseFirstTradeQty(getActivePathProfile())
+      ? (baseFirstCandidate ?? row.qty)
+      : row.qty,
   );
   return { qty, qtyBaseText, qtyVenueText };
 }

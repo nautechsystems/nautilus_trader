@@ -332,4 +332,48 @@ describe('Trades recovery regressions', () => {
     expect(rows[0]?.qty).toBe(1000);
     expect(rows[0]?.qty_venue).toBe('100');
   });
+
+  it('keeps venue qty primary when tokenmm snapshot rows carry a malformed qty_base', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
+    const { setSnapshot } = setupStore();
+    mockGetTrades.mockResolvedValueOnce({
+      rows: [
+        makeTradeRow({
+          row_id: 'row-bad-base',
+          seq: 447,
+          ts: 1_772_700_209_799,
+          ts_ms: 1_772_700_209_799,
+          exchange: 'okx',
+          instrument_id: 'PLUME-USDT-SWAP.OKX',
+          side: '1',
+          price: '0.012736' as any,
+          qty: '100' as any,
+          qty_base: 'not-a-number' as any,
+          qty_venue: '100' as any,
+          trade_id: 'row-bad-base',
+          order_id: 'O-bad-base',
+          signal_id: 'plumeusdt_okx_perp_makerv3',
+        } as Partial<TradeRow>),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      last_seq: 447,
+      has_more: false,
+      next_cursor: null,
+    });
+    mockGetTradesDelta.mockResolvedValueOnce({ rows: [], last_seq: 447, reset_required: false });
+
+    render(<Trades />);
+
+    await waitFor(() => {
+      expect(setSnapshot).toHaveBeenCalled();
+      const [rows] = setSnapshot.mock.calls.at(-1) as [TradeRow[]];
+      const top = rows[0] as TradeRow | undefined;
+      expect(top?.row_id).toBe('row-bad-base');
+      expect(top?.qty).toBe('100');
+      expect((top as any)?.qty_base).toBe('not-a-number');
+      expect((top as any)?.qty_venue).toBe('100');
+    });
+  });
 });

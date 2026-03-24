@@ -300,7 +300,7 @@ class FluxSocketEmitter:
         self._alerts_by_profile: dict[str, tuple[int, int | None, str]] = {}
         self._failure_streak_by_profile: dict[str, int] = {}
         self._backoff_until_by_profile: dict[str, float] = {}
-        self._tokenmm_clean_trade_streams: set[str] = set()
+        self._tokenmm_clean_trade_stream_signatures: dict[str, tuple[int, str]] = {}
         self._trade_poll_limit = SOCKETIO_TRADE_POLL_LIMIT
         self._trade_scan_limit = SOCKETIO_TRADE_SCAN_LIMIT
         self._alerts_preview_limit = SOCKETIO_ALERTS_PREVIEW_LIMIT
@@ -424,16 +424,26 @@ class FluxSocketEmitter:
     def _tokenmm_trade_stream_requires_reset(self, strategy_id: str, metadata: Any) -> bool:
         if not _metadata_is_tokenmm(metadata):
             return False
-        if strategy_id in self._tokenmm_clean_trade_streams:
-            return False
         stream_reset_resolver = getattr(self._store, "tokenmm_trade_stream_requires_reset", None)
+        signature_resolver = getattr(self._store, "tokenmm_trade_stream_signature", None)
+        signature: tuple[int, str] | None = None
+        if callable(signature_resolver):
+            raw_signature = signature_resolver(strategy_id)
+            if isinstance(raw_signature, Sequence) and not isinstance(raw_signature, str | bytes) and len(raw_signature) == 2:
+                signature = (
+                    safe_int(raw_signature[0]) or 0,
+                    decode_text(raw_signature[1]).strip(),
+                )
+        if signature is not None and self._tokenmm_clean_trade_stream_signatures.get(strategy_id) == signature:
+            return False
         if not callable(stream_reset_resolver):
             return False
         requires_reset = bool(stream_reset_resolver(strategy_id))
         if requires_reset:
-            self._tokenmm_clean_trade_streams.discard(strategy_id)
+            self._tokenmm_clean_trade_stream_signatures.pop(strategy_id, None)
             return True
-        self._tokenmm_clean_trade_streams.add(strategy_id)
+        if signature is not None:
+            self._tokenmm_clean_trade_stream_signatures[strategy_id] = signature
         return False
 
     def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:

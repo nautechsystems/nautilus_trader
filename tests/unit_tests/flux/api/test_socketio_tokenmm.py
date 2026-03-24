@@ -592,6 +592,61 @@ def test_socket_emitter_tokenmm_requires_recovery_when_legacy_rows_fall_outside_
     client.disconnect()
 
 
+def test_socket_emitter_tokenmm_revalidates_stream_when_new_legacy_rows_arrive_after_clean_tick(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+    _ = _take_socket_packets(client)
+
+    redis_client.streams[keys.trades_stream()].append(
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "row_id": "trade-legacy-after-clean",
+            "seq": 2,
+            "version": 1,
+            "ts_ms": 1_700_000_000_400,
+            "instrument_id": "PLUME-USDT-SWAP.OKX",
+            "exchange": "okx",
+            "side": "BUY",
+            "price": "0.012736",
+            "qty": "100",
+        },
+    )
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+
+    assert trade_packets == []
+    assert len(market_packets) == 1
+    assert market_packets[0]["args"][0]["recovery"] == {"required": True, "reason": "trade_gap"}
+    client.disconnect()
+
+
 def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signals(
     flux_config,
     redis_client,

@@ -236,7 +236,10 @@ const normalizeTradeEventLike = (candidate: any): any => {
   if (qtyBaseText) {
     row.qty_base = qtyBaseText;
     if (baseFirstQty) {
-      row.qty = Number(qtyBaseText);
+      const qtyBaseNumber = coerceFiniteNumber(qtyBaseText);
+      if (qtyBaseNumber !== undefined) {
+        row.qty = qtyBaseNumber;
+      }
     }
   }
 

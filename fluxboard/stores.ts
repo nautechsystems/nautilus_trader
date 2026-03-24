@@ -153,8 +153,11 @@ function projectTradeQuantityFields(event: TradeEvent): {
 } {
   const qtyBase = coerceOptionalText((event as any).qty_base);
   const qtyVenue = coerceOptionalText((event as any).qty_venue ?? (event as any).qty);
+  const baseFirstCandidate = coerceNumber(qtyBase);
   const qty = coerceNumber(
-    routeUsesBaseFirstTradeQty() ? (qtyBase ?? (event as any).qty) : (event as any).qty,
+    routeUsesBaseFirstTradeQty()
+      ? (baseFirstCandidate ?? (event as any).qty)
+      : (event as any).qty,
   );
   return { qty, qtyBase, qtyVenue };
 }

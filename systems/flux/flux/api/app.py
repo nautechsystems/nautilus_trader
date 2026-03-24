@@ -322,6 +322,7 @@ class FluxApiStore:
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
         self._strategy_alerts_resolver = strategy_alerts_resolver
+        self._tokenmm_trade_reset_cache: dict[str, tuple[tuple[int, str], bool]] = {}
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -1296,12 +1297,30 @@ class FluxApiStore:
             base_first_qty=base_first_qty,
         )
 
+    def tokenmm_trade_stream_signature(self, strategy_id: str) -> tuple[int, str]:
+        keys = self._keys_for_strategy(strategy_id)
+        stream_key = keys.trades_stream()
+        stream_len = self.trades_stream_len(strategy_id) or 0
+        latest_entries = self._redis.xrevrange(stream_key, count=1)
+        latest_entry_id = ""
+        if latest_entries:
+            latest_entry = latest_entries[0]
+            if isinstance(latest_entry, Sequence) and not isinstance(latest_entry, str | bytes):
+                latest_entry_id = decode_text(latest_entry[0]).strip()
+        return stream_len, latest_entry_id
+
     def tokenmm_trade_stream_requires_reset(self, strategy_id: str) -> bool:
+        signature = self.tokenmm_trade_stream_signature(strategy_id)
+        cached = self._tokenmm_trade_reset_cache.get(strategy_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
         keys = self._keys_for_strategy(strategy_id)
         entries = self._redis.xrevrange(keys.trades_stream())
         rows = extract_stream_rows(entries)
         filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
-        return tokenmm_trade_rows_require_reset(filtered)
+        requires_reset = tokenmm_trade_rows_require_reset(filtered)
+        self._tokenmm_trade_reset_cache[strategy_id] = (signature, requires_reset)
+        return requires_reset
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
