@@ -170,3 +170,93 @@ def test_main_fails_closed_when_profile_readiness_is_unhealthy(
     assert "TOKENMM RISK AUDIT FAILED" in captured.err
     assert "readiness" in captured.err.lower()
     assert "state_stream_freshness" in captured.err
+
+
+def test_main_success_banner_includes_readiness_freshness_summary(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    strategy_id = "plumeusdt_bybit_perp_makerv3"
+
+    def _fake_fetch_enveloped_data(*, base_url: str, path: str, timeout: float):
+        assert base_url == "http://127.0.0.1:5022"
+        assert timeout == 5.0
+        if path == module.PROFILE_READINESS_PATH:
+            return {
+                "ok": True,
+                "summary": {
+                    "ready_strategy_count": 1,
+                    "required_strategy_count": 1,
+                    "state_stream_max_age_ms": 30_000,
+                    "failed_checks": [],
+                },
+            }
+        if path == module.PROFILE_SIGNALS_PATH:
+            return {
+                "strategies": [
+                    {
+                        "id": strategy_id,
+                        "meta": {"base_asset": "PLUME"},
+                        "state": {
+                            "state": "bot_off",
+                            "local_qty_base": "5",
+                            "global_qty_base": "5",
+                            "global_qty_base_complete": True,
+                            "aggregation_mode": "complete",
+                        },
+                    },
+                ],
+            }
+        if path == module.PROFILE_BALANCES_PATH:
+            return {
+                "source": "portfolio_snapshot",
+                "global_qty_base": "5",
+                "global_qty_base_complete": True,
+                "aggregation_mode": "complete",
+                "components": [
+                    {
+                        "strategy_id": strategy_id,
+                        "local_qty_base": "5",
+                        "local_position_qty_base": "5",
+                    },
+                ],
+            }
+        if path == module._strategy_balances_path(strategy_id):
+            return {
+                "rows": [
+                    {
+                        "kind": "position",
+                        "signed_qty_base": "5",
+                        "row_id": f"{strategy_id}:pos:0",
+                        "ts_ms": 1_700_000_000_000,
+                    },
+                ],
+            }
+        raise AssertionError(f"unexpected path: {path}")
+
+    module._fetch_enveloped_data = _fake_fetch_enveloped_data
+    module._fetch_json = lambda **_: {
+        "jobs": [
+            {
+                "id": f"tokenmm-node-{strategy_id}",
+                "group_key": "tokenmm",
+                "status": "active",
+            },
+        ],
+    }
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(tmp_path / "missing.toml"),
+            "--strategy-id",
+            strategy_id,
+        ],
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "TOKENMM RISK AUDIT PASSED" in captured.out
+    assert "readiness=1/1" in captured.out
+    assert "state_stream_max_age_ms=30000" in captured.out

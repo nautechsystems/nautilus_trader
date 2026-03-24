@@ -16,6 +16,8 @@ from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
+from flux.api.payloads import safe_int
+
 
 PROFILE_SIGNALS_PATH = "/api/v1/signals?profile=tokenmm"
 PROFILE_BALANCES_PATH = "/api/v1/balances?profile=tokenmm"
@@ -387,6 +389,20 @@ def _readiness_failure_message(readiness_payload: Mapping[str, Any]) -> str:
     return "; ".join(details)
 
 
+def _readiness_success_fragment(readiness_payload: Mapping[str, Any]) -> str:
+    summary = _as_mapping(readiness_payload.get("summary"))
+    ready_strategy_count = safe_int(summary.get("ready_strategy_count"))
+    required_strategy_count = safe_int(summary.get("required_strategy_count"))
+    state_stream_max_age_ms = safe_int(summary.get("state_stream_max_age_ms"))
+
+    details: list[str] = []
+    if ready_strategy_count is not None and required_strategy_count is not None:
+        details.append(f"readiness={ready_strategy_count}/{required_strategy_count}")
+    if state_stream_max_age_ms is not None:
+        details.append(f"state_stream_max_age_ms={state_stream_max_age_ms}")
+    return ", ".join(details)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -606,12 +622,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {error}", file=sys.stderr)
         return 1
 
+    readiness_fragment = _readiness_success_fragment(readiness_payload)
+    readiness_suffix = f", {readiness_fragment}" if readiness_fragment else ""
     print(
         "TOKENMM RISK AUDIT PASSED "
         f"({len(expected_strategy_ids)} strategies, "
         f"global_qty_base={profile_global_qty}, "
         f"aggregation_mode={profile_aggregation_mode}, "
-        f"global_qty_base_complete={profile_global_complete})",
+        f"global_qty_base_complete={profile_global_complete}"
+        f"{readiness_suffix})",
     )
     for summary in strategy_summaries:
         print(f"- {summary}")
