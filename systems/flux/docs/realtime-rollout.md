@@ -12,17 +12,20 @@ This document describes the additive `contract_version=2` rollout controls imple
 3. The backend `contract_version=2` path currently supports `signal` and `trades` surfaces.
 4. The current frontend `Signal` and `Trades` panels use `subscribe` / `realtime_event` / `unsubscribe`
    in flag-on mode; legacy event listeners remain only for explicit local flag-off rollback.
-5. `alerts`, `balances`, and `marketData` currently use the frontend realtime standard over the shared
-   compatibility bridge, which still consumes legacy `market_update` invalidation traffic.
-6. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
+5. `alerts` and `balances` currently use the frontend realtime standard over the shared compatibility
+   bridge, which still consumes legacy `market_update` invalidation traffic and still blocks backend cleanup.
+6. `marketData` remains documented on the same compatibility bridge path today, but it is parked from the
+   active cleanup wave until a separate product-owner decision either retires the route or funds a real
+   backend standard contract for it.
+7. Signal standard recovery is intentionally `invalidate_only` under the current polling transport, while
    trades additionally supports bounded delta replay for contiguous gaps before falling back to
    `recovery_required`.
-7. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
+8. Signals only advertises realtime lineage for canonical profile-scoped snapshots whose request-selected
    strategy set exactly matches the subscribable stream identity for that profile.
-8. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
-9. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
+9. Trades only advertises realtime lineage for the canonical unfiltered first-page descending snapshot.
+10. Canonical trades snapshots must also resolve to a real subscribable descriptor for that normalized profile;
    profile-shaped REST fallbacks are not allowed to advertise `data.realtime` if `subscribe` would reject them.
-10. Non-canonical trades queries stay REST-only and omit `data.realtime`.
+11. Non-canonical trades queries stay REST-only and omit `data.realtime`.
 
 ## Active Surface Matrix
 
@@ -30,9 +33,9 @@ This document describes the additive `contract_version=2` rollout controls imple
 | --- | --- | --- | --- |
 | `signal` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in flag-on mode | `invalidate_only` with lineage and explicit `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
 | `trades` | frontend standard panel with backend `contract_version=2` snapshot lineage and standard Socket.IO subscription in the canonical live view | delta replay for contiguous gaps, otherwise `recovery_required` | frontend duplicate-path cleanup yes; backend legacy-event cleanup no until rollback clients and bridge-backed surfaces are resolved |
-| `alerts` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
-| `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
-| `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no |
+| `alerts` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no until the surface gets a real backend contract or is retired |
+| `balances` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | frontend duplicate-path cleanup yes; backend `market_update` removal no until the surface gets a real backend contract or is retired |
+| `marketData` | frontend standard controller over compatibility bridge via legacy `market_update` | `invalidate_only` snapshot refresh | parked from the active cleanup wave; do not spend more cleanup-wave implementation here, and do not treat it as retired without an explicit route/product decision |
 
 ## Rollout state
 
@@ -155,9 +158,12 @@ Bridge-backed surfaces currently rely on mixed evidence during cleanup review:
 
 1. `legacy_event_counts.market_update` remains the backend-side proof that compatibility traffic exists.
 2. Surface-owned Playwright or Vitest rollout checks provide the client-observed request-count ceilings,
-   recovery counts, and visible health-state transitions for `alerts`, `balances`, and `marketData`.
+   recovery counts, and visible health-state transitions for `alerts`, `balances`, and the parked
+   `marketData` surface.
 3. Cleanup review must not treat the absence of backend `contract_version=2` counters for those bridge
    surfaces as permission to remove `market_update`.
+4. For the current wave, only `alerts` and `balances` are active bridge-backed cleanup blockers. `marketData`
+   remains documented for operational awareness but is parked pending a separate route or contract decision.
 
 Task 14 also adds deterministic browser cutover evidence for the flag-on Signal and Trades routes:
 
@@ -176,6 +182,9 @@ The Task 12 frontend cleanup rehearsal is the mixed-surface Playwright soak:
 E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-soak.spec.ts
 ```
 
+After the 2026-03-24 scope correction, the rehearsal's `MarketData` coverage is historical/non-blocking.
+It remains useful regression evidence for the parked route, but it is not an active Task 13 cleanup gate.
+
 The rehearsal runs a fake-socket mixed rollout with:
 
 1. `Signal`, `Trades`, `Alerts`, and `Balances` mounted together on `/dashboard`
@@ -188,7 +197,8 @@ The rehearsal runs a fake-socket mixed rollout with:
 Pass criteria currently recorded by the rehearsal:
 
 1. mounted dashboard rows stay within the committed `<=120` gate
-2. `signal`, `alerts`, `balances`, and `marketData` stay within their bounded recovery request ceilings
+2. `signal`, `alerts`, and `balances` stay within their bounded recovery request ceilings, while `marketData`
+   remains a historical non-blocking regression target
 3. `trades` issues exactly one delta replay request after the injected gap
 4. the trades replay request preserves `since_seq`, `stream_id`, and `snapshot_revision`
 5. the visible UI shows the recovered alert, balances refresh, trades replay row, and market-data refresh
@@ -231,3 +241,5 @@ the rehearsal green.
 6. Do not remove backend `market_update`, `signal_delta`, or `trade_update` traffic solely because the
    frontend cleanup rehearsal passed; backend legacy-event removal is only valid for surfaces that no longer
    rely on legacy frontend subscriptions or the compatibility bridge.
+7. Treat `marketData` parking as a scope decision, not as retirement. If product still exposes the route,
+   backend cleanup cannot claim MarketData is complete or safely removed.
