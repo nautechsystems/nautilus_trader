@@ -196,6 +196,8 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
 
     """
     for attr in (
+        "take_profit",
+        "stop_loss",
         "tp_trigger_by",
         "sl_trigger_by",
         "tp_order_type",
@@ -204,14 +206,11 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
         "sl_trigger_price",
         "tp_limit_price",
         "sl_limit_price",
+        "close_on_trigger",
     ):
         val = tp_sl.get(attr)
         if val is not None:
             setattr(order_params, attr, val)
-
-    val = tp_sl.get("close_on_trigger")
-    if val is not None:
-        order_params.close_on_trigger = val  # type: ignore[union-attr]
 
 
 class BybitExecutionClient(LiveExecutionClient):
@@ -1061,13 +1060,6 @@ class BybitExecutionClient(LiveExecutionClient):
         is_quote_quantity = (
             order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
         )
-        pyo3_take_profit = (
-            nautilus_pyo3.Price.from_str(tp_sl["take_profit"]) if tp_sl.get("take_profit") else None
-        )
-        pyo3_stop_loss = (
-            nautilus_pyo3.Price.from_str(tp_sl["stop_loss"]) if tp_sl.get("stop_loss") else None
-        )
-
         try:
             if self._is_demo:
                 await self._http_client.submit_order(
@@ -1086,10 +1078,9 @@ class BybitExecutionClient(LiveExecutionClient):
                     is_quote_quantity=is_quote_quantity,
                     is_leverage=is_leverage,
                 )
-            elif pyo3_take_profit is not None or pyo3_stop_loss is not None:
-                # Native TP/SL: use build_place_order_params so all TP/SL fields are
-                # wired into the request, then apply the remaining enum/price fields
-                # directly on the mutable BybitWsPlaceOrderParams object.
+            elif tp_sl.get("take_profit") or tp_sl.get("stop_loss"):
+                # Native TP/SL: build params object then set all TP/SL fields directly
+                # on the mutable BybitWsPlaceOrderParams object via _apply_tp_sl_fields.
                 order_params = self._ws_trade_client.build_place_order_params(
                     product_type=product_type,
                     instrument_id=pyo3_instrument_id,
@@ -1104,8 +1095,6 @@ class BybitExecutionClient(LiveExecutionClient):
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,
                     is_leverage=is_leverage,
-                    take_profit=pyo3_take_profit,
-                    stop_loss=pyo3_stop_loss,
                 )
                 _apply_tp_sl_fields(order_params, tp_sl)
                 await self._ws_trade_client.batch_place_orders(
@@ -1252,12 +1241,6 @@ class BybitExecutionClient(LiveExecutionClient):
         order_params = []
 
         is_leverage = tp_sl["is_leverage"]
-        pyo3_take_profit = (
-            nautilus_pyo3.Price.from_str(tp_sl["take_profit"]) if tp_sl.get("take_profit") else None
-        )
-        pyo3_stop_loss = (
-            nautilus_pyo3.Price.from_str(tp_sl["stop_loss"]) if tp_sl.get("stop_loss") else None
-        )
 
         for order in orders:
             if order.is_closed:
@@ -1318,8 +1301,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
                 is_leverage=is_leverage,
-                take_profit=pyo3_take_profit,
-                stop_loss=pyo3_stop_loss,
             )
             _apply_tp_sl_fields(ws_params, tp_sl)
             order_params.append(ws_params)
