@@ -194,11 +194,12 @@ def _make_spread_order(spread: OptionSpread, tag: str = "001") -> MarketOrder:
 @pytest.mark.asyncio
 async def test_preload_spread_instruments_loads_from_cached_orders(exec_client, cache):
     """
-    Test that spread instruments referenced by cached orders are pre-loaded
-    into the instrument provider via _fetch_spread_instrument.
+    Test that spread instruments referenced by cached orders are pre-loaded into the
+    instrument provider via _fetch_spread_instrument.
 
-    Verifies fix for issue #3752 where spread instruments are not loaded
-    on restart, causing 'instrument not found' errors during reconciliation.
+    Verifies fix for issue #3752 where spread instruments are not loaded on restart,
+    causing 'instrument not found' errors during reconciliation.
+
     """
     # Arrange
     call = _make_option_contract("SPY C400", "SMART", OptionKind.CALL)
@@ -290,8 +291,8 @@ async def test_preload_spread_instruments_ignores_non_spread_orders(exec_client,
 @pytest.mark.asyncio
 async def test_preload_spread_instruments_handles_fetch_failure_gracefully(exec_client, cache):
     """
-    Test that a failure to fetch one spread instrument does not prevent
-    others from being loaded and does not raise an exception.
+    Test that a failure to fetch one spread instrument does not prevent others from
+    being loaded and does not raise an exception.
     """
     # Arrange
     call1 = _make_option_contract("SPY C400", "SMART", OptionKind.CALL)
@@ -324,8 +325,8 @@ async def test_preload_spread_instruments_handles_fetch_failure_gracefully(exec_
 @pytest.mark.asyncio
 async def test_preload_spread_instruments_deduplicates_across_orders(exec_client, cache):
     """
-    Test that multiple orders referencing the same spread instrument only
-    trigger a single fetch.
+    Test that multiple orders referencing the same spread instrument only trigger a
+    single fetch.
     """
     # Arrange
     call = _make_option_contract("SPY C400", "SMART", OptionKind.CALL)
