@@ -46,6 +46,7 @@ use nautilus_polymarket::{
     },
     http::{
         clob::PolymarketClobHttpClient,
+        data_api::PolymarketDataApiHttpClient,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
         query::{
@@ -78,6 +79,7 @@ struct TestServerState {
     gamma_search_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_clob_token_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
     single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    data_api_trade_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -97,6 +99,7 @@ impl Default for TestServerState {
             gamma_search_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_clob_token_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
+            data_api_trade_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         }
     }
 }
@@ -123,6 +126,10 @@ fn create_clob_client(addr: &SocketAddr) -> PolymarketClobHttpClient {
         Some(5),
     )
     .unwrap()
+}
+
+fn create_data_api_client(addr: &SocketAddr) -> PolymarketDataApiHttpClient {
+    PolymarketDataApiHttpClient::new(Some(format!("http://{addr}")), Some(5)).unwrap()
 }
 
 fn create_gamma_client(addr: &SocketAddr) -> PolymarketGammaRawHttpClient {
@@ -365,6 +372,32 @@ async fn handle_public_search(State(state): State<TestServerState>) -> Response 
     }
 }
 
+async fn handle_data_api_trades(
+    State(state): State<TestServerState>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> Response {
+    let all_trades = state.data_api_trade_pages.lock().await;
+    // Flatten all enqueued pages into a single pool for offset/limit slicing
+    let pool: Vec<Value> = all_trades
+        .iter()
+        .filter_map(|v| v.as_array())
+        .flatten()
+        .cloned()
+        .collect();
+
+    let offset: usize = params
+        .get("offset")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let limit: usize = params
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(pool.len());
+
+    let page: Vec<Value> = pool.into_iter().skip(offset).take(limit).collect();
+    Json(json!(page)).into_response()
+}
+
 async fn handle_get_order(State(state): State<TestServerState>) -> Response {
     let resp = state.single_order_response.lock().await;
     match resp.as_ref() {
@@ -395,6 +428,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/events", get(handle_gamma_events))
         .route("/tags", get(handle_gamma_tags))
         .route("/public-search", get(handle_public_search))
+        .route("/trades", get(handle_data_api_trades))
         .route("/health", get(handle_health))
         .with_state(state)
 }
@@ -1571,4 +1605,153 @@ async fn test_get_order_empty_body_returns_error() {
 
     let result = client.get_order("test-order-id").await;
     assert!(result.is_err());
+}
+
+fn make_data_api_trade(asset: &str, price: f64, timestamp: i64, tx_suffix: &str) -> Value {
+    json!({
+        "asset": asset,
+        "conditionId": "0xcondition_test",
+        "side": "BUY",
+        "price": price,
+        "size": 10.0,
+        "timestamp": timestamp,
+        "transactionHash": format!("0x{tx_suffix:0>66}")
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_paginates_multiple_pages() {
+    let state = TestServerState::default();
+    let token = "token_aaa";
+    let condition_id = "0xcondition_test";
+
+    // Enqueue 8 trades total. With limit=Some(5), page_size=5.
+    // Request 1: offset=0, limit=5 → 5 trades (full page → continues)
+    // Request 2: offset=5, limit=5 → 3 trades (partial → stops)
+    // Total raw: 8, after token_id filter: 8 (all match)
+    let mut trades = Vec::new();
+    for i in 0..8u32 {
+        trades.push(make_data_api_trade(
+            token,
+            0.50 + (i as f64) * 0.01,
+            1710000008 - i as i64,
+            &format!("aaa{i}"),
+        ));
+    }
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .push_back(Value::Array(trades));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_aaa.POLYMARKET"),
+            condition_id,
+            token,
+            2,
+            2,
+            Some(5), // page_size = min(5, 500) = 5
+        )
+        .await
+        .unwrap();
+
+    // 8 trades across 2 pages, truncated to limit 5, reversed to chronological
+    assert_eq!(ticks.len(), 5);
+    for i in 1..ticks.len() {
+        assert!(ticks[i - 1].ts_event <= ticks[i].ts_event);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_limit_truncation() {
+    let state = TestServerState::default();
+    let token = "token_bbb";
+    let condition_id = "0xcondition_test";
+
+    // Page 1: 3 trades (full page when limit=3), limit target=3 → truncate after page 1
+    state.data_api_trade_pages.lock().await.extend([
+        json!([
+            make_data_api_trade(token, 0.60, 1710000003, "bbb3"),
+            make_data_api_trade(token, 0.59, 1710000002, "bbb2"),
+            make_data_api_trade(token, 0.58, 1710000001, "bbb1"),
+        ]),
+    ]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_bbb.POLYMARKET"),
+            condition_id,
+            token,
+            2,
+            2,
+            Some(3),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(ticks.len(), 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_single_page_partial() {
+    let state = TestServerState::default();
+    let token = "token_ccc";
+    let condition_id = "0xcondition_test";
+
+    // Single partial page → no second request
+    state.data_api_trade_pages.lock().await.extend([
+        json!([
+            make_data_api_trade(token, 0.70, 1710000001, "ccc1"),
+        ]),
+    ]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_ccc.POLYMARKET"),
+            condition_id,
+            token,
+            2,
+            2,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(ticks.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_empty_response() {
+    let state = TestServerState::default();
+    // No pages enqueued → handler returns empty array
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_ddd.POLYMARKET"),
+            "0xcondition_test",
+            "token_ddd",
+            2,
+            2,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(ticks.is_empty());
 }
