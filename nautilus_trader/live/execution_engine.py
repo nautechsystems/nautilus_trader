@@ -1893,6 +1893,22 @@ class LiveExecutionEngine(ExecutionEngine):
                 continue
             if result is not None:
                 reports.append(result)
+                continue
+
+            cached_order = self._cache.order(command.client_order_id)
+            if cached_order is None or not cached_order.is_open:
+                continue
+
+            self._log.info(
+                f"Startup targeted order-status query returned no report for "
+                f"{command.client_order_id!r}; marking cached order as missing at venue",
+                LogColor.BLUE,
+            )
+            self._resolve_cached_order_missing_at_venue(
+                cached_order,
+                ts_now=command.ts_init,
+                reason="ORDER_NOT_FOUND_AT_VENUE",
+            )
 
         return reports
 
@@ -3372,7 +3388,11 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
-        if snapshot.total_open_order_count != 0:
+        current_open_orders = self._cache.orders_open(
+            instrument_id=instrument_id,
+            account_id=account_id,
+        )
+        if current_open_orders:
             return False
 
         startup_position_ids = {
@@ -3390,7 +3410,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(
             f"Treating startup netting positions as stale cached positions for "
             f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
-            f"snapshot_open_orders={snapshot.total_open_order_count}",
+            f"snapshot_open_orders={snapshot.total_open_order_count}, "
+            f"current_open_orders={len(current_open_orders)}",
             LogColor.BLUE,
         )
         return True

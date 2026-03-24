@@ -107,7 +107,24 @@ journal shows a netting quantity mismatch.
 4. Confirm the recovery signature in logs:
    - `Treating EXTERNAL netting positions as stale startup reconciliation artifacts`
    - `Closing stale EXTERNAL reconciliation positions`
-5. If the node still exits after one restart, treat the mismatch as genuine venue
+5. If the startup window instead shows a cached open order that no longer exists
+   at venue and the venue reports no remaining position for the instrument, the
+   engine may now reject the stale cached order and purge the stale cached
+   startup position automatically. Confirm this exact recovery signature before
+   retrying:
+   - `Startup targeted order-status query returned no report for ...; marking cached order as missing at venue`
+   - `Reconciling ... order not found at venue, marking as REJECTED`
+   - `Treating startup netting positions as stale cached positions for ...`
+   - `Closing stale startup cached positions`
+   - `Startup reconciliation removed stale cached positions for ...`
+6. After either startup-only cleanup signature appears, restart only the
+   affected node once and rerun:
+   - `curl -fsS 'http://127.0.0.1:5022/api/pulse/jobs'`
+   - `python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022`
+   Do not delete Redis cache keys before this bounded retry.
+7. Recovery is complete only if the restarted node is active in Pulse and the
+   risk audit no longer reports `blocked_reconciliation` for that strategy.
+8. If the node still exits after one restart, treat the mismatch as genuine venue
    drift or missing history and keep trading disabled until the account/cache
    state is reconciled manually.
 

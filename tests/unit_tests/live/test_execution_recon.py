@@ -6051,6 +6051,94 @@ class TestHedgeModeReconciliation:
         assert remaining_positions[0].signed_decimal_qty() == Decimal("3256")
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_cleans_stale_startup_position_after_missing_targeted_open_order_query(
+        self,
+    ):
+        """
+        Regression for the March 23, 2026 restart-recovery incident.
+
+        A stale cached netting position can survive restart when the venue returns no
+        open-order report for the cached open order and no position report for the
+        instrument. Startup already synthesizes a flat report in that case, so the
+        recovery path must reject the stale cached order and then purge the stale
+        cached position instead of blocking restart behind manual Redis cleanup.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        stale_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-STALE-STARTUP-001"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("STALE-STARTUP-FILL-001"),
+        )
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        stale_open_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("STALE-OPEN-ORDER-001"),
+        )
+        stale_open_order.apply(
+            TestEventStubs.order_submitted(
+                stale_open_order,
+                account_id=startup_account_id,
+            ),
+        )
+        stale_open_order.apply(
+            TestEventStubs.order_accepted(
+                stale_open_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("STALE-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(stale_open_order)
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == []
+        cached_open_order = self.cache.order(stale_open_order.client_order_id)
+        assert cached_open_order is not None
+        assert cached_open_order.status == OrderStatus.REJECTED
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(1_500)
+        ]
+        assert cleanup_orders
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_uses_open_only_with_targeted_open_order_queries_when_startup_positions_exist(
         self,
     ):
