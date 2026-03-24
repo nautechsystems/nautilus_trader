@@ -1,3 +1,4 @@
+from decimal import Decimal
 from types import SimpleNamespace
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -9,6 +10,7 @@ from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
+from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginBalanceInfo
 
 
 def test_exec_client_config_accepts_portfolio_margin_account_type() -> None:
@@ -71,3 +73,22 @@ def test_portfolio_margin_spot_account_api_uses_papi_balance_snapshot() -> None:
     )
 
     assert api._endpoint_spot_account.url_path == "/papi/v1/balance"
+
+
+def test_portfolio_margin_balance_net_exposure_accounts_for_borrow_and_interest() -> None:
+    balance = BinancePortfolioMarginBalanceInfo(
+        asset="PLUME",
+        totalWalletBalance="0",
+        crossMarginAsset="0",
+        crossMarginBorrowed="30721.57152347",
+        crossMarginFree="0",
+        crossMarginInterest="1.25000000",
+        crossMarginLocked="0",
+        updateTime=1,
+    )
+
+    parsed = balance.parse_to_account_balance()
+
+    assert parsed.total.as_decimal() == Decimal("-30722.82152347")
+    assert parsed.free.as_decimal() == Decimal("-30722.82152347")
+    assert parsed.locked.as_decimal() == Decimal("0")

@@ -132,18 +132,22 @@ class BinancePortfolioMarginBalanceInfo(msgspec.Struct, frozen=True):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.asset)
-        total_value = Decimal(
+        gross_total_value = Decimal(
             self.crossMarginAsset
             if self.crossMarginAsset is not None
             else self.totalWalletBalance
         )
+        borrowed_value = Decimal(self.crossMarginBorrowed or "0")
+        interest_value = Decimal(self.crossMarginInterest or "0")
+        total_value = gross_total_value - borrowed_value - interest_value
         locked_value = Decimal(self.crossMarginLocked or "0")
+        free_value = total_value - locked_value
         total = Money(total_value, currency)
         locked = Money(locked_value, currency)
         return AccountBalance(
             total=total,
             locked=locked,
-            free=Money(total_value - locked_value, currency),
+            free=Money(free_value, currency),
         )
 
 

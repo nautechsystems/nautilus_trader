@@ -38,7 +38,10 @@ def is_terminal_order_denial_reason(reason: object) -> bool:
     return normalized.startswith("unsupported_account_mode")
 
 
-_EXCHANGE_ERROR_CODE_RE = re.compile(r"\bcode=(?P<code>[A-Za-z0-9_-]+)\b", re.IGNORECASE)
+_EXCHANGE_ERROR_CODE_RE = re.compile(
+    r"['\"]?code['\"]?\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
 
 
 def extract_exchange_error_code(reason: object) -> str | None:

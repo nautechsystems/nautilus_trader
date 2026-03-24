@@ -2187,6 +2187,58 @@ def test_build_signals_payload_marks_quote_blockers_as_not_tradeable(
     assert payload["state"]["quote_blockers"][0]["reason_code"] == "pending_cancel_stuck"
 
 
+def test_build_signals_payload_keeps_side_local_borrow_block_tradeable(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 5,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_quote_status": {
+                "bid_open": 5,
+                "ask_open": 0,
+                "bid_depth": 5,
+                "ask_depth": 5,
+                "bid_blocked": 0,
+                "ask_blocked": 5,
+            },
+            "quote_blockers": [
+                {
+                    "reason_code": "spot_borrow_cap",
+                    "blocked_side": "SELL",
+                    "exchange_code": "51006",
+                },
+            ],
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["tradeable"] is True
+    assert payload["blocked"] is False
+
+
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
     contracts = (
         ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),

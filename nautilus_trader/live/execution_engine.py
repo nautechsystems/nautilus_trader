@@ -2812,18 +2812,20 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _restore_startup_orphan_position_lineage(self, mass_status: ExecutionMassStatus) -> None:
         """
-        Restore missing cached netting positions from closed filled order lineage.
+        Restore missing cached netting position exposure from closed filled order lineage.
 
         Startup reconciliation can see cached FILLED orders whose position record was lost while the
-        venue still reports that quantity as part of the live net position. Restoring the cached
-        position lineage lets exact-match deduplication remain safe for those orders.
+        venue still reports that quantity as part of the live net position. Restoring that residual
+        exposure into the one canonical NETTING position keeps startup reconciliation consistent
+        without reintroducing orphan position IDs into the cache.
         """
-        restored_position_ids: list[PositionId] = []
+        restored_fragment_ids: list[str] = []
 
         for instrument_id, position_reports in mass_status.position_reports.items():
             if any(report.venue_position_id is not None for report in position_reports):
                 continue
 
+            account_id = position_reports[0].account_id if position_reports else None
             venue_signed_qty = sum(
                 (report.signed_decimal_qty for report in position_reports),
                 start=Decimal("0"),
@@ -2835,22 +2837,26 @@ class LiveExecutionEngine(ExecutionEngine):
             if instrument is None:
                 continue
 
-            current_signed_qty = sum(
-                (
-                    position.signed_decimal_qty()
-                    for position in self._cache.positions_open(
-                        venue=None,
-                        instrument_id=instrument_id,
-                        account_id=position_reports[0].account_id if position_reports else None,
-                    )
-                ),
-                start=Decimal("0"),
+            positions_open = self._cache.positions_open(
+                venue=None,
+                instrument_id=instrument_id,
+                account_id=account_id,
             )
+            if len(positions_open) != 1:
+                continue
+
+            target_position = positions_open[0]
+            current_signed_qty = target_position.signed_decimal_qty()
+            if current_signed_qty == 0 or (venue_signed_qty > 0 and current_signed_qty < 0) or (
+                venue_signed_qty < 0 and current_signed_qty > 0
+            ):
+                continue
+
             diff_signed_qty = venue_signed_qty - current_signed_qty
             if diff_signed_qty == 0:
                 continue
 
-            candidate_positions: list[Position] = []
+            orphan_fills_by_position_id: dict[PositionId, list[OrderFilled]] = {}
             for cached_order in self._cache.orders(instrument_id=instrument_id):
                 if cached_order.is_open:
                     continue
@@ -2862,10 +2868,20 @@ class LiveExecutionEngine(ExecutionEngine):
                 if cached_order.filled_qty.as_decimal() == 0:
                     continue
 
-                fills = [event for event in cached_order.events if isinstance(event, OrderFilled)]
+                fills = [
+                    event
+                    for event in cached_order.events
+                    if isinstance(event, OrderFilled)
+                    and (account_id is None or event.account_id == account_id)
+                ]
                 if not fills:
                     continue
 
+                orphan_fills_by_position_id.setdefault(position_id, []).extend(fills)
+
+            candidate_positions: list[Position] = []
+            for fills in orphan_fills_by_position_id.values():
+                fills.sort(key=lambda fill: (fill.ts_event, fill.ts_init, fill.trade_id.value))
                 restored_position = Position(instrument=instrument, fill=fills[0])
                 for fill in fills[1:]:
                     restored_position.apply(fill)
@@ -2877,34 +2893,87 @@ class LiveExecutionEngine(ExecutionEngine):
                     diff_signed_qty < 0 and restored_signed_qty >= 0
                 ):
                     continue
-                if abs(diff_signed_qty - restored_signed_qty) >= abs(diff_signed_qty):
+                if abs(restored_signed_qty) > abs(diff_signed_qty):
                     continue
 
                 candidate_positions.append(restored_position)
 
-            candidate_positions.sort(key=lambda position: position.ts_last, reverse=True)
+            candidate_positions.sort(key=lambda position: (abs(position.signed_decimal_qty()), position.ts_last))
+            selected_positions: list[Position] = []
 
-            for restored_position in candidate_positions:
+            def _search_exact_subset(start_index: int, remaining_qty: Decimal) -> bool:
+                if remaining_qty == 0:
+                    return True
+
+                for idx in range(start_index, len(candidate_positions)):
+                    candidate = candidate_positions[idx]
+                    candidate_qty = abs(candidate.signed_decimal_qty())
+                    if candidate_qty > remaining_qty:
+                        continue
+                    selected_positions.append(candidate)
+                    if _search_exact_subset(idx + 1, remaining_qty - candidate_qty):
+                        return True
+                    selected_positions.pop()
+
+                return False
+
+            if not _search_exact_subset(0, abs(diff_signed_qty)):
+                continue
+
+            now_ns = self._clock.timestamp_ns()
+            for restored_position in selected_positions:
                 restored_signed_qty = restored_position.signed_decimal_qty()
-                if abs(diff_signed_qty - restored_signed_qty) >= abs(diff_signed_qty):
-                    continue
-
+                synthetic_fill = FillReport(
+                    account_id=target_position.account_id,
+                    instrument_id=instrument_id,
+                    venue_order_id=VenueOrderId(UUID4().value),
+                    venue_position_id=target_position.id,
+                    trade_id=TradeId(UUID4().value),
+                    order_side=OrderSide.BUY if restored_signed_qty > 0 else OrderSide.SELL,
+                    last_qty=restored_position.quantity,
+                    last_px=instrument.make_price(restored_position.avg_px_open),
+                    commission=Money(0, instrument.quote_currency),
+                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                    report_id=UUID4(),
+                    ts_event=now_ns,
+                    ts_init=now_ns,
+                    client_order_id=restored_position.opening_order_id,
+                )
+                target_position.apply(
+                    OrderFilled(
+                        trader_id=target_position.trader_id,
+                        strategy_id=target_position.strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=synthetic_fill.client_order_id,
+                        venue_order_id=synthetic_fill.venue_order_id,
+                        account_id=target_position.account_id,
+                        trade_id=synthetic_fill.trade_id,
+                        position_id=target_position.id,
+                        order_side=synthetic_fill.order_side,
+                        order_type=OrderType.MARKET,
+                        last_qty=synthetic_fill.last_qty,
+                        last_px=synthetic_fill.last_px,
+                        currency=instrument.quote_currency,
+                        commission=synthetic_fill.commission,
+                        liquidity_side=synthetic_fill.liquidity_side,
+                        event_id=UUID4(),
+                        ts_event=synthetic_fill.ts_event,
+                        ts_init=synthetic_fill.ts_init,
+                        reconciliation=True,
+                    ),
+                )
+                self._cache.update_position(target_position)
+                restored_fragment_ids.append(restored_position.id.value)
                 self._log.warning(
                     f"Restoring startup orphan cached position lineage for {instrument_id}: "
-                    f"position_id={restored_position.id!r} missing from cache, "
+                    f"merged_position_id={restored_position.id!r} into canonical_position_id={target_position.id!r}, "
                     f"restored_signed_qty={restored_signed_qty}, diff_signed_qty={diff_signed_qty}",
                 )
-                self._cache.add_position(restored_position, OmsType.NETTING)
-                restored_position_ids.append(restored_position.id)
-                diff_signed_qty -= restored_signed_qty
 
-                if diff_signed_qty == 0:
-                    break
-
-        if restored_position_ids:
+        if restored_fragment_ids:
             self._log.info(
-                f"Restored {len(restored_position_ids)} startup orphan cached position(s): "
-                f"{[position_id.value for position_id in restored_position_ids]}",
+                f"Restored {len(restored_fragment_ids)} startup orphan cached position fragment(s): "
+                f"{restored_fragment_ids}",
                 LogColor.BLUE,
             )
 

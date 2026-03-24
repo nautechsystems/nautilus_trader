@@ -1389,10 +1389,23 @@ def build_signals_payload_impl(
     tradeable = bot_on and not state_blocked
     near_tradeable = False
     blocked = (not bot_on) or state_blocked
+    def _is_side_local_quote_blocker(blocker: Mapping[str, Any]) -> bool:
+        blocked_side = decode_text(blocker.get("blocked_side")).strip().upper()
+        if blocked_side not in {"BUY", "SELL"}:
+            return False
+        if maker_quote_status is None:
+            return False
+        opposite_prefix = "ask" if blocked_side == "BUY" else "bid"
+        opposite_open = safe_int(maker_quote_status.get(f"{opposite_prefix}_open")) or 0
+        opposite_depth = safe_int(maker_quote_status.get(f"{opposite_prefix}_depth")) or 0
+        opposite_blocked = safe_int(maker_quote_status.get(f"{opposite_prefix}_blocked")) or 0
+        return max(opposite_open, opposite_depth - opposite_blocked) > 0
+
     blocking_quote_blockers = [
         row
         for row in quote_blockers
         if decode_text(row.get("reason_code")).strip().lower() not in {"", "pending_cancel_in_flight"}
+        and not _is_side_local_quote_blocker(row)
     ]
     if blocking_quote_blockers:
         tradeable = False
