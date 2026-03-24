@@ -1026,6 +1026,114 @@ describe('Trades integration flows', () => {
     });
   });
 
+  it('reconnects with a fresh canonical snapshot after an older canonical request resolves late', async () => {
+    realtimeFlags.trades = true;
+    const initialCanonical = createDeferred<any>();
+    const canonicalReentry = createDeferred<any>();
+    getTrades
+      .mockImplementationOnce(() => initialCanonical.promise)
+      .mockResolvedValueOnce({
+        rows: baseRows,
+        total: baseRows.length,
+        page: 1,
+        page_size: 100,
+        last_seq: 2,
+      })
+      .mockImplementationOnce(() => canonicalReentry.promise)
+      .mockResolvedValueOnce({
+        rows: [{ ...baseRows[0], row_id: 'reconnect-catchup', seq: 21, ts: 21 }],
+        total: baseRows.length,
+        page: 1,
+        page_size: 50,
+        last_seq: 21,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'default',
+          surface_query_key: 'trades|profile=default',
+          stream_id: 'trades-main-2',
+          snapshot_revision: 'snap-2',
+          last_seq: 21,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+    render(<Trades />);
+
+    const pageSizeControl = screen.getByLabelText('Page size');
+
+    act(() => {
+      (pageSizeControl as HTMLSelectElement).value = '100';
+      pageSizeControl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(2);
+    });
+
+    act(() => {
+      (pageSizeControl as HTMLSelectElement).value = '50';
+      pageSizeControl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(3);
+    });
+
+    initialCanonical.resolve({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 2,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    socketMock.emit.mockClear();
+
+    act(() => {
+      socketHandlers.connect?.();
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(4);
+    });
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({
+          surface: 'trades',
+          stream_id: 'trades-main-2',
+          snapshot_revision: 'snap-2',
+          resume_from_seq: 21,
+        }),
+        expect.any(Function),
+      );
+    });
+  });
+
   it('keeps manual refresh required when a queued recovery snapshot resolves late', async () => {
     realtimeFlags.trades = true;
     const deferredRecovery = createDeferred<any>();
