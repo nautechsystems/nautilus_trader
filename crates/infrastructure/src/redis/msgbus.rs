@@ -281,8 +281,9 @@ pub async fn publish_messages(
                         log::debug!("Received close message");
                         // Ensure we exit the loop after flushing any remaining messages.
                         if !buffer.is_empty() {
-                            drain_buffer(
+                            flush_buffer_with_retries(
                                 &mut con,
+                                db_config,
                                 &stream_key,
                                 config.stream_per_topic,
                                 autotrim_duration,
@@ -297,8 +298,9 @@ pub async fn publish_messages(
 
                     if buffer_interval.is_zero() {
                         // Immediate flush mode
-                        drain_buffer(
+                        flush_buffer_with_retries(
                             &mut con,
+                            db_config,
                             &stream_key,
                             config.stream_per_topic,
                             autotrim_duration,
@@ -315,8 +317,9 @@ pub async fn publish_messages(
             // unnecessarily waking the task when immediate flushing is enabled.
             () = &mut flush_timer, if !buffer_interval.is_zero() => {
                 if !buffer.is_empty() {
-                    drain_buffer(
+                    flush_buffer_with_retries(
                         &mut con,
+                        db_config,
                         &stream_key,
                         config.stream_per_topic,
                         autotrim_duration,
@@ -333,8 +336,9 @@ pub async fn publish_messages(
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        drain_buffer(
+        flush_buffer_with_retries(
             &mut con,
+            db_config,
             &stream_key,
             config.stream_per_topic,
             autotrim_duration,
@@ -348,6 +352,56 @@ pub async fn publish_messages(
     Ok(())
 }
 
+async fn flush_buffer_with_retries(
+    conn: &mut redis::aio::ConnectionManager,
+    db_config: &DatabaseConfig,
+    stream_key: &str,
+    stream_per_topic: bool,
+    autotrim_duration: Option<Duration>,
+    last_trim_index: &mut HashMap<String, usize>,
+    buffer: &mut VecDeque<BusMessage>,
+) -> anyhow::Result<()> {
+    let max_attempts = db_config.number_of_retries.saturating_add(1).max(1);
+
+    for attempt in 0..max_attempts {
+        match drain_buffer(
+            conn,
+            stream_key,
+            stream_per_topic,
+            autotrim_duration,
+            last_trim_index,
+            buffer,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if attempt + 1 == max_attempts {
+                    return Err(error);
+                }
+
+                let delay = publish_retry_delay(db_config, attempt);
+                log::warn!(
+                    "Redis msgbus publish flush failed on attempt {}/{max_attempts}: {error}. Retrying in {delay:?}",
+                    attempt + 1,
+                );
+                tokio::time::sleep(delay).await;
+                *conn = create_redis_connection(MSGBUS_PUBLISH, db_config.clone()).await?;
+            }
+        }
+    }
+
+    unreachable!("publish retry loop always returns on success or terminal failure")
+}
+
+fn publish_retry_delay(config: &DatabaseConfig, attempt: usize) -> Duration {
+    let exponent = config.exponent_base.saturating_pow(attempt as u32);
+    let delay_ms = config.factor.saturating_mul(exponent);
+    let max_delay_ms = config.max_delay.saturating_mul(1_000);
+
+    Duration::from_millis(delay_ms.min(max_delay_ms).max(1))
+}
+
 async fn drain_buffer(
     conn: &mut redis::aio::ConnectionManager,
     stream_key: &str,
@@ -356,10 +410,16 @@ async fn drain_buffer(
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
 ) -> anyhow::Result<()> {
+    let staged: Vec<BusMessage> = buffer.iter().cloned().collect();
+    if staged.is_empty() {
+        return Ok(());
+    }
+
     let mut pipe = redis::pipe();
     pipe.atomic();
+    let mut staged_stream_keys = Vec::with_capacity(staged.len());
 
-    for msg in buffer.drain(..) {
+    for msg in &staged {
         let items: Vec<(&str, &[u8])> = vec![
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
@@ -369,37 +429,52 @@ async fn drain_buffer(
         } else {
             stream_key.to_string()
         };
+        staged_stream_keys.push(stream_key.clone());
         pipe.xadd(&stream_key, "*", &items);
-
-        if autotrim_duration.is_none() {
-            continue; // Nothing else to do
-        }
-
-        // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(stream_key.clone()).or_insert(0); // Remove clone
-        let unix_duration_now = duration_since_unix_epoch();
-        let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
-
-        // Improve efficiency of this by batching
-        if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {
-            let min_timestamp_ms =
-                (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
-            let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
-                .arg(stream_key.clone())
-                .arg(REDIS_MINID)
-                .arg(min_timestamp_ms)
-                .query_async(conn)
-                .await;
-
-            if let Err(e) = result {
-                log::error!("Error trimming stream '{stream_key}': {e}");
-            } else {
-                last_trim_index.insert(stream_key.clone(), unix_duration_now.as_millis() as usize);
-            }
-        }
     }
 
-    pipe.query_async(conn).await.map_err(anyhow::Error::from)
+    let result: Result<(), redis::RedisError> = pipe.query_async(conn).await;
+    result.map_err(anyhow::Error::from)?;
+
+    for stream_key in staged_stream_keys {
+        maybe_trim_stream(conn, &stream_key, autotrim_duration, last_trim_index).await;
+    }
+
+    buffer.drain(..staged.len());
+    Ok(())
+}
+
+async fn maybe_trim_stream(
+    conn: &mut redis::aio::ConnectionManager,
+    stream_key: &str,
+    autotrim_duration: Option<Duration>,
+    last_trim_index: &mut HashMap<String, usize>,
+) {
+    let Some(autotrim_duration) = autotrim_duration else {
+        return;
+    };
+
+    let last_trim_ms = last_trim_index.entry(stream_key.to_string()).or_insert(0);
+    let unix_duration_now = duration_since_unix_epoch();
+    let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
+
+    if *last_trim_ms >= (unix_duration_now - trim_buffer).as_millis() as usize {
+        return;
+    }
+
+    let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
+    let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
+        .arg(stream_key)
+        .arg(REDIS_MINID)
+        .arg(min_timestamp_ms)
+        .query_async(conn)
+        .await;
+
+    if let Err(e) = result {
+        log::error!("Error trimming stream '{stream_key}': {e}");
+    } else {
+        last_trim_index.insert(stream_key.to_string(), unix_duration_now.as_millis() as usize);
+    }
 }
 
 /// Streams messages from Redis streams and sends them over the provided `tx` channel.
@@ -960,8 +1035,8 @@ mod serial_tests {
         let instance_id = UUID4::new();
         let config = MessageBusConfig {
             database: Some(DatabaseConfig {
-                number_of_retries: 1,
-                factor: 10,
+                number_of_retries: 6,
+                factor: 50,
                 max_delay: 1,
                 ..Default::default()
             }),
