@@ -49,6 +49,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -297,7 +298,7 @@ impl PolymarketDataClient {
                 let ts_init = ctx.clock.get_time_ns();
 
                 if ctx.active_delta_subs.contains(&instrument_id) {
-                    match parse_book_snapshot(&snap, instrument, ts_init) {
+                    match parse_book_snapshot(&snap, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
                         Ok(deltas) => {
                             let mut book = ctx
                                 .order_books
@@ -320,7 +321,7 @@ impl PolymarketDataClient {
                 }
 
                 if ctx.active_quote_subs.contains(&instrument_id) {
-                    match parse_quote_from_snapshot(&snap, instrument, ts_init) {
+                    match parse_quote_from_snapshot(&snap, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
                         Ok(Some(quote)) => {
                             Self::emit_quote_if_changed(ctx, instrument_id, quote);
                         }
@@ -359,7 +360,7 @@ impl PolymarketDataClient {
                             timestamp: quotes.timestamp.clone(),
                         };
 
-                        match parse_book_deltas(&per_asset, instrument, ts_init) {
+                        match parse_book_deltas(&per_asset, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
                             Ok(deltas) => {
                                 if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
                                     && let Err(e) = book.apply_deltas(&deltas)
@@ -384,7 +385,9 @@ impl PolymarketDataClient {
                         let last_quote = ctx.last_quotes.get(&instrument_id).map(|r| *r);
                         match parse_quote_from_price_change(
                             change,
-                            instrument,
+                            instrument_id,
+                            instrument.price_precision(),
+                            instrument.size_precision(),
                             last_quote.as_ref(),
                             ts_event,
                             ts_init,
@@ -413,7 +416,7 @@ impl PolymarketDataClient {
 
                 if ctx.active_trade_subs.contains(&instrument_id) {
                     let ts_init = ctx.clock.get_time_ns();
-                    match parse_trade_tick(&trade, instrument, ts_init) {
+                    match parse_trade_tick(&trade, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
                         Ok(tick) => {
                             if let Err(e) = ctx
                                 .data_sender
