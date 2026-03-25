@@ -273,6 +273,31 @@ def test_markouts_timeseries_queries_use_full_filter_scope_and_clear_legends() -
             assert "{{order_side}}" in legend
 
 
+def test_markouts_dashboard_uses_window_as_analysis_window_selector() -> None:
+    path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    window_var = next(
+        variable
+        for variable in payload["templating"]["list"]
+        if variable["name"] == "window"
+    )
+    assert window_var["query"] == "15m,1h,4h,24h"
+
+    snapshot_panel = next(panel for panel in payload["panels"] if panel["id"] == 1)
+    snapshot_exprs = [target["expr"] for target in snapshot_panel["targets"]]
+    assert all('analysis_window=~"$window"' in expr for expr in snapshot_exprs)
+    assert all("[$window]" not in expr for expr in snapshot_exprs)
+
+    timeseries_panels = [panel for panel in payload["panels"] if panel["type"] == "timeseries"]
+    assert timeseries_panels
+    for panel in timeseries_panels:
+        for target in panel["targets"]:
+            expr = target["expr"]
+            assert 'analysis_window=~"$window"' in expr
+            assert "[$window]" not in expr
+
+
 def test_markouts_runbook_mentions_grafana_sidecars() -> None:
     runbook = (_repo_root() / "docs/runbooks/makerv3-markouts.md").read_text(encoding="utf-8")
     catalog = (_repo_root() / "monitoring/DASHBOARDS.md").read_text(encoding="utf-8")

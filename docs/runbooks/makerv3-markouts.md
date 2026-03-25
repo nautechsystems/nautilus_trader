@@ -88,7 +88,8 @@ The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
 
 - `ops/scripts/exporters/tokenmm_markouts_exporter.py` polls the existing
   `fills.sqlite` and `markouts.sqlite` files and exposes markout performance metrics
-  as aggregate Prometheus gauges
+  as aggregate Prometheus gauges, including fixed `analysis_window` variants
+  for `15m`, `1h`, `4h`, and `24h`
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
   for the operator dashboard focused on markout performance by strategy,
   venue, symbol, side, benchmark, and horizon progression
@@ -115,6 +116,14 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
 Keep the polling window bounded. The exporter now rejects non-positive
 `--window-hours` values so a bad override cannot silently widen polling into a
 full-table scan.
+The configured `--window-hours` value must still cover the largest supported
+analysis window, currently `24h`, so the exported window set stays fixed.
+
+Dashboard semantics:
+
+- the dashboard `window` selector chooses the exported `analysis_window`
+- Grafana's time picker controls how much gauge history the charts show
+- changing the supported analysis windows requires an exporter/dashboard code change
 
 Dashboard usage notes:
 
