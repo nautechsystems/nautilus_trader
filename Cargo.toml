@@ -186,6 +186,7 @@ parquet = { version = "58.1.0", default-features = false, features = [
   "async",
 ] }
 pem = "3.0.6"
+proc-macro2 = "1.0"
 pyo3 = { version = "0.28.2", default-features = false, features = [
   "chrono",
   "hashbrown",
@@ -338,6 +339,7 @@ tonic = { version = "0.13.1", default-features = false, features = [
 ] }
 urlencoding = "2.1.3"
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
+zyn = "0.5.4"
 
 # -----------------------------------------------------------------------------
 # Dev dependencies

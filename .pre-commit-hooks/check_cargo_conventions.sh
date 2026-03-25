@@ -353,7 +353,7 @@ if [[ -f "Cargo.toml" ]]; then
   }
   ' Cargo.toml | while read -r dep; do
     # Check if any crate uses this dependency with workspace = true
-    if ! grep -rq "^${dep}[[:space:]]*=" crates/*/Cargo.toml crates/adapters/*/Cargo.toml 2> /dev/null; then
+    if ! rg -q "^${dep}[[:space:]]*=" crates -g "Cargo.toml"; then
       echo "  Cargo.toml: [workspace.dependencies] '$dep' is not used by any crate"
     fi
   done) || true

@@ -18,8 +18,6 @@
 
 mod custom;
 
-use proc_macro::TokenStream;
-
 /// Expands a struct into a custom data type with generated impls: `#[derive(Debug, Clone,
 /// Serialize, Deserialize, PartialEq)]`, constructor, HasTsInit, CustomDataTrait,
 /// ArrowSchemaProvider, EncodeToRecordBatch, DecodeDataFromRecordBatch,
@@ -32,7 +30,7 @@ use proc_macro::TokenStream;
 /// `#[new]` constructor and `#[getter]` per field. When pyo3 is set, the Rust constructor is
 /// named `new`; Python `__init__` forwards to it.
 /// Use `#[custom_data(pyo3, no_display)]` to skip generating `repr()` and `Display` so you can implement them manually.
-#[proc_macro_attribute]
-pub fn custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
-    custom::expand_custom_data(attr.into(), item.into()).into()
+#[zyn::attribute]
+fn custom_data(#[zyn(input)] item: zyn::syn::ItemStruct, args: zyn::Args) -> zyn::TokenStream {
+    custom::expand_custom_data(item, &args)
 }
