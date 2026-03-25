@@ -64,7 +64,7 @@
 
 use std::{
     borrow::Cow,
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
     io::Cursor,
     ops::Bound as RangeBound,
@@ -687,16 +687,21 @@ impl ParquetDataCatalog {
             return Ok(Vec::new());
         }
 
-        // Group instruments by instrument_id
-        let mut by_id: AHashMap<String, Vec<InstrumentAny>> = AHashMap::new();
+        // Group instruments by concrete type and instrument_id so mixed InstrumentAny
+        // inputs are written as separate parquet batches with stable ordering.
+        let mut by_type_and_id: BTreeMap<(String, String), Vec<InstrumentAny>> = BTreeMap::new();
         for instrument in instruments {
+            let instrument_type = Self::instrument_type_name(&instrument).to_string();
             let instrument_id = Instrument::id(&instrument).to_string();
-            by_id.entry(instrument_id).or_default().push(instrument);
+            by_type_and_id
+                .entry((instrument_type, instrument_id))
+                .or_default()
+                .push(instrument);
         }
 
         let mut paths = Vec::new();
 
-        for (instrument_id, instrument_group) in by_id {
+        for ((_instrument_type, instrument_id), instrument_group) in by_type_and_id {
             Self::check_ascending_timestamps(&instrument_group, "instrument")?;
 
             let start_ts = HasTsInit::ts_init(instrument_group.first().unwrap());
@@ -1023,6 +1028,26 @@ impl ParquetDataCatalog {
         }
 
         Ok(())
+    }
+
+    fn instrument_type_name(instrument: &InstrumentAny) -> &'static str {
+        match instrument {
+            InstrumentAny::Betting(_) => "BettingInstrument",
+            InstrumentAny::BinaryOption(_) => "BinaryOption",
+            InstrumentAny::Cfd(_) => "Cfd",
+            InstrumentAny::Commodity(_) => "Commodity",
+            InstrumentAny::CryptoFuture(_) => "CryptoFuture",
+            InstrumentAny::CryptoOption(_) => "CryptoOption",
+            InstrumentAny::CryptoPerpetual(_) => "CryptoPerpetual",
+            InstrumentAny::CurrencyPair(_) => "CurrencyPair",
+            InstrumentAny::Equity(_) => "Equity",
+            InstrumentAny::FuturesContract(_) => "FuturesContract",
+            InstrumentAny::FuturesSpread(_) => "FuturesSpread",
+            InstrumentAny::IndexInstrument(_) => "IndexInstrument",
+            InstrumentAny::OptionContract(_) => "OptionContract",
+            InstrumentAny::OptionSpread(_) => "OptionSpread",
+            InstrumentAny::PerpetualContract(_) => "PerpetualContract",
+        }
     }
 
     /// Converts data into Arrow record batches for Parquet serialization.

@@ -24,7 +24,10 @@ use nautilus_model::{
     },
     enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol, TradeId},
-    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+    instruments::{
+        CurrencyPair, Instrument, InstrumentAny,
+        stubs::{audusd_sim, equity_aapl},
+    },
     types::{Currency, Price, Quantity},
 };
 use nautilus_persistence::{
@@ -3519,4 +3522,43 @@ fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
 
     let intervals = catalog.get_intervals("instruments", Some(&id_str)).unwrap();
     assert_eq!(intervals, vec![(1_000, 1_000), (2_000, 2_000)]);
+}
+
+#[rstest]
+fn test_write_instruments_groups_by_type_and_id_before_encoding() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let currency_pair = audusd_sim();
+    let shared_id = currency_pair.id;
+
+    let mut equity = equity_aapl();
+    equity.id = shared_id;
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
+
+    let mut currency_pair = currency_pair;
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
+
+    let written = catalog
+        .write_instruments(vec![
+            InstrumentAny::Equity(equity),
+            InstrumentAny::CurrencyPair(currency_pair),
+        ])
+        .unwrap();
+
+    assert_eq!(written.len(), 2);
+
+    let id_str = shared_id.to_string();
+    let intervals = catalog.get_intervals("instruments", Some(&id_str)).unwrap();
+    assert_eq!(intervals, vec![(1_000, 1_000), (2_000, 2_000)]);
+
+    let ids = vec![id_str];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 2);
+    assert!(matches!(read[0], InstrumentAny::CurrencyPair(_)));
+    assert!(matches!(read[1], InstrumentAny::Equity(_)));
+    assert_eq!(HasTsInit::ts_init(&read[0]), UnixNanos::from(1_000));
+    assert_eq!(HasTsInit::ts_init(&read[1]), UnixNanos::from(2_000));
 }
