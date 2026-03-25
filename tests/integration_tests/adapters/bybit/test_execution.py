@@ -503,9 +503,9 @@ async def test_submit_limit_order_with_take_profit_stop_loss(
         await client._submit_order(command)
 
         ws_trade_client.build_place_order_params.assert_called_once()
-        kw = ws_trade_client.build_place_order_params.call_args.kwargs
-        assert kw["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
-        assert kw["stop_loss"] == nautilus_pyo3.Price.from_str("47000.00")
+        order_params = ws_trade_client.build_place_order_params.return_value
+        assert order_params.take_profit == "55000.00"
+        assert order_params.stop_loss == "47000.00"
         ws_trade_client.batch_place_orders.assert_awaited_once()
     finally:
         await client._disconnect()
@@ -518,7 +518,8 @@ async def test_submit_market_order_with_take_profit_only(
     instrument,
 ):
     """
-    Only take_profit in params also triggers the native TP/SL path; stop_loss is None.
+    Only take_profit in params also triggers the native TP/SL path; stop_loss is not
+    set.
     """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
@@ -555,9 +556,10 @@ async def test_submit_market_order_with_take_profit_only(
     try:
         await client._submit_order(command)
 
-        kw = ws_trade_client.build_place_order_params.call_args.kwargs
-        assert kw["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
-        assert kw["stop_loss"] is None
+        ws_trade_client.build_place_order_params.assert_called_once()
+        order_params = ws_trade_client.build_place_order_params.return_value
+        assert order_params.take_profit == "55000.00"
+        # stop_loss not in params → _apply_tp_sl_fields never sets it (correct behavior)
         ws_trade_client.batch_place_orders.assert_awaited_once()
     finally:
         await client._disconnect()
