@@ -92,6 +92,8 @@ struct WsMessageContext {
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     subscribe_new_markets: bool,
+    new_market_filter: Option<Arc<dyn InstrumentFilter>>,
+    cancellation_token: CancellationToken,
 }
 
 /// Polymarket data client for live market data streaming.
@@ -264,6 +266,8 @@ impl PolymarketDataClient {
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
+            new_market_filter: self.config.new_market_filter.clone(),
+            cancellation_token: cancellation.clone(),
         };
 
         let handle = get_runtime().spawn(async move {
@@ -545,22 +549,43 @@ impl PolymarketDataClient {
                     return;
                 }
 
+                if let Some(ref nf) = ctx.new_market_filter
+                    && !nf.accept_new_market(&nm)
+                {
+                    log::debug!("New market slug={} rejected by new_market_filter", nm.slug);
+                    return;
+                }
+
                 let gamma_client = ctx.gamma_client.clone();
                 let filters = ctx.filters.clone();
                 let token_meta = ctx.token_meta.clone();
                 let instruments = ctx.instruments.clone();
                 let data_sender = ctx.data_sender.clone();
                 let clock = ctx.clock;
+                let cancellation = ctx.cancellation_token.clone();
                 let slug = nm.slug;
                 let active = nm.active;
 
                 get_runtime().spawn(async move {
-                    match gamma_client
-                        .request_instruments_by_slugs_with_retry(vec![slug.clone()])
-                        .await
-                    {
+                    let fetch = gamma_client
+                        .request_instruments_by_slugs_with_retry(vec![slug.clone()]);
+
+                    let result = tokio::select! {
+                        r = fetch => r,
+                        () = cancellation.cancelled() => {
+                            log::debug!("New market fetch for '{slug}' cancelled during shutdown");
+                            return;
+                        }
+                    };
+
+                    match result {
                         Ok(new_instruments) => {
                             for inst in new_instruments {
+                                if cancellation.is_cancelled() {
+                                    log::debug!("New market processing cancelled during shutdown");
+                                    return;
+                                }
+
                                 if !filters.iter().all(|f| f.accept(&inst)) {
                                     log::debug!("New market instrument {} filtered out", inst.id());
                                     continue;
@@ -750,7 +775,7 @@ impl DataClient for PolymarketDataClient {
 
         self.ws_client.connect().await?;
 
-        // Subscribe all loaded instruments to WS market channel
+        // Subscribe all loaded instruments to WS market channel.
         let token_ids: Vec<String> = self
             .instruments
             .load()
@@ -758,10 +783,11 @@ impl DataClient for PolymarketDataClient {
             .map(|inst| inst.raw_symbol().as_str().to_string())
             .collect();
 
-        if !token_ids.is_empty() {
+        if !token_ids.is_empty() || self.config.subscribe_new_markets {
             log::info!(
-                "Subscribing {} instruments to WS market data",
-                token_ids.len()
+                "Subscribing {} instruments to WS market data (subscribe_new_markets={})",
+                token_ids.len(),
+                self.config.subscribe_new_markets,
             );
             self.ws_client.subscribe_market(token_ids).await?;
         }

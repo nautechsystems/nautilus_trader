@@ -16,9 +16,11 @@
 //! Example demonstrating new market monitoring with instrument subscriptions.
 //!
 //! Configures the Polymarket data client with `subscribe_new_markets: true` so
-//! the WebSocket connection receives `new_market` events. An [`EventSlugFilter`]
-//! scopes the initial instrument load (and new-market acceptance) to a single
-//! event slug. A custom [`DataActor`] subscribes to all instruments from the
+//! the WebSocket connection receives `new_market` events. A [`SearchFilter`]
+//! pre-populates BTC markets from the Gamma search API at startup — these
+//! serve as the initial instrument set. Any new market created on Polymarket
+//! is then fetched from the Gamma API and emitted alongside the initial BTC
+//! instruments. A custom [`DataActor`] subscribes to all instruments from the
 //! POLYMARKET venue and logs every instrument that arrives — including newly
 //! created markets pushed in real time.
 //!
@@ -46,12 +48,8 @@ use nautilus_model::{
 };
 use nautilus_polymarket::{
     common::models::PolymarketLabel, config::PolymarketDataClientConfig,
-    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
+    factories::PolymarketDataClientFactory, filters::SearchFilter,
 };
-
-// ---------------------------------------------------------------------------
-// Custom DataActor: subscribes to venue instruments and logs new markets
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 struct NewMarketMonitorConfig {
@@ -135,10 +133,6 @@ impl DataActor for NewMarketMonitor {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
@@ -147,13 +141,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let client_id = ClientId::new("POLYMARKET");
 
-    // Scope to a single event slug so we don't load all 72K+ markets
-    let event_filter =
-        EventSlugFilter::from_slugs(vec!["presidential-election-winner-2028".to_string()]);
+    // SearchFilter pre-populates BTC markets as the initial instrument set
+    let search_filter = SearchFilter::from_query("BTC");
 
     let polymarket_config = PolymarketDataClientConfig {
         subscribe_new_markets: true,
-        filters: vec![Arc::new(event_filter)],
+        filters: vec![Arc::new(search_filter)],
         ..Default::default()
     };
 

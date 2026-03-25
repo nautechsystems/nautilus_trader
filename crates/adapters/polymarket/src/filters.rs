@@ -20,7 +20,10 @@ use std::fmt::Debug;
 use nautilus_core::UnixNanos;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 
-use crate::http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams};
+use crate::{
+    http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
+    websocket::messages::PolymarketNewMarket,
+};
 
 /// Declarative filter for controlling which instruments are loaded.
 ///
@@ -65,6 +68,15 @@ pub trait InstrumentFilter: Debug + Send + Sync {
     /// Default accepts all instruments. Override to refine results after fetching.
     fn accept(&self, instrument: &InstrumentAny) -> bool {
         let _ = instrument;
+        true
+    }
+
+    /// Pre-fetch gate for new market WS events: returns `true` if the market
+    /// should proceed to Gamma HTTP fetch. Used when this filter is set as
+    /// the dedicated `new_market_filter` in the data client config.
+    /// Default accepts all new markets.
+    fn accept_new_market(&self, new_market: &PolymarketNewMarket) -> bool {
+        let _ = new_market;
         true
     }
 }
@@ -309,10 +321,6 @@ impl InstrumentFilter for SearchFilter {
 }
 
 /// Filter that queries markets by tag ID.
-///
-/// Use [`TagFilter::from_tag_id`] when you already have the tag ID.
-/// For slug-based resolution, use the async helper
-/// [`resolve_tag_slug`](crate::providers::resolve_tag_slug) first.
 #[derive(Debug, Clone)]
 pub struct TagFilter {
     inner: GammaQueryFilter,
@@ -333,6 +341,51 @@ impl TagFilter {
 impl InstrumentFilter for TagFilter {
     fn query_params(&self) -> Option<GetGammaMarketsParams> {
         self.inner.query_params()
+    }
+}
+
+/// Pre-fetch gate filter for new market WS events via closure.
+///
+/// Intended for use as `new_market_filter` in the data client config.
+/// Does not affect initial instrument loading.
+pub struct NewMarketPredicateFilter {
+    predicate: Box<dyn Fn(&PolymarketNewMarket) -> bool + Send + Sync>,
+    label: String,
+}
+
+impl NewMarketPredicateFilter {
+    pub fn new<F: Fn(&PolymarketNewMarket) -> bool + Send + Sync + 'static>(
+        label: impl Into<String>,
+        predicate: F,
+    ) -> Self {
+        Self {
+            predicate: Box::new(predicate),
+            label: label.into(),
+        }
+    }
+
+    /// Accept new markets where `question` or `description` contains the keyword
+    /// (case-insensitive).
+    pub fn keyword(keyword: impl Into<String>) -> Self {
+        let kw = keyword.into().to_lowercase();
+        let label = format!("keyword={kw}");
+        Self::new(label, move |nm| {
+            nm.question.to_lowercase().contains(&kw) || nm.description.to_lowercase().contains(&kw)
+        })
+    }
+}
+
+impl Debug for NewMarketPredicateFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(NewMarketPredicateFilter))
+            .field("label", &self.label)
+            .finish()
+    }
+}
+
+impl InstrumentFilter for NewMarketPredicateFilter {
+    fn accept_new_market(&self, new_market: &PolymarketNewMarket) -> bool {
+        (self.predicate)(new_market)
     }
 }
 
@@ -469,5 +522,93 @@ mod tests {
     fn test_default_accept_returns_true(yes_instrument: InstrumentAny) {
         let filter = MarketSlugFilter::from_slugs(vec!["test".to_string()]);
         assert!(filter.accept(&yes_instrument)); // default impl returns true
+    }
+
+    // --- accept_new_market tests ---
+
+    fn stub_new_market(
+        slug: &str,
+        tags: Vec<String>,
+        event_slug: Option<&str>,
+    ) -> PolymarketNewMarket {
+        use crate::websocket::messages::PolymarketNewMarketEvent;
+
+        PolymarketNewMarket {
+            id: "1".to_string(),
+            question: "Test?".to_string(),
+            market: Ustr::from("0xabc"),
+            slug: slug.to_string(),
+            description: String::new(),
+            assets_ids: vec![],
+            outcomes: vec!["Yes".to_string(), "No".to_string()],
+            timestamp: "0".to_string(),
+            tags,
+            condition_id: "0xabc".to_string(),
+            active: true,
+            clob_token_ids: vec![],
+            order_price_min_tick_size: None,
+            group_item_title: None,
+            event_message: event_slug.map(|s| PolymarketNewMarketEvent {
+                id: "1".to_string(),
+                ticker: s.to_string(),
+                slug: s.to_string(),
+                title: "Test event".to_string(),
+                description: String::new(),
+            }),
+        }
+    }
+
+    #[rstest]
+    fn test_default_accept_new_market_returns_true() {
+        let filter = GammaQueryFilter::new(GetGammaMarketsParams::default());
+        let nm = stub_new_market("any-market", vec![], None);
+        assert!(filter.accept_new_market(&nm));
+    }
+
+    #[rstest]
+    fn test_market_slug_filter_default_accept_new_market() {
+        let filter = MarketSlugFilter::from_slugs(vec!["trump-win".to_string()]);
+        let nm = stub_new_market("biden-win", vec![], None);
+        assert!(filter.accept_new_market(&nm)); // default: accept all
+    }
+
+    #[rstest]
+    fn test_event_slug_filter_default_accept_new_market() {
+        let filter = EventSlugFilter::from_slugs(vec!["us-election-2024".to_string()]);
+        let nm = stub_new_market("some-market", vec![], Some("uk-election-2024"));
+        assert!(filter.accept_new_market(&nm)); // default: accept all
+    }
+
+    #[rstest]
+    fn test_tag_filter_default_accept_new_market() {
+        let filter = TagFilter::from_tag_id("123");
+        let nm = stub_new_market("nvda-market", vec!["stocks".to_string()], None);
+        assert!(filter.accept_new_market(&nm)); // default: accept all
+    }
+
+    #[rstest]
+    fn test_new_market_predicate_keyword_matches_question() {
+        let filter = NewMarketPredicateFilter::keyword("BTC");
+        let mut nm = stub_new_market("btc-market", vec![], None);
+        nm.question = "Will BTC reach 100k?".to_string();
+        assert!(filter.accept_new_market(&nm));
+    }
+
+    #[rstest]
+    fn test_new_market_predicate_keyword_matches_description() {
+        let filter = NewMarketPredicateFilter::keyword("bitcoin");
+        let mut nm = stub_new_market("some-market", vec![], None);
+        nm.question = "Some question".to_string();
+        nm.description = "This market is about Bitcoin price".to_string();
+        assert!(filter.accept_new_market(&nm));
+    }
+
+    #[rstest]
+    fn test_new_market_predicate_keyword_rejects_no_match() {
+        let filter = NewMarketPredicateFilter::keyword("BTC");
+        let mut nm = stub_new_market("eth-market", vec![], None);
+        nm.question = "Will ETH reach 10k?".to_string();
+        nm.description = "Ethereum price market".to_string();
+        assert!(!filter.accept_new_market(&nm));
     }
 }

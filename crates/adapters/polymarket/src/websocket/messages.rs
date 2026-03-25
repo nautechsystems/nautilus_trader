@@ -139,6 +139,16 @@ pub struct PolymarketTickSizeChange {
     pub timestamp: String,
 }
 
+/// Event metadata embedded in a new market notification.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolymarketNewMarketEvent {
+    pub id: String,
+    pub ticker: String,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+}
+
 /// A new market notification from the WebSocket market channel.
 ///
 /// Only received when `subscribe_new_markets` is enabled.
@@ -160,6 +170,8 @@ pub struct PolymarketNewMarket {
     pub order_price_min_tick_size: Option<String>,
     #[serde(default)]
     pub group_item_title: Option<String>,
+    #[serde(default)]
+    pub event_message: Option<PolymarketNewMarketEvent>,
 }
 
 /// A market resolved notification from the WebSocket market channel.
@@ -493,6 +505,18 @@ mod tests {
             assert_eq!(nm.outcomes.len(), 2);
             assert_eq!(nm.clob_token_ids.len(), 2);
             assert_eq!(nm.order_price_min_tick_size.as_deref(), Some("0.01"));
+
+            let event = nm
+                .event_message
+                .as_ref()
+                .expect("event_message should be parsed");
+            assert_eq!(event.id, "125819");
+            assert_eq!(event.ticker, "nvda-above-in-january-2026");
+            assert_eq!(event.slug, "nvda-above-in-january-2026");
+            assert_eq!(
+                event.title,
+                "Will NVIDIA (NVDA) close above ___ end of January?"
+            );
         }
     }
 

@@ -52,6 +52,7 @@ impl PolymarketDataClientConfig {
                 .or(default.update_instruments_interval_mins),
             subscribe_new_markets: subscribe_new_markets.unwrap_or(false),
             filters: Vec::new(),
+            new_market_filter: None,
         }
     }
 
