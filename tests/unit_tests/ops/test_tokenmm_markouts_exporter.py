@@ -147,6 +147,8 @@ def test_build_parser_rejects_unbounded_or_invalid_poll_configuration() -> None:
     with pytest.raises(SystemExit):
         parser.parse_args(["--window-hours", "0"])
     with pytest.raises(SystemExit):
+        parser.parse_args(["--window-hours", "1"])
+    with pytest.raises(SystemExit):
         parser.parse_args(["--window-hours", "-1"])
     with pytest.raises(SystemExit):
         parser.parse_args(["--poll-interval-s", "0"])
@@ -162,6 +164,14 @@ def test_exporter_rejects_non_positive_window_hours(tmp_path: Path) -> None:
             env="prod",
             profile="tokenmm",
             window_hours=0,
+        )
+    with pytest.raises(ValueError):
+        TokenMMMarkoutsExporter(
+            fills_path=tmp_path / "fills.sqlite",
+            markouts_path=tmp_path / "markouts.sqlite",
+            env="prod",
+            profile="tokenmm",
+            window_hours=1.0,
         )
 
 
@@ -390,6 +400,7 @@ def test_markouts_exporter_aggregates_existing_sqlite_rows_without_new_schema_fi
         "venue": "BYBIT",
         "symbol": "PLUMEUSDT",
         "benchmark_name": "fv_market_mid",
+        "analysis_window": "24h",
     }
 
     assert registry.get_sample_value(
@@ -523,6 +534,7 @@ def test_markouts_exporter_emits_multiple_benchmarks_from_one_process(tmp_path: 
         "symbol": "PLUMEUSDT",
         "order_side": "BUY",
         "horizon_s": "30",
+        "analysis_window": "24h",
     }
     assert registry.get_sample_value(
         "tokenmm_markout_avg_bps",
@@ -532,6 +544,298 @@ def test_markouts_exporter_emits_multiple_benchmarks_from_one_process(tmp_path: 
         "tokenmm_markout_avg_bps",
         {**common_labels, "benchmark_name": "local_mkt_mid"},
     ) == 4.0
+
+
+def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+    markouts_path = tmp_path / "markouts.sqlite"
+    now_ms = 1_700_000_200_000
+
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            fill_ts_ms INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-recent",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-PERP.BYBIT",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "fill_ts_ms": now_ms - 11 * 60 * 1000,
+            },
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-old",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-PERP.BYBIT",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "fill_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+            },
+        ],
+    )
+    _create_table(
+        markouts_path,
+        "execution_markout",
+        """
+        CREATE TABLE execution_markout (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            benchmark_name TEXT NOT NULL,
+            horizon_s INTEGER NOT NULL,
+            target_ts_ms INTEGER NOT NULL,
+            markout_bps TEXT,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            resolution_status TEXT NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-recent",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 120,
+                "target_ts_ms": now_ms - 10 * 60 * 1000,
+                "markout_bps": "10",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-old",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 120,
+                "target_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+                "markout_bps": "30",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+        ],
+    )
+
+    registry = CollectorRegistry(auto_describe=True)
+    exporter = TokenMMMarkoutsExporter(
+        fills_path=fills_path,
+        markouts_path=markouts_path,
+        env="prod",
+        profile="tokenmm",
+        benchmark_name="fv_market_mid",
+        window_hours=24.0,
+        registry=registry,
+    )
+
+    exporter.poll_once(now_ms=now_ms)
+
+    assert [label for label, _hours in markouts_exporter.ANALYSIS_WINDOWS] == [
+        "15m",
+        "1h",
+        "4h",
+        "24h",
+    ]
+
+    common_labels = {
+        "env": "prod",
+        "profile": "tokenmm",
+        "strategy_id": "plumeusdt_bybit_perp_makerv3",
+        "venue": "BYBIT",
+        "symbol": "PLUMEUSDT",
+        "order_side": "BUY",
+        "horizon_s": "120",
+        "benchmark_name": "fv_market_mid",
+    }
+
+    assert registry.get_sample_value(
+        "tokenmm_markout_avg_bps",
+        {**common_labels, "analysis_window": "15m"},
+    ) == 10.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_avg_bps",
+        {**common_labels, "analysis_window": "24h"},
+    ) == 20.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_fill_count",
+        {**common_labels, "analysis_window": "15m"},
+    ) == 1.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_fill_count",
+        {**common_labels, "analysis_window": "24h"},
+    ) == 2.0
+
+
+def test_markouts_exporter_reuses_one_sqlite_read_cycle_per_poll(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fills_path = tmp_path / "fills.sqlite"
+    markouts_path = tmp_path / "markouts.sqlite"
+    now_ms = 1_700_000_200_000
+
+    _create_table(
+        fills_path,
+        "execution_fill",
+        """
+        CREATE TABLE execution_fill (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            order_side TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            fill_ts_ms INTEGER NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-PERP.BYBIT",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "fill_ts_ms": now_ms - 11 * 60 * 1000,
+            },
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-2",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "order_side": "BUY",
+                "instrument_id": "PLUMEUSDT-PERP.BYBIT",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "fill_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+            },
+        ],
+    )
+    _create_table(
+        markouts_path,
+        "execution_markout",
+        """
+        CREATE TABLE execution_markout (
+            trader_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            strategy_id TEXT NOT NULL,
+            benchmark_name TEXT NOT NULL,
+            horizon_s INTEGER NOT NULL,
+            target_ts_ms INTEGER NOT NULL,
+            markout_bps TEXT,
+            fill_px TEXT NOT NULL,
+            fill_qty TEXT NOT NULL,
+            resolution_status TEXT NOT NULL
+        )
+        """,
+        [
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-1",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 120,
+                "target_ts_ms": now_ms - 10 * 60 * 1000,
+                "markout_bps": "10",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+            {
+                "trader_id": "TRADER-1",
+                "event_id": "fill-2",
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "benchmark_name": "fv_market_mid",
+                "horizon_s": 120,
+                "target_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+                "markout_bps": "30",
+                "fill_px": "100",
+                "fill_qty": "1",
+                "resolution_status": "resolved",
+            },
+        ],
+    )
+
+    original_load_sqlite_query = markouts_exporter.load_sqlite_query
+    query_counts = {"markouts": 0, "fills": 0}
+
+    def _counting_load_sqlite_query(path: Path, query: str) -> pd.DataFrame:
+        if "FROM execution_markout" in query:
+            query_counts["markouts"] += 1
+        if "FROM execution_fill" in query:
+            query_counts["fills"] += 1
+        return original_load_sqlite_query(path, query)
+
+    monkeypatch.setattr(
+        markouts_exporter,
+        "load_sqlite_query",
+        _counting_load_sqlite_query,
+        raising=False,
+    )
+
+    exporter = TokenMMMarkoutsExporter(
+        fills_path=fills_path,
+        markouts_path=markouts_path,
+        env="prod",
+        profile="tokenmm",
+        benchmark_name="fv_market_mid",
+        window_hours=24.0,
+        registry=CollectorRegistry(auto_describe=True),
+    )
+
+    exporter.poll_once(now_ms=now_ms)
+
+    assert query_counts == {"markouts": 1, "fills": 1}
+
+
+def test_markouts_exporter_uses_configured_window_hours_for_bounded_read(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured_window_hours: list[float] = []
+
+    def _fake_load_merged_markout_dataset(**kwargs: object) -> pd.DataFrame:
+        captured_window_hours.append(float(kwargs["window_hours"]))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        markouts_exporter,
+        "_load_merged_markout_dataset",
+        _fake_load_merged_markout_dataset,
+        raising=False,
+    )
+
+    exporter = TokenMMMarkoutsExporter(
+        fills_path=tmp_path / "fills.sqlite",
+        markouts_path=tmp_path / "markouts.sqlite",
+        env="prod",
+        profile="tokenmm",
+        benchmark_name="fv_market_mid",
+        window_hours=48.0,
+        registry=CollectorRegistry(auto_describe=True),
+    )
+
+    exporter.poll_once(now_ms=1_700_000_200_000)
+
+    assert captured_window_hours == [48.0]
 
 
 def test_load_markout_snapshot_supports_live_fill_schema_columns(tmp_path: Path) -> None:

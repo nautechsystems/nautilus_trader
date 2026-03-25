@@ -147,7 +147,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"0\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "0s Avg",
@@ -158,7 +158,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"30\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "30s Avg",
@@ -169,7 +169,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"60\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "60s Avg",
@@ -180,7 +180,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"120\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "120s Avg",
@@ -191,7 +191,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(max by (strategy_id,order_side) (max_over_time(tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"0\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "0s N",
@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(max by (strategy_id,order_side) (max_over_time(tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"30\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "30s N",
@@ -213,7 +213,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(max by (strategy_id,order_side) (max_over_time(tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"60\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "60s N",
@@ -224,7 +224,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(max by (strategy_id,order_side) (max_over_time(tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(max by (strategy_id,order_side) (tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"120\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "120s N",
@@ -235,7 +235,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"0\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"0\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "0s Res%",
@@ -246,7 +246,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"30\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"30\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "30s Res%",
@@ -257,7 +257,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"60\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"60\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "60s Res%",
@@ -268,7 +268,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (strategy_id,order_side) (avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",horizon_s=\"120\"}[$window])), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
+          "expr": "label_join(avg by (strategy_id,order_side) (tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\",horizon_s=\"120\"}), \"series_key\", \" | \", \"strategy_id\", \"order_side\")",
           "format": "table",
           "instant": true,
           "legendFormat": "120s Res%",
@@ -432,7 +432,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "avg_over_time(tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "tokenmm_markout_avg_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "Avg {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "A"
         },
@@ -441,7 +441,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "avg_over_time(tokenmm_markout_nw_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "tokenmm_markout_nw_bps{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "NW {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "B"
         }
@@ -513,7 +513,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "avg_over_time(tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "tokenmm_markout_resolution_rate{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "Resolution {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "A"
         }
@@ -577,7 +577,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max_over_time(tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "tokenmm_markout_fill_count{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "Fill Count {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "A"
         },
@@ -586,7 +586,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max_over_time(tokenmm_markout_resolved_rows{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "tokenmm_markout_resolved_rows{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "Resolved Rows {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "B"
         }
@@ -658,7 +658,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - max_over_time(tokenmm_markout_last_target_ts_seconds{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\"}[$window])",
+          "expr": "time() - tokenmm_markout_last_target_ts_seconds{env=~\"$env\",profile=~\"$profile\",strategy_id=~\"$strategy_id\",venue=~\"$venue\",symbol=~\"$symbol\",order_side=~\"$order_side\",horizon_s=~\"$horizon_s\",benchmark_name=~\"$benchmark_name\",analysis_window=~\"$window\"}",
           "legendFormat": "Age {{strategy_id}} {{venue}} {{symbol}} {{benchmark_name}} {{horizon_s}}s {{order_side}}",
           "refId": "A"
         }
