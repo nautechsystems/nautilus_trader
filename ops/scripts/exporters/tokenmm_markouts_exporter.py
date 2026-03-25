@@ -46,8 +46,12 @@ LABEL_NAMES = (
 ANALYSIS_WINDOWS = (
     ("15m", 0.25),
     ("1h", 1.0),
+    ("2h", 2.0),
     ("4h", 4.0),
-    ("24h", 24.0),
+    ("1d", 24.0),
+    ("2d", 48.0),
+    ("3d", 72.0),
+    ("1w", 168.0),
 )
 MAX_ANALYSIS_WINDOW_HOURS = max(hours for _label, hours in ANALYSIS_WINDOWS)
 DEFAULT_TELEMETRY_ROOT = Path("/var/lib/nautilus/telemetry")
@@ -423,7 +427,7 @@ class TokenMMMarkoutsExporter:
         markouts_path: Path,
         env: str,
         profile: str,
-        window_hours: float = 24.0,
+        window_hours: float = MAX_ANALYSIS_WINDOW_HOURS,
         benchmark_name: str = DEFAULT_BENCHMARK_NAME,
         registry: CollectorRegistry | None = None,
     ) -> None:
@@ -603,10 +607,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--window-hours",
         type=analysis_window_hours_arg,
-        default=24.0,
+        default=MAX_ANALYSIS_WINDOW_HOURS,
         help=(
             "Trailing target timestamp window used for bounded polling reads. "
-            "Must cover the largest supported analysis window (currently 24h)."
+            "Must cover the largest supported analysis window (currently 168h / 1w)."
         ),
     )
     parser.add_argument(

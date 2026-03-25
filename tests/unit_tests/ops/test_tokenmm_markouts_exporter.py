@@ -149,6 +149,10 @@ def test_build_parser_rejects_unbounded_or_invalid_poll_configuration() -> None:
     with pytest.raises(SystemExit):
         parser.parse_args(["--window-hours", "1"])
     with pytest.raises(SystemExit):
+        parser.parse_args(["--window-hours", "24"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--window-hours", "167"])
+    with pytest.raises(SystemExit):
         parser.parse_args(["--window-hours", "-1"])
     with pytest.raises(SystemExit):
         parser.parse_args(["--poll-interval-s", "0"])
@@ -172,6 +176,14 @@ def test_exporter_rejects_non_positive_window_hours(tmp_path: Path) -> None:
             env="prod",
             profile="tokenmm",
             window_hours=1.0,
+        )
+    with pytest.raises(ValueError):
+        TokenMMMarkoutsExporter(
+            fills_path=tmp_path / "fills.sqlite",
+            markouts_path=tmp_path / "markouts.sqlite",
+            env="prod",
+            profile="tokenmm",
+            window_hours=24.0,
         )
 
 
@@ -387,7 +399,7 @@ def test_markouts_exporter_aggregates_existing_sqlite_rows_without_new_schema_fi
         markouts_path=markouts_path,
         env="prod",
         profile="tokenmm",
-        window_hours=24.0,
+        window_hours=168.0,
         registry=registry,
     )
 
@@ -400,7 +412,7 @@ def test_markouts_exporter_aggregates_existing_sqlite_rows_without_new_schema_fi
         "venue": "BYBIT",
         "symbol": "PLUMEUSDT",
         "benchmark_name": "fv_market_mid",
-        "analysis_window": "24h",
+        "analysis_window": "1d",
     }
 
     assert registry.get_sample_value(
@@ -520,7 +532,7 @@ def test_markouts_exporter_emits_multiple_benchmarks_from_one_process(tmp_path: 
         env="prod",
         profile="tokenmm",
         benchmark_name="fv_market_mid,local_mkt_mid",
-        window_hours=24.0,
+        window_hours=168.0,
         registry=registry,
     )
 
@@ -534,7 +546,7 @@ def test_markouts_exporter_emits_multiple_benchmarks_from_one_process(tmp_path: 
         "symbol": "PLUMEUSDT",
         "order_side": "BUY",
         "horizon_s": "30",
-        "analysis_window": "24h",
+        "analysis_window": "1d",
     }
     assert registry.get_sample_value(
         "tokenmm_markout_avg_bps",
@@ -585,7 +597,7 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
                 "instrument_id": "PLUMEUSDT-PERP.BYBIT",
                 "fill_px": "100",
                 "fill_qty": "1",
-                "fill_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+                "fill_ts_ms": now_ms - 6 * 24 * 60 * 60 * 1000,
             },
         ],
     )
@@ -625,7 +637,7 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
                 "strategy_id": "plumeusdt_bybit_perp_makerv3",
                 "benchmark_name": "fv_market_mid",
                 "horizon_s": 120,
-                "target_ts_ms": now_ms - 2 * 60 * 60 * 1000,
+                "target_ts_ms": now_ms - 6 * 24 * 60 * 60 * 1000,
                 "markout_bps": "30",
                 "fill_px": "100",
                 "fill_qty": "1",
@@ -641,7 +653,7 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
         env="prod",
         profile="tokenmm",
         benchmark_name="fv_market_mid",
-        window_hours=24.0,
+        window_hours=168.0,
         registry=registry,
     )
 
@@ -650,8 +662,12 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
     assert [label for label, _hours in markouts_exporter.ANALYSIS_WINDOWS] == [
         "15m",
         "1h",
+        "2h",
         "4h",
-        "24h",
+        "1d",
+        "2d",
+        "3d",
+        "1w",
     ]
 
     common_labels = {
@@ -671,7 +687,11 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
     ) == 10.0
     assert registry.get_sample_value(
         "tokenmm_markout_avg_bps",
-        {**common_labels, "analysis_window": "24h"},
+        {**common_labels, "analysis_window": "1d"},
+    ) == 10.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_avg_bps",
+        {**common_labels, "analysis_window": "1w"},
     ) == 20.0
     assert registry.get_sample_value(
         "tokenmm_markout_fill_count",
@@ -679,7 +699,11 @@ def test_markouts_exporter_emits_true_analysis_windows(tmp_path: Path) -> None:
     ) == 1.0
     assert registry.get_sample_value(
         "tokenmm_markout_fill_count",
-        {**common_labels, "analysis_window": "24h"},
+        {**common_labels, "analysis_window": "1d"},
+    ) == 1.0
+    assert registry.get_sample_value(
+        "tokenmm_markout_fill_count",
+        {**common_labels, "analysis_window": "1w"},
     ) == 2.0
 
 
@@ -797,7 +821,7 @@ def test_markouts_exporter_reuses_one_sqlite_read_cycle_per_poll(
         env="prod",
         profile="tokenmm",
         benchmark_name="fv_market_mid",
-        window_hours=24.0,
+        window_hours=168.0,
         registry=CollectorRegistry(auto_describe=True),
     )
 
@@ -829,13 +853,13 @@ def test_markouts_exporter_uses_configured_window_hours_for_bounded_read(
         env="prod",
         profile="tokenmm",
         benchmark_name="fv_market_mid",
-        window_hours=48.0,
+        window_hours=168.0,
         registry=CollectorRegistry(auto_describe=True),
     )
 
     exporter.poll_once(now_ms=1_700_000_200_000)
 
-    assert captured_window_hours == [48.0]
+    assert captured_window_hours == [168.0]
 
 
 def test_load_markout_snapshot_supports_live_fill_schema_columns(tmp_path: Path) -> None:

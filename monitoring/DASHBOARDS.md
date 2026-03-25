@@ -35,7 +35,8 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
   Provides markout performance metrics from existing `fills.sqlite` and `markouts.sqlite`.
   Supports multiple benchmarks in one sidecar process, including
   `fv_market_mid` and `local_mkt_mid`. Publishes one aggregate series per
-  configured `analysis_window`, currently `15m`, `1h`, `4h`, and `24h`.
+  configured `analysis_window`, currently `15m`, `1h`, `2h`, `4h`, `1d`,
+  `2d`, `3d`, and `1w`.
 
 Both sidecars stay off the trading hotpath. They poll existing Redis state and
 durable SQLite telemetry out of band instead of emitting metrics inline from
@@ -71,6 +72,8 @@ Operational notes:
   `symbol`, `order_side`, `horizon_s`, and `benchmark_name`
 - the markouts dashboard now includes notional-weighted markout and freshness
   panels in addition to raw average bps, counts, and resolution rate
+- the markouts dashboard keeps `benchmark_name` single-select so the snapshot
+  table cannot silently average `fv_market_mid` and `local_mkt_mid` together
 - the markouts dashboard `window` selector now chooses the exported
   `analysis_window` label, while Grafana's time picker controls chart history
 - changing the supported markouts analysis windows is a code/config change in
@@ -78,7 +81,7 @@ Operational notes:
 - the markouts exporter rejects non-positive `--window-hours` values so the
   bounded trailing-window contract cannot silently turn into a full-table scan
 - the markouts exporter must be configured with a `--window-hours` value that
-  covers the largest supported analysis window, currently `24h`
+  covers the largest supported analysis window, currently `1w` (`168h`)
 - the liquidity exporter keeps polling healthy strategies even if one Redis key
   read fails for a cycle
 - the markouts exporter logs and keeps serving if a poll fails because a local

@@ -881,25 +881,19 @@
         "type": "custom"
       },
       {
-        "allValue": ".*",
         "current": {
           "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "text": "fv_market_mid",
+          "value": "fv_market_mid"
         },
         "hide": 0,
-        "includeAll": true,
+        "includeAll": false,
         "label": "benchmark_name",
-        "multi": true,
+        "multi": false,
         "name": "benchmark_name",
         "options": [
           {
             "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          {
-            "selected": false,
             "text": "fv_market_mid",
             "value": "fv_market_mid"
           },
@@ -915,8 +909,8 @@
       {
         "current": {
           "selected": true,
-          "text": "1h",
-          "value": "1h"
+          "text": "2h",
+          "value": "2h"
         },
         "hide": 0,
         "includeAll": false,
@@ -929,9 +923,14 @@
             "value": "15m"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "1h",
             "value": "1h"
+          },
+          {
+            "selected": true,
+            "text": "2h",
+            "value": "2h"
           },
           {
             "selected": false,
@@ -940,17 +939,32 @@
           },
           {
             "selected": false,
-            "text": "24h",
-            "value": "24h"
+            "text": "1d",
+            "value": "1d"
+          },
+          {
+            "selected": false,
+            "text": "2d",
+            "value": "2d"
+          },
+          {
+            "selected": false,
+            "text": "3d",
+            "value": "3d"
+          },
+          {
+            "selected": false,
+            "text": "1w",
+            "value": "1w"
           }
         ],
-        "query": "15m,1h,4h,24h",
+        "query": "15m,1h,2h,4h,1d,2d,3d,1w",
         "type": "custom"
       }
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-2h",
     "to": "now"
   },
   "timepicker": {},
