@@ -42,8 +42,8 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data as NautilusData, OrderBookDeltas_API, QuoteTick},
-    enums::BookType,
+    data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas_API, QuoteTick},
+    enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -85,6 +85,8 @@ struct WsMessageContext {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    gamma_client: PolymarketGammaHttpClient,
+    filters: Vec<Arc<dyn InstrumentFilter>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
@@ -251,6 +253,8 @@ impl PolymarketDataClient {
             data_sender: self.data_sender.clone(),
             token_meta,
             instruments: self.instruments.clone(),
+            gamma_client: self.provider.http_client().clone(),
+            filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
             active_quote_subs: self.active_quote_subs.clone(),
@@ -494,7 +498,84 @@ impl PolymarketDataClient {
                 }
             }
 
-            MarketWsMessage::NewMarket(_) | MarketWsMessage::MarketResolved(_) | MarketWsMessage::BestBidAsk(_) => {}
+            MarketWsMessage::NewMarket(nm) => {
+                log::info!("New market event: slug={} condition_id={}", nm.slug, nm.condition_id);
+
+                let gamma_client = ctx.gamma_client.clone();
+                let filters = ctx.filters.clone();
+                let token_meta = ctx.token_meta.clone();
+                let instruments = ctx.instruments.clone();
+                let data_sender = ctx.data_sender.clone();
+                let slug = nm.slug;
+
+                get_runtime().spawn(async move {
+                    match gamma_client
+                        .request_instruments_by_slugs_with_retry(vec![slug.clone()])
+                        .await
+                    {
+                        Ok(new_instruments) => {
+                            for inst in new_instruments {
+                                if !filters.iter().all(|f| f.accept(&inst)) {
+                                    log::debug!("New market instrument {} filtered out", inst.id());
+                                    continue;
+                                }
+
+                                let token_id = Ustr::from(inst.raw_symbol().as_str());
+                                token_meta.insert(token_id, TokenMeta {
+                                    instrument_id: inst.id(),
+                                    price_precision: inst.price_precision(),
+                                    size_precision: inst.size_precision(),
+                                });
+                                instruments.insert(inst.id(), inst.clone());
+
+                                if let Err(e) = data_sender.send(DataEvent::Instrument(inst.clone())) {
+                                    log::error!("Failed to emit new market instrument {}: {e}", inst.id());
+                                }
+                            }
+                        }
+                        Err(e) => log::error!("Failed to fetch instruments for new market slug '{slug}': {e:?}"),
+                    }
+                });
+            }
+
+            MarketWsMessage::MarketResolved(resolved) => {
+                log::info!(
+                    "Market resolved: {} winner={} ({})",
+                    resolved.market, resolved.winning_asset_id, resolved.winning_outcome
+                );
+
+                let ts_init = ctx.clock.get_time_ns();
+
+                for asset_id in &resolved.assets_ids {
+                    let token_id = Ustr::from(asset_id.as_str());
+                    if let Some(meta) = ctx.token_meta.get(&token_id) {
+                        let reason = Ustr::from(&format!(
+                            "Winner: {} ({})", resolved.winning_asset_id, resolved.winning_outcome
+                        ));
+                        let status = InstrumentStatus::new(
+                            meta.instrument_id,
+                            MarketStatusAction::Close,
+                            ts_init,
+                            ts_init,
+                            Some(reason),
+                            None,
+                            Some(false),
+                            None,
+                            None,
+                        );
+                        if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
+                            log::error!("Failed to emit instrument status for {}: {e}", meta.instrument_id);
+                        }
+                    }
+                }
+            }
+
+            MarketWsMessage::BestBidAsk(bba) => {
+                log::trace!(
+                    "best_bid_ask for {}: bid={} ask={}",
+                    bba.asset_id, bba.best_bid, bba.best_ask
+                );
+            }
         }
     }
 
