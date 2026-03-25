@@ -574,6 +574,56 @@ def test_publish_state_extracts_exchange_code_from_live_binance_dict_reason(
     assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
 
 
+def test_publish_state_prefers_exchange_code_field_over_reason_code_field(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+    )
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason="reason_code=spot_borrow_cap exchange_code=51006",
+        now_ns=1_000_000_000,
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
+
+
+def test_publish_state_extracts_exchange_code_from_quoted_exchange_code_key(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+    )
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason='{"exchange_code": "51006", "msg": "Exceeds maximum borrowable amount."}',
+        now_ns=1_000_000_000,
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("running")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
+
+
 def test_publish_state_exports_explicit_quote_health_reason_codes(
     clocked_strategy_factory,
 ) -> None:

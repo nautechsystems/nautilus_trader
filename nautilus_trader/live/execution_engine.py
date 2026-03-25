@@ -196,7 +196,6 @@ class LiveExecutionEngine(ExecutionEngine):
     _EXECUTION_ALERT_BURST_THRESHOLD: Final[int] = 3
     _EXECUTION_ALERT_BURST_WINDOW_NS: Final[int] = 60_000_000_000
     _EXECUTION_ALERT_BURST_COOLDOWN_NS: Final[int] = 60_000_000_000
-
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -2861,6 +2860,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 if cached_order.is_open:
                     continue
 
+                if cached_order.strategy_id != target_position.strategy_id:
+                    continue
+
                 position_id = cached_order.position_id
                 if position_id is None or self._cache.position(position_id) is not None:
                     continue
@@ -2879,7 +2881,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 orphan_fills_by_position_id.setdefault(position_id, []).extend(fills)
 
-            candidate_positions: list[Position] = []
+            exact_match: Position | None = None
+            ambiguous_exact_match = False
             for fills in orphan_fills_by_position_id.values():
                 fills.sort(key=lambda fill: (fill.ts_event, fill.ts_init, fill.trade_id.value))
                 restored_position = Position(instrument=instrument, fill=fills[0])
@@ -2893,82 +2896,66 @@ class LiveExecutionEngine(ExecutionEngine):
                     diff_signed_qty < 0 and restored_signed_qty >= 0
                 ):
                     continue
-                if abs(restored_signed_qty) > abs(diff_signed_qty):
+                if restored_signed_qty != diff_signed_qty:
                     continue
 
-                candidate_positions.append(restored_position)
+                if exact_match is not None:
+                    ambiguous_exact_match = True
+                    break
 
-            candidate_positions.sort(key=lambda position: (abs(position.signed_decimal_qty()), position.ts_last))
-            selected_positions: list[Position] = []
+                exact_match = restored_position
 
-            def _search_exact_subset(start_index: int, remaining_qty: Decimal) -> bool:
-                if remaining_qty == 0:
-                    return True
-
-                for idx in range(start_index, len(candidate_positions)):
-                    candidate = candidate_positions[idx]
-                    candidate_qty = abs(candidate.signed_decimal_qty())
-                    if candidate_qty > remaining_qty:
-                        continue
-                    selected_positions.append(candidate)
-                    if _search_exact_subset(idx + 1, remaining_qty - candidate_qty):
-                        return True
-                    selected_positions.pop()
-
-                return False
-
-            if not _search_exact_subset(0, abs(diff_signed_qty)):
+            if ambiguous_exact_match or exact_match is None:
                 continue
 
             now_ns = self._clock.timestamp_ns()
-            for restored_position in selected_positions:
-                restored_signed_qty = restored_position.signed_decimal_qty()
-                synthetic_fill = FillReport(
-                    account_id=target_position.account_id,
+            restored_signed_qty = exact_match.signed_decimal_qty()
+            synthetic_fill = FillReport(
+                account_id=target_position.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=VenueOrderId(UUID4().value),
+                venue_position_id=target_position.id,
+                trade_id=TradeId(UUID4().value),
+                order_side=OrderSide.BUY if restored_signed_qty > 0 else OrderSide.SELL,
+                last_qty=exact_match.quantity,
+                last_px=instrument.make_price(exact_match.avg_px_open),
+                commission=Money(0, instrument.quote_currency),
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                report_id=UUID4(),
+                ts_event=now_ns,
+                ts_init=now_ns,
+                client_order_id=exact_match.opening_order_id,
+            )
+            target_position.apply(
+                OrderFilled(
+                    trader_id=target_position.trader_id,
+                    strategy_id=target_position.strategy_id,
                     instrument_id=instrument_id,
-                    venue_order_id=VenueOrderId(UUID4().value),
-                    venue_position_id=target_position.id,
-                    trade_id=TradeId(UUID4().value),
-                    order_side=OrderSide.BUY if restored_signed_qty > 0 else OrderSide.SELL,
-                    last_qty=restored_position.quantity,
-                    last_px=instrument.make_price(restored_position.avg_px_open),
-                    commission=Money(0, instrument.quote_currency),
-                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                    report_id=UUID4(),
-                    ts_event=now_ns,
-                    ts_init=now_ns,
-                    client_order_id=restored_position.opening_order_id,
-                )
-                target_position.apply(
-                    OrderFilled(
-                        trader_id=target_position.trader_id,
-                        strategy_id=target_position.strategy_id,
-                        instrument_id=instrument_id,
-                        client_order_id=synthetic_fill.client_order_id,
-                        venue_order_id=synthetic_fill.venue_order_id,
-                        account_id=target_position.account_id,
-                        trade_id=synthetic_fill.trade_id,
-                        position_id=target_position.id,
-                        order_side=synthetic_fill.order_side,
-                        order_type=OrderType.MARKET,
-                        last_qty=synthetic_fill.last_qty,
-                        last_px=synthetic_fill.last_px,
-                        currency=instrument.quote_currency,
-                        commission=synthetic_fill.commission,
-                        liquidity_side=synthetic_fill.liquidity_side,
-                        event_id=UUID4(),
-                        ts_event=synthetic_fill.ts_event,
-                        ts_init=synthetic_fill.ts_init,
-                        reconciliation=True,
-                    ),
-                )
-                self._cache.update_position(target_position)
-                restored_fragment_ids.append(restored_position.id.value)
-                self._log.warning(
-                    f"Restoring startup orphan cached position lineage for {instrument_id}: "
-                    f"merged_position_id={restored_position.id!r} into canonical_position_id={target_position.id!r}, "
-                    f"restored_signed_qty={restored_signed_qty}, diff_signed_qty={diff_signed_qty}",
-                )
+                    client_order_id=synthetic_fill.client_order_id,
+                    venue_order_id=synthetic_fill.venue_order_id,
+                    account_id=target_position.account_id,
+                    trade_id=synthetic_fill.trade_id,
+                    position_id=target_position.id,
+                    order_side=synthetic_fill.order_side,
+                    order_type=OrderType.MARKET,
+                    last_qty=synthetic_fill.last_qty,
+                    last_px=synthetic_fill.last_px,
+                    currency=instrument.quote_currency,
+                    commission=synthetic_fill.commission,
+                    liquidity_side=synthetic_fill.liquidity_side,
+                    event_id=UUID4(),
+                    ts_event=synthetic_fill.ts_event,
+                    ts_init=synthetic_fill.ts_init,
+                    reconciliation=True,
+                ),
+            )
+            self._cache.update_position(target_position)
+            restored_fragment_ids.append(exact_match.id.value)
+            self._log.warning(
+                f"Restoring startup orphan cached position lineage for {instrument_id}: "
+                f"merged_position_id={exact_match.id!r} into canonical_position_id={target_position.id!r}, "
+                f"restored_signed_qty={restored_signed_qty}, diff_signed_qty={diff_signed_qty}",
+            )
 
         if restored_fragment_ids:
             self._log.info(

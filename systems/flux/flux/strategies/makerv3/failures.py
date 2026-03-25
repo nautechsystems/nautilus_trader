@@ -38,8 +38,12 @@ def is_terminal_order_denial_reason(reason: object) -> bool:
     return normalized.startswith("unsupported_account_mode")
 
 
+_EXPLICIT_EXCHANGE_CODE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])['\"]?exchange_code['\"]?(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
 _EXCHANGE_ERROR_CODE_RE = re.compile(
-    r"['\"]?code['\"]?\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    r"(?<![A-Za-z0-9_])['\"]?code['\"]?(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
     re.IGNORECASE,
 )
 
@@ -48,7 +52,9 @@ def extract_exchange_error_code(reason: object) -> str | None:
     normalized = normalize_reason_text(reason)
     if not normalized:
         return None
-    match = _EXCHANGE_ERROR_CODE_RE.search(normalized)
+    match = _EXPLICIT_EXCHANGE_CODE_RE.search(normalized)
+    if match is None:
+        match = _EXCHANGE_ERROR_CODE_RE.search(normalized)
     if match is None:
         return None
     return match.group("code")
