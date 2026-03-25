@@ -93,7 +93,7 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `order_qty_base`
    - `qty_conversion_status`
    - `qty_conversion_source`
-4. Bare `qty` in trade payloads remains venue/native size unless a paired explicit base field is also present.
+4. For TokenMM `trade_update` payloads, bare `qty` is operator-facing base quantity.
 5. The current `qty_conversion_status` space is:
    - `identity`
    - `exact_multiplier`
@@ -270,15 +270,22 @@ Upsert example:
     "symbol": "BTCUSDT",
     "side": "SELL",
     "price": 94254.8,
-    "qty": 0.01
+    "qty": 0.01,
+    "qty_base": 0.01,
+    "qty_venue": 0.01,
+    "qty_conversion_status": "identity",
+    "qty_conversion_source": "generic:multiplier=1"
   }
 }
 ```
 
 Trade quantity note:
 
-1. `trade.qty` is venue/native size.
-2. If the socket contract later includes normalized trade exposure, it must use a convention-consistent explicit `*_venue` / `*_base` pair together with `qty_conversion_status` and `qty_conversion_source`, rather than changing the meaning of `qty`.
+1. For TokenMM `trade_update` payloads, `trade.qty` is operator-facing base quantity.
+2. When normalized trade exposure is available, `trade.qty_base`, `trade.qty_venue`, `trade.qty_conversion_status`, and `trade.qty_conversion_source` must accompany it.
+3. Shared producer bare `qty` remains venue/native size; TokenMM socket projection is the layer that flips bare `qty` to the base-first operator contract.
+4. Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields.
+5. Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection.
 
 Delete example:
 
@@ -301,9 +308,11 @@ Delete example:
 2. Client MUST assume events can be dropped while disconnected.
 3. After reconnect, client MUST resync via REST:
    - `GET /api/v1/signals?profile=tokenmm`
-   - `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)`
+   - `GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted
+   - `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available
    - `GET /api/v1/alerts?profile=tokenmm`
 4. Trade cursor fallback is deterministic:
+   - prefer persisted `last_seq` for reconnect-safe replay
    - persist `(last_trade_ts_ms, last_trade_row_id, last_trade_version)`
    - dedupe by `row_id` with highest `version` winning
    - drop rows where tuple `(ts_ms, row_id, version)` is `<=` persisted cursor tuple

@@ -222,6 +222,37 @@ def safe_bool(value: Any) -> bool | None:
     return None
 
 
+def project_trade_quantity_fields(
+    row: Mapping[str, Any],
+    *,
+    base_first: bool = False,
+) -> dict[str, Any]:
+    """Project explicit trade quantity fields into the operator-facing API contract."""
+
+    out = dict(row)
+    qty_base = decode_text(out.get("qty_base")).strip()
+
+    if base_first and qty_base:
+        out["qty_base"] = qty_base
+        out["qty"] = qty_base
+
+    return out
+
+
+def tokenmm_trade_rows_require_reset(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Return ``True`` when TokenMM trade rows still rely on legacy bare-qty semantics."""
+
+    for row in rows:
+        qty_text = decode_text(row.get("qty")).strip()
+        if not qty_text:
+            continue
+        qty_base_text = decode_text(row.get("qty_base")).strip()
+        qty_venue_text = decode_text(row.get("qty_venue")).strip()
+        if not qty_base_text or not qty_venue_text:
+            return True
+    return False
+
+
 def coerce_ts_ms(value: Any) -> int | None:
     """Coerce seconds, milliseconds, microseconds, nanoseconds, or ISO text into epoch ms."""
 
@@ -709,6 +740,7 @@ def build_trades_rows(
     limit: int,
     since_ms: int | None,
     since_seq: int | None = None,
+    base_first_qty: bool = False,
 ) -> list[dict[str, Any]]:
     """Normalize trade rows and apply time or sequence-based pagination."""
 
@@ -751,7 +783,11 @@ def build_trades_rows(
             else:
                 row_id = row_id or f"{strategy_id}:trade:{out['ts_ms']}:{index}"
         out["row_id"] = row_id
-        filtered.append(enrich_row_with_canonical_naming(out))
+        filtered.append(
+            enrich_row_with_canonical_naming(
+                project_trade_quantity_fields(out, base_first=base_first_qty),
+            ),
+        )
     if since_seq is not None:
         # Delta mode must stream oldest unseen seq first to avoid skipping rows.
         filtered.sort(key=lambda item: safe_int(item.get("seq")) or 0)

@@ -30,6 +30,8 @@ from nautilus_trader.persistence._action_intent import DECISION_CONTEXT_JSON_DEF
 from nautilus_trader.persistence._action_intent import intent_type_for_order_event
 from nautilus_trader.persistence._action_intent import intent_types_to_evict_for_order_event
 from nautilus_trader.persistence._action_intent import iter_json_payload_mappings
+from nautilus_trader.persistence._operator_quantity import OperatorQuantitySnapshot
+from nautilus_trader.persistence._operator_quantity import snapshot_operator_quantity
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.events import OrderEvent
 from nautilus_trader.persistence._async_sqlite import _AsyncSQLitePersistenceActor
@@ -72,6 +74,12 @@ def _extract_order_px(options: object) -> str | None:
             return str(value)
 
     return None
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _encode_payload_json(
@@ -139,6 +147,10 @@ def order_event_to_row(
     ts_ingest: int,
     action_intent: ActionIntentRecord | None = None,
     execution_timing: ExecutionTimingRecord | None = None,
+    order_qty_base: str | None = None,
+    order_qty_venue: str | None = None,
+    qty_conversion_status: str | None = None,
+    qty_conversion_source: str | None = None,
     on_payload_encode_error: Callable[[], None] | None = None,
 ) -> OrderActionRow | None:
     """
@@ -186,6 +198,10 @@ def order_event_to_row(
     order_qty: str | None = None
     order_px: str | None = None
     rejection_reason: str | None = None
+    normalized_order_qty_base = order_qty_base
+    normalized_order_qty_venue = order_qty_venue
+    normalized_qty_conversion_status = qty_conversion_status
+    normalized_qty_conversion_source = qty_conversion_source
 
     if event_type == "OrderInitialized":
         action_id, action_reason, ts_decision_ns, decision_context_json = _parse_intent_tags(data.get("tags"))
@@ -196,7 +212,15 @@ def order_event_to_row(
         reduce_only_raw = data.get("reduce_only")
         post_only = int(bool(post_only_raw)) if post_only_raw is not None else None
         reduce_only = int(bool(reduce_only_raw)) if reduce_only_raw is not None else None
-        order_qty = data.get("quantity")
+        normalized_order_qty_base = normalized_order_qty_base or _optional_text(data.get("order_qty_base"))
+        normalized_order_qty_venue = normalized_order_qty_venue or _optional_text(data.get("order_qty_venue"))
+        normalized_qty_conversion_status = normalized_qty_conversion_status or _optional_text(
+            data.get("qty_conversion_status"),
+        )
+        normalized_qty_conversion_source = normalized_qty_conversion_source or _optional_text(
+            data.get("qty_conversion_source"),
+        )
+        order_qty = _optional_text(data.get("quantity")) or normalized_order_qty_venue
         order_px = _extract_order_px(data.get("options"))
 
     if event_type in ("OrderRejected", "OrderCancelRejected"):
@@ -275,6 +299,10 @@ def order_event_to_row(
         ts_ingest=ts_ingest,
         reconciliation=int(bool(data.get("reconciliation", False))),
         payload_json=_encode_payload_json(data, on_payload_encode_error=on_payload_encode_error),
+        order_qty_base=normalized_order_qty_base,
+        order_qty_venue=normalized_order_qty_venue,
+        qty_conversion_status=normalized_qty_conversion_status,
+        qty_conversion_source=normalized_qty_conversion_source,
     )
 
 
@@ -285,6 +313,7 @@ class _OrderActionEnvelope:
     ts_ingest: int
     action_intent: ActionIntentRecord | None
     execution_timing: ExecutionTimingRecord | None
+    quantity: OperatorQuantitySnapshot | None
 
 
 class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvelope, OrderActionRow]):
@@ -376,6 +405,7 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
         self._execution_timing_cache.prune(now_ns=now_ns)
         action_intent = None
         execution_timing = None
+        quantity = None
         intent_type = intent_type_for_order_event(event_type)
         if intent_type is not None:
             action_intent = self._action_intent_cache.get(
@@ -390,6 +420,14 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
                 strategy_id=str(event.strategy_id),
                 now_ns=now_ns,
             )
+        if event_type == "OrderInitialized":
+            instrument = self.cache.instrument(event.instrument_id)
+            quantity = snapshot_operator_quantity(
+                instrument,
+                payload.get("quantity"),
+                last_px=_extract_order_px(payload.get("options")),
+                missing_metadata_source="persistence:instrument cache miss",
+            )
         self._enqueue_payload(
             _OrderActionEnvelope(
                 data=payload,
@@ -397,6 +435,7 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
                 ts_ingest=now_ns,
                 action_intent=action_intent,
                 execution_timing=execution_timing,
+                quantity=quantity,
             ),
         )
         evict_types = intent_types_to_evict_for_order_event(event_type)
@@ -419,6 +458,14 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
             ts_ingest=payload.ts_ingest,
             action_intent=payload.action_intent,
             execution_timing=payload.execution_timing,
+            order_qty_base=payload.quantity.qty_base if payload.quantity is not None else None,
+            order_qty_venue=payload.quantity.qty_venue if payload.quantity is not None else None,
+            qty_conversion_status=(
+                payload.quantity.qty_conversion_status if payload.quantity is not None else None
+            ),
+            qty_conversion_source=(
+                payload.quantity.qty_conversion_source if payload.quantity is not None else None
+            ),
             on_payload_encode_error=self._on_payload_encode_error,
         )
 

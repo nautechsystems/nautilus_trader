@@ -38,6 +38,10 @@ export type Trade = CanonicalNamingFields & {
   side: 'buy' | 'sell' | string;
   price: string | number | null;
   qty: string | number | null;
+  qty_base?: string | number | null;
+  qty_venue?: string | number | null;
+  qty_conversion_status?: string | null;
+  qty_conversion_source?: string | null;
   mv: string | number | null;  // market value / notional (quote)
   notional?: string | number | null;  // canonical notional (server v1)
   // Fee fields:

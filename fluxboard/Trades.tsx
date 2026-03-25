@@ -174,6 +174,7 @@ const filterTradeRowsAfterReplayCursor = (
 const normalizeTradeEventLike = (candidate: any): any => {
   if (!candidate || typeof candidate !== 'object') return candidate;
   const row = candidate as Record<string, unknown>;
+  const baseFirstQty = typeof window !== 'undefined' && resolvePathnameProfile(window.location?.pathname) === 'tokenmm';
 
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
@@ -225,6 +226,21 @@ const normalizeTradeEventLike = (candidate: any): any => {
   const timeText = String(row.time ?? '').trim();
   if (!timeText && tsMs !== undefined) {
     row.time = new Date(tsMs).toISOString();
+  }
+
+  const qtyBaseText = String(row.qty_base ?? '').trim();
+  const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim();
+  if (qtyVenueText) {
+    row.qty_venue = qtyVenueText;
+  }
+  if (qtyBaseText) {
+    row.qty_base = qtyBaseText;
+    if (baseFirstQty) {
+      const qtyBaseNumber = coerceFiniteNumber(qtyBaseText);
+      if (qtyBaseNumber !== undefined) {
+        row.qty = qtyBaseNumber;
+      }
+    }
   }
 
   if (row.mv == null && row.notional == null) {
@@ -624,8 +640,13 @@ export default function Trades({
           return;
         }
 
+        const snapshotRows = (response.rows || []).map((row: any) => normalizeTradeEventLike({
+          op: row?.op ?? 'upsert',
+          ...row,
+        }));
+
         // Snapshot for the current page slice
-        const snapshotResult = setSnapshot(response.rows || [], pageSizeRef.current, requestResyncId);
+        const snapshotResult = setSnapshot(snapshotRows, pageSizeRef.current, requestResyncId);
         if (snapshotResult?.applied) {
           markGlobalResyncApplied('trades', requestResyncId);
         }
@@ -641,7 +662,7 @@ export default function Trades({
           setUnread(0);
         }
 
-        advanceTradeReplayCursor(response.rows);
+        advanceTradeReplayCursor(snapshotRows);
 
         const activeProfile = typeof window === 'undefined'
           ? 'default'

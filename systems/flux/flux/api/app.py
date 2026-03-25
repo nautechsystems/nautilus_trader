@@ -21,6 +21,7 @@ from flask import request
 
 from flux.api._payloads_balances import build_balance_risk_groups
 from flux.api._payloads_balances import combine_portfolio_snapshot_rows
+from flux.api._payloads_common import tokenmm_trade_rows_require_reset
 from flux.api.payloads import ContractCatalogEntry
 from flux.api.payloads import StrategyMetadata
 from flux.api.payloads import build_alerts_rows
@@ -75,6 +76,21 @@ DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
 _LOG = logging.getLogger(__name__)
 TOKENMM_BALANCES_STALE_AFTER_MS = 30_000
 PARAMS_RUNNING_STALE_AFTER_MS = 3_000
+
+
+def _tokenmm_trade_rows_require_reset_for_strategies(
+    strategy_ids: Sequence[str],
+    metadata_resolver: Callable[[str], StrategyMetadata],
+    stream_reset_resolver: Callable[[str], bool],
+) -> bool:
+    if not strategy_ids:
+        return False
+    for strategy_id in strategy_ids:
+        if not _strategy_groups_include_tokenmm(metadata_resolver(strategy_id)):
+            continue
+        if stream_reset_resolver(strategy_id):
+            return True
+    return False
 
 
 class RedisPipelineProtocol(Protocol):
@@ -306,6 +322,7 @@ class FluxApiStore:
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
         self._strategy_alerts_resolver = strategy_alerts_resolver
+        self._tokenmm_trade_reset_cache: dict[str, tuple[tuple[int, str], bool]] = {}
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -1242,6 +1259,7 @@ class FluxApiStore:
         since_ms: int | None,
         since_seq: int | None = None,
         scan_limit: int | None = None,
+        base_first_qty: bool = False,
     ) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
         if scan_limit is not None:
@@ -1262,9 +1280,10 @@ class FluxApiStore:
             limit=limit,
             since_ms=since_ms,
             since_seq=since_seq,
+            base_first_qty=base_first_qty,
         )
 
-    def load_all_trades_rows(self, strategy_id: str) -> list[dict[str, Any]]:
+    def load_all_trades_rows(self, strategy_id: str, *, base_first_qty: bool = False) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
         entries = self._redis.xrevrange(keys.trades_stream())
         rows = extract_stream_rows(entries)
@@ -1275,7 +1294,33 @@ class FluxApiStore:
             limit=max(1, len(filtered)),
             since_ms=None,
             since_seq=None,
+            base_first_qty=base_first_qty,
         )
+
+    def tokenmm_trade_stream_signature(self, strategy_id: str) -> tuple[int, str]:
+        keys = self._keys_for_strategy(strategy_id)
+        stream_key = keys.trades_stream()
+        stream_len = self.trades_stream_len(strategy_id) or 0
+        latest_entries = self._redis.xrevrange(stream_key, count=1)
+        latest_entry_id = ""
+        if latest_entries:
+            latest_entry = latest_entries[0]
+            if isinstance(latest_entry, Sequence) and not isinstance(latest_entry, str | bytes):
+                latest_entry_id = decode_text(latest_entry[0]).strip()
+        return stream_len, latest_entry_id
+
+    def tokenmm_trade_stream_requires_reset(self, strategy_id: str) -> bool:
+        signature = self.tokenmm_trade_stream_signature(strategy_id)
+        cached = self._tokenmm_trade_reset_cache.get(strategy_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        keys = self._keys_for_strategy(strategy_id)
+        entries = self._redis.xrevrange(keys.trades_stream())
+        rows = extract_stream_rows(entries)
+        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+        requires_reset = tokenmm_trade_rows_require_reset(filtered)
+        self._tokenmm_trade_reset_cache[strategy_id] = (signature, requires_reset)
+        return requires_reset
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
@@ -2762,7 +2807,11 @@ def create_flux_api_app(  # noqa: C901
         total_count_override: int | None = None
         if has_filters or sort_ascending:
             for strategy_id in strategy_ids:
-                strategy_rows = store.load_all_trades_rows(strategy_id)
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
+                strategy_rows = store.load_all_trades_rows(
+                    strategy_id,
+                    base_first_qty=base_first_qty,
+                )
                 for row in strategy_rows:
                     normalized_row = dict(row)
                     normalized_row.setdefault("strategy_id", strategy_id)
@@ -2771,11 +2820,13 @@ def create_flux_api_app(  # noqa: C901
             total_count_override = 0
             page_span = max(1, offset + limit)
             for strategy_id in strategy_ids:
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
                 strategy_rows = store.load_trades_rows(
                     strategy_id,
                     limit=page_span,
                     since_ms=None,
                     since_seq=None,
+                    base_first_qty=base_first_qty,
                 )
                 for row in strategy_rows:
                     normalized_row = dict(row)
@@ -2805,6 +2856,26 @@ def create_flux_api_app(  # noqa: C901
             if signal_id_filter and signal_id != signal_id_filter:
                 continue
             filtered_rows.append(row)
+
+        if _tokenmm_trade_rows_require_reset_for_strategies(
+            strategy_ids=strategy_ids,
+            metadata_resolver=_metadata_for_strategy,
+            stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
+        ):
+            payload: dict[str, Any] = {
+                "rows": [],
+                "total": 0,
+                "limit": limit,
+                "requested_limit": int(requested_limit if requested_limit is not None else limit),
+                "effective_limit": limit,
+                "max_limit": 200,
+                "offset": offset,
+                "has_more": False,
+                "last_seq": 0,
+                "sort": sort_label,
+                "reset_required": True,
+            }
+            return _ok(data=payload)
 
         if multi_strategy_profile_fanout:
             filtered_rows.sort(
@@ -2856,6 +2927,18 @@ def create_flux_api_app(  # noqa: C901
             and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
+        if _tokenmm_trade_rows_require_reset_for_strategies(
+            strategy_ids=strategy_ids,
+            metadata_resolver=_metadata_for_strategy,
+            stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
+        ):
+            return _ok(
+                data={
+                    "rows": [],
+                    "last_seq": 0,
+                    "reset_required": True,
+                },
+            )
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
@@ -2877,8 +2960,9 @@ def create_flux_api_app(  # noqa: C901
 
             rows: list[dict[str, Any]] = []
             for strategy_id in strategy_ids:
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
                 strategy_rows = _rows_after_trade_replay_cursor(
-                    store.load_all_trades_rows(strategy_id),
+                    store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
                     after_ms=since_ms,
                     after_row_id=after_row_id,
                     after_version=after_version,
@@ -2897,6 +2981,7 @@ def create_flux_api_app(  # noqa: C901
             )
 
         strategy_id = strategy_ids[0]
+        base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
         if since_seq is not None:
             scan_limit = 2_000
             scanned_rows = store.load_trades_rows(
@@ -2905,6 +2990,7 @@ def create_flux_api_app(  # noqa: C901
                 since_ms=None,
                 since_seq=None,
                 scan_limit=scan_limit,
+                base_first_qty=base_first_qty,
             )
             seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
             parsed_seqs = [seq for seq in seq_values if seq is not None]
@@ -2956,7 +3042,10 @@ def create_flux_api_app(  # noqa: C901
             )
 
         if since_ms is not None:
-            rows = _rows_after_trade_ts(store.load_all_trades_rows(strategy_id), since_ms=since_ms)
+            rows = _rows_after_trade_ts(
+                store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
+                since_ms=since_ms,
+            )
             rows = rows[:limit]
             return _ok(
                 data={
@@ -2966,7 +3055,13 @@ def create_flux_api_app(  # noqa: C901
                 },
             )
 
-        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms, since_seq=None)
+        rows = store.load_trades_rows(
+            strategy_id,
+            limit=limit,
+            since_ms=since_ms,
+            since_seq=None,
+            base_first_qty=base_first_qty,
+        )
         return _ok(
             data={
                 "rows": rows,

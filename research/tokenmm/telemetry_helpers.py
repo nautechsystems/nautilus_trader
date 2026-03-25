@@ -78,7 +78,7 @@ def compute_fill_notional(
     px_col: str = "last_px",
 ) -> float | pd.Series:
     if isinstance(price_or_frame, pd.DataFrame):
-        qty_values = numeric(price_or_frame[qty_col]).abs()
+        qty_values = _resolve_fill_quantity_series(price_or_frame, qty_col=qty_col).abs()
         px_values = numeric(price_or_frame[px_col])
         return qty_values * px_values
     if qty is None:
@@ -95,10 +95,12 @@ def enrich_fills(fills: pd.DataFrame) -> pd.DataFrame:
         frame["fill_px_num"] = numeric(frame["fill_px_num"])
 
     if "fill_qty_num" not in frame.columns:
-        source = "last_qty" if "last_qty" in frame.columns else "fill_qty"
-        frame["fill_qty_num"] = numeric(frame[source])
+        frame["fill_qty_num"] = _resolve_fill_quantity_series(frame)
     else:
         frame["fill_qty_num"] = numeric(frame["fill_qty_num"])
+
+    frame["fill_qty_base_num"] = _resolve_fill_base_quantity_series(frame).fillna(frame["fill_qty_num"])
+    frame["fill_qty_venue_num"] = _resolve_fill_venue_quantity_series(frame).fillna(frame["fill_qty_num"])
 
     if "fill_notional" not in frame.columns:
         if "notional" in frame.columns:
@@ -134,6 +136,36 @@ def enrich_fills(fills: pd.DataFrame) -> pd.DataFrame:
 
     frame["fill_key"] = _build_fill_key(frame)
     return frame
+
+
+def _coalesce_numeric_columns(frame: pd.DataFrame, candidates: tuple[str, ...]) -> pd.Series:
+    resolved: pd.Series | None = None
+    for column in candidates:
+        if column not in frame.columns:
+            continue
+        values = numeric(frame[column])
+        resolved = values if resolved is None else resolved.fillna(values)
+    if resolved is not None:
+        return resolved
+    return pd.Series([math.nan] * len(frame), index=frame.index, dtype=float)
+
+
+def _resolve_fill_quantity_series(frame: pd.DataFrame, *, qty_col: str = "last_qty") -> pd.Series:
+    if qty_col == "last_qty":
+        candidates = ("last_qty_base", "fill_qty_base", "last_qty", "fill_qty")
+    elif qty_col == "fill_qty":
+        candidates = ("fill_qty_base", "last_qty_base", "fill_qty", "last_qty")
+    else:
+        candidates = (qty_col,)
+    return _coalesce_numeric_columns(frame, candidates)
+
+
+def _resolve_fill_base_quantity_series(frame: pd.DataFrame) -> pd.Series:
+    return _coalesce_numeric_columns(frame, ("last_qty_base", "fill_qty_base"))
+
+
+def _resolve_fill_venue_quantity_series(frame: pd.DataFrame) -> pd.Series:
+    return _coalesce_numeric_columns(frame, ("last_qty_venue", "fill_qty_venue", "last_qty", "fill_qty"))
 
 
 def enrich_markouts(markouts: pd.DataFrame) -> pd.DataFrame:
@@ -188,6 +220,8 @@ def merge_fills_and_markouts(fills: pd.DataFrame, markouts: pd.DataFrame) -> pd.
                 "order_side",
                 "fill_px_num",
                 "fill_qty_num",
+                "fill_qty_base_num",
+                "fill_qty_venue_num",
                 "fill_notional",
                 "fill_ts_ms",
                 "fill_ts_utc",
@@ -208,10 +242,23 @@ def merge_fills_and_markouts(fills: pd.DataFrame, markouts: pd.DataFrame) -> pd.
         if fill_column in merged.columns:
             merged[column] = merged[column].fillna(merged[fill_column])
             merged = merged.drop(columns=[fill_column])
-    for column in ("symbol", "venue", "product", "fill_px_num", "fill_qty_num", "fill_notional", "fill_ts_ms", "fill_ts_utc"):
+    for column in ("symbol", "venue", "product"):
         fill_column = f"{column}_fill"
         if fill_column in merged.columns:
             merged[column] = merged[column].combine_first(merged[fill_column])
+            merged = merged.drop(columns=[fill_column])
+    for column in (
+        "fill_px_num",
+        "fill_qty_num",
+        "fill_qty_base_num",
+        "fill_qty_venue_num",
+        "fill_notional",
+        "fill_ts_ms",
+        "fill_ts_utc",
+    ):
+        fill_column = f"{column}_fill"
+        if fill_column in merged.columns:
+            merged[column] = merged[fill_column].combine_first(merged[column])
             merged = merged.drop(columns=[fill_column])
     return merged
 

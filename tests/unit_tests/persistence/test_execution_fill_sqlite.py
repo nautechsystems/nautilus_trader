@@ -17,6 +17,14 @@ from __future__ import annotations
 
 import sqlite3
 
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.fills.sqlite import connect
 from nautilus_trader.persistence.fills.sqlite import ensure_schema
 from nautilus_trader.persistence.fills.sqlite import fill_to_row
@@ -29,6 +37,35 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
 INFO_JSON_INDEX = 19
+
+
+def _okx_linear_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("PLUME-USDT-SWAP"),
+            venue=Venue("OKX"),
+        ),
+        raw_symbol=Symbol("PLUME-USDT-SWAP"),
+        base_currency=Currency.from_str("PLUME"),
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=4,
+        size_precision=0,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("1"),
+        multiplier=Quantity.from_str("10"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+        info={
+            "base_exposure_mode": "exact_multiplier",
+            "okx_ct_val": "10",
+            "okx_ct_val_ccy": "PLUME",
+            "okx_ct_type": "linear",
+            "okx_lot_sz": "1",
+        },
+    )
 
 
 def _make_fill(instrument, trade_id=None, ts_event: int = 123):
@@ -116,6 +153,43 @@ def test_fill_to_row_maps_core_fields_from_event_attributes() -> None:
     assert row[17] == fill.ts_init
 
 
+def test_fill_to_row_exposes_operator_quantity_fields_for_exact_multiplier_contracts() -> None:
+    fill = _make_fill(instrument=_okx_linear_perpetual(), ts_event=654)
+
+    row = fill_to_row(
+        fill,
+        last_qty_base="1000",
+        last_qty_venue="100",
+        qty_conversion_status="exact_multiplier",
+        qty_conversion_source="generic:multiplier",
+    )
+
+    assert row.last_qty == str(fill.last_qty)
+    assert row.last_qty_venue == "100"
+    assert row.last_qty_base == "1000"
+    assert row.qty_conversion_status == "exact_multiplier"
+    assert row.qty_conversion_source == "generic:multiplier"
+
+
+def test_fill_to_row_exposes_matching_base_and_venue_qty_fields_for_identity_contracts() -> None:
+    fill = _make_fill(instrument=TestInstrumentProvider.btcusdt_binance(), ts_event=655)
+    raw_qty = str(fill.last_qty)
+
+    row = fill_to_row(
+        fill,
+        last_qty_base="100",
+        last_qty_venue="100",
+        qty_conversion_status="identity",
+        qty_conversion_source="generic:multiplier=1",
+    )
+
+    assert row.last_qty == raw_qty
+    assert row.last_qty_venue == "100"
+    assert row.last_qty_base == "100"
+    assert row.qty_conversion_status == "identity"
+    assert row.qty_conversion_source == "generic:multiplier=1"
+
+
 def test_execution_fill_schema_has_ts_ingest_ns_and_intent_correlation_columns(tmp_path) -> None:
     db_path = tmp_path / "fills.sqlite"
     conn = connect(str(db_path))
@@ -145,6 +219,10 @@ def test_execution_fill_schema_has_ts_ingest_ns_and_intent_correlation_columns(t
     assert "ts_exec_forward_ns" in columns
     assert "ts_client_submit_ns" in columns
     assert "ts_adapter_submit_start_ns" in columns
+    assert "last_qty_base" in columns
+    assert "last_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
 
     conn.close()
 
@@ -193,6 +271,10 @@ def test_execution_fill_schema_migrates_legacy_table_before_creating_new_indexes
     }
 
     assert "quote_cycle_id" in columns
+    assert "last_qty_base" in columns
+    assert "last_qty_venue" in columns
+    assert "qty_conversion_status" in columns
+    assert "qty_conversion_source" in columns
     assert "ts_submit_gateway_send_ns" in columns
     assert "execution_fill_quote_cycle_id_idx" in indexes
 

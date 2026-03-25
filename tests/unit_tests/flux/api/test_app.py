@@ -1758,6 +1758,63 @@ def test_trades_profile_tokenmm_keeps_same_ts_and_seq_rows_from_multiple_strateg
     assert body["data"]["last_seq"] == 0
 
 
+def test_trades_profile_tokenmm_projects_qty_as_base_when_explicit_fields_are_present(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-okx",
+                "seq": 11,
+                "ts_ms": 3_000,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "buy",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/trades",
+            query_string={"profile": "tokenmm", "limit": 10, "offset": 0},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["rows"][0]
+    assert row["row_id"] == "t-okx"
+    assert row["qty"] == "1000"
+    assert row["qty_base"] == "1000"
+    assert row["qty_venue"] == "100"
+    assert row["qty_conversion_status"] == "exact_multiplier"
+    assert body["data"]["limit"] == 10
+    assert body["data"]["offset"] == 0
+
+
 def test_trades_with_strategy_query_keeps_per_strategy_debug_view_with_tokenmm_profile(
     flux_config,
     redis_client,

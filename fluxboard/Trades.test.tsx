@@ -8,12 +8,17 @@ import { socket } from './sockets';
 import { playTradeClick } from './utils/sound';
 import type { TradeRow } from './types';
 
-vi.mock('./api', () => ({
-  api: {
-    getTrades: vi.fn(),
-    getTradesDelta: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades: vi.fn(),
+      getTradesDelta: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./sockets', () => ({
   socket: {
@@ -570,6 +575,85 @@ describe('Trades pagination and snapshot loading', () => {
     });
 
     await waitFor(() => expect(applyDelta).toHaveBeenCalled());
+  });
+
+  it('projects qty_base as the primary trade quantity while preserving qty_venue on socket updates', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
+    const { applyDelta } = await renderTrades();
+    const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
+    expect(handler).toBeInstanceOf(Function);
+
+    applyDelta.mockClear();
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'row-okx',
+        seq: 445,
+        version: 1,
+        trade: {
+          row_id: 'row-okx',
+          version: 1,
+          seq: 445,
+          ts_ms: 1_772_700_209_799,
+          instrument_id: 'PLUME-USDT-SWAP.OKX',
+          exchange: 'okx',
+          side: '1',
+          price: '0.012736',
+          qty: '100',
+          qty_base: '1000',
+          qty_venue: '100',
+          qty_conversion_status: 'exact_multiplier',
+          trade_id: 'row-okx',
+          client_order_id: 'O-okx-1',
+          strategy_id: 'plumeusdt_okx_perp_makerv3',
+        },
+      });
+    });
+
+    await waitFor(() => expect(applyDelta).toHaveBeenCalled());
+    const [rows] = applyDelta.mock.calls[0] as [Array<Record<string, unknown>>];
+    expect(rows[0]?.qty).toBe(1000);
+    expect(rows[0]?.qty_venue).toBe('100');
+  });
+
+  it('keeps venue qty primary on non-tokenmm socket updates even when qty_base is present', async () => {
+    (window.location as any).pathname = '/trades';
+    const { applyDelta } = await renderTrades();
+    const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
+    expect(handler).toBeInstanceOf(Function);
+
+    applyDelta.mockClear();
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'row-okx-generic',
+        seq: 446,
+        version: 1,
+        trade: {
+          row_id: 'row-okx-generic',
+          version: 1,
+          seq: 446,
+          ts_ms: 1_772_700_209_799,
+          instrument_id: 'PLUME-USDT-SWAP.OKX',
+          exchange: 'okx',
+          side: '1',
+          price: '0.012736',
+          qty: '100',
+          qty_base: '1000',
+          qty_venue: '100',
+          qty_conversion_status: 'exact_multiplier',
+          trade_id: 'row-okx-generic',
+          client_order_id: 'O-okx-generic',
+          strategy_id: 'generic_makerv3',
+        },
+      });
+    });
+
+    await waitFor(() => expect(applyDelta).toHaveBeenCalled());
+    const [rows] = applyDelta.mock.calls[0] as [Array<Record<string, unknown>>];
+    expect(rows[0]?.qty).toBe('100');
+    expect(rows[0]?.qty_base).toBe('1000');
+    expect(rows[0]?.qty_venue).toBe('100');
   });
 
 });
