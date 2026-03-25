@@ -20,7 +20,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashMap;
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_common::{
@@ -73,10 +72,18 @@ use crate::{
     },
 };
 
+#[derive(Clone, Copy, Debug)]
+struct TokenMeta {
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+}
+
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    token_instruments: Arc<AHashMap<Ustr, InstrumentAny>>,
+    token_meta: Arc<DashMap<Ustr, TokenMeta>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
@@ -230,11 +237,19 @@ impl PolymarketDataClient {
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
     ) {
         let cancellation = self.cancellation_token.clone();
-        let token_instruments = Arc::new(self.provider.build_token_map());
+        let token_meta = Arc::new(DashMap::new());
+        for (token_id, instrument) in self.provider.build_token_map() {
+            token_meta.insert(token_id, TokenMeta {
+                instrument_id: instrument.id(),
+                price_precision: instrument.price_precision(),
+                size_precision: instrument.size_precision(),
+            });
+        }
         let ctx = WsMessageContext {
             clock: self.clock,
             data_sender: self.data_sender.clone(),
-            token_instruments,
+            token_meta,
+            instruments: self.instruments.clone(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
             active_quote_subs: self.active_quote_subs.clone(),
@@ -287,18 +302,18 @@ impl PolymarketDataClient {
         match message {
             MarketWsMessage::Book(snap) => {
                 let token_id = Ustr::from(snap.asset_id.as_str());
-                let instrument = match ctx.token_instruments.get(&token_id) {
-                    Some(inst) => inst,
+                let meta = match ctx.token_meta.get(&token_id) {
+                    Some(m) => *m,
                     None => {
                         log::debug!("No instrument for token_id {token_id}");
                         return;
                     }
                 };
-                let instrument_id = instrument.id();
+                let instrument_id = meta.instrument_id;
                 let ts_init = ctx.clock.get_time_ns();
 
                 if ctx.active_delta_subs.contains(&instrument_id) {
-                    match parse_book_snapshot(&snap, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
+                    match parse_book_snapshot(&snap, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
                         Ok(deltas) => {
                             let mut book = ctx
                                 .order_books
@@ -321,7 +336,7 @@ impl PolymarketDataClient {
                 }
 
                 if ctx.active_quote_subs.contains(&instrument_id) {
-                    match parse_quote_from_snapshot(&snap, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
+                    match parse_quote_from_snapshot(&snap, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
                         Ok(Some(quote)) => {
                             Self::emit_quote_if_changed(ctx, instrument_id, quote);
                         }
@@ -344,14 +359,14 @@ impl PolymarketDataClient {
                 // Each change may belong to a different asset, so resolve per-change
                 for change in &quotes.price_changes {
                     let token_id = Ustr::from(change.asset_id.as_str());
-                    let instrument = match ctx.token_instruments.get(&token_id) {
-                        Some(inst) => inst,
+                    let meta = match ctx.token_meta.get(&token_id) {
+                        Some(m) => *m,
                         None => {
                             log::debug!("No instrument for token_id {token_id}");
                             continue;
                         }
                     };
-                    let instrument_id = instrument.id();
+                    let instrument_id = meta.instrument_id;
 
                     if ctx.active_delta_subs.contains(&instrument_id) {
                         let per_asset = PolymarketQuotes {
@@ -360,7 +375,7 @@ impl PolymarketDataClient {
                             timestamp: quotes.timestamp.clone(),
                         };
 
-                        match parse_book_deltas(&per_asset, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
+                        match parse_book_deltas(&per_asset, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
                             Ok(deltas) => {
                                 if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
                                     && let Err(e) = book.apply_deltas(&deltas)
@@ -386,8 +401,8 @@ impl PolymarketDataClient {
                         match parse_quote_from_price_change(
                             change,
                             instrument_id,
-                            instrument.price_precision(),
-                            instrument.size_precision(),
+                            meta.price_precision,
+                            meta.size_precision,
                             last_quote.as_ref(),
                             ts_event,
                             ts_init,
@@ -405,18 +420,18 @@ impl PolymarketDataClient {
 
             MarketWsMessage::LastTradePrice(trade) => {
                 let token_id = Ustr::from(trade.asset_id.as_str());
-                let instrument = match ctx.token_instruments.get(&token_id) {
-                    Some(inst) => inst,
+                let meta = match ctx.token_meta.get(&token_id) {
+                    Some(m) => *m,
                     None => {
                         log::debug!("No instrument for token_id {token_id}");
                         return;
                     }
                 };
-                let instrument_id = instrument.id();
+                let instrument_id = meta.instrument_id;
 
                 if ctx.active_trade_subs.contains(&instrument_id) {
                     let ts_init = ctx.clock.get_time_ns();
-                    match parse_trade_tick(&trade, instrument_id, instrument.price_precision(), instrument.size_precision(), ts_init) {
+                    match parse_trade_tick(&trade, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
                         Ok(tick) => {
                             if let Err(e) = ctx
                                 .data_sender
