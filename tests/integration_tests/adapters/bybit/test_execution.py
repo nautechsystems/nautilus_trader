@@ -460,11 +460,15 @@ async def test_submit_stop_market_order(exec_client_builder, monkeypatch, instru
 
 @pytest.mark.asyncio
 async def test_submit_limit_order_with_take_profit_stop_loss(
-    exec_client_builder, monkeypatch, instrument
+    exec_client_builder,
+    monkeypatch,
+    instrument,
 ):
-    """Limit order with take_profit + stop_loss in params routes through the native
-    TP/SL path: build_place_order_params is called with correct Price objects and
-    the result is submitted via batch_place_orders."""
+    """
+    Limit order with take_profit + stop_loss in params routes through the native TP/SL
+    path: build_place_order_params is called with correct Price objects and the result
+    is submitted via batch_place_orders.
+    """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
     ws_trade_client = client._ws_trade_client
@@ -509,9 +513,13 @@ async def test_submit_limit_order_with_take_profit_stop_loss(
 
 @pytest.mark.asyncio
 async def test_submit_market_order_with_take_profit_only(
-    exec_client_builder, monkeypatch, instrument
+    exec_client_builder,
+    monkeypatch,
+    instrument,
 ):
-    """Only take_profit in params also triggers the native TP/SL path; stop_loss is None."""
+    """
+    Only take_profit in params also triggers the native TP/SL path; stop_loss is None.
+    """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
     ws_trade_client = client._ws_trade_client
@@ -557,8 +565,10 @@ async def test_submit_market_order_with_take_profit_only(
 
 @pytest.mark.asyncio
 async def test_submit_order_with_tp_sl_enum_fields(exec_client_builder, monkeypatch, instrument):
-    """Trigger types and order types are applied as string attributes on the params object
-    after build_place_order_params returns (fields are mutable via PyO3 get+set)."""
+    """
+    Trigger types and order types are applied as string attributes on the params object
+    after build_place_order_params returns (fields are mutable via PyO3 get+set).
+    """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
     fake_order_params = MagicMock()
@@ -618,10 +628,14 @@ async def test_submit_order_with_tp_sl_enum_fields(exec_client_builder, monkeypa
 
 @pytest.mark.asyncio
 async def test_submit_order_with_invalid_tp_trigger_type_emits_order_denied(
-    exec_client_builder, monkeypatch, instrument
+    exec_client_builder,
+    monkeypatch,
+    instrument,
 ):
-    """An unrecognised tp_trigger_by value must emit generate_order_denied before
-    generate_order_submitted — the order must never reach the exchange."""
+    """
+    An unrecognised tp_trigger_by value must emit generate_order_denied before
+    generate_order_submitted — the order must never reach the exchange.
+    """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
     ws_trade_client = client._ws_trade_client
@@ -664,9 +678,13 @@ async def test_submit_order_with_invalid_tp_trigger_type_emits_order_denied(
 
 @pytest.mark.asyncio
 async def test_submit_order_with_invalid_sl_order_type_emits_order_denied(
-    exec_client_builder, monkeypatch, instrument
+    exec_client_builder,
+    monkeypatch,
+    instrument,
 ):
-    """An unrecognised sl_order_type value must emit generate_order_denied."""
+    """
+    An unrecognised sl_order_type value must emit generate_order_denied.
+    """
     client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
 
     ws_trade_client = client._ws_trade_client
