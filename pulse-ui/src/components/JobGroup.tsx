@@ -4,6 +4,10 @@ import { useState } from "react";
 import type { Job } from "../api";
 import { JobRow } from "./JobRow";
 
+function livenessStatus(job: Job): string {
+  return job.systemd_status || job.status || job.state || "inactive";
+}
+
 interface JobGroupProps {
   groupKey: string;
   groupLabel: string;
@@ -29,9 +33,10 @@ export function JobGroup({
 }: JobGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const activeCount = jobs.filter((job) => (job.status || job.state) === "active").length;
+  const degradedCount = jobs.filter((job) => (job.status || job.state) === "degraded").length;
   const inactiveCount = jobs.filter((job) => (job.status || job.state) === "inactive").length;
   const failedCount = jobs.filter((job) => (job.status || job.state) === "failed").length;
-  const hasRunning = activeCount > 0;
+  const hasRunning = jobs.some((job) => livenessStatus(job) === "active");
   const hasStartable = inactiveCount > 0 || failedCount > 0;
 
   return (
@@ -43,7 +48,9 @@ export function JobGroup({
               {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
               <span className="group-row__label">{groupLabel}</span>
               <span className="group-row__summary">
-                {jobs.length} jobs, {activeCount} active{failedCount ? `, ${failedCount} failed` : ""}
+                {jobs.length} jobs, {activeCount} active
+                {degradedCount ? `, ${degradedCount} degraded` : ""}
+                {failedCount ? `, ${failedCount} failed` : ""}
               </span>
             </button>
 

@@ -169,7 +169,10 @@ def test_extract_active_since_reads_current_systemd_activation_timestamp() -> No
     assert _extract_active_since(output, status="active") == "Fri 2026-03-06 10:00:00 UTC"
 
 
-def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_counts(tmp_path: Path) -> None:
+def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_counts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)
     (env_dir / "tokenmm-api.env").write_text(
@@ -228,6 +231,20 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
         command_runner=runner,
         sudo_prefix=["sudo"],
     )
+    monkeypatch.setattr(
+        "flux.pulse.api._fetch_job_readiness",
+        lambda service: (
+            {
+                "ok": False,
+                "summary": {
+                    "error": "readiness unavailable",
+                    "failed_checks": ["readiness_fetch"],
+                },
+            }
+            if service.job_id == "tokenmm-api"
+            else None
+        ),
+    )
     app = Flask(__name__)
     control_plane.register_routes(app)
 
@@ -235,53 +252,60 @@ def test_list_jobs_returns_shell_links_and_jobs_payload_with_grouping_and_error_
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload == {
-        "jobs": [
-            {
-                "cmd": "python -m flux.runners.tokenmm.run_api",
-                "description": "TokenMM API",
-                "errors": {
-                    "count": 1,
-                    "last_seen": "2026-03-06T19:20:49+00:00",
-                    "preview": "ERROR something bad",
-                },
-                "group_key": "tokenmm",
-                "group_label": "TokenMM",
-                "group_order": 10,
-                "id": "tokenmm-api",
-                "memory": "45.2M",
-                "name": "tokenmm-api",
-                "pid": 1234,
-                "prefix": "tokenmm",
-                "status": "active",
-                "unit": "flux@tokenmm-api",
-                "uptime": "15min",
+    assert payload["shell_links"] == _expected_shell_links("tokenmm")
+    assert payload["total"] == 2
+    assert payload["active"] == 0
+    assert payload["degraded"] == 1
+    assert payload["failed"] == 1
+    assert payload["jobs"][0] == {
+        "cmd": "python -m flux.runners.tokenmm.run_api",
+        "description": "TokenMM API",
+        "errors": {
+            "count": 1,
+            "last_seen": "2026-03-06T19:20:49+00:00",
+            "preview": "ERROR something bad",
+        },
+        "group_key": "tokenmm",
+        "group_label": "TokenMM",
+        "group_order": 10,
+        "id": "tokenmm-api",
+        "memory": "45.2M",
+        "name": "tokenmm-api",
+        "pid": 1234,
+        "prefix": "tokenmm",
+        "readiness": {
+            "ok": False,
+            "summary": {
+                "error": "readiness unavailable",
+                "failed_checks": ["readiness_fetch"],
             },
-            {
-                "cmd": "python -m flux.runners.tokenmm.run_bridge",
-                "description": "TokenMM Bridge",
-                "errors": {
-                    "count": 0,
-                    "last_seen": None,
-                    "preview": None,
-                },
-                "group_key": "tokenmm",
-                "group_label": "TokenMM",
-                "group_order": 10,
-                "id": "tokenmm-bridge",
-                "memory": None,
-                "name": "tokenmm-bridge",
-                "pid": None,
-                "prefix": "tokenmm",
-                "status": "failed",
-                "unit": "flux@tokenmm-bridge",
-                "uptime": None,
-            },
-        ],
-        "shell_links": _expected_shell_links("tokenmm"),
-        "total": 2,
-        "active": 1,
-        "failed": 1,
+        },
+        "status": "degraded",
+        "systemd_status": "active",
+        "unit": "flux@tokenmm-api",
+        "uptime": "15min",
+    }
+    assert payload["jobs"][1] == {
+        "cmd": "python -m flux.runners.tokenmm.run_bridge",
+        "description": "TokenMM Bridge",
+        "errors": {
+            "count": 0,
+            "last_seen": None,
+            "preview": None,
+        },
+        "group_key": "tokenmm",
+        "group_label": "TokenMM",
+        "group_order": 10,
+        "id": "tokenmm-bridge",
+        "memory": None,
+        "name": "tokenmm-bridge",
+        "pid": None,
+        "prefix": "tokenmm",
+        "readiness": None,
+        "status": "failed",
+        "systemd_status": "failed",
+        "unit": "flux@tokenmm-bridge",
+        "uptime": None,
     }
     assert calls
 
@@ -330,7 +354,10 @@ def test_list_jobs_returns_shared_host_shell_links_when_equities_proxy_is_config
     assert payload["shell_links"] == _expected_shell_links("tokenmm", "equities")
 
 
-def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path) -> None:
+def test_list_jobs_scopes_active_job_errors_to_current_activation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     env_dir = tmp_path / "etc" / "flux"
     env_dir.mkdir(parents=True)
     (env_dir / "tokenmm-api.env").write_text(
@@ -371,6 +398,10 @@ def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path
         env_dir=env_dir,
         command_runner=runner,
         sudo_prefix=["sudo"],
+    )
+    monkeypatch.setattr(
+        "flux.pulse.api._fetch_job_readiness",
+        lambda service: {"ok": True, "summary": {"failed_checks": []}},
     )
     app = Flask(__name__)
     control_plane.register_routes(app)
@@ -516,6 +547,65 @@ def test_get_job_snapshot_returns_status_and_error_preview(tmp_path: Path) -> No
         "count": 1,
         "last_seen": "2026-03-19T11:43:02Z",
         "preview": "BinanceClientError: Invalid API-key",
+    }
+
+
+def test_get_job_snapshot_includes_tokenmm_readiness_for_api_services(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tokenmm-api.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM API",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                "PORT=5022",
+                'CMD="python -m flux.runners.tokenmm.run_api"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-api"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="active (running)", pid=1234, memory="45.2M"))
+        if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-api"]:
+            return FakeCompletedProcess(cmd, stdout="")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(
+        "flux.pulse.api._fetch_job_readiness",
+        lambda service: {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["state_stream_freshness"],
+                "stale_state_stream_strategy_ids": ["strategy_a"],
+            },
+        },
+    )
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+
+    snapshot = control_plane.get_job_snapshot("tokenmm-api")
+
+    assert snapshot is not None
+    assert snapshot["status"] == "degraded"
+    assert snapshot["systemd_status"] == "active"
+    assert snapshot["readiness"] == {
+        "ok": False,
+        "summary": {
+            "failed_checks": ["state_stream_freshness"],
+            "stale_state_stream_strategy_ids": ["strategy_a"],
+        },
     }
 
 

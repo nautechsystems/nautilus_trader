@@ -11,6 +11,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
 from flux.runners.tokenmm.run_api import _attach_profile_router_proxy
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
+from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _load_config
@@ -274,6 +275,39 @@ def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path
     response = client.get("/pulse/jobs/tokenmm-api")
     assert response.status_code == 200
     assert "pulse" in response.get_data(as_text=True)
+
+
+def test_attach_tokenmm_readiness_route_returns_enveloped_readiness_payload() -> None:
+    captured: dict[str, bool] = {}
+
+    def _fake_readiness_loader() -> dict[str, object]:
+        captured["called"] = True
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["state_stream_freshness"],
+                "stale_state_stream_strategy_ids": ["strategy_a"],
+            },
+            "checks": {
+                "state_stream_freshness": {
+                    "ok": False,
+                    "summary": "1 strategy has a stale state stream.",
+                },
+            },
+        }
+
+    app = Flask(__name__)
+    _attach_tokenmm_readiness_route(app, readiness_loader=_fake_readiness_loader)
+    client = app.test_client()
+
+    response = client.get("/api/v1/readiness?profile=tokenmm")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["data"]["ok"] is False
+    assert payload["data"]["summary"]["stale_state_stream_strategy_ids"] == ["strategy_a"]
+    assert captured["called"] is True
 
 
 def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch) -> None:

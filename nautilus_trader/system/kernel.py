@@ -82,6 +82,8 @@ except ImportError:  # pragma: no cover
 if uvloop is not None and "pytest" not in sys.modules:
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
+MSGBUS_HEALTHCHECK_INTERVAL_SECS = 0.5
+
 
 class NautilusKernel:
     """
@@ -532,6 +534,7 @@ class NautilusKernel:
         self._is_running = False
         self._is_stopping = False
         self._fatal_shutdown_reason: str | None = None
+        self._msgbus_health_task: asyncio.Task | None = None
 
         build_time_ns = time.time_ns() - ts_build
         build_time_ms = nanos_to_millis(build_time_ns) if build_time_ns > 0 else 0
@@ -569,6 +572,42 @@ class NautilusKernel:
 
     def _setup_shutdown_handling(self) -> None:
         self._msgbus.subscribe("commands.system.shutdown", self._on_shutdown_system)
+
+    def _start_msgbus_health_task(self) -> None:
+        if self._loop is None or self._msgbus_db is None:
+            return
+        if self._msgbus_health_task is not None and not self._msgbus_health_task.done():
+            return
+        self._msgbus_health_task = self._loop.create_task(self._watch_msgbus_database())
+
+    def _cancel_msgbus_health_task(self) -> None:
+        if self._msgbus_health_task is None:
+            return
+        if not self._msgbus_health_task.done():
+            self._msgbus_health_task.cancel()
+        self._msgbus_health_task = None
+
+    def _shutdown_if_msgbus_database_closed(self) -> bool:
+        if self._msgbus_db is None or not self._is_running or self._is_stopping:
+            return False
+        if not self._msgbus_db.is_closed():
+            return False
+
+        self._fatal_shutdown_reason = "Message bus backing database closed"
+        self._log.error(self._fatal_shutdown_reason)
+
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.create_task(self.stop_async())
+        else:
+            self.stop()
+
+        return True
+
+    async def _watch_msgbus_database(self) -> None:
+        while self._is_running and not self._is_stopping:
+            if self._shutdown_if_msgbus_database_closed():
+                return
+            await asyncio.sleep(MSGBUS_HEALTHCHECK_INTERVAL_SECS)
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Set up persistence
@@ -990,7 +1029,9 @@ class NautilusKernel:
         self._log.info("STARTING")
         self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
+        self._fatal_shutdown_reason = None
 
+        self._start_msgbus_health_task()
         self._start_engines()
         self._connect_clients()
         self._emulator.start()
@@ -1015,6 +1056,7 @@ class NautilusKernel:
         self._is_running = True
         self._fatal_shutdown_reason = None
 
+        self._start_msgbus_health_task()
         self._register_executor()
         self._start_engines()
         self._connect_clients()
@@ -1050,6 +1092,7 @@ class NautilusKernel:
         """
         self._log.info("STOPPING")
         self._is_stopping = True
+        self._cancel_msgbus_health_task()
 
         self._stop_clients()
 
@@ -1089,6 +1132,7 @@ class NautilusKernel:
 
         self._log.info("STOPPING")
         self._is_stopping = True
+        self._cancel_msgbus_health_task()
 
         if self._trader.is_running:
             self._trader.stop()
@@ -1132,6 +1176,7 @@ class NautilusKernel:
         sequentially without re-initializing logging.
 
         """
+        self._cancel_msgbus_health_task()
         self._stop_engines()
 
         # Dispose all engines

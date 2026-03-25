@@ -1,4 +1,4 @@
-export type JobStatus = "active" | "failed" | "inactive" | "restarting" | "stopping";
+export type JobStatus = "active" | "degraded" | "failed" | "inactive" | "restarting" | "stopping";
 
 export interface ErrorInfo {
   count: number;
@@ -11,6 +11,7 @@ export interface Job {
   name: string;
   status?: JobStatus;
   state?: JobStatus;
+  systemd_status?: JobStatus;
   pid?: number | string | null;
   memory?: string | null;
   uptime?: string | null;
@@ -35,12 +36,14 @@ export interface JobsResponse {
   shell_links?: ShellLink[];
   total: number;
   active: number;
+  degraded: number;
   failed: number;
 }
 
 export interface JobStats {
   total: number;
   active: number;
+  degraded: number;
   failed: number;
   totalErrors: number;
 }
@@ -158,6 +161,7 @@ export function calculateStats(jobs: Job[]): JobStats {
   return {
     total: jobs.length,
     active: jobs.filter((job) => (job.status || job.state) === "active").length,
+    degraded: jobs.filter((job) => (job.status || job.state) === "degraded").length,
     failed: jobs.filter((job) => (job.status || job.state) === "failed").length,
     totalErrors: jobs.reduce((sum, job) => sum + (job.errors?.count || 0), 0),
   };

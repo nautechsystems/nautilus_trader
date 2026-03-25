@@ -1855,10 +1855,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         client: ExecutionClient,
         instrument_id: InstrumentId,
-    ) -> list[OrderStatusReport]:
+    ) -> tuple[list[OrderStatusReport], list[GenerateOrderStatusReport]]:
         snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
         if not snapshot.open_order_refs:
-            return []
+            return [], []
 
         seen_refs: set[tuple[ClientOrderId, VenueOrderId | None]] = set()
         commands: list[GenerateOrderStatusReport] = []
@@ -1883,6 +1883,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         reports: list[OrderStatusReport] = []
+        missing_commands: list[GenerateOrderStatusReport] = []
         for command, result in zip(commands, results, strict=True):
             if isinstance(result, BaseException):
                 self._log.warning(
@@ -1892,8 +1893,15 @@ class LiveExecutionEngine(ExecutionEngine):
                 continue
             if result is not None:
                 reports.append(result)
+                continue
 
-        return reports
+            cached_order = self._cache.order(command.client_order_id)
+            if cached_order is None or not cached_order.is_open:
+                continue
+
+            missing_commands.append(command)
+
+        return reports, missing_commands
 
     @staticmethod
     def _merge_startup_order_status_reports(
@@ -1990,14 +1998,47 @@ class LiveExecutionEngine(ExecutionEngine):
                     client.generate_fill_reports(fill_reports_command),
                     client.generate_position_status_reports(position_status_command),
                 )
-                targeted_order_reports = (
+                bulk_order_reports = cast("list[OrderStatusReport]", reports[0])
+                targeted_order_reports, targeted_missing_commands = (
                     await self._generate_startup_targeted_order_status_reports(
                         client=client,
                         instrument_id=instrument_id,
                     )
                     if use_open_orders_only
-                    else []
+                    else ([], [])
                 )
+                bulk_reported_client_order_ids = {
+                    report.client_order_id
+                    for report in bulk_order_reports
+                    if report.client_order_id is not None
+                }
+                bulk_reported_venue_order_ids = {
+                    report.venue_order_id
+                    for report in bulk_order_reports
+                    if report.venue_order_id is not None
+                }
+                for command in targeted_missing_commands:
+                    if (
+                        command.client_order_id in bulk_reported_client_order_ids
+                        or command.venue_order_id in bulk_reported_venue_order_ids
+                    ):
+                        continue
+
+                    cached_order = self._cache.order(command.client_order_id)
+                    if cached_order is None or not cached_order.is_open:
+                        continue
+
+                    self._log.info(
+                        f"Startup targeted order-status query returned no report and "
+                        f"the bulk open-order sweep omitted {command.client_order_id!r}; "
+                        "marking cached order as missing at venue",
+                        LogColor.BLUE,
+                    )
+                    self._resolve_cached_order_missing_at_venue(
+                        cached_order,
+                        ts_now=command.ts_init,
+                        reason="ORDER_NOT_FOUND_AT_VENUE",
+                    )
                 position_reports = self._normalize_startup_position_reports_for_instrument(
                     client=client,
                     instrument_id=instrument_id,
@@ -2008,7 +2049,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 mass_status.add_order_reports(
                     reports=self._merge_startup_order_status_reports(
-                        bulk_reports=cast("list[OrderStatusReport]", reports[0]),
+                        bulk_reports=bulk_order_reports,
                         targeted_reports=targeted_order_reports,
                     ),
                 )
@@ -3529,7 +3570,15 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
-        if snapshot.total_open_order_count != 0:
+        current_startup_open_orders = [
+            order
+            for ref in snapshot.open_order_refs
+            if (
+                order := self._cache.order(ref.client_order_id)
+            ) is not None
+            and order.is_open
+        ]
+        if current_startup_open_orders:
             return False
 
         startup_position_ids = {
@@ -3547,7 +3596,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(
             f"Treating startup netting positions as stale cached positions for "
             f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
-            f"snapshot_open_orders={snapshot.total_open_order_count}",
+            f"snapshot_open_orders={snapshot.total_open_order_count}, "
+            f"current_startup_open_orders={len(current_startup_open_orders)}",
             LogColor.BLUE,
         )
         return True

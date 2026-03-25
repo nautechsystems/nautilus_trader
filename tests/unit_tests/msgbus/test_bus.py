@@ -3,6 +3,7 @@ import pytest
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import is_matching_py
+from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
@@ -564,3 +565,36 @@ def test_add_listener_receives_byte_messages(bus):
 
     # Assert
     assert events == [("any.topic", payload)]
+
+
+def test_publish_requests_single_system_shutdown_when_backing_database_is_closed(clock, trader_id):
+    class ClosedDatabase:
+        def __init__(self):
+            self.publish_calls = []
+
+        def is_closed(self):
+            return True
+
+        def publish(self, topic, payload):
+            self.publish_calls.append((topic, payload))
+
+        def close(self):
+            pass
+
+    shutdowns = []
+    database = ClosedDatabase()
+    bus = MessageBus(
+        trader_id=trader_id,
+        clock=clock,
+        database=database,
+    )
+    bus.subscribe("commands.system.shutdown", shutdowns.append)
+
+    bus.publish("events.order.test", b"first")
+    bus.publish("events.order.test", b"second")
+
+    assert database.publish_calls == []
+    assert len(shutdowns) == 1
+    assert isinstance(shutdowns[0], ShutdownSystem)
+    assert shutdowns[0].reason is not None
+    assert "backing database closed" in shutdowns[0].reason
