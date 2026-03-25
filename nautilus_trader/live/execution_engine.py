@@ -196,6 +196,7 @@ class LiveExecutionEngine(ExecutionEngine):
     _EXECUTION_ALERT_BURST_THRESHOLD: Final[int] = 3
     _EXECUTION_ALERT_BURST_WINDOW_NS: Final[int] = 60_000_000_000
     _EXECUTION_ALERT_BURST_COOLDOWN_NS: Final[int] = 60_000_000_000
+    _STARTUP_ORPHAN_SUBSET_SEARCH_LIMIT: Final[int] = 24
 
     def __init__(
         self,
@@ -2861,6 +2862,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 if cached_order.is_open:
                     continue
 
+                if cached_order.strategy_id != target_position.strategy_id:
+                    continue
+
                 position_id = cached_order.position_id
                 if position_id is None or self._cache.position(position_id) is not None:
                     continue
@@ -2898,12 +2902,24 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 candidate_positions.append(restored_position)
 
+            if len(candidate_positions) > self._STARTUP_ORPHAN_SUBSET_SEARCH_LIMIT:
+                self._log.warning(
+                    f"Skipping startup orphan lineage restore for {instrument_id}: "
+                    f"candidate_count={len(candidate_positions)} exceeds search_limit="
+                    f"{self._STARTUP_ORPHAN_SUBSET_SEARCH_LIMIT}",
+                )
+                continue
+
             candidate_positions.sort(key=lambda position: (abs(position.signed_decimal_qty()), position.ts_last))
             selected_positions: list[Position] = []
+            exhausted_states: set[tuple[int, Decimal]] = set()
 
             def _search_exact_subset(start_index: int, remaining_qty: Decimal) -> bool:
                 if remaining_qty == 0:
                     return True
+                state = (start_index, remaining_qty)
+                if state in exhausted_states:
+                    return False
 
                 for idx in range(start_index, len(candidate_positions)):
                     candidate = candidate_positions[idx]
@@ -2915,6 +2931,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         return True
                     selected_positions.pop()
 
+                exhausted_states.add(state)
                 return False
 
             if not _search_exact_subset(0, abs(diff_signed_qty)):
