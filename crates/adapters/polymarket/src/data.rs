@@ -493,6 +493,8 @@ impl PolymarketDataClient {
                     }
                 }
             }
+
+            MarketWsMessage::NewMarket(_) | MarketWsMessage::MarketResolved(_) | MarketWsMessage::BestBidAsk(_) => {}
         }
     }
 

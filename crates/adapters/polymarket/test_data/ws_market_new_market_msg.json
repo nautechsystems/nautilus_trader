@@ -1,0 +1,38 @@
+{
+  "event_type": "new_market",
+  "id": "1031769",
+  "question": "Will NVIDIA (NVDA) close above $240 end of January?",
+  "market": "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1",
+  "slug": "nvda-above-240-on-january-30-2026",
+  "description": "This market will resolve to \"Yes\" if the official closing price for NVIDIA (NVDA) on the final trading day of January 2026 is higher than the listed price. Otherwise, this market will resolve to \"No\".",
+  "assets_ids": [
+    "76043073756653678226373981964075571318267289248134717369284518995922789326425",
+    "31690934263385727664202099278545688007799199447969475608906331829650099442770"
+  ],
+  "outcomes": [
+    "Yes",
+    "No"
+  ],
+  "event_message": {
+    "id": "125819",
+    "ticker": "nvda-above-in-january-2026",
+    "slug": "nvda-above-in-january-2026",
+    "title": "Will NVIDIA (NVDA) close above ___ end of January?",
+    "description": "This market will resolve to \"Yes\" if the official closing price for NVIDIA (NVDA) on the final trading day of January 2026 is higher than the listed price. Otherwise, this market will resolve to \"No\"."
+  },
+  "timestamp": "1766790415550",
+  "tags": [
+    "stocks"
+  ],
+  "condition_id": "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1",
+  "active": true,
+  "clob_token_ids": [
+    "76043073756653678226373981964075571318267289248134717369284518995922789326425",
+    "31690934263385727664202099278545688007799199447969475608906331829650099442770"
+  ],
+  "sports_market_type": "",
+  "line": "",
+  "game_start_time": "",
+  "order_price_min_tick_size": "0.01",
+  "group_item_title": "NVDA above $240"
+}

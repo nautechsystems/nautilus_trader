@@ -139,6 +139,57 @@ pub struct PolymarketTickSizeChange {
     pub timestamp: String,
 }
 
+/// A new market notification from the WebSocket market channel.
+///
+/// Only received when `subscribe_new_markets` is enabled.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolymarketNewMarket {
+    pub id: String,
+    pub question: String,
+    pub market: Ustr,
+    pub slug: String,
+    pub description: String,
+    pub assets_ids: Vec<String>,
+    pub outcomes: Vec<String>,
+    pub timestamp: String,
+    pub tags: Vec<String>,
+    pub condition_id: String,
+    pub active: bool,
+    pub clob_token_ids: Vec<String>,
+    #[serde(default)]
+    pub order_price_min_tick_size: Option<String>,
+    #[serde(default)]
+    pub group_item_title: Option<String>,
+}
+
+/// A market resolved notification from the WebSocket market channel.
+///
+/// Only received when `subscribe_new_markets` is enabled.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolymarketMarketResolved {
+    pub id: String,
+    pub market: Ustr,
+    pub assets_ids: Vec<String>,
+    pub winning_asset_id: String,
+    pub winning_outcome: String,
+    pub timestamp: String,
+    pub tags: Vec<String>,
+}
+
+/// A best bid/ask notification from the WebSocket market channel.
+///
+/// Only received when `subscribe_new_markets` is enabled.
+/// Data is already covered by existing PriceChange/Book handlers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolymarketBestBidAsk {
+    pub market: Ustr,
+    pub asset_id: Ustr,
+    pub best_bid: String,
+    pub best_ask: String,
+    pub spread: String,
+    pub timestamp: String,
+}
+
 /// An envelope for tagged WebSocket market channel messages.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type")]
@@ -151,6 +202,12 @@ pub enum MarketWsMessage {
     LastTradePrice(PolymarketTrade),
     #[serde(rename = "tick_size_change")]
     TickSizeChange(PolymarketTickSizeChange),
+    #[serde(rename = "new_market")]
+    NewMarket(PolymarketNewMarket),
+    #[serde(rename = "market_resolved")]
+    MarketResolved(PolymarketMarketResolved),
+    #[serde(rename = "best_bid_ask")]
+    BestBidAsk(PolymarketBestBidAsk),
 }
 
 /// An envelope for tagged WebSocket user channel messages.
@@ -184,11 +241,14 @@ pub struct PolymarketWsAuth {
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
 ///
 /// Wire format: `{"assets_ids": [...], "type": "market"}`
+/// When `subscribe_new_markets` is true, includes `"custom_feature_enabled": true`.
 #[derive(Debug, Serialize)]
 pub struct MarketInitialSubscribeRequest {
     pub assets_ids: Vec<String>,
     #[serde(rename = "type")]
     pub msg_type: &'static str,
+    #[serde(rename = "custom_feature_enabled", skip_serializing_if = "std::ops::Not::not")]
+    pub subscribe_new_markets: bool,
 }
 
 /// Incremental market-channel subscribe request sent after the initial session subscribe.
@@ -411,6 +471,47 @@ mod tests {
         if let UserWsMessage::Trade(trade) = msg {
             assert_eq!(trade.event_type, PolymarketEventType::Trade);
             assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_new_market() {
+        let msg: MarketWsMessage = load("ws_market_new_market_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::NewMarket(_)));
+        if let MarketWsMessage::NewMarket(nm) = msg {
+            assert_eq!(nm.id, "1031769");
+            assert_eq!(nm.slug, "nvda-above-240-on-january-30-2026");
+            assert_eq!(nm.condition_id, "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1");
+            assert!(nm.active);
+            assert_eq!(nm.outcomes.len(), 2);
+            assert_eq!(nm.clob_token_ids.len(), 2);
+            assert_eq!(nm.order_price_min_tick_size.as_deref(), Some("0.01"));
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_resolved() {
+        let msg: MarketWsMessage = load("ws_market_resolved_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::MarketResolved(_)));
+        if let MarketWsMessage::MarketResolved(mr) = msg {
+            assert_eq!(mr.id, "1031769");
+            assert_eq!(mr.winning_outcome, "Yes");
+            assert_eq!(mr.assets_ids.len(), 2);
+            assert_eq!(mr.winning_asset_id, "76043073756653678226373981964075571318267289248134717369284518995922789326425");
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_best_bid_ask() {
+        let msg: MarketWsMessage = load("ws_market_best_bid_ask_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::BestBidAsk(_)));
+        if let MarketWsMessage::BestBidAsk(bba) = msg {
+            assert_eq!(bba.best_bid, "0.73");
+            assert_eq!(bba.best_ask, "0.77");
+            assert_eq!(bba.spread, "0.04");
         }
     }
 }

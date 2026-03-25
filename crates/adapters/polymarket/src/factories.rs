@@ -93,7 +93,10 @@ impl DataClientFactory for PolymarketDataClientFactory {
             polymarket_config.http_timeout_secs,
         )?;
 
-        let ws_client = PolymarketWebSocketClient::new_market(None);
+        let ws_client = PolymarketWebSocketClient::new_market(
+            polymarket_config.base_url_ws.clone(),
+            polymarket_config.subscribe_new_markets,
+        );
 
         let mut client = PolymarketDataClient::new(
             client_id,

@@ -72,6 +72,8 @@ pub(super) struct FeedHandler {
     market_subscription_initialized: bool,
     // Overflow buffer for batched frames, drained before reading the next raw message
     message_buffer: Vec<PolymarketWsMessage>,
+    // Whether to include `custom_feature_enabled: true` in the initial subscribe
+    subscribe_new_markets: bool,
 }
 
 impl FeedHandler {
@@ -86,6 +88,7 @@ impl FeedHandler {
         subscriptions: SubscriptionState,
         auth_tracker: AuthTracker,
         user_subscribed: bool,
+        subscribe_new_markets: bool,
     ) -> Self {
         Self {
             signal,
@@ -100,6 +103,7 @@ impl FeedHandler {
             user_subscribed,
             market_subscription_initialized: false,
             message_buffer: Vec::new(),
+            subscribe_new_markets,
         }
     }
 
@@ -132,6 +136,7 @@ impl FeedHandler {
             serde_json::to_string(&MarketInitialSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 msg_type: "market",
+                subscribe_new_markets: self.subscribe_new_markets,
             })
         };
 
@@ -291,7 +296,8 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::SubscribeMarket(ids) => {
-                            self.send_subscribe_market(&ids).await;
+                            self.
+                            send_subscribe_market(&ids).await;
                         }
                         HandlerCommand::UnsubscribeMarket(ids) => {
                             for id in &ids {
