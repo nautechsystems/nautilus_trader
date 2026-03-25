@@ -59,7 +59,8 @@ use crate::{
     filters::InstrumentFilter,
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
-        gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams,
+        gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
+        query::GetGammaMarketsParams,
     },
     providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_instruments},
     websocket::{
@@ -452,6 +453,45 @@ impl PolymarketDataClient {
                     change.old_tick_size,
                     change.new_tick_size
                 );
+
+                let token_id = Ustr::from(change.asset_id.as_str());
+                let meta = match ctx.token_meta.get(&token_id) {
+                    Some(m) => *m,
+                    None => {
+                        log::error!("No instrument for token_id {token_id}");
+                        return;
+                    }
+                };
+
+                let tick_size: rust_decimal::Decimal = match change.new_tick_size.parse() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log::error!("Failed to parse new tick size '{}': {e}", change.new_tick_size);
+                        return;
+                    }
+                };
+                let new_price_precision = tick_size.scale() as u8;
+
+                // Update hot-path precision
+                ctx.token_meta.insert(token_id, TokenMeta {
+                    price_precision: new_price_precision,
+                    ..meta
+                });
+
+                // Rebuild and emit the full instrument to update cache.
+                let instruments = ctx.instruments.load();
+                if let Some(existing) = instruments.get(&meta.instrument_id) {
+                    let ts_init = ctx.clock.get_time_ns();
+                    match rebuild_instrument_with_tick_size(existing, &change.new_tick_size, ts_init, ts_init) {
+                        Ok(rebuilt) => {
+                            ctx.instruments.insert(rebuilt.id(), rebuilt.clone());
+                            if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(rebuilt)) {
+                                log::error!("Failed to emit rebuilt instrument: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("Failed to rebuild instrument for tick size change: {e}"),
+                    }
+                }
             }
         }
     }
