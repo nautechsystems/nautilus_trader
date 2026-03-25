@@ -43,6 +43,7 @@ use std::sync::Arc;
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_network::retry::RetryConfig;
 use nautilus_polymarket::{
     filters::GammaQueryFilter,
     http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
@@ -67,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     log::info!("Creating HTTP client");
-    let http_client = PolymarketGammaHttpClient::new(None, None)?;
+    let http_client = PolymarketGammaHttpClient::new(None, None, RetryConfig::default())?;
 
     log::info!("Building filter and provider");
     let filter = GammaQueryFilter::new(params);

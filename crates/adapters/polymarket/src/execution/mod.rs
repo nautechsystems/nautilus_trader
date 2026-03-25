@@ -167,7 +167,8 @@ impl PolymarketExecutionClient {
             immediate_first: false,
             max_elapsed_ms: Some(180_000),
         };
-        let submitter = OrderSubmitter::new(http_client.clone(), order_builder, retry_config);
+        let submitter =
+            OrderSubmitter::new(http_client.clone(), order_builder, retry_config.clone());
 
         let ws_client = PolymarketWebSocketClient::new_user(
             config.base_url_ws.clone(),
@@ -177,6 +178,7 @@ impl PolymarketExecutionClient {
         let gamma_http = PolymarketGammaHttpClient::new(
             config.base_url_gamma.clone(),
             Some(config.http_timeout_secs),
+            retry_config,
         )
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("failed to create Gamma HTTP client")?;

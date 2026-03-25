@@ -139,3 +139,8 @@ doc = false
 name = "polymarket-exec-tester"
 path = "examples/node_exec_tester.rs"
 doc = false
+
+[[example]]
+name = "polymarket-new-market-monitor"
+path = "examples/new_market_monitor.rs"
+doc = false

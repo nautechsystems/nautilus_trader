@@ -1,0 +1,184 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Example demonstrating new market monitoring with instrument subscriptions.
+//!
+//! Configures the Polymarket data client with `subscribe_new_markets: true` so
+//! the WebSocket connection receives `new_market` events. An [`EventSlugFilter`]
+//! scopes the initial instrument load (and new-market acceptance) to a single
+//! event slug. A custom [`DataActor`] subscribes to all instruments from the
+//! POLYMARKET venue and logs every instrument that arrives — including newly
+//! created markets pushed in real time.
+//!
+//! # Usage
+//!
+//! ```sh
+//! cargo run --example polymarket-new-market-monitor --package nautilus-polymarket
+//! ```
+
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
+
+use log::LevelFilter;
+use nautilus_common::{
+    actor::{DataActor, DataActorConfig, DataActorCore},
+    enums::Environment,
+    logging::logger::LoggerConfig,
+};
+use nautilus_live::node::LiveNode;
+use nautilus_model::{
+    identifiers::{ClientId, TraderId, Venue},
+    instruments::{Instrument, InstrumentAny},
+};
+use nautilus_polymarket::{
+    common::models::PolymarketLabel, config::PolymarketDataClientConfig,
+    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
+};
+
+// ---------------------------------------------------------------------------
+// Custom DataActor: subscribes to venue instruments and logs new markets
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct NewMarketMonitorConfig {
+    base: DataActorConfig,
+    client_id: ClientId,
+}
+
+#[derive(Debug)]
+struct NewMarketMonitor {
+    core: DataActorCore,
+    config: NewMarketMonitorConfig,
+    instrument_count: usize,
+}
+
+impl NewMarketMonitor {
+    fn new(config: NewMarketMonitorConfig) -> Self {
+        Self {
+            core: DataActorCore::new(config.base.clone()),
+            config,
+            instrument_count: 0,
+        }
+    }
+}
+
+impl Deref for NewMarketMonitor {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for NewMarketMonitor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl DataActor for NewMarketMonitor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        let venue = Venue::from("POLYMARKET");
+        let client_id = Some(self.config.client_id);
+
+        // Log instruments already in cache from the initial provider load
+        let cache = self.cache();
+        let cached_instruments: Vec<_> = cache
+            .instruments(&venue, None)
+            .iter()
+            .map(|i| (i.id(), PolymarketLabel::from_instrument(i)))
+            .collect();
+        drop(cache);
+
+        log::info!(
+            "Initial provider load: {} instruments in cache",
+            cached_instruments.len()
+        );
+
+        self.instrument_count = cached_instruments.len();
+
+        // Subscribe to all instruments from the venue — this will deliver
+        // both existing and any new instruments pushed by the data client
+        // when subscribe_new_markets is enabled.
+        self.subscribe_instruments(venue, client_id, None);
+
+        log::info!("Subscribed to POLYMARKET instruments, waiting for new markets...");
+
+        Ok(())
+    }
+
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.instrument_count += 1;
+        let label = PolymarketLabel::from_instrument(instrument);
+        log::info!(
+            "Instrument received (total={}): {} — {label} | tick_size={} price_prec={} size_prec={}",
+            self.instrument_count,
+            instrument.id(),
+            instrument.price_increment(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+
+    let environment = Environment::Live;
+    let trader_id = TraderId::from("TESTER-001");
+    let client_id = ClientId::new("POLYMARKET");
+
+    // Scope to a single event slug so we don't load all 72K+ markets
+    let event_filter =
+        EventSlugFilter::from_slugs(vec!["presidential-election-winner-2028".to_string()]);
+
+    let polymarket_config = PolymarketDataClientConfig {
+        subscribe_new_markets: true,
+        filters: vec![Arc::new(event_filter)],
+        ..Default::default()
+    };
+
+    let log_config = LoggerConfig {
+        stdout_level: LevelFilter::Info,
+        ..Default::default()
+    };
+
+    let client_factory = PolymarketDataClientFactory;
+
+    let mut node = LiveNode::builder(trader_id, environment)?
+        .with_name("POLYMARKET-NEW-MARKET-MONITOR-001".to_string())
+        .with_logging(log_config)
+        .with_delay_post_stop_secs(2)
+        .add_data_client(None, Box::new(client_factory), Box::new(polymarket_config))?
+        .build()?;
+
+    let actor_config = NewMarketMonitorConfig {
+        base: DataActorConfig::default(),
+        client_id,
+    };
+    let actor = NewMarketMonitor::new(actor_config);
+
+    node.add_actor(actor)?;
+    node.run().await?;
+
+    Ok(())
+}

@@ -33,6 +33,7 @@ use std::sync::Arc;
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_network::retry::RetryConfig;
 use nautilus_polymarket::{
     filters::EventParamsFilter,
     http::{gamma::PolymarketGammaHttpClient, query::GetGammaEventsParams},
@@ -43,7 +44,7 @@ use nautilus_polymarket::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let http_client = PolymarketGammaHttpClient::new(None, None)?;
+    let http_client = PolymarketGammaHttpClient::new(None, None, RetryConfig::default())?;
     let provider = PolymarketInstrumentProvider::new(http_client.clone());
 
     // ---- Step 1: List available tags ----

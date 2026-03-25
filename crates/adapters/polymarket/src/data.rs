@@ -30,8 +30,8 @@ use nautilus_common::{
         data::{
             BookResponse, InstrumentResponse, InstrumentsResponse, RequestBookSnapshot,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBookDeltas,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBookDeltas, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     providers::InstrumentProvider,
@@ -48,7 +48,6 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -92,6 +91,7 @@ struct WsMessageContext {
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    subscribe_new_markets: bool,
 }
 
 /// Polymarket data client for live market data streaming.
@@ -242,11 +242,14 @@ impl PolymarketDataClient {
         let cancellation = self.cancellation_token.clone();
         let token_meta = Arc::new(DashMap::new());
         for (token_id, instrument) in self.provider.build_token_map() {
-            token_meta.insert(token_id, TokenMeta {
-                instrument_id: instrument.id(),
-                price_precision: instrument.price_precision(),
-                size_precision: instrument.size_precision(),
-            });
+            token_meta.insert(
+                token_id,
+                TokenMeta {
+                    instrument_id: instrument.id(),
+                    price_precision: instrument.price_precision(),
+                    size_precision: instrument.size_precision(),
+                },
+            );
         }
         let ctx = WsMessageContext {
             clock: self.clock,
@@ -260,6 +263,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            subscribe_new_markets: self.config.subscribe_new_markets,
         };
 
         let handle = get_runtime().spawn(async move {
@@ -318,7 +322,13 @@ impl PolymarketDataClient {
                 let ts_init = ctx.clock.get_time_ns();
 
                 if ctx.active_delta_subs.contains(&instrument_id) {
-                    match parse_book_snapshot(&snap, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
+                    match parse_book_snapshot(
+                        &snap,
+                        instrument_id,
+                        meta.price_precision,
+                        meta.size_precision,
+                        ts_init,
+                    ) {
                         Ok(deltas) => {
                             let mut book = ctx
                                 .order_books
@@ -341,7 +351,13 @@ impl PolymarketDataClient {
                 }
 
                 if ctx.active_quote_subs.contains(&instrument_id) {
-                    match parse_quote_from_snapshot(&snap, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
+                    match parse_quote_from_snapshot(
+                        &snap,
+                        instrument_id,
+                        meta.price_precision,
+                        meta.size_precision,
+                        ts_init,
+                    ) {
                         Ok(Some(quote)) => {
                             Self::emit_quote_if_changed(ctx, instrument_id, quote);
                         }
@@ -380,7 +396,13 @@ impl PolymarketDataClient {
                             timestamp: quotes.timestamp.clone(),
                         };
 
-                        match parse_book_deltas(&per_asset, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
+                        match parse_book_deltas(
+                            &per_asset,
+                            instrument_id,
+                            meta.price_precision,
+                            meta.size_precision,
+                            ts_init,
+                        ) {
                             Ok(deltas) => {
                                 if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
                                     && let Err(e) = book.apply_deltas(&deltas)
@@ -436,7 +458,13 @@ impl PolymarketDataClient {
 
                 if ctx.active_trade_subs.contains(&instrument_id) {
                     let ts_init = ctx.clock.get_time_ns();
-                    match parse_trade_tick(&trade, instrument_id, meta.price_precision, meta.size_precision, ts_init) {
+                    match parse_trade_tick(
+                        &trade,
+                        instrument_id,
+                        meta.price_precision,
+                        meta.size_precision,
+                        ts_init,
+                    ) {
                         Ok(tick) => {
                             if let Err(e) = ctx
                                 .data_sender
@@ -470,43 +498,61 @@ impl PolymarketDataClient {
                 let tick_size: rust_decimal::Decimal = match change.new_tick_size.parse() {
                     Ok(d) => d,
                     Err(e) => {
-                        log::error!("Failed to parse new tick size '{}': {e}", change.new_tick_size);
+                        log::error!(
+                            "Failed to parse new tick size '{}': {e}",
+                            change.new_tick_size
+                        );
                         return;
                     }
                 };
                 let new_price_precision = tick_size.scale() as u8;
 
                 // Update hot-path precision
-                ctx.token_meta.insert(token_id, TokenMeta {
-                    price_precision: new_price_precision,
-                    ..meta
-                });
+                ctx.token_meta.insert(
+                    token_id,
+                    TokenMeta {
+                        price_precision: new_price_precision,
+                        ..meta
+                    },
+                );
 
                 // Rebuild and emit the full instrument to update cache.
                 let instruments = ctx.instruments.load();
                 if let Some(existing) = instruments.get(&meta.instrument_id) {
                     let ts_init = ctx.clock.get_time_ns();
-                    match rebuild_instrument_with_tick_size(existing, &change.new_tick_size, ts_init, ts_init) {
+                    match rebuild_instrument_with_tick_size(
+                        existing,
+                        &change.new_tick_size,
+                        ts_init,
+                        ts_init,
+                    ) {
                         Ok(rebuilt) => {
                             ctx.instruments.insert(rebuilt.id(), rebuilt.clone());
                             if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(rebuilt)) {
                                 log::error!("Failed to emit rebuilt instrument: {e}");
                             }
                         }
-                        Err(e) => log::error!("Failed to rebuild instrument for tick size change: {e}"),
+                        Err(e) => {
+                            log::error!("Failed to rebuild instrument for tick size change: {e}")
+                        }
                     }
                 }
             }
 
             MarketWsMessage::NewMarket(nm) => {
-                log::info!("New market event: slug={} condition_id={}", nm.slug, nm.condition_id);
+                if !ctx.subscribe_new_markets {
+                    log::trace!("Ignoring new market event (subscribe_new_markets=false)");
+                    return;
+                }
 
                 let gamma_client = ctx.gamma_client.clone();
                 let filters = ctx.filters.clone();
                 let token_meta = ctx.token_meta.clone();
                 let instruments = ctx.instruments.clone();
                 let data_sender = ctx.data_sender.clone();
+                let clock = ctx.clock;
                 let slug = nm.slug;
+                let active = nm.active;
 
                 get_runtime().spawn(async move {
                     match gamma_client
@@ -520,20 +566,54 @@ impl PolymarketDataClient {
                                     continue;
                                 }
 
+                                let instrument_id = inst.id();
                                 let token_id = Ustr::from(inst.raw_symbol().as_str());
-                                token_meta.insert(token_id, TokenMeta {
-                                    instrument_id: inst.id(),
-                                    price_precision: inst.price_precision(),
-                                    size_precision: inst.size_precision(),
-                                });
-                                instruments.insert(inst.id(), inst.clone());
+                                token_meta.insert(
+                                    token_id,
+                                    TokenMeta {
+                                        instrument_id,
+                                        price_precision: inst.price_precision(),
+                                        size_precision: inst.size_precision(),
+                                    },
+                                );
+                                instruments.insert(instrument_id, inst.clone());
 
-                                if let Err(e) = data_sender.send(DataEvent::Instrument(inst.clone())) {
-                                    log::error!("Failed to emit new market instrument {}: {e}", inst.id());
+                                if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
+                                    log::error!(
+                                        "Failed to emit new market instrument {instrument_id}: {e}"
+                                    );
+                                }
+
+                                // Emit instrument status based on WS active flag
+                                let ts = clock.get_time_ns();
+                                let action = if active {
+                                    MarketStatusAction::Trading
+                                } else {
+                                    MarketStatusAction::PreOpen
+                                };
+                                let status = InstrumentStatus::new(
+                                    instrument_id,
+                                    action,
+                                    ts,
+                                    ts,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                );
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::InstrumentStatus(status))
+                                {
+                                    log::error!(
+                                        "Failed to emit instrument status for {instrument_id}: {e}"
+                                    );
                                 }
                             }
                         }
-                        Err(e) => log::error!("Failed to fetch instruments for new market slug '{slug}': {e:?}"),
+                        Err(e) => log::debug!(
+                            "Failed to fetch instruments for new market slug '{slug}' after retries: {e}"
+                        ),
                     }
                 });
             }
@@ -541,7 +621,9 @@ impl PolymarketDataClient {
             MarketWsMessage::MarketResolved(resolved) => {
                 log::info!(
                     "Market resolved: {} winner={} ({})",
-                    resolved.market, resolved.winning_asset_id, resolved.winning_outcome
+                    resolved.market,
+                    resolved.winning_asset_id,
+                    resolved.winning_outcome
                 );
 
                 let ts_init = ctx.clock.get_time_ns();
@@ -550,7 +632,8 @@ impl PolymarketDataClient {
                     let token_id = Ustr::from(asset_id.as_str());
                     if let Some(meta) = ctx.token_meta.get(&token_id) {
                         let reason = Ustr::from(&format!(
-                            "Winner: {} ({})", resolved.winning_asset_id, resolved.winning_outcome
+                            "Winner: {} ({})",
+                            resolved.winning_asset_id, resolved.winning_outcome
                         ));
                         let status = InstrumentStatus::new(
                             meta.instrument_id,
@@ -564,7 +647,10 @@ impl PolymarketDataClient {
                             None,
                         );
                         if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
-                            log::error!("Failed to emit instrument status for {}: {e}", meta.instrument_id);
+                            log::error!(
+                                "Failed to emit instrument status for {}: {e}",
+                                meta.instrument_id
+                            );
                         }
                     }
                 }
@@ -573,7 +659,9 @@ impl PolymarketDataClient {
             MarketWsMessage::BestBidAsk(bba) => {
                 log::trace!(
                     "best_bid_ask for {}: bid={} ask={}",
-                    bba.asset_id, bba.best_bid, bba.best_ask
+                    bba.asset_id,
+                    bba.best_bid,
+                    bba.best_ask
                 );
             }
         }
@@ -659,6 +747,21 @@ impl DataClient for PolymarketDataClient {
         self.bootstrap_instruments().await?;
 
         self.ws_client.connect().await?;
+
+        // Subscribe all loaded instruments to WS market channel
+        let token_ids: Vec<String> = self
+            .instruments
+            .load()
+            .values()
+            .map(|inst| inst.raw_symbol().as_str().to_string())
+            .collect();
+        if !token_ids.is_empty() {
+            log::info!(
+                "Subscribing {} instruments to WS market data",
+                token_ids.len()
+            );
+            self.ws_client.subscribe_market(token_ids).await?;
+        }
 
         let rx = self
             .ws_client
@@ -907,6 +1010,11 @@ impl DataClient for PolymarketDataClient {
             }
         });
 
+        Ok(())
+    }
+
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        log::debug!("subscribe_instruments: Polymarket auto-subscribes via connect");
         Ok(())
     }
 

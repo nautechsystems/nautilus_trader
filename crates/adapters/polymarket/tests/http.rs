@@ -37,7 +37,7 @@ use axum::{
 };
 use nautilus_common::{providers::InstrumentProvider, testing::wait_until_async};
 use nautilus_model::identifiers::InstrumentId;
-use nautilus_network::http::HttpClient;
+use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
     filters::{
@@ -137,7 +137,12 @@ fn create_gamma_client(addr: &SocketAddr) -> PolymarketGammaRawHttpClient {
 }
 
 fn create_gamma_domain_client(addr: &SocketAddr) -> PolymarketGammaHttpClient {
-    PolymarketGammaHttpClient::new(Some(format!("http://{addr}")), Some(5)).unwrap()
+    PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        Some(5),
+        RetryConfig::default(),
+    )
+    .unwrap()
 }
 
 fn gamma_market_with_slug(slug: &str, condition_id: &str, token_ids: [&str; 2]) -> Value {
@@ -1675,13 +1680,11 @@ async fn test_request_trade_ticks_limit_truncation() {
     let condition_id = "0xcondition_test";
 
     // Page 1: 3 trades (full page when limit=3), limit target=3 → truncate after page 1
-    state.data_api_trade_pages.lock().await.extend([
-        json!([
-            make_data_api_trade(token, 0.60, 1710000003, "bbb3"),
-            make_data_api_trade(token, 0.59, 1710000002, "bbb2"),
-            make_data_api_trade(token, 0.58, 1710000001, "bbb1"),
-        ]),
-    ]);
+    state.data_api_trade_pages.lock().await.extend([json!([
+        make_data_api_trade(token, 0.60, 1710000003, "bbb3"),
+        make_data_api_trade(token, 0.59, 1710000002, "bbb2"),
+        make_data_api_trade(token, 0.58, 1710000001, "bbb1"),
+    ])]);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
@@ -1709,11 +1712,13 @@ async fn test_request_trade_ticks_single_page_partial() {
     let condition_id = "0xcondition_test";
 
     // Single partial page → no second request
-    state.data_api_trade_pages.lock().await.extend([
-        json!([
-            make_data_api_trade(token, 0.70, 1710000001, "ccc1"),
-        ]),
-    ]);
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .extend([json!([make_data_api_trade(
+            token, 0.70, 1710000001, "ccc1"
+        ),])]);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);

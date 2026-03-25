@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_network::retry::RetryConfig;
 use nautilus_polymarket::{
     filters::MarketSlugFilter, http::gamma::PolymarketGammaHttpClient,
     providers::PolymarketInstrumentProvider,
@@ -69,7 +70,7 @@ fn build_updown_slugs() -> Vec<String> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let http_client = PolymarketGammaHttpClient::new(None, None)?;
+    let http_client = PolymarketGammaHttpClient::new(None, None, RetryConfig::default())?;
     let filter = MarketSlugFilter::new(build_updown_slugs);
     let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
     provider.load_all(None).await?;
