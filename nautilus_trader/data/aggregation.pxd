@@ -213,6 +213,7 @@ cdef class SpreadQuoteAggregator:
     cpdef void set_running(self, bint is_running)
     cpdef void set_clock(self, Clock clock)
     cpdef void handle_quote_tick(self, QuoteTick tick)
+    cpdef void flush_pending_historical_quotes(self)
 
     cdef void _process_historical_events(self, uint64_t ts_init)
     cdef void _build_and_send_quote(self, uint64_t ts_event)

@@ -29,6 +29,9 @@ pub struct ScheduledTimeEventHandler(pub TimeEventHandler);
 impl PartialEq for ScheduledTimeEventHandler {
     fn eq(&self, other: &Self) -> bool {
         self.0.event.ts_event == other.0.event.ts_event
+            && self.0.event.name == other.0.event.name
+            && self.0.event.ts_init == other.0.event.ts_init
+            && self.0.event.event_id.as_str() == other.0.event.event_id.as_str()
     }
 }
 
@@ -42,8 +45,24 @@ impl PartialOrd for ScheduledTimeEventHandler {
 
 impl Ord for ScheduledTimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering for min-heap behavior (earlier timestamps = higher priority)
-        other.0.event.ts_event.cmp(&self.0.event.ts_event)
+        // Reverse ordering for min-heap behavior (earlier timestamps = higher priority).
+        // For equal timestamps, preserve the clock's name-based ordering so same-timestamp
+        // spread quote timers fire before time-bar timers.
+        other
+            .0
+            .event
+            .ts_event
+            .cmp(&self.0.event.ts_event)
+            .then_with(|| other.0.event.name.cmp(&self.0.event.name))
+            .then_with(|| other.0.event.ts_init.cmp(&self.0.event.ts_init))
+            .then_with(|| {
+                other
+                    .0
+                    .event
+                    .event_id
+                    .as_str()
+                    .cmp(self.0.event.event_id.as_str())
+            })
     }
 }
 
@@ -189,6 +208,52 @@ mod tests {
             assert_eq!(popped3.event.ts_event, time_event2.ts_event);
 
             assert!(accumulator.is_empty());
+        });
+    }
+
+    #[rstest]
+    fn test_accumulator_pop_same_timestamp_in_name_order() {
+        Python::initialize();
+        Python::attach(|py| {
+            let py_list = PyList::empty(py);
+            let py_append = Py::from(py_list.getattr("append").unwrap());
+
+            let mut accumulator = TimeEventAccumulator::new();
+            let callback = TimeEventCallback::from(py_append.into_any());
+
+            let spread_event = TimeEvent::new(
+                Ustr::from("spread_quote_ESM4"),
+                UUID4::new(),
+                100.into(),
+                100.into(),
+            );
+            let time_bar_event = TimeEvent::new(
+                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                UUID4::new(),
+                100.into(),
+                100.into(),
+            );
+
+            accumulator
+                .heap
+                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
+                    time_bar_event.clone(),
+                    callback.clone(),
+                )));
+            accumulator
+                .heap
+                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
+                    spread_event.clone(),
+                    callback,
+                )));
+
+            let popped1 = accumulator.pop_next_at_or_before(100.into()).unwrap();
+            assert_eq!(popped1.event.ts_event, spread_event.ts_event);
+            assert_eq!(popped1.event.name, spread_event.name);
+
+            let popped2 = accumulator.pop_next_at_or_before(100.into()).unwrap();
+            assert_eq!(popped2.event.ts_event, time_bar_event.ts_event);
+            assert_eq!(popped2.event.name, time_bar_event.name);
         });
     }
 

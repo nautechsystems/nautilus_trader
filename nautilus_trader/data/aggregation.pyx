@@ -1888,6 +1888,29 @@ cdef class SpreadQuoteAggregator:
             self._build_and_send_quote(tick.ts_init)
             return
 
+    cpdef void flush_pending_historical_quotes(self):
+        cdef list event_handlers
+        cdef object event_handler
+
+        if self._update_interval_seconds is None or not self.historical_mode:
+            return
+
+        if not self._historical_events:
+            return
+
+        event_handlers = self._historical_events
+        self._historical_events = []
+
+        if len(self._last_quotes) != self._n_legs:
+            self._log.debug(
+                f"Cannot flush pending historical spread quotes for {self._spread_instrument_id}: "
+                f"missing quotes for one or more legs",
+            )
+            return
+
+        for event_handler in event_handlers:
+            self._build_and_send_quote(event_handler.event.ts_event)
+
     cdef void _process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)

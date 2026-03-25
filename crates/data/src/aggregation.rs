@@ -2251,6 +2251,25 @@ impl SpreadQuoteAggregator {
         }
     }
 
+    /// Flushes the deferred historical timer event, if any.
+    ///
+    /// This is intended for historical request finalization, where we know no more historical
+    /// quotes will arrive for the requested range and should not require a later live tick just
+    /// to release the final same-timestamp spread quote.
+    pub fn flush_pending_historical_quote(&mut self) {
+        if self.update_interval_seconds.is_none() || !self.historical_mode {
+            return;
+        }
+
+        let Some(event) = self.historical_event_at_ts_init.take() else {
+            return;
+        };
+
+        if self.last_quotes.len() == self.n_legs {
+            self.build_and_send_quote(event.ts_event);
+        }
+    }
+
     /// Advances the historical clock and collects timer events. Events at `ts_init` are
     /// deferred until the next call when time advances. The deferred event is only flushed
     /// when all legs have quotes and time has moved past the deferred timestamp. This
@@ -5348,6 +5367,72 @@ mod tests {
             1,
             "deferred event at ts2 is processed when we have all legs and advance to ts3"
         );
+    }
+
+    #[rstest]
+    fn test_spread_quote_historical_flush_emits_pending_final_quote(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let leg1 = instrument.id();
+        let leg2 = InstrumentId::from("MSFT.XNAS");
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            true,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            #[allow(clippy::redundant_clone)] // need clock for set_clock after
+            clock.clone(),
+            true,
+            Some(1),
+            0,
+            None,
+            None,
+        );
+        let rc = Rc::new(RefCell::new(agg));
+        rc.borrow_mut().prepare_for_timer_mode(&rc);
+        rc.borrow_mut().set_clock(clock);
+
+        let ts1 = UnixNanos::from(1_000_000_000);
+        let ts2 = UnixNanos::from(2_000_000_000);
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts1,
+            ts1,
+        ));
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("99.00"),
+            Price::from("99.10"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts2,
+            ts2,
+        ));
+
+        assert_eq!(handler.lock().expect(MUTEX_POISONED).len(), 0);
+
+        rc.borrow_mut().flush_pending_historical_quote();
+
+        let quotes = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(
+            quotes.len(),
+            1,
+            "final historical quote should be emitted when the deferred event is flushed",
+        );
+        assert_eq!(quotes[0].ts_event, ts2);
     }
 
     #[rstest]
