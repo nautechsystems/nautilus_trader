@@ -89,7 +89,7 @@ The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
 - `ops/scripts/exporters/tokenmm_markouts_exporter.py` polls the existing
   `fills.sqlite` and `markouts.sqlite` files and exposes markout performance metrics
   as aggregate Prometheus gauges, including fixed `analysis_window` variants
-  for `15m`, `1h`, `4h`, and `24h`
+  for `15m`, `1h`, `2h`, `4h`, `1d`, `2d`, `3d`, and `1w`
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
   for the operator dashboard focused on markout performance by strategy,
   venue, symbol, side, benchmark, and horizon progression
@@ -110,14 +110,15 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
   --port 9094 \
   --benchmark-name fv_market_mid,local_mkt_mid \
   --poll-interval-s 30 \
-  --window-hours 24
+  --window-hours 168
 ```
 
 Keep the polling window bounded. The exporter now rejects non-positive
 `--window-hours` values so a bad override cannot silently widen polling into a
 full-table scan.
 The configured `--window-hours` value must still cover the largest supported
-analysis window, currently `24h`, so the exported window set stays fixed.
+analysis window, currently `1w` (`168h`), so the exported window set stays
+fixed.
 
 Dashboard semantics:
 
@@ -129,8 +130,10 @@ Dashboard usage notes:
 
 - the markouts dashboard exposes filterable selectors for `strategy_id`,
   `venue`, `symbol`, `order_side`, `horizon_s`, and `benchmark_name`
-- the `window` selector is the rolling aggregation window used by the panels,
-  while the Grafana time range controls the x-axis span
+- `benchmark_name` is intentionally single-select so the snapshot table stays
+  keyed by `Strategy | Side` without averaging benchmarks together
+- the `window` selector chooses the exported fixed analysis window, while the
+  Grafana time range controls the x-axis span
 - use the weighted markout panel when simple average bps is skewed by small fills
 - use the last-target-age panel to distinguish stale exporter output from
   genuinely quiet trading periods

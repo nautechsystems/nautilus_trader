@@ -136,11 +136,14 @@ def test_markouts_dashboard_exposes_real_filters_and_metric_panels() -> None:
 
     assert benchmark_var["type"] == "custom"
     assert benchmark_var["query"] == "fv_market_mid,local_mkt_mid"
-    assert benchmark_var["includeAll"] is True
+    assert benchmark_var.get("includeAll", False) is False
+    assert benchmark_var.get("multi", False) is False
+    assert benchmark_var["current"]["value"] == "fv_market_mid"
 
     assert window_var["type"] == "custom"
-    assert window_var["current"]["value"] == "1h"
-    assert payload["time"]["from"] == "now-1h"
+    assert window_var["query"] == "15m,1h,2h,4h,1d,2d,3d,1w"
+    assert window_var["current"]["value"] == "2h"
+    assert payload["time"]["from"] == "now-2h"
 
     panel_types = {panel["type"] for panel in payload["panels"]}
     assert "table" in panel_types
@@ -282,7 +285,7 @@ def test_markouts_dashboard_uses_window_as_analysis_window_selector() -> None:
         for variable in payload["templating"]["list"]
         if variable["name"] == "window"
     )
-    assert window_var["query"] == "15m,1h,4h,24h"
+    assert window_var["query"] == "15m,1h,2h,4h,1d,2d,3d,1w"
 
     snapshot_panel = next(panel for panel in payload["panels"] if panel["id"] == 1)
     snapshot_exprs = [target["expr"] for target in snapshot_panel["targets"]]
