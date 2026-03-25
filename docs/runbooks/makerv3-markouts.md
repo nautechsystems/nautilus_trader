@@ -91,7 +91,7 @@ The Grafana path for TokenMM markouts is intentionally off the trading hotpath.
   as aggregate Prometheus gauges
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json` reads those gauges
   for the operator dashboard focused on markout performance by strategy,
-  side, benchmark, and horizon progression
+  venue, symbol, side, benchmark, and horizon progression
 - `ops/scripts/exporters/tokenmm_metrics_exporter.py` and
   `monitoring/grafana/dashboards/tokenmm_liquidity_v1.json` handle the separate
   liquidity and uptime metrics surface
@@ -115,6 +115,16 @@ python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
 Keep the polling window bounded. The exporter now rejects non-positive
 `--window-hours` values so a bad override cannot silently widen polling into a
 full-table scan.
+
+Dashboard usage notes:
+
+- the markouts dashboard exposes filterable selectors for `strategy_id`,
+  `venue`, `symbol`, `order_side`, `horizon_s`, and `benchmark_name`
+- the `window` selector is the rolling aggregation window used by the panels,
+  while the Grafana time range controls the x-axis span
+- use the weighted markout panel when simple average bps is skewed by small fills
+- use the last-target-age panel to distinguish stale exporter output from
+  genuinely quiet trading periods
 
 ## Known limitations and scope
 

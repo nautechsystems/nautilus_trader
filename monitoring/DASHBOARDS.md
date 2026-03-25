@@ -66,6 +66,10 @@ Operational notes:
   sidecar unit unless intentionally narrowing coverage
 - the markouts sidecar can expose `0s`, `30s`, `60s`, and `120s` horizons from
   the same persisted `execution_markout` surface
+- the markouts dashboard is filter-driven across `strategy_id`, `venue`,
+  `symbol`, `order_side`, `horizon_s`, and `benchmark_name`
+- the markouts dashboard now includes notional-weighted markout and freshness
+  panels in addition to raw average bps, counts, and resolution rate
 - the markouts exporter rejects non-positive `--window-hours` values so the
   bounded trailing-window contract cannot silently turn into a full-table scan
 - the liquidity exporter keeps polling healthy strategies even if one Redis key
