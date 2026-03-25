@@ -323,8 +323,9 @@ impl ParquetDataCatalogV2 {
 
     /// Write instruments to Parquet files in the catalog.
     ///
-    /// Instruments are stored by instrument ID in `data/instruments/{instrument_id}/instrument.parquet`.
-    /// Multiple instruments with the same ID are written as multiple rows in the same file.
+    /// Instruments are stored under `data/instruments/{instrument_id}/` using timestamp-ranged
+    /// parquet file names, allowing multiple historical versions of the same instrument to be
+    /// written across separate calls.
     ///
     /// # Parameters
     ///
@@ -359,16 +360,27 @@ impl ParquetDataCatalogV2 {
     /// # Parameters
     ///
     /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, returns all instruments.
+    /// - `start`: Optional inclusive lower bound for `ts_init` filtering.
+    /// - `end`: Optional inclusive upper bound for `ts_init` filtering.
     ///
     /// # Returns
     ///
     /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
-    #[pyo3(signature = (instrument_ids=None))]
+    #[pyo3(signature = (instrument_ids=None, start=None, end=None))]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn instruments(&self, instrument_ids: Option<Vec<String>>) -> PyResult<Vec<Py<PyAny>>> {
+    pub fn instruments(
+        &self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let rust_instruments = self
             .inner
-            .query_instruments(instrument_ids.as_deref())
+            .query_instruments_filtered(
+                instrument_ids.as_deref(),
+                start.map(UnixNanos::from),
+                end.map(UnixNanos::from),
+            )
             .map_err(|e| PyIOError::new_err(format!("Failed to query instruments: {e}")))?;
         Python::attach(|py| {
             rust_instruments

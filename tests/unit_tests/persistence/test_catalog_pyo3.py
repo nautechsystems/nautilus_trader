@@ -53,6 +53,26 @@ def bar(t):
     )
 
 
+def make_audusd_snapshot(
+    ts_init: int,
+    venue_extra: str,
+    count: int,
+    enabled: bool,
+) -> CurrencyPair:
+    from typing import Any
+
+    from nautilus_trader.model.instruments import CurrencyPair as PyCurrencyPair
+
+    base = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    payload: dict[str, Any] = {
+        **PyCurrencyPair.to_dict(base),
+        "info": {"venue_extra": venue_extra, "count": count, "enabled": enabled},
+        "ts_event": ts_init,
+        "ts_init": ts_init,
+    }
+    return CurrencyPair.from_dict(payload)
+
+
 def test_write_2_bars_to_catalog(catalog: ParquetDataCatalog):
     # Arrange
     # Note: we use a python catalog only to setup an empty catalog every time
@@ -70,29 +90,13 @@ def test_write_2_bars_to_catalog(catalog: ParquetDataCatalog):
 
 def test_catalog_v2_instrument_roundtrip_with_info_params(catalog: ParquetDataCatalog) -> None:
     # Roundtrip PyO3 instruments (CurrencyPair with Params in info) via catalog v2.
-    from typing import Any
     from typing import cast
 
-    from nautilus_trader.model.instruments import CurrencyPair as PyCurrencyPair
-
-    base = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-    d = PyCurrencyPair.to_dict(base)
-    payload1: dict[str, Any] = {
-        **d,
-        "info": {"venue_extra": "v1", "count": 1, "enabled": True},
-        "ts_event": 1000,
-        "ts_init": 1000,
-    }
-    payload2: dict[str, Any] = {
-        **d,
-        "info": {"venue_extra": "v2", "count": 2, "enabled": False},
-        "ts_event": 2000,
-        "ts_init": 2000,
-    }
-    inst1 = CurrencyPair.from_dict(payload1)
-    inst2 = CurrencyPair.from_dict(payload2)
+    inst1 = make_audusd_snapshot(1000, "v1", 1, True)
+    inst2 = make_audusd_snapshot(2000, "v2", 2, False)
     pyo3_catalog = ParquetDataCatalogV2(catalog.path)
-    pyo3_catalog.write_instruments([inst1, inst2])
+    pyo3_catalog.write_instruments([inst1])
+    pyo3_catalog.write_instruments([inst2])
     read = cast(list[CurrencyPair], pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"]))
     assert len(read) == 2
     by_ts = {inst.ts_init: inst for inst in read}
@@ -102,6 +106,60 @@ def test_catalog_v2_instrument_roundtrip_with_info_params(catalog: ParquetDataCa
     assert dict(by_ts[2000].info) == {"venue_extra": "v2", "count": 2, "enabled": False}
     assert str(by_ts[1000].id) == "AUD/USD.SIM"
     assert str(by_ts[2000].id) == "AUD/USD.SIM"
+
+    filtered = cast(
+        list[CurrencyPair],
+        pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"], start=1500, end=2500),
+    )
+    assert len(filtered) == 1
+    assert filtered[0].ts_init == 2000
+
+
+def test_catalog_v2_instrument_time_range_query_with_multiple_versions(
+    catalog: ParquetDataCatalog,
+) -> None:
+    from typing import cast
+
+    pyo3_catalog = ParquetDataCatalogV2(catalog.path)
+    versions = [
+        make_audusd_snapshot(1000, "v1", 1, True),
+        make_audusd_snapshot(2000, "v2", 2, False),
+        make_audusd_snapshot(3000, "v3", 3, True),
+        make_audusd_snapshot(4000, "v4", 4, False),
+    ]
+
+    for instrument in versions:
+        pyo3_catalog.write_instruments([instrument])
+
+    read_all = cast(
+        list[CurrencyPair],
+        pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"]),
+    )
+    assert [instrument.ts_init for instrument in read_all] == [1000, 2000, 3000, 4000]
+    assert [dict(instrument.info)["venue_extra"] for instrument in read_all] == [
+        "v1",
+        "v2",
+        "v3",
+        "v4",
+    ]
+
+    middle_range = cast(
+        list[CurrencyPair],
+        pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"], start=1500, end=3500),
+    )
+    assert [instrument.ts_init for instrument in middle_range] == [2000, 3000]
+
+    upper_range = cast(
+        list[CurrencyPair],
+        pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"], start=2500, end=4500),
+    )
+    assert [instrument.ts_init for instrument in upper_range] == [3000, 4000]
+
+    lower_range = cast(
+        list[CurrencyPair],
+        pyo3_catalog.instruments(instrument_ids=["AUD/USD.SIM"], start=0, end=2500),
+    )
+    assert [instrument.ts_init for instrument in lower_range] == [1000, 2000]
 
 
 def test_append_data_to_catalog(catalog: ParquetDataCatalog):

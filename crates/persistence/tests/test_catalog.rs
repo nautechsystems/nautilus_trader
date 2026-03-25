@@ -24,7 +24,7 @@ use nautilus_model::{
     },
     enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol, TradeId},
-    instruments::{CurrencyPair, Instrument, InstrumentAny},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::{Currency, Price, Quantity},
 };
 use nautilus_persistence::{
@@ -3469,4 +3469,54 @@ fn test_instrument_roundtrip_with_info_params() {
         Some(info),
         "info (Params) must roundtrip unchanged"
     );
+}
+
+#[rstest]
+fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let base = audusd_sim();
+    let base_id = base.id;
+    let base_info = base.info.clone().unwrap_or_default();
+
+    let mut instrument_v1 = base.clone();
+    let mut info_v1 = base_info.clone();
+    info_v1.insert("venue_extra".to_string(), json!("v1"));
+    instrument_v1.info = Some(info_v1);
+    instrument_v1.ts_event = UnixNanos::from(1_000);
+    instrument_v1.ts_init = UnixNanos::from(1_000);
+
+    let mut instrument_v2 = base;
+    let mut info_v2 = base_info;
+    info_v2.insert("venue_extra".to_string(), json!("v2"));
+    instrument_v2.info = Some(info_v2);
+    instrument_v2.ts_event = UnixNanos::from(2_000);
+    instrument_v2.ts_init = UnixNanos::from(2_000);
+
+    let instrument_v1 = InstrumentAny::CurrencyPair(instrument_v1);
+    let instrument_v2 = InstrumentAny::CurrencyPair(instrument_v2);
+
+    catalog.write_instruments(vec![instrument_v1]).unwrap();
+    catalog.write_instruments(vec![instrument_v2]).unwrap();
+
+    let id_str = base_id.to_string();
+    let ids = vec![id_str.clone()];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 2, "Should read back both instrument versions");
+    assert_eq!(HasTsInit::ts_init(&read[0]), UnixNanos::from(1_000));
+    assert_eq!(HasTsInit::ts_init(&read[1]), UnixNanos::from(2_000));
+
+    let filtered = catalog
+        .query_instruments_filtered(
+            Some(&ids),
+            Some(UnixNanos::from(1_500)),
+            Some(UnixNanos::from(2_500)),
+        )
+        .unwrap();
+    assert_eq!(filtered.len(), 1, "Should filter to the matching version");
+    assert_eq!(HasTsInit::ts_init(&filtered[0]), UnixNanos::from(2_000));
+
+    let intervals = catalog.get_intervals("instruments", Some(&id_str)).unwrap();
+    assert_eq!(intervals, vec![(1_000, 1_000), (2_000, 2_000)]);
 }

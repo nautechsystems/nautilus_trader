@@ -4734,6 +4734,8 @@ class ParquetDataCatalogV2:
     def instruments(
         self,
         instrument_ids: list[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[object]: ...
     def write_custom_data(
         self,
