@@ -39,7 +39,7 @@ def is_terminal_order_denial_reason(reason: object) -> bool:
 
 
 _EXPLICIT_EXCHANGE_CODE_RE = re.compile(
-    r"(?<![A-Za-z0-9_])exchange_code(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    r"(?<![A-Za-z0-9_])['\"]?exchange_code['\"]?(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
     re.IGNORECASE,
 )
 _EXCHANGE_ERROR_CODE_RE = re.compile(
