@@ -514,6 +514,18 @@ cargo-test-extras:  #-- Run all Rust tests with capnp and hypersync features (co
 CORE_FILTERSET := $(subst $(eval ) , + ,$(foreach crate,$(CORE_CRATES),package($(crate))))
 ADAPTER_FILTERSET := $(subst $(eval ) , + ,$(foreach crate,$(ADAPTER_CRATES),package($(crate))))
 
+.PHONY: cargo-test-core-local
+cargo-test-core-local: export RUST_BACKTRACE=1
+cargo-test-core-local: check-nextest-installed
+cargo-test-core-local:  #-- Run Rust tests for core crates only with direct package selection (fast local compile)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Rust tests for core crates with direct package selection...)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --verbose
+else
+	$(info $(M) Running Rust tests for core crates with direct package selection (showing summary and failures only)...)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+endif
+
 .PHONY: cargo-test-core
 cargo-test-core: export RUST_BACKTRACE=1
 cargo-test-core: check-nextest-installed
@@ -543,6 +555,12 @@ cargo-test-core-debug: export RUST_BACKTRACE=1
 cargo-test-core-debug: check-nextest-installed
 cargo-test-core-debug:  #-- Run Rust tests for core crates (debug profile)
 	cargo nextest run --workspace --features "$(CARGO_FEATURES)" -E '$(CORE_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
+
+.PHONY: cargo-test-core-local-debug
+cargo-test-core-local-debug: export RUST_BACKTRACE=1
+cargo-test-core-local-debug: check-nextest-installed
+cargo-test-core-local-debug:  #-- Run Rust tests for core crates with direct package selection (debug profile)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
 
 .PHONY: cargo-test-lib
 cargo-test-lib: export RUST_BACKTRACE=1
