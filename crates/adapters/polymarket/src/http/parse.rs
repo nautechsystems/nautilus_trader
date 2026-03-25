@@ -568,7 +568,8 @@ mod tests {
         assert_eq!(instrument.price_precision(), 2);
 
         let ts_event = UnixNanos::from(2_000_000_000u64);
-        let rebuilt = rebuild_instrument_with_tick_size(&instrument, "0.001", ts_event, ts_event).unwrap();
+        let rebuilt =
+            rebuild_instrument_with_tick_size(&instrument, "0.001", ts_event, ts_event).unwrap();
 
         assert_eq!(rebuilt.price_precision(), 3);
         assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
@@ -582,14 +583,21 @@ mod tests {
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
         let ts_event = UnixNanos::from(2_000_000_000u64);
-        let rebuilt = rebuild_instrument_with_tick_size(&instrument, "0.01", ts_event, ts_event).unwrap();
+        let rebuilt =
+            rebuild_instrument_with_tick_size(&instrument, "0.01", ts_event, ts_event).unwrap();
 
         assert_eq!(rebuilt.id(), instrument.id());
         assert_eq!(rebuilt.raw_symbol(), instrument.raw_symbol());
         assert_eq!(rebuilt.size_precision(), instrument.size_precision());
 
-        let orig_bo = match &instrument { InstrumentAny::BinaryOption(b) => b, _ => panic!() };
-        let new_bo = match &rebuilt { InstrumentAny::BinaryOption(b) => b, _ => panic!() };
+        let orig_bo = match &instrument {
+            InstrumentAny::BinaryOption(b) => b,
+            _ => panic!(),
+        };
+        let new_bo = match &rebuilt {
+            InstrumentAny::BinaryOption(b) => b,
+            _ => panic!(),
+        };
         assert_eq!(new_bo.outcome, orig_bo.outcome);
         assert_eq!(new_bo.currency, orig_bo.currency);
     }

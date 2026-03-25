@@ -533,7 +533,7 @@ impl PolymarketDataClient {
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to rebuild instrument for tick size change: {e}")
+                            log::error!("Failed to rebuild instrument for tick size change: {e}");
                         }
                     }
                 }
@@ -602,6 +602,7 @@ impl PolymarketDataClient {
                                     None,
                                     None,
                                 );
+
                                 if let Err(e) =
                                     data_sender.send(DataEvent::InstrumentStatus(status))
                                 {
@@ -646,6 +647,7 @@ impl PolymarketDataClient {
                             None,
                             None,
                         );
+
                         if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
                             log::error!(
                                 "Failed to emit instrument status for {}: {e}",
@@ -755,6 +757,7 @@ impl DataClient for PolymarketDataClient {
             .values()
             .map(|inst| inst.raw_symbol().as_str().to_string())
             .collect();
+
         if !token_ids.is_empty() {
             log::info!(
                 "Subscribing {} instruments to WS market data",

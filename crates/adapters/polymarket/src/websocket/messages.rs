@@ -203,7 +203,7 @@ pub enum MarketWsMessage {
     #[serde(rename = "tick_size_change")]
     TickSizeChange(PolymarketTickSizeChange),
     #[serde(rename = "new_market")]
-    NewMarket(PolymarketNewMarket),
+    NewMarket(Box<PolymarketNewMarket>),
     #[serde(rename = "market_resolved")]
     MarketResolved(PolymarketMarketResolved),
     #[serde(rename = "best_bid_ask")]

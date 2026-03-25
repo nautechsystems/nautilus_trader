@@ -255,7 +255,6 @@ pub fn parse_quote_from_price_change(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-
     let bid_price = parse_price(&quote.best_bid, price_precision)?;
     let ask_price = parse_price(&quote.best_ask, price_precision)?;
     let changed_price = parse_price(&quote.price, price_precision)?;
@@ -335,7 +334,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_snapshot(&snap, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let deltas = parse_book_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         // CLEAR + 3 bids + 3 asks = 7 deltas
         assert_eq!(deltas.deltas.len(), 7);
@@ -357,7 +363,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_deltas(&quotes, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let deltas = parse_book_deltas(
+            &quotes,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(deltas.deltas.len(), 2);
 
@@ -373,7 +386,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_deltas(&quotes, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let deltas = parse_book_deltas(
+            &quotes,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(deltas.deltas[0].action, BookAction::Delete);
     }
@@ -384,7 +404,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let tick = parse_trade_tick(&trade, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let tick = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
@@ -397,8 +424,22 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let tick1 = parse_trade_tick(&trade, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
-        let tick2 = parse_trade_tick(&trade, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let tick1 = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
+        let tick2 = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(tick1.trade_id, tick2.trade_id);
     }
@@ -409,9 +450,15 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let quote = parse_quote_from_snapshot(&snap, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init)
-            .unwrap()
-            .unwrap();
+        let quote = parse_quote_from_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, Price::from("0.50"));
@@ -429,7 +476,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let result = parse_quote_from_snapshot(&snap, instrument.id(), instrument.price_precision(), instrument.size_precision(), ts_init).unwrap();
+        let result = parse_quote_from_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert!(result.is_none());
     }

@@ -116,7 +116,12 @@ impl PolymarketWebSocketClient {
         Self::new_inner(WsChannel::User, url, Some(credential), false)
     }
 
-    fn new_inner(channel: WsChannel, url: String, credential: Option<Credential>, subscribe_new_markets: bool) -> Self {
+    fn new_inner(
+        channel: WsChannel,
+        url: String,
+        credential: Option<Credential>,
+        subscribe_new_markets: bool,
+    ) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
             channel,
