@@ -160,32 +160,40 @@ def test_markouts_dashboard_exposes_real_filters_and_metric_panels() -> None:
     assert any("tokenmm_markout_last_target_ts_seconds" in expr for expr in expressions)
 
 
-def test_markouts_snapshot_table_uses_detail_rows_for_selected_filters() -> None:
+def test_markouts_snapshot_table_pivots_horizons_for_strategy_side_rows() -> None:
     path = _repo_root() / "monitoring/grafana/dashboards/tokenmm_markouts_v1.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     snapshot_panel = next(panel for panel in payload["panels"] if panel["id"] == 1)
-    assert snapshot_panel["title"] == "Filtered Markout Snapshot"
-    assert len(snapshot_panel["targets"]) == 6
+    assert snapshot_panel["title"] == "Strategy + Side Snapshot"
+    assert len(snapshot_panel["targets"]) == 12
 
     expressions = [target["expr"] for target in snapshot_panel["targets"]]
-    assert any("tokenmm_markout_avg_bps" in expr for expr in expressions)
-    assert any("tokenmm_markout_nw_bps" in expr for expr in expressions)
-    assert any("tokenmm_markout_fill_count" in expr for expr in expressions)
-    assert any("tokenmm_markout_resolved_rows" in expr for expr in expressions)
-    assert any("tokenmm_markout_resolution_rate" in expr for expr in expressions)
-    assert any("tokenmm_markout_last_target_ts_seconds" in expr for expr in expressions)
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_avg_bps" in expr for expr in expressions)
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_fill_count" in expr for expr in expressions)
+    assert any('horizon_s="0"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="30"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="60"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
+    assert any('horizon_s="120"' in expr and "tokenmm_markout_resolution_rate" in expr for expr in expressions)
     assert all("strategy_id=~\"$strategy_id\"" in expr for expr in expressions)
     assert all("venue=~\"$venue\"" in expr for expr in expressions)
     assert all("symbol=~\"$symbol\"" in expr for expr in expressions)
     assert all("order_side=~\"$order_side\"" in expr for expr in expressions)
-    assert all("horizon_s=~\"$horizon_s\"" in expr for expr in expressions)
     assert all("benchmark_name=~\"$benchmark_name\"" in expr for expr in expressions)
+    assert all("horizon_s=~\"$horizon_s\"" not in expr for expr in expressions)
+    assert all('label_join(' in expr for expr in expressions)
+    assert all('avg by (strategy_id,order_side)' in expr or 'max by (strategy_id,order_side)' in expr for expr in expressions)
 
     avg_override = next(
         override
         for override in snapshot_panel["fieldConfig"]["overrides"]
-        if override["matcher"]["options"] == "Avg Bps"
+        if override["matcher"]["options"] == ".* Avg$"
     )
     avg_unit = next(
         prop["value"] for prop in avg_override["properties"] if prop["id"] == "unit"
@@ -200,13 +208,19 @@ def test_markouts_snapshot_table_uses_detail_rows_for_selected_filters() -> None
     rename_by_name = organize["options"]["renameByName"]
     index_by_name = organize["options"]["indexByName"]
 
-    assert rename_by_name["series_key"] == "Series"
-    assert rename_by_name["Value #A"] == "Avg Bps"
-    assert rename_by_name["Value #B"] == "NW Bps"
-    assert rename_by_name["Value #C"] == "Fill Count"
-    assert rename_by_name["Value #D"] == "Resolved Rows"
-    assert rename_by_name["Value #E"] == "Resolution %"
-    assert rename_by_name["Value #F"] == "Last Target Age (s)"
+    assert rename_by_name["series_key"] == "Strategy | Side"
+    assert rename_by_name["Value #A"] == "0s Avg"
+    assert rename_by_name["Value #B"] == "30s Avg"
+    assert rename_by_name["Value #C"] == "60s Avg"
+    assert rename_by_name["Value #D"] == "120s Avg"
+    assert rename_by_name["Value #E"] == "0s N"
+    assert rename_by_name["Value #F"] == "30s N"
+    assert rename_by_name["Value #G"] == "60s N"
+    assert rename_by_name["Value #H"] == "120s N"
+    assert rename_by_name["Value #I"] == "0s Res%"
+    assert rename_by_name["Value #J"] == "30s Res%"
+    assert rename_by_name["Value #K"] == "60s Res%"
+    assert rename_by_name["Value #L"] == "120s Res%"
 
     assert index_by_name["series_key"] == 0
     assert index_by_name["Value #A"] == 1
@@ -215,16 +229,22 @@ def test_markouts_snapshot_table_uses_detail_rows_for_selected_filters() -> None
     assert index_by_name["Value #D"] == 4
     assert index_by_name["Value #E"] == 5
     assert index_by_name["Value #F"] == 6
+    assert index_by_name["Value #G"] == 7
+    assert index_by_name["Value #H"] == 8
+    assert index_by_name["Value #I"] == 9
+    assert index_by_name["Value #J"] == 10
+    assert index_by_name["Value #K"] == 11
+    assert index_by_name["Value #L"] == 12
 
     strategy_override = next(
         override
         for override in snapshot_panel["fieldConfig"]["overrides"]
-        if override["matcher"] == {"id": "byName", "options": "Series"}
+        if override["matcher"] == {"id": "byName", "options": "Strategy | Side"}
     )
     strategy_width = next(
         prop["value"] for prop in strategy_override["properties"] if prop["id"] == "custom.width"
     )
-    assert strategy_width >= 480
+    assert strategy_width >= 360
 
 
 def test_markouts_timeseries_queries_use_full_filter_scope_and_clear_legends() -> None:
