@@ -131,12 +131,13 @@ impl FeedHandler {
             serde_json::to_string(&MarketSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 operation: "subscribe",
+                custom_feature_enabled: self.subscribe_new_markets,
             })
         } else {
             serde_json::to_string(&MarketInitialSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 msg_type: "market",
-                subscribe_new_markets: self.subscribe_new_markets,
+                custom_feature_enabled: self.subscribe_new_markets,
             })
         };
 
@@ -296,8 +297,7 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::SubscribeMarket(ids) => {
-                            self.
-                            send_subscribe_market(&ids).await;
+                            self.send_subscribe_market(&ids).await;
                         }
                         HandlerCommand::UnsubscribeMarket(ids) => {
                             for id in &ids {

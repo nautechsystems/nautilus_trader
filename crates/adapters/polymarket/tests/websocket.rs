@@ -406,6 +406,7 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         json!({
             "assets_ids": [TEST_ASSET_ID],
             "type": "market",
+            "custom_feature_enabled": true,
         }),
         "first market subscribe should use MarketInitialSubscribeRequest"
     );
@@ -422,6 +423,7 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         json!({
             "assets_ids": [TEST_ASSET_ID_2],
             "operation": "subscribe",
+            "custom_feature_enabled": true,
         }),
         "second market subscribe should use MarketSubscribeRequest"
     );

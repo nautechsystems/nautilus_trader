@@ -241,23 +241,26 @@ pub struct PolymarketWsAuth {
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
 ///
 /// Wire format: `{"assets_ids": [...], "type": "market"}`
-/// When `subscribe_new_markets` is true, includes `"custom_feature_enabled": true`.
+/// When `custom_feature_enabled` is true, enables new market and market resolved events.
 #[derive(Debug, Serialize)]
 pub struct MarketInitialSubscribeRequest {
     pub assets_ids: Vec<String>,
     #[serde(rename = "type")]
     pub msg_type: &'static str,
-    #[serde(rename = "custom_feature_enabled", skip_serializing_if = "std::ops::Not::not")]
-    pub subscribe_new_markets: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub custom_feature_enabled: bool,
 }
 
 /// Incremental market-channel subscribe request sent after the initial session subscribe.
 ///
 /// Wire format: `{"assets_ids": [...], "operation": "subscribe"}`
+/// When `custom_feature_enabled` is true, enables new market and market resolved events.
 #[derive(Debug, Serialize)]
 pub struct MarketSubscribeRequest {
     pub assets_ids: Vec<String>,
     pub operation: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub custom_feature_enabled: bool,
 }
 
 /// Market-channel dynamic unsubscribe request sent during an active session.
@@ -482,7 +485,10 @@ mod tests {
         if let MarketWsMessage::NewMarket(nm) = msg {
             assert_eq!(nm.id, "1031769");
             assert_eq!(nm.slug, "nvda-above-240-on-january-30-2026");
-            assert_eq!(nm.condition_id, "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1");
+            assert_eq!(
+                nm.condition_id,
+                "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1"
+            );
             assert!(nm.active);
             assert_eq!(nm.outcomes.len(), 2);
             assert_eq!(nm.clob_token_ids.len(), 2);
@@ -499,7 +505,10 @@ mod tests {
             assert_eq!(mr.id, "1031769");
             assert_eq!(mr.winning_outcome, "Yes");
             assert_eq!(mr.assets_ids.len(), 2);
-            assert_eq!(mr.winning_asset_id, "76043073756653678226373981964075571318267289248134717369284518995922789326425");
+            assert_eq!(
+                mr.winning_asset_id,
+                "76043073756653678226373981964075571318267289248134717369284518995922789326425"
+            );
         }
     }
 
