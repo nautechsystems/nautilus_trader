@@ -6,7 +6,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ColumnDef } from '@tanstack/react-table';
-import { DataTable, type DataTableDebugMetrics } from '@/components/ui/table/DataTable';
+import {
+  DataTable,
+  materializeLiveSortedData,
+  type DataTableDebugMetrics,
+} from '@/components/ui/table/DataTable';
 
 interface TestData {
   id: number;
@@ -46,6 +50,26 @@ function getVisibleNameOrder(): string[] {
     .slice(1)
     .map((row) => within(row).getAllByRole('cell')[1]?.textContent ?? '');
 }
+
+describe('materializeLiveSortedData', () => {
+  it('returns the original array when no live sorted snapshot is needed', () => {
+    expect(materializeLiveSortedData(mockData, false)).toBe(mockData);
+  });
+
+  it('clones top-level row identities for live sorted updates while preserving nested references', () => {
+    const nested = { venue: 'bybit' };
+    const liveData = [{ id: 1, nested }, { id: 2, nested }];
+
+    const snapshot = materializeLiveSortedData(liveData, true);
+
+    expect(snapshot).not.toBe(liveData);
+    expect(snapshot).toHaveLength(2);
+    expect(snapshot[0]).not.toBe(liveData[0]);
+    expect(snapshot[1]).not.toBe(liveData[1]);
+    expect(snapshot[0]?.nested).toBe(nested);
+    expect(snapshot[1]?.nested).toBe(nested);
+  });
+});
 
 describe('DataTable', () => {
   it('renders table with data', () => {
@@ -235,7 +259,7 @@ describe('DataTable', () => {
     expect(dataRow).not.toHaveAttribute('role', 'button');
   });
 
-  it('supports liveDataVersion updates without invalidating the core row model when data identity is stable', () => {
+  it('supports liveDataVersion updates by refreshing the data identity when row objects mutate in place', () => {
     const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
     const liveData = [liveRow];
     const metrics: DataTableDebugMetrics[] = [];
@@ -266,7 +290,7 @@ describe('DataTable', () => {
 
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
-      coreRowModelInvalidated: false,
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });
@@ -313,7 +337,7 @@ describe('DataTable', () => {
     });
   });
 
-  it('keeps the unsorted stable-data fast path when sorting state exists but sorting is disabled', () => {
+  it('refreshes data identity when sorting state exists but sorting is disabled', () => {
     const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
     const liveData = [liveRow];
     const metrics: DataTableDebugMetrics[] = [];
@@ -346,12 +370,12 @@ describe('DataTable', () => {
 
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
-      coreRowModelInvalidated: false,
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });
 
-  it('keeps the unsorted stable-data fast path when sorting state targets a missing column', () => {
+  it('refreshes data identity when sorting state targets a missing column', () => {
     const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
     const liveData = [liveRow];
     const metrics: DataTableDebugMetrics[] = [];
@@ -385,12 +409,12 @@ describe('DataTable', () => {
 
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
-      coreRowModelInvalidated: false,
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });
 
-  it('keeps the unsorted stable-data fast path when sorting state targets a non-sortable column', () => {
+  it('refreshes data identity when sorting state targets a non-sortable column', () => {
     const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
     const liveData = [liveRow];
     const metrics: DataTableDebugMetrics[] = [];
@@ -428,12 +452,12 @@ describe('DataTable', () => {
 
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
-      coreRowModelInvalidated: false,
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });
 
-  it('keeps the unsorted stable-data fast path when sorting state targets an id-only display column', () => {
+  it('refreshes data identity when sorting state targets an id-only display column', () => {
     const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
     const liveData = [liveRow];
     const metrics: DataTableDebugMetrics[] = [];
@@ -474,7 +498,7 @@ describe('DataTable', () => {
 
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(metrics.at(-1)).toMatchObject({
-      coreRowModelInvalidated: false,
+      coreRowModelInvalidated: true,
       liveCacheReset: true,
     });
   });

@@ -127,6 +127,27 @@ export interface DataTableDebugMetrics {
   rowCount: number;
 }
 
+export function materializeLiveSortedData<T>(data: T[], shouldCloneRows: boolean): T[] {
+  if (!shouldCloneRows) {
+    return data;
+  }
+
+  return data.map((row) => {
+    if (Array.isArray(row)) {
+      return [...row] as T;
+    }
+
+    if (row != null && typeof row === 'object') {
+      return Object.create(
+        Object.getPrototypeOf(row),
+        Object.getOwnPropertyDescriptors(row),
+      ) as T;
+    }
+
+    return row;
+  });
+}
+
 function resolveRuntimeSortableColumnId<T>(columnDef: ColumnDef<T>): string | null {
   const typedColumnDef = columnDef as ColumnDef<T> & {
     accessorFn?: unknown;
@@ -350,10 +371,18 @@ function DataTableInner<T>({
   const previousLiveDataVersionRef = useRef(liveDataVersion);
   const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
   const hasActiveSorting = sortable && appliedSorting.length > 0;
-  const effectiveData = useMemo(
-    () => (liveCacheReset && hasActiveSorting ? [...data] : data),
-    [data, hasActiveSorting, liveCacheReset]
-  );
+  const effectiveData = useMemo(() => {
+    if (!liveCacheReset) {
+      return data;
+    }
+
+    // TanStack invalidates row models when the data array identity changes.
+    // For actively sorted live tables, we also need fresh top-level row identities
+    // so accessor caches recompute without reaching into TanStack internals.
+    return hasActiveSorting
+      ? materializeLiveSortedData(data, true)
+      : [...data];
+  }, [data, hasActiveSorting, liveCacheReset]);
   const effectiveSorting = useMemo(
     () => (liveCacheReset && hasActiveSorting
       ? appliedSorting.map((entry) => ({ ...entry }))
@@ -499,12 +528,6 @@ function DataTableInner<T>({
 
   const densityStyles = getDensityStyles(dense, densityMode);
 
-  if (liveCacheReset) {
-    previousRowModelRef.current?.rows.forEach((row) => {
-      (row as any)._valuesCache = {};
-      (row as any)._uniqueValuesCache = {};
-    });
-  }
   const rowModel = table.getRowModel();
   if (liveCacheReset) {
     previousLiveDataVersionRef.current = liveDataVersion;
