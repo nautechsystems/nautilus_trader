@@ -75,10 +75,10 @@ Example shell setup:
 export RITHMIC_ENV=demo
 export RITHMIC_USERNAME="your_username"
 export RITHMIC_PASSWORD="your_password"
-export RITHMIC_SYSTEM_NAME="Apex"
-export RITHMIC_ACCOUNT_ID="YOUR_ACCOUNT"
-export RITHMIC_FCM_ID="Apex"
-export RITHMIC_IB_ID="Apex"
+export RITHMIC_SYSTEM_NAME="your_system_name"
+export RITHMIC_ACCOUNT_ID="your_account"
+export RITHMIC_FCM_ID="your_fcm_id"
+export RITHMIC_IB_ID="your_ib_id"
 ```
 
 Low-level Rust users can also override the primary and alternate WebSocket endpoints directly on

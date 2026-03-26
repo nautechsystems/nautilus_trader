@@ -1,24 +1,27 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
 """
-NautilusTrader adapter for Rithmic futures trading.
+Rithmic futures integration adapter.
 
-This package provides connectivity to Rithmic's R | Protocol API™
-for market data, instruments, and in-progress execution integration
-on futures exchanges.
+This subpackage provides configuration objects, client factories, providers,
+and Python bindings for connecting NautilusTrader to Rithmic market data and
+execution plants.
 
-Example
--------
->>> from nautilus_trader.adapters.rithmic import (
-...     RithmicDataClientConfig,
-...     RithmicLiveDataClient,
-...     RithmicLiveDataClientFactory,
-... )
->>>
->>> config = RithmicDataClientConfig(
-...     environment=RithmicEnvironment.DEMO,
-...     username="your_username",
-...     password="your_password",
-...     system_name="your_system",
-... )
+For convenience, the most commonly used symbols are re-exported at the
+subpackage's top level, so downstream code can simply import from
+``nautilus_trader.adapters.rithmic``.
 """
 
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
@@ -35,7 +38,6 @@ from nautilus_trader.adapters.rithmic.factories import (
 )
 from nautilus_trader.adapters.rithmic.providers import RithmicInstrumentProvider
 
-# Try to import Rust bindings (may not be available if extension not built)
 try:
     from nautilus_trader.adapters.rithmic.bindings import (
         # Gateway
@@ -66,8 +68,6 @@ try:
     _RUST_BINDINGS_AVAILABLE = True
 except ImportError:
     _RUST_BINDINGS_AVAILABLE = False
-
-__version__ = "0.1.0"
 
 __all__ = [
     # Configuration

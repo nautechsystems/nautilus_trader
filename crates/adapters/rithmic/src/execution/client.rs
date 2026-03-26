@@ -780,7 +780,7 @@ impl RithmicExecutionClient {
     ///
     /// Note: In the typical architecture, execution events come from
     /// the gateway's execution event channel (driven by ExecutionHandler).
-    /// This method is provided for standalone client usage.
+    /// This method is provided for direct low-level client usage.
     pub fn event_receiver(&mut self) -> mpsc::UnboundedReceiver<ExecutionEvent> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.event_tx = Some(tx);
@@ -788,7 +788,7 @@ impl RithmicExecutionClient {
     }
 
     /// Sends an event to the event channel.
-    #[allow(dead_code)] // Will be used when standalone client mode is needed
+    #[allow(dead_code)] // Used when execution events are consumed directly from the client
     pub(crate) fn emit_event(&self, event: ExecutionEvent) {
         if let Some(tx) = &self.event_tx {
             let _ = tx.send(event);
