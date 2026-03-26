@@ -12,6 +12,8 @@ from decimal import Decimal
 from decimal import InvalidOperation
 from typing import Any
 
+from flux.common.quantity_units import DEGRADED_QTY_CONVERSION_STATUSES
+
 
 _STABLE_CASH_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
 _MAKERV4_REPLACEMENT = "equities_maker/equities_taker"
@@ -267,6 +269,15 @@ def tokenmm_trade_rows_require_reset(rows: Sequence[Mapping[str, Any]]) -> bool:
             continue
         qty_base_text = decode_text(row.get("qty_base")).strip()
         qty_venue_text = decode_text(row.get("qty_venue")).strip()
+        qty_conversion_status = decode_text(row.get("qty_conversion_status")).strip().lower()
+        qty_conversion_source = decode_text(row.get("qty_conversion_source")).strip()
+        has_explicit_degraded_contract = (
+            bool(qty_venue_text)
+            and qty_conversion_status in DEGRADED_QTY_CONVERSION_STATUSES
+            and bool(qty_conversion_source)
+        )
+        if has_explicit_degraded_contract:
+            continue
         if not qty_base_text or not qty_venue_text:
             return True
     return False

@@ -544,6 +544,69 @@ def test_socket_emitter_tokenmm_requires_recovery_when_trade_rows_lack_normalize
     client.disconnect()
 
 
+def test_socket_emitter_tokenmm_accepts_explicit_degraded_qty_contract_rows(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-missing-metadata-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_venue": "100",
+                "qty_conversion_status": "missing_metadata",
+                "qty_conversion_source": "trade_payload:instrument lookup miss",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+
+    assert len(trade_packets) == 1
+    assert all(packet["args"][0].get("recovery") != {"required": True, "reason": "trade_gap"} for packet in market_packets)
+    packet_payload = trade_packets[0]["args"][0]
+    trade_payload = packet_payload["trade"]
+    assert packet_payload["row_id"] == "trade-missing-metadata-001"
+    assert trade_payload["qty"] == "100"
+    assert trade_payload.get("qty_base") in (None, "")
+    assert trade_payload["qty_venue"] == "100"
+    assert trade_payload["qty_conversion_status"] == "missing_metadata"
+    assert trade_payload["qty_conversion_source"] == "trade_payload:instrument lookup miss"
+    client.disconnect()
+
+
 def test_socket_emitter_tokenmm_requires_recovery_when_legacy_rows_fall_outside_scan_window(
     flux_config,
     redis_client,

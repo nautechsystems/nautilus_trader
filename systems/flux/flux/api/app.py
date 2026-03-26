@@ -3191,6 +3191,27 @@ def create_flux_api_app(  # noqa: C901
             and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
+        compatibility_mode = _tokenmm_trade_rows_require_reset_for_strategies(
+            strategy_ids=strategy_ids,
+            metadata_resolver=_metadata_for_strategy,
+            stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
+        )
+
+        def _delta_ok(
+            *,
+            rows: list[dict[str, Any]],
+            last_seq: int,
+            reset_required: bool,
+        ) -> Response:
+            payload: dict[str, Any] = {
+                "rows": rows,
+                "last_seq": int(last_seq),
+                "reset_required": reset_required,
+            }
+            if compatibility_mode:
+                payload["compatibility_mode"] = True
+            return _ok(data=payload)
+
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
@@ -3202,18 +3223,13 @@ def create_flux_api_app(  # noqa: C901
             if since_seq is not None:
                 # Safe Phase 1 behavior: multi-strategy profile delta does not claim
                 # a synthetic global cursor; clients should resync to snapshot.
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": 0,
-                        "reset_required": since_seq > 0,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=0, reset_required=since_seq > 0)
 
             rows: list[dict[str, Any]] = []
             for strategy_id in strategy_ids:
+                base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
                 strategy_rows = _rows_after_trade_replay_cursor(
-                    store.load_all_trades_rows(strategy_id),
+                    store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
                     after_ms=since_ms,
                     after_row_id=after_row_id,
                     after_version=after_version,
@@ -3223,15 +3239,10 @@ def create_flux_api_app(  # noqa: C901
                     normalized_row.setdefault("strategy_id", strategy_id)
                     rows.append(normalized_row)
             rows.sort(key=_trade_replay_sort_key)
-            return _ok(
-                data={
-                    "rows": rows[:limit],
-                    "last_seq": 0,
-                    "reset_required": False,
-                },
-            )
+            return _delta_ok(rows=rows[:limit], last_seq=0, reset_required=False)
 
         strategy_id = strategy_ids[0]
+        base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
         if since_seq is not None:
             scan_limit = 2_000
             scanned_rows = store.load_trades_rows(
@@ -3240,38 +3251,28 @@ def create_flux_api_app(  # noqa: C901
                 since_ms=None,
                 since_seq=None,
                 scan_limit=scan_limit,
+                base_first_qty=base_first_qty,
             )
             seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
             parsed_seqs = [seq for seq in seq_values if seq is not None]
             if not parsed_seqs:
                 reset_required = since_seq > 0
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": 0,
-                        "reset_required": reset_required,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=0, reset_required=reset_required)
 
             min_seq = min(parsed_seqs)
             max_seq = max(parsed_seqs)
             if since_seq < (min_seq - 1):
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": int(since_seq),
-                        "reset_required": True,
-                    },
-                )
+                if since_seq <= 0 and (compatibility_mode or len(scanned_rows) < scan_limit):
+                    rows = scanned_rows[:limit]
+                    return _delta_ok(
+                        rows=rows,
+                        last_seq=_extract_last_seq(rows, fallback=max_seq),
+                        reset_required=False,
+                    )
+                return _delta_ok(rows=[], last_seq=int(since_seq), reset_required=True)
 
             if since_seq > max_seq:
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": int(max_seq),
-                        "reset_required": True,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=int(max_seq), reset_required=True)
 
             eligible_rows: list[dict[str, Any]] = []
             for row in scanned_rows:
@@ -3282,32 +3283,35 @@ def create_flux_api_app(  # noqa: C901
             eligible_rows.sort(key=lambda item: safe_int(item.get("seq")) or 0)
             rows = eligible_rows[:limit]
             last_seq = safe_int(rows[-1].get("seq")) if rows else since_seq
-            return _ok(
-                data={
-                    "rows": rows,
-                    "last_seq": int(last_seq if last_seq is not None else since_seq),
-                    "reset_required": False,
-                },
+            return _delta_ok(
+                rows=rows,
+                last_seq=int(last_seq if last_seq is not None else since_seq),
+                reset_required=False,
             )
 
         if since_ms is not None:
-            rows = _rows_after_trade_ts(store.load_all_trades_rows(strategy_id), since_ms=since_ms)
+            rows = _rows_after_trade_ts(
+                store.load_all_trades_rows(strategy_id, base_first_qty=base_first_qty),
+                since_ms=since_ms,
+            )
             rows = rows[:limit]
-            return _ok(
-                data={
-                    "rows": rows,
-                    "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
-                    "reset_required": False,
-                },
+            return _delta_ok(
+                rows=rows,
+                last_seq=_extract_last_seq(rows, fallback=fallback_seq),
+                reset_required=False,
             )
 
-        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms, since_seq=None)
-        return _ok(
-            data={
-                "rows": rows,
-                "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
-                "reset_required": False,
-            },
+        rows = store.load_trades_rows(
+            strategy_id,
+            limit=limit,
+            since_ms=since_ms,
+            since_seq=None,
+            base_first_qty=base_first_qty,
+        )
+        return _delta_ok(
+            rows=rows,
+            last_seq=_extract_last_seq(rows, fallback=fallback_seq),
+            reset_required=False,
         )
 
     @app.get("/api/v1/alerts")
